@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { createApiHandler } from '../server/dev-api'
+import { createApiHandler } from '../server/dev-api.js'
 
 type Handle = ReturnType<typeof createApiHandler>
 
