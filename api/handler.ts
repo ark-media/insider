@@ -7,40 +7,33 @@
 // /api/handler with the original path carried in the `_vpath` query param.
 // We strip `_vpath` back out and hand `createApiHandler` the URL it expects.
 //
-// Init uses a dynamic import inside a try/catch so BOTH import-time failures
-// (e.g. a dependency that throws at load) AND construction-time failures
-// (e.g. Clerk rejecting a malformed key) surface as a readable JSON 500
-// instead of Vercel's opaque FUNCTION_INVOCATION_FAILED. A static top-level
-// `import` would crash the function before the try/catch could run.
+// Import is static (not dynamic) so Vercel's file tracer includes
+// `server/dev-api.ts` in the function bundle. `dev-api.ts` has no top-level
+// side effects, so the import itself can't throw — only the
+// `createApiHandler(env)` call can (e.g. if `@clerk/backend` rejects a
+// malformed key). That call is wrapped in try/catch so any init failure
+// surfaces as a readable JSON 500 with the actual error message instead of
+// Vercel's opaque FUNCTION_INVOCATION_FAILED.
 // ---------------------------------------------------------------------------
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createApiHandler } from '../server/dev-api'
 
-type Handle = (req: IncomingMessage, res: ServerResponse) => Promise<void>
+type Handle = ReturnType<typeof createApiHandler>
 
 let handle: Handle | null = null
 let initError: unknown = null
-let initPromise: Promise<void> | null = null
 
-async function ensureInit(): Promise<void> {
-  if (initPromise) return initPromise
-  initPromise = (async () => {
-    try {
-      const mod = await import('../server/dev-api')
-      handle = mod.createApiHandler(process.env as Record<string, string>)
-    } catch (err) {
-      initError = err
-    }
-  })()
-  return initPromise
+try {
+  handle = createApiHandler(process.env as Record<string, string>)
+} catch (err) {
+  initError = err
 }
 
-export default async function handler(
+export default function handler(
   req: IncomingMessage,
   res: ServerResponse,
 ) {
-  await ensureInit()
-
   if (initError || !handle) {
     res.statusCode = 500
     res.setHeader('content-type', 'application/json')
