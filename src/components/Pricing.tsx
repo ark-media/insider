@@ -1,8 +1,18 @@
 import { useState } from "react";
+import { CheckoutModal } from "./CheckoutModal";
 
 export function Pricing() {
-  const [plan, setPlan] = useState<"monthly" | "yearly">("yearly");
+  const [plan, setPlanRaw] = useState<"monthly" | "yearly">("yearly");
+  const [customAmount, setCustomAmount] = useState<string>("");
+  const setPlan = (p: "monthly" | "yearly") => {
+    setPlanRaw(p);
+    setCustomAmount("");
+  };
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const price = plan === "yearly" ? 80 : 8;
+  const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
+  const customValid =
+    parsedCustom !== null && Number.isFinite(parsedCustom) && parsedCustom >= price;
 
   return (
     <section id="pricing" className="relative bg-navy-900">
@@ -34,7 +44,7 @@ export function Pricing() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                Secure checkout via Supporting Cast
+                Secure checkout
               </li>
             </ul>
           </div>
@@ -96,6 +106,8 @@ export function Pricing() {
                       <input
                         type="number"
                         min={price}
+                        value={customAmount}
+                        onChange={(e) => setCustomAmount(e.target.value)}
                         placeholder={plan === "yearly" ? "120" : "12"}
                         className="w-full bg-transparent text-[22px] text-white outline-none placeholder:text-white/25"
                       />
@@ -103,6 +115,13 @@ export function Pricing() {
                         / {plan === "yearly" ? "yr" : "mo"}
                       </span>
                     </div>
+                    {parsedCustom !== null &&
+                      Number.isFinite(parsedCustom) &&
+                      parsedCustom < price && (
+                        <p className="mt-2 text-[11px] text-signal/90">
+                          Minimum is ${price}/{plan === "yearly" ? "yr" : "mo"}.
+                        </p>
+                      )}
                   </div>
                 </div>
 
@@ -117,7 +136,6 @@ export function Pricing() {
                       "Weekly subscriber debriefs",
                       "Full-length unedited interviews",
                       "Q&A episodes every other week",
-                      "Full back catalogue",
                     ].map((f) => (
                       <li key={f} className="flex items-start gap-3">
                         <span className="mt-[7px] h-px w-4 bg-cyan" />
@@ -126,7 +144,11 @@ export function Pricing() {
                     ))}
                   </ul>
 
-                  <button className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white">
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutOpen(true)}
+                    className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white"
+                  >
                     Start my subscription
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
                       →
@@ -138,6 +160,13 @@ export function Pricing() {
           </div>
         </div>
       </div>
+      <CheckoutModal
+        open={checkoutOpen}
+        plan={plan}
+        defaultAmount={price}
+        customAmount={customValid ? (parsedCustom as number) : null}
+        onClose={() => setCheckoutOpen(false)}
+      />
     </section>
   );
 }

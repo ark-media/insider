@@ -22,7 +22,7 @@ const hosts = [
 export function Hosts() {
   return (
     <section className="relative bg-navy-800/40">
-      <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10">
+      <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10 md:pb-48">
         <div className="mb-16 max-w-2xl">
           <div className="inside-tab text-[13px]">The bylines</div>
           <h2 className="mt-10 text-white">

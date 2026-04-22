@@ -23,11 +23,11 @@ const faqs = [
   },
   {
     q: "How do I cancel my Inside Call me Back subscription?",
-    a: "You can cancel anytime from your Supporting Cast account settings. Your access continues through the end of the current billing period.",
+    a: "You can cancel anytime from your account settings. Your access continues through the end of the current billing period.",
   },
   {
     q: "Who do I reach out to for additional support?",
-    a: "Email support@callmebackpodcast.com and our team will get back to you as quickly as possible.",
+    a: "Email hello@arkmedia.org and our team will get back to you as quickly as possible.",
   },
 ];
 

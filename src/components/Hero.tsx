@@ -43,7 +43,7 @@ export function Hero() {
               href="#preview"
               className="text-[15px] text-white/75 underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
             >
-              Listen to a sample episode
+              Listen to a sneak peek
             </a>
           </div>
 

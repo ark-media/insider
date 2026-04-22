@@ -32,7 +32,6 @@ export function Footer() {
 
         <div className="mt-20 flex flex-col gap-4 border-t border-white/10 pt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40 sm:flex-row sm:justify-between">
           <span>© {new Date().getFullYear()} Ark Media LLC</span>
-          <span>Vol. I · Issue 214 · Printed in New York</span>
           <span>Powered by Supporting Cast</span>
         </div>
       </div>
