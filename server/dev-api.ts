@@ -51,6 +51,7 @@ import type { Plugin, Connect } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import crypto from 'node:crypto'
 import Stripe from 'stripe'
+import { createClerkClient } from '@clerk/backend'
 
 type Env = Record<string, string>
 
@@ -375,6 +376,26 @@ export function devApiPlugin(env: Env): Plugin {
   const appBaseUrl = env.APP_BASE_URL || 'http://localhost:5173'
   const cookieSecure = appBaseUrl.startsWith('https://')
 
+  // Preview-access gate: require a Clerk session on every /api/* request
+  // except webhooks (external callers) and the SC magic-link callback
+  // (hit from email links where the browser may not have a Clerk cookie).
+  const clerkSecret = env.CLERK_SECRET_KEY
+  const clerkPublishable =
+    env.CLERK_PUBLISHABLE_KEY || env.VITE_CLERK_PUBLISHABLE_KEY
+  const clerk = clerkSecret
+    ? createClerkClient({
+        secretKey: clerkSecret,
+        publishableKey: clerkPublishable,
+      })
+    : null
+  if (!clerk) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[dev-api] CLERK_SECRET_KEY not set — API is ungated. Set it to enable the preview-access gate.',
+    )
+  }
+  const clerkExemptPaths = new Set(['/stripe/webhook', '/sc/callback'])
+
   // Dev-only bypass for the SC magic-link step. When enabled, /api/sc/signin
   // mints the session cookie directly after confirming the SC user exists,
   // skipping send_login_email entirely. Useful when the SC network domain
@@ -630,6 +651,41 @@ export function devApiPlugin(env: Env): Plugin {
   return {
     name: 'ark-insider-dev-api',
     configureServer(server) {
+      // --- Clerk gate -------------------------------------------------------
+      // Runs before every /api/* route. Mounted at '/api', so req.url inside
+      // the handler is the sub-path (e.g. '/stripe/webhook').
+      if (clerk) {
+        server.middlewares.use('/api', async (req, res, next) => {
+          const subPath = (req.url ?? '/').split('?')[0]
+          if (clerkExemptPaths.has(subPath)) return next()
+
+          const headers = new Headers()
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (Array.isArray(v)) headers.set(k, v.join(', '))
+            else if (typeof v === 'string') headers.set(k, v)
+          }
+          const request = new Request(
+            new URL(`/api${req.url ?? '/'}`, appBaseUrl).toString(),
+            { method: req.method, headers },
+          )
+
+          try {
+            const state = await clerk.authenticateRequest(request)
+            if (!state.isSignedIn) {
+              res.statusCode = 401
+              res.setHeader('content-type', 'application/json')
+              res.end(JSON.stringify({ error: 'unauthenticated' }))
+              return
+            }
+            next()
+          } catch {
+            res.statusCode = 401
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify({ error: 'unauthenticated' }))
+          }
+        })
+      }
+
       // --- Send login email -------------------------------------------------
       server.middlewares.use(
         '/api/sc/signin',
@@ -1103,7 +1159,7 @@ export function devApiPlugin(env: Env): Plugin {
             cancel_at_period_end: true,
           })
 
-          const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
+          const periodEnd = new Date(sub.items.data[0].current_period_end * 1000).toISOString()
           json(200, { ok: true, access_until: periodEnd })
         }),
       )

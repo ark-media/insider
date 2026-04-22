@@ -157,7 +157,7 @@ function makeReq(opts: {
     (opts.body === undefined
       ? Buffer.alloc(0)
       : Buffer.from(JSON.stringify(opts.body), 'utf8'))
-  const stream = Readable.from([raw]) as unknown as IncomingMessage & {
+  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
     method?: string
     url?: string
     headers: Record<string, string>
@@ -167,7 +167,7 @@ function makeReq(opts: {
   stream.url = opts.url ?? '/'
   stream.headers = opts.headers ?? {}
   stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as IncomingMessage
+  return stream as unknown as IncomingMessage
 }
 
 function makeRes(): FakeRes {
@@ -205,11 +205,11 @@ function makeRes(): FakeRes {
 function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
   return new Promise<void>((resolve, reject) => {
     const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = (chunk?: string | Buffer) => {
+    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
       origEnd(chunk as string | Buffer)
       resolve()
       return res
-    }
+    }) as typeof origEnd
     try {
       handler(req, res as ServerResponse, (err) => {
         if (err) reject(err instanceof Error ? err : new Error(String(err)))
@@ -229,7 +229,7 @@ const originalFetch = globalThis.fetch
 const fetchCalls: Array<{ url: string; method: string; body: unknown }> = []
 let fetchImpl: FetchImpl = async () => new Response('{}', { status: 200 })
 
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input.toString()
   let parsed: unknown = undefined
   if (init?.body && typeof init.body === 'string') {
