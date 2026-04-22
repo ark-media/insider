@@ -250,10 +250,25 @@ async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {
   }
 }
 
-function clientIp(req: IncomingMessage): string {
-  // In dev there's no trusted reverse proxy, so ignore X-Forwarded-For to
-  // prevent attackers from spoofing IPs to bypass rate limiting. Production
-  // deployments behind a trusted proxy should re-enable XFF parsing here.
+function clientIp(req: IncomingMessage, trustForwardedFor: boolean): string {
+  // XFF is attacker-controlled when we're not behind a trusted proxy — any
+  // client can set it to any string. So we only parse it when `buildApi`
+  // tells us we're on a platform (Vercel, etc.) that rewrites the header at
+  // the edge before our code sees it. On a naked Vite dev server, this is
+  // off and we fall back to the TCP peer address.
+  if (trustForwardedFor) {
+    const xff = req.headers['x-forwarded-for']
+    const first = Array.isArray(xff) ? xff[0] : xff
+    if (typeof first === 'string') {
+      // Leftmost entry is the original client. Subsequent entries are the
+      // proxy chain (closer to us), which we don't care about for rate
+      // limiting the *caller*.
+      const ip = first.split(',')[0].trim()
+      if (ip) return ip
+    }
+    const xri = req.headers['x-real-ip']
+    if (typeof xri === 'string' && xri.trim()) return xri.trim()
+  }
   return req.socket.remoteAddress ?? 'unknown'
 }
 
@@ -358,9 +373,21 @@ function readSession(req: IncomingMessage, secret: string): SessionPayload | nul
 }
 
 // ---------------------------------------------------------------------------
-// Plugin
+// API builder — shared between the Vite dev plugin and the standalone
+// serverless handler. Returns the Clerk gate config plus a flat list of
+// route handlers keyed by path. Both entry points (`devApiPlugin`,
+// `createApiHandler`) just decide *how* to dispatch into this list.
 // ---------------------------------------------------------------------------
-export function devApiPlugin(env: Env): Plugin {
+type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>
+
+interface Api {
+  clerk: ReturnType<typeof createClerkClient> | null
+  clerkExemptPaths: Set<string>
+  appBaseUrl: string
+  routes: Array<{ path: string; handler: Handler }>
+}
+
+function buildApi(env: Env): Api {
   const stripeKey = env.STRIPE_SECRET_KEY
   const stripe = stripeKey ? new Stripe(stripeKey) : null
 
@@ -375,6 +402,15 @@ export function devApiPlugin(env: Env): Plugin {
 
   const appBaseUrl = env.APP_BASE_URL || 'http://localhost:5173'
   const cookieSecure = appBaseUrl.startsWith('https://')
+
+  // Vercel, Fly, Render, etc. sit in front of our Node function and set
+  // X-Forwarded-For to the real client's IP (after stripping any header the
+  // client tried to inject). `VERCEL=1` is set automatically on Vercel;
+  // TRUST_FORWARDED_FOR=1 is an explicit opt-in for other platforms. Leave
+  // both unset for Vite dev — `socket.remoteAddress` is the real client
+  // there.
+  const trustForwardedFor =
+    env.VERCEL === '1' || env.TRUST_FORWARDED_FOR === '1'
 
   // Preview-access gate: require a Clerk session on every /api/* request
   // except webhooks (external callers) and the SC magic-link callback
@@ -456,29 +492,6 @@ export function devApiPlugin(env: Env): Plugin {
     consumedNonces.set(nonce, exp)
     if (consumedNonces.size > NONCE_STORE_MAX) pruneConsumedNonces()
   }
-
-  const route =
-    (handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>) =>
-    (req: IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
-      handler(req, res).catch((err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.error('[dev-api]', err)
-        if (err && typeof err === 'object' && 'data' in err) {
-          console.error('[dev-api] error data:', JSON.stringify((err as { data: unknown }).data, null, 2))
-        }
-        if (!res.headersSent) {
-          res.statusCode = 500
-          res.setHeader('content-type', 'application/json')
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : 'Internal error',
-            }),
-          )
-        } else {
-          next(err as Error)
-        }
-      })
-    }
 
   const resolveScPriceId = (plan: 'monthly' | 'yearly'): string => {
     const id =
@@ -648,52 +661,16 @@ export function devApiPlugin(env: Env): Plugin {
     return url.toString()
   }
 
-  return {
-    name: 'ark-insider-dev-api',
-    configureServer(server) {
-      // --- Clerk gate -------------------------------------------------------
-      // Runs before every /api/* route. Mounted at '/api', so req.url inside
-      // the handler is the sub-path (e.g. '/stripe/webhook').
-      if (clerk) {
-        server.middlewares.use('/api', async (req, res, next) => {
-          const subPath = (req.url ?? '/').split('?')[0]
-          if (clerkExemptPaths.has(subPath)) return next()
+  const routes: Api['routes'] = []
 
-          const headers = new Headers()
-          for (const [k, v] of Object.entries(req.headers)) {
-            if (Array.isArray(v)) headers.set(k, v.join(', '))
-            else if (typeof v === 'string') headers.set(k, v)
-          }
-          const request = new Request(
-            new URL(`/api${req.url ?? '/'}`, appBaseUrl).toString(),
-            { method: req.method, headers },
-          )
-
-          try {
-            const state = await clerk.authenticateRequest(request)
-            if (!state.isSignedIn) {
-              res.statusCode = 401
-              res.setHeader('content-type', 'application/json')
-              res.end(JSON.stringify({ error: 'unauthenticated' }))
-              return
-            }
-            next()
-          } catch {
-            res.statusCode = 401
-            res.setHeader('content-type', 'application/json')
-            res.end(JSON.stringify({ error: 'unauthenticated' }))
-          }
-        })
-      }
-
-      // --- Send login email -------------------------------------------------
-      server.middlewares.use(
-        '/api/sc/signin',
-        route(async (req, res) => {
+  // --- Send login email -------------------------------------------------
+      routes.push({
+        path: '/api/sc/signin',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
 
-          const ipWait = signinIpLimiter.take(clientIp(req))
+          const ipWait = signinIpLimiter.take(clientIp(req, trustForwardedFor))
           if (ipWait !== null) {
             res.setHeader('retry-after', String(ipWait))
             return json(429, { error: 'Too many sign-in attempts. Try again shortly.' })
@@ -735,13 +712,13 @@ export function devApiPlugin(env: Env): Plugin {
             console.error('[dev-api] signin error (swallowed):', err)
           }
           json(200, { ok: true })
-        }),
-      )
+        },
+      })
 
       // --- Magic link callback ---------------------------------------------
-      server.middlewares.use(
-        '/api/sc/callback',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/sc/callback',
+        handler: async (req, res) => {
           const url = new URL(req.url ?? '/', appBaseUrl)
           const token = url.searchParams.get('t') ?? ''
           const payload = verifyToken<NoncePayload>(sessionSecret, token)
@@ -784,24 +761,24 @@ export function devApiPlugin(env: Env): Plugin {
           res.statusCode = 302
           res.setHeader('location', dest.toString())
           res.end()
-        }),
-      )
+        },
+      })
 
       // --- Sign out ---------------------------------------------------------
-      server.middlewares.use(
-        '/api/signout',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/signout',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
           clearSessionCookie(res, cookieSecure)
           json(200, { ok: true })
-        }),
-      )
+        },
+      })
 
       // --- Who am I (+ personalized feeds) ---------------------------------
-      server.middlewares.use(
-        '/api/me',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/me',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           const session = readSession(req, sessionSecret)
           if (!session) return json(401, { error: 'unauthenticated' })
@@ -825,16 +802,16 @@ export function devApiPlugin(env: Env): Plugin {
             }
             json(e.status ?? 502, { error: e.message })
           }
-        }),
-      )
+        },
+      })
 
       // --- Send setup SMS --------------------------------------------------
       // Asks SC to text the signed-in user a link for setting up their feed.
       // SC's endpoint expects E.164 (+15555555555); we normalize loosely and
       // let SC return 422 for anything it can't route.
-      server.middlewares.use(
-        '/api/sc/send-setup-sms',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/sc/send-setup-sms',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
 
@@ -924,13 +901,13 @@ export function devApiPlugin(env: Env): Plugin {
             console.error('[dev-api] send_setup_sms failed:', err)
             json(e.status ?? 502, { error: 'Could not send SMS. Please try again.' })
           }
-        }),
-      )
+        },
+      })
 
       // --- Stripe: create subscription -------------------------------------
-      server.middlewares.use(
-        '/api/stripe/create-subscription',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/stripe/create-subscription',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
@@ -1026,13 +1003,13 @@ export function devApiPlugin(env: Env): Plugin {
             amount_cents: amountCents,
             plan,
           })
-        }),
-      )
+        },
+      })
 
       // --- Gift: create one-time PaymentIntent -----------------------------
-      server.middlewares.use(
-        '/api/gift/create-checkout',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/gift/create-checkout',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
@@ -1096,13 +1073,13 @@ export function devApiPlugin(env: Env): Plugin {
             amount_cents: amountCents,
             term,
           })
-        }),
-      )
+        },
+      })
 
       // --- Gift: poll for activation ---------------------------------------
-      server.middlewares.use(
-        '/api/gift/status',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/gift/status',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
           const url = new URL(req.url ?? '/', appBaseUrl)
@@ -1123,13 +1100,13 @@ export function devApiPlugin(env: Env): Plugin {
             status: pi.status,
             activated: Boolean(pi.metadata?.sc_subscription_id),
           })
-        }),
-      )
+        },
+      })
 
       // --- Cancel subscription -----------------------------------------------
-      server.middlewares.use(
-        '/api/stripe/cancel-subscription',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/stripe/cancel-subscription',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
@@ -1161,13 +1138,13 @@ export function devApiPlugin(env: Env): Plugin {
 
           const periodEnd = new Date(sub.items.data[0].current_period_end * 1000).toISOString()
           json(200, { ok: true, access_until: periodEnd })
-        }),
-      )
+        },
+      })
 
       // --- Poll for activation after payment -------------------------------
-      server.middlewares.use(
-        '/api/stripe/subscription-status',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/stripe/subscription-status',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
           const url = new URL(req.url ?? '/', appBaseUrl)
@@ -1197,17 +1174,17 @@ export function devApiPlugin(env: Env): Plugin {
             status: sub.status,
             activated: Boolean(sub.metadata?.sc_subscription_id),
           })
-        }),
-      )
+        },
+      })
 
       // --- Stripe webhook --------------------------------------------------
       // NOTE: This handler reads the raw request body directly. In production
       // with Express/body-parser, ensure raw body is preserved for this route
       // (e.g. via `express.raw({ type: 'application/json' })`) — otherwise
       // Stripe signature verification will fail on the parsed body.
-      server.middlewares.use(
-        '/api/stripe/webhook',
-        route(async (req, res) => {
+      routes.push({
+        path: '/api/stripe/webhook',
+        handler: async (req, res) => {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
@@ -1283,8 +1260,166 @@ export function devApiPlugin(env: Env): Plugin {
               error: err instanceof Error ? err.message : 'Webhook handler error',
             })
           }
-        }),
-      )
+        },
+      })
+
+  return { clerk, clerkExemptPaths, appBaseUrl, routes }
+}
+
+// ---------------------------------------------------------------------------
+// Vite dev plugin — registers each route as Connect middleware under its path.
+// Keeps the exact surface the tests rely on (`plugin.configureServer(fake)`
+// captures a handler per path via `server.middlewares.use(path, handler)`).
+// ---------------------------------------------------------------------------
+export function devApiPlugin(env: Env): Plugin {
+  const api = buildApi(env)
+
+  const withErrors =
+    (handler: Handler) =>
+    (req: IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
+      handler(req, res).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('[dev-api]', err)
+        if (err && typeof err === 'object' && 'data' in err) {
+          console.error(
+            '[dev-api] error data:',
+            JSON.stringify((err as { data: unknown }).data, null, 2),
+          )
+        }
+        if (!res.headersSent) {
+          res.statusCode = 500
+          res.setHeader('content-type', 'application/json')
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : 'Internal error',
+            }),
+          )
+        } else {
+          next(err as Error)
+        }
+      })
+    }
+
+  return {
+    name: 'ark-insider-dev-api',
+    configureServer(server) {
+      // Clerk gate mounted at /api. Vite strips the prefix, so req.url inside
+      // this handler is the sub-path (e.g. '/stripe/webhook').
+      if (api.clerk) {
+        const clerk = api.clerk
+        server.middlewares.use('/api', async (req, res, next) => {
+          const subPath = (req.url ?? '/').split('?')[0]
+          if (api.clerkExemptPaths.has(subPath)) return next()
+
+          const headers = new Headers()
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (Array.isArray(v)) headers.set(k, v.join(', '))
+            else if (typeof v === 'string') headers.set(k, v)
+          }
+          const request = new Request(
+            new URL(`/api${req.url ?? '/'}`, api.appBaseUrl).toString(),
+            { method: req.method, headers },
+          )
+
+          try {
+            const state = await clerk.authenticateRequest(request)
+            if (!state.isSignedIn) {
+              res.statusCode = 401
+              res.setHeader('content-type', 'application/json')
+              res.end(JSON.stringify({ error: 'unauthenticated' }))
+              return
+            }
+            next()
+          } catch {
+            res.statusCode = 401
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify({ error: 'unauthenticated' }))
+          }
+        })
+      }
+
+      for (const { path, handler } of api.routes) {
+        server.middlewares.use(path, withErrors(handler))
+      }
     },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Standalone HTTP handler — for non-Vite deployments (Vercel Node Functions).
+// Same Clerk gate, same route handlers, exact-path dispatch. Bodies are read
+// from the raw request stream, so the caller must *not* pre-parse the body
+// (on Vercel: `export const config = { api: { bodyParser: false } }`).
+// ---------------------------------------------------------------------------
+export function createApiHandler(env: Env) {
+  const api = buildApi(env)
+  const routeMap = new Map(api.routes.map((r) => [r.path, r.handler]))
+
+  return async function handle(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    try {
+      const fullPath = (req.url ?? '/').split('?')[0]
+
+      if (api.clerk) {
+        const subPath = fullPath.startsWith('/api')
+          ? fullPath.slice('/api'.length) || '/'
+          : fullPath
+        if (!api.clerkExemptPaths.has(subPath)) {
+          const headers = new Headers()
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (Array.isArray(v)) headers.set(k, v.join(', '))
+            else if (typeof v === 'string') headers.set(k, v)
+          }
+          const request = new Request(
+            new URL(req.url ?? '/', api.appBaseUrl).toString(),
+            { method: req.method, headers },
+          )
+          try {
+            const state = await api.clerk.authenticateRequest(request)
+            if (!state.isSignedIn) {
+              res.statusCode = 401
+              res.setHeader('content-type', 'application/json')
+              res.end(JSON.stringify({ error: 'unauthenticated' }))
+              return
+            }
+          } catch {
+            res.statusCode = 401
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify({ error: 'unauthenticated' }))
+            return
+          }
+        }
+      }
+
+      const handler = routeMap.get(fullPath)
+      if (!handler) {
+        res.statusCode = 404
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ error: 'Not found' }))
+        return
+      }
+
+      await handler(req, res)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[api]', err)
+      if (err && typeof err === 'object' && 'data' in err) {
+        console.error(
+          '[api] error data:',
+          JSON.stringify((err as { data: unknown }).data, null, 2),
+        )
+      }
+      if (!res.headersSent) {
+        res.statusCode = 500
+        res.setHeader('content-type', 'application/json')
+        res.end(
+          JSON.stringify({
+            error: err instanceof Error ? err.message : 'Internal error',
+          }),
+        )
+      }
+    }
   }
 }
