@@ -615,7 +615,8 @@ function buildApi(env: Env): Api {
       typeof sub.customer === 'string' ? sub.customer : sub.customer.id
     const customer = await stripe.customers.retrieve(customerId)
     if (customer.deleted) throw new Error('Stripe customer was deleted')
-    const email = customer.email
+    const activeCustomer = customer as Stripe.Customer
+    const email = activeCustomer.email
     if (!email) throw new Error('Stripe customer has no email')
 
     const plan =
@@ -624,7 +625,7 @@ function buildApi(env: Env): Api {
     const scPriceId = resolveScPriceId(plan)
 
     const sc = createScClient(env)
-    const user = await findOrCreateScUser(sc, email, customer.name ?? undefined)
+    const user = await findOrCreateScUser(sc, email, activeCustomer.name ?? undefined)
     const created = await sc.call<{ subscription: { id: number } }>(
       'POST',
       '/subscriptions',
