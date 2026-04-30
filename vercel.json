@@ -1,9 +1,6 @@
 {
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/handler?_vpath=/api/:path*" }
-  ],
   "functions": {
-    "api/handler.ts": {
+    "api/**/*.ts": {
       "includeFiles": "server/**"
     }
   }

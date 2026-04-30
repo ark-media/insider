@@ -1346,62 +1346,86 @@ export function devApiPlugin(env: Env): Plugin {
 }
 
 // ---------------------------------------------------------------------------
-// Standalone HTTP handler — for non-Vite deployments (Vercel Node Functions).
-// Same Clerk gate, same route handlers, exact-path dispatch. Bodies are read
-// from the raw request stream, so the caller must *not* pre-parse the body
-// (on Vercel: `export const config = { api: { bodyParser: false } }`).
+// Per-route handler factory — for non-Vite deployments (Vercel Node Functions).
+// Each file under /api bundles as its own function and calls this with the
+// route path it serves. The factory wraps the matching handler with the Clerk
+// preview gate, skipping it for paths in `clerkExemptPaths` (Stripe webhook,
+// SC magic-link callback) that are hit from outside with no Clerk cookie.
+//
+// Init is guarded so a missing or malformed env var (e.g. a Clerk key that
+// rejects at construction) surfaces as a readable JSON 500 instead of
+// Vercel's opaque FUNCTION_INVOCATION_FAILED.
 // ---------------------------------------------------------------------------
-export function createApiHandler(env: Env) {
-  const api = buildApi(env)
-  const routeMap = new Map(api.routes.map((r) => [r.path, r.handler]))
+export function createRouteHandler(env: Env, path: string) {
+  let routeHandler: Handler | null = null
+  let clerk: ReturnType<typeof createClerkClient> | null = null
+  let appBaseUrl = ''
+  let exemptFromClerk = false
+  let initError: unknown = null
+
+  try {
+    const api = buildApi(env)
+    const route = api.routes.find((r) => r.path === path)
+    if (!route) throw new Error(`No route registered for ${path}`)
+    routeHandler = route.handler
+    clerk = api.clerk
+    appBaseUrl = api.appBaseUrl
+    const subPath = path.startsWith('/api')
+      ? path.slice('/api'.length) || '/'
+      : path
+    exemptFromClerk = api.clerkExemptPaths.has(subPath)
+  } catch (err) {
+    initError = err
+  }
 
   return async function handle(
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
-    try {
-      const fullPath = (req.url ?? '/').split('?')[0]
+    if (initError || !routeHandler) {
+      res.statusCode = 500
+      res.setHeader('content-type', 'application/json')
+      res.end(
+        JSON.stringify({
+          error: 'API failed to initialize',
+          message:
+            initError instanceof Error
+              ? initError.message
+              : String(initError ?? 'unknown'),
+          stack: initError instanceof Error ? initError.stack : undefined,
+        }),
+      )
+      return
+    }
 
-      if (api.clerk) {
-        const subPath = fullPath.startsWith('/api')
-          ? fullPath.slice('/api'.length) || '/'
-          : fullPath
-        if (!api.clerkExemptPaths.has(subPath)) {
-          const headers = new Headers()
-          for (const [k, v] of Object.entries(req.headers)) {
-            if (Array.isArray(v)) headers.set(k, v.join(', '))
-            else if (typeof v === 'string') headers.set(k, v)
-          }
-          const request = new Request(
-            new URL(req.url ?? '/', api.appBaseUrl).toString(),
-            { method: req.method, headers },
-          )
-          try {
-            const state = await api.clerk.authenticateRequest(request)
-            if (!state.isSignedIn) {
-              res.statusCode = 401
-              res.setHeader('content-type', 'application/json')
-              res.end(JSON.stringify({ error: 'unauthenticated' }))
-              return
-            }
-          } catch {
+    try {
+      if (clerk && !exemptFromClerk) {
+        const headers = new Headers()
+        for (const [k, v] of Object.entries(req.headers)) {
+          if (Array.isArray(v)) headers.set(k, v.join(', '))
+          else if (typeof v === 'string') headers.set(k, v)
+        }
+        const request = new Request(
+          new URL(req.url ?? '/', appBaseUrl).toString(),
+          { method: req.method, headers },
+        )
+        try {
+          const state = await clerk.authenticateRequest(request)
+          if (!state.isSignedIn) {
             res.statusCode = 401
             res.setHeader('content-type', 'application/json')
             res.end(JSON.stringify({ error: 'unauthenticated' }))
             return
           }
+        } catch {
+          res.statusCode = 401
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify({ error: 'unauthenticated' }))
+          return
         }
       }
 
-      const handler = routeMap.get(fullPath)
-      if (!handler) {
-        res.statusCode = 404
-        res.setHeader('content-type', 'application/json')
-        res.end(JSON.stringify({ error: 'Not found' }))
-        return
-      }
-
-      await handler(req, res)
+      await routeHandler(req, res)
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[api]', err)
