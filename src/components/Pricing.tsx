@@ -19,7 +19,7 @@ export function Pricing() {
       <div className="mx-auto max-w-[1280px] px-6 pt-20 pb-24 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="inside-tab text-[13px]">Join the insiders</div>
+            <div className="inside-tab text-[13px]">Become a member</div>
             <h2 className="mt-10 text-white">
               <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                 Pick your
@@ -30,8 +30,8 @@ export function Pricing() {
             </h2>
             <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-white/70">
               Eight dollars a month or eighty a year — or name a higher amount
-              to support the show. Every Insider gets the same feed, the same
-              Q&amp;As, the same complete interviews.
+              to support the work. Every Ark+ member gets the same bundle, the
+              same paid feed, the same community.
             </p>
             <ul className="mt-10 space-y-2 text-[13px] text-white/55">
               <li className="flex items-center gap-2">
@@ -40,11 +40,11 @@ export function Pricing() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                Gift subscriptions available
+                Gift Ark+ available
               </li>
               <li className="flex items-center gap-2">
                 <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                Secure checkout
+                Secure checkout via Stripe
               </li>
             </ul>
           </div>
@@ -65,11 +65,11 @@ export function Pricing() {
                   }`}
                 >
                   {p}
-                  {p === "yearly" && (
+                  {p === "yearly" ? (
                     <span className={`ml-2 text-[10px] ${plan === p ? "text-navy/70" : "text-cyan"}`}>
                       −17%
                     </span>
-                  )}
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -116,26 +116,26 @@ export function Pricing() {
                       </span>
                     </div>
                     {parsedCustom !== null &&
-                      Number.isFinite(parsedCustom) &&
-                      parsedCustom < price && (
-                        <p className="mt-2 text-[11px] text-signal/90">
-                          Minimum is ${price}/{plan === "yearly" ? "yr" : "mo"}.
-                        </p>
-                      )}
+                    Number.isFinite(parsedCustom) &&
+                    parsedCustom < price ? (
+                      <p className="mt-2 text-[11px] text-signal/90">
+                        Minimum is ${price}/{plan === "yearly" ? "yr" : "mo"}.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
                 {/* Includes column */}
                 <div className="p-8">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
-                    Every Insider receives
+                    Every Ark+ member gets
                   </div>
                   <ul className="mt-5 space-y-3 text-[14px] text-white/80">
                     {[
-                      "Private, ad-free RSS feed",
-                      "Weekly subscriber debriefs",
-                      "Full-length unedited interviews",
-                      "Q&A episodes every other week",
+                      "Inside Call Me Back — private, ad-free feed",
+                      "Members-only newsletters",
+                      "The Ark+ community in the Circle app",
+                      "Live events and Q&As",
                     ].map((f) => (
                       <li key={f} className="flex items-start gap-3">
                         <span className="mt-[7px] h-px w-4 bg-cyan" />
@@ -149,7 +149,7 @@ export function Pricing() {
                     onClick={() => setCheckoutOpen(true)}
                     className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white"
                   >
-                    Start my subscription
+                    Become a member
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
                       →
                     </span>

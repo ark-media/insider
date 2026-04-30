@@ -2,31 +2,35 @@ import { useState } from "react";
 
 const faqs = [
   {
-    q: "Can I still listen to Call me Back for free, or do I need a paid subscription?",
-    a: "Yes. The Call me Back feed is free. New episodes drop every Monday and Thursday. Inside Call me Back grants you access to an extra episode every Friday, featuring Dan, Nadav Eyal, and Amit Segal answering listener questions.",
+    q: "Is this one membership or multiple?",
+    a: "One. Ark+ is a single membership — one bill, one login — that covers Inside Call Me Back, members-only newsletters, the community, and live events. No fragmented platforms. No separate subscriptions to keep track of.",
   },
   {
-    q: "Can I listen to Inside Call me Back on my favorite podcasting app?",
-    a: "Once you subscribe, you'll receive a private RSS feed that works in Apple Podcasts, Overcast, Pocket Casts, Spotify, and most other major podcast apps.",
+    q: "Can I still listen to Call Me Back for free?",
+    a: "Yes. Call Me Back continues to drop free episodes every Sunday and Thursday. Ark+ adds Inside Call Me Back — extended interviews, ad-free episodes, and members-only Q&As — alongside everything else in the bundle.",
   },
   {
-    q: "What do I need to do to join Inside Call me Back?",
-    a: "Pick a plan above, complete checkout via Supporting Cast, and you'll get instructions for adding the private feed to your podcast app of choice.",
+    q: "How do I listen to Inside Call Me Back?",
+    a: "After you join, you'll get a private RSS feed and one-tap setup links for Apple Podcasts, Overcast, Pocket Casts, Spotify, and most other major podcast apps. Episodes show up automatically, just like the free feed.",
+  },
+  {
+    q: "Where does the community live?",
+    a: "The Ark+ community lives in the Circle app — iOS, Android, and the web. After you join, you'll get a single sign-on link from arkmedia.org straight into the community.",
   },
   {
     q: "What are my payment options?",
-    a: "You can pay monthly or annually, or name a higher amount to support the show. All plans include the same Insider benefits.",
+    a: "Monthly or annual, or name a higher amount to support the work. We accept all major credit and debit cards, plus Apple Pay and Google Pay where available. Checkout is processed by Stripe.",
   },
   {
-    q: "What types of payment do you accept?",
-    a: "We accept all major credit and debit cards, plus Apple Pay and Google Pay where available, securely processed through Supporting Cast.",
+    q: "How do I cancel?",
+    a: "From your member dashboard at any time. Your access continues through the end of the current billing period.",
   },
   {
-    q: "How do I cancel my Inside Call me Back subscription?",
-    a: "You can cancel anytime from your account settings. Your access continues through the end of the current billing period.",
+    q: "Can I gift Ark+?",
+    a: "Yes. Gift Ark+ for 6 months or 1 year — see the Gift Ark+ page. Gifts are one-time payments, not auto-renewing subscriptions, and the recipient gets a code by email the moment payment clears.",
   },
   {
-    q: "Who do I reach out to for additional support?",
+    q: "Who do I contact for support?",
     a: "Email hello@arkmedia.org and our team will get back to you as quickly as possible.",
   },
 ];
@@ -49,8 +53,8 @@ export function FAQ() {
               </span>
             </h2>
             <p className="mt-8 max-w-sm text-[15px] leading-[1.6] text-white/60">
-              Everything you need to know before joining the Insider feed. Still
-              stuck? Drop us a line.
+              Everything you need to know before joining Ark+. Still stuck?
+              Drop us a line.
             </p>
           </div>
 

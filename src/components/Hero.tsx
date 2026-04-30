@@ -6,58 +6,56 @@ export function Hero() {
         <div className="relative z-10 lg:col-span-7">
           <div className="rise rise-1 flex items-center gap-3 text-[12px] font-semibold uppercase tracking-[0.22em] text-cyan">
             <span className="h-px w-10 bg-cyan" />
-            The Call Me Back Insider
+            Ark+
           </div>
 
           <h1 className="rise rise-2 mt-8 text-white">
             <span className="display-upright block text-[clamp(2.2rem,5.2vw,4.6rem)]">
-              The conversation
+              The full
             </span>
             <span className="display-upright block text-[clamp(2.2rem,5.2vw,4.6rem)]">
-              after the{" "}
-              <span className="display text-cyan">cameras</span>
-            </span>
-            <span className="display-upright block text-[clamp(2.2rem,5.2vw,4.6rem)]">
-              stop rolling.
+              Ark Media{" "}
+              <span className="display text-cyan">experience.</span>
             </span>
           </h1>
 
           <p className="rise rise-3 mt-8 max-w-lg text-[15px] leading-[1.6] text-white/75">
-            Join Dan Senor, Nadav Eyal and Amit Segal for the off-record
-            debriefs, subscriber-only Q&amp;As and full-length interviews that
-            never make the public feed.{" "}
-            <span className="text-white">$8/month. No ads. No filler.</span>
+            One membership for the paid feed, members-only newsletters, the
+            community, and live events.{" "}
+            <span className="text-white">One bill. One login.</span>
           </p>
 
-          <div className="rise rise-4 mt-10 flex flex-wrap items-center gap-6">
+          <ul className="rise rise-4 mt-8 space-y-2 text-[14px] text-white/85">
+            {[
+              "Inside Call Me Back — extended interviews, ad-free",
+              "Members-only newsletters — sharper analysis, weekly",
+              "The Ark+ community — Dan, Donniel, and Yossi in the room",
+              "Live events and Q&As",
+              "Early access to new shows",
+            ].map((line) => (
+              <li key={line} className="flex items-start gap-3">
+                <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
+                {line}
+              </li>
+            ))}
+          </ul>
+
+          <div className="rise rise-5 mt-10 flex flex-wrap items-center gap-6">
             <a
               href="#pricing"
               className="group relative inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white"
             >
-              Become an Insider
+              Become a member
               <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
                 →
               </span>
             </a>
             <a
-              href="#preview"
+              href="/plus/gift"
               className="text-[15px] text-white/75 underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
             >
-              Listen to a sneak peek
+              Gift Ark+
             </a>
-          </div>
-
-          {/* Listening platforms */}
-          <div className="rise rise-5 mt-14 flex flex-wrap items-center gap-x-6 gap-y-3 text-[13px] text-white/55">
-            <span className="font-semibold uppercase tracking-[0.22em] text-white/40">
-              Listen on
-            </span>
-            <span className="h-3 w-px bg-white/20" />
-            {["Apple Podcasts", "Spotify", "Overcast", "Pocket Casts", "YouTube", "RSS"].map((p) => (
-              <a key={p} href="#" className="transition hover:text-cyan">
-                {p}
-              </a>
-            ))}
           </div>
         </div>
 
@@ -79,7 +77,7 @@ export function Hero() {
               />
             </div>
 
-            {/* Floating subscriber badge */}
+            {/* Floating member badge */}
             <div
               className="absolute -bottom-6 -left-4 rotate-[4deg] bg-navy-900 px-5 py-3 text-white ring-1 ring-cyan/40"
               style={{
@@ -87,7 +85,7 @@ export function Hero() {
               }}
             >
               <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                Subscriber Feed
+                Ark+ Member
               </div>
               <div className="display-upright mt-1 text-[22px]">
                 No. 00214

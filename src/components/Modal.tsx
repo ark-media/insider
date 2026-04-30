@@ -85,9 +85,20 @@ export function Modal({
           type="button"
           onClick={stableClose}
           aria-label="Close"
-          className="absolute right-4 top-4 text-white/50 transition hover:text-white"
+          className="absolute right-3 top-3 inline-flex size-9 items-center justify-center text-white/50 transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
-          ×
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="square"
+          >
+            <path d="M3 3l10 10M13 3L3 13" />
+          </svg>
         </button>
         {children}
       </div>

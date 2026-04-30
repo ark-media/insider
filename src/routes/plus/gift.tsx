@@ -1,18 +1,21 @@
 import { useState } from "react";
-import { Masthead } from "../components/Masthead";
-import { Footer } from "../components/Footer";
-import { GiftCheckoutModal } from "../components/GiftCheckoutModal";
+import { createFileRoute } from "@tanstack/react-router";
+import { GiftCheckoutModal } from "../../components/GiftCheckoutModal";
 import {
   GIFT_LABEL,
   GIFT_PRICE_DOLLARS,
   type GiftInput,
   type GiftTerm,
-} from "../lib/gift";
+} from "../../lib/gift";
+
+export const Route = createFileRoute("/plus/gift")({
+  component: GiftPage,
+});
 
 const inputClass =
   "w-full border border-white/20 bg-transparent px-3 py-2.5 text-white placeholder:text-white/30 outline-none transition focus:border-cyan disabled:opacity-50";
 
-export function Gift({ authed }: { authed?: boolean }) {
+function GiftPage() {
   const [term, setTerm] = useState<GiftTerm>("1yr");
   const [giverName, setGiverName] = useState("");
   const [giverEmail, setGiverEmail] = useState("");
@@ -40,27 +43,26 @@ export function Gift({ authed }: { authed?: boolean }) {
   };
 
   return (
-    <div className="min-h-dvh bg-navy-900 font-sans text-white">
-      <Masthead authed={authed} />
-
+    <>
       <section className="relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-16 pb-24 sm:px-10">
           <div className="grid grid-cols-1 gap-14 lg:grid-cols-12">
             {/* Left: pitch */}
             <div className="lg:col-span-5">
-              <div className="inside-tab text-[13px]">Give the Insider</div>
+              <div className="inside-tab text-[13px]">Gift Ark+</div>
               <h1 className="mt-10 text-white">
                 <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
-                  Give Inside
+                  Give the full
                 </span>
                 <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
-                  Call Me <span className="display text-cyan">Back.</span>
+                  Ark Media{" "}
+                  <span className="display text-cyan">experience.</span>
                 </span>
               </h1>
               <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-white/70">
-                A fixed-term gift of the Insider feed — same private RSS, same
-                unedited interviews, same subscriber Q&amp;As. No autorenew. We
-                email the recipient a welcome link the moment your payment
+                A fixed-term gift of Ark+ — Inside Call Me Back, members-only
+                newsletters, the community, and live events. No autorenew. We
+                email the recipient a redemption link the moment your payment
                 clears.
               </p>
               <ul className="mt-10 space-y-2 text-[13px] text-white/55">
@@ -85,7 +87,6 @@ export function Gift({ authed }: { authed?: boolean }) {
                 onSubmit={onSubmit}
                 className="border border-white/15 bg-navy-800/50 p-8"
               >
-                {/* Term tiles */}
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
                   Gift length
                 </div>
@@ -124,7 +125,6 @@ export function Gift({ authed }: { authed?: boolean }) {
                   })}
                 </div>
 
-                {/* Giver */}
                 <div className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
                   From
                 </div>
@@ -152,7 +152,6 @@ export function Gift({ authed }: { authed?: boolean }) {
                   </label>
                 </div>
 
-                {/* Recipient */}
                 <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
                   To
                 </div>
@@ -180,7 +179,6 @@ export function Gift({ authed }: { authed?: boolean }) {
                   </label>
                 </div>
 
-                {/* Message */}
                 <div className="mt-6">
                   <label className="block">
                     <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
@@ -217,7 +215,7 @@ export function Gift({ authed }: { authed?: boolean }) {
                 </button>
                 <p className="mt-3 text-[11px] leading-snug text-white/45">
                   Payment is securely processed by Stripe. The recipient
-                  receives a welcome email as soon as it clears.
+                  receives a redemption email as soon as it clears.
                 </p>
               </form>
             </div>
@@ -225,13 +223,11 @@ export function Gift({ authed }: { authed?: boolean }) {
         </div>
       </section>
 
-      <Footer />
-
       <GiftCheckoutModal
         open={submitted !== null}
         input={submitted}
         onClose={() => setSubmitted(null)}
       />
-    </div>
+    </>
   );
 }

@@ -7,6 +7,7 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import { Modal } from "./Modal";
+import { SuccessMark } from "./SuccessMark";
 import {
   createGiftCheckout,
   fetchGiftStatus,
@@ -119,9 +120,11 @@ export function GiftCheckoutModal({
       <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-cyan">
         Gift · Inside Call Me Back
       </p>
-      <h2 className="mt-2 font-serif text-3xl leading-tight">
+      <h2 className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-white">
         ${headerPrice}{" "}
-        <span className="text-base text-white/50">· {headerLabel}</span>
+        <span className="text-[14px] font-sans font-normal text-white/50">
+          · {headerLabel}
+        </span>
       </h2>
       {input ? (
         <p className="mt-3 text-[13px] text-white/60">
@@ -184,20 +187,20 @@ export function GiftCheckoutModal({
       ) : null}
 
       {step.kind === "done" && input ? (
-        <div className="mt-6 space-y-3 text-sm text-white/80">
+        <SuccessMark title="Gift sent.">
           <p>
-            Gift sent. We just emailed{" "}
+            We just emailed{" "}
             <span className="font-semibold text-white">{input.recipientEmail}</span>{" "}
             a welcome link to set up their feed.
           </p>
           <button
             type="button"
             onClick={handleClose}
-            className="mt-4 w-full border border-white/30 px-4 py-2.5 text-sm font-semibold uppercase tracking-wider transition hover:border-cyan hover:bg-cyan hover:text-navy"
+            className="mt-6 w-full border border-white/30 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Close
           </button>
-        </div>
+        </SuccessMark>
       ) : null}
 
       {step.kind === "error" ? (

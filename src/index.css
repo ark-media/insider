@@ -124,6 +124,38 @@ body {
 }
 .live-dot { animation: blink 2.4s ease-in-out infinite; }
 
+/* Editorial hairline that draws in from the left */
+@keyframes draw-rule {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.draw-rule {
+  transform-origin: left;
+  animation: draw-rule 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Slow ambient pulse for cover-art panels */
+@keyframes drift {
+  0%, 100% { opacity: 0.18; transform: translate3d(0, 0, 0); }
+  50%      { opacity: 0.32; transform: translate3d(0, -2%, 0); }
+}
+.drift { animation: drift 9s ease-in-out infinite; }
+
+/* SVG checkmark stroke draw-in */
+@keyframes draw-check {
+  from { stroke-dashoffset: 32; }
+  to   { stroke-dashoffset: 0; }
+}
+.draw-check {
+  stroke-dasharray: 32;
+  stroke-dashoffset: 32;
+  animation: draw-check 0.7s cubic-bezier(0.65, 0, 0.35, 1) 0.15s forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .rise, .marquee-track, .live-dot { animation: none; }
+  .rise, .marquee-track, .live-dot, .draw-rule, .drift, .draw-check {
+    animation: none;
+  }
+  .draw-rule { transform: scaleX(1); }
+  .draw-check { stroke-dashoffset: 0; }
 }

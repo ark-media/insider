@@ -1,0 +1,50 @@
+import { episodes, type Episode } from "../data/episodes";
+import type { ShowSlug } from "../data/shows";
+
+/**
+ * Mock Simplecast API client.
+ *
+ * Real implementation would call the Simplecast Episodes API and project the
+ * raw fields down to the {@link Episode} shape. Paid shows
+ * (`inside-call-me-back`) read against the SupportingCast admin API in real
+ * life — the public surface here returns episode titles + dates only, never
+ * audio. That mirrors the proposal's "names only, no audio" rule for the
+ * paid show's public marketing page.
+ */
+
+const FAKE_LATENCY_MS = 90;
+
+function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms + Math.random() * 50));
+}
+
+export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
+  await jitter();
+  return episodes
+    .filter((e) => e.showSlug === showSlug)
+    .sort(
+      (a, b) =>
+        new Date(b.publishedAt).getTime() -
+        new Date(a.publishedAt).getTime(),
+    );
+}
+
+export async function getEpisode(
+  showSlug: ShowSlug,
+  slug: string,
+): Promise<Episode | null> {
+  await jitter();
+  return (
+    episodes.find((e) => e.showSlug === showSlug && e.slug === slug) ?? null
+  );
+}
+
+/**
+ * Simplecast embed URL for a given episode. The real API exposes a stable
+ * embed URL keyed by episode id; here we pretend the slug is the id.
+ */
+export function simplecastEmbedSrc(showSlug: ShowSlug, slug: string): string {
+  return `https://player.simplecast.com/${encodeURIComponent(
+    showSlug,
+  )}/${encodeURIComponent(slug)}`;
+}

@@ -1,0 +1,151 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { shows } from "../data/shows";
+
+export const Route = createFileRoute("/")({
+  component: HomePage,
+});
+
+const sections = [
+  {
+    eyebrow: "Newsletters",
+    title: "In your inbox.",
+    to: "/newsletters",
+    body: "Curated dispatches from the Ark Media newsroom.",
+  },
+  {
+    eyebrow: "Community",
+    title: "In the room.",
+    to: "/community",
+    body: "The Ark+ community — Dan, Donniel, and Yossi in conversation with members.",
+  },
+  {
+    eyebrow: "Ark+",
+    title: "All in.",
+    to: "/plus",
+    body: "One membership for the paid feed, members-only newsletters, and the community.",
+  },
+];
+
+function HomePage() {
+  return (
+    <main className="relative">
+      <section className="relative">
+        <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-20 sm:px-10 sm:pt-20">
+          <p className="inside-tab rise rise-1 text-[12px]">Ark Media</p>
+          <h1 className="mt-10 max-w-4xl text-white">
+            <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
+              Long-form journalism
+            </span>
+            <span className="rise rise-3 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
+              for the{" "}
+              <span className="display text-cyan">conversation</span>
+            </span>
+            <span className="rise rise-4 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
+              that matters.
+            </span>
+          </h1>
+          <div
+            aria-hidden="true"
+            className="draw-rule mt-10 h-px w-24 origin-left bg-cyan"
+            style={{ animationDelay: "0.7s" }}
+          />
+          <p className="rise rise-5 mt-8 max-w-2xl text-[15px] leading-[1.65] text-white/70">
+            Podcasts, newsletters, and live events from Dan Senor and the Ark
+            Media team. Independent reporting and serious conversations on
+            Israel, the Middle East, and the world they're shaping.
+          </p>
+          <div
+            className="rise mt-10 flex flex-wrap gap-3"
+            style={{ animationDelay: "0.78s" }}
+          >
+            <Link
+              to="/shows"
+              className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Explore shows →
+            </Link>
+            <Link
+              to="/plus"
+              className="inline-flex items-center gap-2 border border-white/30 px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-white transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Become an Ark+ member
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-white/10 bg-navy-900">
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                Podcasts
+              </div>
+              <h2 className="mt-3 text-white">
+                <span className="display-upright block text-[clamp(1.8rem,3.5vw,2.6rem)]">
+                  Five shows.
+                </span>
+              </h2>
+            </div>
+            <Link
+              to="/shows"
+              className="hidden text-[12px] font-semibold uppercase tracking-[0.18em] text-white/70 transition hover:text-cyan sm:inline"
+            >
+              All shows →
+            </Link>
+          </div>
+
+          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {shows.map((show) => (
+              <Link
+                key={show.slug}
+                to={show.route}
+                className="group block border border-white/12 bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                  {show.shortTitle}
+                </div>
+                <div className="mt-4 font-display text-[22px] leading-[1.15] text-white">
+                  {show.title}
+                </div>
+                <p className="mt-3 text-[13px] leading-[1.6] text-white/60">
+                  {show.tagline}
+                </p>
+                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45 transition group-hover:text-cyan">
+                  Visit show →
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-white/10 bg-navy-900">
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            {sections.map((s) => (
+              <Link
+                key={s.to}
+                to={s.to}
+                className="group block border border-white/12 bg-navy-800/40 p-8 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                  {s.eyebrow}
+                </div>
+                <div className="mt-4 font-display text-[24px] leading-[1.1] text-white">
+                  {s.title}
+                </div>
+                <p className="mt-3 text-[13px] leading-[1.6] text-white/60">
+                  {s.body}
+                </p>
+                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45 transition group-hover:text-cyan">
+                  Learn more →
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

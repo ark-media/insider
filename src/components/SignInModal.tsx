@@ -46,11 +46,8 @@ export function SignInModal({
       }
       if (data.bypass) {
         // Dev-only path: server already issued the session cookie. Do a full
-        // reload so /api/me runs fresh with the new cookie and App.tsx mounts
-        // with auth=member (otherwise the guest-bounce effect kicks us off
-        // #setup before fetchMe resolves).
-        window.location.hash = "setup";
-        window.location.reload();
+        // reload so /api/me runs fresh with the new cookie before /setup mounts.
+        window.location.href = "/setup";
         return;
       }
       setStatus({ kind: "sent", email: email.trim() });
@@ -64,7 +61,9 @@ export function SignInModal({
       <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-cyan">
         Subscriber Access
       </p>
-      <h2 className="mt-2 font-serif text-3xl leading-tight">Sign in</h2>
+      <h2 className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-white">
+        Sign in
+      </h2>
 
       {status.kind === "sent" ? (
         <div className="mt-6 space-y-3 text-sm text-white/80">
@@ -104,9 +103,9 @@ export function SignInModal({
               className="mt-2 w-full border border-white/20 bg-transparent px-3 py-2.5 text-white placeholder-white/30 outline-none transition focus:border-cyan disabled:opacity-50"
             />
           </label>
-          {status.kind === "error" && (
-            <p className="text-sm text-red-300">{status.message}</p>
-          )}
+          {status.kind === "error" ? (
+            <p className="text-[13px] text-signal/90">{status.message}</p>
+          ) : null}
           <button
             type="submit"
             disabled={status.kind === "loading"}

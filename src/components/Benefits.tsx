@@ -1,23 +1,23 @@
 const benefits = [
   {
     no: "01",
-    title: "The off-record debrief",
-    body: "Every episode is followed by a 15–25 minute unedited conversation — the arguments, asides and second thoughts that don't make the public cut.",
+    title: "Inside Call Me Back",
+    body: "Extended interviews, ad-free episodes, members-only Q&As, and the full archive — delivered as a private feed in the podcast app you already use.",
   },
   {
     no: "02",
-    title: "Subscriber Q&A",
-    body: "Send your questions for Dan, Nadav and Amit. A standing subscriber-only episode every other week answers as many as we can fit.",
+    title: "Members-only newsletters",
+    body: "A weekly Ark+ members letter with sharper analysis, source notes, and what we're reading. Plus full archives of every Ark Media newsletter, paid and free.",
   },
   {
     no: "03",
-    title: "Full interviews, unedited",
-    body: "Hear the complete two-hour sessions with prime ministers, generals and correspondents — not the 55-minute broadcast edit.",
+    title: "The Ark+ community",
+    body: "Dan, Donniel, and Yossi in the room with members in the Circle app. Discussion threads, watch parties, and live audio events — not a comments section.",
   },
   {
     no: "04",
-    title: "An ad-free feed",
-    body: "A private RSS feed. No host reads. No mid-rolls. No pre-rolls. Ever.",
+    title: "Live events & early access",
+    body: "Audio rooms, video AMAs, and member-priority access to live recordings. New shows land in the Ark+ feed first.",
   },
 ];
 
@@ -27,18 +27,20 @@ export function Benefits() {
       <div className="mx-auto max-w-[1280px] px-6 pt-20 pb-24 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="inside-tab text-[13px]">What's inside</div>
+            <div className="inside-tab text-[13px]">What's included</div>
             <h2 className="mt-10 text-white">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
-                Four things
+                Four things,
               </span>
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
-                you <span className="display text-cyan">won't</span> get
-              </span>
-              <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
-                on the free feed.
+                <span className="display text-cyan">one</span> membership.
               </span>
             </h2>
+            <p className="mt-8 max-w-md text-[14px] leading-[1.6] text-white/65">
+              No fragmented platforms, no separate logins, no FAQ explaining
+              why Discord is locked to Substack. One Ark+ membership covers
+              everything below.
+            </p>
           </div>
 
           <ol className="lg:col-span-7">

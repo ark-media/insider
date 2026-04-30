@@ -756,8 +756,7 @@ function buildApi(env: Env): Api {
           })
           setSessionCookie(res, session, SESSION_TTL_SECONDS, cookieSecure)
 
-          const dest = new URL('/', appBaseUrl)
-          dest.hash = 'setup'
+          const dest = new URL('/setup', appBaseUrl)
           res.statusCode = 302
           res.setHeader('location', dest.toString())
           res.end()

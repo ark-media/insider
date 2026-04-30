@@ -296,8 +296,7 @@ export function SetupFlow({ me }: { me: Me }) {
             type="button"
             onClick={async () => {
               await signOut();
-              window.location.hash = "";
-              window.location.reload();
+              window.location.href = "/";
             }}
             className="underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
           >

@@ -1,8 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ClerkProvider } from '@clerk/react'
+import { RouterProvider } from '@tanstack/react-router'
 import './index.css'
-import App from './App.tsx'
+import { router } from './router'
 import { Gate } from './Gate.tsx'
 
 createRoot(document.getElementById('root')!).render(
@@ -12,7 +13,7 @@ createRoot(document.getElementById('root')!).render(
       afterSignOutUrl="/"
     >
       <Gate>
-        <App />
+        <RouterProvider router={router} />
       </Gate>
     </ClerkProvider>
   </StrictMode>,

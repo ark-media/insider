@@ -1,0 +1,70 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { PageShell } from "../components/PageShell";
+
+export const Route = createFileRoute("/contact")({
+  component: ContactPage,
+});
+
+const lanes: { eyebrow: string; title: string; email: string; body: string }[] = [
+  {
+    eyebrow: "Listener mail",
+    title: "For show ideas, feedback, and corrections",
+    email: "hello@arkmedia.org",
+    body: "We read every note. Send a thought, a sharper way to put a thing, or a correction we missed.",
+  },
+  {
+    eyebrow: "Press",
+    title: "For press, interviews, and media inquiries",
+    email: "press@arkmedia.org",
+    body: "Booking requests for hosts, interview availability, and press credentials.",
+  },
+  {
+    eyebrow: "Partnerships",
+    title: "For sponsorships and partnerships",
+    email: "partners@arkmedia.org",
+    body: "Brand partnerships, syndication, and editorial collaborations.",
+  },
+  {
+    eyebrow: "Member support",
+    title: "For Ark+ membership questions",
+    email: "support@arkmedia.org",
+    body: "Trouble with your private feed, billing, the Circle app, or anything else Ark+. Quickest reply if you write from the email on file.",
+  },
+];
+
+function ContactPage() {
+  return (
+    <PageShell
+      eyebrow="Contact"
+      title="Get in touch."
+      lede="A few addresses for a few different conversations."
+    >
+      <section className="border-t border-white/10 bg-navy-900">
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            {lanes.map((l) => (
+              <a
+                key={l.email}
+                href={`mailto:${l.email}`}
+                className="group block border border-white/12 bg-navy-800/40 p-7 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                  {l.eyebrow}
+                </div>
+                <h3 className="mt-4 font-display text-[20px] leading-tight text-white">
+                  {l.title}
+                </h3>
+                <p className="mt-3 text-[13.5px] leading-[1.6] text-white/65">
+                  {l.body}
+                </p>
+                <div className="mt-5 text-[14px] text-white/85 transition group-hover:text-cyan">
+                  {l.email} →
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    </PageShell>
+  );
+}
