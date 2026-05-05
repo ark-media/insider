@@ -132,7 +132,7 @@ function IsraelVotesPage() {
     <PageShell
       eyebrow="Israel Votes"
       title="Tracking the next Israeli election."
-      lede="Polls, parties, and the politics behind the headlines — explained the way Call Me Back listeners expect."
+      lede="Polls, parties, and the politics behind the headlines"
     >
       <WatchLatest />
       <Explainers />
