@@ -13,6 +13,8 @@ const navLinks: { label: string; to: string; matchPrefix?: string }[] = [
   { label: "Ark+", to: "/plus", matchPrefix: "/plus" },
 ];
 
+const ISRAEL_VOTES_PATH = "/israel-votes";
+
 function isActive(pathname: string, link: (typeof navLinks)[number]) {
   return link.matchPrefix
     ? pathname.startsWith(link.matchPrefix)
@@ -84,6 +86,20 @@ export function PublicMasthead() {
               </Link>
             );
           })}
+
+          <Link
+            to={ISRAEL_VOTES_PATH}
+            aria-current={
+              location.pathname === ISRAEL_VOTES_PATH ? "page" : undefined
+            }
+            className={`hidden px-4 py-1.5 font-display text-[12px] font-bold uppercase tracking-[0.18em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:inline-block ${
+              location.pathname === ISRAEL_VOTES_PATH
+                ? "bg-cyan text-navy"
+                : "bg-white text-navy hover:bg-cyan"
+            }`}
+          >
+            Israel Votes
+          </Link>
 
           <div ref={dropdownRef} className="relative">
             <button
@@ -163,6 +179,20 @@ export function PublicMasthead() {
             aria-label="Primary mobile"
             className="mx-auto flex max-w-[1280px] flex-col px-6 py-4"
           >
+            <Link
+              to={ISRAEL_VOTES_PATH}
+              aria-current={
+                location.pathname === ISRAEL_VOTES_PATH ? "page" : undefined
+              }
+              onClick={() => setMobileOpen(false)}
+              className={`mb-3 block px-4 py-3 text-center font-display text-[13px] font-bold uppercase tracking-[0.18em] text-navy transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                location.pathname === ISRAEL_VOTES_PATH
+                  ? "bg-cyan"
+                  : "bg-white hover:bg-cyan"
+              }`}
+            >
+              Israel Votes
+            </Link>
             {navLinks.map((link) => {
               const active = isActive(location.pathname, link);
               return (
