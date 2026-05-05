@@ -75,7 +75,6 @@ export function Footer() {
 
         <div className="mt-20 flex flex-col gap-4 border-t border-white/10 pt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40 sm:flex-row sm:justify-between">
           <span>© {new Date().getFullYear()} Ark Media LLC</span>
-          <span>One membership · One bill · One login</span>
         </div>
       </div>
     </footer>
