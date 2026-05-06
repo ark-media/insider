@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import {
@@ -6,21 +6,34 @@ import {
   fetchPublicBroadcasts,
 } from "../lib/circle";
 import type { CommunityBroadcast } from "../data/communityBroadcasts";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createFileRoute("/community")({
   component: CommunityPage,
 });
 
 function CommunityPage() {
+  const navigate = useNavigate();
+  const { state } = useSubscriberAuth();
   const [broadcasts, setBroadcasts] = useState<CommunityBroadcast[] | null>(null);
 
   useEffect(() => {
+    if (state.kind === "guest") {
+      void navigate({ to: "/plus" });
+    }
+  }, [state.kind, navigate]);
+
+  useEffect(() => {
     let live = true;
-    void fetchPublicBroadcasts().then((b) => live && setBroadcasts(b));
+    void fetchPublicBroadcasts()
+      .then((b) => live && setBroadcasts(b))
+      .catch(() => live && setBroadcasts([]));
     return () => {
       live = false;
     };
   }, []);
+
+  if (state.kind === "loading" || state.kind === "guest") return null;
 
   return (
     <PageShell

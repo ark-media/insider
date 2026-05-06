@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { ArkLogo } from "./ArkLogo";
 import {
-  signOut,
   cancelSubscription,
   sendSetupSms,
   type Me,
   type UserFeed,
 } from "../lib/auth";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Device = "phone" | "computer";
 
@@ -137,6 +137,7 @@ function feedAppUrl(feed: UserFeed | null, scApp: string | undefined): string {
 }
 
 export function SetupFlow({ me }: { me: Me }) {
+  const { signOut } = useSubscriberAuth();
   const feed = me.feeds[0] ?? null;
   const feedUrl = feed?.url ?? "";
 
@@ -294,10 +295,7 @@ export function SetupFlow({ me }: { me: Me }) {
           </span>
           <button
             type="button"
-            onClick={async () => {
-              await signOut();
-              window.location.href = "/";
-            }}
+            onClick={signOut}
             className="underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
           >
             Sign out

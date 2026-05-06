@@ -1,20 +1,17 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ClerkProvider } from '@clerk/react'
 import { RouterProvider } from '@tanstack/react-router'
 import './index.css'
 import { router } from './router'
 import { Gate } from './Gate.tsx'
+import { SignupAuth0Provider } from './components/SignupAuth0Provider.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ClerkProvider
-      publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}
-      afterSignOutUrl="/"
-    >
-      <Gate>
+    <Gate>
+      <SignupAuth0Provider>
         <RouterProvider router={router} />
-      </Gate>
-    </ClerkProvider>
+      </SignupAuth0Provider>
+    </Gate>
   </StrictMode>,
 )

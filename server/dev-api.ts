@@ -51,8 +51,29 @@ import type { Plugin, Connect } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import crypto from 'node:crypto'
 import Stripe from 'stripe'
-import { createClerkClient } from '@clerk/backend'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
 
+const AUTH0_DOMAIN = 'https://auth.ark-plus.xyz'
+const AUTH0_AUDIENCE = 'https://ark-plus.xyz/api'
+const EMAIL_CLAIM = 'https://ark-plus.xyz/email'
+const AUTH0_CLIENT_ID = '1T1u9VRHbSWxOwy8OX5PVYw9BdPNtAvp'
+
+const jwks = createRemoteJWKSet(new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`))
+
+async function getAuth0Email(req: IncomingMessage): Promise<string | null> {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) return null
+  const token = authHeader.slice(7)
+  try {
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer: `${AUTH0_DOMAIN}/`,
+      audience: AUTH0_AUDIENCE,
+    })
+    return (payload[EMAIL_CLAIM] as string | undefined) ?? null
+  } catch {
+    return null
+  }
+}
 type Env = Record<string, string>
 
 type ScError = Error & { status?: number; data?: unknown }
@@ -169,6 +190,116 @@ async function findOrCreateScUser(
     last_name: '',
   })
   return created.user
+}
+
+// ---------------------------------------------------------------------------
+// Auth0 Management API — create users after successful payment
+// ---------------------------------------------------------------------------
+
+type Auth0MgmtToken = { access_token: string; expires_at: number }
+// Module-level cache is effective in long-running dev/prod processes but resets
+// on each serverless cold start — tokens are re-fetched per invocation there.
+let cachedMgmtToken: Auth0MgmtToken | null = null
+
+async function getAuth0ManagementToken(env: Env): Promise<string | null> {
+  const clientId = env.AUTH0_MANAGEMENT_CLIENT_ID
+  const clientSecret = env.AUTH0_MANAGEMENT_CLIENT_SECRET
+  if (!clientId || !clientSecret) return null
+
+  if (cachedMgmtToken && cachedMgmtToken.expires_at > Date.now() + 60_000) {
+    return cachedMgmtToken.access_token
+  }
+
+  // Custom domains don't host the Management API — the audience and token
+  // endpoint must use the native Auth0 tenant domain (e.g. foo.us.auth0.com).
+  const tenantDomain = env.AUTH0_TENANT_DOMAIN || AUTH0_DOMAIN
+
+  const res = await fetch(`${tenantDomain}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+      audience: `${tenantDomain}/api/v2/`,
+    }),
+  })
+  if (!res.ok) {
+    // eslint-disable-next-line no-console
+    console.error('[auth0] mgmt token failed:', res.status, await res.text())
+    return null
+  }
+  const data = (await res.json()) as { access_token: string; expires_in: number }
+  cachedMgmtToken = {
+    access_token: data.access_token,
+    expires_at: Date.now() + data.expires_in * 1000,
+  }
+  return data.access_token
+}
+
+async function findOrCreateAuth0User(
+  email: string,
+  nameHint: string | undefined,
+  env: Env,
+): Promise<string | null> {
+  const token = await getAuth0ManagementToken(env)
+  if (!token) return null
+
+  const tenantDomain = env.AUTH0_TENANT_DOMAIN || AUTH0_DOMAIN
+  const base = `${tenantDomain}/api/v2`
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+
+  // Return early if Auth0 user already exists.
+  const searchRes = await fetch(
+    `${base}/users-by-email?email=${encodeURIComponent(email)}`,
+    { headers },
+  )
+  if (searchRes.ok) {
+    const existing = (await searchRes.json()) as Array<{ user_id: string }>
+    if (existing.length > 0) return existing[0].user_id
+  }
+
+  // Create Auth0 user with a random temporary password — the password-change
+  // email below is how they'll actually log in for the first time.
+  const spaceIdx = (nameHint ?? '').indexOf(' ')
+  const givenName = spaceIdx > -1 ? nameHint!.slice(0, spaceIdx) : (nameHint ?? '')
+  const familyName = spaceIdx > -1 ? nameHint!.slice(spaceIdx + 1) : ''
+  const tempPassword = `Tmp-${crypto.randomBytes(16).toString('hex')}`
+
+  const createRes = await fetch(`${base}/users`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      connection: 'Username-Password-Authentication',
+      email,
+      password: tempPassword,
+      given_name: (givenName || email.split('@')[0]).slice(0, 40),
+      ...(familyName ? { family_name: familyName.slice(0, 40) } : {}),
+      email_verified: false,
+    }),
+  })
+  if (!createRes.ok) {
+    // eslint-disable-next-line no-console
+    console.error('[auth0] create user failed:', createRes.status, await createRes.text())
+    return null
+  }
+  const created = (await createRes.json()) as { user_id: string }
+
+  // Send the new member an email to set their password and activate their login.
+  await fetch(`${AUTH0_DOMAIN}/dbconnections/change_password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: AUTH0_CLIENT_ID,
+      email,
+      connection: 'Username-Password-Authentication',
+    }),
+  }).catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error('[auth0] change_password email failed:', err)
+  })
+
+  return created.user_id
 }
 
 // ---------------------------------------------------------------------------
@@ -381,8 +512,6 @@ function readSession(req: IncomingMessage, secret: string): SessionPayload | nul
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>
 
 interface Api {
-  clerk: ReturnType<typeof createClerkClient> | null
-  clerkExemptPaths: Set<string>
   appBaseUrl: string
   routes: Array<{ path: string; handler: Handler }>
 }
@@ -412,86 +541,18 @@ function buildApi(env: Env): Api {
   const trustForwardedFor =
     env.VERCEL === '1' || env.TRUST_FORWARDED_FOR === '1'
 
-  // Preview-access gate: require a Clerk session on every /api/* request
-  // except webhooks (external callers) and the SC magic-link callback
-  // (hit from email links where the browser may not have a Clerk cookie).
-  const clerkSecret = env.CLERK_SECRET_KEY
-  const clerkPublishable =
-    env.CLERK_PUBLISHABLE_KEY || env.VITE_CLERK_PUBLISHABLE_KEY
-  const clerk = clerkSecret
-    ? createClerkClient({
-        secretKey: clerkSecret,
-        publishableKey: clerkPublishable,
-      })
-    : null
-  if (!clerk) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[dev-api] CLERK_SECRET_KEY not set — API is ungated. Set it to enable the preview-access gate.',
-    )
-  }
-  const clerkExemptPaths = new Set(['/stripe/webhook', '/sc/callback'])
-
-  // Dev-only bypass for the SC magic-link step. When enabled, /api/sc/signin
-  // mints the session cookie directly after confirming the SC user exists,
-  // skipping send_login_email entirely. Useful when the SC network domain
-  // allowlist blocks localhost redirects. NEVER enable in production.
-  const allowDevSignin = env.ALLOW_DEV_SIGNIN === '1'
-  if (allowDevSignin) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[dev-api] ALLOW_DEV_SIGNIN=1 — /api/sc/signin will mint sessions directly. Do not run this in production.',
-    )
-  }
+  // Auth0 handles authentication. Backend verifies JWTs via Auth0's JWKS.
 
   // Stripe price cache — keyed by `${plan}-${amountCents}` to avoid creating
   // a fresh Price object on every pay-what-you-want checkout.
   const priceCache = new Map<string, string>()
 
-  // Single-use sign-in nonces. We track the nonce → its own expiry (unix
-  // seconds) so we can prune entries individually instead of wiping the
-  // whole set on overflow (which would briefly re-open the replay window
-  // for the most recent ~N nonces). In-memory, so it resets on restart —
-  // fine for dev; production should use Redis or similar.
-  const consumedNonces = new Map<string, number>()
-  const NONCE_STORE_MAX = 5000
-
-  // Rate limiters guarding /api/sc/signin. Two buckets per request: one
-  // per source IP (anti-flood) and one per normalized email (prevents
-  // someone hammering one inbox even from rotating IPs). Both must allow
-  // the call to proceed.
-  //
-  // Tuning rationale: legit users only need 1–2 sign-in emails per session.
-  // Generous enough not to block humans, tight enough that an attacker
-  // can't burn through SC's email quota.
-  const signinIpLimiter = createRateLimiter({
-    capacity: 10, // burst
-    refillPerSec: 10 / (15 * 60), // 10 per 15 min
-  })
-  const signinEmailLimiter = createRateLimiter({
-    capacity: 5,
-    refillPerSec: 5 / (60 * 60), // 5 per hour
-  })
-
   // SMS setup-link sender. Tight budget — SC forwards these to a carrier and
-  // charges per message, so abuse is expensive. Per-session here because the
-  // route requires a signed-in user; SC itself also rate-limits server-side.
+  // charges per message, so abuse is expensive. SC itself also rate-limits server-side.
   const smsSessionLimiter = createRateLimiter({
     capacity: 3,
     refillPerSec: 3 / (60 * 60), // 3 per hour per session
   })
-
-  const pruneConsumedNonces = (): void => {
-    const now = Math.floor(Date.now() / 1000)
-    for (const [nonce, exp] of consumedNonces) {
-      if (exp <= now) consumedNonces.delete(nonce)
-    }
-  }
-
-  const recordConsumedNonce = (nonce: string, exp: number): void => {
-    consumedNonces.set(nonce, exp)
-    if (consumedNonces.size > NONCE_STORE_MAX) pruneConsumedNonces()
-  }
 
   const resolveScPriceId = (plan: 'monthly' | 'yearly'): string => {
     const id =
@@ -588,11 +649,20 @@ function buildApi(env: Env): Api {
       },
     )
 
+    let auth0UserId: string | null = null
+    try {
+      auth0UserId = await findOrCreateAuth0User(recipientEmail, recipientName, env)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[auth0] findOrCreateAuth0User (gift) failed:', err)
+    }
+
     await stripe.paymentIntents.update(pi.id, {
       metadata: {
         ...pi.metadata,
         sc_user_id: String(recipient.id),
         sc_subscription_id: String(createdSub.subscription.id),
+        ...(auth0UserId ? { auth0_user_id: auth0UserId } : {}),
       },
     })
 
@@ -632,174 +702,52 @@ function buildApi(env: Env): Api {
       { user_id: user.id, subscription_price_id: Number(scPriceId) },
     )
 
+    let auth0UserId: string | null = null
+    try {
+      auth0UserId = await findOrCreateAuth0User(email, activeCustomer.name ?? undefined, env)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[auth0] findOrCreateAuth0User failed:', err)
+    }
+
     await stripe.subscriptions.update(sub.id, {
       metadata: {
         ...sub.metadata,
         sc_user_id: String(user.id),
         sc_subscription_id: String(created.subscription.id),
+        ...(auth0UserId ? { auth0_user_id: auth0UserId } : {}),
       },
     })
-
-    // Fire the login email so they can sign in immediately. Log failures —
-    // the subscription is still active; this is a soft failure.
-    try {
-      await sc.call('POST', `/users/${user.id}/send_login_email`, {
-        redirect_url: buildSigninRedirectUrl(email),
-      })
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[dev-api] send_login_email failed after activation:', err)
-    }
-  }
-
-  const buildSigninRedirectUrl = (email: string): string => {
-    const nonce = signToken<NoncePayload>(sessionSecret, {
-      email,
-      exp: Math.floor(Date.now() / 1000) + NONCE_TTL_SECONDS,
-    })
-    const url = new URL('/api/sc/callback', appBaseUrl)
-    url.searchParams.set('t', nonce)
-    return url.toString()
   }
 
   const routes: Api['routes'] = []
-
-  // --- Send login email -------------------------------------------------
-      routes.push({
-        path: '/api/sc/signin',
-        handler: async (req, res) => {
-          const json = makeJsonRes(res)
-          if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
-
-          const ipWait = signinIpLimiter.take(clientIp(req, trustForwardedFor))
-          if (ipWait !== null) {
-            res.setHeader('retry-after', String(ipWait))
-            return json(429, { error: 'Too many sign-in attempts. Try again shortly.' })
-          }
-
-          const body = (await readJson<{ email?: string }>(req)) ?? {}
-          if (!body.email) return json(400, { error: 'Email is required' })
-          const normalizedEmail = body.email.trim().toLowerCase()
-
-          const emailWait = signinEmailLimiter.take(normalizedEmail)
-          if (emailWait !== null) {
-            res.setHeader('retry-after', String(emailWait))
-            return json(429, {
-              error: 'Too many sign-in attempts for this email. Try again later.',
-            })
-          }
-
-          // Always return 200 regardless of whether the email matches a member.
-          // Prevents membership enumeration.
-          const sc = createScClient(env)
-          try {
-            const user = await findScUserByEmail(sc, normalizedEmail)
-            if (user && allowDevSignin) {
-              const session = signToken<SessionPayload>(sessionSecret, {
-                email: normalizedEmail,
-                sc_user_id: user.id,
-                exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
-              })
-              setSessionCookie(res, session, SESSION_TTL_SECONDS, cookieSecure)
-              return json(200, { ok: true, bypass: true })
-            }
-            if (user) {
-              await sc.call('POST', `/users/${user.id}/send_login_email`, {
-                redirect_url: buildSigninRedirectUrl(normalizedEmail),
-              })
-            }
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.error('[dev-api] signin error (swallowed):', err)
-          }
-          json(200, { ok: true })
-        },
-      })
-
-      // --- Magic link callback ---------------------------------------------
-      routes.push({
-        path: '/api/sc/callback',
-        handler: async (req, res) => {
-          const url = new URL(req.url ?? '/', appBaseUrl)
-          const token = url.searchParams.get('t') ?? ''
-          const payload = verifyToken<NoncePayload>(sessionSecret, token)
-
-          const bounceHome = (msg?: string) => {
-            const dest = new URL('/', appBaseUrl)
-            if (msg) dest.searchParams.set('signin_error', msg)
-            res.statusCode = 302
-            res.setHeader('location', dest.toString())
-            res.end()
-          }
-
-          if (!payload) return bounceHome('invalid_or_expired')
-          if (consumedNonces.has(token)) return bounceHome('already_used')
-          recordConsumedNonce(token, payload.exp)
-
-          // Resolve the current SC user for this email so the session carries
-          // their id (used by /api/me).
-          let scUserId = 0
-          try {
-            const sc = createScClient(env)
-            const user = await findScUserByEmail(sc, payload.email)
-            if (!user) return bounceHome('no_membership')
-            scUserId = user.id
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.error('[dev-api] callback SC lookup failed:', err)
-            return bounceHome('sc_error')
-          }
-
-          const session = signToken<SessionPayload>(sessionSecret, {
-            email: payload.email,
-            sc_user_id: scUserId,
-            exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
-          })
-          setSessionCookie(res, session, SESSION_TTL_SECONDS, cookieSecure)
-
-          const dest = new URL('/setup', appBaseUrl)
-          res.statusCode = 302
-          res.setHeader('location', dest.toString())
-          res.end()
-        },
-      })
-
-      // --- Sign out ---------------------------------------------------------
-      routes.push({
-        path: '/api/signout',
-        handler: async (req, res) => {
-          const json = makeJsonRes(res)
-          if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
-          clearSessionCookie(res, cookieSecure)
-          json(200, { ok: true })
-        },
-      })
 
       // --- Who am I (+ personalized feeds) ---------------------------------
       routes.push({
         path: '/api/me',
         handler: async (req, res) => {
           const json = makeJsonRes(res)
-          const session = readSession(req, sessionSecret)
-          if (!session) return json(401, { error: 'unauthenticated' })
+          const email = await getAuth0Email(req)
+          if (!email) return json(401, { error: 'unauthenticated' })
 
           try {
             const sc = createScClient(env)
-            const feedsRes = await sc.call<{ feeds: ScUserFeed[] }>(
-              'GET',
-              `/users/${session.sc_user_id}/feeds`,
-            )
-            json(200, {
-              email: session.email,
-              feeds: feedsRes.feeds ?? [],
-            })
+            const user = await findScUserByEmail(sc, email)
+            if (!user) return json(401, { error: 'membership_not_found' })
+            let feeds: ScUserFeed[] = []
+            try {
+              const feedsRes = await sc.call<{ feeds: ScUserFeed[] }>(
+                'GET',
+                `/users/${user.id}/feeds`,
+              )
+              feeds = feedsRes.feeds ?? []
+            } catch (feedErr) {
+              if ((feedErr as ScError).status !== 404) throw feedErr
+              // 404 means no feeds set up yet — treat as empty
+            }
+            json(200, { email, feeds })
           } catch (err) {
             const e = err as ScError
-            // If SC says the user is gone, clear the stale session.
-            if (e.status === 404) {
-              clearSessionCookie(res, cookieSecure)
-              return json(401, { error: 'membership_not_found' })
-            }
             json(e.status ?? 502, { error: e.message })
           }
         },
@@ -815,10 +763,14 @@ function buildApi(env: Env): Api {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
 
-          const session = readSession(req, sessionSecret)
-          if (!session) return json(401, { error: 'unauthenticated' })
+          const smsEmail = await getAuth0Email(req)
+          if (!smsEmail) return json(401, { error: 'unauthenticated' })
 
-          const wait = smsSessionLimiter.take(String(session.sc_user_id))
+          const smsSc = createScClient(env)
+          const smsUser = await findScUserByEmail(smsSc, smsEmail)
+          if (!smsUser) return json(401, { error: 'membership_not_found' })
+
+          const wait = smsSessionLimiter.take(String(smsUser.id))
           if (wait !== null) {
             res.setHeader('retry-after', String(wait))
             return json(429, {
@@ -869,21 +821,20 @@ function buildApi(env: Env): Api {
           }
 
           try {
-            const sc = createScClient(env)
             // Resolve the target feed — prefer the explicit feed_id, else the
             // first feed on the account (matches what SetupFlow displays).
             if (!feedId) {
-              const feedsRes = await sc.call<{ feeds: ScUserFeed[] }>(
+              const feedsRes = await smsSc.call<{ feeds: ScUserFeed[] }>(
                 'GET',
-                `/users/${session.sc_user_id}/feeds`,
+                `/users/${smsUser.id}/feeds`,
               )
               feedId = feedsRes.feeds?.[0]?.id
             }
             if (!feedId) return json(404, { error: 'No feed found for this account.' })
 
-            await sc.call(
+            await smsSc.call(
               'POST',
-              `/users/${session.sc_user_id}/feeds/${feedId}/send_setup_sms`,
+              `/users/${smsUser.id}/feeds/${feedId}/send_setup_sms`,
               { phone },
             )
             json(200, { ok: true })
@@ -1111,12 +1062,12 @@ function buildApi(env: Env): Api {
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
-          const session = readSession(req, sessionSecret)
-          if (!session) return json(401, { error: 'unauthenticated' })
+          const cancelEmail = await getAuth0Email(req)
+          if (!cancelEmail) return json(401, { error: 'unauthenticated' })
 
           // Find the Stripe customer by email
           const customers = await stripe.customers.list({
-            email: session.email,
+            email: cancelEmail,
             limit: 1,
           })
           const customer = customers.data[0]
@@ -1151,12 +1102,12 @@ function buildApi(env: Env): Api {
           const subId = url.searchParams.get('id')
           if (!subId) return json(400, { error: 'id required' })
 
-          // Verify the caller owns this subscription. New subscribers won't
-          // have a session yet (they haven't clicked the magic link), so we
-          // accept an `email` query param as proof of ownership — the email
-          // was just used to create the subscription moments ago.
+          // Verify the caller owns this subscription. New subscribers may not
+          // have an Auth0 session yet (they just paid), so we accept an `email`
+          // query param as a fallback — the email was just used to create the
+          // subscription moments ago.
           const emailParam = url.searchParams.get('email')?.trim().toLowerCase()
-          const session = readSession(req, sessionSecret)
+          const auth0Email = await getAuth0Email(req)
           const sub = await stripe.subscriptions.retrieve(subId, {
             expand: ['customer'],
           })
@@ -1165,7 +1116,7 @@ function buildApi(env: Env): Api {
             typeof customer === 'object' && customer && !('deleted' in customer && customer.deleted)
               ? (customer as Stripe.Customer).email?.toLowerCase() ?? null
               : null
-          const callerEmail = session?.email ?? emailParam
+          const callerEmail = auth0Email ?? emailParam
           if (!callerEmail || callerEmail !== customerEmail) {
             return json(403, { error: 'Forbidden' })
           }
@@ -1263,7 +1214,7 @@ function buildApi(env: Env): Api {
         },
       })
 
-  return { clerk, clerkExemptPaths, appBaseUrl, routes }
+  return { appBaseUrl, routes }
 }
 
 // ---------------------------------------------------------------------------
@@ -1303,41 +1254,7 @@ export function devApiPlugin(env: Env): Plugin {
   return {
     name: 'ark-insider-dev-api',
     configureServer(server) {
-      // Clerk gate mounted at /api. Vite strips the prefix, so req.url inside
-      // this handler is the sub-path (e.g. '/stripe/webhook').
-      if (api.clerk) {
-        const clerk = api.clerk
-        server.middlewares.use('/api', async (req, res, next) => {
-          const subPath = (req.url ?? '/').split('?')[0]
-          if (api.clerkExemptPaths.has(subPath)) return next()
-
-          const headers = new Headers()
-          for (const [k, v] of Object.entries(req.headers)) {
-            if (Array.isArray(v)) headers.set(k, v.join(', '))
-            else if (typeof v === 'string') headers.set(k, v)
-          }
-          const request = new Request(
-            new URL(`/api${req.url ?? '/'}`, api.appBaseUrl).toString(),
-            { method: req.method, headers },
-          )
-
-          try {
-            const state = await clerk.authenticateRequest(request)
-            if (!state.isSignedIn) {
-              res.statusCode = 401
-              res.setHeader('content-type', 'application/json')
-              res.end(JSON.stringify({ error: 'unauthenticated' }))
-              return
-            }
-            next()
-          } catch {
-            res.statusCode = 401
-            res.setHeader('content-type', 'application/json')
-            res.end(JSON.stringify({ error: 'unauthenticated' }))
-          }
-        })
-      }
-
+      // Register API routes. Auth0 JWTs are verified per-route via JWKS.
       for (const { path, handler } of api.routes) {
         server.middlewares.use(path, withErrors(handler))
       }
@@ -1358,9 +1275,6 @@ export function devApiPlugin(env: Env): Plugin {
 // ---------------------------------------------------------------------------
 export function createRouteHandler(env: Env, path: string) {
   let routeHandler: Handler | null = null
-  let clerk: ReturnType<typeof createClerkClient> | null = null
-  let appBaseUrl = ''
-  let exemptFromClerk = false
   let initError: unknown = null
 
   try {
@@ -1368,12 +1282,6 @@ export function createRouteHandler(env: Env, path: string) {
     const route = api.routes.find((r) => r.path === path)
     if (!route) throw new Error(`No route registered for ${path}`)
     routeHandler = route.handler
-    clerk = api.clerk
-    appBaseUrl = api.appBaseUrl
-    const subPath = path.startsWith('/api')
-      ? path.slice('/api'.length) || '/'
-      : path
-    exemptFromClerk = api.clerkExemptPaths.has(subPath)
   } catch (err) {
     initError = err
   }
@@ -1399,32 +1307,6 @@ export function createRouteHandler(env: Env, path: string) {
     }
 
     try {
-      if (clerk && !exemptFromClerk) {
-        const headers = new Headers()
-        for (const [k, v] of Object.entries(req.headers)) {
-          if (Array.isArray(v)) headers.set(k, v.join(', '))
-          else if (typeof v === 'string') headers.set(k, v)
-        }
-        const request = new Request(
-          new URL(req.url ?? '/', appBaseUrl).toString(),
-          { method: req.method, headers },
-        )
-        try {
-          const state = await clerk.authenticateRequest(request)
-          if (!state.isSignedIn) {
-            res.statusCode = 401
-            res.setHeader('content-type', 'application/json')
-            res.end(JSON.stringify({ error: 'unauthenticated' }))
-            return
-          }
-        } catch {
-          res.statusCode = 401
-          res.setHeader('content-type', 'application/json')
-          res.end(JSON.stringify({ error: 'unauthenticated' }))
-          return
-        }
-      }
-
       await routeHandler(req, res)
     } catch (err) {
       // eslint-disable-next-line no-console

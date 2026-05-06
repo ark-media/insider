@@ -6,7 +6,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { fetchMe, signOut as apiSignOut, type Me } from "./auth";
+import { useAuth0 } from "@auth0/auth0-react";
+import { fetchMe, type Me } from "./auth";
+import { setTokenGetter } from "./tokenStore";
 
 export type SubscriberAuthState =
   | { kind: "loading" }
@@ -16,27 +18,37 @@ export type SubscriberAuthState =
 type SubscriberAuthValue = {
   state: SubscriberAuthState;
   refresh: () => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: () => void;
 };
 
 const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
 
 export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
+  const { isAuthenticated, isLoading, getAccessTokenSilently, logout } = useAuth0();
   const [state, setState] = useState<SubscriberAuthState>({ kind: "loading" });
+
+  // Make getAccessTokenSilently available to non-React code (fetchMe, etc.)
+  useEffect(() => {
+    setTokenGetter(() => getAccessTokenSilently());
+  }, [getAccessTokenSilently]);
 
   const refresh = useCallback(async () => {
     const me = await fetchMe();
     setState(me ? { kind: "member", me } : { kind: "guest" });
   }, []);
 
-  const signOut = useCallback(async () => {
-    await apiSignOut();
-    setState({ kind: "guest" });
-  }, []);
-
   useEffect(() => {
+    if (isLoading) return;
+    if (!isAuthenticated) {
+      setState({ kind: "guest" });
+      return;
+    }
     void refresh();
-  }, [refresh]);
+  }, [isAuthenticated, isLoading, refresh]);
+
+  const signOut = useCallback(() => {
+    logout({ logoutParams: { returnTo: window.location.origin } });
+  }, [logout]);
 
   return (
     <SubscriberAuthContext.Provider value={{ state, refresh, signOut }}>

@@ -1,19 +1,34 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { fetchMe } from "../../lib/auth";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { CIRCLE_OPEN_LINKS } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
 
 export const Route = createFileRoute("/account/")({
-  beforeLoad: async () => {
-    const me = await fetchMe();
-    if (!me) throw redirect({ to: "/plus" });
-    return { me };
-  },
   component: AccountDashboard,
 });
 
 function AccountDashboard() {
-  const { me } = Route.useRouteContext();
+  const navigate = useNavigate();
+  const { state, signOut } = useSubscriberAuth();
+
+  useEffect(() => {
+    if (state.kind === "guest") {
+      void navigate({ to: "/plus" });
+    }
+  }, [state.kind, navigate]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900">
+        <p className="text-white/60">Loading…</p>
+      </div>
+    );
+  }
+
+  if (state.kind === "guest") return null;
+
+  const { me } = state;
 
   return (
     <PageShell
@@ -76,6 +91,12 @@ function AccountDashboard() {
                   <AccountLink to="/account/newsletters" label="Newsletter preferences" />
                   <AccountLink to="/account/billing" label="Billing & cancel" />
                 </ul>
+                <button
+                  onClick={signOut}
+                  className="mt-6 w-full border border-white/25 px-4 py-3 text-[13.5px] text-white/85 transition hover:border-red-500/50 hover:text-red-500"
+                >
+                  Sign out
+                </button>
               </div>
             </div>
           </div>

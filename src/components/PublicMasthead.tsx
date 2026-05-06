@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
+import { useAuth0 } from "@auth0/auth0-react";
 import { ArkLogo } from "./ArkLogo";
-import { SignInModal } from "./SignInModal";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
-const navLinks: { label: string; to: string; matchPrefix?: string }[] = [
+const ALL_NAV_LINKS: { label: string; to: string; matchPrefix?: string }[] = [
   { label: "Shows", to: "/shows", matchPrefix: "/shows" },
   { label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
   { label: "Community", to: "/community" },
@@ -15,17 +15,23 @@ const navLinks: { label: string; to: string; matchPrefix?: string }[] = [
 
 const ISRAEL_VOTES_PATH = "/israel-votes";
 
-function isActive(pathname: string, link: (typeof navLinks)[number]) {
+function isActive(pathname: string, link: (typeof ALL_NAV_LINKS)[number]) {
   return link.matchPrefix
     ? pathname.startsWith(link.matchPrefix)
     : pathname === link.to;
 }
 
 export function PublicMasthead() {
-  const [signInOpen, setSignInOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { state, signOut } = useSubscriberAuth();
+  const { loginWithRedirect } = useAuth0();
+  const isMember = state.kind === "member";
+  const navLinks = ALL_NAV_LINKS.filter((link) => {
+    if (link.to === "/plus") return !isMember;
+    if (link.to === "/community") return isMember;
+    return true;
+  });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
@@ -120,9 +126,9 @@ export function PublicMasthead() {
                 {state.kind === "member" ? (
                   <MemberMenu
                     email={state.me.email}
-                    onSignOut={async () => {
-                      await signOut();
+                    onSignOut={() => {
                       setAccountOpen(false);
+                      signOut();
                     }}
                     onClose={() => setAccountOpen(false)}
                   />
@@ -130,7 +136,7 @@ export function PublicMasthead() {
                   <GuestMenu
                     onSignIn={() => {
                       setAccountOpen(false);
-                      setSignInOpen(true);
+                      void loginWithRedirect();
                     }}
                     onClose={() => setAccountOpen(false)}
                   />
@@ -221,7 +227,6 @@ export function PublicMasthead() {
         </div>
       ) : null}
 
-      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
     </header>
   );
 }
