@@ -109,20 +109,6 @@ type GiftMetadata = {
 const GIFT_PRICES_CENTS: Record<GiftTerm, number> = { '6mo': 4800, '1yr': 8000 }
 const GIFT_TERM_DAYS: Record<GiftTerm, number> = { '6mo': 182, '1yr': 365 }
 
-type SessionPayload = {
-  email: string
-  sc_user_id: number
-  exp: number // unix seconds
-}
-
-type NoncePayload = {
-  email: string
-  exp: number
-}
-
-const SESSION_COOKIE = 'insider_session'
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30 // 30 days
-const NONCE_TTL_SECONDS = 60 * 15 // 15 minutes
 
 // ---------------------------------------------------------------------------
 // Supporting Cast client
@@ -302,53 +288,6 @@ async function findOrCreateAuth0User(
   return created.user_id
 }
 
-// ---------------------------------------------------------------------------
-// HMAC-signed token helpers (sessions + sign-in nonces)
-// ---------------------------------------------------------------------------
-function b64urlEncode(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function b64urlDecode(str: string): Buffer {
-  const pad = 4 - (str.length % 4 || 4)
-  const s = str.replace(/-/g, '+').replace(/_/g, '/') + (pad < 4 ? '='.repeat(pad) : '')
-  return Buffer.from(s, 'base64')
-}
-
-function signToken<T>(secret: string, payload: T): string {
-  const body = b64urlEncode(Buffer.from(JSON.stringify(payload), 'utf8'))
-  const mac = crypto.createHmac('sha256', secret).update(body).digest()
-  return `${body}.${b64urlEncode(mac)}`
-}
-
-function verifyToken<T>(secret: string, token: string): T | null {
-  const parts = token.split('.')
-  if (parts.length !== 2) return null
-  const [body, macStr] = parts
-  const expected = crypto.createHmac('sha256', secret).update(body).digest()
-  let received: Buffer
-  try {
-    received = b64urlDecode(macStr)
-  } catch {
-    return null
-  }
-  if (received.length !== expected.length) return null
-  if (!crypto.timingSafeEqual(received, expected)) return null
-  try {
-    const payload = JSON.parse(b64urlDecode(body).toString('utf8')) as T & {
-      exp?: unknown
-    }
-    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
-      // Every token we mint carries an exp. A token without one is malformed
-      // (or maliciously crafted to dodge the expiry check) — reject it.
-      return null
-    }
-    if (payload.exp < Math.floor(Date.now() / 1000)) return null
-    return payload as T
-  } catch {
-    return null
-  }
-}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -381,27 +320,6 @@ async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {
   }
 }
 
-function clientIp(req: IncomingMessage, trustForwardedFor: boolean): string {
-  // XFF is attacker-controlled when we're not behind a trusted proxy — any
-  // client can set it to any string. So we only parse it when `buildApi`
-  // tells us we're on a platform (Vercel, etc.) that rewrites the header at
-  // the edge before our code sees it. On a naked Vite dev server, this is
-  // off and we fall back to the TCP peer address.
-  if (trustForwardedFor) {
-    const xff = req.headers['x-forwarded-for']
-    const first = Array.isArray(xff) ? xff[0] : xff
-    if (typeof first === 'string') {
-      // Leftmost entry is the original client. Subsequent entries are the
-      // proxy chain (closer to us), which we don't care about for rate
-      // limiting the *caller*.
-      const ip = first.split(',')[0].trim()
-      if (ip) return ip
-    }
-    const xri = req.headers['x-real-ip']
-    if (typeof xri === 'string' && xri.trim()) return xri.trim()
-  }
-  return req.socket.remoteAddress ?? 'unknown'
-}
 
 // ---------------------------------------------------------------------------
 // Token-bucket rate limiter
@@ -460,48 +378,6 @@ function createRateLimiter(opts: {
   }
 }
 
-function parseCookies(header: string | undefined): Record<string, string> {
-  const out: Record<string, string> = {}
-  if (!header) return out
-  for (const part of header.split(';')) {
-    const idx = part.indexOf('=')
-    if (idx === -1) continue
-    const k = part.slice(0, idx).trim()
-    const v = decodeURIComponent(part.slice(idx + 1).trim())
-    if (k) out[k] = v
-  }
-  return out
-}
-
-function cookieFlags(secure: boolean): string {
-  return `HttpOnly; SameSite=Lax; Path=/${secure ? '; Secure' : ''}`
-}
-
-function setSessionCookie(
-  res: ServerResponse,
-  token: string,
-  maxAgeSeconds: number,
-  secure: boolean,
-) {
-  res.setHeader(
-    'set-cookie',
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}; ${cookieFlags(secure)}; Max-Age=${maxAgeSeconds}`,
-  )
-}
-
-function clearSessionCookie(res: ServerResponse, secure: boolean) {
-  res.setHeader(
-    'set-cookie',
-    `${SESSION_COOKIE}=; ${cookieFlags(secure)}; Max-Age=0`,
-  )
-}
-
-function readSession(req: IncomingMessage, secret: string): SessionPayload | null {
-  const cookies = parseCookies(req.headers.cookie)
-  const token = cookies[SESSION_COOKIE]
-  if (!token) return null
-  return verifyToken<SessionPayload>(secret, token)
-}
 
 // ---------------------------------------------------------------------------
 // API builder — shared between the Vite dev plugin and the standalone
@@ -520,26 +396,7 @@ function buildApi(env: Env): Api {
   const stripeKey = env.STRIPE_SECRET_KEY
   const stripe = stripeKey ? new Stripe(stripeKey) : null
 
-  const sessionSecret =
-    env.SESSION_SECRET || crypto.randomBytes(32).toString('hex')
-  if (!env.SESSION_SECRET) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[dev-api] SESSION_SECRET not set — generated an ephemeral one. Sessions will reset on server restart.',
-    )
-  }
-
   const appBaseUrl = env.APP_BASE_URL || 'http://localhost:5173'
-  const cookieSecure = appBaseUrl.startsWith('https://')
-
-  // Vercel, Fly, Render, etc. sit in front of our Node function and set
-  // X-Forwarded-For to the real client's IP (after stripping any header the
-  // client tried to inject). `VERCEL=1` is set automatically on Vercel;
-  // TRUST_FORWARDED_FOR=1 is an explicit opt-in for other platforms. Leave
-  // both unset for Vite dev — `socket.remoteAddress` is the real client
-  // there.
-  const trustForwardedFor =
-    env.VERCEL === '1' || env.TRUST_FORWARDED_FOR === '1'
 
   // Auth0 handles authentication. Backend verifies JWTs via Auth0's JWKS.
 
