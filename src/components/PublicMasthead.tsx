@@ -115,7 +115,7 @@ export function PublicMasthead() {
               aria-expanded={accountOpen}
               className="border border-white/30 px-4 py-1.5 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-white transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              {state.kind === "member" ? "Account" : "Log in"}
+              {state.kind === "member" ? "Account" : state.kind === "loading" ? "···" : "Log in"}
             </button>
 
             {accountOpen ? (
