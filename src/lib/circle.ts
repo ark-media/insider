@@ -43,5 +43,5 @@ export const CIRCLE_OPEN_LINKS = {
   ios: "https://apps.apple.com/app/circle-communities/id1525026498",
   android:
     "https://play.google.com/store/apps/details?id=com.circle.circleapp",
-  web: "https://community.arkmedia.org",
+  web: "https://app.arkmedia.org",
 };
