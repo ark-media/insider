@@ -51,7 +51,7 @@ import type { Plugin, Connect } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import crypto from 'node:crypto'
 import Stripe from 'stripe'
-import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose'
 
 const AUTH0_DOMAIN = 'https://auth.ark-plus.xyz'
 const AUTH0_AUDIENCE = 'https://ark-plus.xyz/api'
@@ -1070,6 +1070,59 @@ function buildApi(env: Env): Api {
           }
         },
       })
+
+  // --- Circle SSO: mint a signed JWT for seamless Circle community auth ----
+  // Circle redirects unauthenticated users to <your_sso_url>?return_to=<dest>.
+  // The frontend /circle-sso page calls this endpoint with the Auth0 Bearer
+  // token; we verify it, sign a Circle JWT (HS256), and return the redirect URL.
+  routes.push({
+    path: '/api/circle-sso',
+    handler: async (req, res) => {
+      const json = makeJsonRes(res)
+      if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+
+      const circleSecret = env.CIRCLE_SSO_SECRET
+      if (!circleSecret) return json(500, { error: 'CIRCLE_SSO_SECRET not configured' })
+
+      const authHeader = req.headers.authorization
+      if (!authHeader?.startsWith('Bearer ')) return json(401, { error: 'unauthenticated' })
+
+      const token = authHeader.slice(7)
+      let email: string
+      let name: string | undefined
+      try {
+        const { payload } = await jwtVerify(token, jwks, {
+          issuer: `${AUTH0_DOMAIN}/`,
+          audience: AUTH0_AUDIENCE,
+        })
+        const emailClaim = payload[EMAIL_CLAIM] as string | undefined
+        if (!emailClaim) return json(401, { error: 'unauthenticated' })
+        email = emailClaim
+        name = (payload['name'] as string | undefined) ?? undefined
+      } catch {
+        return json(401, { error: 'unauthenticated' })
+      }
+
+      const body = (await readJson<{ return_to?: unknown }>(req)) ?? {}
+      const returnTo = typeof body.return_to === 'string' ? body.return_to : '/'
+
+      const secret = new TextEncoder().encode(circleSecret)
+      const circleJwt = await new SignJWT({
+        email,
+        name: name ?? email.split('@')[0],
+        user_token: email,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime('10m')
+        .sign(secret)
+
+      json(200, {
+        jwt: circleJwt,
+        redirect_url: `https://app.arkmedia.org/sso?jwt=${encodeURIComponent(circleJwt)}&return_to=${encodeURIComponent(returnTo)}`,
+      })
+    },
+  })
 
   return { appBaseUrl, routes }
 }
