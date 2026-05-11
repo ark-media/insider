@@ -58,12 +58,17 @@ const AUTH0_AUDIENCE = 'https://ark-plus.xyz/api'
 const EMAIL_CLAIM = 'https://ark-plus.xyz/email'
 const AUTH0_CLIENT_ID = '1T1u9VRHbSWxOwy8OX5PVYw9BdPNtAvp'
 
+// Checkout-session tokens are HS256 JWTs we issue ourselves to log a new
+// subscriber in immediately after payment, without forcing them to click a
+// password-reset email first. They expire in 24h; after that the user logs in
+// normally via Auth0 with the password they set from the reset email.
+const CHECKOUT_TOKEN_ISSUER = 'ark-insider'
+const CHECKOUT_TOKEN_AUDIENCE = 'checkout-session'
+const CHECKOUT_TOKEN_TTL_SEC = 24 * 60 * 60
+
 const jwks = createRemoteJWKSet(new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`))
 
-async function getAuth0Email(req: IncomingMessage): Promise<string | null> {
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
+async function verifyAuth0Bearer(token: string): Promise<string | null> {
   try {
     const { payload } = await jwtVerify(token, jwks, {
       issuer: `${AUTH0_DOMAIN}/`,
@@ -73,6 +78,42 @@ async function getAuth0Email(req: IncomingMessage): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+async function verifyCheckoutToken(token: string, env: Env): Promise<string | null> {
+  const secret = env.CHECKOUT_SESSION_SECRET
+  if (!secret) return null
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+      issuer: CHECKOUT_TOKEN_ISSUER,
+      audience: CHECKOUT_TOKEN_AUDIENCE,
+    })
+    return (payload.email as string | undefined) ?? null
+  } catch {
+    return null
+  }
+}
+
+async function signCheckoutToken(email: string, env: Env): Promise<string> {
+  const secret = env.CHECKOUT_SESSION_SECRET
+  if (!secret) throw new Error('CHECKOUT_SESSION_SECRET not configured')
+  return new SignJWT({ email })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setIssuer(CHECKOUT_TOKEN_ISSUER)
+    .setAudience(CHECKOUT_TOKEN_AUDIENCE)
+    .setExpirationTime(`${CHECKOUT_TOKEN_TTL_SEC}s`)
+    .sign(new TextEncoder().encode(secret))
+}
+
+async function getSessionEmail(
+  req: IncomingMessage,
+  env: Env,
+): Promise<string | null> {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) return null
+  const token = authHeader.slice(7)
+  return (await verifyAuth0Bearer(token)) ?? (await verifyCheckoutToken(token, env))
 }
 type Env = Record<string, string>
 
@@ -411,6 +452,14 @@ function buildApi(env: Env): Api {
     refillPerSec: 3 / (60 * 60), // 3 per hour per session
   })
 
+  // /api/auth/checkout-session is polled by the client (~1 req/s during the
+  // 20s window after payment). Cap per Stripe subscription to defend the
+  // upstream Stripe and Auth0 APIs from runaway loops or scripted abuse.
+  const checkoutSessionLimiter = createRateLimiter({
+    capacity: 25,
+    refillPerSec: 1,
+  })
+
   const resolveScPriceId = (plan: 'monthly' | 'yearly'): string => {
     const id =
       plan === 'monthly'
@@ -532,14 +581,24 @@ function buildApi(env: Env): Api {
     }
   }
 
-  const activateScSubscriptionForStripeSub = async (
-    sub: Stripe.Subscription,
-  ): Promise<void> => {
+  // Concurrent callers (webhook + /api/auth/checkout-session) can both try to
+  // provision the same subscription within ms of each other. Without a lock
+  // we'd create two SC subscriptions for the same user. Dedupe by Stripe sub
+  // id: the second caller waits on the first's promise and then re-reads
+  // Stripe metadata (set by the winner) to early-return cleanly.
+  const provisionInFlight = new Map<string, Promise<void>>()
+
+  const doActivate = async (subId: string): Promise<void> => {
     if (!stripe) return
-    if (sub.metadata?.sc_subscription_id) return // already granted
+
+    // Re-read inside the critical section. The caller's in-memory `sub`
+    // snapshot may be stale: another caller could have finished provisioning
+    // (and written metadata) between their retrieve and our handler firing.
+    const fresh = await stripe.subscriptions.retrieve(subId)
+    if (fresh.metadata?.sc_subscription_id) return
 
     const customerId =
-      typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+      typeof fresh.customer === 'string' ? fresh.customer : fresh.customer.id
     const customer = await stripe.customers.retrieve(customerId)
     if (customer.deleted) throw new Error('Stripe customer was deleted')
     const activeCustomer = customer as Stripe.Customer
@@ -547,7 +606,7 @@ function buildApi(env: Env): Api {
     if (!email) throw new Error('Stripe customer has no email')
 
     const plan =
-      (sub.metadata?.plan as 'monthly' | 'yearly' | undefined) ?? 'yearly'
+      (fresh.metadata?.plan as 'monthly' | 'yearly' | undefined) ?? 'yearly'
 
     const scPriceId = resolveScPriceId(plan)
 
@@ -567,14 +626,30 @@ function buildApi(env: Env): Api {
       console.error('[auth0] findOrCreateAuth0User failed:', err)
     }
 
-    await stripe.subscriptions.update(sub.id, {
+    await stripe.subscriptions.update(fresh.id, {
       metadata: {
-        ...sub.metadata,
+        ...fresh.metadata,
         sc_user_id: String(user.id),
         sc_subscription_id: String(created.subscription.id),
         ...(auth0UserId ? { auth0_user_id: auth0UserId } : {}),
       },
     })
+  }
+
+  const activateScSubscriptionForStripeSub = async (
+    sub: Stripe.Subscription,
+  ): Promise<void> => {
+    if (!stripe) return
+    if (sub.metadata?.sc_subscription_id) return // already granted, fast path
+
+    const existing = provisionInFlight.get(sub.id)
+    if (existing) return existing
+
+    const promise = doActivate(sub.id).finally(() => {
+      provisionInFlight.delete(sub.id)
+    })
+    provisionInFlight.set(sub.id, promise)
+    return promise
   }
 
   const routes: Api['routes'] = []
@@ -584,7 +659,7 @@ function buildApi(env: Env): Api {
         path: '/api/me',
         handler: async (req, res) => {
           const json = makeJsonRes(res)
-          const email = await getAuth0Email(req)
+          const email = await getSessionEmail(req, env)
           if (!email) return json(401, { error: 'unauthenticated' })
 
           try {
@@ -620,7 +695,7 @@ function buildApi(env: Env): Api {
           const json = makeJsonRes(res)
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
 
-          const smsEmail = await getAuth0Email(req)
+          const smsEmail = await getSessionEmail(req, env)
           if (!smsEmail) return json(401, { error: 'unauthenticated' })
 
           const smsSc = createScClient(env)
@@ -919,7 +994,7 @@ function buildApi(env: Env): Api {
           if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
           if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
-          const cancelEmail = await getAuth0Email(req)
+          const cancelEmail = await getSessionEmail(req, env)
           if (!cancelEmail) return json(401, { error: 'unauthenticated' })
 
           // Find the Stripe customer by email
@@ -964,7 +1039,7 @@ function buildApi(env: Env): Api {
           // query param as a fallback — the email was just used to create the
           // subscription moments ago.
           const emailParam = url.searchParams.get('email')?.trim().toLowerCase()
-          const auth0Email = await getAuth0Email(req)
+          const auth0Email = await getSessionEmail(req, env)
           const sub = await stripe.subscriptions.retrieve(subId, {
             expand: ['customer'],
           })
@@ -981,6 +1056,97 @@ function buildApi(env: Env): Api {
           json(200, {
             status: sub.status,
             activated: Boolean(sub.metadata?.sc_subscription_id),
+          })
+        },
+      })
+
+      // --- Checkout session: auto-login after subscription ----------------
+      // Brand-new subscribers don't have an Auth0 password yet — the webhook
+      // sends them a password-reset email so they can pick one for future
+      // logins. To get them into /setup immediately without round-tripping
+      // through that email, we provision their account synchronously here and
+      // hand back a short-lived HS256 JWT the client can use as a Bearer
+      // token. /api/me + friends accept either Auth0 RS256 tokens or this
+      // token (see verifyCheckoutToken / getSessionEmail).
+      //
+      // Ownership: the email is verified against the Stripe customer record
+      // (same pattern as /api/stripe/subscription-status), which the caller
+      // just created moments ago.
+      routes.push({
+        path: '/api/auth/checkout-session',
+        handler: async (req, res) => {
+          const json = makeJsonRes(res)
+          if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+          if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+          if (!env.CHECKOUT_SESSION_SECRET) {
+            return json(500, { error: 'CHECKOUT_SESSION_SECRET missing' })
+          }
+
+          const body =
+            (await readJson<{ subscription_id?: string; email?: string }>(req)) ?? {}
+          const subId = body.subscription_id?.trim()
+          const emailParam = body.email?.trim().toLowerCase()
+          if (!subId) return json(400, { error: 'subscription_id required' })
+          if (!emailParam) return json(400, { error: 'email required' })
+
+          const wait = checkoutSessionLimiter.take(subId)
+          if (wait !== null) {
+            res.setHeader('retry-after', String(wait))
+            return json(429, { error: 'Too many attempts. Please wait a moment.' })
+          }
+
+          const sub = await stripe.subscriptions.retrieve(subId, {
+            expand: ['customer'],
+          })
+          const customer = sub.customer
+          const customerEmail =
+            typeof customer === 'object' &&
+            customer &&
+            !('deleted' in customer && customer.deleted)
+              ? (customer as Stripe.Customer).email?.toLowerCase() ?? null
+              : null
+          if (!customerEmail || customerEmail !== emailParam) {
+            return json(403, { error: 'Forbidden' })
+          }
+
+          // Defense against replay of leaked (subscription_id, email) pairs:
+          // auto-login is only valid during the brief window right after
+          // checkout. After that, the user logs in normally via Auth0 with
+          // the password they set from the reset email.
+          const AUTO_LOGIN_WINDOW_SEC = 60 * 60 // 1 hour
+          if (Date.now() / 1000 - sub.created > AUTO_LOGIN_WINDOW_SEC) {
+            return json(410, {
+              error: 'Auto-login window expired. Please sign in via the link in your welcome email.',
+            })
+          }
+
+          // Stripe moves a default_incomplete subscription to `active` only
+          // after the PaymentIntent confirms. The client calls this endpoint
+          // right after confirmPayment resolves, but Stripe's internal state
+          // transition can lag by a few hundred ms. Tell the client to retry.
+          if (sub.status !== 'active' && sub.status !== 'trialing') {
+            return json(202, { ready: false, status: sub.status })
+          }
+
+          // Provision SC user + SC subscription + Auth0 user. Idempotent — if
+          // the webhook already ran, this is a no-op. Failures here mean the
+          // caller paid but provisioning is incomplete; the webhook will
+          // retry async, but we shouldn't hand out a session token yet.
+          try {
+            await activateScSubscriptionForStripeSub(sub)
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error('[auth/checkout-session] provision failed:', err)
+            return json(502, {
+              error: 'Could not finish setting up your account. Please try again.',
+            })
+          }
+
+          const accessToken = await signCheckoutToken(customerEmail, env)
+          json(200, {
+            access_token: accessToken,
+            expires_in: CHECKOUT_TOKEN_TTL_SEC,
+            email: customerEmail,
           })
         },
       })
@@ -1088,20 +1254,20 @@ function buildApi(env: Env): Api {
       if (!authHeader?.startsWith('Bearer ')) return json(401, { error: 'unauthenticated' })
 
       const token = authHeader.slice(7)
-      let email: string
+      let email: string | null = null
       let name: string | undefined
       try {
         const { payload } = await jwtVerify(token, jwks, {
           issuer: `${AUTH0_DOMAIN}/`,
           audience: AUTH0_AUDIENCE,
         })
-        const emailClaim = payload[EMAIL_CLAIM] as string | undefined
-        if (!emailClaim) return json(401, { error: 'unauthenticated' })
-        email = emailClaim
+        email = (payload[EMAIL_CLAIM] as string | undefined) ?? null
         name = (payload['name'] as string | undefined) ?? undefined
       } catch {
-        return json(401, { error: 'unauthenticated' })
+        // Not an Auth0 token — try our short-lived checkout-session token.
+        email = await verifyCheckoutToken(token, env)
       }
+      if (!email) return json(401, { error: 'unauthenticated' })
 
       const body = (await readJson<{ return_to?: unknown }>(req)) ?? {}
       const returnTo = typeof body.return_to === 'string' ? body.return_to : '/'

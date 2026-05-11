@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
   Elements,
@@ -7,7 +8,8 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import { Modal } from "./Modal";
-import { SuccessMark } from "./SuccessMark";
+import { setCheckoutSession } from "../lib/tokenStore";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Plan = "monthly" | "yearly";
 
@@ -23,7 +25,6 @@ type Step =
     }
   | { kind: "activating"; subscriptionId: string; email: string }
   | { kind: "processing"; email: string }
-  | { kind: "done"; email: string }
   | { kind: "error"; message: string };
 
 const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as
@@ -42,26 +43,73 @@ const inputClass =
 
 const MAX_POLL_ATTEMPTS = 15;
 
-async function pollUntilActivated(
+type CheckoutSessionResult =
+  | { kind: "ready"; accessToken: string; expiresIn: number }
+  | { kind: "processing" }
+  | { kind: "error"; message: string }
+  | { kind: "timeout" };
+
+// Polls /api/auth/checkout-session — the endpoint returns 200 with a token
+// once Stripe marks the subscription `active` AND we've provisioned the
+// member's SC + Auth0 records; it returns 202 while we're still waiting on
+// Stripe's state transition. We poll because Stripe takes a few hundred ms
+// to flip incomplete -> active after the PaymentIntent confirms.
+async function pollForCheckoutSession(
   subscriptionId: string,
   email: string,
-  timeoutMs = 15000,
-): Promise<"activated" | "processing" | "timeout"> {
+  timeoutMs = 20000,
+): Promise<CheckoutSessionResult> {
   const deadline = Date.now() + timeoutMs;
   let attempts = 0;
   while (attempts < MAX_POLL_ATTEMPTS) {
     attempts++;
-    const params = new URLSearchParams({ id: subscriptionId, email });
-    const res = await fetch(`/api/stripe/subscription-status?${params}`);
-    if (res.ok) {
-      const data = (await res.json()) as { status: string; activated: boolean };
-      if (data.activated) return "activated";
-      if (data.status === "processing") return "processing";
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription_id: subscriptionId, email }),
+      });
+    } catch {
+      return { kind: "error", message: "Network error. Please try again." };
     }
-    if (Date.now() >= deadline) return "timeout";
+    if (res.status === 200) {
+      const data = (await res.json()) as {
+        access_token: string;
+        expires_in: number;
+      };
+      return {
+        kind: "ready",
+        accessToken: data.access_token,
+        expiresIn: data.expires_in,
+      };
+    }
+    if (res.status === 202) {
+      const data = (await res.json().catch(() => ({}))) as { status?: string };
+      if (data.status === "processing") return { kind: "processing" };
+      // Still in transition — keep polling.
+    } else if (res.status === 429) {
+      // Rate-limited — wait the suggested interval and keep polling. The
+      // window is small (~1s) so this is rarely user-visible.
+      const retryAfter = Number(res.headers.get("retry-after") ?? "1");
+      await new Promise((r) =>
+        setTimeout(r, Math.max(1000, retryAfter * 1000)),
+      );
+      continue;
+    } else if (res.status >= 400) {
+      // Anything else (403 forbidden, 410 expired window, 5xx) won't fix
+      // itself by polling — surface the message and stop.
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      return {
+        kind: "error",
+        message:
+          data.error ?? `Could not finish checkout (status ${res.status}).`,
+      };
+    }
+    if (Date.now() >= deadline) return { kind: "timeout" };
     await new Promise((r) => setTimeout(r, 1000));
   }
-  return "timeout";
+  return { kind: "timeout" };
 }
 
 export function CheckoutModal({
@@ -80,6 +128,8 @@ export function CheckoutModal({
   const [step, setStep] = useState<Step>({ kind: "details" });
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const navigate = useNavigate();
+  const { refresh } = useSubscriberAuth();
 
   const handleClose = useCallback(() => {
     setStep({ kind: "details" });
@@ -87,6 +137,26 @@ export function CheckoutModal({
     setName("");
     onClose();
   }, [onClose]);
+
+  const handleActivated = useCallback(
+    async (accessToken: string, expiresIn: number) => {
+      try {
+        setCheckoutSession(accessToken, expiresIn);
+        await refresh();
+        onClose();
+        void navigate({ to: "/setup" });
+      } catch (err) {
+        setStep({
+          kind: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not sign you in. Please try again.",
+        });
+      }
+    },
+    [navigate, onClose, refresh],
+  );
 
   const amountCents =
     customAmount !== null ? Math.round(customAmount * 100) : defaultAmount * 100;
@@ -154,7 +224,7 @@ export function CheckoutModal({
         </span>
       </h2>
 
-      {(step.kind === "details" || step.kind === "creating") && (
+      {step.kind === "details" || step.kind === "creating" ? (
         <form onSubmit={startCheckout} className="mt-6 space-y-4">
           <Field label="Name (optional)">
             <input
@@ -189,9 +259,9 @@ export function CheckoutModal({
             link by email once your membership is active.
           </p>
         </form>
-      )}
+      ) : null}
 
-      {step.kind === "payment" && stripePromiseValue && (
+      {step.kind === "payment" && stripePromiseValue ? (
         <Elements
           stripe={stripePromiseValue}
           options={{
@@ -210,21 +280,22 @@ export function CheckoutModal({
                 email: step.email,
               })
             }
-            onDone={() => setStep({ kind: "done", email: step.email })}
+            onActivated={handleActivated}
             onProcessing={() =>
               setStep({ kind: "processing", email: step.email })
             }
           />
         </Elements>
-      )}
+      ) : null}
 
-      {step.kind === "activating" && (
-        <p className="mt-6 text-sm text-white/70">
-          Payment received — activating your membership…
-        </p>
-      )}
+      {step.kind === "activating" ? (
+        <div className="mt-6 flex items-center gap-3 text-sm text-white/70">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-cyan" />
+          <span>Payment received — signing you in…</span>
+        </div>
+      ) : null}
 
-      {step.kind === "processing" && (
+      {step.kind === "processing" ? (
         <div className="mt-6 space-y-3 text-sm text-white/80">
           <p>
             Your payment is being processed by your bank. We'll email{" "}
@@ -239,26 +310,9 @@ export function CheckoutModal({
             Close
           </button>
         </div>
-      )}
+      ) : null}
 
-      {step.kind === "done" && (
-        <SuccessMark title="You're in.">
-          <p>
-            We just sent a sign-in link to{" "}
-            <span className="font-semibold text-white">{step.email}</span>.
-            Tap it to set up your private podcast feed.
-          </p>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="mt-6 w-full border border-white/30 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Close
-          </button>
-        </SuccessMark>
-      )}
-
-      {step.kind === "error" && (
+      {step.kind === "error" ? (
         <div className="mt-6 space-y-3 text-sm">
           <p className="text-red-300">{step.message}</p>
           <button
@@ -269,7 +323,7 @@ export function CheckoutModal({
             Try again
           </button>
         </div>
-      )}
+      ) : null}
     </Modal>
   );
 }
@@ -296,14 +350,14 @@ function PaymentStep({
   subscriptionId,
   onError,
   onActivating,
-  onDone,
+  onActivated,
   onProcessing,
 }: {
   email: string;
   subscriptionId: string;
   onError: (message: string) => void;
   onActivating: () => void;
-  onDone: () => void;
+  onActivated: (accessToken: string, expiresIn: number) => void | Promise<void>;
   onProcessing: () => void;
 }) {
   const stripe = useStripe();
@@ -348,16 +402,19 @@ function PaymentStep({
 
     if (pi.status === "succeeded") {
       onActivating();
-      const result = await pollUntilActivated(subscriptionId, email);
-      if (result === "activated") {
-        onDone();
-      } else if (result === "processing") {
+      const result = await pollForCheckoutSession(subscriptionId, email);
+      if (result.kind === "ready") {
+        await onActivated(result.accessToken, result.expiresIn);
+      } else if (result.kind === "processing") {
         onProcessing();
+      } else if (result.kind === "error") {
+        onError(result.message);
       } else {
-        // Stripe confirmed payment; activation is still pending. The webhook
-        // will finish the job in the background — show the done state so the
-        // user isn't blocked.
-        onDone();
+        // Timeout: Stripe confirmed payment but our provisioning didn't
+        // finish in 20s. The webhook will complete it in the background and
+        // email a password-reset link, so route the user to the
+        // bank-processing copy rather than stranding them.
+        onProcessing();
       }
       return;
     }
