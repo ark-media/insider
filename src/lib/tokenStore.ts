@@ -2,62 +2,31 @@ type TokenGetter = () => Promise<string>
 
 let _get: TokenGetter | null = null
 
-// Short-lived token issued by /api/auth/checkout-session so a brand-new
-// subscriber is logged in immediately after payment, without round-tripping
-// through the password-reset email. After it expires the user logs in
-// normally via Auth0 using the password they set from that email.
-const CHECKOUT_SESSION_KEY = 'ark.checkoutSession'
-
-type StoredCheckoutSession = {
-  token: string
-  expiresAt: number
-}
-
-function readCheckoutSession(): StoredCheckoutSession | null {
-  try {
-    const raw = localStorage.getItem(CHECKOUT_SESSION_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as StoredCheckoutSession
-    if (!parsed.token || typeof parsed.expiresAt !== 'number') return null
-    if (parsed.expiresAt <= Date.now()) {
-      localStorage.removeItem(CHECKOUT_SESSION_KEY)
-      return null
-    }
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-export function setCheckoutSession(token: string, expiresInSec: number) {
-  localStorage.setItem(
-    CHECKOUT_SESSION_KEY,
-    JSON.stringify({
-      token,
-      expiresAt: Date.now() + expiresInSec * 1000,
-    } satisfies StoredCheckoutSession),
-  )
-}
-
-export function clearCheckoutSession() {
-  localStorage.removeItem(CHECKOUT_SESSION_KEY)
-}
-
-export function hasCheckoutSession(): boolean {
-  return readCheckoutSession() !== null
-}
-
 export function setTokenGetter(fn: TokenGetter) {
   _get = fn
 }
 
+// Returns the Auth0 access token when an Auth0 session exists, or null. The
+// brand-new-subscriber session (issued by /api/auth/checkout-session) lives
+// in an httpOnly cookie that JS cannot read — those requests rely on
+// credentials: 'include' instead of a Bearer header.
 export async function getToken(): Promise<string | null> {
-  const checkout = readCheckoutSession()
-  if (checkout) return checkout.token
   if (!_get) return null
   try {
     return await _get()
   } catch {
     return null
   }
+}
+
+// Non-httpOnly companion cookie set by /api/auth/checkout-session purely as a
+// presence signal — the real session token is in the sibling httpOnly cookie.
+// Used to gate "should we attempt fetchMe()" before Auth0 resolves.
+const PRESENT_COOKIE_NAME = 'ark_checkout_present'
+
+export function hasCheckoutCookie(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.cookie
+    .split(';')
+    .some((c) => c.trim().startsWith(`${PRESENT_COOKIE_NAME}=`))
 }

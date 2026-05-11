@@ -60,11 +60,76 @@ const AUTH0_CLIENT_ID = '1T1u9VRHbSWxOwy8OX5PVYw9BdPNtAvp'
 
 // Checkout-session tokens are HS256 JWTs we issue ourselves to log a new
 // subscriber in immediately after payment, without forcing them to click a
-// password-reset email first. They expire in 24h; after that the user logs in
-// normally via Auth0 with the password they set from the reset email.
+// password-reset email first. The TTL is short — it only needs to cover
+// landing on /setup and finishing onboarding. After it expires the user logs
+// in normally via Auth0 with the password they set from the reset email.
+//
+// The token rides in an httpOnly cookie so JS — including any XSS payload —
+// can't exfiltrate it. A second non-httpOnly companion cookie ("present")
+// gives the SPA a way to detect that a session exists without exposing the
+// token itself.
 const CHECKOUT_TOKEN_ISSUER = 'ark-insider'
 const CHECKOUT_TOKEN_AUDIENCE = 'checkout-session'
-const CHECKOUT_TOKEN_TTL_SEC = 24 * 60 * 60
+const CHECKOUT_TOKEN_TTL_SEC = 30 * 60
+const CHECKOUT_COOKIE_NAME = 'ark_checkout'
+const CHECKOUT_PRESENT_COOKIE_NAME = 'ark_checkout_present'
+
+function readCookie(req: IncomingMessage, name: string): string | null {
+  const raw = req.headers.cookie
+  if (!raw) return null
+  for (const part of raw.split(';')) {
+    const eq = part.indexOf('=')
+    if (eq < 0) continue
+    if (part.slice(0, eq).trim() === name) {
+      return part.slice(eq + 1).trim()
+    }
+  }
+  return null
+}
+
+function buildCookie(
+  name: string,
+  value: string,
+  opts: { maxAgeSec: number; httpOnly: boolean; secure: boolean },
+): string {
+  const parts = [
+    `${name}=${value}`,
+    'Path=/',
+    'SameSite=Lax',
+    `Max-Age=${opts.maxAgeSec}`,
+  ]
+  if (opts.httpOnly) parts.push('HttpOnly')
+  if (opts.secure) parts.push('Secure')
+  return parts.join('; ')
+}
+
+function isSecureOrigin(env: Env): boolean {
+  return env.APP_BASE_URL?.startsWith('https://') ?? false
+}
+
+function setCheckoutCookies(res: ServerResponse, token: string, env: Env): void {
+  const secure = isSecureOrigin(env)
+  res.setHeader('Set-Cookie', [
+    buildCookie(CHECKOUT_COOKIE_NAME, token, {
+      maxAgeSec: CHECKOUT_TOKEN_TTL_SEC,
+      httpOnly: true,
+      secure,
+    }),
+    buildCookie(CHECKOUT_PRESENT_COOKIE_NAME, '1', {
+      maxAgeSec: CHECKOUT_TOKEN_TTL_SEC,
+      httpOnly: false,
+      secure,
+    }),
+  ])
+}
+
+function clearCheckoutCookies(res: ServerResponse, env: Env): void {
+  const secure = isSecureOrigin(env)
+  res.setHeader('Set-Cookie', [
+    buildCookie(CHECKOUT_COOKIE_NAME, '', { maxAgeSec: 0, httpOnly: true, secure }),
+    buildCookie(CHECKOUT_PRESENT_COOKIE_NAME, '', { maxAgeSec: 0, httpOnly: false, secure }),
+  ])
+}
 
 const jwks = createRemoteJWKSet(new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`))
 
@@ -110,10 +175,19 @@ async function getSessionEmail(
   req: IncomingMessage,
   env: Env,
 ): Promise<string | null> {
+  // Auth0 sessions arrive as Bearer tokens; the post-checkout session rides
+  // in an httpOnly cookie. Prefer Bearer (the authoritative long-term session
+  // once the user has finished password setup) and fall back to the cookie.
   const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  return (await verifyAuth0Bearer(token)) ?? (await verifyCheckoutToken(token, env))
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7)
+    const email =
+      (await verifyAuth0Bearer(token)) ?? (await verifyCheckoutToken(token, env))
+    if (email) return email
+  }
+  const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
+  if (cookieToken) return verifyCheckoutToken(cookieToken, env)
+  return null
 }
 type Env = Record<string, string>
 
@@ -1143,11 +1217,26 @@ function buildApi(env: Env): Api {
           }
 
           const accessToken = await signCheckoutToken(customerEmail, env)
+          setCheckoutCookies(res, accessToken, env)
           json(200, {
-            access_token: accessToken,
-            expires_in: CHECKOUT_TOKEN_TTL_SEC,
+            ready: true,
             email: customerEmail,
+            expires_in: CHECKOUT_TOKEN_TTL_SEC,
           })
+        },
+      })
+
+      // --- Sign out -------------------------------------------------------
+      // Clears the checkout-session cookies. The client invokes this before
+      // triggering Auth0's logout redirect so brand-new subscribers can fully
+      // sign out without leaving a 30-min cookie behind.
+      routes.push({
+        path: '/api/signout',
+        handler: async (req, res) => {
+          const json = makeJsonRes(res)
+          if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+          clearCheckoutCookies(res, env)
+          json(200, { ok: true })
         },
       })
 
@@ -1250,22 +1339,27 @@ function buildApi(env: Env): Api {
       const circleSecret = env.CIRCLE_SSO_SECRET
       if (!circleSecret) return json(500, { error: 'CIRCLE_SSO_SECRET not configured' })
 
-      const authHeader = req.headers.authorization
-      if (!authHeader?.startsWith('Bearer ')) return json(401, { error: 'unauthenticated' })
-
-      const token = authHeader.slice(7)
       let email: string | null = null
       let name: string | undefined
-      try {
-        const { payload } = await jwtVerify(token, jwks, {
-          issuer: `${AUTH0_DOMAIN}/`,
-          audience: AUTH0_AUDIENCE,
-        })
-        email = (payload[EMAIL_CLAIM] as string | undefined) ?? null
-        name = (payload['name'] as string | undefined) ?? undefined
-      } catch {
-        // Not an Auth0 token — try our short-lived checkout-session token.
-        email = await verifyCheckoutToken(token, env)
+      const authHeader = req.headers.authorization
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice(7)
+        try {
+          const { payload } = await jwtVerify(token, jwks, {
+            issuer: `${AUTH0_DOMAIN}/`,
+            audience: AUTH0_AUDIENCE,
+          })
+          email = (payload[EMAIL_CLAIM] as string | undefined) ?? null
+          name = (payload['name'] as string | undefined) ?? undefined
+        } catch {
+          // Not an Auth0 token — could still be a checkout-session token
+          // mistakenly passed as Bearer (older clients).
+          email = await verifyCheckoutToken(token, env)
+        }
+      }
+      if (!email) {
+        const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
+        if (cookieToken) email = await verifyCheckoutToken(cookieToken, env)
       }
       if (!email) return json(401, { error: 'unauthenticated' })
 

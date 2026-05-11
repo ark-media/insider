@@ -8,11 +8,7 @@ import {
 } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { fetchMe, type Me } from "./auth";
-import {
-  clearCheckoutSession,
-  hasCheckoutSession,
-  setTokenGetter,
-} from "./tokenStore";
+import { hasCheckoutCookie, setTokenGetter } from "./tokenStore";
 
 export type SubscriberAuthState =
   | { kind: "loading" }
@@ -42,10 +38,10 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // A checkout-session token (issued by /api/auth/checkout-session right
-    // after payment) is a valid session even when Auth0 hasn't authenticated
-    // the user in the SDK. Fetch /api/me directly without waiting on Auth0.
-    if (hasCheckoutSession()) {
+    // The post-checkout session lives in an httpOnly cookie that JS can't
+    // read, so we rely on the sibling "present" cookie as a hint that
+    // /api/me will succeed even though Auth0 hasn't authenticated the user.
+    if (hasCheckoutCookie()) {
       void refresh();
       return;
     }
@@ -58,7 +54,9 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated, isLoading, refresh]);
 
   const signOut = useCallback(() => {
-    clearCheckoutSession();
+    // Clear the server-set checkout cookies before Auth0 takes over the tab.
+    // Fire-and-forget; the Auth0 redirect happens regardless.
+    void fetch("/api/signout", { method: "POST", credentials: "include" });
     logout({ logoutParams: { returnTo: window.location.origin } });
   }, [logout]);
 

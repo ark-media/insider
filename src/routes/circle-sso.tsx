@@ -31,20 +31,25 @@ function CircleSSOBridge() {
     }
 
     void (async () => {
+      // Auth0 path uses a Bearer header; the post-checkout-cookie path
+      // attaches via credentials:'include' and getToken() returns null.
       const token = await getToken();
-      if (!token) {
-        void loginWithRedirect({ appState: { returnTo: selfPath } });
-        return;
-      }
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
 
       const res = await fetch("/api/circle-sso", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
+        credentials: "include",
         body: JSON.stringify({ return_to: return_to ?? "/" }),
       });
+
+      if (res.status === 401) {
+        void loginWithRedirect({ appState: { returnTo: selfPath } });
+        return;
+      }
 
       const data = (await res.json()) as { redirect_url?: string };
       if (data.redirect_url) {

@@ -4,7 +4,7 @@ import { PublicMasthead } from "../components/PublicMasthead";
 import { Footer } from "../components/Footer";
 import { LiveStatus } from "../components/LiveStatus";
 import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
-import { hasCheckoutSession } from "../lib/tokenStore";
+import { hasCheckoutCookie } from "../lib/tokenStore";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -28,7 +28,7 @@ function RootContent() {
   // - auth0Loading: SDK is processing the redirect callback
   // - isAuthenticated && state.kind === "loading": fetchMe is in-flight after auth resolved
   // - checkout-session: fetchMe is in-flight for a freshly-paid subscriber
-  const hasCheckout = hasCheckoutSession();
+  const hasCheckout = hasCheckoutCookie();
   const isResolvingSession =
     (auth0Loading && !hasCheckout) ||
     (isAuthenticated && state.kind === "loading") ||

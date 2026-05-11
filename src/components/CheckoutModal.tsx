@@ -8,7 +8,6 @@ import {
   useStripe,
 } from "@stripe/react-stripe-js";
 import { Modal } from "./Modal";
-import { setCheckoutSession } from "../lib/tokenStore";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Plan = "monthly" | "yearly";
@@ -44,16 +43,17 @@ const inputClass =
 const MAX_POLL_ATTEMPTS = 15;
 
 type CheckoutSessionResult =
-  | { kind: "ready"; accessToken: string; expiresIn: number }
+  | { kind: "ready" }
   | { kind: "processing" }
   | { kind: "error"; message: string }
   | { kind: "timeout" };
 
-// Polls /api/auth/checkout-session — the endpoint returns 200 with a token
-// once Stripe marks the subscription `active` AND we've provisioned the
-// member's SC + Auth0 records; it returns 202 while we're still waiting on
-// Stripe's state transition. We poll because Stripe takes a few hundred ms
-// to flip incomplete -> active after the PaymentIntent confirms.
+// Polls /api/auth/checkout-session — the endpoint sets the session cookie
+// and returns 200 once Stripe marks the subscription `active` AND we've
+// provisioned the member's SC + Auth0 records; it returns 202 while we're
+// still waiting on Stripe's state transition. We poll because Stripe takes
+// a few hundred ms to flip incomplete -> active after the PaymentIntent
+// confirms. credentials:'include' is required so the cookie sticks.
 async function pollForCheckoutSession(
   subscriptionId: string,
   email: string,
@@ -68,21 +68,14 @@ async function pollForCheckoutSession(
       res = await fetch("/api/auth/checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ subscription_id: subscriptionId, email }),
       });
     } catch {
       return { kind: "error", message: "Network error. Please try again." };
     }
     if (res.status === 200) {
-      const data = (await res.json()) as {
-        access_token: string;
-        expires_in: number;
-      };
-      return {
-        kind: "ready",
-        accessToken: data.access_token,
-        expiresIn: data.expires_in,
-      };
+      return { kind: "ready" };
     }
     if (res.status === 202) {
       const data = (await res.json().catch(() => ({}))) as { status?: string };
@@ -138,25 +131,21 @@ export function CheckoutModal({
     onClose();
   }, [onClose]);
 
-  const handleActivated = useCallback(
-    async (accessToken: string, expiresIn: number) => {
-      try {
-        setCheckoutSession(accessToken, expiresIn);
-        await refresh();
-        onClose();
-        void navigate({ to: "/setup" });
-      } catch (err) {
-        setStep({
-          kind: "error",
-          message:
-            err instanceof Error
-              ? err.message
-              : "Could not sign you in. Please try again.",
-        });
-      }
-    },
-    [navigate, onClose, refresh],
-  );
+  const handleActivated = useCallback(async () => {
+    try {
+      await refresh();
+      onClose();
+      void navigate({ to: "/setup" });
+    } catch (err) {
+      setStep({
+        kind: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Could not sign you in. Please try again.",
+      });
+    }
+  }, [navigate, onClose, refresh]);
 
   const amountCents =
     customAmount !== null ? Math.round(customAmount * 100) : defaultAmount * 100;
@@ -357,7 +346,7 @@ function PaymentStep({
   subscriptionId: string;
   onError: (message: string) => void;
   onActivating: () => void;
-  onActivated: (accessToken: string, expiresIn: number) => void | Promise<void>;
+  onActivated: () => void | Promise<void>;
   onProcessing: () => void;
 }) {
   const stripe = useStripe();
@@ -404,7 +393,7 @@ function PaymentStep({
       onActivating();
       const result = await pollForCheckoutSession(subscriptionId, email);
       if (result.kind === "ready") {
-        await onActivated(result.accessToken, result.expiresIn);
+        await onActivated();
       } else if (result.kind === "processing") {
         onProcessing();
       } else if (result.kind === "error") {

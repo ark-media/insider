@@ -20,6 +20,11 @@ export type Me = {
   feeds: UserFeed[];
 };
 
+// Authenticated requests accept either source of session:
+//   - Auth0 access token → Authorization: Bearer header
+//   - Checkout-session token → httpOnly cookie attached by credentials:'include'
+// We always include credentials so the cookie attaches when present, and add
+// the Bearer header when getToken() returns one.
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await getToken();
   if (!token) return {};
@@ -29,8 +34,10 @@ async function authHeaders(): Promise<Record<string, string>> {
 export async function fetchMe(): Promise<Me | null> {
   try {
     const headers = await authHeaders();
-    if (!headers.Authorization) return null;
-    const res = await fetch("/api/me", { headers });
+    const res = await fetch("/api/me", {
+      headers,
+      credentials: "include",
+    });
     if (res.status === 401) return null;
     if (!res.ok) return null;
     return (await res.json()) as Me;
@@ -48,6 +55,7 @@ export async function cancelSubscription(): Promise<{
   const res = await fetch("/api/stripe/cancel-subscription", {
     method: "POST",
     headers,
+    credentials: "include",
   });
   return (await res.json()) as {
     ok: boolean;
@@ -64,6 +72,7 @@ export async function sendSetupSms(
   const res = await fetch("/api/sc/send-setup-sms", {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
+    credentials: "include",
     body: JSON.stringify({ phone, feed_id: feedId }),
   });
   return (await res.json()) as { ok: boolean; error?: string };

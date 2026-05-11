@@ -121,7 +121,7 @@ function getHandler(path: string, envOverrides?: Record<string, string>): Middle
 type FakeRes = ServerResponse & {
   __body: () => string
   __json: () => unknown
-  __header: (name: string) => string | undefined
+  __header: (name: string) => string | string[] | undefined
 }
 
 function makeReq(opts: {
@@ -148,7 +148,7 @@ function makeReq(opts: {
 }
 
 function makeRes(): FakeRes {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string | string[]> = {}
   let body = ''
   let statusCode = 200
   let ended = false
@@ -162,8 +162,8 @@ function makeRes(): FakeRes {
     get headersSent() {
       return ended
     },
-    setHeader(name: string, value: string | number) {
-      headers[name.toLowerCase()] = String(value)
+    setHeader(name: string, value: string | number | string[]) {
+      headers[name.toLowerCase()] = Array.isArray(value) ? value : String(value)
     },
     getHeader(name: string) {
       return headers[name.toLowerCase()]
@@ -177,6 +177,27 @@ function makeRes(): FakeRes {
     __header: (name: string) => headers[name.toLowerCase()],
   } as unknown as FakeRes
   return res
+}
+
+function parseSetCookies(setCookie: string | string[] | undefined): Map<string, { value: string; attrs: Record<string, string> }> {
+  const out = new Map<string, { value: string; attrs: Record<string, string> }>()
+  if (!setCookie) return out
+  const list = Array.isArray(setCookie) ? setCookie : [setCookie]
+  for (const c of list) {
+    const [nv, ...rest] = c.split(';')
+    const eq = nv.indexOf('=')
+    if (eq < 0) continue
+    const name = nv.slice(0, eq).trim()
+    const value = nv.slice(eq + 1).trim()
+    const attrs: Record<string, string> = {}
+    for (const a of rest) {
+      const aeq = a.indexOf('=')
+      if (aeq < 0) attrs[a.trim().toLowerCase()] = ''
+      else attrs[a.slice(0, aeq).trim().toLowerCase()] = a.slice(aeq + 1).trim()
+    }
+    out.set(name, { value, attrs })
+  }
+  return out
 }
 
 function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
@@ -365,7 +386,7 @@ describe('POST /api/auth/checkout-session — validation', () => {
 // ===========================================================================
 
 describe('POST /api/auth/checkout-session — happy path', () => {
-  test('200 issues an HS256 token that verifies and carries the customer email', async () => {
+  test('200 sets httpOnly session cookie with a valid HS256 token', async () => {
     nextSubscription = activeSub()
     const h = getHandler(PATH)
     const req = makeReq({
@@ -376,23 +397,39 @@ describe('POST /api/auth/checkout-session — happy path', () => {
 
     expect(res.statusCode).toBe(200)
     const body = res.__json() as {
-      access_token: string
-      expires_in: number
+      ready: boolean
       email: string
+      expires_in: number
     }
+    expect(body.ready).toBe(true)
     expect(body.email).toBe('user@example.com')
-    expect(body.expires_in).toBe(24 * 60 * 60)
+    expect(body.expires_in).toBe(30 * 60)
+    // The token must NOT appear in the response body.
+    expect(JSON.stringify(body)).not.toContain('access_token')
+
+    const cookies = parseSetCookies(res.__header('set-cookie'))
+    const session = cookies.get('ark_checkout')
+    expect(session).toBeDefined()
+    expect(session!.attrs['httponly']).toBe('')
+    expect(session!.attrs['path']).toBe('/')
+    expect(session!.attrs['samesite']?.toLowerCase()).toBe('lax')
+    expect(Number(session!.attrs['max-age'])).toBe(30 * 60)
+
+    const hint = cookies.get('ark_checkout_present')
+    expect(hint).toBeDefined()
+    expect(hint!.value).toBe('1')
+    // The hint cookie is JS-readable, so it must NOT have HttpOnly.
+    expect(hint!.attrs['httponly']).toBeUndefined()
 
     const { payload } = await jwtVerify(
-      body.access_token,
+      session!.value,
       new TextEncoder().encode(CHECKOUT_SECRET),
       { issuer: 'ark-insider', audience: 'checkout-session' },
     )
     expect(payload.email).toBe('user@example.com')
     expect(typeof payload.iat).toBe('number')
     expect(typeof payload.exp).toBe('number')
-    // exp should be ~24h after iat
-    expect((payload.exp as number) - (payload.iat as number)).toBe(24 * 60 * 60)
+    expect((payload.exp as number) - (payload.iat as number)).toBe(30 * 60)
   })
 
   test('email param is normalized to lowercase', async () => {
@@ -528,9 +565,9 @@ describe('POST /api/auth/checkout-session — rate limit', () => {
 // Token acceptance by other endpoints (verifies getSessionEmail dual-token)
 // ===========================================================================
 
-describe('Checkout token works with other authenticated endpoints', () => {
-  test('GET /api/me accepts a checkout token issued by /api/auth/checkout-session', async () => {
-    // 1) Mint a token via the endpoint.
+describe('Checkout cookie works with other authenticated endpoints', () => {
+  test('GET /api/me accepts the httpOnly cookie set by /api/auth/checkout-session', async () => {
+    // 1) Mint a session via the endpoint and extract the cookie.
     nextSubscription = activeSub()
     const checkout = getHandler(PATH)
     const mintReq = makeReq({
@@ -539,10 +576,12 @@ describe('Checkout token works with other authenticated endpoints', () => {
     const mintRes = makeRes()
     await runHandler(checkout, mintReq, mintRes)
     expect(mintRes.statusCode).toBe(200)
-    const { access_token } = mintRes.__json() as { access_token: string }
+    const cookies = parseSetCookies(mintRes.__header('set-cookie'))
+    const sessionToken = cookies.get('ark_checkout')?.value
+    expect(sessionToken).toBeDefined()
 
-    // 2) Call /api/me with that token as a Bearer. SC user lookup + feeds
-    //    list are stubbed so we get a clean 200.
+    // 2) Call /api/me with that token in a Cookie header. SC user lookup +
+    //    feeds list are stubbed so we get a clean 200.
     fetchImpl = async (url) => {
       if (url.endsWith('/users/search')) {
         return new Response(
@@ -560,7 +599,7 @@ describe('Checkout token works with other authenticated endpoints', () => {
     const meReq = makeReq({
       method: 'GET',
       url: ME_PATH,
-      headers: { authorization: `Bearer ${access_token}` },
+      headers: { cookie: `ark_checkout=${sessionToken}` },
     })
     const meRes = makeRes()
     await runHandler(meHandler, meReq, meRes)
@@ -569,7 +608,7 @@ describe('Checkout token works with other authenticated endpoints', () => {
     expect(body.email).toBe('user@example.com')
   })
 
-  test('GET /api/me rejects a token signed with the wrong secret', async () => {
+  test('GET /api/me rejects a cookie signed with the wrong secret', async () => {
     const { SignJWT } = await import('jose')
     const forged = await new SignJWT({ email: 'user@example.com' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -583,14 +622,14 @@ describe('Checkout token works with other authenticated endpoints', () => {
     const meReq = makeReq({
       method: 'GET',
       url: ME_PATH,
-      headers: { authorization: `Bearer ${forged}` },
+      headers: { cookie: `ark_checkout=${forged}` },
     })
     const meRes = makeRes()
     await runHandler(meHandler, meReq, meRes)
     expect(meRes.statusCode).toBe(401)
   })
 
-  test('GET /api/me rejects a token with the wrong audience', async () => {
+  test('GET /api/me rejects a cookie with the wrong audience', async () => {
     const { SignJWT } = await import('jose')
     const wrongAud = await new SignJWT({ email: 'user@example.com' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -604,32 +643,67 @@ describe('Checkout token works with other authenticated endpoints', () => {
     const meReq = makeReq({
       method: 'GET',
       url: ME_PATH,
-      headers: { authorization: `Bearer ${wrongAud}` },
+      headers: { cookie: `ark_checkout=${wrongAud}` },
     })
     const meRes = makeRes()
     await runHandler(meHandler, meReq, meRes)
     expect(meRes.statusCode).toBe(401)
   })
 
-  test('GET /api/me rejects an expired token', async () => {
+  test('GET /api/me rejects an expired cookie', async () => {
     const { SignJWT } = await import('jose')
     const expired = await new SignJWT({ email: 'user@example.com' })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt(Math.floor(Date.now() / 1000) - 7200)
       .setIssuer('ark-insider')
       .setAudience('checkout-session')
-      .setExpirationTime(Math.floor(Date.now() / 1000) - 3600) // 1h in the past
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 3600)
       .sign(new TextEncoder().encode(CHECKOUT_SECRET))
 
     const meHandler = getHandler(ME_PATH)
     const meReq = makeReq({
       method: 'GET',
       url: ME_PATH,
-      headers: { authorization: `Bearer ${expired}` },
+      headers: { cookie: `ark_checkout=${expired}` },
     })
     const meRes = makeRes()
     await runHandler(meHandler, meReq, meRes)
     expect(meRes.statusCode).toBe(401)
+  })
+
+  test('GET /api/me returns 401 when no Bearer and no cookie are present', async () => {
+    const meHandler = getHandler(ME_PATH)
+    const meReq = makeReq({ method: 'GET', url: ME_PATH })
+    const meRes = makeRes()
+    await runHandler(meHandler, meReq, meRes)
+    expect(meRes.statusCode).toBe(401)
+  })
+})
+
+// ===========================================================================
+// POST /api/signout
+// ===========================================================================
+
+describe('POST /api/signout — clears checkout cookies', () => {
+  test('returns 200 and emits Max-Age=0 Set-Cookie for both cookies', async () => {
+    const h = getHandler('/api/signout')
+    const req = makeReq({ method: 'POST', url: '/api/signout' })
+    const res = makeRes()
+    await runHandler(h, req, res)
+
+    expect(res.statusCode).toBe(200)
+    const cookies = parseSetCookies(res.__header('set-cookie'))
+    expect(cookies.get('ark_checkout')?.attrs['max-age']).toBe('0')
+    expect(cookies.get('ark_checkout')?.attrs['httponly']).toBe('')
+    expect(cookies.get('ark_checkout_present')?.attrs['max-age']).toBe('0')
+  })
+
+  test('405 on GET', async () => {
+    const h = getHandler('/api/signout')
+    const req = makeReq({ method: 'GET', url: '/api/signout' })
+    const res = makeRes()
+    await runHandler(h, req, res)
+    expect(res.statusCode).toBe(405)
   })
 })
 
