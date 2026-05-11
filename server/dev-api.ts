@@ -21,7 +21,7 @@ import {
   projectScEpisode,
   type ProjectedEpisode,
   type ScEpisode,
-} from './show-notes'
+} from './show-notes.js'
 
 const AUTH0_DOMAIN = 'https://auth.ark-plus.xyz'
 const AUTH0_AUDIENCE = 'https://ark-plus.xyz/api'
