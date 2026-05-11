@@ -1,50 +1,14 @@
 // ---------------------------------------------------------------------------
-// Ark Insider — dev API plugin
+// Ark Insider — API plugin
 //
-// This is the dev-server backend for the marketing site. It handles three
-// concerns: Supporting Cast (SC) magic-link auth, Stripe checkout, and the
-// SC ↔ Stripe glue via webhooks. Everything runs as Vite middleware against
-// node http, so it's fine for development; production should swap this for
-// a real server (the same shapes will port over).
+// Backend for the marketing site, run as Vite middleware in dev and as a
+// single Vercel Node Function (`api/[...slug].ts`) in production. Handles
+// Supporting Cast (SC) user/feed lookup, Stripe checkout + gifting, and the
+// SC ↔ Stripe glue via webhooks.
 //
-// AUTH MODEL — SC magic links without a token-exchange endpoint
-// =============================================================
-// Supporting Cast's API exposes `POST /users/{id}/send_login_email` (which
-// accepts a `redirect_url`) but **no endpoint to verify a token returned in
-// that redirect**. Their session lives on the SC domain, not ours, and we
-// cannot read it cross-origin. So we run our own session, anchored on the
-// email-ownership proof a magic link already provides:
-//
-//   1. POST /api/sc/signin { email }
-//        - Rate-limited per IP and per email.
-//        - Looks up the SC user via /users/search.
-//        - Mints an HMAC-signed nonce (NoncePayload, 15-minute TTL).
-//        - Asks SC to email a login link with redirect_url pointing at our
-//          /api/sc/callback?t=<nonce>.
-//        - Always returns 200, so attackers can't enumerate memberships.
-//
-//   2. User clicks the link → SC authenticates them on the SC domain →
-//      SC redirects to /api/sc/callback?t=<nonce>.
-//
-//   3. GET /api/sc/callback
-//        - Verifies the HMAC + expiry.
-//        - Marks the nonce consumed (single-use replay protection).
-//        - Re-resolves the SC user (so a deleted-then-recreated user
-//          doesn't accidentally inherit a stale id).
-//        - Sets an httpOnly `insider_session` cookie containing
-//          { email, sc_user_id, exp } and 302s to /#setup.
-//
-//   4. GET /api/me
-//        - Reads the session cookie and calls SC /users/{id}/feeds for the
-//          per-user feed URL and per-app deep links.
-//        - Clears the cookie if SC says the user is gone (404).
-//
-//   5. POST /api/signout clears the cookie.
-//
-// The single security claim: the only way to land on /api/sc/callback with
-// a valid (nonce, sig) pair is to have requested the email AND clicked the
-// link in the matching inbox. Forging the redirect requires the session
-// secret (server-side only). Replays are blocked by the consumed-nonce set.
+// Auth: long-term sessions are Auth0 Bearer tokens; new subscribers get a
+// short-lived HS256 `ark_checkout` JWT cookie so they can complete /setup
+// before clicking the password-reset email. See `getSessionEmail`.
 // ---------------------------------------------------------------------------
 
 import type { Plugin, Connect } from 'vite'
