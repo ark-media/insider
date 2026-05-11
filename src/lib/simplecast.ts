@@ -57,3 +57,14 @@ export function simplecastEmbedSrc(showSlug: ShowSlug, slug: string): string {
 export function simplecastPlaylistSrc(podcastId: string): string {
   return `https://player.simplecast.com/${encodeURIComponent(podcastId)}?dark=true`;
 }
+
+/**
+ * Resolve a show's Simplecast podcast UUID from build-time env vars.
+ * Mapping: `call-me-back` → `VITE_SIMPLECAST_PODCAST_ID_CALL_ME_BACK`.
+ * Returns undefined (no player rendered) when the var is unset.
+ */
+export function simplecastPodcastIdForShow(showSlug: ShowSlug): string | undefined {
+  const key = `VITE_SIMPLECAST_PODCAST_ID_${showSlug.toUpperCase().replace(/-/g, "_")}`;
+  const value = (import.meta.env as Record<string, string | undefined>)[key];
+  return value && value.trim() ? value.trim() : undefined;
+}

@@ -13,7 +13,11 @@ import {
   type Episode,
 } from "../data/episodes";
 import { hostsForShow } from "../data/hosts";
-import { listEpisodes, simplecastPlaylistSrc } from "../lib/simplecast";
+import {
+  listEpisodes,
+  simplecastPlaylistSrc,
+  simplecastPodcastIdForShow,
+} from "../lib/simplecast";
 import { subscribeEmail } from "../lib/beehiiv";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
@@ -37,6 +41,7 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
 function PublicShowPage({ show }: { show: Show }) {
   const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
+  const simplecastPodcastId = simplecastPodcastIdForShow(show.slug);
 
   useEffect(() => {
     let live = true;
@@ -110,8 +115,8 @@ function PublicShowPage({ show }: { show: Show }) {
         </div>
       </section>
 
-      {show.simplecastPodcastId ? (
-        <ShowPlayer show={show} podcastId={show.simplecastPodcastId} />
+      {simplecastPodcastId ? (
+        <ShowPlayer show={show} podcastId={simplecastPodcastId} />
       ) : null}
 
       {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
