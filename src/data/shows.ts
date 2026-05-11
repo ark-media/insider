@@ -30,6 +30,12 @@ export type Show = {
   /** Slugs of related shows (rendered in the carousel at the bottom of show pages). */
   related: ShowSlug[];
   listen: ListenLink[];
+  /**
+   * Simplecast podcast UUID for the show-level playlist embed.
+   * Find it in the Simplecast dashboard under Distribution → Embeds → All Episodes.
+   * When set, the public show page renders the Simplecast playlist player.
+   */
+  simplecastPodcastId?: string;
 };
 
 export const shows: Show[] = [
@@ -52,6 +58,7 @@ export const shows: Show[] = [
       { platform: "pocket-casts", url: "https://pca.st/podcast/9d6a14e0-bbcb-0137-8eea-0acc26574db2" },
       { platform: "youtube", url: "https://www.youtube.com/@CallMeBackPodcast" },
     ],
+    simplecastPodcastId: "REPLACE_WITH_CALL_ME_BACK_PODCAST_UUID",
   },
   {
     slug: "inside-call-me-back",
@@ -84,6 +91,7 @@ export const shows: Show[] = [
       { platform: "spotify", url: "https://open.spotify.com/show/4eFsQEm56jeazfH5qzdxMq" },
       { platform: "overcast", url: "https://overcast.fm/itunes1497635252" },
     ],
+    simplecastPodcastId: "REPLACE_WITH_FOR_HEAVENS_SAKE_PODCAST_UUID",
   },
   {
     slug: "whats-your-number",
@@ -101,6 +109,7 @@ export const shows: Show[] = [
       { platform: "apple", url: "https://podcasts.apple.com/" },
       { platform: "spotify", url: "https://open.spotify.com/" },
     ],
+    simplecastPodcastId: "REPLACE_WITH_WHATS_YOUR_NUMBER_PODCAST_UUID",
   },
   {
     slug: "ark-news-daily",
@@ -118,6 +127,7 @@ export const shows: Show[] = [
       { platform: "apple", url: "https://podcasts.apple.com/" },
       { platform: "spotify", url: "https://open.spotify.com/" },
     ],
+    simplecastPodcastId: "REPLACE_WITH_ARK_NEWS_DAILY_PODCAST_UUID",
   },
 ];
 

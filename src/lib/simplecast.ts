@@ -48,3 +48,12 @@ export function simplecastEmbedSrc(showSlug: ShowSlug, slug: string): string {
     showSlug,
   )}/${encodeURIComponent(slug)}`;
 }
+
+/**
+ * Simplecast show-level playlist embed — the player + episode list iframe
+ * exposed under Distribution → Embeds → All Episodes in the Simplecast
+ * dashboard. Renders dark to match the rest of the site.
+ */
+export function simplecastPlaylistSrc(podcastId: string): string {
+  return `https://player.simplecast.com/${encodeURIComponent(podcastId)}?dark=true`;
+}

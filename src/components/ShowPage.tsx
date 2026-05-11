@@ -13,7 +13,7 @@ import {
   type Episode,
 } from "../data/episodes";
 import { hostsForShow } from "../data/hosts";
-import { listEpisodes } from "../lib/simplecast";
+import { listEpisodes, simplecastPlaylistSrc } from "../lib/simplecast";
 import { subscribeEmail } from "../lib/beehiiv";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
@@ -109,6 +109,10 @@ function PublicShowPage({ show }: { show: Show }) {
           ) : null}
         </div>
       </section>
+
+      {show.simplecastPodcastId ? (
+        <ShowPlayer show={show} podcastId={show.simplecastPodcastId} />
+      ) : null}
 
       {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
 
@@ -443,6 +447,33 @@ function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
         View episode →
       </div>
     </Link>
+  );
+}
+
+function ShowPlayer({ show, podcastId }: { show: Show; podcastId: string }) {
+  return (
+    <section className="border-t border-white/10 bg-navy-900">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          Listen here
+        </div>
+        <h2 className="mt-4 max-w-2xl font-display text-[clamp(1.4rem,2.6vw,2rem)] leading-[1.15] text-white">
+          {show.cadence}.
+        </h2>
+        <div className="mt-8 border border-white/12 bg-navy-800/40">
+          <iframe
+            title={`${show.title} — episodes`}
+            src={simplecastPlaylistSrc(podcastId)}
+            height={780}
+            width="100%"
+            scrolling="no"
+            allow="clipboard-write"
+            loading="lazy"
+            className="block w-full border-0"
+          />
+        </div>
+      </div>
+    </section>
   );
 }
 
