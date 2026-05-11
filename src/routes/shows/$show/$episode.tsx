@@ -7,6 +7,7 @@ import {
 } from "../../../data/episodes";
 import { getShow, type ShowSlug } from "../../../data/shows";
 import { getEpisode, simplecastEpisodeSrc } from "../../../lib/simplecast";
+import { renderShowNotes } from "../../../lib/show-notes-renderer";
 import { PageShell } from "../../../components/PageShell";
 
 export const Route = createFileRoute("/shows/$show/$episode")({
@@ -104,13 +105,27 @@ function EpisodePage() {
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Show notes
           </div>
-          <p className="mt-6 max-w-2xl text-[14px] leading-[1.7] text-white/55">
-            Full show notes and transcript will appear here once the episode is
-            ingested. For now: see the episode description above.
-          </p>
+          <ShowNotes html={episode.showNotesHtml} />
         </div>
       </section>
     </main>
+  );
+}
+
+function ShowNotes({ html }: { html: string | undefined }) {
+  if (!html || !html.trim()) {
+    return (
+      <p className="mt-6 max-w-2xl text-[14px] leading-[1.7] text-white/55">
+        Full show notes and transcript will appear here once the episode is
+        ingested. For now: see the episode description above.
+      </p>
+    );
+  }
+  // Trust boundary: `html` is pre-sanitized by sanitizeShowNotes on the server.
+  return (
+    <div className="mt-6 max-w-2xl text-[14px] leading-[1.7] text-white/75 [&_p]:mt-4 [&_p:first-child]:mt-0 [&_ul]:mt-4 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:mt-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:mt-1 [&_h2]:mt-8 [&_h2]:font-display [&_h2]:text-[18px] [&_h2]:text-white [&_h3]:mt-6 [&_h3]:font-display [&_h3]:text-[15px] [&_h3]:text-white [&_blockquote]:mt-4 [&_blockquote]:border-l-2 [&_blockquote]:border-cyan/40 [&_blockquote]:pl-4 [&_blockquote]:text-white/65 [&_strong]:text-white [&_b]:text-white">
+      {renderShowNotes(html)}
+    </div>
   );
 }
 

@@ -16,6 +16,11 @@ export type Episode = {
    * When present, the episode page renders the real Simplecast player.
    */
   id?: string;
+  /**
+   * Sanitized HTML show notes from Simplecast. Allowlisted on the
+   * server before it reaches the client. Absent on mock data.
+   */
+  showNotesHtml?: string;
 };
 
 /**

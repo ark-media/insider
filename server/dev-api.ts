@@ -16,6 +16,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import crypto from 'node:crypto'
 import Stripe from 'stripe'
 import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose'
+import {
+  isPublishedEpisode,
+  projectScEpisode,
+  type ProjectedEpisode,
+  type ScEpisode,
+} from './show-notes'
 
 const AUTH0_DOMAIN = 'https://auth.ark-plus.xyz'
 const AUTH0_AUDIENCE = 'https://ark-plus.xyz/api'
@@ -376,28 +382,7 @@ async function findOrCreateAuth0User(
 // resets on each serverless cold start, which is fine — Simplecast
 // episodes update on the order of days, not seconds.
 // ---------------------------------------------------------------------------
-type ProjectedEpisode = {
-  showSlug: string
-  slug: string
-  title: string
-  publishedAt: string
-  durationMinutes: number
-  description: string
-  id: string
-}
-
-type ScEpisodesResponse = {
-  collection?: Array<{
-    id?: string
-    slug?: string
-    title?: string
-    description?: string
-    duration?: number
-    published_at?: string
-    status?: string
-    is_published?: boolean
-  }>
-}
+type ScEpisodesResponse = { collection?: ScEpisode[] }
 
 const SIMPLECAST_CACHE_TTL_MS = 5 * 60 * 1000
 const simplecastCache = new Map<string, { at: number; episodes: ProjectedEpisode[] }>()
@@ -409,19 +394,6 @@ function resolveSimplecastPodcastId(env: Env, showSlug: string): string | undefi
   const key = `VITE_SIMPLECAST_PODCAST_ID_${showSlug.toUpperCase().replace(/-/g, '_')}`
   const value = env[key]
   return value && value.trim() ? value.trim() : undefined
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 async function fetchSimplecastEpisodes(
@@ -447,16 +419,8 @@ async function fetchSimplecastEpisodes(
   const body = (await res.json()) as ScEpisodesResponse
   const episodes: ProjectedEpisode[] = (body.collection ?? [])
     // Drafts and scheduled episodes carry no published_at — drop them.
-    .filter((e) => e.is_published !== false && Boolean(e.published_at) && Boolean(e.id))
-    .map((e) => ({
-      showSlug,
-      id: e.id ?? '',
-      slug: e.slug ?? e.id ?? '',
-      title: e.title ?? '',
-      publishedAt: (e.published_at ?? '').slice(0, 10),
-      durationMinutes: Math.max(0, Math.round((e.duration ?? 0) / 60)),
-      description: stripHtml(e.description ?? ''),
-    }))
+    .filter(isPublishedEpisode)
+    .map((e) => projectScEpisode(e, showSlug))
     .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
 
   simplecastCache.set(podcastId, { at: Date.now(), episodes })
