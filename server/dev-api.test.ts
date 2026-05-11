@@ -4,15 +4,21 @@
 // registered handlers, then invoke the SMS handler directly with a fake
 // IncomingMessage (a Readable over a JSON body) and a minimal ServerResponse.
 // `fetch` is monkey-patched per test so the SC calls never leave the process.
+//
+// Auth: the handler accepts either an Auth0 Bearer (RS256, JWKS-validated —
+// impractical to mint here) or our checkout-session cookie (HS256 with a
+// secret we control). All tests use the cookie path. The SC `findUserByEmail`
+// lookup is intercepted globally so each test's email → user id mapping is
+// deterministic without per-test setup.
 
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
-import crypto from 'node:crypto'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { SignJWT } from 'jose'
 import { devApiPlugin } from './dev-api'
 
-const SESSION_SECRET = 'test-secret-0123456789abcdef0123456789abcdef'
-const SESSION_COOKIE = 'insider_session'
+const CHECKOUT_SECRET = 'test-checkout-secret-0123456789abcdef0123456789abcdef'
+const CHECKOUT_COOKIE = 'ark_checkout'
 const SMS_PATH = '/api/sc/send-setup-sms'
 
 type Middleware = (
@@ -21,28 +27,28 @@ type Middleware = (
   next: (err?: unknown) => void,
 ) => void
 
-// --- Token helpers (mirror the plugin's HMAC format) -----------------------
-function b64url(buf: Buffer): string {
-  return buf
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
+// --- Token helpers ---------------------------------------------------------
+async function signCheckoutJwt(
+  email: string,
+  opts: { secret?: string; expSec?: number } = {},
+): Promise<string> {
+  const secret = opts.secret ?? CHECKOUT_SECRET
+  return new SignJWT({ email })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setIssuer('ark-insider')
+    .setAudience('checkout-session')
+    .setExpirationTime(opts.expSec ?? '1h')
+    .sign(new TextEncoder().encode(secret))
 }
 
-function signToken<T>(secret: string, payload: T): string {
-  const body = b64url(Buffer.from(JSON.stringify(payload), 'utf8'))
-  const mac = crypto.createHmac('sha256', secret).update(body).digest()
-  return `${body}.${b64url(mac)}`
-}
-
-function sessionCookie(scUserId = 42): string {
-  const token = signToken(SESSION_SECRET, {
-    email: 'user@example.com',
-    sc_user_id: scUserId,
-    exp: Math.floor(Date.now() / 1000) + 3600,
-  })
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}`
+// The SC user id is derived from the email pattern user${id}@example.com —
+// see the global /users/search interceptor below. Encoding it this way lets a
+// single helper drive both auth (the cookie carries the email) and the SC
+// lookup result without per-test mocking.
+async function sessionCookie(scUserId = 42): Promise<string> {
+  const jwt = await signCheckoutJwt(`user${scUserId}@example.com`)
+  return `${CHECKOUT_COOKIE}=${jwt}`
 }
 
 // --- Plugin harness --------------------------------------------------------
@@ -56,7 +62,7 @@ function buildSmsHandler(): Middleware {
     },
   }
   const plugin = devApiPlugin({
-    SESSION_SECRET,
+    CHECKOUT_SESSION_SECRET: CHECKOUT_SECRET,
     SC_NETWORK_ID: 'test-net',
     SC_API_KEY: 'test-key',
     APP_BASE_URL: 'http://localhost:5173',
@@ -165,6 +171,20 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestIni
     }
   }
   fetchCalls.push({ url, method: init?.method ?? 'GET', body: parsed })
+  // SC user lookup is universal across these tests — the email pattern
+  // user${id}@example.com encodes the desired sc_user_id, so per-test
+  // fetchImpls don't have to handle it.
+  if (url.endsWith('/users/search') && init?.method === 'POST') {
+    const email =
+      parsed && typeof parsed === 'object' && parsed !== null
+        ? ((parsed as { email?: string }).email ?? '')
+        : ''
+    const m = /^user(\d+)@example\.com$/.exec(email)
+    const id = m ? Number(m[1]) : 42
+    return new Response(JSON.stringify({ users: [{ id, email }] }), {
+      status: 200,
+    })
+  }
   return fetchImpl(url, init)
 }) as typeof fetch
 
@@ -196,7 +216,7 @@ describe('POST /api/sc/send-setup-sms — auth gate', () => {
     const handler = buildSmsHandler()
     const req = makeReq({
       body: { phone: '5551234567', feed_id: 1 },
-      cookie: `${SESSION_COOKIE}=not-a-real-token`,
+      cookie: `${CHECKOUT_COOKIE}=not-a-real-token`,
     })
     const res = makeRes()
     await runHandler(handler, req, res)
@@ -206,14 +226,12 @@ describe('POST /api/sc/send-setup-sms — auth gate', () => {
 
   test('401 when session is signed with a different secret', async () => {
     const handler = buildSmsHandler()
-    const forged = signToken('wrong-secret', {
-      email: 'user@example.com',
-      sc_user_id: 42,
-      exp: Math.floor(Date.now() / 1000) + 3600,
+    const forged = await signCheckoutJwt('user@example.com', {
+      secret: 'wrong-secret',
     })
     const req = makeReq({
       body: { phone: '5551234567', feed_id: 1 },
-      cookie: `${SESSION_COOKIE}=${encodeURIComponent(forged)}`,
+      cookie: `${CHECKOUT_COOKIE}=${forged}`,
     })
     const res = makeRes()
     await runHandler(handler, req, res)
@@ -222,7 +240,7 @@ describe('POST /api/sc/send-setup-sms — auth gate', () => {
 
   test('405 on non-POST', async () => {
     const handler = buildSmsHandler()
-    const req = makeReq({ method: 'GET', cookie: sessionCookie() })
+    const req = makeReq({ method: 'GET', cookie: await sessionCookie() })
     const res = makeRes()
     await runHandler(handler, req, res)
     expect(res.statusCode).toBe(405)
@@ -232,7 +250,7 @@ describe('POST /api/sc/send-setup-sms — auth gate', () => {
 describe('POST /api/sc/send-setup-sms — rate limit', () => {
   test('allows 3 requests then 429s with retry-after header', async () => {
     const handler = buildSmsHandler()
-    const cookie = sessionCookie()
+    const cookie = await sessionCookie()
 
     for (let i = 0; i < 3; i++) {
       const req = makeReq({ body: { phone: '5551234567', feed_id: 1 }, cookie })
@@ -258,7 +276,7 @@ describe('POST /api/sc/send-setup-sms — rate limit', () => {
     for (let i = 0; i < 3; i++) {
       const req = makeReq({
         body: { phone: '5551234567', feed_id: 1 },
-        cookie: sessionCookie(1),
+        cookie: await sessionCookie(1),
       })
       const res = makeRes()
       await runHandler(handler, req, res)
@@ -267,7 +285,7 @@ describe('POST /api/sc/send-setup-sms — rate limit', () => {
 
     const req = makeReq({
       body: { phone: '5551234567', feed_id: 1 },
-      cookie: sessionCookie(2),
+      cookie: await sessionCookie(2),
     })
     const res = makeRes()
     await runHandler(handler, req, res)
@@ -284,7 +302,7 @@ describe('POST /api/sc/send-setup-sms — phone normalization', () => {
     const handler = buildSmsHandler()
     const req = makeReq({
       body: { phone, feed_id: 1 },
-      cookie: sessionCookie(Math.floor(Math.random() * 1e9)),
+      cookie: await sessionCookie(Math.floor(Math.random() * 1e9)),
     })
     const res = makeRes()
     await runHandler(handler, req, res)
@@ -363,7 +381,7 @@ describe('POST /api/sc/send-setup-sms — SC error surfacing', () => {
     }
     const req = makeReq({
       body: { phone: '+15551234567', feed_id: 1 },
-      cookie: sessionCookie(),
+      cookie: await sessionCookie(),
     })
     const res = makeRes()
     await runHandler(handler, req, res)
@@ -383,7 +401,7 @@ describe('POST /api/sc/send-setup-sms — SC error surfacing', () => {
     }
     const req = makeReq({
       body: { phone: '+15551234567', feed_id: 1 },
-      cookie: sessionCookie(),
+      cookie: await sessionCookie(),
     })
     const res = makeRes()
     await runHandler(handler, req, res)
@@ -401,7 +419,7 @@ describe('POST /api/sc/send-setup-sms — SC error surfacing', () => {
     }
     const req = makeReq({
       body: { phone: '+15551234567', feed_id: 1 },
-      cookie: sessionCookie(),
+      cookie: await sessionCookie(),
     })
     const res = makeRes()
     await runHandler(handler, req, res)
