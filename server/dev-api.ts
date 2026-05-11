@@ -19,6 +19,8 @@ import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose'
 import {
   isPublishedEpisode,
   projectScEpisode,
+  sanitizeShowNotes,
+  stripHtml,
   type ProjectedEpisode,
   type ScEpisode,
 } from './show-notes.js'
@@ -386,6 +388,42 @@ type ScEpisodesResponse = { collection?: ScEpisode[] }
 
 const SIMPLECAST_CACHE_TTL_MS = 5 * 60 * 1000
 const simplecastCache = new Map<string, { at: number; episodes: ProjectedEpisode[] }>()
+
+// Per-episode cache for the full episode fetch. The list endpoint
+// (`/podcasts/{id}/episodes`) returns slim episode summaries that omit both
+// `description` and `long_description`, so the only way to get show notes is
+// `/episodes/{id}`. Cached longer than the list — show notes change rarely.
+const SIMPLECAST_EPISODE_CACHE_TTL_MS = 30 * 60 * 1000
+type EpisodeNotes = { showNotesHtml: string; description: string }
+const simplecastEpisodeCache = new Map<string, { at: number; notes: EpisodeNotes }>()
+
+async function fetchSimplecastEpisodeNotes(
+  episodeId: string,
+  token: string,
+): Promise<EpisodeNotes> {
+  const cached = simplecastEpisodeCache.get(episodeId)
+  if (cached && Date.now() - cached.at < SIMPLECAST_EPISODE_CACHE_TTL_MS) {
+    return cached.notes
+  }
+  const url = `https://api.simplecast.com/episodes/${encodeURIComponent(episodeId)}`
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`Simplecast ${res.status}: ${await res.text()}`)
+  }
+  const body = (await res.json()) as ScEpisode
+  const rawNotes = body.long_description ?? body.description ?? ''
+  const notes: EpisodeNotes = {
+    showNotesHtml: sanitizeShowNotes(rawNotes),
+    description: stripHtml(body.description ?? ''),
+  }
+  simplecastEpisodeCache.set(episodeId, { at: Date.now(), notes })
+  return notes
+}
 
 function resolveSimplecastPodcastId(env: Env, showSlug: string): string | undefined {
   // Accept only the slug pattern we expect so a caller can't probe arbitrary
@@ -779,6 +817,39 @@ function buildApi(env: Env): Api {
             json(200, { episodes })
           } catch (err) {
             console.error('[simplecast] fetch failed:', err)
+            json(502, { error: 'simplecast_unavailable' })
+          }
+        },
+      })
+
+      // --- Simplecast single episode (show notes) --------------------------
+      // The list endpoint above omits description / long_description, so the
+      // episode page calls this with the episode id from the list response to
+      // populate the show notes. Returns just the notes + stripped description
+      // — the rest of the episode shape (title, duration, etc.) is already on
+      // the client from the list.
+      routes.push({
+        path: '/api/simplecast/episode',
+        handler: async (req, res) => {
+          const json = makeJsonRes(res)
+          if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+          const url = new URL(req.url ?? '', 'http://x')
+          const id = url.searchParams.get('id')
+          if (!id) return json(400, { error: 'missing `id`' })
+          // UUID format check — the id is interpolated into the upstream URL.
+          if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) {
+            return json(400, { error: 'invalid `id`' })
+          }
+
+          const token = env.SIMPLECAST_API_TOKEN
+          if (!token) return json(200, { showNotesHtml: '', description: '' })
+
+          try {
+            const notes = await fetchSimplecastEpisodeNotes(id, token)
+            json(200, notes)
+          } catch (err) {
+            console.error('[simplecast] episode fetch failed:', err)
             json(502, { error: 'simplecast_unavailable' })
           }
         },

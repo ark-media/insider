@@ -6,7 +6,11 @@ import {
   type Episode,
 } from "../../../data/episodes";
 import { getShow, type ShowSlug } from "../../../data/shows";
-import { getEpisode, simplecastEpisodeSrc } from "../../../lib/simplecast";
+import {
+  fetchEpisodeNotes,
+  getEpisode,
+  simplecastEpisodeSrc,
+} from "../../../lib/simplecast";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
 import { PageShell } from "../../../components/PageShell";
 
@@ -23,6 +27,9 @@ function EpisodePage() {
   const { show } = Route.useLoaderData();
   const { episode: episodeSlug } = Route.useParams();
   const [episode, setEpisode] = useState<Episode | null | "loading">("loading");
+  const [enriched, setEnriched] = useState<
+    { showNotesHtml: string; description: string } | null
+  >(null);
 
   useEffect(() => {
     let live = true;
@@ -33,6 +40,20 @@ function EpisodePage() {
       live = false;
     };
   }, [show.slug, episodeSlug]);
+
+  const episodeId =
+    typeof episode === "object" && episode ? episode.id : undefined;
+  useEffect(() => {
+    if (!episodeId) return;
+    let live = true;
+    void fetchEpisodeNotes(episodeId).then((notes) => {
+      if (!live || !notes) return;
+      setEnriched(notes);
+    });
+    return () => {
+      live = false;
+    };
+  }, [episodeId]);
 
   if (episode === "loading") {
     return (
@@ -79,7 +100,7 @@ function EpisodePage() {
             {episode.title}
           </h1>
           <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-white/75">
-            {episode.description}
+            {enriched?.description || episode.description}
           </p>
           <div className="mt-6 text-[12px] uppercase tracking-[0.18em] text-white/45">
             {formatDuration(episode.durationMinutes)}
@@ -105,7 +126,7 @@ function EpisodePage() {
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Show notes
           </div>
-          <ShowNotes html={episode.showNotesHtml} />
+          <ShowNotes html={enriched?.showNotesHtml || episode.showNotesHtml} />
         </div>
       </section>
     </main>

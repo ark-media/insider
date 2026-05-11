@@ -164,6 +164,52 @@ describe('createCatchAllHandler — dispatch via _path query param', () => {
     expect((res.__json() as { error: string }).error).toBe('unauthenticated')
   })
 
+  test('/api/simplecast/episode returns sanitized show notes for a valid UUID', async () => {
+    fetchImpl = async (url) => {
+      if (url.startsWith('https://api.simplecast.com/episodes/')) {
+        return new Response(
+          JSON.stringify({
+            id: '2d482aab-31dd-4d0f-a858-5cc0cb9c7360',
+            description: '<p>Short blurb.</p>',
+            long_description:
+              '<p>Full notes <a href="https://example.com">link</a><script>alert(1)</script></p>',
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }
+
+    const handler = buildHandler()
+    const req = makeReq({
+      url: '/api/handler?_path=simplecast/episode&id=2d482aab-31dd-4d0f-a858-5cc0cb9c7360',
+    })
+    const res = makeRes()
+    await handler(req, res)
+
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as { showNotesHtml: string; description: string }
+    expect(body.showNotesHtml).toContain('Full notes')
+    expect(body.showNotesHtml).toContain('href="https://example.com"')
+    expect(body.showNotesHtml).not.toContain('<script')
+    expect(body.description).toBe('Short blurb.')
+  })
+
+  test('/api/simplecast/episode rejects non-UUID ids without hitting Simplecast', async () => {
+    const handler = buildHandler()
+    const req = makeReq({
+      url: '/api/handler?_path=simplecast/episode&id=../../etc/passwd',
+    })
+    const res = makeRes()
+    await handler(req, res)
+
+    expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toMatch(/invalid/)
+    expect(
+      fetchCalls.some((c) => c.url.includes('simplecast.com')),
+    ).toBe(false)
+  })
+
   test('unknown _path returns the catch-all JSON 404', async () => {
     const handler = buildHandler()
     const req = makeReq({ url: '/api/handler?_path=nope/does-not-exist' })

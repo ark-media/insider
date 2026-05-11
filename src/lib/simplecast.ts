@@ -50,6 +50,35 @@ export async function getEpisode(
 }
 
 /**
+ * Fetches show notes + description for a single Simplecast episode by id.
+ * The list endpoint returns slim episode summaries (no description /
+ * long_description), so the episode page calls this with the id from the
+ * list response to fill in the show notes section. Returns null on failure
+ * — the page falls back to whatever the list / mock supplied.
+ */
+export async function fetchEpisodeNotes(
+  episodeId: string,
+): Promise<{ showNotesHtml: string; description: string } | null> {
+  try {
+    const res = await fetch(
+      `/api/simplecast/episode?id=${encodeURIComponent(episodeId)}`,
+      { credentials: "same-origin" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      showNotesHtml?: string;
+      description?: string;
+    };
+    return {
+      showNotesHtml: body.showNotesHtml ?? "",
+      description: body.description ?? "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Per-episode Simplecast player. Takes the Simplecast episode UUID
  * (Episode.id from the API). Dark theme to match the rest of the site.
  */
