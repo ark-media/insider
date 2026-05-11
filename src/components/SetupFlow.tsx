@@ -214,11 +214,8 @@ export function SetupFlow({ me }: { me: Me }) {
 
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   useEffect(() => {
+    if (!qrTarget) return;
     let cancelled = false;
-    if (!qrTarget) {
-      setQrDataUrl("");
-      return;
-    }
     QRCode.toDataURL(qrTarget, {
       width: 512,
       margin: 1,
@@ -479,7 +476,7 @@ export function SetupFlow({ me }: { me: Me }) {
                 </button>
               </div>
 
-              {device === "computer" && qrDataUrl ? (
+              {device === "computer" && qrTarget && qrDataUrl ? (
                 <QrHandoff
                   appName={selectedApp.name}
                   dataUrl={qrDataUrl}

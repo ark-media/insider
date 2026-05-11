@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
   Elements,
@@ -85,18 +85,28 @@ export function GiftCheckoutModal({
   const inputKey = input
     ? `${input.giverEmail}|${input.recipientEmail}|${input.term}`
     : null;
-  if (open && input && inputKey && startedFor.current !== inputKey) {
+  useEffect(() => {
+    if (!open || !input || !inputKey) return;
+    if (startedFor.current === inputKey) return;
     startedFor.current = inputKey;
+    // Intentional: re-opening with a different gift must reset the prior
+    // success/error state back to "creating" before we kick off the new
+    // PaymentIntent. Setting this in a callback would flash the stale state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStep({ kind: "creating" });
+    let cancelled = false;
     (async () => {
       if (!publishableKey) {
-        setStep({
-          kind: "error",
-          message: "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-        });
+        if (!cancelled) {
+          setStep({
+            kind: "error",
+            message: "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+          });
+        }
         return;
       }
       const result = await createGiftCheckout(input);
+      if (cancelled) return;
       if (!result.ok) {
         setStep({ kind: "error", message: result.error });
         return;
@@ -108,7 +118,10 @@ export function GiftCheckoutModal({
         amountCents: result.data.amount_cents,
       });
     })();
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [open, input, inputKey]);
 
   const stripePromiseValue = getStripe();
 

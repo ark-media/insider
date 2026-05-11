@@ -41,7 +41,10 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     // The post-checkout session lives in an httpOnly cookie that JS can't
     // read, so we rely on the sibling "present" cookie as a hint that
     // /api/me will succeed even though Auth0 hasn't authenticated the user.
+    // `refresh` is async and only setStates after `await fetchMe()`, so the
+    // synchronous-setState rule is a false positive here.
     if (hasCheckoutCookie()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void refresh();
       return;
     }
