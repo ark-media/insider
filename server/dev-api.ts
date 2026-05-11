@@ -326,7 +326,7 @@ async function getAuth0ManagementToken(env: Env): Promise<string | null> {
     }),
   })
   if (!res.ok) {
-     
+
     console.error('[auth0] mgmt token failed:', res.status, await res.text())
     return null
   }
@@ -380,7 +380,7 @@ async function findOrCreateAuth0User(
     }),
   })
   if (!createRes.ok) {
-     
+
     console.error('[auth0] create user failed:', createRes.status, await createRes.text())
     return null
   }
@@ -396,7 +396,7 @@ async function findOrCreateAuth0User(
       connection: 'Username-Password-Authentication',
     }),
   }).catch((err: unknown) => {
-     
+
     console.error('[auth0] change_password email failed:', err)
   })
 
@@ -633,7 +633,7 @@ function buildApi(env: Env): Api {
     try {
       auth0UserId = await findOrCreateAuth0User(recipientEmail, recipientName, env)
     } catch (err) {
-       
+
       console.error('[auth0] findOrCreateAuth0User (gift) failed:', err)
     }
 
@@ -650,7 +650,7 @@ function buildApi(env: Env): Api {
     try {
       await sc.call('POST', `/users/${recipient.id}/send_welcome_email`, {})
     } catch (err) {
-       
+
       console.error('[dev-api] gift send_welcome_email failed:', err)
     }
   }
@@ -696,7 +696,7 @@ function buildApi(env: Env): Api {
     try {
       auth0UserId = await findOrCreateAuth0User(email, activeCustomer.name ?? undefined, env)
     } catch (err) {
-       
+
       console.error('[auth0] findOrCreateAuth0User failed:', err)
     }
 
@@ -854,7 +854,7 @@ function buildApi(env: Env): Api {
             if (e.status === 429) {
               return json(429, { error: 'SMS rate limit reached. Try again in a moment.' })
             }
-             
+
             console.error('[dev-api] send_setup_sms failed:', err)
             json(e.status ?? 502, { error: 'Could not send SMS. Please try again.' })
           }
@@ -1209,7 +1209,7 @@ function buildApi(env: Env): Api {
           try {
             await activateScSubscriptionForStripeSub(sub)
           } catch (err) {
-             
+
             console.error('[auth/checkout-session] provision failed:', err)
             return json(502, {
               error: 'Could not finish setting up your account. Please try again.',
@@ -1288,7 +1288,7 @@ function buildApi(env: Env): Api {
                   try {
                     await sc.call('DELETE', `/subscriptions/${scSubId}`)
                   } catch (err) {
-                     
+
                     console.error('[dev-api] SC cancel failed:', err)
                   }
                 }
@@ -1302,7 +1302,7 @@ function buildApi(env: Env): Api {
                 break
               }
               case 'invoice.payment_failed': {
-                 
+
                 console.warn(
                   '[stripe] invoice.payment_failed',
                   (event.data.object as Stripe.Invoice).id,
@@ -1314,7 +1314,7 @@ function buildApi(env: Env): Api {
             }
             json(200, { received: true })
           } catch (err) {
-             
+
             console.error('[dev-api] webhook handler error:', err)
             if (err && typeof err === 'object' && 'data' in err) {
               console.error('[dev-api] webhook error data:', JSON.stringify((err as { data: unknown }).data, null, 2))
@@ -1399,7 +1399,7 @@ export function devApiPlugin(env: Env): Plugin {
     (handler: Handler) =>
     (req: IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
       handler(req, res).catch((err: unknown) => {
-         
+
         console.error('[dev-api]', err)
         if (err && typeof err === 'object' && 'data' in err) {
           console.error(
@@ -1479,7 +1479,7 @@ export function createRouteHandler(env: Env, path: string) {
     try {
       await routeHandler(req, res)
     } catch (err) {
-       
+
       console.error('[api]', err)
       if (err && typeof err === 'object' && 'data' in err) {
         console.error(
