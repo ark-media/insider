@@ -13,11 +13,7 @@ import {
   type Episode,
 } from "../data/episodes";
 import { hostsForShow } from "../data/hosts";
-import {
-  listEpisodes,
-  simplecastPlaylistSrc,
-  simplecastPodcastIdForShow,
-} from "../lib/simplecast";
+import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
 import { subscribeEmail } from "../lib/beehiiv";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
@@ -41,7 +37,6 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
 function PublicShowPage({ show }: { show: Show }) {
   const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
-  const simplecastPodcastId = simplecastPodcastIdForShow(show.slug);
 
   useEffect(() => {
     let live = true;
@@ -52,6 +47,7 @@ function PublicShowPage({ show }: { show: Show }) {
   }, [show.slug]);
 
   const latest = episodes?.slice(0, 3) ?? [];
+  const featuredEpisode = episodes?.find((ep) => Boolean(ep.id)) ?? null;
 
   return (
     <main className="relative">
@@ -115,8 +111,8 @@ function PublicShowPage({ show }: { show: Show }) {
         </div>
       </section>
 
-      {simplecastPodcastId ? (
-        <ShowPlayer show={show} podcastId={simplecastPodcastId} />
+      {featuredEpisode ? (
+        <ShowPlayer show={show} episode={featuredEpisode} />
       ) : null}
 
       {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
@@ -455,7 +451,7 @@ function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
   );
 }
 
-function ShowPlayer({ show, podcastId }: { show: Show; podcastId: string }) {
+function ShowPlayer({ show, episode }: { show: Show; episode: Episode }) {
   return (
     <section className="border-t border-white/10 bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
@@ -467,9 +463,9 @@ function ShowPlayer({ show, podcastId }: { show: Show; podcastId: string }) {
         </h2>
         <div className="mt-8 border border-white/12 bg-navy-800/40">
           <iframe
-            title={`${show.title} — episodes`}
-            src={simplecastPlaylistSrc(podcastId)}
-            height={780}
+            title={`${episode.title} — player`}
+            src={simplecastEpisodeSrc(episode.id!)}
+            height={200}
             width="100%"
             scrolling="no"
             allow="clipboard-write"

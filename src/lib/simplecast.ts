@@ -56,23 +56,3 @@ export async function getEpisode(
 export function simplecastEpisodeSrc(episodeId: string): string {
   return `https://player.simplecast.com/${encodeURIComponent(episodeId)}?dark=true`;
 }
-
-/**
- * Simplecast show-level playlist embed — the player + episode list iframe
- * exposed under Distribution → Embeds → All Episodes in the Simplecast
- * dashboard. Renders dark to match the rest of the site.
- */
-export function simplecastPlaylistSrc(podcastId: string): string {
-  return `https://player.simplecast.com/${encodeURIComponent(podcastId)}?dark=true`;
-}
-
-/**
- * Resolve a show's Simplecast podcast UUID from build-time env vars.
- * Mapping: `call-me-back` → `VITE_SIMPLECAST_PODCAST_ID_CALL_ME_BACK`.
- * Returns undefined (no player rendered) when the var is unset.
- */
-export function simplecastPodcastIdForShow(showSlug: ShowSlug): string | undefined {
-  const key = `VITE_SIMPLECAST_PODCAST_ID_${showSlug.toUpperCase().replace(/-/g, "_")}`;
-  const value = (import.meta.env as Record<string, string | undefined>)[key];
-  return value && value.trim() ? value.trim() : undefined;
-}
