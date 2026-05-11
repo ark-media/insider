@@ -1528,8 +1528,13 @@ export function devApiPlugin(env: Env): Plugin {
 // Catch-all handler factory — for Vercel Node Functions.
 //
 // Vercel's Hobby plan caps Serverless Functions at 12 per deployment, so
-// instead of one file per route we expose a single `api/[...slug].ts` that
-// dispatches to the matching registered handler by request pathname.
+// instead of one file per route we expose a single `api/handler.ts` and use a
+// vercel.json rewrite (`/api/(.*)` → `/api/handler?_path=$1`) to route every
+// request through it. The original path arrives via the `_path` query param.
+//
+// Why the rewrite: Vercel's `[...slug]` filename pattern is a Next.js
+// convention. In a plain Vite project it gets interpreted as a single-segment
+// dynamic route, so `/api/foo` matches but `/api/foo/bar` returns NOT_FOUND.
 //
 // Init is guarded so a missing or malformed env var (e.g. a Stripe key that
 // rejects at construction) surfaces as a readable JSON 500 instead of
@@ -1566,7 +1571,13 @@ export function createCatchAllHandler(env: Env) {
       return
     }
 
-    const pathname = new URL(req.url ?? '', 'http://x').pathname
+    // vercel.json rewrites `/api/*` to `/api/handler?_path=*`, so the original
+    // path arrives in the `_path` query param. Fall back to the URL pathname
+    // for non-Vercel callers (the dev server, tests) where the handler is
+    // mounted directly at each route.
+    const url = new URL(req.url ?? '', 'http://x')
+    const slug = url.searchParams.get('_path')
+    const pathname = slug !== null ? `/api/${slug}` : url.pathname
     const handler = routesByPath.get(pathname)
     if (!handler) {
       res.statusCode = 404

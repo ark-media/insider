@@ -1,10 +1,11 @@
 {
   "functions": {
-    "api/**/*.ts": {
+    "api/handler.ts": {
       "includeFiles": "server/**"
     }
   },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/handler?_path=$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
