@@ -1561,25 +1561,23 @@ export function devApiPlugin(env: Env): Plugin {
 }
 
 // ---------------------------------------------------------------------------
-// Per-route handler factory — for non-Vite deployments (Vercel Node Functions).
-// Each file under /api bundles as its own function and calls this with the
-// route path it serves. The factory wraps the matching handler with the Clerk
-// preview gate, skipping it for paths in `clerkExemptPaths` (Stripe webhook,
-// SC magic-link callback) that are hit from outside with no Clerk cookie.
+// Catch-all handler factory — for Vercel Node Functions.
 //
-// Init is guarded so a missing or malformed env var (e.g. a Clerk key that
+// Vercel's Hobby plan caps Serverless Functions at 12 per deployment, so
+// instead of one file per route we expose a single `api/[...slug].ts` that
+// dispatches to the matching registered handler by request pathname.
+//
+// Init is guarded so a missing or malformed env var (e.g. a Stripe key that
 // rejects at construction) surfaces as a readable JSON 500 instead of
 // Vercel's opaque FUNCTION_INVOCATION_FAILED.
 // ---------------------------------------------------------------------------
-export function createRouteHandler(env: Env, path: string) {
-  let routeHandler: Handler | null = null
+export function createCatchAllHandler(env: Env) {
+  let routesByPath: Map<string, Handler> | null = null
   let initError: unknown = null
 
   try {
     const api = buildApi(env)
-    const route = api.routes.find((r) => r.path === path)
-    if (!route) throw new Error(`No route registered for ${path}`)
-    routeHandler = route.handler
+    routesByPath = new Map(api.routes.map((r) => [r.path, r.handler]))
   } catch (err) {
     initError = err
   }
@@ -1588,7 +1586,7 @@ export function createRouteHandler(env: Env, path: string) {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
-    if (initError || !routeHandler) {
+    if (initError || !routesByPath) {
       res.statusCode = 500
       res.setHeader('content-type', 'application/json')
       res.end(
@@ -1604,8 +1602,17 @@ export function createRouteHandler(env: Env, path: string) {
       return
     }
 
+    const pathname = new URL(req.url ?? '', 'http://x').pathname
+    const handler = routesByPath.get(pathname)
+    if (!handler) {
+      res.statusCode = 404
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ error: 'not_found', path: pathname }))
+      return
+    }
+
     try {
-      await routeHandler(req, res)
+      await handler(req, res)
     } catch (err) {
 
       console.error('[api]', err)
