@@ -6,7 +6,7 @@ import {
   type Episode,
 } from "../../../data/episodes";
 import { getShow, type ShowSlug } from "../../../data/shows";
-import { getEpisode, simplecastEmbedSrc } from "../../../lib/simplecast";
+import { getEpisode, simplecastEpisodeSrc } from "../../../lib/simplecast";
 import { PageShell } from "../../../components/PageShell";
 
 export const Route = createFileRoute("/shows/$show/$episode")({
@@ -94,7 +94,7 @@ function EpisodePage() {
           {isPaid ? (
             <PaidEpisodeBlock />
           ) : (
-            <PlayerBlock src={simplecastEmbedSrc(show.slug as ShowSlug, episode.slug)} />
+            <PlayerBlock episode={episode} />
           )}
         </div>
       </section>
@@ -114,22 +114,32 @@ function EpisodePage() {
   );
 }
 
-function PlayerBlock({ src }: { src: string }) {
+function PlayerBlock({ episode }: { episode: Episode }) {
+  if (!episode.id) {
+    return (
+      <div className="border border-white/15 bg-navy-800/40 p-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          Listen
+        </div>
+        <p className="mt-3 text-[12px] text-white/55">
+          This episode isn't available in our embedded player yet. Listen
+          through your podcast app of choice.
+        </p>
+      </div>
+    );
+  }
   return (
-    <div className="border border-white/15 bg-navy-800/40 p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-        Listen
-      </div>
-      <p className="mt-3 text-[12px] text-white/55">
-        Embedded Simplecast player loads here in production. Mock URL:{" "}
-        <code className="text-white/70">{src}</code>
-      </p>
-      <div
-        className="mt-4 flex h-[120px] items-center justify-center bg-navy-900/80 text-[12px] uppercase tracking-[0.22em] text-white/45"
-        aria-label="Player placeholder"
-      >
-        Player placeholder
-      </div>
+    <div className="border border-white/15 bg-navy-800/40">
+      <iframe
+        title={`${episode.title} — player`}
+        src={simplecastEpisodeSrc(episode.id)}
+        height={200}
+        width="100%"
+        scrolling="no"
+        allow="clipboard-write"
+        loading="lazy"
+        className="block w-full border-0"
+      />
     </div>
   );
 }

@@ -1,26 +1,32 @@
-import { episodes, type Episode } from "../data/episodes";
+import { episodes as mockEpisodes, type Episode } from "../data/episodes";
 import type { ShowSlug } from "../data/shows";
 
 /**
- * Mock Simplecast API client.
- *
- * Real implementation would call the Simplecast Episodes API and project the
- * raw fields down to the {@link Episode} shape. Paid shows
- * (`inside-call-me-back`) read against the SupportingCast admin API in real
- * life — the public surface here returns episode titles + dates only, never
- * audio. That mirrors the proposal's "names only, no audio" rule for the
- * paid show's public marketing page.
+ * Simplecast client. Fetches episodes from /api/simplecast/episodes, which
+ * proxies the Simplecast API server-side (the API token can't ride along
+ * with the client). When the server returns an empty list — paid show with
+ * no Simplecast podcast, or dev environment without a token — we fall back
+ * to the local mock catalog so the UI keeps working.
  */
 
-const FAKE_LATENCY_MS = 90;
+type ApiResponse = { episodes?: Episode[] };
 
-function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms + Math.random() * 50));
+async function fetchEpisodesFromApi(showSlug: ShowSlug): Promise<Episode[] | null> {
+  try {
+    const res = await fetch(
+      `/api/simplecast/episodes?show=${encodeURIComponent(showSlug)}`,
+      { credentials: "same-origin" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as ApiResponse;
+    return body.episodes ?? [];
+  } catch {
+    return null;
+  }
 }
 
-export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
-  await jitter();
-  return episodes
+function mockListEpisodes(showSlug: ShowSlug): Episode[] {
+  return mockEpisodes
     .filter((e) => e.showSlug === showSlug)
     .sort(
       (a, b) =>
@@ -29,24 +35,26 @@ export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
     );
 }
 
+export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
+  const remote = await fetchEpisodesFromApi(showSlug);
+  if (remote && remote.length > 0) return remote;
+  return mockListEpisodes(showSlug);
+}
+
 export async function getEpisode(
   showSlug: ShowSlug,
   slug: string,
 ): Promise<Episode | null> {
-  await jitter();
-  return (
-    episodes.find((e) => e.showSlug === showSlug && e.slug === slug) ?? null
-  );
+  const all = await listEpisodes(showSlug);
+  return all.find((e) => e.slug === slug) ?? null;
 }
 
 /**
- * Simplecast embed URL for a given episode. The real API exposes a stable
- * embed URL keyed by episode id; here we pretend the slug is the id.
+ * Per-episode Simplecast player. Takes the Simplecast episode UUID
+ * (Episode.id from the API). Dark theme to match the rest of the site.
  */
-export function simplecastEmbedSrc(showSlug: ShowSlug, slug: string): string {
-  return `https://player.simplecast.com/${encodeURIComponent(
-    showSlug,
-  )}/${encodeURIComponent(slug)}`;
+export function simplecastEpisodeSrc(episodeId: string): string {
+  return `https://player.simplecast.com/${encodeURIComponent(episodeId)}?dark=true`;
 }
 
 /**

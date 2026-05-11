@@ -10,6 +10,12 @@ export type Episode = {
   description: string;
   /** Optional list of guest names. */
   guests?: string[];
+  /**
+   * Simplecast episode UUID. Present on episodes fetched from the
+   * Simplecast API; absent on local mock data (e.g. the paid show).
+   * When present, the episode page renders the real Simplecast player.
+   */
+  id?: string;
 };
 
 /**

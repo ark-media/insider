@@ -405,6 +405,102 @@ async function findOrCreateAuth0User(
 
 
 // ---------------------------------------------------------------------------
+// Simplecast episode fetch
+//
+// Projects the Simplecast Episodes API down to our Episode shape. Cached
+// per-podcast in-process to absorb traffic on hot show pages. The cache
+// resets on each serverless cold start, which is fine — Simplecast
+// episodes update on the order of days, not seconds.
+// ---------------------------------------------------------------------------
+type ProjectedEpisode = {
+  showSlug: string
+  slug: string
+  title: string
+  publishedAt: string
+  durationMinutes: number
+  description: string
+  id: string
+}
+
+type ScEpisodesResponse = {
+  collection?: Array<{
+    id?: string
+    slug?: string
+    title?: string
+    description?: string
+    duration?: number
+    published_at?: string
+    status?: string
+    is_published?: boolean
+  }>
+}
+
+const SIMPLECAST_CACHE_TTL_MS = 5 * 60 * 1000
+const simplecastCache = new Map<string, { at: number; episodes: ProjectedEpisode[] }>()
+
+function resolveSimplecastPodcastId(env: Env, showSlug: string): string | undefined {
+  // Accept only the slug pattern we expect so a caller can't probe arbitrary
+  // env keys by injecting an unusual `show` value.
+  if (!/^[a-z0-9-]+$/.test(showSlug)) return undefined
+  const key = `VITE_SIMPLECAST_PODCAST_ID_${showSlug.toUpperCase().replace(/-/g, '_')}`
+  const value = env[key]
+  return value && value.trim() ? value.trim() : undefined
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+async function fetchSimplecastEpisodes(
+  podcastId: string,
+  token: string,
+  showSlug: string,
+): Promise<ProjectedEpisode[]> {
+  const cached = simplecastCache.get(podcastId)
+  if (cached && Date.now() - cached.at < SIMPLECAST_CACHE_TTL_MS) {
+    return cached.episodes
+  }
+
+  const url = `https://api.simplecast.com/podcasts/${encodeURIComponent(podcastId)}/episodes?limit=50`
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`Simplecast ${res.status}: ${await res.text()}`)
+  }
+  const body = (await res.json()) as ScEpisodesResponse
+  const episodes: ProjectedEpisode[] = (body.collection ?? [])
+    // Drafts and scheduled episodes carry no published_at — drop them.
+    .filter((e) => e.is_published !== false && Boolean(e.published_at) && Boolean(e.id))
+    .map((e) => ({
+      showSlug,
+      id: e.id ?? '',
+      slug: e.slug ?? e.id ?? '',
+      title: e.title ?? '',
+      publishedAt: (e.published_at ?? '').slice(0, 10),
+      durationMinutes: Math.max(0, Math.round((e.duration ?? 0) / 60)),
+      description: stripHtml(e.description ?? ''),
+    }))
+    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+
+  simplecastCache.set(podcastId, { at: Date.now(), episodes })
+  return episodes
+}
+
+
+// ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
 type JsonRes = (status: number, body: unknown) => void
@@ -727,6 +823,38 @@ function buildApi(env: Env): Api {
   }
 
   const routes: Api['routes'] = []
+
+      // --- Simplecast episode catalog --------------------------------------
+      // Proxies the Simplecast API and projects the response down to our
+      // Episode shape. Cached in-process for SIMPLECAST_CACHE_TTL_MS to keep
+      // hot show pages from hammering the upstream API.
+      routes.push({
+        path: '/api/simplecast/episodes',
+        handler: async (req, res) => {
+          const json = makeJsonRes(res)
+          if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+          const url = new URL(req.url ?? '', 'http://x')
+          const show = url.searchParams.get('show')
+          if (!show) return json(400, { error: 'missing `show`' })
+
+          const podcastId = resolveSimplecastPodcastId(env, show)
+          const token = env.SIMPLECAST_API_TOKEN
+          if (!podcastId || !token) {
+            // Show has no Simplecast podcast configured, or the server has no
+            // token. Return an empty list — the client falls back to mocks.
+            return json(200, { episodes: [] })
+          }
+
+          try {
+            const episodes = await fetchSimplecastEpisodes(podcastId, token, show)
+            json(200, { episodes })
+          } catch (err) {
+            console.error('[simplecast] fetch failed:', err)
+            json(502, { error: 'simplecast_unavailable' })
+          }
+        },
+      })
 
       // --- Who am I (+ personalized feeds) ---------------------------------
       routes.push({
