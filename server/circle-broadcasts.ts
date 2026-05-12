@@ -8,6 +8,7 @@
 // rather than silently disappearing on the wire.
 
 import sanitizeHtml from 'sanitize-html'
+import { toIsoDate } from './lib/dates.js'
 import type {
   NewsletterPost,
   NewsletterSlug,
@@ -92,9 +93,9 @@ export function projectBroadcast(
   authorName: string,
 ): NewsletterPost | null {
   if (b.id === undefined || b.id === null) return null
-  const sentAt = b.sent_at ?? b.scheduled_at ?? b.created_at ?? ''
   // Drop unsent broadcasts — they would publish drafts to the public site.
-  if (!sentAt) return null
+  const publishedAt = toIsoDate(b.sent_at ?? b.scheduled_at ?? b.created_at)
+  if (!publishedAt) return null
 
   const rawHtml = b.email_body_html ?? b.body_html ?? b.html_body ?? b.body ?? ''
   const bodyHtml = sanitizeBroadcastHtml(rawHtml)
@@ -116,7 +117,7 @@ export function projectBroadcast(
     newsletterSlug,
     slug: broadcastSlug(b.id),
     title,
-    publishedAt: sentAt.slice(0, 10),
+    publishedAt,
     excerpt,
     body: plain,
     bodyHtml,

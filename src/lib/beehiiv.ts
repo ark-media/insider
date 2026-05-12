@@ -4,7 +4,7 @@ import {
   type NewsletterPost,
   type NewsletterSlug,
 } from "../data/newsletters";
-import type { FetchPostResult, NewsletterSource } from "./newsletterSources";
+import type { NewsletterSource } from "./newsletterSources";
 
 /**
  * Beehiiv client.
@@ -55,34 +55,9 @@ async function fetchPostsFromApi(
   }
 }
 
-async function listPosts(slug: NewsletterSlug): Promise<NewsletterPost[]> {
-  return fetchPostsFromApi(slug);
-}
-
-async function getPost(
-  newsletterSlug: NewsletterSlug,
-  postSlug: string,
-  isMember: boolean,
-): Promise<FetchPostResult> {
-  const posts = await fetchPostsFromApi(newsletterSlug);
-  const post = posts.find((p) => p.slug === postSlug);
-  if (!post) return { kind: "not-found" };
-  if (post.tier === "free" || isMember) return { kind: "ok", post };
-
-  // Beehiiv premium-only posts ship without `content.free.web`, so `body` is
-  // typically empty. The preview falls back to excerpt — short, but enough to
-  // anchor the paywall card.
-  const previewText =
-    post.body.split(/(?<=\.|!|\?)\s+/).slice(0, 2).join(" ") || post.excerpt;
-  const preview: NewsletterPost = {
-    ...post,
-    body: previewText,
-    bodyHtml: undefined,
-  };
-  return { kind: "gated", preview, reason: "ark-plus-required" };
-}
-
-export const beehiivSource: NewsletterSource = { listPosts, getPost };
+export const beehiivSource: NewsletterSource = {
+  listPosts: fetchPostsFromApi,
+};
 
 /**
  * Subscribe an email to a newsletter. Mocked — real impl would call beehiiv's

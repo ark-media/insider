@@ -29,13 +29,21 @@ import {
   verifyCheckoutToken,
 } from '../lib/session.js'
 import type { Deps, Route } from '../lib/route.js'
+import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug } from './newsletter-slugs.js'
 
-const CIRCLE_BROADCASTS_CACHE_TTL_MS = 5 * 60 * 1000
-const circleBroadcastsCache = new Map<
-  NewsletterSlug,
-  { at: number; posts: NewsletterPost[] }
->()
+const CIRCLE_CACHE_TTL_MS = 5 * 60 * 1000
+const circleBroadcastsCache = makeTTLCache<NewsletterSlug, NewsletterPost[]>(
+  CIRCLE_CACHE_TTL_MS,
+)
+
+// Test-only: drop in-process caches between cases so each test starts cold.
+// Production code never calls this — the caches expire on their own TTL.
+export function __resetCircleCachesForTests(): void {
+  circleBroadcastsCache.clear()
+  circleSpacePostsCache.clear()
+  circleSpaceIdCache.clear()
+}
 
 // newsletter slug → { tag editors apply on send, author for the byline }
 const CIRCLE_NEWSLETTER_BINDINGS: Partial<
@@ -76,9 +84,7 @@ async function fetchCircleBroadcasts(
   token: string,
 ): Promise<NewsletterPost[]> {
   const cached = circleBroadcastsCache.get(newsletterSlug)
-  if (cached && Date.now() - cached.at < CIRCLE_BROADCASTS_CACHE_TTL_MS) {
-    return cached.posts
-  }
+  if (cached) return cached
   const binding = CIRCLE_NEWSLETTER_BINDINGS[newsletterSlug]
   if (!binding) return []
 
@@ -118,9 +124,13 @@ async function fetchCircleBroadcasts(
   const posts: NewsletterPost[] = matches
     .map((b) => projectBroadcast(b, newsletterSlug, binding.authorName))
     .filter((p): p is NewsletterPost => p !== null)
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+    .sort(
+      (a, b) =>
+        b.publishedAt.localeCompare(a.publishedAt) ||
+        a.slug.localeCompare(b.slug),
+    )
 
-  circleBroadcastsCache.set(newsletterSlug, { at: Date.now(), posts })
+  circleBroadcastsCache.set(newsletterSlug, posts)
   return posts
 }
 
@@ -132,12 +142,10 @@ async function fetchCircleBroadcasts(
 // behind the same TTL as broadcasts.
 // ---------------------------------------------------------------------------
 
-const CIRCLE_SPACE_POSTS_CACHE_TTL_MS = 5 * 60 * 1000
-const circleSpacePostsCache = new Map<
-  NewsletterSlug,
-  { at: number; posts: NewsletterPost[] }
->()
-const circleSpaceIdCache = new Map<string, { at: number; id: number }>()
+const circleSpacePostsCache = makeTTLCache<NewsletterSlug, NewsletterPost[]>(
+  CIRCLE_CACHE_TTL_MS,
+)
+const circleSpaceIdCache = makeTTLCache<string, number>(CIRCLE_CACHE_TTL_MS)
 
 const CIRCLE_SPACES_PAGE_SIZE = 100
 const CIRCLE_SPACES_MAX_PAGES = 5
@@ -152,9 +160,7 @@ async function resolveSpaceIdBySlug(
   token: string,
 ): Promise<number | null> {
   const cached = circleSpaceIdCache.get(spaceSlug)
-  if (cached && Date.now() - cached.at < CIRCLE_SPACE_POSTS_CACHE_TTL_MS) {
-    return cached.id
-  }
+  if (cached !== null) return cached
   for (let page = 1; page <= CIRCLE_SPACES_MAX_PAGES; page += 1) {
     const url =
       `https://app.circle.so/api/admin/v2/spaces` +
@@ -170,7 +176,7 @@ async function resolveSpaceIdBySlug(
     if (records.length === 0) break
     const match = records.find((s) => s.slug === spaceSlug)
     if (match?.id !== undefined) {
-      circleSpaceIdCache.set(spaceSlug, { at: Date.now(), id: match.id })
+      circleSpaceIdCache.set(spaceSlug, match.id)
       return match.id
     }
     if (records.length < CIRCLE_SPACES_PAGE_SIZE) break
@@ -183,9 +189,7 @@ async function fetchCircleSpacePosts(
   token: string,
 ): Promise<NewsletterPost[]> {
   const cached = circleSpacePostsCache.get(newsletterSlug)
-  if (cached && Date.now() - cached.at < CIRCLE_SPACE_POSTS_CACHE_TTL_MS) {
-    return cached.posts
-  }
+  if (cached) return cached
   const binding = CIRCLE_SPACE_BINDINGS[newsletterSlug]
   if (!binding) return []
 
@@ -196,7 +200,7 @@ async function fetchCircleSpacePosts(
   for (let page = 1; page <= CIRCLE_SPACE_POSTS_MAX_PAGES; page += 1) {
     const url =
       `https://app.circle.so/api/admin/v2/posts` +
-      `?space_id=${encodeURIComponent(String(spaceId))}` +
+      `?space_id=${spaceId}` +
       `&status=published` +
       `&per_page=${CIRCLE_SPACE_POSTS_PAGE_SIZE}&page=${page}`
     const res = await fetch(url, {
@@ -209,6 +213,10 @@ async function fetchCircleSpacePosts(
     const records = body.records ?? []
     if (records.length === 0) break
     for (const p of records) {
+      // Belt-and-suspenders: the `status=published` query param above filters
+      // server-side, but Circle has historically returned drafts at the tail
+      // of a page on some plans. Keep the projection guard so the local
+      // assumption (only published reaches the wire) stays explicit.
       if (isPublishedPost(p)) {
         matches.push(p)
         if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
@@ -223,9 +231,13 @@ async function fetchCircleSpacePosts(
       projectSpacePost(p, newsletterSlug, binding.authorName, binding.tier),
     )
     .filter((p): p is NewsletterPost => p !== null)
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+    .sort(
+      (a, b) =>
+        b.publishedAt.localeCompare(a.publishedAt) ||
+        a.slug.localeCompare(b.slug),
+    )
 
-  circleSpacePostsCache.set(newsletterSlug, { at: Date.now(), posts })
+  circleSpacePostsCache.set(newsletterSlug, posts)
   return posts
 }
 

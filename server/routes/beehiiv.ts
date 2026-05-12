@@ -17,17 +17,18 @@ import type {
 } from '../../src/data/newsletters.js'
 import { makeJsonRes } from '../lib/http.js'
 import type { Deps, Env, Route } from '../lib/route.js'
+import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug } from './newsletter-slugs.js'
 
 const BEEHIIV_POSTS_CACHE_TTL_MS = 5 * 60 * 1000
-const beehiivPostsCache = new Map<
-  NewsletterSlug,
-  { at: number; posts: NewsletterPost[] }
->()
+const beehiivPostsCache = makeTTLCache<NewsletterSlug, NewsletterPost[]>(
+  BEEHIIV_POSTS_CACHE_TTL_MS,
+)
 
 // newsletter slug → author fallback for posts whose Beehiiv `authors[]` is
 // empty. Beehiiv usually populates authors, so this is just safety-net copy.
 const BEEHIIV_AUTHOR_FALLBACK: Partial<Record<NewsletterSlug, string>> = {
+  'the-call-me-back-newsletter': 'Dan Senor',
   'ark-daily': 'Ark Media newsroom',
   'for-heavens-sake-newsletter': 'Donniel Hartman & Yossi Klein Halevi',
   'members-letter': 'Ark Media editorial',
@@ -51,9 +52,7 @@ async function fetchBeehiivPosts(
   env: Env,
 ): Promise<NewsletterPost[]> {
   const cached = beehiivPostsCache.get(newsletterSlug)
-  if (cached && Date.now() - cached.at < BEEHIIV_POSTS_CACHE_TTL_MS) {
-    return cached.posts
-  }
+  if (cached) return cached
   const publicationId = resolveBeehiivPublicationId(env, newsletterSlug)
   if (!publicationId) return []
   // Beehiiv publication ids carry a stable `pub_` prefix. Validate before
@@ -80,9 +79,13 @@ async function fetchBeehiivPosts(
     .filter(isPublishedBeehiivPost)
     .map((p) => projectBeehiivPost(p, newsletterSlug, authorFallback))
     .filter((p): p is NewsletterPost => p !== null)
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+    .sort(
+      (a, b) =>
+        b.publishedAt.localeCompare(a.publishedAt) ||
+        a.slug.localeCompare(b.slug),
+    )
 
-  beehiivPostsCache.set(newsletterSlug, { at: Date.now(), posts })
+  beehiivPostsCache.set(newsletterSlug, posts)
   return posts
 }
 

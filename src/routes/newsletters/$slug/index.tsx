@@ -1,9 +1,8 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   formatPostDate,
   type Newsletter,
-  type NewsletterPost,
   type NewsletterSlug,
 } from "../../../data/newsletters";
 import { getPublication, subscribeEmail } from "../../../lib/beehiiv";
@@ -12,26 +11,17 @@ import { PageShell } from "../../../components/PageShell";
 
 export const Route = createFileRoute("/newsletters/$slug/")({
   loader: async ({ params }) => {
-    const pub = await getPublication(params.slug as NewsletterSlug);
+    const slug = params.slug as NewsletterSlug;
+    const pub = await getPublication(slug);
     if (!pub) throw notFound();
-    return { pub };
+    const posts = await sourceFor(slug).listPosts(slug);
+    return { pub, posts };
   },
   component: NewsletterLandingPage,
 });
 
 function NewsletterLandingPage() {
-  const { pub } = Route.useLoaderData();
-  const [posts, setPosts] = useState<NewsletterPost[] | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void sourceFor(pub.slug)
-      .listPosts(pub.slug)
-      .then((p) => live && setPosts(p));
-    return () => {
-      live = false;
-    };
-  }, [pub.slug]);
+  const { pub, posts } = Route.useLoaderData();
 
   return (
     <PageShell
@@ -48,8 +38,10 @@ function NewsletterLandingPage() {
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
               Recent issues
             </div>
-            {posts === null ? (
-              <p className="mt-8 text-[14px] text-fg-muted">Loading…</p>
+            {posts.length === 0 ? (
+              <p className="mt-8 text-[14px] text-fg-muted">
+                No recent issues yet.
+              </p>
             ) : (
               <ul className="mt-8 divide-y divide-rule border-y border-rule">
                 {posts.map((p) => (

@@ -9,6 +9,7 @@
 // originate from Circle's editors and need the same allowlist.
 
 import { sanitizeBroadcastHtml, stripHtml } from './circle-broadcasts.js'
+import { toIsoDate } from './lib/dates.js'
 import type {
   NewsletterPost,
   NewsletterSlug,
@@ -52,10 +53,16 @@ export function projectSpacePost(
   tier: 'free' | 'ark-plus',
 ): NewsletterPost | null {
   if (p.id === undefined || p.id === null) return null
-  const publishedAt = p.published_at ?? p.created_at
+  const publishedAt = toIsoDate(p.published_at ?? p.created_at)
   if (!publishedAt) return null
 
   const rawHtml = extractBodyHtml(p.body)
+  // Drop bodyless posts — Circle occasionally returns published records with
+  // empty bodies (community posts created from media-only uploads, or posts
+  // whose body failed to render). Rendering one as a newsletter issue would
+  // surface a blank article page.
+  if (!rawHtml.trim()) return null
+
   const bodyHtml = sanitizeBroadcastHtml(rawHtml)
   const plain = stripHtml(rawHtml)
   const title = p.name ?? '(untitled)'
@@ -70,7 +77,7 @@ export function projectSpacePost(
     newsletterSlug,
     slug: postSlug,
     title,
-    publishedAt: publishedAt.slice(0, 10),
+    publishedAt,
     excerpt,
     body: plain,
     bodyHtml,

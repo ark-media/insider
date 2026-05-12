@@ -4,7 +4,7 @@ import {
 } from "../data/communityBroadcasts";
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import { upcomingEvents, type ArkEvent } from "../data/events";
-import type { FetchPostResult, NewsletterSource } from "./newsletterSources";
+import type { NewsletterSource } from "./newsletterSources";
 
 /**
  * Mock Circle headless client.
@@ -57,111 +57,36 @@ export const CIRCLE_OPEN_LINKS = {
 };
 
 // ---------------------------------------------------------------------------
-// Newsletter source — Circle Broadcasts as newsletter issues
+// Newsletter sources — Circle Broadcasts and Circle space posts
+//
+// Both endpoints answer with the same `{ posts: NewsletterPost[] }` shape, so
+// one fetcher serves both. The only thing that varies is which endpoint to
+// hit; gating semantics are identical (free unless the upstream projection
+// already marked it ark-plus).
 // ---------------------------------------------------------------------------
 
-type BroadcastsResponse = { posts?: NewsletterPost[] };
+type PostsResponse = { posts?: NewsletterPost[] };
 
-async function fetchBroadcastsFromApi(
+async function fetchCirclePosts(
+  endpoint: "broadcasts" | "space-posts",
   slug: NewsletterSlug,
 ): Promise<NewsletterPost[]> {
   try {
     const res = await fetch(
-      `/api/circle/broadcasts?newsletter=${encodeURIComponent(slug)}`,
+      `/api/circle/${endpoint}?newsletter=${encodeURIComponent(slug)}`,
       { credentials: "same-origin" },
     );
     if (!res.ok) return [];
-    const body = (await res.json()) as BroadcastsResponse;
+    const body = (await res.json()) as PostsResponse;
     return body.posts ?? [];
   } catch {
     return [];
   }
-}
-
-async function circleListPosts(
-  slug: NewsletterSlug,
-): Promise<NewsletterPost[]> {
-  return fetchBroadcastsFromApi(slug);
-}
-
-async function circleGetPost(
-  slug: NewsletterSlug,
-  postSlug: string,
-  isMember: boolean,
-): Promise<FetchPostResult> {
-  const posts = await circleListPosts(slug);
-  const post = posts.find((p) => p.slug === postSlug);
-  if (!post) return { kind: "not-found" };
-  // Circle broadcasts have no per-post tier — every broadcast goes to every
-  // community member. A post here is only gated if the upstream projection
-  // explicitly marked it ark-plus (e.g. via a Circle tag on the broadcast).
-  if (post.tier === "free" || isMember) return { kind: "ok", post };
-
-  const previewText =
-    post.body.split(/(?<=\.|!|\?)\s+/).slice(0, 2).join(" ") ||
-    post.excerpt;
-  const preview: NewsletterPost = {
-    ...post,
-    body: previewText,
-    // Drop the rich HTML for previews — paragraph splitting on plain text is
-    // the safer surface when we're only showing a teaser.
-    bodyHtml: undefined,
-  };
-  return { kind: "gated", preview, reason: "ark-plus-required" };
 }
 
 export const circleSource: NewsletterSource = {
-  listPosts: circleListPosts,
-  getPost: circleGetPost,
+  listPosts: (slug) => fetchCirclePosts("broadcasts", slug),
 };
-
-// ---------------------------------------------------------------------------
-// Newsletter source — Circle space posts (community content as issues)
-// ---------------------------------------------------------------------------
-
-async function fetchSpacePostsFromApi(
-  slug: NewsletterSlug,
-): Promise<NewsletterPost[]> {
-  try {
-    const res = await fetch(
-      `/api/circle/space-posts?newsletter=${encodeURIComponent(slug)}`,
-      { credentials: "same-origin" },
-    );
-    if (!res.ok) return [];
-    const body = (await res.json()) as BroadcastsResponse;
-    return body.posts ?? [];
-  } catch {
-    return [];
-  }
-}
-
-async function circleSpaceListPosts(
-  slug: NewsletterSlug,
-): Promise<NewsletterPost[]> {
-  return fetchSpacePostsFromApi(slug);
-}
-
-async function circleSpaceGetPost(
-  slug: NewsletterSlug,
-  postSlug: string,
-  isMember: boolean,
-): Promise<FetchPostResult> {
-  const posts = await circleSpaceListPosts(slug);
-  const post = posts.find((p) => p.slug === postSlug);
-  if (!post) return { kind: "not-found" };
-  if (post.tier === "free" || isMember) return { kind: "ok", post };
-
-  const previewText =
-    post.body.split(/(?<=\.|!|\?)\s+/).slice(0, 2).join(" ") || post.excerpt;
-  const preview: NewsletterPost = {
-    ...post,
-    body: previewText,
-    bodyHtml: undefined,
-  };
-  return { kind: "gated", preview, reason: "ark-plus-required" };
-}
-
 export const circleSpaceSource: NewsletterSource = {
-  listPosts: circleSpaceListPosts,
-  getPost: circleSpaceGetPost,
+  listPosts: (slug) => fetchCirclePosts("space-posts", slug),
 };

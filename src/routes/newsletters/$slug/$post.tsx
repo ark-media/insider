@@ -1,13 +1,12 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import {
   formatPostDate,
   type NewsletterSlug,
 } from "../../../data/newsletters";
 import { getPublication } from "../../../lib/beehiiv";
 import {
+  buildGatedPreview,
   sourceFor,
-  type FetchPostResult,
 } from "../../../lib/newsletterSources";
 import { PageShell } from "../../../components/PageShell";
 import { useSubscriberAuth } from "../../../lib/subscriberAuth";
@@ -15,39 +14,27 @@ import { renderShowNotes } from "../../../lib/show-notes-renderer";
 
 export const Route = createFileRoute("/newsletters/$slug/$post")({
   loader: async ({ params }) => {
-    const pub = await getPublication(params.slug as NewsletterSlug);
+    const slug = params.slug as NewsletterSlug;
+    const pub = await getPublication(slug);
     if (!pub) throw notFound();
-    return { pub };
+    // Fetch the unfiltered list here; we apply the membership-aware gate at
+    // render time so navigating list → post doesn't refetch, and so the
+    // member/non-member gate updates without a new request.
+    const posts = await sourceFor(slug).listPosts(slug);
+    return { pub, posts };
   },
   component: PostPage,
 });
 
 function PostPage() {
-  const { pub } = Route.useLoaderData();
+  const { pub, posts } = Route.useLoaderData();
   const { post: postSlug } = Route.useParams();
   const { state } = useSubscriberAuth();
   const isMember = state.kind === "member";
-  const [result, setResult] = useState<FetchPostResult | "loading">("loading");
 
-  useEffect(() => {
-    let live = true;
-    void sourceFor(pub.slug)
-      .getPost(pub.slug, postSlug, isMember)
-      .then((r) => live && setResult(r));
-    return () => {
-      live = false;
-    };
-  }, [pub.slug, postSlug, isMember]);
+  const found = posts.find((p) => p.slug === postSlug);
 
-  if (result === "loading") {
-    return (
-      <PageShell title="Loading…" lede=" ">
-        <></>
-      </PageShell>
-    );
-  }
-
-  if (result.kind === "not-found") {
+  if (!found) {
     return (
       <PageShell
         eyebrow={pub.shortTitle}
@@ -69,8 +56,8 @@ function PostPage() {
     );
   }
 
-  const post = result.kind === "ok" ? result.post : result.preview;
-  const gated = result.kind === "gated";
+  const gated = found.tier === "ark-plus" && !isMember;
+  const post = gated ? buildGatedPreview(found) : found;
 
   return (
     <main className="relative">

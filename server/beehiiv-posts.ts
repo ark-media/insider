@@ -8,6 +8,7 @@
 // rather than silently disappearing on the wire.
 
 import sanitizeHtml from 'sanitize-html'
+import { toIsoDate } from './lib/dates.js'
 import type {
   NewsletterPost,
   NewsletterSlug,
@@ -80,15 +81,6 @@ export function sanitizeBeehiivHtml(html: string): string {
       }),
     },
   })
-}
-
-function toIsoDate(d: BeehiivPost['publish_date']): string {
-  if (typeof d === 'number') {
-    // Beehiiv ships publish_date as a unix epoch in seconds.
-    return new Date(d * 1000).toISOString().slice(0, 10)
-  }
-  if (typeof d === 'string' && d) return d.slice(0, 10)
-  return ''
 }
 
 function firstAuthorName(p: BeehiivPost, fallback: string): string {
