@@ -49,7 +49,7 @@ function PostPage() {
         title="Post not found."
         lede="We couldn't find that post."
       >
-        <section className="border-t border-white/10 bg-navy-900">
+        <section className="border-t border-rule bg-navy-900">
           <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
             <Link
               to="/newsletters/$slug"
@@ -74,23 +74,23 @@ function PostPage() {
           <Link
             to="/newsletters/$slug"
             params={{ slug: pub.slug }}
-            className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan transition hover:text-white"
+            className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan transition hover:text-fg-strong"
           >
             ← {pub.shortTitle}
           </Link>
-          <h1 className="mt-8 font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-white">
+          <h1 className="mt-8 font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-fg-strong">
             {post.title}
           </h1>
-          <p className="mt-4 text-[12px] uppercase tracking-[0.18em] text-white/45">
+          <p className="mt-4 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
             {formatPostDate(post.publishedAt)} · {post.authorName}
             {post.tier === "ark-plus" ? " · Ark+" : ""}
           </p>
         </div>
       </section>
 
-      <article className="border-t border-white/10 bg-navy-900">
+      <article className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[820px] px-6 py-12 sm:px-10">
-          <div className="space-y-5 text-[16px] leading-[1.75] text-white/80">
+          <div className="space-y-5 text-[16px] leading-[1.75] text-fg">
             {post.body.split("\n\n").map((para, i) => (
               <p key={i} className="whitespace-pre-line">
                 {para}
@@ -106,10 +106,10 @@ function PostPage() {
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
               Members only
             </div>
-            <h2 className="mt-6 font-display text-[28px] leading-[1.1] text-white">
+            <h2 className="mt-6 font-display text-[28px] leading-[1.1] text-fg-strong">
               The rest of this post is for Ark+ members.
             </h2>
-            <p className="mt-4 max-w-2xl text-[14.5px] leading-[1.7] text-white/70">
+            <p className="mt-4 max-w-2xl text-[14.5px] leading-[1.7] text-fg">
               Ark+ membership is one bill, one login. It includes the paid
               feed, members-only newsletters, and the community.
             </p>

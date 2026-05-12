@@ -27,7 +27,7 @@ export function SuccessMark({
           Confirmed
         </span>
       </div>
-      <h3 className="display-upright mt-5 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-white">
+      <h3 className="display-upright mt-5 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong">
         {title}
       </h3>
       <div
@@ -36,7 +36,7 @@ export function SuccessMark({
         style={{ animationDelay: "0.55s" }}
       />
       {children ? (
-        <div className="mt-5 text-[14px] leading-[1.6] text-white/75">
+        <div className="mt-5 text-[14px] leading-[1.6] text-fg">
           {children}
         </div>
       ) : null}

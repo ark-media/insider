@@ -47,34 +47,34 @@ function BillingPage() {
       title="Your Ark+ membership."
       lede={`Signed in as ${me.email}.`}
     >
-      <section className="border-t border-white/10 bg-navy-900">
+      <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="border border-white/12 bg-navy-800/40 p-8">
+            <div className="border border-rule bg-navy-800/40 p-8">
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                 Manage payment & invoices
               </div>
-              <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-white/70">
+              <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
                 Update your card, change your billing email, or download
                 invoices in the Stripe Customer Portal.
               </p>
               <button
                 type="button"
                 disabled
-                className="mt-6 inline-flex items-center gap-2 border border-white/25 px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-white/55 opacity-60"
+                className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-muted opacity-60"
               >
                 Open Stripe portal →
               </button>
-              <p className="mt-3 text-[11px] leading-snug text-white/45">
+              <p className="mt-3 text-[11px] leading-snug text-fg-muted">
                 Stripe portal redirect not yet wired in this preview build.
               </p>
             </div>
 
-            <div className="border border-white/12 bg-navy-800/40 p-8">
+            <div className="border border-rule bg-navy-800/40 p-8">
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                 Cancel
               </div>
-              <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-white/70">
+              <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
                 Cancel anytime. You'll keep access through the end of your
                 current billing period.
               </p>
@@ -90,7 +90,7 @@ function BillingPage() {
                   type="button"
                   onClick={onCancel}
                   disabled={status.kind === "cancelling"}
-                  className="mt-6 inline-flex items-center gap-2 border border-white/25 px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-white transition hover:border-signal hover:text-signal disabled:opacity-60"
+                  className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-danger hover:text-danger disabled:opacity-60"
                 >
                   {status.kind === "cancelling"
                     ? "Cancelling…"
@@ -99,7 +99,7 @@ function BillingPage() {
               )}
               {status.kind === "error" ? (
                 <p
-                  className="mt-3 text-[12px] text-signal/80"
+                  className="mt-3 text-[12px] text-danger"
                   aria-live="polite"
                 >
                   {status.message}

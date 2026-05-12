@@ -45,14 +45,14 @@ const sections: { title: string; links: FooterLink[] }[] = [
 
 export function Footer() {
   return (
-    <footer className="relative border-t border-white/10 bg-navy-900">
+    <footer className="relative border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="flex items-center gap-3 text-white">
+            <div className="flex items-center gap-3 text-fg-strong">
               <ArkLogo height={64} />
             </div>
-            <p className="mt-10 max-w-lg text-white">
+            <p className="mt-10 max-w-lg text-fg-strong">
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
                 Long-form journalism
               </span>
@@ -73,7 +73,7 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-20 flex flex-col gap-4 border-t border-white/10 pt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/40 sm:flex-row sm:justify-between">
+        <div className="mt-20 flex flex-col gap-4 border-t border-rule pt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted sm:flex-row sm:justify-between">
           <span>© {new Date().getFullYear()} Ark Media LLC</span>
         </div>
       </div>
@@ -92,7 +92,7 @@ function FooterCol({ title, links }: { title: string; links: FooterLink[] }) {
           <li key={l.to}>
             <Link
               to={l.to}
-              className="text-white/75 transition hover:text-cyan"
+              className="text-fg transition hover:text-cyan"
             >
               {l.label}
             </Link>

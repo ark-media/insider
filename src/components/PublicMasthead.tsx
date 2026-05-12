@@ -62,14 +62,14 @@ export function PublicMasthead() {
         <Link
           to="/"
           aria-label="Ark Media — home"
-          className="group flex items-center gap-3 text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
+          className="group flex items-center gap-3 text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
         >
           <ArkLogo height={56} />
         </Link>
 
         <nav
           aria-label="Primary"
-          className="flex items-center gap-1 text-[13px] text-white/70 sm:gap-6"
+          className="flex items-center gap-1 text-[13px] text-fg-muted sm:gap-6"
         >
           {navLinks.map((link) => {
             const active = isActive(location.pathname, link);
@@ -78,30 +78,31 @@ export function PublicMasthead() {
                 key={link.to}
                 to={link.to}
                 aria-current={active ? "page" : undefined}
-                className={`relative hidden py-1 transition hover:text-white sm:inline-block ${
-                  active ? "text-white" : ""
+                className={`relative hidden min-h-11 items-center py-2 transition hover:text-fg-strong sm:inline-flex ${
+                  active ? "text-fg-strong" : ""
                 }`}
               >
                 {link.label}
                 {active ? (
                   <span
                     aria-hidden="true"
-                    className="absolute -bottom-1 left-0 right-0 h-px bg-cyan"
+                    className="absolute bottom-1 left-0 right-0 h-px bg-cyan"
                   />
                 ) : null}
               </Link>
             );
           })}
 
+          {/* Israel Votes pill — visible at ALL breakpoints (flagship campaign) */}
           <Link
             to={ISRAEL_VOTES_PATH}
             aria-current={
               location.pathname === ISRAEL_VOTES_PATH ? "page" : undefined
             }
-            className={`hidden px-4 py-1.5 font-display text-[12px] font-bold uppercase tracking-[0.18em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:inline-block ${
+            className={`inline-flex min-h-11 items-center px-3 font-display text-[11px] font-bold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:px-4 sm:text-[12px] ${
               location.pathname === ISRAEL_VOTES_PATH
                 ? "bg-cyan text-navy"
-                : "bg-white text-navy hover:bg-cyan"
+                : "bg-fg-strong text-navy hover:bg-cyan"
             }`}
           >
             Israel Votes
@@ -113,15 +114,22 @@ export function PublicMasthead() {
               onClick={() => setAccountOpen((v) => !v)}
               aria-haspopup="menu"
               aria-expanded={accountOpen}
-              className="border border-white/30 px-4 py-1.5 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-white transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              disabled={state.kind === "loading"}
+              className="hidden min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60 sm:inline-flex"
             >
-              {state.kind === "member" ? "Account" : state.kind === "loading" ? "···" : "Log in"}
+              {state.kind === "member" ? (
+                "Account"
+              ) : state.kind === "loading" ? (
+                <span aria-label="Loading account state" className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
+              ) : (
+                "Log in"
+              )}
             </button>
 
             {accountOpen ? (
               <div
                 role="menu"
-                className="absolute right-0 mt-2 w-64 border border-white/15 bg-navy-900/95 p-4 text-[13px] text-white/85 shadow-xl backdrop-blur"
+                className="absolute right-0 mt-2 w-64 border border-rule bg-navy-900 p-4 text-[13px] text-fg shadow-xl"
               >
                 {state.kind === "member" ? (
                   <MemberMenu
@@ -151,7 +159,7 @@ export function PublicMasthead() {
             aria-label="Menu"
             aria-expanded={mobileOpen}
             aria-controls="mobile-nav"
-            className="ml-1 inline-flex size-10 items-center justify-center text-white transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
+            className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
           >
             <svg
               width="20"
@@ -179,26 +187,34 @@ export function PublicMasthead() {
       {mobileOpen ? (
         <div
           id="mobile-nav"
-          className="border-t border-white/10 bg-navy-900/95 backdrop-blur sm:hidden"
+          className="border-t border-rule bg-navy-900 sm:hidden"
         >
           <nav
             aria-label="Primary mobile"
             className="mx-auto flex max-w-[1280px] flex-col px-6 py-4"
           >
-            <Link
-              to={ISRAEL_VOTES_PATH}
-              aria-current={
-                location.pathname === ISRAEL_VOTES_PATH ? "page" : undefined
-              }
-              onClick={() => setMobileOpen(false)}
-              className={`mb-3 block px-4 py-3 text-center font-display text-[13px] font-bold uppercase tracking-[0.18em] text-navy transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
-                location.pathname === ISRAEL_VOTES_PATH
-                  ? "bg-cyan"
-                  : "bg-white hover:bg-cyan"
-              }`}
-            >
-              Israel Votes
-            </Link>
+            {/* Account button is hidden in the top bar on mobile (Israel Votes
+                takes that slot); surface it as the first item here. */}
+            {state.kind === "member" ? (
+              <Link
+                to="/account"
+                onClick={() => setMobileOpen(false)}
+                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              >
+                Account
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  void loginWithRedirect();
+                }}
+                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              >
+                Log in
+              </button>
+            )}
             {navLinks.map((link) => {
               const active = isActive(location.pathname, link);
               return (
@@ -207,15 +223,15 @@ export function PublicMasthead() {
                   to={link.to}
                   aria-current={active ? "page" : undefined}
                   onClick={() => setMobileOpen(false)}
-                  className={`flex items-center justify-between border-b border-white/8 py-3 text-[14px] transition last:border-b-0 ${
-                    active ? "text-cyan" : "text-white/85 hover:text-white"
+                  className={`flex min-h-11 items-center justify-between border-b border-rule-soft py-3 text-[14px] transition last:border-b-0 ${
+                    active ? "text-cyan" : "text-fg hover:text-fg-strong"
                   }`}
                 >
                   <span>{link.label}</span>
                   <span
                     aria-hidden="true"
-                    className={`text-[12px] tracking-[0.22em] ${
-                      active ? "text-cyan" : "text-white/30"
+                    className={`text-[12px] tracking-eyebrow ${
+                      active ? "text-cyan" : "text-fg-faint"
                     }`}
                   >
                     →
@@ -240,23 +256,21 @@ function GuestMenu({
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-        Member sign in
-      </p>
-      <p className="text-[12px] leading-snug text-white/60">
+      <p className="eyebrow">Member sign in</p>
+      <p className="text-[12px] leading-snug text-fg-muted">
         Already an Ark+ member? Sign in to access your account.
       </p>
       <button
         type="button"
         onClick={onSignIn}
-        className="w-full border border-cyan bg-cyan px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Sign in
       </button>
       <Link
         to="/plus"
         onClick={onClose}
-        className="block w-full border border-white/25 px-3 py-2 text-center text-[12px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Become a member
       </Link>
@@ -275,23 +289,21 @@ function MemberMenu({
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-        Signed in
-      </p>
-      <p className="truncate text-[12px] text-white/80" title={email}>
+      <p className="eyebrow">Signed in</p>
+      <p className="truncate text-[12px] text-fg" title={email}>
         {email}
       </p>
       <Link
         to="/account"
         onClick={onClose}
-        className="block w-full border border-cyan bg-cyan px-3 py-2 text-center text-[12px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-center text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Member dashboard
       </Link>
       <button
         type="button"
         onClick={onSignOut}
-        className="w-full border border-white/25 px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-white/80 transition hover:border-white/60 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-[12px] font-semibold uppercase tracking-button text-fg-muted transition hover:border-rule-strong hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Sign out
       </button>

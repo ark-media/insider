@@ -7,11 +7,15 @@ export function Modal({
   open,
   onClose,
   className,
+  labelledBy,
+  describedBy,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   className?: string;
+  labelledBy?: string;
+  describedBy?: string;
   children: React.ReactNode;
 }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -75,19 +79,21 @@ export function Modal({
       ref={backdropRef}
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy-900/85 py-8 backdrop-blur-sm sm:items-center"
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy-900/90 py-8 sm:items-center"
       onClick={stableClose}
     >
       <div
         ref={panelRef}
-        className={`relative mx-4 my-auto w-full border border-white/10 bg-navy-900 p-8 text-white shadow-2xl ${className ?? ""}`}
+        className={`relative mx-4 my-auto w-full border border-rule bg-navy-900 p-8 text-fg-strong shadow-2xl ${className ?? ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         <button
           type="button"
           onClick={stableClose}
           aria-label="Close"
-          className="absolute right-3 top-3 inline-flex size-9 items-center justify-center text-white/50 transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="absolute right-2 top-2 inline-flex min-h-11 min-w-11 items-center justify-center text-fg-faint transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           <svg
             width="16"

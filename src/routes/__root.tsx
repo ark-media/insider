@@ -37,7 +37,7 @@ function RootContent() {
   if (isResolvingSession) {
     return (
       <div role="status" aria-label="Loading" className="flex min-h-dvh items-center justify-center bg-navy-900">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-cyan" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
       </div>
     );
   }
@@ -45,12 +45,19 @@ function RootContent() {
   return (
     <div className="min-h-dvh bg-navy-900 font-sans text-ink">
       {chromeless ? null : (
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+      )}
+      {chromeless ? null : (
         <>
           <LiveStatus />
           <PublicMasthead />
         </>
       )}
-      <Outlet />
+      <div id="main-content">
+        <Outlet />
+      </div>
       {chromeless ? null : <Footer />}
     </div>
   );

@@ -13,7 +13,7 @@ export const Route = createFileRoute("/plus/gift")({
 });
 
 const inputClass =
-  "w-full border border-white/20 bg-transparent px-3 py-2.5 text-white placeholder:text-white/30 outline-none transition focus:border-cyan disabled:opacity-50";
+  "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-muted outline-none transition focus:border-cyan disabled:opacity-50";
 
 function GiftPage() {
   const [term, setTerm] = useState<GiftTerm>("1yr");
@@ -50,7 +50,7 @@ function GiftPage() {
             {/* Left: pitch */}
             <div className="lg:col-span-5">
               <div className="inside-tab text-[13px]">Gift Ark+</div>
-              <h1 className="mt-10 text-white">
+              <h1 className="mt-10 text-fg-strong">
                 <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                   Give the full
                 </span>
@@ -59,13 +59,13 @@ function GiftPage() {
                   <span className="display text-cyan">experience.</span>
                 </span>
               </h1>
-              <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-white/70">
+              <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-fg">
                 A fixed-term gift of Ark+ — Inside Call Me Back, members-only
                 newsletters, the community, and live events. No autorenew. We
                 email the recipient a redemption link the moment your payment
                 clears.
               </p>
-              <ul className="mt-10 space-y-2 text-[13px] text-white/55">
+              <ul className="mt-10 space-y-2 text-[13px] text-fg-muted">
                 <li className="flex items-center gap-2">
                   <span className="inline-block size-1.5 rounded-full bg-cyan" />
                   No autorenew — the gift ends when the term ends
@@ -85,9 +85,9 @@ function GiftPage() {
             <div className="lg:col-span-7">
               <form
                 onSubmit={onSubmit}
-                className="border border-white/15 bg-navy-800/50 p-8"
+                className="border border-rule bg-navy-800/50 p-8"
               >
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
                   Gift length
                 </div>
                 <div
@@ -107,7 +107,7 @@ function GiftPage() {
                         className={`group flex flex-col items-center gap-1 border px-4 py-6 transition ${
                           selected
                             ? "border-cyan bg-cyan text-navy"
-                            : "border-white/20 text-white hover:border-white/50"
+                            : "border-rule-strong text-fg-strong hover:border-rule-strong"
                         }`}
                       >
                         <span className="display-upright text-[clamp(2.2rem,4vw,2.8rem)] leading-none">
@@ -115,7 +115,7 @@ function GiftPage() {
                         </span>
                         <span
                           className={`text-[12px] font-semibold uppercase tracking-[0.18em] ${
-                            selected ? "text-navy/70" : "text-white/55"
+                            selected ? "text-navy/70" : "text-fg-muted"
                           }`}
                         >
                           {GIFT_LABEL[t]}
@@ -125,7 +125,7 @@ function GiftPage() {
                   })}
                 </div>
 
-                <div className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
+                <div className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
                   From
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -152,7 +152,7 @@ function GiftPage() {
                   </label>
                 </div>
 
-                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
+                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
                   To
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -181,7 +181,7 @@ function GiftPage() {
 
                 <div className="mt-6">
                   <label className="block">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
                       Message (optional)
                     </span>
                     <textarea
@@ -195,7 +195,7 @@ function GiftPage() {
                   </label>
                   <div
                     className={`mt-1 text-right text-[11px] tabular-nums ${
-                      message.length >= 450 ? "text-cyan" : "text-white/40"
+                      message.length >= 450 ? "text-cyan" : "text-fg-muted"
                     }`}
                     aria-live="polite"
                   >
@@ -206,14 +206,14 @@ function GiftPage() {
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white disabled:opacity-60"
+                  className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
                 >
                   Continue to payment · ${GIFT_PRICE_DOLLARS[term]}
                   <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
                     →
                   </span>
                 </button>
-                <p className="mt-3 text-[11px] leading-snug text-white/45">
+                <p className="mt-3 text-[11px] leading-snug text-fg-muted">
                   Payment is securely processed by Stripe. The recipient
                   receives a redemption email as soon as it clears.
                 </p>

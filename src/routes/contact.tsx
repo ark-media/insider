@@ -39,25 +39,25 @@ function ContactPage() {
       title="Get in touch."
       lede="A few addresses for a few different conversations."
     >
-      <section className="border-t border-white/10 bg-navy-900">
+      <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {lanes.map((l) => (
               <a
                 key={l.email}
                 href={`mailto:${l.email}`}
-                className="group block border border-white/12 bg-navy-800/40 p-7 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                className="group block border border-rule bg-navy-800/40 p-7 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                   {l.eyebrow}
                 </div>
-                <h3 className="mt-4 font-display text-[20px] leading-tight text-white">
+                <h3 className="mt-4 font-display text-[20px] leading-tight text-fg-strong">
                   {l.title}
                 </h3>
-                <p className="mt-3 text-[13.5px] leading-[1.6] text-white/65">
+                <p className="mt-3 text-[13.5px] leading-[1.6] text-fg-muted">
                   {l.body}
                 </p>
-                <div className="mt-5 text-[14px] text-white/85 transition group-hover:text-cyan">
+                <div className="mt-5 text-[14px] text-fg transition group-hover:text-cyan">
                   {l.email} →
                 </div>
               </a>

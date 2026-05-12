@@ -44,7 +44,7 @@ export function FAQ() {
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-4">
             <div className="inside-tab text-[13px]">The fine print</div>
-            <h2 className="mt-10 text-white">
+            <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 Frequently
               </span>
@@ -52,41 +52,47 @@ export function FAQ() {
                 <span className="display text-cyan">asked.</span>
               </span>
             </h2>
-            <p className="mt-8 max-w-sm text-[15px] leading-[1.6] text-white/60">
+            <p className="mt-8 max-w-sm text-[15px] leading-[1.6] text-fg-muted">
               Everything you need to know before joining Ark+. Still stuck?
               Drop us a line.
             </p>
           </div>
 
           <div className="lg:col-span-8">
-            <ul className="border-t border-white/12">
+            <ul className="border-t border-rule">
               {faqs.map((f, i) => {
                 const isOpen = open === i;
+                const panelId = `faq-panel-${i}`;
+                const buttonId = `faq-trigger-${i}`;
                 return (
-                  <li key={f.q} className="border-b border-white/12">
+                  <li key={f.q} className="border-b border-rule">
                     <button
+                      id={buttonId}
                       onClick={() => setOpen(isOpen ? null : i)}
                       aria-expanded={isOpen}
-                      className="flex w-full items-start justify-between gap-6 py-5 text-left transition hover:text-cyan"
+                      aria-controls={panelId}
+                      className="flex min-h-12 w-full items-start justify-between gap-6 py-4 text-left transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                     >
-                      <span className="display-upright text-[15px] leading-snug text-white sm:text-[16px]">
+                      <span className="display-upright text-[15px] leading-snug text-fg-strong sm:text-[16px]">
                         {f.q}
                       </span>
                       <span
-                        className={`mt-1 inline-flex size-6 shrink-0 items-center justify-center border border-white/30 text-[14px] text-white transition ${
-                          isOpen ? "rotate-45 border-cyan text-cyan" : ""
+                        className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center text-[18px] text-fg-strong transition ${
+                          isOpen ? "rotate-45 text-cyan" : ""
                         }`}
-                        aria-hidden
+                        aria-hidden="true"
                       >
                         +
                       </span>
                     </button>
                     <div
-                      className={`grid overflow-hidden transition-all duration-500 ease-[cubic-bezier(.16,1,.3,1)] ${
-                        isOpen ? "grid-rows-[1fr] pb-5" : "grid-rows-[0fr]"
-                      }`}
+                      id={panelId}
+                      role="region"
+                      aria-labelledby={buttonId}
+                      hidden={!isOpen}
+                      className="overflow-hidden"
                     >
-                      <p className="min-h-0 max-w-2xl text-[13.5px] leading-[1.65] text-white/65">
+                      <p className="max-w-2xl pb-5 text-[14px] leading-[1.65] text-fg-muted">
                         {f.a}
                       </p>
                     </div>

@@ -40,7 +40,7 @@ function NewsletterLandingPage() {
       title={pub.title}
       lede={pub.description}
     >
-      <section className="border-t border-white/10 bg-navy-900">
+      <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <SignupCard pub={pub} />
@@ -50,9 +50,9 @@ function NewsletterLandingPage() {
               Recent issues
             </div>
             {posts === null ? (
-              <p className="mt-8 text-[14px] text-white/45">Loading…</p>
+              <p className="mt-8 text-[14px] text-fg-muted">Loading…</p>
             ) : (
-              <ul className="mt-8 divide-y divide-white/10 border-y border-white/10">
+              <ul className="mt-8 divide-y divide-rule border-y border-rule">
                 {posts.map((p) => (
                   <li key={p.slug}>
                     <Link
@@ -61,15 +61,15 @@ function NewsletterLandingPage() {
                       className="group block py-5 transition hover:text-cyan"
                     >
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-                        <span className="font-display text-[18px] tracking-[-0.005em] text-white group-hover:text-cyan">
+                        <span className="font-display text-[18px] tracking-[-0.005em] text-fg-strong group-hover:text-cyan">
                           {p.title}
                         </span>
-                        <span className="text-[11px] uppercase tracking-[0.18em] text-white/45 group-hover:text-cyan">
+                        <span className="text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan">
                           {formatPostDate(p.publishedAt)}
                           {p.tier === "ark-plus" ? " · Ark+" : ""}
                         </span>
                       </div>
-                      <p className="mt-2 max-w-2xl text-[13.5px] leading-[1.6] text-white/65">
+                      <p className="mt-2 max-w-2xl text-[13.5px] leading-[1.6] text-fg-muted">
                         {p.excerpt}
                       </p>
                     </Link>
@@ -106,11 +106,11 @@ function SignupCard({ pub }: { pub: Newsletter }) {
   };
 
   return (
-    <div className="border border-white/15 bg-navy-800/40 p-7">
+    <div className="border border-rule bg-navy-800/40 p-7">
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
         Subscribe
       </div>
-      <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-white/70">
+      <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
         {pub.cadence}. Written by {pub.authorName}.
         {pub.tier === "ark-plus"
           ? " Members-only — included with Ark+."
@@ -127,19 +127,19 @@ function SignupCard({ pub }: { pub: Newsletter }) {
         <form onSubmit={onSubmit} className="mt-6">
           <label className="block">
             <span className="sr-only">Email</span>
-            <div className="flex items-center border border-white/20 bg-transparent transition focus-within:border-cyan">
+            <div className="flex items-center border border-rule-strong bg-transparent transition focus-within:border-cyan">
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full bg-transparent px-3 py-2.5 text-[14px] text-white outline-none placeholder:text-white/30"
+                className="w-full bg-transparent px-3 py-2.5 text-[14px] text-fg-strong outline-none placeholder:text-fg-muted"
               />
               <button
                 type="submit"
                 disabled={status === "submitting"}
-                className="border-l border-white/20 bg-cyan px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-white disabled:opacity-60"
+                className="border-l border-rule-strong bg-cyan px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
               >
                 {status === "ok" ? "Subscribed" : "Subscribe"}
               </button>
@@ -148,7 +148,7 @@ function SignupCard({ pub }: { pub: Newsletter }) {
           {message ? (
             <p
               className={`mt-3 text-[12px] ${
-                status === "error" ? "text-signal/80" : "text-cyan"
+                status === "error" ? "text-danger" : "text-cyan"
               }`}
               aria-live="polite"
             >

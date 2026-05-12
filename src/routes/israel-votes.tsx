@@ -143,7 +143,7 @@ function IsraelVotesPage() {
 
 function WatchLatest() {
   return (
-    <section className="border-t border-white/10 bg-navy-900">
+    <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
           Watch the latest
@@ -158,12 +158,12 @@ function WatchLatest() {
 
 function Explainers() {
   return (
-    <section className="border-t border-white/10 bg-navy-900">
+    <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
           Explainers
         </div>
-        <p className="mt-6 max-w-2xl text-[14px] leading-[1.7] text-white/65">
+        <p className="mt-6 max-w-2xl text-[14px] leading-[1.7] text-fg-muted">
           Background on the camps, the coalitions, and the constituencies
           shaping Israel's next vote — in video and audio.
         </p>
@@ -171,14 +171,14 @@ function Explainers() {
           {EXPLAINERS.map((e) => (
             <article
               key={e.videoId}
-              className="flex flex-col border border-white/12 bg-navy-800/40"
+              className="flex flex-col border border-rule bg-navy-800/40"
             >
               <YouTubeEmbed videoId={e.videoId} title={e.title} />
               <div className="flex flex-1 flex-col p-6">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                   {e.show}
                 </div>
-                <h3 className="mt-3 font-display text-[20px] leading-[1.2] text-white">
+                <h3 className="mt-3 font-display text-[20px] leading-[1.2] text-fg-strong">
                   {e.title}
                 </h3>
                 <div className="mt-6">
@@ -202,27 +202,27 @@ function PlaylistSection() {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   return (
-    <section className="border-t border-white/10 bg-navy-900">
+    <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="flex items-end justify-between">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
               Israel Votes playlist
             </div>
-            <h2 className="mt-6 max-w-3xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-white">
+            <h2 className="mt-6 max-w-3xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
               The full collection.
             </h2>
-            <p className="mt-4 max-w-2xl text-[14px] leading-[1.7] text-white/65">
+            <p className="mt-4 max-w-2xl text-[14px] leading-[1.7] text-fg-muted">
               Episodes from across the Ark Media network covering the campaign,
               the coalitions, and the questions on the ballot.
             </p>
           </div>
-          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45 sm:inline">
+          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted sm:inline">
             {PLAYLIST.length} episodes
           </span>
         </div>
 
-        <ul className="mt-10 divide-y divide-white/10 border-y border-white/10">
+        <ul className="mt-10 divide-y divide-rule border-y border-rule">
           {PLAYLIST.map((track, idx) => {
             const isActive = activeIdx === idx;
             return (
@@ -233,23 +233,23 @@ function PlaylistSection() {
                   aria-expanded={isActive}
                   className="group flex w-full items-baseline gap-4 py-4 text-left transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:gap-6"
                 >
-                  <span className="w-8 shrink-0 font-display text-[13px] tabular-nums text-white/35">
+                  <span className="w-8 shrink-0 font-display text-[13px] tabular-nums text-fg-faint">
                     {String(idx + 1).padStart(2, "0")}
                   </span>
                   <span
                     aria-hidden="true"
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center border border-white/25 text-[10px] transition group-hover:border-cyan ${
-                      isActive ? "border-cyan bg-cyan/10 text-cyan" : "text-white/70"
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center border border-rule-strong text-[10px] transition group-hover:border-cyan ${
+                      isActive ? "border-cyan bg-cyan/10 text-cyan" : "text-fg"
                     }`}
                   >
                     {isActive ? "▮▮" : "▶"}
                   </span>
-                  <span className="flex-1 text-[14px] leading-[1.45] text-white/85">
+                  <span className="flex-1 text-[14px] leading-[1.45] text-fg">
                     <span className="font-display tracking-[-0.005em]">
                       {track.title}
                     </span>
                   </span>
-                  <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45 sm:inline">
+                  <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted sm:inline">
                     {SHOW_LABEL[track.show]}
                   </span>
                 </button>
@@ -257,8 +257,7 @@ function PlaylistSection() {
                   <div className="pb-5 pl-12 pr-2 sm:pl-[72px]">
                     <audio
                       controls
-                      autoPlay
-                      preload="auto"
+                      preload="metadata"
                       src={track.audioUrl}
                       className="h-10 w-full"
                     />
@@ -275,7 +274,7 @@ function PlaylistSection() {
 
 function YouTubeEmbed({ videoId, title }: { videoId: string; title: string }) {
   return (
-    <div className="relative aspect-video w-full overflow-hidden border border-white/10 bg-black">
+    <div className="relative aspect-video w-full overflow-hidden border border-rule bg-black">
       <iframe
         src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`}
         title={title}

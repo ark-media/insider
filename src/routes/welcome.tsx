@@ -11,12 +11,12 @@ function WelcomePage() {
       <section className="relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-16 pb-12 sm:px-10 sm:pt-24">
           <p className="inside-tab text-[12px]">You're in</p>
-          <h1 className="mt-10 max-w-3xl text-white">
+          <h1 className="mt-10 max-w-3xl text-fg-strong">
             <span className="display-upright block text-[clamp(2.2rem,5vw,4rem)] leading-[1.05]">
               Welcome to <span className="display text-cyan">Ark+</span>.
             </span>
           </h1>
-          <p className="mt-8 max-w-2xl text-[15px] leading-[1.65] text-white/75">
+          <p className="mt-8 max-w-2xl text-[15px] leading-[1.65] text-fg">
             Three things to do, and then you're set. Your membership is active
             now — provisioning happens in the background and may take a minute
             or two to land in every place.
@@ -24,7 +24,7 @@ function WelcomePage() {
         </div>
       </section>
 
-      <section className="border-t border-white/10 bg-navy-900">
+      <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <WelcomeStep
@@ -53,9 +53,9 @@ function WelcomePage() {
         </div>
       </section>
 
-      <section className="border-t border-white/10 bg-navy-800/40">
+      <section className="border-t border-rule bg-navy-800/40">
         <div className="mx-auto max-w-[1280px] px-6 py-12 sm:px-10">
-          <p className="text-[13px] leading-[1.6] text-white/60">
+          <p className="text-[13px] leading-[1.6] text-fg-muted">
             A welcome email is on its way. Need help?{" "}
             <Link to="/contact" className="text-cyan underline-offset-4 hover:underline">
               Contact us.
@@ -86,14 +86,14 @@ function WelcomeStep({
     "mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
   return (
-    <div className="border border-white/12 bg-navy-800/40 p-8">
+    <div className="border border-rule bg-navy-800/40 p-8">
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
         Step {n}
       </div>
-      <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-white">
+      <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
         {title}
       </h2>
-      <p className="mt-4 text-[14px] leading-[1.6] text-white/70">{body}</p>
+      <p className="mt-4 text-[14px] leading-[1.6] text-fg">{body}</p>
       {external ? (
         <a href={href} className={ctaCls} target="_blank" rel="noreferrer noopener">
           {cta} →

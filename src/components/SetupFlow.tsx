@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import QRCode from "qrcode";
 import { ArkLogo } from "./ArkLogo";
 import {
@@ -152,6 +153,7 @@ export function SetupFlow({ me }: { me: Me }) {
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const handleCancel = async () => {
+    if (cancelState === "cancelling") return;
     setCancelState("cancelling");
     try {
       const result = await cancelSubscription();
@@ -264,10 +266,10 @@ export function SetupFlow({ me }: { me: Me }) {
     : "";
 
   return (
-    <div className="ark-bg grain-overlay min-h-dvh text-white">
+    <div className="ark-bg grain-overlay min-h-dvh text-fg-strong">
       {/* Dateline bar */}
-      <div className="border-b border-white/8 bg-navy-900/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-6 py-2 text-[11px] font-medium uppercase tracking-[0.22em] text-white/55 sm:px-10">
+      <div className="border-b border-rule-soft bg-navy-900">
+        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-6 py-2 text-[11px] font-medium uppercase tracking-[0.22em] text-fg-muted sm:px-10">
           <span className="hidden sm:inline">Vol. I · No. 214</span>
           <span className="flex items-center gap-2">
             <span className="live-dot inline-block size-1.5 rounded-full bg-cyan" />
@@ -279,21 +281,24 @@ export function SetupFlow({ me }: { me: Me }) {
 
       {/* Header */}
       <header className="mx-auto flex max-w-[1280px] items-center justify-between px-6 pt-6 pb-4 sm:px-10 sm:pt-8">
-        <a href="/" className="flex items-center gap-3">
+        <Link to="/" className="flex items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan">
           <ArkLogo height={60} />
-          <span className="ml-2 hidden h-4 w-px bg-white/25 sm:inline-block" />
-          <span className="ml-2 hidden text-[11px] font-medium uppercase tracking-[0.22em] text-cyan sm:inline">
+          <span className="ml-2 hidden h-4 w-px bg-rule-strong sm:inline-block" />
+          <span className="ml-2 hidden text-[11px] font-medium uppercase tracking-eyebrow text-cyan sm:inline">
             The Insider
           </span>
-        </a>
-        <div className="flex items-center gap-6 text-[13px] text-white/70">
-          <span className="hidden sm:inline">
-            Signed in as <span className="text-white">{me.email}</span>
+        </Link>
+        <div className="flex min-w-0 items-center gap-6 text-[13px] text-fg">
+          <span className="hidden min-w-0 max-w-[260px] truncate sm:inline-block">
+            Signed in as{" "}
+            <span className="text-fg-strong" title={me.email}>
+              {me.email}
+            </span>
           </span>
           <button
             type="button"
             onClick={signOut}
-            className="underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+            className="shrink-0 underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
           >
             Sign out
           </button>
@@ -322,7 +327,7 @@ export function SetupFlow({ me }: { me: Me }) {
               <span className="h-px w-10 bg-cyan" />
               You're in
             </div>
-            <h1 className="mt-5 text-white">
+            <h1 className="mt-5 text-fg-strong">
               <span className="display-upright block text-[clamp(1.9rem,4.2vw,3.4rem)]">
                 Now let's get you
               </span>
@@ -330,7 +335,7 @@ export function SetupFlow({ me }: { me: Me }) {
                 <span className="display text-cyan">listening.</span>
               </span>
             </h1>
-            <p className="mt-5 max-w-md text-[15px] leading-[1.6] text-white/75">
+            <p className="mt-5 max-w-md text-[15px] leading-[1.6] text-fg">
               Get your exclusive Inside Call Me Back episodes in your podcast
               app of choice — in just a few steps.
             </p>
@@ -405,8 +410,8 @@ export function SetupFlow({ me }: { me: Me }) {
               onClick={() => setAppKey("manual")}
               className={`mt-3 w-full border px-4 py-3 text-left text-[13px] transition sm:text-center ${
                 appKey === "manual"
-                  ? "border-cyan bg-cyan/10 text-white"
-                  : "border-white/15 text-white/70 hover:border-cyan/60 hover:text-white"
+                  ? "border-cyan bg-cyan/10 text-fg-strong"
+                  : "border-rule text-fg hover:border-cyan/60 hover:text-fg-strong"
               }`}
             >
               Another app — I'll add the feed manually
@@ -430,7 +435,7 @@ export function SetupFlow({ me }: { me: Me }) {
         >
           {selectedApp ? (
             <div className="rise rise-1 space-y-6">
-              <ol className="space-y-3 border border-white/10 bg-navy-800/60 p-6 text-[14px] leading-[1.65] text-white/80 sm:text-[15px]">
+              <ol className="space-y-3 border border-rule bg-navy-800/60 p-6 text-[14px] leading-[1.65] text-fg sm:text-[15px]">
                 {selectedApp.instructions.map((step, i) => (
                   <li key={i} className="flex gap-3">
                     <span className="font-display text-[13px] font-bold text-cyan">
@@ -446,7 +451,7 @@ export function SetupFlow({ me }: { me: Me }) {
                   <button
                     type="button"
                     onClick={copyFeed}
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong"
                   >
                     {copied ? "Copied ✓" : selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
@@ -458,7 +463,7 @@ export function SetupFlow({ me }: { me: Me }) {
                     href={selectedAppUrl || feedUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong"
                   >
                     {selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
@@ -470,7 +475,7 @@ export function SetupFlow({ me }: { me: Me }) {
                 <button
                   type="button"
                   onClick={copyFeed}
-                  className="text-[13px] text-white/60 underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+                  className="text-[13px] text-fg-muted underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
                 >
                   {copied ? "Feed URL copied" : "Or copy the raw feed URL"}
                 </button>
@@ -499,13 +504,13 @@ export function SetupFlow({ me }: { me: Me }) {
                 />
               ) : null}
 
-              <div className="border border-white/10 bg-navy-900/60 p-4 font-mono text-[12px] break-all text-white/55">
+              <div className="border border-rule bg-navy-900/60 p-4 font-mono text-[12px] break-all text-fg-muted">
                 {feedUrl || "No feed available for this membership yet."}
               </div>
 
               {selectedApp.note ? (
-                <div className="border-l-2 border-signal/70 bg-signal/10 p-4 text-[13px] leading-[1.6] text-white/80">
-                  <span className="mr-1 font-semibold text-signal">Note —</span>
+                <div className="border-l-2 border-signal/70 bg-signal/10 p-4 text-[13px] leading-[1.6] text-fg">
+                  <span className="mr-1 font-semibold text-danger">Note —</span>
                   {selectedApp.note}
                 </div>
               ) : null}
@@ -514,12 +519,12 @@ export function SetupFlow({ me }: { me: Me }) {
         </Section>
 
         {/* Cancel subscription */}
-        <div className="mt-20 border-t border-white/8 pt-10">
+        <div className="mt-20 border-t border-rule-soft pt-10">
           {cancelState === "idle" ? (
             <button
               type="button"
               onClick={() => setCancelState("confirming")}
-              className="text-[13px] text-white/40 underline decoration-white/20 underline-offset-[6px] transition hover:text-red-400 hover:decoration-red-400/50"
+              className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-danger hover:decoration-danger/50"
             >
               Cancel my subscription
             </button>
@@ -527,7 +532,7 @@ export function SetupFlow({ me }: { me: Me }) {
 
           {cancelState === "confirming" ? (
             <div className="max-w-md space-y-4">
-              <p className="text-[14px] leading-[1.6] text-white/75">
+              <p className="text-[14px] leading-[1.6] text-fg">
                 Are you sure you want to cancel? You'll keep access until the
                 end of your current billing period.
               </p>
@@ -535,14 +540,14 @@ export function SetupFlow({ me }: { me: Me }) {
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="bg-red-500/90 px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-[0.08em] text-white transition hover:bg-red-500"
+                  className="bg-danger px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-cta text-navy transition hover:bg-danger-strong"
                 >
                   Yes, cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => setCancelState("idle")}
-                  className="text-[13px] text-white/60 underline decoration-white/25 underline-offset-[6px] transition hover:text-white hover:decoration-white/50"
+                  className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-fg-strong hover:decoration-fg-strong"
                 >
                   Never mind
                 </button>
@@ -551,17 +556,17 @@ export function SetupFlow({ me }: { me: Me }) {
           ) : null}
 
           {cancelState === "cancelling" ? (
-            <p className="text-[14px] text-white/55">Cancelling...</p>
+            <p className="text-[14px] text-fg-muted">Cancelling...</p>
           ) : null}
 
           {cancelState === "cancelled" ? (
             <div className="max-w-md space-y-2">
-              <p className="text-[14px] leading-[1.6] text-white/75">
+              <p className="text-[14px] leading-[1.6] text-fg">
                 Your subscription has been cancelled.
                 {accessUntil ? (
                   <>
                     {" "}You'll have access until{" "}
-                    <span className="text-white">
+                    <span className="text-fg-strong">
                       {new Date(accessUntil).toLocaleDateString(undefined, {
                         month: "long",
                         day: "numeric",
@@ -577,13 +582,13 @@ export function SetupFlow({ me }: { me: Me }) {
 
           {cancelState === "error" ? (
             <div className="max-w-md space-y-3">
-              <p className="text-[14px] text-red-400">
+              <p className="text-[14px] text-danger">
                 {cancelError}
               </p>
               <button
                 type="button"
                 onClick={() => setCancelState("idle")}
-                className="text-[13px] text-white/60 underline decoration-white/25 underline-offset-[6px] transition hover:text-white"
+                className="text-[13px] text-fg-muted underline decoration-white/25 underline-offset-[6px] transition hover:text-fg-strong"
               >
                 Try again
               </button>
@@ -623,19 +628,19 @@ function Section({
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <span
           className={`font-display text-[13px] font-bold uppercase tracking-[0.22em] ${
-            done ? "text-cyan/70" : active ? "text-cyan" : "text-white/35"
+            done ? "text-cyan/70" : active ? "text-cyan" : "text-fg-faint"
           }`}
         >
           Step {number}
           {done ? " ✓" : ""}
         </span>
-        <h2 className="text-white">
+        <h2 className="text-fg-strong">
           <span className="display-upright text-[clamp(1.3rem,2.6vw,1.9rem)]">
             {title}
           </span>
         </h2>
       </div>
-      <p className="mt-2 max-w-xl text-[13px] text-white/55">{subtitle}</p>
+      <p className="mt-2 max-w-xl text-[13px] text-fg-muted">{subtitle}</p>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -661,18 +666,18 @@ function DeviceCard({
       className={`group flex flex-col items-center gap-3 border p-8 text-center transition ${
         selected
           ? "border-cyan bg-cyan/10"
-          : "border-white/15 hover:border-cyan/60 hover:bg-white/[0.03]"
+          : "border-rule hover:border-cyan/60 hover:bg-white/[0.03]"
       }`}
     >
       <span
-        className={`transition ${selected ? "text-cyan" : "text-white/60 group-hover:text-cyan"}`}
+        className={`transition ${selected ? "text-cyan" : "text-fg-muted group-hover:text-cyan"}`}
       >
         {icon}
       </span>
-      <span className="font-display text-[15px] font-bold uppercase tracking-[0.08em] text-white">
+      <span className="font-display text-[15px] font-bold uppercase tracking-[0.08em] text-fg-strong">
         {label}
       </span>
-      <span className="text-[12px] text-white/55">{hint}</span>
+      <span className="text-[12px] text-fg-muted">{hint}</span>
     </button>
   );
 }
@@ -693,13 +698,13 @@ function AppCard({
       className={`flex flex-col items-start gap-2 border p-4 text-left transition ${
         selected
           ? "border-cyan bg-cyan/10"
-          : "border-white/15 hover:border-cyan/60 hover:bg-white/[0.03]"
+          : "border-rule hover:border-cyan/60 hover:bg-white/[0.03]"
       }`}
     >
-      <span className="font-display text-[14px] font-bold uppercase tracking-[0.06em] text-white">
+      <span className="font-display text-[14px] font-bold uppercase tracking-[0.06em] text-fg-strong">
         {app.name}
       </span>
-      <span className="text-[11px] uppercase tracking-[0.18em] text-white/45">
+      <span className="text-[11px] uppercase tracking-[0.18em] text-fg-muted">
         {app.tagline}
       </span>
     </button>
@@ -716,7 +721,7 @@ function QrHandoff({
   target: string;
 }) {
   return (
-    <div className="flex flex-col gap-5 border border-white/10 bg-navy-900/40 p-6 sm:flex-row sm:items-center sm:gap-8">
+    <div className="flex flex-col gap-5 border border-rule bg-navy-900/40 p-6 sm:flex-row sm:items-center sm:gap-8">
       <div className="bg-white p-3 shrink-0">
         <img
           src={dataUrl}
@@ -729,14 +734,14 @@ function QrHandoff({
           <span className="h-px w-6 bg-cyan" />
           Continue on phone
         </div>
-        <h3 className="mt-3 font-display text-[17px] font-bold uppercase tracking-[0.04em] text-white">
+        <h3 className="mt-3 font-display text-[17px] font-bold uppercase tracking-[0.04em] text-fg-strong">
           Scan to open {appName}
         </h3>
-        <p className="mt-2 text-[13px] leading-[1.6] text-white/60">
+        <p className="mt-2 text-[13px] leading-[1.6] text-fg-muted">
           Point your phone's camera at this code. It'll open the setup link on
           your phone so you can finish in the {appName} app.
         </p>
-        <div className="mt-3 font-mono text-[11px] break-all text-white/35">
+        <div className="mt-3 font-mono text-[11px] break-all text-fg-faint">
           {target}
         </div>
       </div>
@@ -762,12 +767,12 @@ function SmsHandoff({
   selfSmsHref: string;
 }) {
   return (
-    <div className="border border-white/10 bg-navy-900/40 p-6">
+    <div className="border border-rule bg-navy-900/40 p-6">
       <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
         <span className="h-px w-6 bg-cyan" />
         Text me the setup link
       </div>
-      <p className="mt-2 text-[13px] leading-[1.6] text-white/60">
+      <p className="mt-2 text-[13px] leading-[1.6] text-fg-muted">
         We'll text you a link that opens your feed. Useful if you'd rather set
         this up on a different phone.
       </p>
@@ -778,13 +783,13 @@ function SmsHandoff({
           aria-live="polite"
           className="mt-4 flex items-center justify-between gap-4 border border-cyan/40 bg-cyan/10 p-4"
         >
-          <p className="text-[13px] leading-[1.6] text-white">
+          <p className="text-[13px] leading-[1.6] text-fg-strong">
             Sent. Check your messages — tap the link to finish setup.
           </p>
           <button
             type="button"
             onClick={onReset}
-            className="text-[12px] text-white/60 underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+            className="text-[12px] text-fg-muted underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
           >
             Send another
           </button>
@@ -802,13 +807,14 @@ function SmsHandoff({
             placeholder="+1 555 123 4567"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="flex-1 border border-white/15 bg-navy-900/60 px-4 py-3 font-mono text-[14px] text-white placeholder:text-white/30 focus:border-cyan focus:outline-none"
+            className="flex-1 border border-rule bg-navy-900/60 px-4 py-3 font-mono text-[14px] text-fg-strong placeholder:text-fg-placeholder focus:border-cyan focus:outline-none"
             disabled={state === "sending"}
           />
           <button
             type="submit"
             disabled={!phone.trim() || state === "sending"}
-            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan"
+            aria-busy={state === "sending"}
+            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan"
           >
             {state === "sending" ? "Sending..." : "Text me the link"}
             <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
@@ -819,7 +825,7 @@ function SmsHandoff({
       )}
 
       {state === "error" && error ? (
-        <p role="alert" className="mt-3 text-[13px] text-red-400">
+        <p role="alert" className="mt-3 text-[13px] text-danger">
           {error}
         </p>
       ) : null}
@@ -827,7 +833,7 @@ function SmsHandoff({
       {selfSmsHref ? (
         <a
           href={selfSmsHref}
-          className="mt-4 inline-block text-[12px] text-white/45 underline decoration-white/20 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+          className="mt-4 inline-block text-[12px] text-fg-muted underline decoration-white/20 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
         >
           Or open Messages with the link pre-filled →
         </a>

@@ -21,7 +21,7 @@ function SetupPage() {
   if (state.kind === "loading") {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-navy-900">
-        <p className="text-white/60">Loading…</p>
+        <p className="text-fg-muted">Loading…</p>
       </div>
     );
   }

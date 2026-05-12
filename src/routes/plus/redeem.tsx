@@ -41,7 +41,7 @@ async function mockRedeem(
 }
 
 const inputClass =
-  "w-full border border-white/20 bg-transparent px-3 py-2.5 text-white placeholder:text-white/30 outline-none transition focus:border-cyan disabled:opacity-50";
+  "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-muted outline-none transition focus:border-cyan disabled:opacity-50";
 
 function RedeemPage() {
   const [code, setCode] = useState("");
@@ -61,7 +61,7 @@ function RedeemPage() {
           <div className="grid grid-cols-1 gap-14 lg:grid-cols-12">
             <div className="lg:col-span-5">
               <div className="inside-tab text-[13px]">Redeem an Ark+ gift</div>
-              <h1 className="mt-10 text-white">
+              <h1 className="mt-10 text-fg-strong">
                 <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                   Got a code?
                 </span>
@@ -69,7 +69,7 @@ function RedeemPage() {
                   <span className="display text-cyan">Redeem</span> it.
                 </span>
               </h1>
-              <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-white/70">
+              <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-fg">
                 Enter the code from your gift email along with the email you
                 want associated with your Ark+ membership. We'll handle the
                 rest.
@@ -82,12 +82,12 @@ function RedeemPage() {
                   <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                     You're in
                   </div>
-                  <h2 className="mt-4 font-display text-[28px] leading-tight text-white">
+                  <h2 className="mt-4 font-display text-[28px] leading-tight text-fg-strong">
                     Welcome to Ark+.
                   </h2>
-                  <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-white/70">
+                  <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
                     Your gift has been redeemed. Your access runs through{" "}
-                    <strong className="text-white">
+                    <strong className="text-fg-strong">
                       {new Date(result.expiresAt).toLocaleDateString("en-US", {
                         month: "long",
                         day: "numeric",
@@ -104,8 +104,8 @@ function RedeemPage() {
                   </Link>
                 </div>
               ) : (
-                <form onSubmit={onSubmit} className="border border-white/15 bg-navy-800/50 p-8">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
+                <form onSubmit={onSubmit} className="border border-rule bg-navy-800/50 p-8">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
                     Gift code
                   </div>
                   <input
@@ -117,7 +117,7 @@ function RedeemPage() {
                     className={`${inputClass} mt-3 font-mono uppercase`}
                   />
 
-                  <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/55">
+                  <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
                     Your email
                   </div>
                   <input
@@ -132,7 +132,7 @@ function RedeemPage() {
                   <button
                     type="submit"
                     disabled={result.kind === "submitting"}
-                    className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-white disabled:opacity-60"
+                    className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
                   >
                     {result.kind === "submitting" ? "Redeeming…" : "Redeem"}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
@@ -142,7 +142,7 @@ function RedeemPage() {
 
                   {result.kind === "error" ? (
                     <p
-                      className="mt-3 text-[12px] text-signal/80"
+                      className="mt-3 text-[12px] text-danger"
                       aria-live="polite"
                     >
                       {result.message}

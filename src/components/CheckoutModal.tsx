@@ -38,7 +38,7 @@ function getStripe() {
 }
 
 const inputClass =
-  "w-full border border-white/20 bg-transparent px-3 py-2.5 text-white placeholder:text-white/30 outline-none transition focus:border-cyan disabled:opacity-50";
+  "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-placeholder outline-none transition focus:border-cyan disabled:opacity-50";
 
 const MAX_POLL_ATTEMPTS = 15;
 
@@ -202,13 +202,22 @@ export function CheckoutModal({
   const stripePromiseValue = getStripe();
 
   return (
-    <Modal open={open} onClose={handleClose} className="max-w-lg">
-      <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-cyan">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      className="max-w-lg"
+      labelledBy="checkout-title"
+      describedBy="checkout-desc"
+    >
+      <p id="checkout-desc" className="eyebrow">
         Insider Membership · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
-      <h2 className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-white">
+      <h2
+        id="checkout-title"
+        className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
+      >
         ${displayAmount}{" "}
-        <span className="text-[14px] font-sans font-normal text-white/50">
+        <span className="text-[14px] font-sans font-normal text-fg-muted">
           / {intervalLabel}
         </span>
       </h2>
@@ -239,11 +248,12 @@ export function CheckoutModal({
           <button
             type="submit"
             disabled={step.kind === "creating"}
-            className="w-full border border-cyan bg-cyan px-4 py-2.5 text-sm font-semibold uppercase tracking-wider text-navy transition hover:bg-transparent hover:text-cyan disabled:opacity-60"
+            aria-busy={step.kind === "creating"}
+            className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
           >
             {step.kind === "creating" ? "Preparing checkout…" : "Continue to payment"}
           </button>
-          <p className="text-[11px] leading-snug text-white/45">
+          <p className="text-[12px] leading-snug text-fg-muted">
             Payment is securely processed by Stripe. You'll receive a sign-in
             link by email once your membership is active.
           </p>
@@ -278,23 +288,28 @@ export function CheckoutModal({
       ) : null}
 
       {step.kind === "activating" ? (
-        <div className="mt-6 flex items-center gap-3 text-sm text-white/70">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-cyan" />
+        <div className="mt-6 flex items-center gap-3 text-sm text-fg">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
           <span>Payment received — signing you in…</span>
         </div>
       ) : null}
 
       {step.kind === "processing" ? (
-        <div className="mt-6 space-y-3 text-sm text-white/80">
+        <div className="mt-6 space-y-3 text-sm text-fg">
           <p>
             Your payment is being processed by your bank. We'll email{" "}
-            <span className="font-semibold text-white">{step.email}</span> a
-            sign-in link as soon as it clears (usually within a few minutes).
+            <span
+              className="font-semibold text-fg-strong break-all"
+              title={step.email}
+            >
+              {step.email}
+            </span>{" "}
+            a sign-in link as soon as it clears (usually within a few minutes).
           </p>
           <button
             type="button"
             onClick={handleClose}
-            className="mt-4 w-full border border-white/30 px-4 py-2.5 text-sm font-semibold uppercase tracking-wider transition hover:border-cyan hover:bg-cyan hover:text-navy"
+            className="mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Close
           </button>
@@ -303,11 +318,11 @@ export function CheckoutModal({
 
       {step.kind === "error" ? (
         <div className="mt-6 space-y-3 text-sm">
-          <p className="text-red-300">{step.message}</p>
+          <p role="alert" className="text-danger">{step.message}</p>
           <button
             type="button"
             onClick={() => setStep({ kind: "details" })}
-            className="w-full border border-white/30 px-4 py-2.5 text-sm font-semibold uppercase tracking-wider text-white transition hover:border-cyan hover:bg-cyan hover:text-navy"
+            className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Try again
           </button>
@@ -326,9 +341,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-white/55">
-        {label}
-      </span>
+      <span className="eyebrow text-fg-muted">{label}</span>
       <div className="mt-2">{children}</div>
     </label>
   );
@@ -419,7 +432,8 @@ function PaymentStep({
       <button
         type="submit"
         disabled={!stripe || submitting}
-        className="w-full border border-cyan bg-cyan px-4 py-2.5 text-sm font-semibold uppercase tracking-wider text-navy transition hover:bg-transparent hover:text-cyan disabled:opacity-60"
+        aria-busy={submitting}
+        className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
       >
         {submitting ? "Processing…" : "Pay & activate"}
       </button>

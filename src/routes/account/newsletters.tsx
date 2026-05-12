@@ -41,10 +41,10 @@ function NewsletterPrefs() {
       title="Pick what lands in your inbox."
       lede={`Signed in as ${me.email}. Adjust at any time — toggling off won't delete past issues from your archive.`}
     >
-      <section className="border-t border-white/10 bg-navy-900">
+      <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <form onSubmit={onSave} className="max-w-3xl">
-            <ul className="divide-y divide-white/10 border-y border-white/10">
+            <ul className="divide-y divide-rule border-y border-rule">
               {newsletters.map((n) => (
                 <li
                   key={n.slug}
@@ -52,7 +52,7 @@ function NewsletterPrefs() {
                 >
                   <div>
                     <div className="flex items-center gap-3">
-                      <span className="font-display text-[18px] leading-tight text-white">
+                      <span className="font-display text-[18px] leading-tight text-fg-strong">
                         {n.title}
                       </span>
                       {n.tier === "ark-plus" ? (
@@ -61,10 +61,10 @@ function NewsletterPrefs() {
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-2 max-w-md text-[13.5px] leading-[1.55] text-white/65">
+                    <p className="mt-2 max-w-md text-[13.5px] leading-[1.55] text-fg-muted">
                       {n.description}
                     </p>
-                    <p className="mt-2 text-[12px] uppercase tracking-[0.18em] text-white/45">
+                    <p className="mt-2 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
                       {n.cadence}
                     </p>
                   </div>
@@ -96,7 +96,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
       className={`relative inline-flex h-7 w-12 shrink-0 items-center border transition ${
         on
           ? "border-cyan bg-cyan/20"
-          : "border-white/25 bg-transparent hover:border-white/45"
+          : "border-rule-strong bg-transparent hover:border-rule-strong"
       }`}
     >
       <span

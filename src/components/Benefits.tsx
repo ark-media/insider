@@ -28,7 +28,7 @@ export function Benefits() {
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <div className="inside-tab text-[13px]">What's included</div>
-            <h2 className="mt-10 text-white">
+            <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 Four things,
               </span>
@@ -36,7 +36,7 @@ export function Benefits() {
                 <span className="display text-cyan">one</span> membership.
               </span>
             </h2>
-            <p className="mt-8 max-w-md text-[14px] leading-[1.6] text-white/65">
+            <p className="mt-8 max-w-md text-[14px] leading-[1.6] text-fg-muted">
               No fragmented platforms, no separate logins, no FAQ explaining
               why Discord is locked to Substack. One Ark+ membership covers
               everything below.
@@ -47,16 +47,16 @@ export function Benefits() {
             {benefits.map((b) => (
               <li
                 key={b.no}
-                className="group grid grid-cols-[auto_1fr] gap-x-8 border-t border-white/12 py-7 first:border-t-0 first:pt-0 sm:gap-x-14"
+                className="group grid grid-cols-[auto_1fr] gap-x-8 border-t border-rule py-7 first:border-t-0 first:pt-0 sm:gap-x-14"
               >
                 <div className="display-upright text-[20px] text-cyan sm:text-[22px]">
                   {b.no}
                 </div>
                 <div className="max-w-[54ch]">
-                  <h3 className="display-upright text-[20px] leading-tight text-white sm:text-[22px]">
+                  <h3 className="display-upright text-[20px] leading-tight text-fg-strong sm:text-[22px]">
                     {b.title}
                   </h3>
-                  <p className="mt-3 text-[14px] leading-[1.6] text-white/65">
+                  <p className="mt-3 text-[14px] leading-[1.6] text-fg-muted">
                     {b.body}
                   </p>
                 </div>

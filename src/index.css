@@ -17,10 +17,65 @@
 
   --color-ink: #0b153c;
   --color-paper: #f5f7fb;
-  --color-rule: rgba(255, 255, 255, 0.1);
 
-  /* Accent signal red from brandbook (use sparingly for alerts only) */
+  /* Semantic foregrounds — minimum AA contrast on navy-900.
+     Use text-fg-strong / text-fg / text-fg-muted / text-fg-faint
+     instead of text-white/N for any text content. */
+  --color-fg-strong: rgb(255 255 255 / 0.96);
+  --color-fg: rgb(255 255 255 / 0.85);
+  --color-fg-muted: rgb(255 255 255 / 0.7);
+  --color-fg-faint: rgb(255 255 255 / 0.55);
+  --color-fg-placeholder: rgb(255 255 255 / 0.4);
+
+  /* Rule / divider / decorative scale — never apply to text */
+  --color-rule: rgb(255 255 255 / 0.12);
+  --color-rule-soft: rgb(255 255 255 / 0.08);
+  --color-rule-strong: rgb(255 255 255 / 0.2);
+
+  /* Brand danger (alerts, errors). signal = brandbook red. */
   --color-signal: #eb0102;
+  --color-danger: #ff7a7a;
+  --color-danger-strong: #ff5a5a;
+
+  /* Editorial shadow tokens — for cover artwork and floating chips */
+  --shadow-cover: 0 40px 100px -30px rgb(0 0 0 / 0.7), 0 8px 30px -10px rgb(0 0 0 / 0.5);
+  --shadow-float: 0 20px 50px -20px rgb(0 0 0 / 0.8);
+
+  /* Typographic tracking tokens */
+  --tracking-eyebrow: 0.22em;
+  --tracking-button: 0.18em;
+  --tracking-cta: 0.08em;
+}
+
+@utility eyebrow {
+  font-size: 0.6875rem; /* 11px */
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  color: var(--color-cyan);
+}
+
+/* Skip-to-content link — visually hidden until focused */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.75rem 1rem;
+  background: var(--color-cyan);
+  color: var(--color-navy);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-button);
+  transform: translateY(-110%);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
 }
 
 :root {
@@ -153,9 +208,15 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rise, .marquee-track, .live-dot, .draw-rule, .drift, .draw-check {
-    animation: none;
+  .rise, .marquee-track, .live-dot, .draw-rule, .drift, .draw-check,
+  .animate-spin {
+    animation: none !important;
   }
   .draw-rule { transform: scaleX(1); }
   .draw-check { stroke-dashoffset: 0; }
+}
+
+/* Marquee pause when the user hovers the track (and via JS for explicit control) */
+.marquee-track[data-paused="true"] {
+  animation-play-state: paused;
 }

@@ -15,7 +15,7 @@ function LogoutComponent() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-navy-900">
-      <p className="text-white">Signing out…</p>
+      <p className="text-fg-strong">Signing out…</p>
     </div>
   )
 }

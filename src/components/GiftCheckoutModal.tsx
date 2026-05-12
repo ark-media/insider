@@ -129,30 +129,43 @@ export function GiftCheckoutModal({
   const headerLabel = input ? GIFT_LABEL[input.term] : "";
 
   return (
-    <Modal open={open} onClose={handleClose} className="max-w-lg">
-      <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-cyan">
-        Gift · Inside Call Me Back
-      </p>
-      <h2 className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-white">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      className="max-w-lg"
+      labelledBy="gift-title"
+      describedBy="gift-desc"
+    >
+      <p id="gift-desc" className="eyebrow">Gift · Inside Call Me Back</p>
+      <h2
+        id="gift-title"
+        className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
+      >
         ${headerPrice}{" "}
-        <span className="text-[14px] font-sans font-normal text-white/50">
+        <span className="text-[14px] font-sans font-normal text-fg-muted">
           · {headerLabel}
         </span>
       </h2>
       {input ? (
-        <p className="mt-3 text-[13px] text-white/60">
+        <p className="mt-3 text-[13px] text-fg-muted break-words">
           For{" "}
-          <span className="font-semibold text-white">
+          <span
+            className="font-semibold text-fg-strong break-all"
+            title={input.recipientName || input.recipientEmail}
+          >
             {input.recipientName || input.recipientEmail}
           </span>
           {input.recipientName ? (
-            <span className="text-white/50"> · {input.recipientEmail}</span>
+            <span className="text-fg-muted break-all" title={input.recipientEmail}>
+              {" "}
+              · {input.recipientEmail}
+            </span>
           ) : null}
         </p>
       ) : null}
 
       {step.kind === "creating" ? (
-        <p className="mt-6 text-sm text-white/70">Preparing checkout…</p>
+        <p className="mt-6 text-sm text-fg">Preparing checkout…</p>
       ) : null}
 
       {step.kind === "payment" && stripePromiseValue && input ? (
@@ -177,22 +190,27 @@ export function GiftCheckoutModal({
       ) : null}
 
       {step.kind === "activating" ? (
-        <p className="mt-6 text-sm text-white/70">
+        <p className="mt-6 text-sm text-fg">
           Payment received — setting up the gift…
         </p>
       ) : null}
 
       {step.kind === "processing" && input ? (
-        <div className="mt-6 space-y-3 text-sm text-white/80">
+        <div className="mt-6 space-y-3 text-sm text-fg">
           <p>
             Your payment is being processed. We'll email{" "}
-            <span className="font-semibold text-white">{input.recipientEmail}</span>{" "}
+            <span
+              className="font-semibold text-fg-strong break-all"
+              title={input.recipientEmail}
+            >
+              {input.recipientEmail}
+            </span>{" "}
             as soon as it clears.
           </p>
           <button
             type="button"
             onClick={handleClose}
-            className="mt-4 w-full border border-white/30 px-4 py-2.5 text-sm font-semibold uppercase tracking-wider transition hover:border-cyan hover:bg-cyan hover:text-navy"
+            className="mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Close
           </button>
@@ -203,13 +221,18 @@ export function GiftCheckoutModal({
         <SuccessMark title="Gift sent.">
           <p>
             We just emailed{" "}
-            <span className="font-semibold text-white">{input.recipientEmail}</span>{" "}
+            <span
+              className="font-semibold text-fg-strong break-all"
+              title={input.recipientEmail}
+            >
+              {input.recipientEmail}
+            </span>{" "}
             a welcome link to set up their feed.
           </p>
           <button
             type="button"
             onClick={handleClose}
-            className="mt-6 w-full border border-white/30 px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            className="mt-6 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-[12px] font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Close
           </button>
@@ -218,11 +241,11 @@ export function GiftCheckoutModal({
 
       {step.kind === "error" ? (
         <div className="mt-6 space-y-3 text-sm">
-          <p className="text-red-300">{step.message}</p>
+          <p role="alert" className="text-danger">{step.message}</p>
           <button
             type="button"
             onClick={handleClose}
-            className="w-full border border-white/30 px-4 py-2.5 text-sm font-semibold uppercase tracking-wider text-white transition hover:border-cyan hover:bg-cyan hover:text-navy"
+            className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Close
           </button>
@@ -314,7 +337,8 @@ function PaymentStep({
       <button
         type="submit"
         disabled={!stripe || submitting}
-        className="w-full border border-cyan bg-cyan px-4 py-2.5 text-sm font-semibold uppercase tracking-wider text-navy transition hover:bg-transparent hover:text-cyan disabled:opacity-60"
+        aria-busy={submitting}
+        className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
       >
         {submitting ? "Processing…" : "Pay & send gift"}
       </button>
