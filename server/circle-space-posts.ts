@@ -18,9 +18,11 @@ export type CirclePost = {
   id?: number | string
   name?: string
   slug?: string
-  // Circle's `body` is sometimes a plain HTML string and sometimes an object
-  // with `.html` (and other variants). Accept both — extract the HTML below.
-  body?: string | { html?: string; [k: string]: unknown }
+  // Circle's space-post `body` is an ActionText/rich_text record where the
+  // rendered HTML lives at `body.body`. We also accept a plain string and an
+  // object-with-`.html` shape to stay forgiving across API surfaces (the
+  // broadcasts endpoint and older docs hint at both).
+  body?: string | { body?: string; html?: string; [k: string]: unknown }
   published_at?: string
   created_at?: string
   status?: string
@@ -31,7 +33,10 @@ export type CirclePost = {
 function extractBodyHtml(body: CirclePost['body']): string {
   if (!body) return ''
   if (typeof body === 'string') return body
-  if (typeof body === 'object' && typeof body.html === 'string') return body.html
+  if (typeof body === 'object') {
+    if (typeof body.body === 'string') return body.body
+    if (typeof body.html === 'string') return body.html
+  }
   return ''
 }
 

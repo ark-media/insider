@@ -55,6 +55,30 @@ describe('projectSpacePost', () => {
     expect(out!.body).toContain('Hi there')
   })
 
+  test('accepts body as ActionText rich_text record with nested .body HTML', () => {
+    // Circle's /api/admin/v2/posts list endpoint returns `body` as a Rails
+    // ActionText record: { id, name, body: '<html...>', record_type, record_id, ... }.
+    // The rendered HTML lives at body.body — see circle.ts diagnostic log
+    // confirmation from 2026-05-12.
+    const out = projectSpacePost(
+      {
+        ...base,
+        body: {
+          id: 42,
+          name: 'body',
+          body: '<div><p><strong>Be respectful.</strong></p></div>',
+          record_type: 'Post',
+          record_id: 7,
+        },
+      },
+      'members-letter',
+      'Ark Media editorial',
+      'ark-plus',
+    )
+    expect(out!.bodyHtml).toContain('<strong>Be respectful.</strong>')
+    expect(out!.body).toContain('Be respectful.')
+  })
+
   test('falls back to created_at when published_at missing', () => {
     const out = projectSpacePost(
       { ...base, published_at: undefined, created_at: '2026-01-02T00:00:00Z' },

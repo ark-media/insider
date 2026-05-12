@@ -207,28 +207,6 @@ async function fetchCircleSpacePosts(
     }
     const body = (await res.json()) as { records?: CirclePost[] }
     const records = body.records ?? []
-    if (page === 1 && records[0]) {
-      const sample = records[0] as Record<string, unknown>
-      const bodyPreview =
-        typeof sample.body === 'string'
-          ? `string(${sample.body.length}): ${sample.body.slice(0, 200)}`
-          : sample.body && typeof sample.body === 'object'
-            ? (() => {
-                const inner = (sample.body as Record<string, unknown>).body
-                const innerPreview =
-                  typeof inner === 'string'
-                    ? `string(${inner.length}): ${inner.slice(0, 300)}`
-                    : `type: ${typeof inner}`
-                return `object keys: ${Object.keys(sample.body as object).join(',')} | body.body = ${innerPreview}`
-              })()
-            : `type: ${typeof sample.body}`
-      console.log(
-        '[circle] space posts list — first record keys:',
-        Object.keys(sample).join(','),
-        '| body =',
-        bodyPreview,
-      )
-    }
     if (records.length === 0) break
     for (const p of records) {
       if (isPublishedPost(p)) {
