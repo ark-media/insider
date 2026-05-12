@@ -45,6 +45,15 @@ describe('sanitizeBeehiivHtml', () => {
     const out = sanitizeBeehiivHtml('<a href="javascript:alert(1)">x</a>')
     expect(out).not.toContain('javascript:')
   })
+
+  test('drops Beehiiv default gradient_avatar images', () => {
+    const out = sanitizeBeehiivHtml(
+      '<p>Body.</p><img src="https://media.beehiiv.com/cdn-cgi/image/fit=scale-down/static_assets/gradient_avatar_1.png" alt="">',
+    )
+    expect(out).toContain('<p>Body.</p>')
+    expect(out).not.toContain('gradient_avatar')
+    expect(out).not.toContain('<img')
+  })
 })
 
 describe('projectBeehiivPost', () => {
@@ -138,6 +147,28 @@ describe('projectBeehiivPost', () => {
       'A',
     )
     expect(noPreviewNoSubtitle!.excerpt).toContain('Hello world')
+  })
+
+  test('excerpt fallback does not leak <style> block contents', () => {
+    const out = projectBeehiivPost(
+      {
+        ...base,
+        preview_text: undefined,
+        subtitle: undefined,
+        content: {
+          free: {
+            web:
+              "<style>:root { --wt-primary-color: #030712; --wt-text-on-primary-color: #FFFFFF; }</style>" +
+              '<p>Real body starts here.</p>',
+          },
+        },
+      },
+      'ark-daily',
+      'A',
+    )
+    expect(out!.excerpt).not.toContain('--wt-')
+    expect(out!.excerpt).not.toContain('#030712')
+    expect(out!.excerpt).toContain('Real body starts here')
   })
 
   test('falls back to author fallback when authors[] is empty', () => {

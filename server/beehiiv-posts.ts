@@ -47,7 +47,11 @@ export type BeehiivPost = {
 }
 
 export function stripHtml(html: string): string {
+  // Drop <style>/<script> block *contents* before tag-stripping. Beehiiv's
+  // web HTML ships with a dozen+ theme `<style>` blocks; if we only strip
+  // the tags, the CSS body survives as raw text and leaks into the excerpt.
   return html
+    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -63,6 +67,11 @@ export function stripHtml(html: string): string {
 // of formatting than Circle Broadcasts — block quotes, headings down to h4,
 // images, and horizontal rules are common. Keep the schema tight on <a> and
 // <img> attributes.
+// Beehiiv auto-injects a default author avatar (a gradient sphere PNG) when
+// the post's author has no custom avatar set. It's chrome, not editorial,
+// so we drop it before it reaches the page.
+const BEEHIIV_DEFAULT_AVATAR_RE = /\/static_assets\/gradient_avatar_/i
+
 export function sanitizeBeehiivHtml(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: [
@@ -80,6 +89,9 @@ export function sanitizeBeehiivHtml(html: string): string {
         rel: 'noopener noreferrer',
       }),
     },
+    exclusiveFilter: (frame) =>
+      frame.tag === 'img' &&
+      BEEHIIV_DEFAULT_AVATAR_RE.test(frame.attribs?.src ?? ''),
   })
 }
 
