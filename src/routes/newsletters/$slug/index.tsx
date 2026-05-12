@@ -6,11 +6,8 @@ import {
   type NewsletterPost,
   type NewsletterSlug,
 } from "../../../data/newsletters";
-import {
-  getPublication,
-  listPosts,
-  subscribeEmail,
-} from "../../../lib/beehiiv";
+import { getPublication, subscribeEmail } from "../../../lib/beehiiv";
+import { sourceFor } from "../../../lib/newsletterSources";
 import { PageShell } from "../../../components/PageShell";
 
 export const Route = createFileRoute("/newsletters/$slug/")({
@@ -28,7 +25,9 @@ function NewsletterLandingPage() {
 
   useEffect(() => {
     let live = true;
-    void listPosts(pub.slug).then((p) => live && setPosts(p));
+    void sourceFor(pub.slug)
+      .listPosts(pub.slug)
+      .then((p) => live && setPosts(p));
     return () => {
       live = false;
     };

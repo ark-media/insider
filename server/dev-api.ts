@@ -24,6 +24,20 @@ import {
   type ProjectedEpisode,
   type ScEpisode,
 } from './show-notes.js'
+import {
+  isSentBroadcast,
+  projectBroadcast,
+  type CircleBroadcast,
+} from './circle-broadcasts.js'
+import {
+  isPublishedBeehiivPost,
+  projectBeehiivPost,
+  type BeehiivPost,
+} from './beehiiv-posts.js'
+import type {
+  NewsletterPost,
+  NewsletterSlug,
+} from '../src/data/newsletters.js'
 
 const AUTH0_DOMAIN = 'https://auth.ark-plus.xyz'
 const AUTH0_AUDIENCE = 'https://ark-plus.xyz/api'
@@ -467,6 +481,168 @@ async function fetchSimplecastEpisodes(
 
 
 // ---------------------------------------------------------------------------
+// Circle Admin API v2 — Broadcasts
+//
+// Pulls "sent" broadcasts from Circle and projects them to NewsletterPosts.
+// Used by the public newsletter pages while we evaluate Circle as an
+// alternative to Beehiiv for editorial source. The Admin v2 token is a
+// server-side secret (CIRCLE_ADMIN_API_TOKEN). Each newsletter slug maps to a
+// Circle tag — broadcasts tagged with that tag get routed to that newsletter.
+// ---------------------------------------------------------------------------
+
+const CIRCLE_BROADCASTS_CACHE_TTL_MS = 5 * 60 * 1000
+const circleBroadcastsCache = new Map<
+  NewsletterSlug,
+  { at: number; posts: NewsletterPost[] }
+>()
+
+// newsletter slug → { tag editors apply on send, author for the byline }
+const CIRCLE_NEWSLETTER_BINDINGS: Partial<
+  Record<NewsletterSlug, { tag: string; authorName: string }>
+> = {
+  'the-call-me-back-newsletter': {
+    tag: 'call-me-back',
+    authorName: 'Dan Senor',
+  },
+}
+
+const NEWSLETTER_SLUGS = new Set<NewsletterSlug>([
+  'the-call-me-back-newsletter',
+  'ark-daily',
+  'for-heavens-sake-newsletter',
+  'members-letter',
+])
+
+function isNewsletterSlug(s: string): s is NewsletterSlug {
+  return (NEWSLETTER_SLUGS as Set<string>).has(s)
+}
+
+async function fetchCircleBroadcasts(
+  newsletterSlug: NewsletterSlug,
+  token: string,
+): Promise<NewsletterPost[]> {
+  const cached = circleBroadcastsCache.get(newsletterSlug)
+  if (cached && Date.now() - cached.at < CIRCLE_BROADCASTS_CACHE_TTL_MS) {
+    return cached.posts
+  }
+  const binding = CIRCLE_NEWSLETTER_BINDINGS[newsletterSlug]
+  if (!binding) return []
+
+  // Admin v2 returns broadcasts paginated; 50 is plenty for the "Recent issues"
+  // list. The `?status=sent` filter is per Circle's docs; if it isn't
+  // honored we drop unsent records in the projection too.
+  const url = `https://app.circle.so/api/admin/v2/broadcasts?status=sent&per_page=50`
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`Circle ${res.status}: ${await res.text()}`)
+  }
+  const body = (await res.json()) as { records?: CircleBroadcast[] }
+  const tagLc = binding.tag.toLowerCase()
+
+  const posts: NewsletterPost[] = (body.records ?? [])
+    .filter(isSentBroadcast)
+    .filter((b) => {
+      const tags = (b.tags ?? []).map((t) =>
+        (typeof t === 'string' ? t : (t.name ?? '')).toLowerCase(),
+      )
+      return tags.includes(tagLc)
+    })
+    .map((b) => projectBroadcast(b, newsletterSlug, binding.authorName))
+    .filter((p): p is NewsletterPost => p !== null)
+    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+
+  circleBroadcastsCache.set(newsletterSlug, { at: Date.now(), posts })
+  return posts
+}
+
+
+// ---------------------------------------------------------------------------
+// Beehiiv API v2 — Posts
+//
+// Pulls confirmed (published) posts from a Beehiiv publication and projects
+// them to NewsletterPosts. Used by the public newsletter pages for any
+// newsletter whose source is `beehiivSource`. The API key is a server-side
+// secret (BEEHIIV_API_KEY). Each newsletter slug maps to a publication id
+// resolved from env via BEEHIIV_PUBLICATION_ID_<SLUG_UPPER>.
+// ---------------------------------------------------------------------------
+
+const BEEHIIV_POSTS_CACHE_TTL_MS = 5 * 60 * 1000
+const beehiivPostsCache = new Map<
+  NewsletterSlug,
+  { at: number; posts: NewsletterPost[] }
+>()
+
+// newsletter slug → author fallback for posts whose Beehiiv `authors[]` is
+// empty. Beehiiv usually populates authors, so this is just safety-net copy.
+const BEEHIIV_AUTHOR_FALLBACK: Partial<Record<NewsletterSlug, string>> = {
+  'ark-daily': 'Ark Media newsroom',
+  'for-heavens-sake-newsletter': 'Donniel Hartman & Yossi Klein Halevi',
+  'members-letter': 'Ark Media editorial',
+}
+
+function resolveBeehiivPublicationId(
+  env: Env,
+  newsletterSlug: NewsletterSlug,
+): string | undefined {
+  // Same shape as resolveSimplecastPodcastId: derive an env key from the
+  // newsletter slug. The slug is from a closed union (NewsletterSlug), so the
+  // derived key can't be attacker-controlled.
+  const key = `BEEHIIV_PUBLICATION_ID_${newsletterSlug.toUpperCase().replace(/-/g, '_')}`
+  const value = env[key]
+  return value && value.trim() ? value.trim() : undefined
+}
+
+async function fetchBeehiivPosts(
+  newsletterSlug: NewsletterSlug,
+  token: string,
+  env: Env,
+): Promise<NewsletterPost[]> {
+  const cached = beehiivPostsCache.get(newsletterSlug)
+  if (cached && Date.now() - cached.at < BEEHIIV_POSTS_CACHE_TTL_MS) {
+    return cached.posts
+  }
+  const publicationId = resolveBeehiivPublicationId(env, newsletterSlug)
+  if (!publicationId) return []
+  // Beehiiv publication ids carry a stable `pub_` prefix. Validate before
+  // interpolating into the upstream URL.
+  if (!/^pub_[A-Za-z0-9-]+$/.test(publicationId)) return []
+
+  // v2 returns paginated results; 50 is plenty for the "Recent issues" list.
+  // `expand[]=free_web_content` is required to get the HTML body — by
+  // default v2 returns only metadata. We never request premium_web_content,
+  // so gated content stays on Beehiiv's side of the wire.
+  const url =
+    `https://api.beehiiv.com/v2/publications/${publicationId}/posts` +
+    `?status=confirmed&limit=50&expand[]=free_web_content`
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`Beehiiv ${res.status}: ${await res.text()}`)
+  }
+  const body = (await res.json()) as { data?: BeehiivPost[] }
+  const authorFallback = BEEHIIV_AUTHOR_FALLBACK[newsletterSlug] ?? ''
+
+  const posts: NewsletterPost[] = (body.data ?? [])
+    .filter(isPublishedBeehiivPost)
+    .map((p) => projectBeehiivPost(p, newsletterSlug, authorFallback))
+    .filter((p): p is NewsletterPost => p !== null)
+    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+
+  beehiivPostsCache.set(newsletterSlug, { at: Date.now(), posts })
+  return posts
+}
+
+
+// ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
 type JsonRes = (status: number, body: unknown) => void
@@ -851,6 +1027,83 @@ function buildApi(env: Env): Api {
           } catch (err) {
             console.error('[simplecast] episode fetch failed:', err)
             json(502, { error: 'simplecast_unavailable' })
+          }
+        },
+      })
+
+      // --- Circle Broadcasts (newsletter source during Beehiiv vs Circle test)
+      // Returns broadcasts tagged for the requested newsletter, projected to
+      // the NewsletterPost shape. Returns an empty list when no token or no
+      // binding is configured — pages render an empty "Recent issues" rail.
+      routes.push({
+        path: '/api/circle/broadcasts',
+        handler: async (req, res) => {
+          const json = makeJsonRes(res)
+          if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+          const url = new URL(req.url ?? '', 'http://x')
+          const slug = url.searchParams.get('newsletter')
+          if (!slug) return json(400, { error: 'missing `newsletter`' })
+          if (!isNewsletterSlug(slug)) {
+            return json(400, { error: 'invalid `newsletter`' })
+          }
+
+          // Broadcasts change on editorial cadence (hours/days). Vercel's
+          // edge cache absorbs the traffic between cold starts via SWR: serve
+          // the cached body for s-maxage seconds, then keep serving stale for
+          // up to stale-while-revalidate seconds while one request goes
+          // upstream to refresh. Caps Circle Admin API hits at roughly one
+          // per region per 5 minutes regardless of traffic.
+          res.setHeader(
+            'cache-control',
+            'public, s-maxage=300, stale-while-revalidate=3600',
+          )
+
+          const token = env.CIRCLE_ADMIN_API_TOKEN
+          if (!token) return json(200, { posts: [] })
+
+          try {
+            const posts = await fetchCircleBroadcasts(slug, token)
+            json(200, { posts })
+          } catch (err) {
+            console.error('[circle] broadcasts fetch failed:', err)
+            json(502, { error: 'circle_unavailable' })
+          }
+        },
+      })
+
+      // --- Beehiiv Posts (newsletter source for Beehiiv-backed newsletters)
+      // Returns confirmed posts from the publication mapped to the requested
+      // newsletter slug, projected to the NewsletterPost shape. Returns an
+      // empty list when BEEHIIV_API_KEY or the publication-id env is unset.
+      routes.push({
+        path: '/api/beehiiv/posts',
+        handler: async (req, res) => {
+          const json = makeJsonRes(res)
+          if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+          const url = new URL(req.url ?? '', 'http://x')
+          const slug = url.searchParams.get('newsletter')
+          if (!slug) return json(400, { error: 'missing `newsletter`' })
+          if (!isNewsletterSlug(slug)) {
+            return json(400, { error: 'invalid `newsletter`' })
+          }
+
+          // Same SWR pattern as the Circle route — see comment there.
+          res.setHeader(
+            'cache-control',
+            'public, s-maxage=300, stale-while-revalidate=3600',
+          )
+
+          const token = env.BEEHIIV_API_KEY
+          if (!token) return json(200, { posts: [] })
+
+          try {
+            const posts = await fetchBeehiivPosts(slug, token, env)
+            json(200, { posts })
+          } catch (err) {
+            console.error('[beehiiv] posts fetch failed:', err)
+            json(502, { error: 'beehiiv_unavailable' })
           }
         },
       })

@@ -4,9 +4,14 @@ import {
   formatPostDate,
   type NewsletterSlug,
 } from "../../../data/newsletters";
-import { getPost, getPublication, type FetchPostResult } from "../../../lib/beehiiv";
+import { getPublication } from "../../../lib/beehiiv";
+import {
+  sourceFor,
+  type FetchPostResult,
+} from "../../../lib/newsletterSources";
 import { PageShell } from "../../../components/PageShell";
 import { useSubscriberAuth } from "../../../lib/subscriberAuth";
+import { renderShowNotes } from "../../../lib/show-notes-renderer";
 
 export const Route = createFileRoute("/newsletters/$slug/$post")({
   loader: async ({ params }) => {
@@ -26,9 +31,9 @@ function PostPage() {
 
   useEffect(() => {
     let live = true;
-    void getPost(pub.slug, postSlug, isMember).then(
-      (r) => live && setResult(r),
-    );
+    void sourceFor(pub.slug)
+      .getPost(pub.slug, postSlug, isMember)
+      .then((r) => live && setResult(r));
     return () => {
       live = false;
     };
@@ -91,11 +96,15 @@ function PostPage() {
       <article className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[820px] px-6 py-12 sm:px-10">
           <div className="space-y-5 text-[16px] leading-[1.75] text-fg">
-            {post.body.split("\n\n").map((para, i) => (
-              <p key={i} className="break-words whitespace-pre-line">
-                {para}
-              </p>
-            ))}
+            {post.bodyHtml ? (
+              renderShowNotes(post.bodyHtml)
+            ) : (
+              post.body.split("\n\n").map((para, i) => (
+                <p key={i} className="break-words whitespace-pre-line">
+                  {para}
+                </p>
+              ))
+            )}
           </div>
         </div>
       </article>
