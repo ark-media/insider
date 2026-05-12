@@ -12,6 +12,11 @@ import {
   projectBroadcast,
   type CircleBroadcast,
 } from '../circle-broadcasts.js'
+import {
+  isPublishedPost,
+  projectSpacePost,
+  type CirclePost,
+} from '../circle-space-posts.js'
 import type {
   NewsletterPost,
   NewsletterSlug,
@@ -39,6 +44,23 @@ const CIRCLE_NEWSLETTER_BINDINGS: Partial<
   'the-call-me-back-newsletter': {
     tag: 'call-me-back',
     authorName: 'Dan Senor',
+  },
+}
+
+// newsletter slug → { Circle space slug, author byline, tier the newsletter
+// publishes at }. Space posts (community discussion content) don't carry a
+// per-post tier signal like the "members-only" tag on broadcasts — every post
+// in a gated space is gated, so the tier rides on the binding.
+const CIRCLE_SPACE_BINDINGS: Partial<
+  Record<
+    NewsletterSlug,
+    { spaceSlug: string; authorName: string; tier: 'free' | 'ark-plus' }
+  >
+> = {
+  'members-letter': {
+    spaceSlug: 'ark-code-of-conduct',
+    authorName: 'Ark Media editorial',
+    tier: 'ark-plus',
   },
 }
 
@@ -102,6 +124,111 @@ async function fetchCircleBroadcasts(
   return posts
 }
 
+// ---------------------------------------------------------------------------
+// Circle space posts → NewsletterPost
+//
+// Admin v2 has no `slug` filter on /spaces, so we paginate /spaces, match the
+// slug client-side, then fetch /posts?space_id=<id>. Both lookups are cached
+// behind the same TTL as broadcasts.
+// ---------------------------------------------------------------------------
+
+const CIRCLE_SPACE_POSTS_CACHE_TTL_MS = 5 * 60 * 1000
+const circleSpacePostsCache = new Map<
+  NewsletterSlug,
+  { at: number; posts: NewsletterPost[] }
+>()
+const circleSpaceIdCache = new Map<string, { at: number; id: number }>()
+
+const CIRCLE_SPACES_PAGE_SIZE = 100
+const CIRCLE_SPACES_MAX_PAGES = 5
+const CIRCLE_SPACE_POSTS_TARGET = 50
+const CIRCLE_SPACE_POSTS_MAX_PAGES = 5
+const CIRCLE_SPACE_POSTS_PAGE_SIZE = 50
+
+type CircleSpaceRecord = { id?: number; slug?: string }
+
+async function resolveSpaceIdBySlug(
+  spaceSlug: string,
+  token: string,
+): Promise<number | null> {
+  const cached = circleSpaceIdCache.get(spaceSlug)
+  if (cached && Date.now() - cached.at < CIRCLE_SPACE_POSTS_CACHE_TTL_MS) {
+    return cached.id
+  }
+  for (let page = 1; page <= CIRCLE_SPACES_MAX_PAGES; page += 1) {
+    const url =
+      `https://app.circle.so/api/admin/v2/spaces` +
+      `?per_page=${CIRCLE_SPACES_PAGE_SIZE}&page=${page}`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      throw new Error(`Circle ${res.status}: ${await res.text()}`)
+    }
+    const body = (await res.json()) as { records?: CircleSpaceRecord[] }
+    const records = body.records ?? []
+    if (records.length === 0) break
+    const match = records.find((s) => s.slug === spaceSlug)
+    if (match?.id !== undefined) {
+      circleSpaceIdCache.set(spaceSlug, { at: Date.now(), id: match.id })
+      return match.id
+    }
+    if (records.length < CIRCLE_SPACES_PAGE_SIZE) break
+  }
+  return null
+}
+
+async function fetchCircleSpacePosts(
+  newsletterSlug: NewsletterSlug,
+  token: string,
+): Promise<NewsletterPost[]> {
+  const cached = circleSpacePostsCache.get(newsletterSlug)
+  if (cached && Date.now() - cached.at < CIRCLE_SPACE_POSTS_CACHE_TTL_MS) {
+    return cached.posts
+  }
+  const binding = CIRCLE_SPACE_BINDINGS[newsletterSlug]
+  if (!binding) return []
+
+  const spaceId = await resolveSpaceIdBySlug(binding.spaceSlug, token)
+  if (spaceId === null) return []
+
+  const matches: CirclePost[] = []
+  for (let page = 1; page <= CIRCLE_SPACE_POSTS_MAX_PAGES; page += 1) {
+    const url =
+      `https://app.circle.so/api/admin/v2/posts` +
+      `?space_id=${encodeURIComponent(String(spaceId))}` +
+      `&status=published` +
+      `&per_page=${CIRCLE_SPACE_POSTS_PAGE_SIZE}&page=${page}`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      throw new Error(`Circle ${res.status}: ${await res.text()}`)
+    }
+    const body = (await res.json()) as { records?: CirclePost[] }
+    const records = body.records ?? []
+    if (records.length === 0) break
+    for (const p of records) {
+      if (isPublishedPost(p)) {
+        matches.push(p)
+        if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
+      }
+    }
+    if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
+    if (records.length < CIRCLE_SPACE_POSTS_PAGE_SIZE) break
+  }
+
+  const posts: NewsletterPost[] = matches
+    .map((p) =>
+      projectSpacePost(p, newsletterSlug, binding.authorName, binding.tier),
+    )
+    .filter((p): p is NewsletterPost => p !== null)
+    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+
+  circleSpacePostsCache.set(newsletterSlug, { at: Date.now(), posts })
+  return posts
+}
+
 export function circleRoutes({ env }: Deps): Route[] {
   return [
     {
@@ -132,6 +259,36 @@ export function circleRoutes({ env }: Deps): Route[] {
           json(200, { posts })
         } catch (err) {
           console.error('[circle] broadcasts fetch failed:', err)
+          json(502, { error: 'circle_unavailable' })
+        }
+      },
+    },
+    {
+      path: '/api/circle/space-posts',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+        const url = new URL(req.url ?? '', 'http://x')
+        const slug = url.searchParams.get('newsletter')
+        if (!slug) return json(400, { error: 'missing `newsletter`' })
+        if (!isNewsletterSlug(slug)) {
+          return json(400, { error: 'invalid `newsletter`' })
+        }
+
+        res.setHeader(
+          'cache-control',
+          'public, s-maxage=300, stale-while-revalidate=3600',
+        )
+
+        const token = env.CIRCLE_ADMIN_API_TOKEN
+        if (!token) return json(200, { posts: [] })
+
+        try {
+          const posts = await fetchCircleSpacePosts(slug, token)
+          json(200, { posts })
+        } catch (err) {
+          console.error('[circle] space posts fetch failed:', err)
           json(502, { error: 'circle_unavailable' })
         }
       },

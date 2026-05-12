@@ -114,3 +114,54 @@ export const circleSource: NewsletterSource = {
   listPosts: circleListPosts,
   getPost: circleGetPost,
 };
+
+// ---------------------------------------------------------------------------
+// Newsletter source — Circle space posts (community content as issues)
+// ---------------------------------------------------------------------------
+
+async function fetchSpacePostsFromApi(
+  slug: NewsletterSlug,
+): Promise<NewsletterPost[]> {
+  try {
+    const res = await fetch(
+      `/api/circle/space-posts?newsletter=${encodeURIComponent(slug)}`,
+      { credentials: "same-origin" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as BroadcastsResponse;
+    return body.posts ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function circleSpaceListPosts(
+  slug: NewsletterSlug,
+): Promise<NewsletterPost[]> {
+  return fetchSpacePostsFromApi(slug);
+}
+
+async function circleSpaceGetPost(
+  slug: NewsletterSlug,
+  postSlug: string,
+  isMember: boolean,
+): Promise<FetchPostResult> {
+  const posts = await circleSpaceListPosts(slug);
+  const post = posts.find((p) => p.slug === postSlug);
+  if (!post) return { kind: "not-found" };
+  if (post.tier === "free" || isMember) return { kind: "ok", post };
+
+  const previewText =
+    post.body.split(/(?<=\.|!|\?)\s+/).slice(0, 2).join(" ") || post.excerpt;
+  const preview: NewsletterPost = {
+    ...post,
+    body: previewText,
+    bodyHtml: undefined,
+  };
+  return { kind: "gated", preview, reason: "ark-plus-required" };
+}
+
+export const circleSpaceSource: NewsletterSource = {
+  listPosts: circleSpaceListPosts,
+  getPost: circleSpaceGetPost,
+};

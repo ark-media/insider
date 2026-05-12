@@ -11,7 +11,7 @@
 
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import { beehiivSource } from "./beehiiv";
-import { circleSource } from "./circle";
+import { circleSource, circleSpaceSource } from "./circle";
 
 export type FetchPostResult =
   | { kind: "ok"; post: NewsletterPost }
@@ -31,7 +31,7 @@ const sourceBySlug: Record<NewsletterSlug, NewsletterSource> = {
   "the-call-me-back-newsletter": circleSource,
   "ark-daily": beehiivSource,
   "for-heavens-sake-newsletter": beehiivSource,
-  "members-letter": beehiivSource,
+  "members-letter": circleSpaceSource,
 };
 
 export function sourceFor(slug: NewsletterSlug): NewsletterSource {
