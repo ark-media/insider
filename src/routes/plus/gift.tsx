@@ -85,7 +85,7 @@ function GiftPage() {
             <div className="lg:col-span-7">
               <form
                 onSubmit={onSubmit}
-                className="border border-rule bg-navy-800/50 p-8"
+                className="border border-rule bg-navy-800/50 p-5 sm:p-8"
               >
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
                   Gift length
@@ -93,7 +93,7 @@ function GiftPage() {
                 <div
                   role="radiogroup"
                   aria-label="Gift length"
-                  className="mt-3 grid grid-cols-2 gap-3"
+                  className="mt-3 grid grid-cols-2 gap-2 sm:gap-3"
                 >
                   {(["6mo", "1yr"] as const).map((t) => {
                     const selected = term === t;
@@ -209,7 +209,7 @@ function GiftPage() {
                   className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
                 >
                   Continue to payment · ${GIFT_PRICE_DOLLARS[term]}
-                  <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+                  <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                     →
                   </span>
                 </button>

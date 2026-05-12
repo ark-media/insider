@@ -92,7 +92,7 @@ function PostPage() {
         <div className="mx-auto max-w-[820px] px-6 py-12 sm:px-10">
           <div className="space-y-5 text-[16px] leading-[1.75] text-fg">
             {post.body.split("\n\n").map((para, i) => (
-              <p key={i} className="whitespace-pre-line">
+              <p key={i} className="break-words whitespace-pre-line">
                 {para}
               </p>
             ))}

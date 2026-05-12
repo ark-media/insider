@@ -135,7 +135,7 @@ function RedeemPage() {
                     className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
                   >
                     {result.kind === "submitting" ? "Redeeming…" : "Redeem"}
-                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                       →
                     </span>
                   </button>

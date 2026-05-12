@@ -114,7 +114,7 @@ export function NumberedRow({
   );
 
   const containerClass =
-    "group grid grid-cols-[auto_1fr] items-start gap-x-8 border-t border-rule py-8 transition first:border-t-0 first:pt-0 sm:gap-x-12";
+    "group grid grid-cols-[auto_1fr] items-start gap-x-5 border-t border-rule py-8 transition first:border-t-0 first:pt-0 sm:gap-x-12";
 
   if (to) {
     return (

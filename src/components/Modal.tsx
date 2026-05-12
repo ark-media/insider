@@ -81,12 +81,12 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={labelledBy}
       aria-describedby={describedBy}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy-900/90 py-8 sm:items-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy-900/90 py-4 sm:items-center sm:py-8"
       onClick={stableClose}
     >
       <div
         ref={panelRef}
-        className={`relative mx-4 my-auto w-full border border-rule bg-navy-900 p-8 text-fg-strong shadow-2xl ${className ?? ""}`}
+        className={`relative mx-3 my-auto w-full border border-rule bg-navy-900 p-6 text-fg-strong shadow-2xl sm:mx-4 sm:p-8 ${className ?? ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         <button

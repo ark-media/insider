@@ -66,7 +66,7 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-8 text-[13px] sm:grid-cols-4 lg:col-span-7">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-8 text-[13px] sm:gap-x-8 sm:grid-cols-4 lg:col-span-7">
             {sections.map((s) => (
               <FooterCol key={s.title} title={s.title} links={s.links} />
             ))}

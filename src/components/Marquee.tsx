@@ -44,7 +44,7 @@ export function Marquee() {
         onClick={() => setPaused((p) => !p)}
         aria-label={paused ? "Resume marquee animation" : "Pause marquee animation"}
         aria-pressed={paused}
-        className="absolute right-2 top-1/2 inline-flex min-h-9 min-w-9 -translate-y-1/2 items-center justify-center bg-navy-900/80 text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="absolute right-2 top-1/2 inline-flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center bg-navy-900/80 text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         <span aria-hidden="true" className="text-[12px]">
           {paused ? "▶" : "❚❚"}

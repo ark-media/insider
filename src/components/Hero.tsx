@@ -46,7 +46,7 @@ export function Hero() {
               className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong"
             >
               Become a member
-              <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+              <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                 →
               </span>
             </a>

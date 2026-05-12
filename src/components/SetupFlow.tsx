@@ -454,7 +454,7 @@ export function SetupFlow({ me }: { me: Me }) {
                     className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong"
                   >
                     {copied ? "Copied ✓" : selectedApp.ctaLabel}
-                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                       →
                     </span>
                   </button>
@@ -466,7 +466,7 @@ export function SetupFlow({ me }: { me: Me }) {
                     className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong"
                   >
                     {selectedApp.ctaLabel}
-                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                       →
                     </span>
                   </a>
@@ -504,7 +504,7 @@ export function SetupFlow({ me }: { me: Me }) {
                 />
               ) : null}
 
-              <div className="border border-rule bg-navy-900/60 p-4 font-mono text-[12px] break-all text-fg-muted">
+              <div className="overflow-x-auto border border-rule bg-navy-900/60 p-4 font-mono text-[13px] whitespace-nowrap text-fg-muted sm:text-[12px]">
                 {feedUrl || "No feed available for this membership yet."}
               </div>
 
@@ -817,7 +817,7 @@ function SmsHandoff({
             className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan"
           >
             {state === "sending" ? "Sending..." : "Text me the link"}
-            <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+            <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
               →
             </span>
           </button>
