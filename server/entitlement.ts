@@ -6,8 +6,9 @@
 //
 //   1. Auth0 — user.app_metadata.tier, surfaced to clients via the
 //      AUTH0_TIER_CLAIM custom claim (configured by an Auth0 Login Action).
-//   2. Circle — community member tag (CIRCLE_SUBSCRIBER_TAG_ID) controls
-//      which Spaces the member can see.
+//   2. Circle — community access group (CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID)
+//      controls which Spaces the member can see. Gate Spaces against the
+//      group directly in the Circle admin UI.
 //
 // Failures are isolated per target: if Auth0 is down, Circle still gets
 // updated, and vice versa. Both endpoints are idempotent on our end, so the
@@ -66,7 +67,7 @@ export async function syncEntitlement(
 ): Promise<EntitlementResult> {
   const [auth0Res, circleRes] = await Promise.allSettled([
     setAuth0Tier(env, email, tier, opts),
-    setCircleTag(env, email, tier),
+    setCircleAccessGroup(env, email, tier),
   ])
 
   const auth0: Auth0Status =
@@ -199,44 +200,62 @@ export async function fetchAuth0EmailVerified(
 }
 
 // --- Circle ----------------------------------------------------------------
-// Circle's Headless Member API (v1). Find a member by email, then add or
-// remove the subscriber tag. The tag's ID is created once in the Circle admin
-// UI and stored as CIRCLE_SUBSCRIBER_TAG_ID.
+// Circle's Admin v2 API. Members of the configured access group can see the
+// Spaces gated to it; non-members can't. The group's ID is created once in
+// Circle admin and stored as CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID.
+//
+// The Admin v2 access-groups endpoints take email directly, so no separate
+// member-id lookup is needed in the per-email path. Member-id resolution is
+// still required for the reconciler's drift pass (see
+// listCircleAccessGroupSubscriberEmails) because the access-group list
+// returns only ids.
 
-const CIRCLE_API = 'https://app.circle.so/api/v1'
+const CIRCLE_API = 'https://app.circle.so/api/admin/v2'
 
-async function setCircleTag(
+async function setCircleAccessGroup(
   env: Env,
   email: string,
   tier: Tier,
 ): Promise<'ok' | 'no-member' | 'skipped'> {
   const apiToken = env.CIRCLE_API_TOKEN
-  const communityId = env.CIRCLE_COMMUNITY_ID
-  const tagId = env.CIRCLE_SUBSCRIBER_TAG_ID
-  if (!apiToken || !communityId || !tagId) return 'skipped'
+  const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
+  if (!apiToken || !accessGroupId) return 'skipped'
 
-  const headers = { Authorization: `Token ${apiToken}` }
-
-  const find = await fetch(
-    `${CIRCLE_API}/community_members/search?email=${encodeURIComponent(email)}&community_id=${encodeURIComponent(communityId)}`,
-    { headers },
-  )
-  if (find.status === 404) return 'no-member'
-  if (!find.ok) {
-    throw new Error(`Circle search ${find.status}: ${await find.text()}`)
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    'Content-Type': 'application/json',
   }
-  const member = (await find.json()) as { id?: number } | null
-  if (!member?.id) return 'no-member'
+  const base = `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members`
 
-  const method = tier === 'subscriber' ? 'POST' : 'DELETE'
-  const tagRes = await fetch(
-    `${CIRCLE_API}/community_members/${member.id}/tags/${encodeURIComponent(tagId)}`,
-    { method, headers },
+  if (tier === 'subscriber') {
+    const res = await fetch(base, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email }),
+    })
+    // 404 → the email isn't a Circle community member yet. Treat as
+    // no-member, matching the pre-access-group behavior; the user will be
+    // added on their first Circle SSO.
+    if (res.status === 404) return 'no-member'
+    // 422 / 409 → already a member (Circle's response code for duplicates is
+    // undocumented in the Admin v2 spec; both have been observed in practice).
+    // Treat as in-desired-state. All other 4xx (400, 401, 403, ...) still
+    // throw so auth and validation errors surface.
+    if (!res.ok && res.status !== 422 && res.status !== 409) {
+      throw new Error(`Circle access-group POST ${res.status}: ${await res.text()}`)
+    }
+    return 'ok'
+  }
+
+  // tier === 'free' → remove
+  const res = await fetch(
+    `${base}?email=${encodeURIComponent(email)}`,
+    { method: 'DELETE', headers },
   )
-  // DELETE on a tag the member doesn't have, and POST on a tag they already
-  // have, both return 4xx. Treat those as already-in-desired-state.
-  if (!tagRes.ok && tagRes.status !== 404 && tagRes.status !== 422) {
-    throw new Error(`Circle tag ${method} ${tagRes.status}: ${await tagRes.text()}`)
+  // 404 → not in the group already (either never was, or no member record).
+  // Treat as desired state.
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Circle access-group DELETE ${res.status}: ${await res.text()}`)
   }
   return 'ok'
 }
@@ -264,16 +283,16 @@ export async function emailForStripeCustomer(
 //   2. Walk Auth0 users with tier='subscriber'. For any whose email is not
 //      in the active set AND whose gift hasn't expired, leave alone. The
 //      rest get synced to 'free'. This heals any missed webhook downgrades.
-//   3. Walk Circle members with the subscriber tag. Untag any that aren't in
-//      the active set, aren't gift-protected, and weren't already touched by
-//      pass 2. Catches drift where Auth0 already reads 'free' but Circle
-//      still has the tag — pass 2 misses those because it iterates Auth0,
-//      not Circle.
+//   3. Walk Circle's subscriber access group. Remove any members who aren't
+//      in the active set, aren't gift-protected, and weren't already
+//      touched by pass 2. Catches drift where Auth0 already reads 'free'
+//      but Circle still has the user in the access group — pass 2 misses
+//      those because it iterates Auth0, not Circle.
 //
 // Auth0 v3 search caps at 1000 hits regardless of pagination; pass 2 falls
 // back to /jobs/users-exports when that ceiling is reached.
 //
-// Circle drift untags are capped (CIRCLE_DRIFT_MAX_UNTAG) so a bad list
+// Circle drift removals are capped (CIRCLE_DRIFT_MAX_REMOVE) so a bad list
 // response can't mass-downgrade subscribers — any overflow waits for the
 // next cron run.
 
@@ -285,7 +304,7 @@ type ReconcileSummary = {
   results: EntitlementResult[]
 }
 
-const CIRCLE_DRIFT_MAX_UNTAG = 100
+const CIRCLE_DRIFT_MAX_REMOVE = 100
 
 export async function reconcileEntitlements(
   env: Env,
@@ -323,12 +342,13 @@ export async function reconcileEntitlements(
 
   // Pass 3 — Circle drift. Soft-fail: a list error shouldn't fail the cron.
   const downgradeSet = new Set(downgradeEmails)
-  const circleSubs = await listCircleSubscribers(env, maxAuth0Pages).catch(
-    (err: unknown) => {
-      console.error('[reconcile] listCircleSubscribers failed:', err)
-      return [] as string[]
-    },
-  )
+  const circleSubs = await listCircleAccessGroupSubscriberEmails(
+    env,
+    maxAuth0Pages,
+  ).catch((err: unknown) => {
+    console.error('[reconcile] listCircleAccessGroupSubscriberEmails failed:', err)
+    return [] as string[]
+  })
   const driftEmails = circleSubs
     .filter(
       (email) =>
@@ -336,7 +356,7 @@ export async function reconcileEntitlements(
         !giftProtected.has(email) &&
         !downgradeSet.has(email),
     )
-    .slice(0, CIRCLE_DRIFT_MAX_UNTAG)
+    .slice(0, CIRCLE_DRIFT_MAX_REMOVE)
 
   const driftResults = await batched(
     driftEmails,
@@ -538,40 +558,71 @@ async function listAuth0SubscribersViaExport(
   return out
 }
 
-// Lists Circle community members tagged as subscribers. Used by the
-// reconciler's drift pass to catch the case where Circle still has the
-// subscriber tag but Auth0 already reads 'free' (a partial-failure during a
-// downgrade webhook). Returns emails lowercased.
-async function listCircleSubscribers(
+// Lists emails of members currently in the subscriber access group. Used by
+// the reconciler's drift pass to catch the case where Circle still has the
+// member in the group but Auth0 already reads 'free' (a partial-failure
+// during a downgrade webhook).
+//
+// The Admin v2 access-group list endpoint returns only community_member_id;
+// we resolve those to emails by walking /community_members in parallel and
+// joining the two. Both walks share the same maxPages budget.
+async function listCircleAccessGroupSubscriberEmails(
   env: Env,
   maxPages: number,
 ): Promise<string[]> {
   const apiToken = env.CIRCLE_API_TOKEN
-  const communityId = env.CIRCLE_COMMUNITY_ID
-  const tagId = env.CIRCLE_SUBSCRIBER_TAG_ID
-  if (!apiToken || !communityId || !tagId) return []
+  const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
+  if (!apiToken || !accessGroupId) return []
 
-  const headers = { Authorization: `Token ${apiToken}` }
-  const emails: string[] = []
+  const headers = { Authorization: `Bearer ${apiToken}` }
+
+  // 1. Member ids in the access group.
+  const memberIds = new Set<number>()
   for (let page = 1; page <= maxPages; page += 1) {
     const url =
-      `${CIRCLE_API}/community_members?` +
-      `community_id=${encodeURIComponent(communityId)}` +
-      `&per_page=100&page=${page}` +
-      `&member_tag_ids[]=${encodeURIComponent(tagId)}`
+      `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members` +
+      `?per_page=100&page=${page}`
     const res = await fetch(url, { headers })
     if (!res.ok) {
-      throw new Error(`Circle list ${res.status}: ${await res.text()}`)
+      throw new Error(`Circle access-group list ${res.status}: ${await res.text()}`)
     }
-    // Circle's v1 list returns either a bare array or an envelope; accept both.
-    const body = (await res.json()) as
-      | Array<{ email?: string }>
-      | { records?: Array<{ email?: string }> }
-    const records = Array.isArray(body) ? body : (body.records ?? [])
+    const body = (await res.json()) as {
+      records?: Array<{ community_member_id?: number }>
+      has_next_page?: boolean
+    }
+    const records = body.records ?? []
     for (const r of records) {
-      if (r.email) emails.push(r.email.toLowerCase())
+      if (typeof r.community_member_id === 'number') memberIds.add(r.community_member_id)
     }
-    if (records.length < 100) break
+    if (records.length < 100 || body.has_next_page === false) break
+  }
+  if (memberIds.size === 0) return []
+
+  // 2. Resolve ids → emails by walking the full members list.
+  const emails: string[] = []
+  for (let page = 1; page <= maxPages; page += 1) {
+    const url = `${CIRCLE_API}/community_members?per_page=100&page=${page}`
+    const res = await fetch(url, { headers })
+    if (!res.ok) {
+      throw new Error(`Circle members list ${res.status}: ${await res.text()}`)
+    }
+    const body = (await res.json()) as {
+      records?: Array<{ id?: number; email?: string }>
+      has_next_page?: boolean
+    }
+    const records = body.records ?? []
+    for (const r of records) {
+      if (
+        typeof r.id === 'number' &&
+        memberIds.has(r.id) &&
+        typeof r.email === 'string'
+      ) {
+        emails.push(r.email.toLowerCase())
+      }
+    }
+    // Once every id in the access group has been matched, no need to keep paging.
+    if (emails.length >= memberIds.size) break
+    if (records.length < 100 || body.has_next_page === false) break
   }
   return emails
 }

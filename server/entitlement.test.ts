@@ -1,7 +1,7 @@
 // Unit tests for the entitlement sync. fetch is monkey-patched per test so
 // neither Auth0 nor Circle is hit over the network. Tests focus on:
 //   - subscriber/free flips PATCH the right Auth0 user and POST/DELETE the
-//     right Circle tag
+//     right Circle access group membership
 //   - missing-user / missing-member return no-op statuses (not errors)
 //   - one downstream failing doesn't poison the other
 //   - skipped status when env vars are absent
@@ -19,8 +19,7 @@ const BASE_ENV = {
   AUTH0_MANAGEMENT_CLIENT_SECRET: 'csec',
   AUTH0_TENANT_DOMAIN: 'https://tenant.us.auth0.com',
   CIRCLE_API_TOKEN: 'circle-tok',
-  CIRCLE_COMMUNITY_ID: 'comm-1',
-  CIRCLE_SUBSCRIBER_TAG_ID: 'tag-99',
+  CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: 'ag-99',
 } as Record<string, string>
 
 type FetchCall = { url: string; init?: RequestInit }
@@ -52,7 +51,7 @@ afterAll(() => {
   globalThis.fetch = originalFetch
 })
 
-// Default routes: token + user-found + circle-found + tag-success.
+// Default routes: token + user-found + access-group POST/DELETE success.
 function happyPath(): FetchHandler {
   return ({ url, init }) => {
     if (url.endsWith('/oauth/token')) {
@@ -64,10 +63,7 @@ function happyPath(): FetchHandler {
     if (url.includes('/api/v2/users/') && init?.method === 'PATCH') {
       return jsonRes(200, {})
     }
-    if (url.includes('/community_members/search')) {
-      return jsonRes(200, { id: 7 })
-    }
-    if (url.includes('/community_members/7/tags/')) {
+    if (url.includes('/access_groups/ag-99/community_members')) {
       return jsonRes(200, {})
     }
     return jsonRes(500, { unexpected: url })
@@ -75,7 +71,7 @@ function happyPath(): FetchHandler {
 }
 
 describe('syncEntitlement', () => {
-  test('subscriber: PATCHes Auth0 with tier and POSTs Circle tag', async () => {
+  test('subscriber: PATCHes Auth0 with tier and POSTs Circle access group', async () => {
     installFetch(happyPath())
     const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
     expect(res).toEqual({ email: 'a@x.com', tier: 'subscriber', auth0: 'ok', circle: 'ok' })
@@ -87,11 +83,14 @@ describe('syncEntitlement', () => {
     // No gift => gift_expires_at not set on subscriber upgrade.
     expect(patchBody.app_metadata.gift_expires_at).toBeUndefined()
 
-    const tagCall = calls.find((c) => c.url.includes('/tags/tag-99'))
-    expect(tagCall?.init?.method).toBe('POST')
+    const agCall = calls.find((c) =>
+      c.url.includes('/access_groups/ag-99/community_members'),
+    )
+    expect(agCall?.init?.method).toBe('POST')
+    expect(JSON.parse(String(agCall!.init!.body))).toEqual({ email: 'a@x.com' })
   })
 
-  test('free: PATCHes Auth0 with free and DELETEs Circle tag', async () => {
+  test('free: PATCHes Auth0 with free and DELETEs Circle access group', async () => {
     installFetch(happyPath())
     const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'free')
     expect(res.auth0).toBe('ok')
@@ -104,16 +103,21 @@ describe('syncEntitlement', () => {
     // Downgrade clears any prior gift state.
     expect(patchBody.app_metadata.gift_expires_at).toBeNull()
 
-    const tagCall = calls.find((c) => c.url.includes('/tags/tag-99'))
-    expect(tagCall?.init?.method).toBe('DELETE')
+    const agCall = calls.find((c) =>
+      c.url.includes('/access_groups/ag-99/community_members'),
+    )
+    expect(agCall?.init?.method).toBe('DELETE')
+    // DELETE puts the email in the query string.
+    expect(agCall!.url).toContain('email=a%40x.com')
   })
 
   test('no Auth0 user yet → no-user (not an error)', async () => {
-    installFetch(({ url, init }) => {
+    installFetch(({ url }) => {
       if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
       if (url.includes('/users-by-email')) return jsonRes(200, [])
-      if (url.includes('/community_members/search')) return jsonRes(200, { id: 7 })
-      if (init?.method === 'POST' || init?.method === 'DELETE') return jsonRes(200, {})
+      if (url.includes('/access_groups/ag-99/community_members')) {
+        return jsonRes(200, {})
+      }
       return jsonRes(500, { unexpected: url })
     })
     const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
@@ -121,12 +125,14 @@ describe('syncEntitlement', () => {
     expect(res.circle).toBe('ok')
   })
 
-  test('no Circle member yet → no-member (not an error)', async () => {
+  test('no Circle community member (POST returns 404) → no-member', async () => {
     installFetch(({ url, init }) => {
       if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
       if (url.includes('/users-by-email')) return jsonRes(200, [{ user_id: 'u1' }])
       if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
-      if (url.includes('/community_members/search')) return jsonRes(404, {})
+      if (url.includes('/access_groups/ag-99/community_members')) {
+        return jsonRes(404, { error: 'no member' })
+      }
       return jsonRes(500, { unexpected: url })
     })
     const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
@@ -134,12 +140,84 @@ describe('syncEntitlement', () => {
     expect(res.circle).toBe('no-member')
   })
 
+  test('POST when email is already in the group (422) is treated as success', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
+      if (url.includes('/users-by-email')) return jsonRes(200, [{ user_id: 'u1' }])
+      if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
+      if (
+        url.includes('/access_groups/ag-99/community_members') &&
+        init?.method === 'POST'
+      ) {
+        return jsonRes(422, { error: 'already a member' })
+      }
+      return jsonRes(500, { unexpected: url })
+    })
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    expect(res.circle).toBe('ok')
+  })
+
+  test('POST when email is already in the group (409) is treated as success', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
+      if (url.includes('/users-by-email')) return jsonRes(200, [{ user_id: 'u1' }])
+      if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
+      if (
+        url.includes('/access_groups/ag-99/community_members') &&
+        init?.method === 'POST'
+      ) {
+        return jsonRes(409, { error: 'conflict' })
+      }
+      return jsonRes(500, { unexpected: url })
+    })
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    expect(res.circle).toBe('ok')
+  })
+
+  test('POST 403 (auth failure) propagates as circle:error', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
+      if (url.includes('/users-by-email')) return jsonRes(200, [{ user_id: 'u1' }])
+      if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
+      if (
+        url.includes('/access_groups/ag-99/community_members') &&
+        init?.method === 'POST'
+      ) {
+        return jsonRes(403, { error: 'wrong token type' })
+      }
+      return jsonRes(500, { unexpected: url })
+    })
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    expect(res.circle).toBe('error')
+  })
+
+  test('DELETE on a member who is not in the group (404) is treated as success', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
+      if (url.includes('/users-by-email')) return jsonRes(200, [{ user_id: 'u1' }])
+      if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
+      if (
+        url.includes('/access_groups/ag-99/community_members') &&
+        init?.method === 'DELETE'
+      ) {
+        return jsonRes(404, { error: 'not in group' })
+      }
+      return jsonRes(500, { unexpected: url })
+    })
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'free')
+    expect(res.circle).toBe('ok')
+  })
+
   test('Auth0 failure does not block Circle update', async () => {
     installFetch(({ url, init }) => {
       if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
       if (url.includes('/users-by-email')) return jsonRes(500, { error: 'boom' })
-      if (url.includes('/community_members/search')) return jsonRes(200, { id: 7 })
-      if (url.includes('/community_members/7/tags/') && init?.method === 'POST') return jsonRes(200, {})
+      if (
+        url.includes('/access_groups/ag-99/community_members') &&
+        init?.method === 'POST'
+      ) {
+        return jsonRes(200, {})
+      }
       return jsonRes(500, { unexpected: url })
     })
     const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
@@ -152,7 +230,9 @@ describe('syncEntitlement', () => {
       if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
       if (url.includes('/users-by-email')) return jsonRes(200, [{ user_id: 'u1' }])
       if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
-      if (url.includes('/community_members/search')) return jsonRes(500, { error: 'boom' })
+      if (url.includes('/access_groups/ag-99/community_members')) {
+        return jsonRes(500, { error: 'boom' })
+      }
       return jsonRes(500, { unexpected: url })
     })
     const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
@@ -161,9 +241,10 @@ describe('syncEntitlement', () => {
   })
 
   test('skips Auth0 when mgmt creds absent', async () => {
-    installFetch(({ url, init }) => {
-      if (url.includes('/community_members/search')) return jsonRes(200, { id: 7 })
-      if (init?.method === 'POST') return jsonRes(200, {})
+    installFetch(({ url }) => {
+      if (url.includes('/access_groups/ag-99/community_members')) {
+        return jsonRes(200, {})
+      }
       return jsonRes(500, { unexpected: url })
     })
     const env = { ...BASE_ENV, AUTH0_MANAGEMENT_CLIENT_ID: '', AUTH0_MANAGEMENT_CLIENT_SECRET: '' }
@@ -187,6 +268,18 @@ describe('syncEntitlement', () => {
     expect(res.circle).toBe('skipped')
   })
 
+  test('skips Circle when access group id absent', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
+      if (url.includes('/users-by-email')) return jsonRes(200, [{ user_id: 'u1' }])
+      if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
+      return jsonRes(500, { unexpected: url })
+    })
+    const env = { ...BASE_ENV, CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: '' }
+    const res = await syncEntitlement(env, 'a@x.com', 'subscriber')
+    expect(res.circle).toBe('skipped')
+  })
+
   test('patches all Auth0 users for the email (multi-connection)', async () => {
     installFetch(({ url, init }) => {
       if (url.endsWith('/oauth/token')) return jsonRes(200, { access_token: 't', expires_in: 3600 })
@@ -194,8 +287,7 @@ describe('syncEntitlement', () => {
         return jsonRes(200, [{ user_id: 'auth0|db' }, { user_id: 'google-oauth2|123' }])
       }
       if (url.includes('/api/v2/users/') && init?.method === 'PATCH') return jsonRes(200, {})
-      if (url.includes('/community_members/search')) return jsonRes(200, { id: 7 })
-      if (init?.method === 'POST') return jsonRes(200, {})
+      if (url.includes('/access_groups/ag-99/community_members')) return jsonRes(200, {})
       return jsonRes(500, { unexpected: url })
     })
     const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
@@ -284,23 +376,28 @@ function makeStripe(
   } as unknown as Stripe
 }
 
-// Reconciler-specific fetch handler: serves Auth0 token + subscriber list +
-// per-email PATCH + Circle search/tag/list.
+// Reconciler-specific fetch handler: Auth0 token + subscriber list + per-email
+// PATCH + Circle access-group POST/DELETE + drift-pass list endpoints.
 type ReconcilerFixtures = {
   auth0Subscribers: Array<{
     email: string
     app_metadata?: { gift_expires_at?: string }
   }>
-  // Circle members holding the subscriber tag. Defaults to []; pass a list to
-  // exercise the drift pass.
+  // Emails currently in the subscriber access group on Circle. Defaults to
+  // []; pass a list to exercise the drift pass.
   circleSubscribers?: string[]
-  // When true, the Circle list endpoint returns 500 so the soft-fail path
-  // runs.
+  // When true, the access-group list endpoint returns 500 so the soft-fail
+  // path runs.
   circleListFails?: boolean
 }
 
 function reconcilerFetchHandler(fixtures: ReconcilerFixtures): FetchHandler {
   const circleSubs = fixtures.circleSubscribers ?? []
+  // Assign each circle subscriber a deterministic community_member_id so
+  // the access-group list and the community-members list can be joined.
+  const memberIdForEmail = new Map(
+    circleSubs.map((email, idx) => [email, idx + 1] as const),
+  )
   return ({ url, init }) => {
     if (url.endsWith('/oauth/token')) {
       return jsonRes(200, { access_token: 'mgmt-tok', expires_in: 3600 })
@@ -318,21 +415,37 @@ function reconcilerFetchHandler(fixtures: ReconcilerFixtures): FetchHandler {
     if (url.includes('/api/v2/users/') && init?.method === 'PATCH') {
       return jsonRes(200, {})
     }
-    if (url.includes('/community_members/search')) {
-      return jsonRes(200, { id: 7 })
-    }
-    if (url.includes('/community_members/7/tags/')) {
-      return jsonRes(200, {})
-    }
-    if (url.includes('/community_members?')) {
+    // Order matters: the access-group list (path includes /access_groups/)
+    // must match before the generic /community_members fallback.
+    if (url.includes('/access_groups/ag-99/community_members')) {
+      // POST and DELETE both go here too; succeed quietly for those.
+      if (init?.method === 'POST' || init?.method === 'DELETE') {
+        return jsonRes(200, {})
+      }
+      // GET — list of members in the group.
       if (fixtures.circleListFails) {
         return jsonRes(500, { error: 'circle boom' })
       }
       const page = Number(url.match(/[?&]page=(\d+)/)?.[1] ?? '1')
-      return jsonRes(
-        200,
-        page === 1 ? circleSubs.map((email) => ({ email })) : [],
-      )
+      const records =
+        page === 1
+          ? circleSubs.map((email) => ({
+              community_member_id: memberIdForEmail.get(email)!,
+            }))
+          : []
+      return jsonRes(200, { records, has_next_page: false })
+    }
+    if (url.includes('/community_members')) {
+      // Full members list used by the drift pass to resolve ids → emails.
+      const page = Number(url.match(/[?&]page=(\d+)/)?.[1] ?? '1')
+      const records =
+        page === 1
+          ? circleSubs.map((email) => ({
+              id: memberIdForEmail.get(email)!,
+              email,
+            }))
+          : []
+      return jsonRes(200, { records, has_next_page: false })
     }
     return jsonRes(500, { unexpected: url })
   }
@@ -440,12 +553,12 @@ describe('reconcileEntitlements', () => {
   })
 
   // --- Circle drift pass --------------------------------------------------
-  // Auth0 may already read 'free' while Circle still holds the subscriber
-  // tag (a partial-failure during a downgrade webhook). The Auth0-driven
-  // downgrade pass misses those because they don't appear in its query;
-  // the drift pass walks Circle and untags them.
+  // Auth0 may already read 'free' while Circle still has the user in the
+  // subscriber access group (a partial-failure during a downgrade webhook).
+  // The Auth0-driven downgrade pass misses those because they don't appear
+  // in its query; the drift pass walks Circle and removes them.
 
-  test('drift pass: Circle has tag but no active Stripe / no Auth0 → downgrade', async () => {
+  test('drift pass: Circle has group member with no active Stripe / no Auth0 → remove', async () => {
     installFetch(
       reconcilerFetchHandler({
         auth0Subscribers: [],
@@ -457,14 +570,17 @@ describe('reconcileEntitlements', () => {
     const summary = await reconcileEntitlements(BASE_ENV, stripe)
 
     expect(summary.downgraded).toBe(1)
-    // Email looked up to find member id 7, then untagged.
-    const deleteTag = calls.find(
-      (c) => c.url.includes('/community_members/7/tags/tag-99') && c.init?.method === 'DELETE',
+    // The drift email is removed from the access group via DELETE.
+    const removal = calls.find(
+      (c) =>
+        c.url.includes('/access_groups/ag-99/community_members') &&
+        c.url.includes('email=drift%40x.com') &&
+        c.init?.method === 'DELETE',
     )
-    expect(deleteTag).toBeDefined()
+    expect(removal).toBeDefined()
   })
 
-  test('drift pass: Circle has tag but Stripe is active → no untag', async () => {
+  test('drift pass: group member with active Stripe → no removal', async () => {
     installFetch(
       reconcilerFetchHandler({
         auth0Subscribers: [],
@@ -480,10 +596,12 @@ describe('reconcileEntitlements', () => {
 
     expect(summary.upgraded).toBe(1)
     expect(summary.downgraded).toBe(0)
-    const tagDeletes = calls.filter(
-      (c) => c.url.includes('/tags/tag-99') && c.init?.method === 'DELETE',
+    const deletes = calls.filter(
+      (c) =>
+        c.url.includes('/access_groups/ag-99/community_members') &&
+        c.init?.method === 'DELETE',
     )
-    expect(tagDeletes.length).toBe(0)
+    expect(deletes.length).toBe(0)
   })
 
   test('drift pass: list endpoint failure does not fail the run', async () => {
@@ -514,8 +632,8 @@ describe('reconcileEntitlements', () => {
 
     await reconcileEntitlements(env, stripe)
 
-    // No Circle calls of any kind — token absence short-circuits the
-    // listCircleSubscribers helper and setCircleTag.
+    // No Circle calls of any kind — token absence short-circuits both the
+    // list helper and setCircleAccessGroup.
     const circleCalls = calls.filter((c) => c.url.includes('circle.so'))
     expect(circleCalls.length).toBe(0)
   })
@@ -597,14 +715,12 @@ describe('listAuth0Subscribers export-job fallback', () => {
       if (url.includes('/api/v2/users/') && init?.method === 'PATCH') {
         return jsonRes(200, {})
       }
-      if (url.includes('/community_members/search')) {
-        return jsonRes(200, { id: 7 })
+      if (url.includes('/access_groups/ag-99/community_members')) {
+        if (init?.method === 'POST' || init?.method === 'DELETE') return jsonRes(200, {})
+        return jsonRes(200, { records: [], has_next_page: false })
       }
-      if (url.includes('/community_members/7/tags/')) {
-        return jsonRes(200, {})
-      }
-      if (url.includes('/community_members?')) {
-        return jsonRes(200, [])
+      if (url.includes('/community_members')) {
+        return jsonRes(200, { records: [], has_next_page: false })
       }
       return jsonRes(500, { unexpected: url })
     })
