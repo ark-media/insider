@@ -213,7 +213,14 @@ async function fetchCircleSpacePosts(
         typeof sample.body === 'string'
           ? `string(${sample.body.length}): ${sample.body.slice(0, 200)}`
           : sample.body && typeof sample.body === 'object'
-            ? `object keys: ${Object.keys(sample.body as object).join(',')}`
+            ? (() => {
+                const inner = (sample.body as Record<string, unknown>).body
+                const innerPreview =
+                  typeof inner === 'string'
+                    ? `string(${inner.length}): ${inner.slice(0, 300)}`
+                    : `type: ${typeof inner}`
+                return `object keys: ${Object.keys(sample.body as object).join(',')} | body.body = ${innerPreview}`
+              })()
             : `type: ${typeof sample.body}`
       console.log(
         '[circle] space posts list — first record keys:',
