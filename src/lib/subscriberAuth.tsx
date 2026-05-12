@@ -9,6 +9,8 @@ import {
 import { useAuth0 } from "@auth0/auth0-react";
 import { fetchMe, type Me } from "./auth";
 import { hasCheckoutCookie, setTokenGetter } from "./tokenStore";
+import { identifyUser, resetIdentity } from "./observability";
+import { AUTH0_TIER_CLAIM } from "../../shared/auth0-claims";
 
 export type SubscriberAuthState =
   | { kind: "loading" }
@@ -24,7 +26,7 @@ type SubscriberAuthValue = {
 const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
 
 export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading, getAccessTokenSilently, logout } = useAuth0();
+  const { isAuthenticated, isLoading, getAccessTokenSilently, logout, user } = useAuth0();
   const [state, setState] = useState<SubscriberAuthState>({ kind: "loading" });
 
   // Make getAccessTokenSilently available to non-React code (fetchMe, etc.)
@@ -55,6 +57,24 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     }
     void refresh();
   }, [isAuthenticated, isLoading, refresh]);
+
+  // Tie analytics/error identity to the auth lifecycle. Tier comes from the
+  // Auth0 token claim when present; falls back to "has SC feeds" so a fresh
+  // subscriber identifies correctly before the Action propagates the claim.
+  useEffect(() => {
+    if (state.kind === "member") {
+      const tierClaim = user?.[AUTH0_TIER_CLAIM];
+      const tier: "subscriber" | "free" =
+        tierClaim === "subscriber" || state.me.feeds.length > 0 ? "subscriber" : "free";
+      identifyUser({
+        id: user?.sub ?? state.me.email,
+        email: state.me.email,
+        tier,
+      });
+    } else if (state.kind === "guest") {
+      resetIdentity();
+    }
+  }, [state, user]);
 
   const signOut = useCallback(() => {
     // Clear the server-set checkout cookies before Auth0 takes over the tab.

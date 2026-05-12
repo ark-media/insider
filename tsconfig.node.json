@@ -24,6 +24,7 @@
     "vite.config.ts",
     "server/**/*.ts",
     "api/**/*.ts",
+    "shared/**/*.ts",
     "src/data/newsletters.ts"
   ]
 }

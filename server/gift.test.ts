@@ -580,6 +580,9 @@ describe('Webhook — gift activation', () => {
   test('new recipient: creates SC user with custom_1/custom_2, creates 1yr subscription, sends welcome email, stamps PI metadata', async () => {
     const pi = buildGiftPI({ term: '1yr' })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+    // Activator re-reads the PI before POSTing /subscriptions (cross-instance
+    // race guard). Surface the same object so metadata stays empty pre-write.
+    retrievedPI = pi
 
     // SC: recipient does not exist on /users/search, /users POST returns new id
     fetchImpl = async (url, init) => {
@@ -661,6 +664,7 @@ describe('Webhook — gift activation', () => {
   test('6mo: uses GIFT_6MO price id and ~182-day ends_at', async () => {
     const pi = buildGiftPI({ term: '6mo' })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+    retrievedPI = pi
 
     fetchImpl = async (url, init) => {
       if (url.endsWith('/users/search'))
@@ -689,6 +693,7 @@ describe('Webhook — gift activation', () => {
   test('existing recipient: PATCHes custom_1/custom_2 (does not POST /users)', async () => {
     const pi = buildGiftPI()
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+    retrievedPI = pi
 
     fetchImpl = async (url, init) => {
       if (url.endsWith('/users/search')) {

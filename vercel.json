@@ -1,11 +1,17 @@
 {
   "functions": {
     "api/handler.ts": {
-      "includeFiles": "server/**"
+      "includeFiles": "{server,shared}/**"
     }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/handler?_path=$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/reconcile-entitlements",
+      "schedule": "0 3 * * *"
+    }
   ]
 }
