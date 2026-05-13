@@ -9,6 +9,7 @@ import {
   sourceFor,
 } from "../../../lib/newsletterSources";
 import { PageShell } from "../../../components/PageShell";
+import { Breadcrumbs } from "../../../components/Breadcrumbs";
 import { useSubscriberAuth } from "../../../lib/subscriberAuth";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
 
@@ -37,6 +38,20 @@ function PostPage() {
   if (!found) {
     return (
       <PageShell
+        breadcrumbs={
+          <Breadcrumbs
+            items={[
+              { label: "Home", to: "/" },
+              { label: "Newsletters", to: "/newsletters" },
+              {
+                label: pub.shortTitle,
+                to: "/newsletters/$slug",
+                params: { slug: pub.slug },
+              },
+              { label: "Not found" },
+            ]}
+          />
+        }
         eyebrow={pub.shortTitle}
         title="Post not found."
         lede="We couldn't find that post."
@@ -63,13 +78,18 @@ function PostPage() {
     <main className="relative">
       <section className="relative">
         <div className="mx-auto max-w-[820px] px-6 pt-12 pb-8 sm:px-10 sm:pt-20">
-          <Link
-            to="/newsletters/$slug"
-            params={{ slug: pub.slug }}
-            className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan transition hover:text-fg-strong"
-          >
-            ← {pub.shortTitle}
-          </Link>
+          <Breadcrumbs
+            items={[
+              { label: "Home", to: "/" },
+              { label: "Newsletters", to: "/newsletters" },
+              {
+                label: pub.shortTitle,
+                to: "/newsletters/$slug",
+                params: { slug: pub.slug },
+              },
+              { label: post.title },
+            ]}
+          />
           <h1 className="mt-8 font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-fg-strong">
             {post.title}
           </h1>

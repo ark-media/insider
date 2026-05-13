@@ -13,6 +13,7 @@ import {
 } from "../../../lib/simplecast";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
 import { useSubscriberAuth } from "../../../lib/subscriberAuth";
+import { Breadcrumbs } from "../../../components/Breadcrumbs";
 
 export const Route = createFileRoute("/shows/$show/$episode")({
   loader: ({ params }) => {
@@ -69,7 +70,10 @@ function EpisodePage() {
     <main className="relative">
       <section className="relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
-          <Breadcrumb show={show} trailing={formatEpisodeDate(episode.publishedAt)} />
+          <EpisodeBreadcrumbs
+            show={show}
+            trailing={formatEpisodeDate(episode.publishedAt)}
+          />
           <h1 className="mt-8 max-w-3xl font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-fg-strong">
             {episode.title}
           </h1>
@@ -105,18 +109,20 @@ function EpisodePage() {
   );
 }
 
-function Breadcrumb({ show, trailing }: { show: Show; trailing?: string }) {
-  return (
-    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-      <Link
-        to={show.route}
-        className="transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        {show.shortTitle}
-      </Link>
-      {trailing ? <span className="text-fg-muted"> · {trailing}</span> : null}
-    </div>
-  );
+function EpisodeBreadcrumbs({
+  show,
+  trailing,
+}: {
+  show: Show;
+  trailing?: string;
+}) {
+  const items: Array<{ label: string; to?: string }> = [
+    { label: "Home", to: "/" },
+    { label: "Shows", to: "/shows" },
+    { label: show.shortTitle, to: show.route },
+  ];
+  if (trailing) items.push({ label: trailing });
+  return <Breadcrumbs items={items} />;
 }
 
 const SHOW_NOTES_CLASS = [
@@ -245,17 +251,17 @@ function EpisodeSkeleton({ show }: { show: Show }) {
       <span className="sr-only">Loading episode</span>
       <section className="relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
-          <Breadcrumb show={show} />
+          <EpisodeBreadcrumbs show={show} />
           <div className="mt-8 max-w-3xl space-y-3">
-            <div className="h-[clamp(1.8rem,4vw,3rem)] w-full max-w-2xl animate-pulse rounded bg-white/8" />
-            <div className="h-[clamp(1.8rem,4vw,3rem)] w-3/4 animate-pulse rounded bg-white/8" />
+            <div className="h-[clamp(1.8rem,4vw,3rem)] w-full max-w-2xl animate-pulse rounded bg-fg-strong/8" />
+            <div className="h-[clamp(1.8rem,4vw,3rem)] w-3/4 animate-pulse rounded bg-fg-strong/8" />
           </div>
           <div className="mt-6 max-w-2xl space-y-2">
-            <div className="h-3 w-full animate-pulse rounded bg-white/6" />
-            <div className="h-3 w-full animate-pulse rounded bg-white/6" />
-            <div className="h-3 w-2/3 animate-pulse rounded bg-white/6" />
+            <div className="h-3 w-full animate-pulse rounded bg-fg-strong/8" />
+            <div className="h-3 w-full animate-pulse rounded bg-fg-strong/8" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-fg-strong/8" />
           </div>
-          <div className="mt-6 h-3 w-40 animate-pulse rounded bg-white/6" />
+          <div className="mt-6 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
         </div>
       </section>
 
@@ -271,10 +277,10 @@ function EpisodeSkeleton({ show }: { show: Show }) {
             Show notes
           </div>
           <div className="mt-6 max-w-2xl space-y-2">
-            <div className="h-3 w-full animate-pulse rounded bg-white/6" />
-            <div className="h-3 w-11/12 animate-pulse rounded bg-white/6" />
-            <div className="h-3 w-10/12 animate-pulse rounded bg-white/6" />
-            <div className="h-3 w-9/12 animate-pulse rounded bg-white/6" />
+            <div className="h-3 w-full animate-pulse rounded bg-fg-strong/8" />
+            <div className="h-3 w-11/12 animate-pulse rounded bg-fg-strong/8" />
+            <div className="h-3 w-10/12 animate-pulse rounded bg-fg-strong/8" />
+            <div className="h-3 w-9/12 animate-pulse rounded bg-fg-strong/8" />
           </div>
         </div>
       </section>
@@ -287,7 +293,7 @@ function EpisodeNotFound({ show }: { show: Show }) {
     <main className="relative">
       <section className="relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
-          <Breadcrumb show={show} trailing="Episode not found" />
+          <EpisodeBreadcrumbs show={show} trailing="Episode not found" />
           <h1 className="mt-8 max-w-3xl font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-fg-strong">
             We couldn't find that episode.
           </h1>

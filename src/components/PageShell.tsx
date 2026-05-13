@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 
 export function PageShell({
+  breadcrumbs,
   eyebrow,
   title,
   lede,
   children,
 }: {
+  breadcrumbs?: ReactNode;
   eyebrow?: string;
   title: ReactNode;
   lede?: ReactNode;
@@ -15,6 +17,7 @@ export function PageShell({
     <main className="relative">
       <section className="relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-10 pb-16 sm:px-10 sm:pt-16">
+          {breadcrumbs ? <div className="mb-6">{breadcrumbs}</div> : null}
           {eyebrow ? (
             <p className="inside-tab text-[12px]">{eyebrow}</p>
           ) : null}

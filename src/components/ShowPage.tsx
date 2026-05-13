@@ -16,14 +16,28 @@ import { hostsForShow } from "../data/hosts";
 import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
 import { subscribeEmail } from "../lib/beehiiv";
 import { PageShell, PlaceholderSection } from "./PageShell";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
+import { ArkNewsDailyArtwork } from "./ArkNewsDailyArtwork";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 export function ShowPage({ slug }: { slug: ShowSlug }) {
   const show = getShow(slug);
   if (!show) {
     return (
-      <PageShell title="Show not found" lede="We couldn't find that show.">
+      <PageShell
+        breadcrumbs={
+          <Breadcrumbs
+            items={[
+              { label: "Home", to: "/" },
+              { label: "Shows", to: "/shows" },
+              { label: "Not found" },
+            ]}
+          />
+        }
+        title="Show not found"
+        lede="We couldn't find that show."
+      >
         <PlaceholderSection
           title="Looking for a show?"
           body="Browse all of our shows from the Shows hub."
@@ -225,7 +239,7 @@ function PaidShowMarketing({
                 </p>
                 <Link
                   to="/plus"
-                  className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong"
+                  className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
                 >
                   See Ark+ membership
                   <span aria-hidden="true">→</span>
@@ -273,9 +287,18 @@ function PaidShowMarketing({
 }
 
 function ShowHero({ show }: { show: Show }) {
+  const branded = show.slug === "ark-news-daily";
   return (
-    <section className="relative">
+    <section className={`relative ${branded ? "and-bg" : ""}`}>
       <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
+        <Breadcrumbs
+          className="rise rise-1 mb-6"
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Shows", to: "/shows" },
+            { label: show.shortTitle },
+          ]}
+        />
         <p className="inside-tab rise rise-1 text-[12px]">
           {show.shortTitle}
         </p>
@@ -370,6 +393,9 @@ function ShowUpsell({ show: _show }: { show: Show }) {
 }
 
 function ShowArtwork({ show }: { show: Show }) {
+  if (show.slug === "ark-news-daily") {
+    return <ArkNewsDailyArtwork title={show.title} />;
+  }
   return (
     <div
       role="img"
@@ -579,7 +605,7 @@ function NewsletterCapture() {
                   type="submit"
                   disabled={status === "submitting"}
                   aria-busy={status === "submitting"}
-                  className="border-l border-rule-strong bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
+                  className="border-l border-rule-strong bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
                 >
                   {status === "submitting" ? "Subscribing…" : "Subscribe"}
                 </button>

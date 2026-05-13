@@ -11,6 +11,22 @@
       rel="stylesheet"
     />
     <title>The Insider · Call Me Back · Ark Media</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("ark.theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          if (theme === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

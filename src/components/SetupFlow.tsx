@@ -451,7 +451,7 @@ export function SetupFlow({ me }: { me: Me }) {
                   <button
                     type="button"
                     onClick={copyFeed}
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
                   >
                     {copied ? "Copied ✓" : selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -463,7 +463,7 @@ export function SetupFlow({ me }: { me: Me }) {
                     href={selectedAppUrl || feedUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
                   >
                     {selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -666,7 +666,7 @@ function DeviceCard({
       className={`group flex flex-col items-center gap-3 border p-8 text-center transition ${
         selected
           ? "border-cyan bg-cyan/10"
-          : "border-rule hover:border-cyan/60 hover:bg-white/[0.03]"
+          : "border-rule hover:border-cyan/60 hover:bg-fg-strong/[0.03]"
       }`}
     >
       <span
@@ -698,7 +698,7 @@ function AppCard({
       className={`flex flex-col items-start gap-2 border p-4 text-left transition ${
         selected
           ? "border-cyan bg-cyan/10"
-          : "border-rule hover:border-cyan/60 hover:bg-white/[0.03]"
+          : "border-rule hover:border-cyan/60 hover:bg-fg-strong/[0.03]"
       }`}
     >
       <span className="font-display text-[14px] font-bold uppercase tracking-[0.06em] text-fg-strong">
@@ -814,7 +814,7 @@ function SmsHandoff({
             type="submit"
             disabled={!phone.trim() || state === "sending"}
             aria-busy={state === "sending"}
-            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan"
+            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan"
           >
             {state === "sending" ? "Sending..." : "Text me the link"}
             <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">

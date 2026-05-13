@@ -7,16 +7,19 @@ import { router } from './router'
 import { Gate } from './Gate.tsx'
 import { SignupAuth0Provider } from './components/SignupAuth0Provider.tsx'
 import { initObservability } from './lib/observability'
+import { ThemeProvider } from './lib/theme.tsx'
 
 initObservability()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Gate>
-      <SignupAuth0Provider>
-        <RouterProvider router={router} />
-      </SignupAuth0Provider>
-    </Gate>
-    <SpeedInsights />
+    <ThemeProvider>
+      <Gate>
+        <SignupAuth0Provider>
+          <RouterProvider router={router} />
+        </SignupAuth0Provider>
+      </Gate>
+      <SpeedInsights />
+    </ThemeProvider>
   </StrictMode>,
 )

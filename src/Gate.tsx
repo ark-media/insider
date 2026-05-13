@@ -23,14 +23,14 @@ function PasswordGate({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-navy-900 px-6">
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-navy-800 p-8 text-center">
+      <div className="w-full max-w-sm rounded-2xl border border-rule bg-navy-800 p-8 text-center">
         <p className="font-display text-xs uppercase tracking-[0.2em] text-cyan">
           Preview access
         </p>
-        <h1 className="mt-3 font-display text-2xl text-white">
+        <h1 className="mt-3 font-display text-2xl text-fg-strong">
           Insider is in testing
         </h1>
-        <p className="mt-2 text-sm text-white/60">
+        <p className="mt-2 text-sm text-fg-muted">
           Enter the team password to continue.
         </p>
         <div className="mt-6 flex flex-col gap-3">
@@ -41,12 +41,12 @@ function PasswordGate({ children }: { children: ReactNode }) {
             onKeyDown={(e) => e.key === "Enter" && submit()}
             placeholder="Password"
             autoFocus
-            className="w-full rounded-lg border border-white/15 bg-navy-900 px-4 py-2 text-white placeholder:text-white/30 focus:border-cyan focus:outline-none"
+            className="w-full rounded-lg border border-rule-strong bg-navy-900 px-4 py-2 text-fg-strong placeholder:text-fg-placeholder focus:border-cyan focus:outline-none"
           />
-          {error ? <p className="text-sm text-red-400">Incorrect password.</p> : null}
+          {error ? <p className="text-sm text-danger">Incorrect password.</p> : null}
           <button
             onClick={submit}
-            className="w-full rounded-lg bg-cyan px-4 py-2 font-medium text-navy-900 hover:brightness-110"
+            className="w-full rounded-lg bg-cyan px-4 py-2 font-medium text-navy hover:brightness-110"
           >
             Continue
           </button>

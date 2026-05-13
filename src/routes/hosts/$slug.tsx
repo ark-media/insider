@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { getHost } from "../../data/hosts";
 import { getShow } from "../../data/shows";
 import { PageShell } from "../../components/PageShell";
+import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { HostArtwork } from "../../components/HostArtwork";
 
 export const Route = createFileRoute("/hosts/$slug")({
@@ -20,7 +21,20 @@ function HostPage() {
     .filter((s): s is NonNullable<ReturnType<typeof getShow>> => Boolean(s));
 
   return (
-    <PageShell eyebrow="Host" title={host.name} lede={host.role}>
+    <PageShell
+      breadcrumbs={
+        <Breadcrumbs
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Hosts", to: "/hosts" },
+            { label: host.name },
+          ]}
+        />
+      }
+      eyebrow="Host"
+      title={host.name}
+      lede={host.role}
+    >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
           <div className="lg:col-span-5">

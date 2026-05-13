@@ -36,7 +36,7 @@ export const showNotesParserOptions: HTMLReactParserOptions = {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-cyan underline underline-offset-2 transition hover:text-white"
+          className="text-cyan underline underline-offset-2 transition hover:text-fg-strong"
         >
           {children}
         </a>

@@ -105,7 +105,7 @@ function SignupForm({
           <button
             type="submit"
             disabled={status === "submitting"}
-            className="border-l border-rule-strong bg-cyan px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
+            className="border-l border-rule-strong bg-cyan px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
           >
             {status === "ok" ? "Subscribed" : "Subscribe"}
           </button>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { fetchMe } from "../../lib/auth";
 import { newsletters } from "../../data/newsletters";
 import { PageShell } from "../../components/PageShell";
+import { Breadcrumbs } from "../../components/Breadcrumbs";
 
 export const Route = createFileRoute("/account/newsletters")({
   beforeLoad: async () => {
@@ -37,6 +38,15 @@ function NewsletterPrefs() {
 
   return (
     <PageShell
+      breadcrumbs={
+        <Breadcrumbs
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Account", to: "/account" },
+            { label: "Newsletter preferences" },
+          ]}
+        />
+      }
       eyebrow="Newsletter preferences"
       title="Pick what lands in your inbox."
       lede={`Signed in as ${me.email}. Adjust at any time — toggling off won't delete past issues from your archive.`}

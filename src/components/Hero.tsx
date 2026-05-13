@@ -43,7 +43,7 @@ export function Hero() {
           <div className="rise rise-5 mt-10 flex flex-wrap items-center gap-6">
             <a
               href="#pricing"
-              className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong"
+              className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
             >
               Become a member
               <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">

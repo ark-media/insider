@@ -8,6 +8,7 @@ import {
 import { getPublication, subscribeEmail } from "../../../lib/beehiiv";
 import { sourceFor } from "../../../lib/newsletterSources";
 import { PageShell } from "../../../components/PageShell";
+import { Breadcrumbs } from "../../../components/Breadcrumbs";
 
 export const Route = createFileRoute("/newsletters/$slug/")({
   loader: async ({ params }) => {
@@ -25,6 +26,15 @@ function NewsletterLandingPage() {
 
   return (
     <PageShell
+      breadcrumbs={
+        <Breadcrumbs
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Newsletters", to: "/newsletters" },
+            { label: pub.shortTitle },
+          ]}
+        />
+      }
       eyebrow={pub.tier === "ark-plus" ? "Ark+ newsletter" : "Newsletter"}
       title={pub.title}
       lede={pub.description}
@@ -130,7 +140,7 @@ function SignupCard({ pub }: { pub: Newsletter }) {
               <button
                 type="submit"
                 disabled={status === "submitting"}
-                className="border-l border-rule-strong bg-cyan px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong disabled:opacity-60"
+                className="border-l border-rule-strong bg-cyan px-4 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
               >
                 {status === "ok" ? "Subscribed" : "Subscribe"}
               </button>

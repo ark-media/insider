@@ -147,7 +147,7 @@ export function Pricing() {
                   <button
                     type="button"
                     onClick={() => setCheckoutOpen(true)}
-                    className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     Become a member
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">

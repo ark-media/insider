@@ -3,6 +3,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth0 } from "@auth0/auth0-react";
 import { ArkLogo } from "./ArkLogo";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { useTheme } from "../lib/theme";
 
 const ALL_NAV_LINKS: { label: string; to: string; matchPrefix?: string }[] = [
   { label: "Shows", to: "/shows", matchPrefix: "/shows" },
@@ -93,6 +94,8 @@ export function PublicMasthead() {
             );
           })}
 
+          <ThemeToggle />
+
           {/* Israel Votes pill — visible at ALL breakpoints (flagship campaign) */}
           <Link
             to={ISRAEL_VOTES_PATH}
@@ -102,7 +105,7 @@ export function PublicMasthead() {
             className={`inline-flex min-h-11 items-center px-3 font-display text-[11px] font-bold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:px-4 sm:text-[12px] ${
               location.pathname === ISRAEL_VOTES_PATH
                 ? "bg-cyan text-navy"
-                : "bg-fg-strong text-navy hover:bg-cyan"
+                : "bg-fg-strong text-navy-900 hover:bg-cyan hover:text-navy"
             }`}
           >
             Israel Votes
@@ -244,6 +247,52 @@ export function PublicMasthead() {
       ) : null}
 
     </header>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const isLight = theme === "light";
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
+      aria-pressed={isLight}
+      title={isLight ? "Switch to dark mode" : "Switch to light mode"}
+      className="inline-flex min-h-11 min-w-11 items-center justify-center text-fg-muted transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+    >
+      {isLight ? (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M16.5 12.5A6.5 6.5 0 0 1 7.5 3.5a7 7 0 1 0 9 9z" />
+        </svg>
+      ) : (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="10" cy="10" r="3.25" />
+          <path d="M10 1.5v2M10 16.5v2M3.5 10h-2M18.5 10h-2M5.05 5.05L3.64 3.64M16.36 16.36l-1.41-1.41M5.05 14.95l-1.41 1.41M16.36 3.64l-1.41 1.41" />
+        </svg>
+      )}
+    </button>
   );
 }
 

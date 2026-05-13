@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { fetchMe, cancelSubscription } from "../../lib/auth";
 import { PageShell } from "../../components/PageShell";
+import { Breadcrumbs } from "../../components/Breadcrumbs";
 
 export const Route = createFileRoute("/account/billing")({
   beforeLoad: async () => {
@@ -43,6 +44,15 @@ function BillingPage() {
 
   return (
     <PageShell
+      breadcrumbs={
+        <Breadcrumbs
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Account", to: "/account" },
+            { label: "Billing" },
+          ]}
+        />
+      }
       eyebrow="Billing"
       title="Your Ark+ membership."
       lede={`Signed in as ${me.email}.`}
