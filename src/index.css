@@ -4,21 +4,30 @@
   --font-display: "Exo", "Arial Narrow", system-ui, sans-serif;
   --font-sans: "Lato", ui-sans-serif, system-ui, sans-serif;
 
-  /* Brandbook primaries */
+  /* Brandbook primaries — fixed across themes */
   --color-navy: #0b153c;
   --color-cyan: #3eb5f9;
 
-  /* Brandbook secondary navy scale */
+  /* Brandbook secondary navy scale — these names are kept for compatibility,
+     but the values flip in light mode (see [data-theme="light"] below).
+     Semantically: 900 = deepest page bg, 800 = surface, 700 = elevated surface, etc. */
   --color-navy-900: #070b22;
   --color-navy-800: #101736;
   --color-navy-700: #1a244e;
   --color-navy-600: #253368;
   --color-navy-500: #304181;
 
+  /* Ark News Daily — show-specific brand palette (purple). Also flips in light. */
+  --color-and-purple-900: #1f0828;
+  --color-and-purple-800: #2c0d39;
+  --color-and-purple-700: #41124f;
+  --color-and-purple-600: #4d1758;
+  --color-and-purple-500: #5d1d68;
+
   --color-ink: #0b153c;
   --color-paper: #f5f7fb;
 
-  /* Semantic foregrounds — minimum AA contrast on navy-900.
+  /* Semantic foregrounds — minimum AA contrast on the active page bg.
      Use text-fg-strong / text-fg / text-fg-muted / text-fg-faint
      instead of text-white/N for any text content. */
   --color-fg-strong: rgb(255 255 255 / 0.96);
@@ -45,6 +54,62 @@
   --tracking-eyebrow: 0.22em;
   --tracking-button: 0.18em;
   --tracking-cta: 0.08em;
+}
+
+/* Light theme — inverts the surface convention from dark mode.
+   In dark mode 900 is the deepest page bg and 800/700 are lighter elevated surfaces.
+   In light mode, page bg becomes a soft tinted paper and 800/700 become *crisp white*
+   elevated cards with real shadow — the editorial print convention. This creates
+   actual depth instead of cards-blending-into-page.
+   --color-cyan is darkened (~5.4:1 on paper) because brand cyan #3eb5f9 fails AA
+   on white. Brand primaries --color-navy / --color-paper stay fixed so cyan-on-navy
+   accents look identical across themes. */
+[data-theme="light"] {
+  --color-cyan: #0a6fad;
+
+  /* 900 = page paper (gently tinted cool off-white — slightly deeper than #f5f7fb
+     so true-white cards visibly lift against it).
+     800 = card surface (true white). Many cards use bg-navy-800/40 — that 40% white
+     over the paper bg still creates a clean lift when paired with the bumped rules
+     and the soft card shadow added at the bottom of this file.
+     700 = elevated/popover surface (true white).
+     600/500 = decorative borders, chips, and progress fills. */
+  --color-navy-900: #e7ecf6;
+  --color-navy-800: #ffffff;
+  --color-navy-700: #ffffff;
+  --color-navy-600: #c8d3e8;
+  --color-navy-500: #a7b5d2;
+
+  /* Ark News Daily — light purple paper. Same inversion: page is tinted, cards are white. */
+  --color-and-purple-900: #ecdcf2;
+  --color-and-purple-800: #ffffff;
+  --color-and-purple-700: #ffffff;
+  --color-and-purple-600: #d6bbe1;
+  --color-and-purple-500: #b894c8;
+
+  --color-fg-strong: rgb(11 21 60 / 0.96);
+  --color-fg: rgb(11 21 60 / 0.82);
+  --color-fg-muted: rgb(11 21 60 / 0.62);
+  --color-fg-faint: rgb(11 21 60 / 0.48);
+  --color-fg-placeholder: rgb(11 21 60 / 0.36);
+
+  --color-rule: rgb(11 21 60 / 0.18);
+  --color-rule-soft: rgb(11 21 60 / 0.1);
+  --color-rule-strong: rgb(11 21 60 / 0.28);
+
+  --color-signal: #c4151b;
+  --color-danger: #c4151b;
+  --color-danger-strong: #9f0e14;
+
+  /* Editorial shadows — present enough to lift cards off the paper, soft enough
+     to feel printed rather than digital. Layered for depth realism. */
+  --shadow-cover:
+    0 30px 60px -25px rgb(11 21 60 / 0.28),
+    0 12px 30px -12px rgb(11 21 60 / 0.18),
+    0 2px 6px -2px rgb(11 21 60 / 0.08);
+  --shadow-float:
+    0 18px 40px -18px rgb(11 21 60 / 0.22),
+    0 4px 10px -4px rgb(11 21 60 / 0.1);
 }
 
 @utility eyebrow {
@@ -80,10 +145,15 @@
 
 :root {
   font-family: var(--font-sans);
-  color: #eaf0ff;
+  color: var(--color-fg-strong);
   background: var(--color-navy-900);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
 }
 
 body {
@@ -135,6 +205,41 @@ body {
     radial-gradient(ellipse 45% 55% at 20% 85%, rgba(62, 181, 249, 0.14) 0%, transparent 65%),
     linear-gradient(180deg, #070b22 0%, #0b153c 55%, #070b22 100%);
 }
+[data-theme="light"] .ark-bg {
+  background:
+    radial-gradient(ellipse 60% 50% at 78% 22%, rgba(62, 181, 249, 0.32) 0%, transparent 62%),
+    radial-gradient(ellipse 50% 60% at 18% 88%, rgba(10, 111, 173, 0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(255, 255, 255, 0.7) 0%, transparent 70%),
+    linear-gradient(180deg, #e6edf8 0%, #f1f5fc 45%, #e8eef8 100%);
+}
+
+/* Ark News Daily backdrop — show-specific purple wash */
+.and-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(125, 40, 145, 0.55) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.12) 0%, transparent 65%),
+    linear-gradient(180deg, #1f0828 0%, #41124f 55%, #1f0828 100%);
+}
+[data-theme="light"] .and-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(125, 40, 145, 0.28) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.16) 0%, transparent 65%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(255, 255, 255, 0.55) 0%, transparent 75%),
+    linear-gradient(180deg, #ecdcf2 0%, #f3e6f7 45%, #e8d4ef 100%);
+}
+
+/* Editorial card lift — only in light mode, only on the card-pattern utilities the
+   codebase actually uses (bg-navy-800/40, /50, /60). True-white cards on tinted
+   paper need a soft cast shadow to read as elevated rather than as paint. The
+   selector matches the Tailwind opacity variants without affecting full-bleed
+   bg-navy-800 sections (Marquee, mobile menu) which intentionally span edge to edge. */
+[data-theme="light"] [class*="bg-navy-800/"],
+[data-theme="light"] [class*="bg-navy-700/"] {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.6) inset,
+    0 12px 28px -16px rgb(11 21 60 / 0.18),
+    0 2px 6px -2px rgb(11 21 60 / 0.06);
+}
 
 /* Subtle grain to kill banding on the gradients */
 .grain-overlay {
@@ -148,6 +253,10 @@ body {
   opacity: 0.12;
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+[data-theme="light"] .grain-overlay::after {
+  opacity: 0.06;
+  mix-blend-mode: multiply;
 }
 
 /* Rising cyan divider hairlines */
