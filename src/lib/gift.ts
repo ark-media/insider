@@ -59,8 +59,18 @@ export async function fetchGiftStatus(
   paymentIntentId: string,
   giverEmail: string,
 ): Promise<{ status: string; activated: boolean } | null> {
-  const params = new URLSearchParams({ id: paymentIntentId, email: giverEmail });
-  const res = await fetch(`/api/gift/status?${params}`);
-  if (!res.ok) return null;
-  return (await res.json()) as { status: string; activated: boolean };
+  try {
+    const params = new URLSearchParams({ id: paymentIntentId, email: giverEmail });
+    const res = await fetch(`/api/gift/status?${params}`);
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as
+      | { status?: string; activated?: boolean }
+      | null;
+    if (!data || typeof data.status !== "string" || typeof data.activated !== "boolean") {
+      return null;
+    }
+    return { status: data.status, activated: data.activated };
+  } catch {
+    return null;
+  }
 }

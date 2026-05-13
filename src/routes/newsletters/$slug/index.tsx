@@ -61,11 +61,11 @@ function NewsletterLandingPage() {
                       params={{ slug: pub.slug, post: p.slug }}
                       className="group block py-5 transition hover:text-cyan"
                     >
-                      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-                        <span className="font-display text-[18px] tracking-[-0.005em] text-fg-strong group-hover:text-cyan">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
+                        <span className="min-w-0 flex-1 break-words font-display text-[18px] tracking-[-0.005em] text-fg-strong group-hover:text-cyan">
                           {p.title}
                         </span>
-                        <span className="text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan">
+                        <span className="shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan">
                           {formatPostDate(p.publishedAt)}
                           {p.tier === "ark-plus" ? " · Ark+" : ""}
                         </span>
