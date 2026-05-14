@@ -85,3 +85,25 @@ export async function fetchEpisodeNotes(
 export function simplecastEpisodeSrc(episodeId: string): string {
   return `https://player.simplecast.com/${encodeURIComponent(episodeId)}?dark=true`;
 }
+
+/**
+ * Fetches the show-level description from Simplecast as plain text. Returns
+ * null on failure or when no description is configured — callers should fall
+ * back to the hardcoded description in `src/data/shows.ts`.
+ */
+export async function fetchPodcastDescription(
+  showSlug: ShowSlug,
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `/api/simplecast/podcast?show=${encodeURIComponent(showSlug)}`,
+      { credentials: "same-origin" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { description?: string };
+    const description = body.description?.trim();
+    return description ? description : null;
+  } catch {
+    return null;
+  }
+}

@@ -56,6 +56,30 @@ export const CIRCLE_OPEN_LINKS = {
   web: "https://app.arkmedia.org",
 };
 
+// Each Beehiiv-published newsletter has a paired Circle space where editorial
+// mirrors the post and members carry the conversation. The newsletter web page
+// surfaces a "Comment in Circle" link that deep-links here; /circle-sso wraps
+// it so signed-in members land directly inside Circle.
+const NEWSLETTER_CIRCLE_SPACES: Record<NewsletterSlug, string> = {
+  "the-call-me-back-newsletter":
+    "https://community.arkmedia.org/c/call-me-back-newsletter",
+  "ark-daily": "https://community.arkmedia.org/c/ark-daily",
+  "for-heavens-sake-newsletter":
+    "https://community.arkmedia.org/c/for-heavens-sake-letter",
+  "members-letter":
+    "https://community.arkmedia.org/c/members-letter",
+};
+
+/**
+ * Build the comment URL for a newsletter post. Wraps the Circle space link in
+ * /circle-sso so signed-in members land directly on the discussion; guests are
+ * prompted to set up a Circle account first.
+ */
+export function newsletterCommentUrl(slug: NewsletterSlug): string {
+  const target = NEWSLETTER_CIRCLE_SPACES[slug];
+  return `/circle-sso?return_to=${encodeURIComponent(target)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Newsletter sources — Circle Broadcasts and Circle space posts
 //

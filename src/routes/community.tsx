@@ -3,10 +3,20 @@ import { useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import {
   CIRCLE_OPEN_LINKS,
+  circleEventLink,
   fetchPublicBroadcasts,
+  fetchUpcomingEvents,
 } from "../lib/circle";
 import type { CommunityBroadcast } from "../data/communityBroadcasts";
+import { formatEventStart, type ArkEvent } from "../data/events";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+
+const EVENT_FORMAT_LABEL: Record<ArkEvent["format"], string> = {
+  "audio-room": "Audio room",
+  "video-ama": "Video AMA",
+  "watch-party": "Watch party",
+  "in-person": "In person",
+};
 
 export const Route = createFileRoute("/community")({
   component: CommunityPage,
@@ -16,6 +26,7 @@ function CommunityPage() {
   const navigate = useNavigate();
   const { state } = useSubscriberAuth();
   const [broadcasts, setBroadcasts] = useState<CommunityBroadcast[] | null>(null);
+  const [events, setEvents] = useState<ArkEvent[] | null>(null);
 
   useEffect(() => {
     if (state.kind === "guest") {
@@ -28,6 +39,9 @@ function CommunityPage() {
     void fetchPublicBroadcasts()
       .then((b) => live && setBroadcasts(b))
       .catch(() => live && setBroadcasts([]));
+    void fetchUpcomingEvents()
+      .then((e) => live && setEvents(e))
+      .catch(() => live && setEvents([]));
     return () => {
       live = false;
     };
@@ -132,6 +146,43 @@ function CommunityPage() {
 
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <div className="flex items-end justify-between gap-6">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                Upcoming events
+              </div>
+              <p className="mt-3 max-w-2xl text-[13px] text-fg-muted">
+                Audio rooms, AMAs, watch parties, and the occasional gathering
+                in New York or Tel Aviv. Most live in the Ark+ community.
+              </p>
+            </div>
+            <Link
+              to="/events"
+              className="hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted transition hover:text-cyan sm:inline"
+            >
+              See all events →
+            </Link>
+          </div>
+          {events === null ? (
+            <p className="mt-8 text-[14px] text-fg-muted">Loading…</p>
+          ) : events.length === 0 ? (
+            <p className="mt-8 text-[14px] text-fg-muted">
+              Nothing on the calendar right now — check back soon.
+            </p>
+          ) : (
+            <ul className="mt-10 divide-y divide-rule border-y border-rule">
+              {events.slice(0, 4).map((e) => (
+                <li key={e.id} className="py-6">
+                  <CommunityEventRow event={e} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <section className="border-t border-rule bg-navy-900">
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             From the room — selected member posts
           </div>
@@ -163,5 +214,49 @@ function CommunityPage() {
         </div>
       </section>
     </PageShell>
+  );
+}
+
+function CommunityEventRow({ event }: { event: ArkEvent }) {
+  const isMemberOnly = event.access === "ark-plus";
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-8">
+      <div className="lg:col-span-3">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          {formatEventStart(event.startsAt)}
+        </div>
+        <p className="mt-2 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
+          {EVENT_FORMAT_LABEL[event.format]}
+          {event.venue ? ` · ${event.venue}` : ""}
+        </p>
+      </div>
+      <div className="lg:col-span-7">
+        <h3 className="font-display text-[18px] leading-tight text-fg-strong">
+          {event.title}
+        </h3>
+        <p className="mt-2 text-[13px] leading-[1.6] text-fg-muted">
+          with {event.hosts.join(" · ")}
+        </p>
+      </div>
+      <div className="lg:col-span-2 lg:text-right">
+        <span
+          className={`inline-block border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+            isMemberOnly
+              ? "border-cyan/60 text-cyan"
+              : "border-rule-strong text-fg-muted"
+          }`}
+        >
+          {isMemberOnly ? "Ark+ only" : "Open to all"}
+        </span>
+        <a
+          href={circleEventLink(event.id)}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="mt-3 inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan"
+        >
+          {isMemberOnly ? "Open in Circle" : "RSVP"} →
+        </a>
+      </div>
+    </div>
   );
 }

@@ -63,10 +63,10 @@ function HomePage() {
             style={{ animationDelay: "0.78s" }}
           >
             <Link
-              to="/shows"
+              to="/podcasts"
               className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              Explore shows →
+              Explore podcasts →
             </Link>
             <Link
               to="/plus"
@@ -91,10 +91,10 @@ function HomePage() {
               </h2>
             </div>
             <Link
-              to="/shows"
+              to="/podcasts"
               className="hidden text-[12px] font-semibold uppercase tracking-button text-fg-muted transition hover:text-cyan sm:inline"
             >
-              All shows →
+              All podcasts →
             </Link>
           </div>
 

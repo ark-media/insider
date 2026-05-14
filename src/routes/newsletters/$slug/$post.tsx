@@ -8,6 +8,7 @@ import {
   buildGatedPreview,
   sourceFor,
 } from "../../../lib/newsletterSources";
+import { newsletterCommentUrl } from "../../../lib/circle";
 import { PageShell } from "../../../components/PageShell";
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
 import { useSubscriberAuth } from "../../../lib/subscriberAuth";
@@ -115,6 +116,28 @@ function PostPage() {
           </div>
         </div>
       </article>
+
+      {gated ? null : (
+        <section className="border-t border-rule bg-navy-800/40">
+          <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                Keep the conversation going
+              </div>
+              <p className="mt-2 text-[14px] leading-[1.6] text-fg">
+                Comments and replies live in the Circle community. Sign in once
+                and they open straight to the thread.
+              </p>
+            </div>
+            <a
+              href={newsletterCommentUrl(pub.slug)}
+              className="inline-flex shrink-0 items-center justify-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Comment in Circle →
+            </a>
+          </div>
+        </section>
+      )}
 
       {gated ? (
         <section className="border-t border-cyan/30 bg-navy-800/40">

@@ -5,7 +5,9 @@ export type ShowSlug =
   | "whats-your-number"
   | "ark-news-daily";
 
-export type ShowRoute = `/shows/${ShowSlug}`;
+export type ShowRoute =
+  | `/podcasts/${Exclude<ShowSlug, "inside-call-me-back">}`
+  | "/plus/inside-call-me-back";
 
 export type ListenPlatform =
   | "apple"
@@ -35,7 +37,7 @@ export type Show = {
 export const shows: Show[] = [
   {
     slug: "call-me-back",
-    route: "/shows/call-me-back",
+    route: "/podcasts/call-me-back",
     title: "Call Me Back",
     shortTitle: "Call Me Back",
     tagline: "Conversations on the world Israel is shaping — and being shaped by.",
@@ -55,7 +57,7 @@ export const shows: Show[] = [
   },
   {
     slug: "inside-call-me-back",
-    route: "/shows/inside-call-me-back",
+    route: "/plus/inside-call-me-back",
     title: "Inside Call Me Back",
     shortTitle: "Inside CMB",
     tagline: "The members-only companion to Call Me Back.",
@@ -69,7 +71,7 @@ export const shows: Show[] = [
   },
   {
     slug: "for-heavens-sake",
-    route: "/shows/for-heavens-sake",
+    route: "/podcasts/for-heavens-sake",
     title: "For Heaven's Sake",
     shortTitle: "For Heaven's Sake",
     tagline: "A conversation about Israel, Jewish identity, and meaning.",
@@ -87,7 +89,7 @@ export const shows: Show[] = [
   },
   {
     slug: "whats-your-number",
-    route: "/shows/whats-your-number",
+    route: "/podcasts/whats-your-number",
     title: "What's Your Number",
     shortTitle: "What's Your Number",
     tagline: "Numbers that explain the moment.",
@@ -104,7 +106,7 @@ export const shows: Show[] = [
   },
   {
     slug: "ark-news-daily",
-    route: "/shows/ark-news-daily",
+    route: "/podcasts/ark-news-daily",
     title: "Ark News Daily",
     shortTitle: "Ark News Daily",
     tagline: "A fast, focused brief on the day's most consequential story.",

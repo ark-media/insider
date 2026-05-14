@@ -21,23 +21,27 @@ import { Route as CareersRouteImport } from './routes/careers'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShowsIndexRouteImport } from './routes/shows/index'
+import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
 import { Route as PlusIndexRouteImport } from './routes/plus/index'
 import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
 import { Route as HostsIndexRouteImport } from './routes/hosts/index'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
-import { Route as ShowsWhatsYourNumberRouteImport } from './routes/shows/whats-your-number'
-import { Route as ShowsInsideCallMeBackRouteImport } from './routes/shows/inside-call-me-back'
-import { Route as ShowsForHeavensSakeRouteImport } from './routes/shows/for-heavens-sake'
-import { Route as ShowsCallMeBackRouteImport } from './routes/shows/call-me-back'
-import { Route as ShowsArkNewsDailyRouteImport } from './routes/shows/ark-news-daily'
+import { Route as ShowsShowRouteImport } from './routes/shows/$show'
+import { Route as PodcastsWhatsYourNumberRouteImport } from './routes/podcasts/whats-your-number'
+import { Route as PodcastsForHeavensSakeRouteImport } from './routes/podcasts/for-heavens-sake'
+import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-me-back'
+import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-news-daily'
 import { Route as PlusRedeemRouteImport } from './routes/plus/redeem'
+import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
 import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
 import { Route as AccountBillingRouteImport } from './routes/account/billing'
+import { Route as AboutNetworkRouteImport } from './routes/about/network'
 import { Route as NewslettersSlugIndexRouteImport } from './routes/newsletters/$slug/index'
 import { Route as ShowsShowEpisodeRouteImport } from './routes/shows/$show/$episode'
+import { Route as PodcastsShowEpisodeRouteImport } from './routes/podcasts/$show/$episode'
 import { Route as NewslettersSlugPostRouteImport } from './routes/newsletters/$slug/$post'
 
 const WelcomeRoute = WelcomeRouteImport.update({
@@ -100,6 +104,11 @@ const ShowsIndexRoute = ShowsIndexRouteImport.update({
   path: '/shows/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PodcastsIndexRoute = PodcastsIndexRouteImport.update({
+  id: '/podcasts/',
+  path: '/podcasts/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlusIndexRoute = PlusIndexRouteImport.update({
   id: '/plus/',
   path: '/plus/',
@@ -120,34 +129,39 @@ const AccountIndexRoute = AccountIndexRouteImport.update({
   path: '/account/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShowsWhatsYourNumberRoute = ShowsWhatsYourNumberRouteImport.update({
-  id: '/shows/whats-your-number',
-  path: '/shows/whats-your-number',
+const ShowsShowRoute = ShowsShowRouteImport.update({
+  id: '/shows/$show',
+  path: '/shows/$show',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShowsInsideCallMeBackRoute = ShowsInsideCallMeBackRouteImport.update({
-  id: '/shows/inside-call-me-back',
-  path: '/shows/inside-call-me-back',
+const PodcastsWhatsYourNumberRoute = PodcastsWhatsYourNumberRouteImport.update({
+  id: '/podcasts/whats-your-number',
+  path: '/podcasts/whats-your-number',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShowsForHeavensSakeRoute = ShowsForHeavensSakeRouteImport.update({
-  id: '/shows/for-heavens-sake',
-  path: '/shows/for-heavens-sake',
+const PodcastsForHeavensSakeRoute = PodcastsForHeavensSakeRouteImport.update({
+  id: '/podcasts/for-heavens-sake',
+  path: '/podcasts/for-heavens-sake',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShowsCallMeBackRoute = ShowsCallMeBackRouteImport.update({
-  id: '/shows/call-me-back',
-  path: '/shows/call-me-back',
+const PodcastsCallMeBackRoute = PodcastsCallMeBackRouteImport.update({
+  id: '/podcasts/call-me-back',
+  path: '/podcasts/call-me-back',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShowsArkNewsDailyRoute = ShowsArkNewsDailyRouteImport.update({
-  id: '/shows/ark-news-daily',
-  path: '/shows/ark-news-daily',
+const PodcastsArkNewsDailyRoute = PodcastsArkNewsDailyRouteImport.update({
+  id: '/podcasts/ark-news-daily',
+  path: '/podcasts/ark-news-daily',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlusRedeemRoute = PlusRedeemRouteImport.update({
   id: '/plus/redeem',
   path: '/plus/redeem',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlusInsideCallMeBackRoute = PlusInsideCallMeBackRouteImport.update({
+  id: '/plus/inside-call-me-back',
+  path: '/plus/inside-call-me-back',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlusGiftRoute = PlusGiftRouteImport.update({
@@ -175,14 +189,24 @@ const AccountBillingRoute = AccountBillingRouteImport.update({
   path: '/account/billing',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AboutNetworkRoute = AboutNetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
+  getParentRoute: () => AboutRoute,
+} as any)
 const NewslettersSlugIndexRoute = NewslettersSlugIndexRouteImport.update({
   id: '/newsletters/$slug/',
   path: '/newsletters/$slug/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShowsShowEpisodeRoute = ShowsShowEpisodeRouteImport.update({
-  id: '/shows/$show/$episode',
-  path: '/shows/$show/$episode',
+  id: '/$episode',
+  path: '/$episode',
+  getParentRoute: () => ShowsShowRoute,
+} as any)
+const PodcastsShowEpisodeRoute = PodcastsShowEpisodeRouteImport.update({
+  id: '/podcasts/$show/$episode',
+  path: '/podcasts/$show/$episode',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NewslettersSlugPostRoute = NewslettersSlugPostRouteImport.update({
@@ -193,7 +217,7 @@ const NewslettersSlugPostRoute = NewslettersSlugPostRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  '/about': typeof AboutRouteWithChildren
   '/careers': typeof CareersRoute
   '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
@@ -203,29 +227,33 @@ export interface FileRoutesByFullPath {
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
   '/welcome': typeof WelcomeRoute
+  '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
+  '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/plus/redeem': typeof PlusRedeemRoute
-  '/shows/ark-news-daily': typeof ShowsArkNewsDailyRoute
-  '/shows/call-me-back': typeof ShowsCallMeBackRoute
-  '/shows/for-heavens-sake': typeof ShowsForHeavensSakeRoute
-  '/shows/inside-call-me-back': typeof ShowsInsideCallMeBackRoute
-  '/shows/whats-your-number': typeof ShowsWhatsYourNumberRoute
+  '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
+  '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
+  '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
+  '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
+  '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
   '/plus/': typeof PlusIndexRoute
+  '/podcasts/': typeof PodcastsIndexRoute
   '/shows/': typeof ShowsIndexRoute
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
+  '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
   '/newsletters/$slug/': typeof NewslettersSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  '/about': typeof AboutRouteWithChildren
   '/careers': typeof CareersRoute
   '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
@@ -235,30 +263,34 @@ export interface FileRoutesByTo {
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
   '/welcome': typeof WelcomeRoute
+  '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
+  '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/plus/redeem': typeof PlusRedeemRoute
-  '/shows/ark-news-daily': typeof ShowsArkNewsDailyRoute
-  '/shows/call-me-back': typeof ShowsCallMeBackRoute
-  '/shows/for-heavens-sake': typeof ShowsForHeavensSakeRoute
-  '/shows/inside-call-me-back': typeof ShowsInsideCallMeBackRoute
-  '/shows/whats-your-number': typeof ShowsWhatsYourNumberRoute
+  '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
+  '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
+  '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
+  '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
+  '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account': typeof AccountIndexRoute
   '/hosts': typeof HostsIndexRoute
   '/newsletters': typeof NewslettersIndexRoute
   '/plus': typeof PlusIndexRoute
+  '/podcasts': typeof PodcastsIndexRoute
   '/shows': typeof ShowsIndexRoute
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
+  '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
   '/newsletters/$slug': typeof NewslettersSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  '/about': typeof AboutRouteWithChildren
   '/careers': typeof CareersRoute
   '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
@@ -268,23 +300,27 @@ export interface FileRoutesById {
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
   '/welcome': typeof WelcomeRoute
+  '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
+  '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/plus/redeem': typeof PlusRedeemRoute
-  '/shows/ark-news-daily': typeof ShowsArkNewsDailyRoute
-  '/shows/call-me-back': typeof ShowsCallMeBackRoute
-  '/shows/for-heavens-sake': typeof ShowsForHeavensSakeRoute
-  '/shows/inside-call-me-back': typeof ShowsInsideCallMeBackRoute
-  '/shows/whats-your-number': typeof ShowsWhatsYourNumberRoute
+  '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
+  '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
+  '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
+  '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
+  '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
   '/plus/': typeof PlusIndexRoute
+  '/podcasts/': typeof PodcastsIndexRoute
   '/shows/': typeof ShowsIndexRoute
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
+  '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
   '/newsletters/$slug/': typeof NewslettersSlugIndexRoute
 }
@@ -302,23 +338,27 @@ export interface FileRouteTypes {
     | '/logout'
     | '/setup'
     | '/welcome'
+    | '/about/network'
     | '/account/billing'
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/hosts/$slug'
     | '/plus/gift'
+    | '/plus/inside-call-me-back'
     | '/plus/redeem'
-    | '/shows/ark-news-daily'
-    | '/shows/call-me-back'
-    | '/shows/for-heavens-sake'
-    | '/shows/inside-call-me-back'
-    | '/shows/whats-your-number'
+    | '/podcasts/ark-news-daily'
+    | '/podcasts/call-me-back'
+    | '/podcasts/for-heavens-sake'
+    | '/podcasts/whats-your-number'
+    | '/shows/$show'
     | '/account/'
     | '/hosts/'
     | '/newsletters/'
     | '/plus/'
+    | '/podcasts/'
     | '/shows/'
     | '/newsletters/$slug/$post'
+    | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
     | '/newsletters/$slug/'
   fileRoutesByTo: FileRoutesByTo
@@ -334,23 +374,27 @@ export interface FileRouteTypes {
     | '/logout'
     | '/setup'
     | '/welcome'
+    | '/about/network'
     | '/account/billing'
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/hosts/$slug'
     | '/plus/gift'
+    | '/plus/inside-call-me-back'
     | '/plus/redeem'
-    | '/shows/ark-news-daily'
-    | '/shows/call-me-back'
-    | '/shows/for-heavens-sake'
-    | '/shows/inside-call-me-back'
-    | '/shows/whats-your-number'
+    | '/podcasts/ark-news-daily'
+    | '/podcasts/call-me-back'
+    | '/podcasts/for-heavens-sake'
+    | '/podcasts/whats-your-number'
+    | '/shows/$show'
     | '/account'
     | '/hosts'
     | '/newsletters'
     | '/plus'
+    | '/podcasts'
     | '/shows'
     | '/newsletters/$slug/$post'
+    | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
     | '/newsletters/$slug'
   id:
@@ -366,30 +410,34 @@ export interface FileRouteTypes {
     | '/logout'
     | '/setup'
     | '/welcome'
+    | '/about/network'
     | '/account/billing'
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/hosts/$slug'
     | '/plus/gift'
+    | '/plus/inside-call-me-back'
     | '/plus/redeem'
-    | '/shows/ark-news-daily'
-    | '/shows/call-me-back'
-    | '/shows/for-heavens-sake'
-    | '/shows/inside-call-me-back'
-    | '/shows/whats-your-number'
+    | '/podcasts/ark-news-daily'
+    | '/podcasts/call-me-back'
+    | '/podcasts/for-heavens-sake'
+    | '/podcasts/whats-your-number'
+    | '/shows/$show'
     | '/account/'
     | '/hosts/'
     | '/newsletters/'
     | '/plus/'
+    | '/podcasts/'
     | '/shows/'
     | '/newsletters/$slug/$post'
+    | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
     | '/newsletters/$slug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AboutRoute: typeof AboutRoute
+  AboutRoute: typeof AboutRouteWithChildren
   CareersRoute: typeof CareersRoute
   CircleSsoRoute: typeof CircleSsoRoute
   CommunityRoute: typeof CommunityRoute
@@ -404,19 +452,21 @@ export interface RootRouteChildren {
   AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
   HostsSlugRoute: typeof HostsSlugRoute
   PlusGiftRoute: typeof PlusGiftRoute
+  PlusInsideCallMeBackRoute: typeof PlusInsideCallMeBackRoute
   PlusRedeemRoute: typeof PlusRedeemRoute
-  ShowsArkNewsDailyRoute: typeof ShowsArkNewsDailyRoute
-  ShowsCallMeBackRoute: typeof ShowsCallMeBackRoute
-  ShowsForHeavensSakeRoute: typeof ShowsForHeavensSakeRoute
-  ShowsInsideCallMeBackRoute: typeof ShowsInsideCallMeBackRoute
-  ShowsWhatsYourNumberRoute: typeof ShowsWhatsYourNumberRoute
+  PodcastsArkNewsDailyRoute: typeof PodcastsArkNewsDailyRoute
+  PodcastsCallMeBackRoute: typeof PodcastsCallMeBackRoute
+  PodcastsForHeavensSakeRoute: typeof PodcastsForHeavensSakeRoute
+  PodcastsWhatsYourNumberRoute: typeof PodcastsWhatsYourNumberRoute
+  ShowsShowRoute: typeof ShowsShowRouteWithChildren
   AccountIndexRoute: typeof AccountIndexRoute
   HostsIndexRoute: typeof HostsIndexRoute
   NewslettersIndexRoute: typeof NewslettersIndexRoute
   PlusIndexRoute: typeof PlusIndexRoute
+  PodcastsIndexRoute: typeof PodcastsIndexRoute
   ShowsIndexRoute: typeof ShowsIndexRoute
   NewslettersSlugPostRoute: typeof NewslettersSlugPostRoute
-  ShowsShowEpisodeRoute: typeof ShowsShowEpisodeRoute
+  PodcastsShowEpisodeRoute: typeof PodcastsShowEpisodeRoute
   NewslettersSlugIndexRoute: typeof NewslettersSlugIndexRoute
 }
 
@@ -506,6 +556,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShowsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/podcasts/': {
+      id: '/podcasts/'
+      path: '/podcasts'
+      fullPath: '/podcasts/'
+      preLoaderRoute: typeof PodcastsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/plus/': {
       id: '/plus/'
       path: '/plus'
@@ -534,39 +591,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/shows/whats-your-number': {
-      id: '/shows/whats-your-number'
-      path: '/shows/whats-your-number'
-      fullPath: '/shows/whats-your-number'
-      preLoaderRoute: typeof ShowsWhatsYourNumberRouteImport
+    '/shows/$show': {
+      id: '/shows/$show'
+      path: '/shows/$show'
+      fullPath: '/shows/$show'
+      preLoaderRoute: typeof ShowsShowRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/shows/inside-call-me-back': {
-      id: '/shows/inside-call-me-back'
-      path: '/shows/inside-call-me-back'
-      fullPath: '/shows/inside-call-me-back'
-      preLoaderRoute: typeof ShowsInsideCallMeBackRouteImport
+    '/podcasts/whats-your-number': {
+      id: '/podcasts/whats-your-number'
+      path: '/podcasts/whats-your-number'
+      fullPath: '/podcasts/whats-your-number'
+      preLoaderRoute: typeof PodcastsWhatsYourNumberRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/shows/for-heavens-sake': {
-      id: '/shows/for-heavens-sake'
-      path: '/shows/for-heavens-sake'
-      fullPath: '/shows/for-heavens-sake'
-      preLoaderRoute: typeof ShowsForHeavensSakeRouteImport
+    '/podcasts/for-heavens-sake': {
+      id: '/podcasts/for-heavens-sake'
+      path: '/podcasts/for-heavens-sake'
+      fullPath: '/podcasts/for-heavens-sake'
+      preLoaderRoute: typeof PodcastsForHeavensSakeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/shows/call-me-back': {
-      id: '/shows/call-me-back'
-      path: '/shows/call-me-back'
-      fullPath: '/shows/call-me-back'
-      preLoaderRoute: typeof ShowsCallMeBackRouteImport
+    '/podcasts/call-me-back': {
+      id: '/podcasts/call-me-back'
+      path: '/podcasts/call-me-back'
+      fullPath: '/podcasts/call-me-back'
+      preLoaderRoute: typeof PodcastsCallMeBackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/shows/ark-news-daily': {
-      id: '/shows/ark-news-daily'
-      path: '/shows/ark-news-daily'
-      fullPath: '/shows/ark-news-daily'
-      preLoaderRoute: typeof ShowsArkNewsDailyRouteImport
+    '/podcasts/ark-news-daily': {
+      id: '/podcasts/ark-news-daily'
+      path: '/podcasts/ark-news-daily'
+      fullPath: '/podcasts/ark-news-daily'
+      preLoaderRoute: typeof PodcastsArkNewsDailyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plus/redeem': {
@@ -574,6 +631,13 @@ declare module '@tanstack/react-router' {
       path: '/plus/redeem'
       fullPath: '/plus/redeem'
       preLoaderRoute: typeof PlusRedeemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plus/inside-call-me-back': {
+      id: '/plus/inside-call-me-back'
+      path: '/plus/inside-call-me-back'
+      fullPath: '/plus/inside-call-me-back'
+      preLoaderRoute: typeof PlusInsideCallMeBackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plus/gift': {
@@ -611,6 +675,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountBillingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/about/network': {
+      id: '/about/network'
+      path: '/network'
+      fullPath: '/about/network'
+      preLoaderRoute: typeof AboutNetworkRouteImport
+      parentRoute: typeof AboutRoute
+    }
     '/newsletters/$slug/': {
       id: '/newsletters/$slug/'
       path: '/newsletters/$slug'
@@ -620,9 +691,16 @@ declare module '@tanstack/react-router' {
     }
     '/shows/$show/$episode': {
       id: '/shows/$show/$episode'
-      path: '/shows/$show/$episode'
+      path: '/$episode'
       fullPath: '/shows/$show/$episode'
       preLoaderRoute: typeof ShowsShowEpisodeRouteImport
+      parentRoute: typeof ShowsShowRoute
+    }
+    '/podcasts/$show/$episode': {
+      id: '/podcasts/$show/$episode'
+      path: '/podcasts/$show/$episode'
+      fullPath: '/podcasts/$show/$episode'
+      preLoaderRoute: typeof PodcastsShowEpisodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/newsletters/$slug/$post': {
@@ -635,9 +713,31 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AboutRouteChildren {
+  AboutNetworkRoute: typeof AboutNetworkRoute
+}
+
+const AboutRouteChildren: AboutRouteChildren = {
+  AboutNetworkRoute: AboutNetworkRoute,
+}
+
+const AboutRouteWithChildren = AboutRoute._addFileChildren(AboutRouteChildren)
+
+interface ShowsShowRouteChildren {
+  ShowsShowEpisodeRoute: typeof ShowsShowEpisodeRoute
+}
+
+const ShowsShowRouteChildren: ShowsShowRouteChildren = {
+  ShowsShowEpisodeRoute: ShowsShowEpisodeRoute,
+}
+
+const ShowsShowRouteWithChildren = ShowsShowRoute._addFileChildren(
+  ShowsShowRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AboutRoute: AboutRoute,
+  AboutRoute: AboutRouteWithChildren,
   CareersRoute: CareersRoute,
   CircleSsoRoute: CircleSsoRoute,
   CommunityRoute: CommunityRoute,
@@ -652,19 +752,21 @@ const rootRouteChildren: RootRouteChildren = {
   AccountPodcastFeedRoute: AccountPodcastFeedRoute,
   HostsSlugRoute: HostsSlugRoute,
   PlusGiftRoute: PlusGiftRoute,
+  PlusInsideCallMeBackRoute: PlusInsideCallMeBackRoute,
   PlusRedeemRoute: PlusRedeemRoute,
-  ShowsArkNewsDailyRoute: ShowsArkNewsDailyRoute,
-  ShowsCallMeBackRoute: ShowsCallMeBackRoute,
-  ShowsForHeavensSakeRoute: ShowsForHeavensSakeRoute,
-  ShowsInsideCallMeBackRoute: ShowsInsideCallMeBackRoute,
-  ShowsWhatsYourNumberRoute: ShowsWhatsYourNumberRoute,
+  PodcastsArkNewsDailyRoute: PodcastsArkNewsDailyRoute,
+  PodcastsCallMeBackRoute: PodcastsCallMeBackRoute,
+  PodcastsForHeavensSakeRoute: PodcastsForHeavensSakeRoute,
+  PodcastsWhatsYourNumberRoute: PodcastsWhatsYourNumberRoute,
+  ShowsShowRoute: ShowsShowRouteWithChildren,
   AccountIndexRoute: AccountIndexRoute,
   HostsIndexRoute: HostsIndexRoute,
   NewslettersIndexRoute: NewslettersIndexRoute,
   PlusIndexRoute: PlusIndexRoute,
+  PodcastsIndexRoute: PodcastsIndexRoute,
   ShowsIndexRoute: ShowsIndexRoute,
   NewslettersSlugPostRoute: NewslettersSlugPostRoute,
-  ShowsShowEpisodeRoute: ShowsShowEpisodeRoute,
+  PodcastsShowEpisodeRoute: PodcastsShowEpisodeRoute,
   NewslettersSlugIndexRoute: NewslettersSlugIndexRoute,
 }
 export const routeTree = rootRouteImport

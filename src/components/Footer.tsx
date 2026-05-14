@@ -5,13 +5,13 @@ type FooterLink = { label: string; to: string };
 
 const sections: { title: string; links: FooterLink[] }[] = [
   {
-    title: "Listen",
+    title: "Podcasts",
     links: [
-      { label: "All shows", to: "/shows" },
-      { label: "Call Me Back", to: "/shows/call-me-back" },
-      { label: "Inside Call Me Back", to: "/shows/inside-call-me-back" },
-      { label: "For Heaven's Sake", to: "/shows/for-heavens-sake" },
-      { label: "Ark News Daily", to: "/shows/ark-news-daily" },
+      { label: "All podcasts", to: "/podcasts" },
+      { label: "Call Me Back", to: "/podcasts/call-me-back" },
+      { label: "Inside Call Me Back", to: "/plus/inside-call-me-back" },
+      { label: "For Heaven's Sake", to: "/podcasts/for-heavens-sake" },
+      { label: "Ark News Daily", to: "/podcasts/ark-news-daily" },
     ],
   },
   {

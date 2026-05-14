@@ -1,12 +1,42 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell } from "../../components/PageShell";
-import { newsletters } from "../../data/newsletters";
+import type { NewsletterSlug } from "../../data/newsletters";
 import { subscribeEmail } from "../../lib/beehiiv";
 
 export const Route = createFileRoute("/newsletters/")({
   component: NewslettersPage,
 });
+
+type NewsletterCard = {
+  slug: NewsletterSlug;
+  shortTitle: string;
+  title: string;
+  description: string;
+  cadence: string;
+  tier: "free" | "ark-plus";
+};
+
+const cards: NewsletterCard[] = [
+  {
+    slug: "the-call-me-back-newsletter",
+    shortTitle: "Ark Media",
+    title: "The Ark Media Newsletter",
+    description:
+      "Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead.",
+    cadence: "Weekly",
+    tier: "free",
+  },
+  {
+    slug: "members-letter",
+    shortTitle: "Members Letter",
+    title: "The Ark+ Members Letter",
+    description:
+      "A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading.",
+    cadence: "Weekly",
+    tier: "ark-plus",
+  },
+];
 
 function NewslettersPage() {
   return (
@@ -18,7 +48,7 @@ function NewslettersPage() {
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {newsletters.map((n) => (
+            {cards.map((n) => (
               <article
                 key={n.slug}
                 className="flex flex-col justify-between gap-6 border border-rule bg-navy-800/40 p-7"
@@ -64,11 +94,7 @@ function NewslettersPage() {
   );
 }
 
-function SignupForm({
-  slug,
-}: {
-  slug: (typeof newsletters)[number]["slug"];
-}) {
+function SignupForm({ slug }: { slug: NewsletterSlug }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "ok" | "error">(
     "idle",

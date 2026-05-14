@@ -1,25 +1,96 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth0 } from "@auth0/auth0-react";
 import { ArkLogo } from "./ArkLogo";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
+import { shows } from "../data/shows";
 
-const ALL_NAV_LINKS: { label: string; to: string; matchPrefix?: string }[] = [
-  { label: "Shows", to: "/shows", matchPrefix: "/shows" },
-  { label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
-  { label: "Community", to: "/community" },
-  { label: "Events", to: "/events" },
-  { label: "About", to: "/about" },
-  { label: "Ark+", to: "/plus", matchPrefix: "/plus" },
+// Nav order per Figma IA spec: Podcasts | Community | Newsletters | Israel
+// Votes | Ark+ | About | Account. Israel Votes renders as a pill for campaign
+// emphasis; Account is its own dropdown.
+//
+// Items render in array order — reorder here, the nav reflows. Each item's
+// variant chooses the renderer (text link / pill / menu). `hideWhen` removes
+// the item for the named auth state ('member' or 'guest'). Items with
+// `children` open a dropdown; the parent link stays clickable.
+type NavVariant = "text" | "pill" | "menu";
+type NavChild = {
+  label: string;
+  to: string;
+  description?: string;
+  paid?: boolean;
+};
+type NavItem = {
+  label: string;
+  to: string;
+  variant: NavVariant;
+  matchPrefix?: string;
+  hideWhen?: "member" | "guest";
+  children?: NavChild[];
+};
+
+const podcastChildren: NavChild[] = shows.map((show) => ({
+  label: show.shortTitle,
+  to: show.route,
+  description: show.cadence,
+  paid: show.paid,
+}));
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    variant: "menu",
+    label: "Podcasts",
+    to: "/podcasts",
+    matchPrefix: "/podcasts",
+    children: podcastChildren,
+  },
+  {
+    variant: "menu",
+    label: "Community",
+    to: "/community",
+    matchPrefix: "/community",
+    hideWhen: "guest",
+    children: [{ label: "Upcoming Events", to: "/events" }],
+  },
+  { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
+  { variant: "pill", label: "Israel Votes", to: "/israel-votes" },
+  {
+    variant: "menu",
+    label: "Ark+",
+    to: "/plus",
+    matchPrefix: "/plus",
+    hideWhen: "member",
+    children: [{ label: "Gift Ark+", to: "/plus/gift" }],
+  },
+  {
+    variant: "menu",
+    label: "About",
+    to: "/about",
+    matchPrefix: "/about",
+    children: [
+      { label: "Network", to: "/about/network" },
+      { label: "Careers", to: "/careers" },
+      { label: "Get in touch", to: "/contact" },
+    ],
+  },
 ];
 
-const ISRAEL_VOTES_PATH = "/israel-votes";
+function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "children">) {
+  if (item.matchPrefix && pathname.startsWith(item.matchPrefix)) return true;
+  if (pathname === item.to) return true;
+  if (item.children?.some((c) => pathname === c.to || pathname.startsWith(`${c.to}/`))) {
+    return true;
+  }
+  return false;
+}
 
-function isActive(pathname: string, link: (typeof ALL_NAV_LINKS)[number]) {
-  return link.matchPrefix
-    ? pathname.startsWith(link.matchPrefix)
-    : pathname === link.to;
+function visibleNavItems(isMember: boolean): NavItem[] {
+  return NAV_ITEMS.filter((item) => {
+    if (item.hideWhen === "member") return !isMember;
+    if (item.hideWhen === "guest") return isMember;
+    return true;
+  });
 }
 
 export function PublicMasthead() {
@@ -28,11 +99,7 @@ export function PublicMasthead() {
   const { state, signOut } = useSubscriberAuth();
   const { loginWithRedirect } = useAuth0();
   const isMember = state.kind === "member";
-  const navLinks = ALL_NAV_LINKS.filter((link) => {
-    if (link.to === "/plus") return !isMember;
-    if (link.to === "/community") return isMember;
-    return true;
-  });
+  const navItems = visibleNavItems(isMember);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
@@ -72,44 +139,36 @@ export function PublicMasthead() {
           aria-label="Primary"
           className="flex items-center gap-1 text-[13px] text-fg-muted sm:gap-6"
         >
-          {navLinks.map((link) => {
-            const active = isActive(location.pathname, link);
-            return (
-              <Link
-                key={link.to}
-                to={link.to}
-                aria-current={active ? "page" : undefined}
-                className={`relative hidden min-h-11 items-center py-2 transition hover:text-fg-strong sm:inline-flex ${
-                  active ? "text-fg-strong" : ""
-                }`}
-              >
-                {link.label}
-                {active ? (
-                  <span
-                    aria-hidden="true"
-                    className="absolute bottom-1 left-0 right-0 h-px bg-cyan"
+          {navItems.map((item) => {
+            switch (item.variant) {
+              case "menu":
+                return (
+                  <NavMenu
+                    key={item.to}
+                    item={item}
+                    pathname={location.pathname}
                   />
-                ) : null}
-              </Link>
-            );
+                );
+              case "pill":
+                return (
+                  <NavPillLink
+                    key={item.to}
+                    item={item}
+                    pathname={location.pathname}
+                  />
+                );
+              case "text":
+                return (
+                  <NavTextLink
+                    key={item.to}
+                    item={item}
+                    pathname={location.pathname}
+                  />
+                );
+            }
           })}
 
           <ThemeToggle />
-
-          {/* Israel Votes pill — visible at ALL breakpoints (flagship campaign) */}
-          <Link
-            to={ISRAEL_VOTES_PATH}
-            aria-current={
-              location.pathname === ISRAEL_VOTES_PATH ? "page" : undefined
-            }
-            className={`inline-flex min-h-11 items-center px-3 font-display text-[11px] font-bold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:px-4 sm:text-[12px] ${
-              location.pathname === ISRAEL_VOTES_PATH
-                ? "bg-cyan text-navy"
-                : "bg-fg-strong text-navy-900 hover:bg-cyan hover:text-navy"
-            }`}
-          >
-            Israel Votes
-          </Link>
 
           <div ref={dropdownRef} className="relative">
             <button
@@ -218,35 +277,300 @@ export function PublicMasthead() {
                 Log in
               </button>
             )}
-            {navLinks.map((link) => {
-              const active = isActive(location.pathname, link);
-              return (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex min-h-11 items-center justify-between border-b border-rule-soft py-3 text-[14px] transition last:border-b-0 ${
-                    active ? "text-cyan" : "text-fg hover:text-fg-strong"
-                  }`}
-                >
-                  <span>{link.label}</span>
-                  <span
-                    aria-hidden="true"
-                    className={`text-[12px] tracking-eyebrow ${
-                      active ? "text-cyan" : "text-fg-faint"
+            {navItems
+              // Pills already render in the top bar at every breakpoint;
+              // skip them in the dropdown so they don't appear twice.
+              .filter((item) => item.variant !== "pill")
+              .map((item) => {
+                const active = isActive(location.pathname, item);
+                if (item.variant === "menu") {
+                  return (
+                    <MobileNavSection
+                      key={item.to}
+                      item={item}
+                      active={active}
+                      pathname={location.pathname}
+                      onNavigate={() => setMobileOpen(false)}
+                    />
+                  );
+                }
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex min-h-11 items-center justify-between border-b border-rule-soft py-3 text-[14px] transition last:border-b-0 ${
+                      active ? "text-cyan" : "text-fg hover:text-fg-strong"
                     }`}
                   >
-                    →
-                  </span>
-                </Link>
-              );
-            })}
+                    <span>{item.label}</span>
+                    <span
+                      aria-hidden="true"
+                      className={`text-[12px] tracking-eyebrow ${
+                        active ? "text-cyan" : "text-fg-faint"
+                      }`}
+                    >
+                      →
+                    </span>
+                  </Link>
+                );
+              })}
           </nav>
         </div>
       ) : null}
 
     </header>
+  );
+}
+
+function NavMenu({ item, pathname }: { item: NavItem; pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const [syncedPathname, setSyncedPathname] = useState(pathname);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<number | null>(null);
+  const menuId = useId();
+  const active = isActive(pathname, item);
+  const children = item.children ?? [];
+  const hasDescriptions = children.some((c) => c.description);
+
+  // Close the dropdown when the route changes — navigating away should
+  // dismiss the menu. Done during render rather than in an effect to avoid a
+  // cascading re-render.
+  if (syncedPathname !== pathname) {
+    setSyncedPathname(pathname);
+    setOpen(false);
+  }
+
+  const cancelClose = () => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 120);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onDown = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
+
+  useEffect(() => () => cancelClose(), []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative hidden sm:block"
+      onMouseEnter={() => {
+        cancelClose();
+        setOpen(true);
+      }}
+      onMouseLeave={scheduleClose}
+      onFocus={() => {
+        cancelClose();
+        setOpen(true);
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          scheduleClose();
+        }
+      }}
+    >
+      <Link
+        to={item.to}
+        aria-current={active ? "page" : undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        className={`relative inline-flex min-h-11 items-center py-2 transition hover:text-fg-strong ${
+          active ? "text-fg-strong" : ""
+        }`}
+      >
+        {item.label}
+        {active ? (
+          <span
+            aria-hidden="true"
+            className="absolute bottom-1 left-0 right-0 h-px bg-cyan"
+          />
+        ) : null}
+      </Link>
+      {open ? (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label={item.label}
+          className={`absolute left-0 top-full z-30 mt-1 border border-rule bg-navy-900 p-2 shadow-xl ${
+            hasDescriptions ? "w-72" : "w-56"
+          }`}
+        >
+          {children.map((child) => {
+            const childActive =
+              pathname === child.to || pathname.startsWith(`${child.to}/`);
+            return (
+              <Link
+                key={child.to}
+                to={child.to}
+                role="menuitem"
+                aria-current={childActive ? "page" : undefined}
+                className={`flex items-start justify-between gap-3 border-b border-rule-soft px-3 py-3 text-[13px] transition last:border-b-0 hover:bg-navy-800/60 ${
+                  childActive ? "text-cyan" : "text-fg hover:text-fg-strong"
+                }`}
+              >
+                <span className="flex-1">
+                  <span className="block font-display text-[13px] leading-tight text-fg-strong">
+                    {child.label}
+                  </span>
+                  {child.description ? (
+                    <span className="mt-0.5 block text-[11px] leading-snug text-fg-muted">
+                      {child.description}
+                    </span>
+                  ) : null}
+                </span>
+                {child.paid ? (
+                  <span className="mt-0.5 border border-cyan/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-button text-cyan">
+                    Ark+
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MobileNavSection({
+  item,
+  active,
+  pathname,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  pathname: string;
+  onNavigate: () => void;
+}) {
+  const children = item.children ?? [];
+  return (
+    <div className="border-b border-rule-soft py-1 last:border-b-0">
+      <Link
+        to={item.to}
+        aria-current={active ? "page" : undefined}
+        onClick={onNavigate}
+        className={`flex min-h-11 items-center justify-between py-3 text-[14px] transition ${
+          active ? "text-cyan" : "text-fg hover:text-fg-strong"
+        }`}
+      >
+        <span>{item.label}</span>
+        <span
+          aria-hidden="true"
+          className={`text-[12px] tracking-eyebrow ${
+            active ? "text-cyan" : "text-fg-faint"
+          }`}
+        >
+          →
+        </span>
+      </Link>
+      {children.length > 0 ? (
+        <ul className="mb-2 ml-3 border-l border-rule-soft pl-3">
+          {children.map((child) => {
+            const childActive =
+              pathname === child.to || pathname.startsWith(`${child.to}/`);
+            return (
+              <li key={child.to}>
+                <Link
+                  to={child.to}
+                  aria-current={childActive ? "page" : undefined}
+                  onClick={onNavigate}
+                  className={`flex min-h-10 items-center justify-between py-2 text-[13px] transition ${
+                    childActive ? "text-cyan" : "text-fg-muted hover:text-fg-strong"
+                  }`}
+                >
+                  <span>{child.label}</span>
+                  {child.paid ? (
+                    <span className="border border-cyan/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-button text-cyan">
+                      Ark+
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function NavTextLink({
+  item,
+  pathname,
+}: {
+  item: NavItem;
+  pathname: string;
+}) {
+  const active = isActive(pathname, item);
+  return (
+    <Link
+      to={item.to}
+      aria-current={active ? "page" : undefined}
+      className={`relative hidden min-h-11 items-center py-2 transition hover:text-fg-strong sm:inline-flex ${
+        active ? "text-fg-strong" : ""
+      }`}
+    >
+      {item.label}
+      {active ? (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-1 left-0 right-0 h-px bg-cyan"
+        />
+      ) : null}
+    </Link>
+  );
+}
+
+// Visible at all breakpoints (campaign emphasis); rendered as a solid pill
+// rather than the underline-on-active treatment that text links use.
+function NavPillLink({
+  item,
+  pathname,
+}: {
+  item: NavItem;
+  pathname: string;
+}) {
+  const active = isActive(pathname, item);
+  return (
+    <Link
+      to={item.to}
+      aria-current={active ? "page" : undefined}
+      className={`inline-flex min-h-11 items-center px-3 font-display text-[11px] font-bold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:px-4 sm:text-[12px] ${
+        active
+          ? "bg-cyan text-navy"
+          : "bg-fg-strong text-navy-900 hover:bg-cyan hover:text-navy"
+      }`}
+    >
+      {item.label}
+    </Link>
   );
 }
 
@@ -347,7 +671,14 @@ function MemberMenu({
         onClick={onClose}
         className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-center text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
-        Member dashboard
+        Account settings
+      </Link>
+      <Link
+        to="/setup"
+        onClick={onClose}
+        className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+      >
+        Set up your feed
       </Link>
       <button
         type="button"

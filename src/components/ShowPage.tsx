@@ -13,7 +13,11 @@ import {
   type Episode,
 } from "../data/episodes";
 import { hostsForShow } from "../data/hosts";
-import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
+import {
+  fetchPodcastDescription,
+  listEpisodes,
+  simplecastEpisodeSrc,
+} from "../lib/simplecast";
 import { subscribeEmail } from "../lib/beehiiv";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
@@ -30,7 +34,7 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
           <Breadcrumbs
             items={[
               { label: "Home", to: "/" },
-              { label: "Shows", to: "/shows" },
+              { label: "Podcasts", to: "/podcasts" },
               { label: "Not found" },
             ]}
           />
@@ -40,7 +44,7 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
       >
         <PlaceholderSection
           title="Looking for a show?"
-          body="Browse all of our shows from the Shows hub."
+          body="Browse all of our podcasts from the hub."
         />
       </PageShell>
     );
@@ -52,6 +56,7 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
 function PublicShowPage({ show }: { show: Show }) {
   const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
+  const description = useShowDescription(show);
 
   useEffect(() => {
     let live = true;
@@ -68,7 +73,7 @@ function PublicShowPage({ show }: { show: Show }) {
     <main className="relative">
       <ShowHero show={show} />
 
-      <ShowAbout show={show} />
+      <ShowAbout show={show} description={description} />
 
       {showHasPaidExtension(show.slug) ? <ShowUpsell show={show} /> : null}
 
@@ -105,7 +110,7 @@ function PublicShowPage({ show }: { show: Show }) {
                 {episodes.slice(3).map((ep) => (
                   <li key={ep.slug}>
                     <Link
-                      to="/shows/$show/$episode"
+                      to="/podcasts/$show/$episode"
                       params={{ show: show.slug, episode: ep.slug }}
                       className="group flex items-baseline justify-between gap-6 py-4 text-fg transition hover:text-cyan"
                     >
@@ -147,43 +152,33 @@ function PaidShowPage({ show }: { show: Show }) {
   const isMember = state.kind === "member";
   const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
+  const description = useShowDescription(show);
+
+  // Drop episodes loaded in a prior member session once the viewer is no
+  // longer a member, so a stale list can't flash if they sign back in.
+  if (!isMember && episodes !== null) {
+    setEpisodes(null);
+  }
 
   useEffect(() => {
+    if (!isMember) return;
     let live = true;
     void listEpisodes(show.slug).then((r) => live && setEpisodes(r));
     return () => {
       live = false;
     };
-  }, [show.slug]);
+  }, [show.slug, isMember]);
 
   return (
     <main className="relative">
       <ShowHero show={show} />
 
+      <ShowAbout show={show} description={description} />
+
       {isMember ? (
-        <section className="border-t border-rule bg-navy-900">
-          <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              You're a member
-            </div>
-            <h2 className="mt-6 max-w-3xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
-              Set up your private feed.
-            </h2>
-            <p className="mt-4 max-w-2xl text-[14px] leading-[1.7] text-fg">
-              Inside Call Me Back is delivered as a private, ad-free feed in
-              the podcast app you already use. Add it once and new episodes
-              show up automatically.
-            </p>
-            <Link
-              to="/account/podcast-feed"
-              className="mt-8 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-            >
-              Set up the feed →
-            </Link>
-          </div>
-        </section>
+        <PaidShowMemberContent show={show} episodes={episodes} />
       ) : (
-        <PaidShowMarketing show={show} episodes={episodes} />
+        <PaidShowJoinCta show={show} />
       )}
 
       {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
@@ -193,96 +188,134 @@ function PaidShowPage({ show }: { show: Show }) {
   );
 }
 
-function PaidShowMarketing({
+function PaidShowMemberContent({
   show,
   episodes,
 }: {
   show: Show;
   episodes: Episode[] | null;
 }) {
-  const recent = episodes?.slice(0, 5) ?? [];
+  // The hero player and the episode cards used to both surface the latest
+  // episode, which meant the same title rendered twice on the page. The
+  // featured episode is now hoisted into the hero player at the top, and the
+  // grid below skips it so each episode appears exactly once.
+  const featuredEpisode = episodes?.find((ep) => Boolean(ep.id)) ?? null;
+  const remaining = (episodes ?? []).filter(
+    (ep) => ep.slug !== featuredEpisode?.slug,
+  );
+  const moreLatest = remaining.slice(0, 3);
+  const archive = remaining.slice(3);
 
   return (
     <>
+      {featuredEpisode ? (
+        <ShowPlayer show={show} episode={featuredEpisode} />
+      ) : null}
+
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
-            <div className="lg:col-span-7">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                What you get
+          <div className="flex items-end justify-between">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              {featuredEpisode ? "More episodes" : "Latest episodes"}
+            </div>
+            <Link
+              to="/account/podcast-feed"
+              className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted transition hover:text-cyan sm:inline"
+            >
+              Set up private feed →
+            </Link>
+          </div>
+
+          {episodes === null ? (
+            <p className="mt-8 text-[14px] text-fg-muted">Loading episodes…</p>
+          ) : moreLatest.length === 0 ? (
+            <p className="mt-8 text-[14px] text-fg-muted">
+              {featuredEpisode
+                ? "That's the only episode so far — more coming soon."
+                : "No episodes yet — check back soon."}
+            </p>
+          ) : (
+            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+              {moreLatest.map((ep) => (
+                <EpisodeCard key={ep.slug} show={show} episode={ep} />
+              ))}
+            </div>
+          )}
+
+          {archive.length > 0 ? (
+            <div id="all-episodes" className="mt-16">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+                All episodes
               </div>
-              <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-fg">
-                {show.description}
-              </p>
-              <ul className="mt-8 space-y-3 text-[14px] text-fg">
-                {[
-                  "Extended, unedited interviews",
-                  "Ad-free episodes",
-                  "Members-only Q&As every other week",
-                  "Full archive access",
-                ].map((line) => (
-                  <li key={line} className="flex items-start gap-3">
-                    <span className="mt-[7px] h-px w-4 bg-cyan" />
-                    {line}
+              <ul className="mt-6 divide-y divide-rule border-y border-rule">
+                {archive.map((ep) => (
+                  <li key={ep.slug}>
+                    <Link
+                      to="/podcasts/$show/$episode"
+                      params={{ show: show.slug, episode: ep.slug }}
+                      className="group flex items-baseline justify-between gap-6 py-4 text-fg transition hover:text-cyan"
+                    >
+                      <span className="min-w-0 flex-1 text-[14px]">
+                        <span
+                          className="line-clamp-2 font-display tracking-[-0.005em]"
+                          title={ep.title}
+                        >
+                          {ep.title}
+                        </span>
+                      </span>
+                      <span className="hidden shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan sm:inline">
+                        {formatEpisodeDate(ep.publishedAt)} · {formatDuration(ep.durationMinutes)}
+                      </span>
+                    </Link>
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="lg:col-span-5">
-              <div className="border border-rule bg-navy-800/40 p-8">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                  Get Inside Call Me Back
-                </div>
-                <p className="mt-4 text-[14px] leading-[1.6] text-fg">
-                  Included with Ark+. One membership, one bill — Inside CMB plus
-                  members-only newsletters and the community.
-                </p>
-                <Link
-                  to="/plus"
-                  className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
-                >
-                  See Ark+ membership
-                  <span aria-hidden="true">→</span>
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-            Recent episodes
-          </div>
-          <p className="mt-4 max-w-2xl text-[13px] text-fg-muted">
-            Names only. Audio is reserved for Ark+ members.
-          </p>
-          {episodes === null ? (
-            <p className="mt-8 text-[14px] text-fg-muted">Loading…</p>
-          ) : (
-            <ul className="mt-8 divide-y divide-rule border-y border-rule">
-              {recent.map((ep) => (
-                <li
-                  key={ep.slug}
-                  className="flex items-baseline justify-between gap-6 py-4"
-                >
-                  <span
-                    className="line-clamp-2 min-w-0 flex-1 font-display text-[15px] tracking-[-0.005em] text-fg-strong"
-                    title={ep.title}
-                  >
-                    {ep.title}
-                  </span>
-                  <span className="hidden shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted sm:inline">
-                    {formatEpisodeDate(ep.publishedAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          ) : null}
         </div>
       </section>
     </>
+  );
+}
+
+function PaidShowJoinCta({ show }: { show: Show }) {
+  return (
+    <section className="border-t border-rule bg-navy-900">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+          <div className="lg:col-span-7">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              Ark+ members only
+            </div>
+            <h2 className="mt-6 max-w-2xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
+              Join Ark+ to listen to {show.title}.
+            </h2>
+            <p className="mt-4 max-w-2xl text-[15px] leading-[1.7] text-fg">
+              Members get extended interviews, ad-free episodes, members-only
+              Q&amp;As, the Ark+ newsletter, and the community — one membership,
+              one bill.
+            </p>
+          </div>
+          <div className="lg:col-span-5">
+            <div className="border border-rule bg-navy-800/40 p-8">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                Get Ark+
+              </div>
+              <p className="mt-4 text-[14px] leading-[1.6] text-fg">
+                Full access to {show.title} plus everything else in Ark+.
+              </p>
+              <Link
+                to="/plus"
+                className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
+              >
+                See Ark+ membership
+                <span aria-hidden="true">→</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -295,7 +328,7 @@ function ShowHero({ show }: { show: Show }) {
           className="rise rise-1 mb-6"
           items={[
             { label: "Home", to: "/" },
-            { label: "Shows", to: "/shows" },
+            { label: "Podcasts", to: "/podcasts" },
             { label: show.shortTitle },
           ]}
         />
@@ -330,7 +363,13 @@ function ShowHero({ show }: { show: Show }) {
   );
 }
 
-function ShowAbout({ show }: { show: Show }) {
+function ShowAbout({
+  show,
+  description,
+}: {
+  show: Show;
+  description: string;
+}) {
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
@@ -340,7 +379,7 @@ function ShowAbout({ show }: { show: Show }) {
               About
             </div>
             <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-fg">
-              {show.description}
+              {description}
             </p>
           </div>
           <div className="lg:col-span-5">
@@ -461,7 +500,7 @@ function ListenRow({
 function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
   return (
     <Link
-      to="/shows/$show/$episode"
+      to="/podcasts/$show/$episode"
       params={{ show: show.slug, episode: episode.slug }}
       className="group block border border-rule bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
     >
@@ -677,4 +716,36 @@ function RelatedShows({
 
 function showHasPaidExtension(slug: ShowSlug): boolean {
   return slug === "call-me-back";
+}
+
+// Returns the show description, preferring the live copy from Simplecast and
+// falling back to the hardcoded one in `data/shows.ts`. The hook seeds with
+// the local string so the page paints with real content immediately; the
+// remote value is only adopted if it comes back non-empty and different,
+// which avoids a one-frame text swap when the two strings already agree.
+//
+// State carries the slug it was hydrated for so navigating between shows
+// resets the description during render (the React-recommended alternative to
+// `setState` inside an effect).
+function useShowDescription(show: Show): string {
+  const [state, setState] = useState({
+    slug: show.slug,
+    value: show.description,
+  });
+  if (state.slug !== show.slug) {
+    setState({ slug: show.slug, value: show.description });
+  }
+  useEffect(() => {
+    let live = true;
+    void fetchPodcastDescription(show.slug).then((d) => {
+      if (!live || !d || d === show.description) return;
+      setState((prev) =>
+        prev.slug === show.slug ? { slug: show.slug, value: d } : prev,
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [show.slug, show.description]);
+  return state.value;
 }
