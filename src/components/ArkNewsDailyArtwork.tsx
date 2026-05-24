@@ -3,12 +3,20 @@
  * deep magenta background with concentric ripples, cyan ark mark,
  * and the "Ark NEWS / DAILY" wordmark.
  */
-export function ArkNewsDailyArtwork({ title }: { title: string }) {
+export function ArkNewsDailyArtwork({
+  title,
+  className,
+}: {
+  title: string;
+  className?: string;
+}) {
   return (
     <div
       role="img"
       aria-label={`${title} — cover art`}
-      className="relative aspect-square w-full max-w-md overflow-hidden border border-and-purple-500/40"
+      className={`relative aspect-square overflow-hidden border border-and-purple-500/40 ${
+        className ?? "w-full max-w-md"
+      }`}
       style={{
         background:
           "radial-gradient(circle at 32% 68%, #6b2380 0%, #4d1758 35%, #2c0d39 70%, #1a0722 100%)",
@@ -101,7 +109,7 @@ export function ArkNewsDailyArtwork({ title }: { title: string }) {
       </div>
 
       {/* Ark Media endorsement, bottom-right */}
-      <div className="absolute bottom-4 right-4 flex items-center gap-2 text-fg-faint">
+      <div className="absolute bottom-4 right-4 flex items-center gap-2 text-white/70">
         <svg
           aria-hidden="true"
           viewBox="0 0 200 200"
@@ -112,7 +120,7 @@ export function ArkNewsDailyArtwork({ title }: { title: string }) {
             d="M14 130 C 30 122, 80 118, 100 118 C 120 118, 170 122, 186 130 L 168 158 L 32 158 Z M30 104 C 50 94, 82 90, 100 90 C 118 90, 150 94, 170 104 L 156 120 L 44 120 Z M86 40 L 114 40 L 132 84 L 68 84 Z"
           />
         </svg>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
           Ark Media
         </span>
       </div>
