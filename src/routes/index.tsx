@@ -35,17 +35,26 @@ function HomePage() {
     <main className="relative">
       <section className="relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-20 sm:px-10 sm:pt-20">
+          {/* Animated brand mark. The GIF has a baked-in navy background, so it
+              sits in a fixed-navy tile (--color-navy doesn't flip with the
+              theme) and stays seamless in both light and dark. */}
+          <div className="rise rise-1 mb-6 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-navy ring-1 ring-cyan/30">
+            <img
+              src="/brand/ark-icon-loop.gif"
+              alt="Ark Media"
+              width={64}
+              height={64}
+              className="h-full w-full object-cover"
+            />
+          </div>
           <p className="inside-tab rise rise-1 text-[12px]">Ark Media</p>
           <h1 className="mt-10 max-w-4xl text-fg-strong">
             <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
-              Long-form journalism
+              Connecting Jewish{" "}
+              <span className="display text-cyan">Voices</span>,
             </span>
             <span className="rise rise-3 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
-              for the{" "}
-              <span className="display text-cyan">conversation</span>
-            </span>
-            <span className="rise rise-4 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
-              that matters.
+              Near and Far.
             </span>
           </h1>
           <div
@@ -54,9 +63,11 @@ function HomePage() {
             style={{ animationDelay: "0.7s" }}
           />
           <p className="rise rise-5 mt-8 max-w-2xl text-[15px] leading-[1.65] text-fg">
-            Podcasts, newsletters, and live events from Dan Senor and the Ark
-            Media team. Independent reporting and serious conversations on
-            Israel, the Middle East, and the world they're shaping.
+            Ark Media is a podcast network that explores the big questions
+            shaping Jewish life, Israel's future, and our rapidly changing
+            world. Through conversations with leading Jewish thinkers from
+            around the world, Ark Media aims to build a global community driven
+            by curiosity and meaningful dialogue.
           </p>
           <div
             className="rise mt-10 flex flex-wrap gap-3"

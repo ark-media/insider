@@ -42,11 +42,24 @@ function NewslettersPage() {
   return (
     <PageShell
       eyebrow="Newsletters"
-      title="In your inbox, every week."
-      lede="Free in your inbox. Members-only editions in your inbox and on the web. Pick what you want."
+      title="Come aboard the Ark."
+      lede="Subscribe to our newsletter and get new episodes every Friday."
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          {/* Brand banner — the same lockup that heads the email editions. It
+              carries a baked-in navy background, so it reads as an intentional
+              navy strip on both the light and dark page. */}
+          <div className="mb-12 overflow-hidden rounded-lg ring-1 ring-rule">
+            <img
+              src="/newsletters/header.png"
+              alt="The Ark Media Newsletter"
+              width={1024}
+              height={84}
+              loading="lazy"
+              className="block w-full"
+            />
+          </div>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {cards.map((n) => (
               <article
@@ -64,9 +77,9 @@ function NewslettersPage() {
                       <span className="text-fg-muted">Free</span>
                     )}
                   </div>
-                  <h3 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
+                  <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
                     {n.title}
-                  </h3>
+                  </h2>
                   <p className="mt-3 text-[13.5px] leading-[1.6] text-fg-muted">
                     {n.description}
                   </p>
@@ -79,7 +92,7 @@ function NewslettersPage() {
                   <Link
                     to="/newsletters/$slug"
                     params={{ slug: n.slug }}
-                    className="inline-flex items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan"
+                    className="inline-flex min-h-11 items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     Recent issues →
                   </Link>
@@ -126,12 +139,12 @@ function SignupForm({ slug }: { slug: NewsletterSlug }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email"
-            className="w-full bg-transparent px-3 py-2 text-[13px] text-fg-strong outline-none placeholder:text-fg-muted"
+            className="min-h-11 w-full bg-transparent px-3 py-2 text-[13px] text-fg-strong outline-none placeholder:text-fg-muted"
           />
           <button
             type="submit"
             disabled={status === "submitting"}
-            className="border-l border-rule-strong bg-cyan px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
+            className="min-h-11 border-l border-rule-strong bg-cyan px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
           >
             {status === "ok" ? "Subscribed" : "Subscribe"}
           </button>

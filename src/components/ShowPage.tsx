@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   LISTEN_PLATFORM_LABEL,
   getShow,
+  showAtmosphere,
   type ListenLink,
   type Show,
   type ShowSlug,
@@ -22,7 +23,7 @@ import { subscribeEmail } from "../lib/beehiiv";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
-import { ArkNewsDailyArtwork } from "./ArkNewsDailyArtwork";
+import { ShowCover } from "./ShowCover";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 export function ShowPage({ slug }: { slug: ShowSlug }) {
@@ -66,8 +67,14 @@ function PublicShowPage({ show }: { show: Show }) {
     };
   }, [show.slug]);
 
-  const latest = episodes?.slice(0, 3) ?? [];
+  // The featured episode is hoisted into the player at the top, so the grid and
+  // the All-episodes list below both skip it — each episode renders exactly once.
   const featuredEpisode = episodes?.find((ep) => Boolean(ep.id)) ?? null;
+  const remaining = (episodes ?? []).filter(
+    (ep) => ep.slug !== featuredEpisode?.slug,
+  );
+  const latest = remaining.slice(0, 3);
+  const archive = remaining.slice(3);
 
   return (
     <main className="relative">
@@ -77,11 +84,15 @@ function PublicShowPage({ show }: { show: Show }) {
 
       {showHasPaidExtension(show.slug) ? <ShowUpsell show={show} /> : null}
 
+      {featuredEpisode ? (
+        <ShowPlayer show={show} episode={featuredEpisode} />
+      ) : null}
+
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="flex items-end justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              Latest episodes
+              {featuredEpisode ? "More episodes" : "Latest episodes"}
             </div>
             <a
               href="#all-episodes"
@@ -93,6 +104,12 @@ function PublicShowPage({ show }: { show: Show }) {
 
           {episodes === null ? (
             <p className="mt-8 text-[14px] text-fg-muted">Loading episodes…</p>
+          ) : latest.length === 0 ? (
+            <p className="mt-8 text-[14px] text-fg-muted">
+              {featuredEpisode
+                ? "That's the only episode so far — more coming soon."
+                : "No episodes yet — check back soon."}
+            </p>
           ) : (
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
               {latest.map((ep) => (
@@ -101,42 +118,9 @@ function PublicShowPage({ show }: { show: Show }) {
             </div>
           )}
 
-          {episodes && episodes.length > 3 ? (
-            <div id="all-episodes" className="mt-16">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
-                All episodes
-              </div>
-              <ul className="mt-6 divide-y divide-rule border-y border-rule">
-                {episodes.slice(3).map((ep) => (
-                  <li key={ep.slug}>
-                    <Link
-                      to="/podcasts/$show/$episode"
-                      params={{ show: show.slug, episode: ep.slug }}
-                      className="group flex items-baseline justify-between gap-6 py-4 text-fg transition hover:text-cyan"
-                    >
-                      <span className="min-w-0 flex-1 text-[14px]">
-                        <span
-                          className="line-clamp-2 font-display tracking-[-0.005em]"
-                          title={ep.title}
-                        >
-                          {ep.title}
-                        </span>
-                      </span>
-                      <span className="hidden shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan sm:inline">
-                        {formatEpisodeDate(ep.publishedAt)} · {formatDuration(ep.durationMinutes)}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <AllEpisodes show={show} episodes={archive} />
         </div>
       </section>
-
-      {featuredEpisode ? (
-        <ShowPlayer show={show} episode={featuredEpisode} />
-      ) : null}
 
       {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
 
@@ -242,36 +226,7 @@ function PaidShowMemberContent({
             </div>
           )}
 
-          {archive.length > 0 ? (
-            <div id="all-episodes" className="mt-16">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
-                All episodes
-              </div>
-              <ul className="mt-6 divide-y divide-rule border-y border-rule">
-                {archive.map((ep) => (
-                  <li key={ep.slug}>
-                    <Link
-                      to="/podcasts/$show/$episode"
-                      params={{ show: show.slug, episode: ep.slug }}
-                      className="group flex items-baseline justify-between gap-6 py-4 text-fg transition hover:text-cyan"
-                    >
-                      <span className="min-w-0 flex-1 text-[14px]">
-                        <span
-                          className="line-clamp-2 font-display tracking-[-0.005em]"
-                          title={ep.title}
-                        >
-                          {ep.title}
-                        </span>
-                      </span>
-                      <span className="hidden shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan sm:inline">
-                        {formatEpisodeDate(ep.publishedAt)} · {formatDuration(ep.durationMinutes)}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <AllEpisodes show={show} episodes={archive} />
         </div>
       </section>
     </>
@@ -320,9 +275,8 @@ function PaidShowJoinCta({ show }: { show: Show }) {
 }
 
 function ShowHero({ show }: { show: Show }) {
-  const branded = show.slug === "ark-news-daily";
   return (
-    <section className={`relative ${branded ? "and-bg" : ""}`}>
+    <section className={`relative ${showAtmosphere(show.slug)}`}>
       <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
         <Breadcrumbs
           className="rise rise-1 mb-6"
@@ -432,40 +386,12 @@ function ShowUpsell({ show: _show }: { show: Show }) {
 }
 
 function ShowArtwork({ show }: { show: Show }) {
-  if (show.slug === "ark-news-daily") {
-    return <ArkNewsDailyArtwork title={show.title} />;
-  }
   return (
-    <div
-      role="img"
-      aria-label={`${show.title} — cover art`}
-      className="relative aspect-square w-full max-w-md overflow-hidden border border-rule bg-gradient-to-br from-navy-800/80 via-navy-700/40 to-navy-900/80"
-    >
-      <div
-        aria-hidden="true"
-        className="drift absolute inset-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(ellipse 60% 50% at 30% 30%, rgb(62 181 249 / 0.55) 0%, transparent 60%)",
-        }}
-      />
-      <div
-        aria-hidden="true"
-        className="drift absolute inset-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(ellipse 50% 40% at 75% 80%, rgb(62 181 249 / 0.28) 0%, transparent 65%)",
-          animationDelay: "-4.5s",
-          animationDuration: "11s",
-        }}
-      />
-      <div className="absolute inset-0 flex flex-col justify-between p-8">
-        <div className="eyebrow">{show.shortTitle}</div>
-        <div className="display-upright text-[clamp(2rem,4vw,3rem)] leading-[0.9] text-fg-strong">
-          {show.title}
-        </div>
-      </div>
-    </div>
+    <ShowCover
+      show={show}
+      priority
+      className="w-full max-w-md border border-rule shadow-cover"
+    />
   );
 }
 
@@ -501,7 +427,11 @@ function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
   return (
     <Link
       to="/podcasts/$show/$episode"
-      params={{ show: show.slug, episode: episode.slug }}
+      params={(prev) => ({
+        ...prev,
+        show: show.slug,
+        episode: episode.slug,
+      })}
       className="group block border border-rule bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
     >
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
@@ -521,6 +451,44 @@ function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
         View episode →
       </div>
     </Link>
+  );
+}
+
+// The archive list below the featured grid. Capped to roughly four rows
+// (max-h-[14rem]) and scrolled internally so a long back catalog doesn't push
+// the rest of the page down. Rows use line-clamp-1 so every row is the same
+// height and the four-episode cap stays predictable.
+function AllEpisodes({ show, episodes }: { show: Show; episodes: Episode[] }) {
+  if (episodes.length === 0) return null;
+  return (
+    <div id="all-episodes" className="mt-16">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+        All episodes
+      </div>
+      <ul className="mt-6 max-h-[14rem] divide-y divide-rule overflow-y-auto border-y border-rule">
+        {episodes.map((ep) => (
+          <li key={ep.slug}>
+            <Link
+              to="/podcasts/$show/$episode"
+              params={(prev) => ({ ...prev, show: show.slug, episode: ep.slug })}
+              className="group flex items-baseline justify-between gap-6 py-4 text-fg transition hover:text-cyan"
+            >
+              <span className="min-w-0 flex-1 text-[14px]">
+                <span
+                  className="line-clamp-1 font-display tracking-[-0.005em]"
+                  title={ep.title}
+                >
+                  {ep.title}
+                </span>
+              </span>
+              <span className="hidden shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan sm:inline">
+                {formatEpisodeDate(ep.publishedAt)} · {formatDuration(ep.durationMinutes)}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -574,6 +542,8 @@ function HostsSection({ slugs }: { slugs: string[] }) {
               <HostArtwork
                 initials={h.initials}
                 role={h.role}
+                photo={h.headshot}
+                name={h.name}
                 variant={i % 2 === 0 ? "primary" : "secondary"}
               />
               <h3 className="mt-5 font-display text-[20px] leading-tight text-fg-strong transition group-hover:text-cyan">
@@ -692,19 +662,22 @@ function RelatedShows({
             <Link
               key={s.slug}
               to={s.route}
-              className="group block border border-rule bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className="group block overflow-hidden border border-rule bg-navy-800/40 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                {s.shortTitle}
-              </div>
-              <div className="mt-4 font-display text-[20px] leading-[1.15] text-fg-strong">
-                {s.title}
-              </div>
-              <p className="mt-3 text-[13px] leading-[1.6] text-fg-muted">
-                {s.tagline}
-              </p>
-              <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition group-hover:text-cyan">
-                Visit show →
+              <ShowCover show={s} className="border-b border-rule" />
+              <div className="p-6">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                  {s.shortTitle}
+                </div>
+                <div className="mt-4 font-display text-[20px] leading-[1.15] text-fg-strong">
+                  {s.title}
+                </div>
+                <p className="mt-3 text-[13px] leading-[1.6] text-fg-muted">
+                  {s.tagline}
+                </p>
+                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition group-hover:text-cyan">
+                  Visit show →
+                </div>
               </div>
             </Link>
           ))}

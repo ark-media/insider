@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageShell } from "../components/PageShell";
+import { team } from "../data/team";
 
 export const Route = createFileRoute("/about")({
   component: AboutPage,
@@ -42,21 +43,21 @@ function AboutPage() {
     <PageShell
       eyebrow="About"
       title="Ark Media."
-      lede="An independent media company built around long-form journalism, serious conversations, and the audiences that show up for both."
+      lede="Ark Media is a podcast network focused on spirited debate and learning about Jewish life,
+Israel, the Middle East, and our larger geopolitics."
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             What Ark Media does
-          </div>
+          </h2>
           <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-12">
             <p className="text-[15.5px] leading-[1.75] text-fg lg:col-span-7">
-              We make podcasts and newsletters about Israel, the Middle East,
-              and the world they are shaping — long-form interviews with
-              policy-makers, military and intelligence figures, journalists,
-              and writers. Our editorial bar is plain: take the audience
-              seriously, take the questions seriously, and resist the pressure
-              to shorten the answer.
+              Ark Media is a podcast network that explores the big questions
+              shaping Jewish life, Israel's future, and our rapidly changing
+              world. Through conversations with leading Jewish thinkers from
+              around the world, Ark Media aims to build a global community
+              driven by curiosity and meaningful dialogue.
             </p>
             <div className="text-[14px] leading-[1.7] text-fg-muted lg:col-span-5">
               <p>
@@ -73,8 +74,44 @@ function AboutPage() {
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-            Find your way around
+            The team
           </div>
+          <h2 className="mt-3 max-w-2xl font-display text-[clamp(1.5rem,3vw,2.2rem)] leading-[1.1] text-fg-strong">
+            The people behind Ark Media.
+          </h2>
+          <ul className="mt-10 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+            {team.map((m) => (
+              <li key={m.name}>
+                <div className="relative aspect-square overflow-hidden rounded-lg bg-navy-800 ring-1 ring-rule">
+                  <img
+                    src={m.photo}
+                    alt={`${m.name} — portrait`}
+                    width={1024}
+                    height={1024}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div className="mt-3 font-display text-[15px] leading-tight text-fg-strong">
+                  {m.name}
+                </div>
+                {m.role ? (
+                  <div className="mt-0.5 text-[12px] leading-snug text-fg-muted">
+                    {m.role}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="border-t border-rule bg-navy-900">
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            Find your way around
+          </h2>
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {aboutLinks.map((link) => (
               <Link

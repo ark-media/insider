@@ -6,18 +6,21 @@ const hosts = [
     role: "Host",
     bio: "Author of The Genius of Israel and Start-Up Nation. Former foreign policy advisor.",
     initials: "DS",
+    headshot: "/hosts/dan-senor.jpg",
   },
   {
     name: "Nadav Eyal",
     role: "Regular",
     bio: "Columnist at Yedioth Ahronoth. Author of Revolt. One of Israel's most read journalists.",
     initials: "NE",
+    headshot: "/hosts/nadav-eyal.jpg",
   },
   {
     name: "Amit Segal",
     role: "Regular",
     bio: "Chief political analyst for Channel 12 News. The most quoted political voice in Israel.",
     initials: "AS",
+    headshot: "/hosts/amit-segal.jpg",
   },
 ];
 
@@ -49,6 +52,8 @@ export function Hosts() {
               <HostArtwork
                 initials={h.initials}
                 role={h.role}
+                photo={h.headshot}
+                name={h.name}
                 variant={i % 2 === 0 ? "primary" : "secondary"}
                 className="mb-6"
               />

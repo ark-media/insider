@@ -38,17 +38,22 @@ function HostPage() {
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <HostArtwork initials={host.initials} role={host.role} />
+            <HostArtwork
+              initials={host.initials}
+              role={host.role}
+              photo={host.headshot}
+              name={host.name}
+            />
           </div>
           <div className="lg:col-span-7">
-            <div className="eyebrow">Bio</div>
+            <h2 className="eyebrow">Bio</h2>
             <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-fg">
               {host.longBio}
             </p>
 
             {shows.length > 0 ? (
               <>
-                <div className="mt-12 eyebrow">Shows</div>
+                <h2 className="mt-12 eyebrow">Shows</h2>
                 <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {shows.map((s) => (
                     <li key={s.slug}>
@@ -56,9 +61,9 @@ function HostPage() {
                         to={s.route}
                         className="group block border border-rule bg-navy-800/40 p-5 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                       >
-                        <div className="font-display text-[18px] leading-[1.2] text-fg-strong">
+                        <h3 className="font-display text-[18px] leading-[1.2] text-fg-strong">
                           {s.title}
-                        </div>
+                        </h3>
                         <p className="mt-2 text-[13px] leading-[1.5] text-fg-muted">
                           {s.tagline}
                         </p>

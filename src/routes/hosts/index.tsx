@@ -27,11 +27,13 @@ function HostsHub() {
                 <HostArtwork
                   initials={h.initials}
                   role={h.role}
+                  photo={h.headshot}
+                  name={h.name}
                   variant={i % 2 === 0 ? "primary" : "secondary"}
                 />
-                <h3 className="mt-5 font-display text-[22px] leading-tight text-fg-strong transition group-hover:text-cyan">
+                <h2 className="mt-5 font-display text-[22px] leading-tight text-fg-strong transition group-hover:text-cyan">
                   {h.name}
-                </h3>
+                </h2>
                 <p className="mt-2 max-w-sm text-[13px] leading-[1.55] text-fg-muted">
                   {h.shortBio}
                 </p>
