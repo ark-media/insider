@@ -479,11 +479,13 @@ export function SetupFlow({ me }: { me: Me }) {
                 </button>
               </div>
 
-              {device === "computer" && qrTarget && qrDataUrl ? (
+              {qrTarget && qrDataUrl ? (
                 <QrHandoff
                   appName={selectedApp.name}
+                  manual={selectedApp.key === "manual"}
                   dataUrl={qrDataUrl}
                   target={qrTarget}
+                  mode={device ?? "computer"}
                 />
               ) : null}
 
@@ -502,9 +504,13 @@ export function SetupFlow({ me }: { me: Me }) {
                 />
               ) : null}
 
-              <div className="overflow-x-auto border border-rule bg-navy-900/60 p-4 font-mono text-[13px] whitespace-nowrap text-fg-muted sm:text-[12px]">
-                {feedUrl || "No feed available for this membership yet."}
-              </div>
+              {feedUrl ? (
+                <CopyableUrl url={feedUrl} />
+              ) : (
+                <div className="border border-rule bg-navy-900/60 p-4 font-mono text-[13px] text-fg-muted sm:text-[12px]">
+                  No feed available for this membership yet.
+                </div>
+              )}
 
               {selectedApp.note ? (
                 <div className="border-l-2 border-signal/70 bg-signal/10 p-4 text-[13px] leading-[1.6] text-fg">
@@ -709,21 +715,68 @@ function AppCard({
   );
 }
 
+function CopyableUrl({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      /* no-op */
+    }
+  };
+  return (
+    <div className="flex items-stretch border border-rule bg-navy-900/60">
+      <span
+        title={url}
+        className="min-w-0 flex-1 truncate px-4 py-3 font-mono text-[13px] text-fg-muted sm:text-[12px]"
+      >
+        {url}
+      </span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={
+          copied ? "Feed URL copied to clipboard" : "Copy feed URL to clipboard"
+        }
+        className="flex shrink-0 items-center gap-2 border-l border-rule px-4 py-3 font-display text-[11px] font-bold uppercase tracking-[0.12em] text-fg-muted transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+        <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+      </button>
+    </div>
+  );
+}
+
 function QrHandoff({
   appName,
+  manual,
   dataUrl,
   target,
+  mode,
 }: {
   appName: string;
+  manual: boolean;
   dataUrl: string;
   target: string;
+  mode: Device;
 }) {
+  const eyebrow =
+    mode === "phone" ? "Continue on another device" : "Continue on phone";
+  const heading = manual ? "Scan to open the setup link" : `Scan to open ${appName}`;
+  const body =
+    mode === "phone"
+      ? "On another device, point its camera at this code to open the setup link there."
+      : manual
+        ? "Point your phone's camera at this code. It'll open the setup link on your phone, ready to add in your podcast app."
+        : `Point your phone's camera at this code. It'll open the setup link on your phone so you can finish in the ${appName} app.`;
   return (
-    <div className="flex flex-col gap-5 border border-rule bg-navy-900/40 p-6 sm:flex-row sm:items-center sm:gap-8">
+    <div className="flex flex-col gap-5 border border-rule bg-navy-900/40 p-6 sm:flex-row sm:items-start sm:gap-8">
       <div className="bg-white p-3 shrink-0">
         <img
           src={dataUrl}
-          alt={`QR code to open ${appName} on your phone`}
+          alt="QR code for the setup link"
           width={144}
           height={144}
           className="block size-36 sm:size-40"
@@ -732,17 +785,14 @@ function QrHandoff({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
           <span className="h-px w-6 bg-cyan" />
-          Continue on phone
+          {eyebrow}
         </div>
         <h3 className="mt-3 font-display text-[17px] font-bold uppercase tracking-[0.04em] text-fg-strong">
-          Scan to open {appName}
+          {heading}
         </h3>
-        <p className="mt-2 text-[13px] leading-[1.6] text-fg-muted">
-          Point your phone's camera at this code. It'll open the setup link on
-          your phone so you can finish in the {appName} app.
-        </p>
-        <div className="mt-3 font-mono text-[11px] break-all text-fg-faint">
-          {target}
+        <p className="mt-2 text-[13px] leading-[1.6] text-fg-muted">{body}</p>
+        <div className="mt-4">
+          <CopyableUrl url={target} />
         </div>
       </div>
     </div>
@@ -857,6 +907,23 @@ function MonitorIcon() {
       <rect x="2" y="4" width="20" height="13" rx="1.5" />
       <line x1="8" y1="21" x2="16" y2="21" />
       <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="1.5" />
+      <path d="M5 15V5a1.5 1.5 0 0 1 1.5-1.5H15" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M5 12.5 10 17.5 19 6.5" />
     </svg>
   );
 }

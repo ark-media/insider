@@ -44,7 +44,7 @@ export default defineConfig([
   {
     // Provider files that co-locate their hook (the hook reads a module-local
     // context that can't be exported without leaking internals).
-    files: ['src/lib/subscriberAuth.tsx'],
+    files: ['src/lib/subscriberAuth.tsx', 'src/lib/theme.tsx'],
     rules: {
       'react-refresh/only-export-components': 'off',
     },
