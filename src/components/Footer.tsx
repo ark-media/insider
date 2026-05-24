@@ -54,14 +54,11 @@ export function Footer() {
             </div>
             <p className="mt-10 max-w-lg text-fg-strong">
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
-                Long-form journalism
+                Connecting Jewish{" "}
+                <span className="display text-cyan">Voices</span>,
               </span>
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
-                for the{" "}
-                <span className="display text-cyan">conversation</span>
-              </span>
-              <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
-                that matters.
+                Near and Far.
               </span>
             </p>
           </div>

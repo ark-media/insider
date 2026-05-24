@@ -59,7 +59,7 @@ function NetworkPage() {
       }
       eyebrow="Network"
       title="The Ark Media network."
-      lede="Every property we run, one page. Independent journalism for the conversation that matters."
+      lede="Every property we run, one page. Connecting Jewish voices, near and far."
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
