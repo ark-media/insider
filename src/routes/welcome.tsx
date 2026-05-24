@@ -30,7 +30,7 @@ function WelcomePage() {
             <WelcomeStep
               n="01"
               title="Open the Ark+ community"
-              body="Dan, Donniel, and Yossi are in the Circle app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically."
+              body="Nadav, Amit and Talare in the Circle app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically."
               cta="Install the Circle app"
               href={CIRCLE_OPEN_LINKS.ios}
               external

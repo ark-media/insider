@@ -31,7 +31,7 @@ export function Hero() {
             {[
               "Inside Call Me Back — extended interviews, ad-free",
               "Members-only newsletters — sharper analysis, weekly",
-              "The Ark+ community — Dan, Donniel, and Yossi in the room",
+              "The Ark+ community — Nadav, Amit and Tal in the room",
               "Live events and Q&As",
               "Early access to new shows",
             ].map((line) => (

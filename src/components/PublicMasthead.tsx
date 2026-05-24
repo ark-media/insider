@@ -125,7 +125,7 @@ export function PublicMasthead() {
   }, [accountOpen]);
 
   return (
-    <header className="relative z-20">
+    <header className="sticky top-0 z-20 border-b border-rule-soft bg-navy-900">
       <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 pt-6 pb-4 sm:px-10 sm:pt-8">
         <Link
           to="/"

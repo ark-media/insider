@@ -3,6 +3,7 @@ import { useState } from "react";
 import { PageShell } from "../../components/PageShell";
 import type { NewsletterSlug } from "../../data/newsletters";
 import { subscribeEmail } from "../../lib/beehiiv";
+import { useSubscriberAuth } from "../../lib/subscriberAuth";
 
 export const Route = createFileRoute("/newsletters/")({
   component: NewslettersPage,
@@ -39,6 +40,9 @@ const cards: NewsletterCard[] = [
 ];
 
 function NewslettersPage() {
+  const { state } = useSubscriberAuth();
+  const isMember = state.kind === "member";
+
   return (
     <PageShell
       eyebrow="Newsletters"
@@ -47,63 +51,68 @@ function NewslettersPage() {
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          {/* Brand banner — the same lockup that heads the email editions. It
-              carries a baked-in navy background, so it reads as an intentional
-              navy strip on both the light and dark page. */}
-          <div className="mb-12 overflow-hidden rounded-lg ring-1 ring-rule">
-            <img
-              src="/newsletters/header.png"
-              alt="The Ark Media Newsletter"
-              width={1024}
-              height={84}
-              loading="lazy"
-              className="block w-full"
-            />
-          </div>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {cards.map((n) => (
-              <article
-                key={n.slug}
-                className="flex flex-col justify-between gap-6 border border-rule bg-navy-800/40 p-7"
-              >
-                <div>
-                  <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.22em]">
-                    <span className="text-cyan">{n.shortTitle}</span>
-                    {n.tier === "ark-plus" ? (
-                      <span className="border border-cyan/60 px-2 py-0.5 text-[10px] tracking-[0.18em] text-cyan">
-                        Ark+
-                      </span>
-                    ) : (
-                      <span className="text-fg-muted">Free</span>
-                    )}
+            {cards.map((n) => {
+              // Ark+ letter is members-only: free signups and guests both
+              // resolve to a non-member state, so they get the join CTA in
+              // place of the email form.
+              const locked = n.tier === "ark-plus" && !isMember;
+              return (
+                <article
+                  key={n.slug}
+                  className="flex flex-col justify-between gap-6 border border-rule bg-navy-800/40 p-7"
+                >
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.22em]">
+                      <span className="text-cyan">{n.shortTitle}</span>
+                      {n.tier === "ark-plus" ? (
+                        <span className="border border-cyan/60 px-2 py-0.5 text-[10px] tracking-[0.18em] text-cyan">
+                          Ark+
+                        </span>
+                      ) : (
+                        <span className="text-fg-muted">Free</span>
+                      )}
+                    </div>
+                    <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
+                      {n.title}
+                    </h2>
+                    <p className="mt-3 text-[13.5px] leading-[1.6] text-fg-muted">
+                      {n.description}
+                    </p>
+                    <p className="mt-4 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
+                      {locked ? "Ark+ members only" : n.cadence}
+                    </p>
                   </div>
-                  <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
-                    {n.title}
-                  </h2>
-                  <p className="mt-3 text-[13.5px] leading-[1.6] text-fg-muted">
-                    {n.description}
-                  </p>
-                  <p className="mt-4 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
-                    {n.cadence}
-                  </p>
-                </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                  <Link
-                    to="/newsletters/$slug"
-                    params={{ slug: n.slug }}
-                    className="inline-flex min-h-11 items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  >
-                    Recent issues →
-                  </Link>
-                  <SignupForm slug={n.slug} />
-                </div>
-              </article>
-            ))}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                    <Link
+                      to="/newsletters/$slug"
+                      params={{ slug: n.slug }}
+                      className="inline-flex min-h-11 items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    >
+                      Recent issues →
+                    </Link>
+                    {locked ? <JoinArkPlusCta /> : <SignupForm slug={n.slug} />}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </div>
       </section>
     </PageShell>
+  );
+}
+
+function JoinArkPlusCta() {
+  return (
+    <Link
+      to="/plus"
+      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 bg-cyan px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+    >
+      Join Ark+
+      <span aria-hidden="true">→</span>
+    </Link>
   );
 }
 

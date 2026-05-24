@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   LISTEN_PLATFORM_LABEL,
   getShow,
@@ -66,15 +66,6 @@ function PublicShowPage({ show }: { show: Show }) {
     };
   }, [show.slug]);
 
-  // The featured episode is hoisted into the player at the top, so the grid and
-  // the All-episodes list below both skip it — each episode renders exactly once.
-  const featuredEpisode = episodes?.find((ep) => Boolean(ep.id)) ?? null;
-  const remaining = (episodes ?? []).filter(
-    (ep) => ep.slug !== featuredEpisode?.slug,
-  );
-  const latest = remaining.slice(0, 3);
-  const archive = remaining.slice(3);
-
   return (
     <main className="relative">
       <ShowHero show={show} />
@@ -83,43 +74,7 @@ function PublicShowPage({ show }: { show: Show }) {
 
       {showHasPaidExtension(show.slug) ? <ShowUpsell show={show} /> : null}
 
-      {featuredEpisode ? (
-        <ShowPlayer show={show} episode={featuredEpisode} />
-      ) : null}
-
-      <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="flex items-end justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              {featuredEpisode ? "More episodes" : "Latest episodes"}
-            </div>
-            <a
-              href="#all-episodes"
-              className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted transition hover:text-cyan sm:inline"
-            >
-              View all episodes →
-            </a>
-          </div>
-
-          {episodes === null ? (
-            <p className="mt-8 text-[14px] text-fg-muted">Loading episodes…</p>
-          ) : latest.length === 0 ? (
-            <p className="mt-8 text-[14px] text-fg-muted">
-              {featuredEpisode
-                ? "That's the only episode so far — more coming soon."
-                : "No episodes yet — check back soon."}
-            </p>
-          ) : (
-            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-              {latest.map((ep) => (
-                <EpisodeCard key={ep.slug} show={show} episode={ep} />
-              ))}
-            </div>
-          )}
-
-          <AllEpisodes show={show} episodes={archive} />
-        </div>
-      </section>
+      <EpisodeBrowser show={show} episodes={episodes} />
 
       {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
 
@@ -157,7 +112,18 @@ function PaidShowPage({ show }: { show: Show }) {
       <ShowAbout show={show} description={description} />
 
       {isMember ? (
-        <PaidShowMemberContent show={show} episodes={episodes} />
+        <EpisodeBrowser
+          show={show}
+          episodes={episodes}
+          headerLink={
+            <Link
+              to="/account/podcast-feed"
+              className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted transition hover:text-cyan"
+            >
+              Set up private feed →
+            </Link>
+          }
+        />
       ) : (
         <PaidShowJoinCta show={show} />
       )}
@@ -166,67 +132,6 @@ function PaidShowPage({ show }: { show: Show }) {
 
       <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
-  );
-}
-
-function PaidShowMemberContent({
-  show,
-  episodes,
-}: {
-  show: Show;
-  episodes: Episode[] | null;
-}) {
-  // The hero player and the episode cards used to both surface the latest
-  // episode, which meant the same title rendered twice on the page. The
-  // featured episode is now hoisted into the hero player at the top, and the
-  // grid below skips it so each episode appears exactly once.
-  const featuredEpisode = episodes?.find((ep) => Boolean(ep.id)) ?? null;
-  const remaining = (episodes ?? []).filter(
-    (ep) => ep.slug !== featuredEpisode?.slug,
-  );
-  const moreLatest = remaining.slice(0, 3);
-  const archive = remaining.slice(3);
-
-  return (
-    <>
-      {featuredEpisode ? (
-        <ShowPlayer show={show} episode={featuredEpisode} />
-      ) : null}
-
-      <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="flex items-end justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              {featuredEpisode ? "More episodes" : "Latest episodes"}
-            </div>
-            <Link
-              to="/account/podcast-feed"
-              className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted transition hover:text-cyan sm:inline"
-            >
-              Set up private feed →
-            </Link>
-          </div>
-
-          {episodes === null ? (
-            <p className="mt-8 text-[14px] text-fg-muted">Loading episodes…</p>
-          ) : moreLatest.length === 0 ? (
-            <p className="mt-8 text-[14px] text-fg-muted">
-              {featuredEpisode
-                ? "That's the only episode so far — more coming soon."
-                : "No episodes yet — check back soon."}
-            </p>
-          ) : (
-            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-              {moreLatest.map((ep) => (
-                <EpisodeCard key={ep.slug} show={show} episode={ep} />
-              ))}
-            </div>
-          )}
-
-          <AllEpisodes show={show} episodes={archive} />
-        </div>
-      </section>
-    </>
   );
 }
 
@@ -420,83 +325,371 @@ function ListenRow({
   );
 }
 
-function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
+// How many archive rows to reveal per "Show more" press.
+const ARCHIVE_PAGE_SIZE = 8;
+
+// Owns the show's episode-listening experience: an in-place player plus the
+// grid and archive that feed it. Any episode is playable without leaving the
+// page — clicking Play swaps the player's source to that episode and scrolls
+// it into view (the Crooked-style "listen here, browse here" model). The
+// player defaults to the latest episode; the grid and archive skip whatever
+// the player is showing only by skipping the latest, so the layout stays
+// stable as the selection changes.
+function EpisodeBrowser({
+  show,
+  episodes,
+  headerLink,
+}: {
+  show: Show;
+  episodes: Episode[] | null;
+  headerLink?: ReactNode;
+}) {
+  // Reset the player selection when navigating between shows so an episode
+  // chosen on one show can't linger in the player on the next.
+  const [selected, setSelected] = useState<{ slug: ShowSlug; id: string | null }>(
+    { slug: show.slug, id: null },
+  );
+  if (selected.slug !== show.slug) {
+    setSelected({ slug: show.slug, id: null });
+  }
+  const [query, setQuery] = useState("");
+  const playerRef = useRef<HTMLDivElement>(null);
+
+  const featuredEpisode = episodes?.find((ep) => Boolean(ep.id)) ?? null;
+  const remaining = (episodes ?? []).filter(
+    (ep) => ep.slug !== featuredEpisode?.slug,
+  );
+  const latest = remaining.slice(0, 3);
+  const archive = remaining.slice(3);
+
+  const selectedEpisode =
+    (selected.id ? episodes?.find((ep) => ep.id === selected.id) : null) ??
+    featuredEpisode;
+  const activeId = selectedEpisode?.id ?? null;
+  const isLatest = selectedEpisode?.slug === featuredEpisode?.slug;
+
+  function play(ep: Episode) {
+    if (!ep.id) return;
+    setSelected({ slug: show.slug, id: ep.id });
+    playerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const matches = searching
+    ? remaining.filter(
+        (ep) =>
+          ep.title.toLowerCase().includes(q) ||
+          (ep.guests?.some((g) => g.toLowerCase().includes(q)) ?? false),
+      )
+    : [];
+
   return (
-    <Link
-      to="/podcasts/$show/$episode"
-      params={{ show: show.slug, episode: episode.slug } as never}
-      className="group block border border-rule bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-    >
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-        {formatEpisodeDate(episode.publishedAt)} ·{" "}
-        {formatDuration(episode.durationMinutes)}
+    <>
+      <div ref={playerRef}>
+        {selectedEpisode ? (
+          <ShowPlayer episode={selectedEpisode} isLatest={isLatest} />
+        ) : null}
       </div>
-      <div
-        className="mt-4 line-clamp-2 font-display text-[18px] leading-[1.2] text-fg-strong"
-        title={episode.title}
-      >
-        {episode.title}
-      </div>
-      <p className="mt-3 line-clamp-3 text-[13px] leading-[1.6] text-fg-muted">
-        {episode.description}
-      </p>
-      <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition group-hover:text-cyan">
-        View episode →
-      </div>
-    </Link>
+
+      <section className="border-t border-rule bg-navy-900">
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              {featuredEpisode ? "More episodes" : "Latest episodes"}
+            </div>
+            <div className="flex items-center gap-5">
+              {episodes && episodes.length > 4 ? (
+                <EpisodeSearch value={query} onChange={setQuery} />
+              ) : null}
+              {headerLink}
+            </div>
+          </div>
+
+          {episodes === null ? (
+            <p className="mt-8 text-[14px] text-fg-muted">Loading episodes…</p>
+          ) : remaining.length === 0 ? (
+            <p className="mt-8 text-[14px] text-fg-muted">
+              {featuredEpisode
+                ? "That's the only episode so far — more coming soon."
+                : "No episodes yet — check back soon."}
+            </p>
+          ) : searching ? (
+            <EpisodeList
+              show={show}
+              episodes={matches}
+              onPlay={play}
+              activeId={activeId}
+              label={`${matches.length} ${
+                matches.length === 1 ? "result" : "results"
+              } for “${query.trim()}”`}
+              emptyLabel={`No episodes match “${query.trim()}”.`}
+            />
+          ) : (
+            <>
+              <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+                {latest.map((ep) => (
+                  <EpisodeCard
+                    key={ep.slug}
+                    show={show}
+                    episode={ep}
+                    onPlay={() => play(ep)}
+                    isActive={Boolean(ep.id) && ep.id === activeId}
+                  />
+                ))}
+              </div>
+              {archive.length > 0 ? (
+                <EpisodeList
+                  show={show}
+                  episodes={archive}
+                  onPlay={play}
+                  activeId={activeId}
+                  label="All episodes"
+                />
+              ) : null}
+            </>
+          )}
+        </div>
+      </section>
+    </>
   );
 }
 
-// The archive list below the featured grid. Capped to roughly four rows
-// (max-h-[14rem]) and scrolled internally so a long back catalog doesn't push
-// the rest of the page down. Rows use line-clamp-1 so every row is the same
-// height and the four-episode cap stays predictable.
-function AllEpisodes({ show, episodes }: { show: Show; episodes: Episode[] }) {
-  if (episodes.length === 0) return null;
+function EpisodeSearch({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex items-center">
+      <span className="sr-only">Search episodes</span>
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search episodes"
+        className="w-full min-w-[12rem] border border-rule bg-navy-800/40 px-3 py-1.5 text-[13px] text-fg placeholder:text-fg-muted transition focus:border-cyan focus-visible:outline-none sm:w-56"
+      />
+    </label>
+  );
+}
+
+// A flat, paginated episode list — used both for the back catalog and for
+// search results. Reveals ARCHIVE_PAGE_SIZE rows at a time so a long history
+// no longer hides inside a cramped internal scroll box.
+function EpisodeList({
+  show,
+  episodes,
+  onPlay,
+  activeId,
+  label,
+  emptyLabel,
+}: {
+  show: Show;
+  episodes: Episode[];
+  onPlay: (ep: Episode) => void;
+  activeId: string | null;
+  label: string;
+  emptyLabel?: string;
+}) {
+  const [visible, setVisible] = useState(ARCHIVE_PAGE_SIZE);
+  const shown = episodes.slice(0, visible);
+
   return (
     <div id="all-episodes" className="mt-16">
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
-        All episodes
+        {label}
       </div>
-      <ul className="mt-6 max-h-[14rem] divide-y divide-rule overflow-y-auto border-y border-rule">
-        {episodes.map((ep) => (
-          <li key={ep.slug}>
-            <Link
-              to="/podcasts/$show/$episode"
-              params={{ show: show.slug, episode: ep.slug } as never}
-              className="group flex items-baseline justify-between gap-6 py-4 text-fg transition hover:text-cyan"
+      {episodes.length === 0 ? (
+        <p className="mt-6 text-[14px] text-fg-muted">
+          {emptyLabel ?? "No episodes."}
+        </p>
+      ) : (
+        <>
+          <ul className="mt-6 divide-y divide-rule border-y border-rule">
+            {shown.map((ep) => (
+              <EpisodeRow
+                key={ep.slug}
+                show={show}
+                episode={ep}
+                onPlay={onPlay}
+                isActive={Boolean(ep.id) && ep.id === activeId}
+              />
+            ))}
+          </ul>
+          {episodes.length > visible ? (
+            <button
+              type="button"
+              onClick={() => setVisible((v) => v + ARCHIVE_PAGE_SIZE)}
+              className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              <span className="min-w-0 flex-1 text-[14px]">
-                <span
-                  className="line-clamp-1 font-display tracking-[-0.005em]"
-                  title={ep.title}
-                >
-                  {ep.title}
-                </span>
-              </span>
-              <span className="hidden shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan sm:inline">
-                {formatEpisodeDate(ep.publishedAt)} · {formatDuration(ep.durationMinutes)}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+              Show more episodes
+              <span aria-hidden="true">↓</span>
+            </button>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
 
-function ShowPlayer({ show, episode }: { show: Show; episode: Episode }) {
+function EpisodeRow({
+  show,
+  episode,
+  onPlay,
+  isActive,
+}: {
+  show: Show;
+  episode: Episode;
+  onPlay: (ep: Episode) => void;
+  isActive: boolean;
+}) {
+  return (
+    <li
+      className={`group flex items-center gap-4 py-4 transition ${
+        isActive ? "text-cyan" : "text-fg"
+      }`}
+    >
+      {episode.id ? (
+        <button
+          type="button"
+          onClick={() => onPlay(episode)}
+          aria-label={`Play ${episode.title}`}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-rule-strong text-fg-muted transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          {isActive ? <EqualizerGlyph /> : <PlayGlyph />}
+        </button>
+      ) : (
+        <span className="h-8 w-8 shrink-0" aria-hidden="true" />
+      )}
+      <Link
+        to="/podcasts/$show/$episode"
+        params={{ show: show.slug, episode: episode.slug } as never}
+        className="min-w-0 flex-1 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+      >
+        <span
+          className="line-clamp-1 font-display text-[14px] tracking-[-0.005em]"
+          title={episode.title}
+        >
+          {episode.title}
+        </span>
+        {episode.guests && episode.guests.length > 0 ? (
+          <span className="mt-0.5 block truncate text-[11px] text-fg-muted">
+            With {episode.guests.join(", ")}
+          </span>
+        ) : null}
+      </Link>
+      <span className="shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted">
+        {formatEpisodeDate(episode.publishedAt)} ·{" "}
+        {formatDuration(episode.durationMinutes)}
+      </span>
+    </li>
+  );
+}
+
+function EpisodeCard({
+  show,
+  episode,
+  onPlay,
+  isActive,
+}: {
+  show: Show;
+  episode: Episode;
+  onPlay: () => void;
+  isActive: boolean;
+}) {
+  return (
+    <div
+      className={`group flex h-full flex-col border bg-navy-800/40 p-6 transition ${
+        isActive ? "border-cyan" : "border-rule"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          {formatEpisodeDate(episode.publishedAt)} ·{" "}
+          {formatDuration(episode.durationMinutes)}
+        </div>
+        {isActive ? (
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan" aria-hidden="true" />
+            Now playing
+          </span>
+        ) : null}
+      </div>
+      <Link
+        to="/podcasts/$show/$episode"
+        params={{ show: show.slug, episode: episode.slug } as never}
+        className="mt-4 line-clamp-2 font-display text-[18px] leading-[1.2] text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        title={episode.title}
+      >
+        {episode.title}
+      </Link>
+      {episode.guests && episode.guests.length > 0 ? (
+        <p className="mt-2 text-[12px] uppercase tracking-[0.14em] text-fg-muted">
+          With {episode.guests.join(", ")}
+        </p>
+      ) : null}
+      <p className="mt-3 line-clamp-3 text-[13px] leading-[1.6] text-fg-muted">
+        {episode.description}
+      </p>
+      <div className="mt-auto flex items-center gap-4 pt-6">
+        {episode.id ? (
+          <button
+            type="button"
+            onClick={onPlay}
+            className="inline-flex items-center gap-2 border border-cyan px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            <PlayGlyph />
+            Play
+          </button>
+        ) : null}
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: show.slug, episode: episode.slug } as never}
+          className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          View episode →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function ShowPlayer({
+  episode,
+  isLatest,
+}: {
+  episode: Episode;
+  isLatest: boolean;
+}) {
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-          Listen here
+        <div className="flex items-center gap-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            {isLatest ? "Latest episode" : "Now playing"}
+          </div>
+          {isLatest ? (
+            <span className="border border-cyan px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan">
+              New
+            </span>
+          ) : null}
         </div>
-        <h2 className="mt-4 max-w-2xl font-display text-[clamp(1.4rem,2.6vw,2rem)] leading-[1.15] text-fg-strong">
-          {show.cadence}.
+        <h2
+          className="mt-4 max-w-3xl font-display text-[clamp(1.4rem,2.6vw,2rem)] leading-[1.15] text-fg-strong"
+          title={episode.title}
+        >
+          {episode.title}
         </h2>
+        <div className="mt-3 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
+          {formatEpisodeDate(episode.publishedAt)} ·{" "}
+          {formatDuration(episode.durationMinutes)}
+        </div>
         <div className="mt-8 border border-rule bg-navy-800/40">
           <iframe
+            key={episode.id}
             title={`${episode.title} — player`}
             src={simplecastEpisodeSrc(episode.id!)}
             height={200}
@@ -509,6 +702,36 @@ function ShowPlayer({ show, episode }: { show: Show; episode: Episode }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function PlayGlyph() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M2 1.2v7.6a.4.4 0 0 0 .61.34l6.1-3.8a.4.4 0 0 0 0-.68L2.61.86A.4.4 0 0 0 2 1.2Z" />
+    </svg>
+  );
+}
+
+function EqualizerGlyph() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="1" y="4" width="1.6" height="5" rx="0.5" />
+      <rect x="4.2" y="1.5" width="1.6" height="7.5" rx="0.5" />
+      <rect x="7.4" y="3" width="1.6" height="6" rx="0.5" />
+    </svg>
   );
 }
 

@@ -52,7 +52,7 @@ export const shows: Show[] = [
     tagline:
       "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     description:
-      "Dan Senor's flagship show un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
+      "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     hosts: ["Dan Senor"],
     cadence: "New episodes Sundays and Thursdays",
     coverArt: "/shows/call-me-back.jpg",
@@ -84,7 +84,7 @@ export const shows: Show[] = [
     tagline:
       "Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of constructive disagreement about Israel, world Jewry, and the future of Zionism.",
     description:
-      "Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of intense dialectic on all topics related to Israel, the Jewish diaspora, and the future of Zionism.",
+      "Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of constructive disagreement about Israel, world Jewry, and the future of Zionism.",
     hosts: ["Donniel Hartman", "Yossi Klein Halevi"],
     cadence: "Weekly",
     coverArt: "/shows/for-heavens-sake.jpg",
@@ -100,7 +100,7 @@ export const shows: Show[] = [
     tagline:
       "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
     description:
-      "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? delves into the forces shaping the Israeli economy from within and without.",
+      "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
     hosts: ["Yonatan Adiri", "Michal Lev-Ram"],
     cadence: "Weekly",
     coverArt: "/shows/whats-your-number.jpg",
@@ -116,7 +116,7 @@ export const shows: Show[] = [
     tagline:
       "Every morning, Ark Media gives you the latest updates on the war in Iran and how they impact the Middle East, geopolitics, and Jews around the world.",
     description:
-      "Ten minutes, every weekday. The single news item that matters most — explained without the noise.",
+      "Every morning, Ark Media gives you the latest updates on the war in Iran and how they impact the Middle East, geopolitics, and Jews around the world.",
     hosts: ["Ark Media newsroom"],
     cadence: "Weekdays, 7:00 AM ET",
     coverArt: "/shows/ark-news-daily.jpg",

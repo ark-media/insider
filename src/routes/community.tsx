@@ -53,7 +53,7 @@ function CommunityPage() {
     <PageShell
       eyebrow="Community"
       title="The room behind the show."
-      lede="Dan, Donniel, and Yossi in conversation with members — on the day's news, the week's reading, and what didn't make the cut. In the Circle app."
+      lede="Nadav, Amit and Tal in conversation with members — on the day's news, the week's reading, and what didn't make the cut. In the Circle app."
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">

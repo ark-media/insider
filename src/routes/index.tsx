@@ -20,7 +20,7 @@ const sections = [
     eyebrow: "Community",
     title: "In the room.",
     to: "/community",
-    body: "The Ark+ community — Dan, Donniel, and Yossi in conversation with members.",
+    body: "The Ark+ community — Nadav, Amit and Tal in conversation with members.",
   },
   {
     number: "03",

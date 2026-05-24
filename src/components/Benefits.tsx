@@ -12,7 +12,7 @@ const benefits = [
   {
     no: "03",
     title: "The Ark+ community",
-    body: "Dan, Donniel, and Yossi in the room with members in the Circle app. Discussion threads, watch parties, and live audio events — not a comments section.",
+    body: "Nadav, Amit and Tal in the room with members in the Circle app. Discussion threads, watch parties, and live audio events — not a comments section.",
   },
   {
     no: "04",
