@@ -105,10 +105,14 @@ function RedeemPage() {
                 </div>
               ) : (
                 <form onSubmit={onSubmit} className="border border-rule bg-navy-800/50 p-8">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+                  <label
+                    htmlFor="redeem-code"
+                    className="block text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted"
+                  >
                     Gift code
-                  </div>
+                  </label>
                   <input
+                    id="redeem-code"
                     type="text"
                     required
                     value={code}
@@ -117,10 +121,14 @@ function RedeemPage() {
                     className={`${inputClass} mt-3 font-mono uppercase`}
                   />
 
-                  <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+                  <label
+                    htmlFor="redeem-email"
+                    className="mt-6 block text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted"
+                  >
                     Your email
-                  </div>
+                  </label>
                   <input
+                    id="redeem-email"
                     type="email"
                     required
                     value={email}

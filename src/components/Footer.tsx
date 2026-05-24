@@ -70,8 +70,12 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-20 flex flex-col gap-4 border-t border-rule pt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted sm:flex-row sm:justify-between">
-          <span>© {new Date().getFullYear()} Ark Media LLC</span>
+        <div className="mt-20 flex flex-col gap-6 border-t border-rule pt-8 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+            © {new Date().getFullYear()} Ark Media LLC
+          </span>
+          {/* Social links are hidden until real Ark Media profile URLs exist —
+              SocialLinks.tsx still holds the (placeholder) markup to re-enable. */}
         </div>
       </div>
     </footer>

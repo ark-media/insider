@@ -58,9 +58,9 @@ function CommunityPage() {
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
               What happens in the community
-            </div>
+            </h2>
             <ul className="mt-8 space-y-5 text-[14.5px] leading-[1.7] text-fg">
               <li className="flex items-start gap-4">
                 <span className="mt-[10px] h-px w-5 bg-cyan" />
@@ -111,7 +111,7 @@ function CommunityPage() {
                   href={CIRCLE_OPEN_LINKS.ios}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan"
+                  className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Open on iOS
                 </a>
@@ -119,7 +119,7 @@ function CommunityPage() {
                   href={CIRCLE_OPEN_LINKS.android}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan"
+                  className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Open on Android
                 </a>
@@ -127,7 +127,7 @@ function CommunityPage() {
                   href={CIRCLE_OPEN_LINKS.web}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan"
+                  className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Open on web
                 </a>
@@ -148,9 +148,9 @@ function CommunityPage() {
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="flex items-end justify-between gap-6">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                 Upcoming events
-              </div>
+              </h2>
               <p className="mt-3 max-w-2xl text-[13px] text-fg-muted">
                 Audio rooms, AMAs, watch parties, and the occasional gathering
                 in New York or Tel Aviv. Most live in the Ark+ community.
@@ -164,7 +164,7 @@ function CommunityPage() {
             </Link>
           </div>
           {events === null ? (
-            <p className="mt-8 text-[14px] text-fg-muted">Loading…</p>
+            <p className="mt-8 text-[14px] text-fg-muted" role="status">Loading…</p>
           ) : events.length === 0 ? (
             <p className="mt-8 text-[14px] text-fg-muted">
               Nothing on the calendar right now — check back soon.
@@ -183,14 +183,14 @@ function CommunityPage() {
 
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             From the room — selected member posts
-          </div>
+          </h2>
           <p className="mt-3 max-w-2xl text-[13px] text-fg-muted">
             Posts members chose to share publicly.
           </p>
           {broadcasts === null ? (
-            <p className="mt-8 text-[14px] text-fg-muted">Loading…</p>
+            <p className="mt-8 text-[14px] text-fg-muted" role="status">Loading…</p>
           ) : (
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
               {broadcasts.map((b) => (
@@ -252,7 +252,7 @@ function CommunityEventRow({ event }: { event: ArkEvent }) {
           href={circleEventLink(event.id)}
           target="_blank"
           rel="noreferrer noopener"
-          className="mt-3 inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan"
+          className="mt-3 inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           {isMemberOnly ? "Open in Circle" : "RSVP"} →
         </a>

@@ -33,6 +33,11 @@ export function Modal({
 
     previousFocusRef.current = document.activeElement;
 
+    // Lock background scroll while the dialog is open so scrolling inside the
+    // modal can't bleed into the page behind it.
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         stableClose();
@@ -66,6 +71,7 @@ export function Modal({
 
     return () => {
       window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevBodyOverflow;
       if (previousFocusRef.current instanceof HTMLElement) {
         previousFocusRef.current.focus();
       }

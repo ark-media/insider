@@ -298,7 +298,7 @@ export function SetupFlow({ me }: { me: Me }) {
           <button
             type="button"
             onClick={signOut}
-            className="shrink-0 underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+            className="shrink-0 underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Sign out
           </button>
@@ -309,16 +309,14 @@ export function SetupFlow({ me }: { me: Me }) {
         {/* Masthead row */}
         <div className="rise rise-1 flex flex-col items-start gap-6 sm:flex-row sm:items-end sm:gap-8">
           <div
-            className="relative aspect-square w-[140px] shrink-0 overflow-hidden sm:w-[164px]"
-            style={{
-              boxShadow:
-                "0 40px 100px -30px rgba(0,0,0,0.7), 0 8px 30px -10px rgba(0,0,0,0.5)",
-              transform: "rotate(-1.5deg)",
-            }}
+            className="relative aspect-square w-[140px] shrink-0 overflow-hidden shadow-cover sm:w-[164px]"
+            style={{ transform: "rotate(-1.5deg)" }}
           >
             <img
               src="/inside-cmb.jpg"
               alt="Inside Call Me Back"
+              width={760}
+              height={760}
               className="h-full w-full object-cover"
             />
           </div>
@@ -408,7 +406,7 @@ export function SetupFlow({ me }: { me: Me }) {
             <button
               type="button"
               onClick={() => setAppKey("manual")}
-              className={`mt-3 w-full border px-4 py-3 text-left text-[13px] transition sm:text-center ${
+              className={`mt-3 w-full border px-4 py-3 text-left text-[13px] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:text-center ${
                 appKey === "manual"
                   ? "border-cyan bg-cyan/10 text-fg-strong"
                   : "border-rule text-fg hover:border-cyan/60 hover:text-fg-strong"
@@ -451,7 +449,7 @@ export function SetupFlow({ me }: { me: Me }) {
                   <button
                     type="button"
                     onClick={copyFeed}
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     {copied ? "Copied ✓" : selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -463,7 +461,7 @@ export function SetupFlow({ me }: { me: Me }) {
                     href={selectedAppUrl || feedUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     {selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -475,7 +473,7 @@ export function SetupFlow({ me }: { me: Me }) {
                 <button
                   type="button"
                   onClick={copyFeed}
-                  className="text-[13px] text-fg-muted underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+                  className="text-[13px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   {copied ? "Feed URL copied" : "Or copy the raw feed URL"}
                 </button>
@@ -524,7 +522,7 @@ export function SetupFlow({ me }: { me: Me }) {
             <button
               type="button"
               onClick={() => setCancelState("confirming")}
-              className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-danger hover:decoration-danger/50"
+              className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-danger hover:decoration-danger/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Cancel my subscription
             </button>
@@ -540,14 +538,14 @@ export function SetupFlow({ me }: { me: Me }) {
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="bg-danger px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-cta text-navy transition hover:bg-danger-strong"
+                  className="bg-danger px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-cta text-navy transition hover:bg-danger-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Yes, cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => setCancelState("idle")}
-                  className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-fg-strong hover:decoration-fg-strong"
+                  className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-fg-strong hover:decoration-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Never mind
                 </button>
@@ -588,7 +586,7 @@ export function SetupFlow({ me }: { me: Me }) {
               <button
                 type="button"
                 onClick={() => setCancelState("idle")}
-                className="text-[13px] text-fg-muted underline decoration-white/25 underline-offset-[6px] transition hover:text-fg-strong"
+                className="text-[13px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
                 Try again
               </button>
@@ -663,7 +661,7 @@ function DeviceCard({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex flex-col items-center gap-3 border p-8 text-center transition ${
+      className={`group flex flex-col items-center gap-3 border p-8 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
         selected
           ? "border-cyan bg-cyan/10"
           : "border-rule hover:border-cyan/60 hover:bg-fg-strong/[0.03]"
@@ -695,7 +693,7 @@ function AppCard({
     <button
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-start gap-2 border p-4 text-left transition ${
+      className={`flex flex-col items-start gap-2 border p-4 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
         selected
           ? "border-cyan bg-cyan/10"
           : "border-rule hover:border-cyan/60 hover:bg-fg-strong/[0.03]"
@@ -726,6 +724,8 @@ function QrHandoff({
         <img
           src={dataUrl}
           alt={`QR code to open ${appName} on your phone`}
+          width={144}
+          height={144}
           className="block size-36 sm:size-40"
         />
       </div>
@@ -789,7 +789,7 @@ function SmsHandoff({
           <button
             type="button"
             onClick={onReset}
-            className="text-[12px] text-fg-muted underline decoration-white/25 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+            className="text-[12px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Send another
           </button>
@@ -814,7 +814,7 @@ function SmsHandoff({
             type="submit"
             disabled={!phone.trim() || state === "sending"}
             aria-busy={state === "sending"}
-            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan"
+            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             {state === "sending" ? "Sending..." : "Text me the link"}
             <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -833,7 +833,7 @@ function SmsHandoff({
       {selfSmsHref ? (
         <a
           href={selfSmsHref}
-          className="mt-4 inline-block text-[12px] text-fg-muted underline decoration-white/20 underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+          className="mt-4 inline-block text-[12px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           Or open Messages with the link pre-filled →
         </a>

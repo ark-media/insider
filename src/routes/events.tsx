@@ -37,11 +37,11 @@ function EventsPage() {
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Upcoming
-          </div>
+          </h2>
           {events === null ? (
-            <p className="mt-8 text-[14px] text-fg-muted">Loading…</p>
+            <p className="mt-8 text-[14px] text-fg-muted" role="status">Loading…</p>
           ) : events.length === 0 ? (
             <p className="mt-8 text-[14px] text-fg-muted">
               No upcoming events on the calendar — check back soon.
@@ -99,7 +99,7 @@ function EventRow({ event }: { event: ArkEvent }) {
           href={circleEventLink(event.id)}
           target="_blank"
           rel="noreferrer noopener"
-          className="mt-4 inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan"
+          className="mt-4 inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           {isMemberOnly ? "Open in Circle" : "RSVP in Circle"} →
         </a>

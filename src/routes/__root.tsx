@@ -43,7 +43,7 @@ function RootContent() {
   }
 
   return (
-    <div className="min-h-dvh bg-navy-900 font-sans text-ink">
+    <div className="bg-app min-h-dvh font-sans text-ink">
       {chromeless ? null : (
         <a href="#main-content" className="skip-link">
           Skip to main content

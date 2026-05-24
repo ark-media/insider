@@ -51,12 +51,12 @@ export function Pricing() {
 
           <div className="lg:col-span-7">
             {/* Plan toggle */}
-            <div role="tablist" aria-orientation="horizontal" className="inline-flex border border-rule-strong p-1">
+            <div role="group" aria-label="Billing period" className="inline-flex border border-rule-strong p-1">
               {(["monthly", "yearly"] as const).map((p) => (
                 <button
                   key={p}
-                  role="tab"
-                  aria-selected={plan === p}
+                  type="button"
+                  aria-pressed={plan === p}
                   onClick={() => setPlan(p)}
                   className={`relative inline-flex min-h-11 items-center px-6 font-display text-[12px] font-bold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
                     plan === p
@@ -98,12 +98,13 @@ export function Pricing() {
 
                   {/* Custom amount */}
                   <div className="mt-10">
-                    <label className="eyebrow text-fg-muted">
+                    <label htmlFor="custom-amount" className="eyebrow text-fg-muted">
                       Or name your price
                     </label>
                     <div className="mt-2 flex items-center border-b border-rule-strong pb-2 focus-within:border-cyan">
                       <span className="mr-2 text-[22px] text-fg-muted">$</span>
                       <input
+                        id="custom-amount"
                         type="number"
                         min={price}
                         value={customAmount}

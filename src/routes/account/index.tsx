@@ -88,6 +88,7 @@ function AccountDashboard() {
                   <AccountLink to="/account/billing" label="Billing & cancel" />
                 </ul>
                 <button
+                  type="button"
                   onClick={signOut}
                   className="mt-6 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-[14px] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >

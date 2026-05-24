@@ -7,6 +7,8 @@ type CommonProps = {
   body?: ReactNode;
   cta?: string;
   badge?: ReactNode;
+  /** Optional square thumbnail shown beside the eyebrow + title. */
+  media?: ReactNode;
 };
 
 type LinkCardProps = CommonProps & {
@@ -25,14 +27,30 @@ type StaticCardProps = CommonProps & {
 const cardClass =
   "group relative block border border-rule bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
-function CardBody({ eyebrow, title, body, cta, badge }: CommonProps) {
+function CardBody({ eyebrow, title, body, cta, badge, media }: CommonProps) {
+  const heading = (
+    <>
+      <div className="eyebrow">{eyebrow}</div>
+      <div
+        className={`${media ? "mt-2" : "mt-4"} line-clamp-3 font-display text-[22px] leading-[1.15] text-fg-strong`}
+      >
+        {title}
+      </div>
+    </>
+  );
   return (
     <>
       {badge ?? null}
-      <div className="eyebrow">{eyebrow}</div>
-      <div className="mt-4 line-clamp-3 font-display text-[22px] leading-[1.15] text-fg-strong">
-        {title}
-      </div>
+      {media ? (
+        <div className="flex items-start gap-4">
+          <div className="w-14 shrink-0 overflow-hidden border border-rule">
+            {media}
+          </div>
+          <div className="min-w-0 flex-1">{heading}</div>
+        </div>
+      ) : (
+        heading
+      )}
       {body ? (
         <p className="mt-3 line-clamp-4 text-[13px] leading-[1.6] text-fg-muted">
           {body}

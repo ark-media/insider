@@ -63,9 +63,9 @@ function NetworkPage() {
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Properties
-          </div>
+          </h2>
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {properties.map((p) => (
               <Link
@@ -93,9 +93,9 @@ function NetworkPage() {
 
       <section className="border-t border-rule bg-navy-800/40">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Shows by name
-          </div>
+          </h2>
           <ul className="mt-8 divide-y divide-rule border-y border-rule">
             {shows.map((s) => (
               <li key={s.slug} className="py-5">

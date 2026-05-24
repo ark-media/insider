@@ -3,6 +3,7 @@ import { useState } from "react";
 import { fetchMe, cancelSubscription } from "../../lib/auth";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
+import { Modal } from "../../components/Modal";
 
 export const Route = createFileRoute("/account/billing")({
   beforeLoad: async () => {
@@ -21,15 +22,10 @@ function BillingPage() {
     | { kind: "ok"; until: string }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const onCancel = async () => {
-    if (
-      !window.confirm(
-        "Cancel your Ark+ membership? You'll keep access until the end of your current billing period.",
-      )
-    ) {
-      return;
-    }
+    setConfirmOpen(false);
     setStatus({ kind: "cancelling" });
     const r = await cancelSubscription();
     if (r.ok) {
@@ -61,9 +57,9 @@ function BillingPage() {
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="border border-rule bg-navy-800/40 p-8">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                 Manage payment & invoices
-              </div>
+              </h2>
               <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
                 Update your card, change your billing email, or download
                 invoices in the Stripe Customer Portal.
@@ -81,9 +77,9 @@ function BillingPage() {
             </div>
 
             <div className="border border-rule bg-navy-800/40 p-8">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                 Cancel
-              </div>
+              </h2>
               <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
                 Cancel anytime. You'll keep access through the end of your
                 current billing period.
@@ -98,9 +94,9 @@ function BillingPage() {
               ) : (
                 <button
                   type="button"
-                  onClick={onCancel}
+                  onClick={() => setConfirmOpen(true)}
                   disabled={status.kind === "cancelling"}
-                  className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-danger hover:text-danger disabled:opacity-60"
+                  className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   {status.kind === "cancelling"
                     ? "Cancelling…"
@@ -119,6 +115,43 @@ function BillingPage() {
           </div>
         </div>
       </section>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        className="max-w-md"
+        labelledBy="cancel-title"
+        describedBy="cancel-desc"
+      >
+        <p id="cancel-desc" className="eyebrow">
+          Cancel membership
+        </p>
+        <h2
+          id="cancel-title"
+          className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+        >
+          Cancel your Ark+ membership?
+        </h2>
+        <p className="mt-4 text-[14px] leading-[1.6] text-fg">
+          You'll keep access until the end of your current billing period.
+        </p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex min-h-12 flex-1 items-center justify-center border border-danger px-4 text-sm font-semibold uppercase tracking-button text-danger transition hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            Yes, cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(false)}
+            className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            Never mind
+          </button>
+        </div>
+      </Modal>
     </PageShell>
   );
 }

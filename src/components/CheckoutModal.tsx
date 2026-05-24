@@ -9,6 +9,7 @@ import {
 } from "@stripe/react-stripe-js";
 import { Modal } from "./Modal";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { useTheme } from "../lib/theme";
 
 type Plan = "monthly" | "yearly";
 
@@ -123,6 +124,7 @@ export function CheckoutModal({
   const [name, setName] = useState("");
   const navigate = useNavigate();
   const { refresh } = useSubscriberAuth();
+  const { theme } = useTheme();
 
   const handleClose = useCallback(() => {
     setStep({ kind: "details" });
@@ -265,7 +267,10 @@ export function CheckoutModal({
           stripe={stripePromiseValue}
           options={{
             clientSecret: step.clientSecret,
-            appearance: { theme: "night", labels: "floating" },
+            appearance: {
+              theme: theme === "light" ? "stripe" : "night",
+              labels: "floating",
+            },
           }}
         >
           <PaymentStep
@@ -288,7 +293,11 @@ export function CheckoutModal({
       ) : null}
 
       {step.kind === "activating" ? (
-        <div className="mt-6 flex items-center gap-3 text-sm text-fg">
+        <div
+          className="mt-6 flex items-center gap-3 text-sm text-fg"
+          role="status"
+          aria-live="polite"
+        >
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
           <span>Payment received — signing you in…</span>
         </div>

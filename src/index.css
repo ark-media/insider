@@ -67,21 +67,23 @@
 [data-theme="light"] {
   --color-cyan: #0a6fad;
 
-  /* 900 = page paper (gently tinted cool off-white — slightly deeper than #f5f7fb
-     so true-white cards visibly lift against it).
-     800 = card surface (true white). Many cards use bg-navy-800/40 — that 40% white
-     over the paper bg still creates a clean lift when paired with the bumped rules
-     and the soft card shadow added at the bottom of this file.
+  /* 900 = page paper — a soft, cool "newsprint" canvas. Kept a touch deeper than a
+     bright off-white *on purpose*: true-white cards (800/700) need real tonal room
+     to lift against it. The luminous feel comes from the atmospheric .bg-app wash at
+     the top of the page, not from a pale flat fill (which read as washed-out before).
+     800 = card surface (true white). Cards use bg-navy-800/40 — 40% white over the
+     newsprint canvas, plus the layered card shadow + 1px navy hairline below, lands a
+     clean editorial lift.
      700 = elevated/popover surface (true white).
      600/500 = decorative borders, chips, and progress fills. */
-  --color-navy-900: #e7ecf6;
+  --color-navy-900: #e2e8f4;
   --color-navy-800: #ffffff;
   --color-navy-700: #ffffff;
-  --color-navy-600: #c8d3e8;
-  --color-navy-500: #a7b5d2;
+  --color-navy-600: #c6d2e8;
+  --color-navy-500: #a3b3d3;
 
-  /* Ark News Daily — light purple paper. Same inversion: page is tinted, cards are white. */
-  --color-and-purple-900: #ecdcf2;
+  /* Ark News Daily — light orchid paper. Same inversion: page is tinted, cards are white. */
+  --color-and-purple-900: #e8d7f0;
   --color-and-purple-800: #ffffff;
   --color-and-purple-700: #ffffff;
   --color-and-purple-600: #d6bbe1;
@@ -93,9 +95,9 @@
   --color-fg-faint: rgb(11 21 60 / 0.48);
   --color-fg-placeholder: rgb(11 21 60 / 0.36);
 
-  --color-rule: rgb(11 21 60 / 0.18);
-  --color-rule-soft: rgb(11 21 60 / 0.1);
-  --color-rule-strong: rgb(11 21 60 / 0.28);
+  --color-rule: rgb(11 21 60 / 0.14);
+  --color-rule-soft: rgb(11 21 60 / 0.08);
+  --color-rule-strong: rgb(11 21 60 / 0.24);
 
   --color-signal: #c4151b;
   --color-danger: #c4151b;
@@ -198,6 +200,27 @@ body {
   box-shadow: 0 6px 0 0 rgba(0, 0, 0, 0.15);
 }
 
+/* Page backdrop applied to the root app container.
+   Dark: the flat deep-navy paper (unchanged behaviour).
+   Light: a luminous paper wash with a cyan "dawn" glow in the upper-right — the
+   daytime echo of the dark theme's atmospheric hero. The wash is sized to the top
+   ~860px and anchored top, so it brightens the masthead + hero, then settles into
+   the flat newsprint canvas exactly where the first content section begins. Content
+   sections paint solid bg-navy-900 over it, so there are no full-bleed seams. */
+.bg-app {
+  background-color: var(--color-navy-900);
+}
+[data-theme="light"] .bg-app {
+  background-color: var(--color-navy-900);
+  background-image:
+    radial-gradient(58% 52% at 86% -6%, rgba(62, 181, 249, 0.22) 0%, transparent 60%),
+    radial-gradient(70% 60% at 22% -14%, rgba(255, 255, 255, 0.92) 0%, transparent 56%),
+    linear-gradient(180deg, #f2f6fd 0%, #eaf0fa 38%, var(--color-navy-900) 86%);
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: 100% 860px;
+}
+
 /* Ark wave backdrop — a restrained version of the brandbook background */
 .ark-bg {
   background:
@@ -207,10 +230,11 @@ body {
 }
 [data-theme="light"] .ark-bg {
   background:
-    radial-gradient(ellipse 60% 50% at 78% 22%, rgba(62, 181, 249, 0.32) 0%, transparent 62%),
-    radial-gradient(ellipse 50% 60% at 18% 88%, rgba(10, 111, 173, 0.14) 0%, transparent 65%),
-    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(255, 255, 255, 0.7) 0%, transparent 70%),
-    linear-gradient(180deg, #e6edf8 0%, #f1f5fc 45%, #e8eef8 100%);
+    radial-gradient(ellipse 62% 55% at 80% 12%, rgba(62, 181, 249, 0.38) 0%, transparent 60%),
+    radial-gradient(ellipse 52% 60% at 14% 92%, rgba(10, 111, 173, 0.16) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 38% 30%, rgba(255, 255, 255, 0.85) 0%, transparent 62%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(11, 21, 60, 0.07) 0%, transparent 60%),
+    linear-gradient(180deg, #eef4fd 0%, #e9f0fb 48%, #e3eaf6 100%);
 }
 
 /* Ark News Daily backdrop — show-specific purple wash */
@@ -222,10 +246,80 @@ body {
 }
 [data-theme="light"] .and-bg {
   background:
-    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(125, 40, 145, 0.28) 0%, transparent 65%),
-    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.16) 0%, transparent 65%),
-    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(255, 255, 255, 0.55) 0%, transparent 75%),
-    linear-gradient(180deg, #ecdcf2 0%, #f3e6f7 45%, #e8d4ef 100%);
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(125, 40, 145, 0.34) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.18) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(31, 8, 40, 0.08) 0%, transparent 60%),
+    linear-gradient(180deg, #f0e2f6 0%, #ecdcf3 48%, #e6d3ee 100%);
+}
+
+/* Per-show brand washes. Each mirrors the .and-bg composition (a hero-corner
+   primary glow, a small cyan accent that keeps every show in the Ark family,
+   and a deep/luminous base for dark/light) so the set reads as one system with
+   distinct identities. Mapped to slugs by showAtmosphere() in data/shows.ts. */
+
+/* Call Me Back — sapphire / royal blue (the flagship) */
+.cmb-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(46, 102, 240, 0.42) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.14) 0%, transparent 65%),
+    linear-gradient(180deg, #060d28 0%, #112a63 55%, #060d28 100%);
+}
+[data-theme="light"] .cmb-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(46, 102, 240, 0.24) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.18) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(6, 13, 40, 0.07) 0%, transparent 60%),
+    linear-gradient(180deg, #e7eefc 0%, #dfe8fb 48%, #d6e1f7 100%);
+}
+
+/* Inside Call Me Back — indigo/violet (the premium companion to CMB) */
+.icmb-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(99, 80, 230, 0.44) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.12) 0%, transparent 65%),
+    linear-gradient(180deg, #0a0a2c 0%, #241a5e 55%, #0a0a2c 100%);
+}
+[data-theme="light"] .icmb-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(99, 80, 230, 0.26) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.18) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(10, 10, 44, 0.08) 0%, transparent 60%),
+    linear-gradient(180deg, #e9e6fb 0%, #e3def9 48%, #dad3f5 100%);
+}
+
+/* For Heaven's Sake — vermilion / orange-red (matches the cover's swooshes) */
+.fhs-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(228, 78, 30, 0.42) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.10) 0%, transparent 65%),
+    linear-gradient(180deg, #160805 0%, #3a160c 55%, #160805 100%);
+}
+[data-theme="light"] .fhs-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(228, 78, 30, 0.22) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.14) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(40, 14, 8, 0.07) 0%, transparent 60%),
+    linear-gradient(180deg, #fdeee6 0%, #fbe6da 48%, #f8dccd 100%);
+}
+
+/* What's Your Number? — teal / emerald (markets & the economy) */
+.wyn-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(28, 178, 138, 0.38) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.14) 0%, transparent 65%),
+    linear-gradient(180deg, #04130f 0%, #0a3a2c 55%, #04130f 100%);
+}
+[data-theme="light"] .wyn-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(28, 178, 138, 0.24) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.16) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(4, 19, 15, 0.07) 0%, transparent 60%),
+    linear-gradient(180deg, #e3f4ed 0%, #d9efe4 48%, #cde9da 100%);
 }
 
 /* Editorial card lift — only in light mode, only on the card-pattern utilities the
@@ -233,12 +327,41 @@ body {
    paper need a soft cast shadow to read as elevated rather than as paint. The
    selector matches the Tailwind opacity variants without affecting full-bleed
    bg-navy-800 sections (Marquee, mobile menu) which intentionally span edge to edge. */
-[data-theme="light"] [class*="bg-navy-800/"],
-[data-theme="light"] [class*="bg-navy-700/"] {
+[data-theme="light"] [class*="bg-navy-800/"]:not([class*="hover:bg-navy-800"]),
+[data-theme="light"] [class*="bg-navy-700/"]:not([class*="hover:bg-navy-700"]) {
   box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.6) inset,
-    0 12px 28px -16px rgb(11 21 60 / 0.18),
-    0 2px 6px -2px rgb(11 21 60 / 0.06);
+    0 1px 0 rgb(255 255 255 / 0.9) inset,
+    0 18px 38px -20px rgb(11 21 60 / 0.28),
+    0 4px 12px -6px rgb(11 21 60 / 0.12);
+}
+
+/* Cyan-on-paper contrast.
+   In light mode --color-cyan is the darkened #0a6fad so cyan *text* (eyebrows, links,
+   "Voices") and *borders* clear AA as ink on paper. As a button FILL with the hardcoded
+   navy label, though, cyan reads poorly. So filled cyan controls get an explicit deep
+   ocean-cyan + white label (~7:1) — written as literal values, NOT the --color-cyan
+   token, so the button contrast can never depend on how/when the theme variable resolves
+   (a brief flash of the bright dark-mode cyan under white text is what looked washed out).
+   Dividers / dots / the eyebrow rule are bg-cyan with no text, so they keep the token. */
+[data-theme="light"] .bg-cyan.text-navy,
+[data-theme="light"] .hover\:bg-cyan.hover\:text-navy:hover {
+  background-color: #0a5f93;
+  border-color: #0a5f93;
+  color: #fff;
+}
+[data-theme="light"] .skip-link {
+  background: #0a5f93;
+  color: #fff;
+}
+[data-theme="light"] ::selection {
+  background: #0a5f93;
+  color: #fff;
+}
+/* The INSIDE tab is a brand motif echoing the bright-cyan podcast cover, so it keeps
+   the bright cyan (navy text on it reads ~8:1) rather than the deep ink-cyan. */
+[data-theme="light"] .inside-tab {
+  background: #3eb5f9;
+  box-shadow: 0 6px 0 0 rgb(11 21 60 / 0.1);
 }
 
 /* Subtle grain to kill banding on the gradients */

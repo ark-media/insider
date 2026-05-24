@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+
 export function Hero() {
   return (
     <section className="ark-bg grain-overlay relative overflow-hidden">
@@ -50,12 +52,12 @@ export function Hero() {
                 →
               </span>
             </a>
-            <a
-              href="/plus/gift"
+            <Link
+              to="/plus/gift"
               className="inline-flex min-h-11 items-center text-[15px] text-fg underline decoration-rule-strong underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
             >
               Gift Ark+
-            </a>
+            </Link>
           </div>
         </div>
 

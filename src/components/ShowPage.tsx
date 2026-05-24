@@ -19,7 +19,6 @@ import {
   listEpisodes,
   simplecastEpisodeSrc,
 } from "../lib/simplecast";
-import { subscribeEmail } from "../lib/beehiiv";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
@@ -123,8 +122,6 @@ function PublicShowPage({ show }: { show: Show }) {
       </section>
 
       {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
-
-      <NewsletterCapture />
 
       <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
@@ -427,11 +424,7 @@ function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
   return (
     <Link
       to="/podcasts/$show/$episode"
-      params={(prev) => ({
-        ...prev,
-        show: show.slug,
-        episode: episode.slug,
-      })}
+      params={{ show: show.slug, episode: episode.slug } as never}
       className="group block border border-rule bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
     >
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
@@ -470,7 +463,7 @@ function AllEpisodes({ show, episodes }: { show: Show; episodes: Episode[] }) {
           <li key={ep.slug}>
             <Link
               to="/podcasts/$show/$episode"
-              params={(prev) => ({ ...prev, show: show.slug, episode: ep.slug })}
+              params={{ show: show.slug, episode: ep.slug } as never}
               className="group flex items-baseline justify-between gap-6 py-4 text-fg transition hover:text-cyan"
             >
               <span className="min-w-0 flex-1 text-[14px]">
@@ -536,7 +529,7 @@ function HostsSection({ slugs }: { slugs: string[] }) {
             <Link
               key={h.slug}
               to="/hosts/$slug"
-              params={{ slug: h.slug }}
+              params={{ slug: h.slug } as never}
               className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
             >
               <HostArtwork
@@ -554,83 +547,6 @@ function HostsSection({ slugs }: { slugs: string[] }) {
               </p>
             </Link>
           ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function NewsletterCapture() {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "submitting" | "ok" | "error">(
-    "idle",
-  );
-  const [message, setMessage] = useState<string | null>(null);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) return;
-    setStatus("submitting");
-    const r = await subscribeEmail("the-call-me-back-newsletter", email.trim());
-    if (r.ok) {
-      setStatus("ok");
-      setMessage("You're on the list.");
-      setEmail("");
-    } else {
-      setStatus("error");
-      setMessage(r.error ?? "Could not subscribe.");
-    }
-  };
-
-  return (
-    <section className="border-t border-rule bg-navy-800/40">
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
-          <div className="lg:col-span-6">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              Newsletter
-            </div>
-            <h3 className="mt-6 max-w-md font-display text-[clamp(1.6rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
-              Get the Call Me Back newsletter.
-            </h3>
-            <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
-              Dan's weekly dispatch — the through-lines from this week's
-              interviews and what they tell us about the week ahead.
-            </p>
-          </div>
-          <form onSubmit={onSubmit} className="lg:col-span-6">
-            <label className="block">
-              <span className="sr-only">Email</span>
-              <div className="flex items-center border border-rule-strong bg-transparent transition focus-within:border-cyan">
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full bg-transparent px-4 py-3 text-[14px] text-fg-strong outline-none placeholder:text-fg-placeholder"
-                />
-                <button
-                  type="submit"
-                  disabled={status === "submitting"}
-                  aria-busy={status === "submitting"}
-                  className="border-l border-rule-strong bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
-                >
-                  {status === "submitting" ? "Subscribing…" : "Subscribe"}
-                </button>
-              </div>
-            </label>
-            {message ? (
-              <p
-                className={`mt-3 text-[12px] ${
-                  status === "error" ? "text-danger" : "text-cyan"
-                }`}
-                aria-live="polite"
-              >
-                {message}
-              </p>
-            ) : null}
-          </form>
         </div>
       </div>
     </section>

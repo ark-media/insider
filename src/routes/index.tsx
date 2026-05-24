@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { shows } from "../data/shows";
 import { LinkCard, NumberedRow } from "../components/ContentCard";
+import { ShowCover } from "../components/ShowCover";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -118,6 +119,7 @@ function HomePage() {
                 title={show.title}
                 body={show.tagline}
                 cta="Visit show"
+                media={<ShowCover show={show} />}
               />
             ))}
           </div>

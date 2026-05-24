@@ -78,7 +78,7 @@ function NewsletterPrefs() {
 
             <button
               type="submit"
-              className="mt-10 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan"
+              className="mt-10 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               {saved ? "Saved" : "Save preferences"} →
             </button>
@@ -147,18 +147,18 @@ function Toggle({
       aria-checked={on}
       onClick={onClick}
       disabled={disabled}
-      className={`relative inline-flex h-7 w-12 shrink-0 items-center border transition ${
+      className={`relative inline-flex h-7 w-12 shrink-0 items-center border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
         disabled
           ? "cursor-not-allowed border-rule bg-transparent opacity-40"
           : on
             ? "border-cyan bg-cyan/20"
-            : "border-rule-strong bg-transparent hover:border-rule-strong"
+            : "border-rule-strong bg-transparent hover:border-cyan"
       }`}
     >
       <span
         aria-hidden="true"
-        className={`inline-block size-5 transform bg-white transition ${
-          on ? "translate-x-6 bg-cyan" : "translate-x-0.5"
+        className={`inline-block size-5 transform transition ${
+          on ? "translate-x-6 bg-cyan" : "translate-x-0.5 bg-fg-strong"
         }`}
       />
     </button>

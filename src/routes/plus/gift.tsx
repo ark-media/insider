@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { GiftCheckoutModal } from "../../components/GiftCheckoutModal";
 import {
@@ -15,6 +15,8 @@ export const Route = createFileRoute("/plus/gift")({
 const inputClass =
   "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-muted outline-none transition focus:border-cyan disabled:opacity-50";
 
+const GIFT_TERMS = ["6mo", "1yr"] as const;
+
 function GiftPage() {
   const [term, setTerm] = useState<GiftTerm>("1yr");
   const [giverName, setGiverName] = useState("");
@@ -23,6 +25,23 @@ function GiftPage() {
   const [recipientEmail, setRecipientEmail] = useState("");
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState<GiftInput | null>(null);
+  const radioRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Roving-tabindex keyboard model for the gift-length radiogroup: arrow keys
+  // move and select the next/previous option, Home/End jump to the ends.
+  const onRadioKeyDown = (e: React.KeyboardEvent, index: number) => {
+    let next = index;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown")
+      next = (index + 1) % GIFT_TERMS.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+      next = (index - 1 + GIFT_TERMS.length) % GIFT_TERMS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = GIFT_TERMS.length - 1;
+    else return;
+    e.preventDefault();
+    setTerm(GIFT_TERMS[next]);
+    radioRefs.current[next]?.focus();
+  };
 
   const canSubmit =
     giverEmail.trim().length > 0 &&
@@ -95,19 +114,24 @@ function GiftPage() {
                   aria-label="Gift length"
                   className="mt-3 grid grid-cols-2 gap-2 sm:gap-3"
                 >
-                  {(["6mo", "1yr"] as const).map((t) => {
+                  {GIFT_TERMS.map((t, i) => {
                     const selected = term === t;
                     return (
                       <button
                         key={t}
+                        ref={(el) => {
+                          radioRefs.current[i] = el;
+                        }}
                         type="button"
                         role="radio"
                         aria-checked={selected}
+                        tabIndex={selected ? 0 : -1}
                         onClick={() => setTerm(t)}
-                        className={`group flex flex-col items-center gap-1 border px-4 py-6 transition ${
+                        onKeyDown={(e) => onRadioKeyDown(e, i)}
+                        className={`group flex flex-col items-center gap-1 border px-4 py-6 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
                           selected
                             ? "border-cyan bg-cyan text-navy"
-                            : "border-rule-strong text-fg-strong hover:border-rule-strong"
+                            : "border-rule-strong text-fg-strong hover:border-cyan"
                         }`}
                       >
                         <span className="display-upright text-[clamp(2.2rem,4vw,2.8rem)] leading-none">
@@ -206,7 +230,7 @@ function GiftPage() {
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="group mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
+                  className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   Continue to payment · ${GIFT_PRICE_DOLLARS[term]}
                   <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">

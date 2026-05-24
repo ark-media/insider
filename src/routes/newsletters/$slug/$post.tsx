@@ -108,7 +108,7 @@ function PostPage() {
               renderShowNotes(post.bodyHtml)
             ) : (
               post.body.split("\n\n").map((para, i) => (
-                <p key={i} className="break-words whitespace-pre-line">
+                <p key={`${i}-${para.slice(0, 32)}`} className="break-words whitespace-pre-line">
                   {para}
                 </p>
               ))

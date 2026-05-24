@@ -54,7 +54,6 @@ const NAV_ITEMS: NavItem[] = [
     children: [{ label: "Upcoming Events", to: "/events" }],
   },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
-  { variant: "pill", label: "Israel Votes", to: "/israel-votes" },
   {
     variant: "menu",
     label: "Ark+",
@@ -74,6 +73,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Get in touch", to: "/contact" },
     ],
   },
+  { variant: "pill", label: "Israel Votes", to: "/israel-votes" },
 ];
 
 function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "children">) {
@@ -174,7 +174,6 @@ export function PublicMasthead() {
             <button
               type="button"
               onClick={() => setAccountOpen((v) => !v)}
-              aria-haspopup="menu"
               aria-expanded={accountOpen}
               disabled={state.kind === "loading"}
               className="hidden min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60 sm:inline-flex"
@@ -190,7 +189,6 @@ export function PublicMasthead() {
 
             {accountOpen ? (
               <div
-                role="menu"
                 className="absolute right-0 mt-2 w-64 border border-rule bg-navy-900 p-4 text-[13px] text-fg shadow-xl"
               >
                 {state.kind === "member" ? (
@@ -398,7 +396,6 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string }) {
       <Link
         to={item.to}
         aria-current={active ? "page" : undefined}
-        aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
         className={`relative inline-flex min-h-11 items-center py-2 transition hover:text-fg-strong ${
@@ -416,8 +413,6 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string }) {
       {open ? (
         <div
           id={menuId}
-          role="menu"
-          aria-label={item.label}
           className={`absolute left-0 top-full z-30 mt-1 border border-rule bg-navy-900 p-2 shadow-xl ${
             hasDescriptions ? "w-72" : "w-56"
           }`}
@@ -429,7 +424,6 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string }) {
               <Link
                 key={child.to}
                 to={child.to}
-                role="menuitem"
                 aria-current={childActive ? "page" : undefined}
                 className={`flex items-start justify-between gap-3 border-b border-rule-soft px-3 py-3 text-[13px] transition last:border-b-0 hover:bg-navy-800/60 ${
                   childActive ? "text-cyan" : "text-fg hover:text-fg-strong"

@@ -145,9 +145,9 @@ function WatchLatest() {
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
           Watch the latest
-        </div>
+        </h2>
         <div className="mt-8 max-w-4xl">
           <YouTubeEmbed videoId={FEATURED_VIDEO_ID} title="Watch the latest Israel Votes update" />
         </div>
@@ -160,9 +160,9 @@ function Explainers() {
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
           Explainers
-        </div>
+        </h2>
         <p className="mt-6 max-w-2xl text-[14px] leading-[1.7] text-fg-muted">
           Background on the camps, the coalitions, and the constituencies
           shaping Israel's next vote — in video and audio.
@@ -274,7 +274,7 @@ function PlaylistSection() {
 
 function YouTubeEmbed({ videoId, title }: { videoId: string; title: string }) {
   return (
-    <div className="relative aspect-video w-full overflow-hidden border border-rule bg-black">
+    <div className="relative aspect-video w-full overflow-hidden border border-rule bg-navy">
       <iframe
         src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`}
         title={title}

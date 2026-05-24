@@ -8,6 +8,7 @@ import {
 } from "@stripe/react-stripe-js";
 import { Modal } from "./Modal";
 import { SuccessMark } from "./SuccessMark";
+import { useTheme } from "../lib/theme";
 import {
   createGiftCheckout,
   fetchGiftStatus,
@@ -73,6 +74,7 @@ export function GiftCheckoutModal({
 }) {
   const [step, setStep] = useState<Step>({ kind: "creating" });
   const startedFor = useRef<string | null>(null);
+  const { theme } = useTheme();
 
   const handleClose = useCallback(() => {
     startedFor.current = null;
@@ -165,7 +167,9 @@ export function GiftCheckoutModal({
       ) : null}
 
       {step.kind === "creating" ? (
-        <p className="mt-6 text-sm text-fg">Preparing checkout…</p>
+        <p className="mt-6 text-sm text-fg" role="status" aria-live="polite">
+          Preparing checkout…
+        </p>
       ) : null}
 
       {step.kind === "payment" && stripePromiseValue && input ? (
@@ -173,7 +177,10 @@ export function GiftCheckoutModal({
           stripe={stripePromiseValue}
           options={{
             clientSecret: step.clientSecret,
-            appearance: { theme: "night", labels: "floating" },
+            appearance: {
+              theme: theme === "light" ? "stripe" : "night",
+              labels: "floating",
+            },
           }}
         >
           <PaymentStep
@@ -190,7 +197,7 @@ export function GiftCheckoutModal({
       ) : null}
 
       {step.kind === "activating" ? (
-        <p className="mt-6 text-sm text-fg">
+        <p className="mt-6 text-sm text-fg" role="status" aria-live="polite">
           Payment received — setting up the gift…
         </p>
       ) : null}

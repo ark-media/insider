@@ -49,7 +49,8 @@ export const shows: Show[] = [
     route: "/podcasts/call-me-back",
     title: "Call Me Back",
     shortTitle: "Call Me Back",
-    tagline: "Conversations on the world Israel is shaping — and being shaped by.",
+    tagline:
+      "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     description:
       "Dan Senor's flagship show un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     hosts: ["Dan Senor"],
@@ -64,7 +65,8 @@ export const shows: Show[] = [
     route: "/plus/inside-call-me-back",
     title: "Inside Call Me Back",
     shortTitle: "Inside CMB",
-    tagline: "The members-only companion to Call Me Back.",
+    tagline:
+      "Presenting the challenges and dilemmas facing Israelis to a global audience.",
     description:
       "Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.",
     hosts: ["Dan Senor"],
@@ -79,7 +81,8 @@ export const shows: Show[] = [
     route: "/podcasts/for-heavens-sake",
     title: "For Heaven's Sake",
     shortTitle: "For Heaven's Sake",
-    tagline: "A conversation about Israel, Jewish identity, and meaning.",
+    tagline:
+      "Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of constructive disagreement about Israel, world Jewry, and the future of Zionism.",
     description:
       "Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of intense dialectic on all topics related to Israel, the Jewish diaspora, and the future of Zionism.",
     hosts: ["Donniel Hartman", "Yossi Klein Halevi"],
@@ -94,7 +97,8 @@ export const shows: Show[] = [
     route: "/podcasts/whats-your-number",
     title: "What's Your Number?",
     shortTitle: "What's Your Number?",
-    tagline: "Looking at the Israeli economy through a global lens.",
+    tagline:
+      "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
     description:
       "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? delves into the forces shaping the Israeli economy from within and without.",
     hosts: ["Yonatan Adiri", "Michal Lev-Ram"],
@@ -109,7 +113,8 @@ export const shows: Show[] = [
     route: "/podcasts/ark-news-daily",
     title: "Ark News Daily",
     shortTitle: "Ark News Daily",
-    tagline: "A fast, focused brief on the day's most consequential story.",
+    tagline:
+      "Every morning, Ark Media gives you the latest updates on the war in Iran and how they impact the Middle East, geopolitics, and Jews around the world.",
     description:
       "Ten minutes, every weekday. The single news item that matters most — explained without the noise.",
     hosts: ["Ark Media newsroom"],
