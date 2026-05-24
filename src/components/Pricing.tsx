@@ -1,5 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckoutModal } from "./CheckoutModal";
+
+function fmtPrice(dollars: number): string {
+  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+}
 
 export function Pricing() {
   const [plan, setPlanRaw] = useState<"monthly" | "yearly">("yearly");
@@ -9,10 +13,51 @@ export function Pricing() {
     setCustomAmount("");
   };
   const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const price = plan === "yearly" ? 80 : 8;
+
+  // Prices come from Stripe (the source of truth) via /api/pricing — never
+  // hardcoded, so the displayed amount can't drift from what we actually
+  // charge. (USD source amount; buyers pay the localized equivalent.)
+  const [prices, setPrices] = useState<{ monthly: number; yearly: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/pricing");
+        const data = (await res.json().catch(() => ({}))) as {
+          monthly_cents?: number;
+          yearly_cents?: number;
+        };
+        if (
+          !cancelled &&
+          typeof data.monthly_cents === "number" &&
+          typeof data.yearly_cents === "number"
+        ) {
+          setPrices({
+            monthly: data.monthly_cents / 100,
+            yearly: data.yearly_cents / 100,
+          });
+        }
+      } catch {
+        /* leave prices null — UI shows a loading state */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const price = prices ? (plan === "yearly" ? prices.yearly : prices.monthly) : null;
   const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
   const customValid =
-    parsedCustom !== null && Number.isFinite(parsedCustom) && parsedCustom >= price;
+    parsedCustom !== null &&
+    Number.isFinite(parsedCustom) &&
+    price !== null &&
+    parsedCustom >= price;
+  const savingsPct = prices
+    ? Math.round((1 - prices.yearly / (prices.monthly * 12)) * 100)
+    : null;
 
   return (
     <section id="pricing" className="relative bg-navy-900">
@@ -29,9 +74,11 @@ export function Pricing() {
               </span>
             </h2>
             <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-fg">
-              Eight dollars a month or eighty a year — or name a higher amount
-              to support the work. Every Ark+ member gets the same bundle, the
-              same paid feed, the same community.
+              {prices
+                ? `$${fmtPrice(prices.monthly)} a month or $${fmtPrice(prices.yearly)} a year`
+                : "Monthly or annual"}{" "}
+              — or name a higher amount to support the work. Every Ark+ member
+              gets the same bundle, the same paid feed, the same community.
             </p>
             <ul className="mt-10 space-y-2 text-[13px] text-fg-muted">
               <li className="flex items-center gap-2">
@@ -45,6 +92,10 @@ export function Pricing() {
               <li className="flex items-center gap-2">
                 <span className="inline-block size-1.5 rounded-full bg-cyan" />
                 Secure checkout via Stripe
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="inline-block size-1.5 rounded-full bg-cyan" />
+                Pay in your local currency
               </li>
             </ul>
           </div>
@@ -65,9 +116,9 @@ export function Pricing() {
                   }`}
                 >
                   {p}
-                  {p === "yearly" ? (
+                  {p === "yearly" && savingsPct ? (
                     <span className={`ml-2 text-[10px] ${plan === p ? "text-navy/70" : "text-cyan"}`}>
-                      −17%
+                      −{savingsPct}%
                     </span>
                   ) : null}
                 </button>
@@ -84,7 +135,11 @@ export function Pricing() {
                   </div>
                   <div className="mt-6 flex items-baseline gap-2 text-fg-strong">
                     <span className="display-upright text-[clamp(3.5rem,7vw,5rem)] leading-none">
-                      ${price}
+                      {price !== null ? (
+                        `$${fmtPrice(price)}`
+                      ) : (
+                        <span className="inline-block h-[0.7em] w-28 animate-pulse rounded bg-rule-strong/40 align-middle" />
+                      )}
                     </span>
                     <span className="text-[14px] text-fg-muted">
                       / {plan === "yearly" ? "year" : "month"}
@@ -92,7 +147,9 @@ export function Pricing() {
                   </div>
                   <div className="mt-3 text-[13px] text-fg-muted">
                     {plan === "yearly"
-                      ? "Works out to $6.67 a month."
+                      ? prices
+                        ? `Works out to $${(prices.yearly / 12).toFixed(2)} a month.`
+                        : ""
                       : "Or save with an annual plan."}
                   </div>
 
@@ -106,7 +163,7 @@ export function Pricing() {
                       <input
                         id="custom-amount"
                         type="number"
-                        min={price}
+                        min={price ?? undefined}
                         value={customAmount}
                         onChange={(e) => setCustomAmount(e.target.value)}
                         placeholder={plan === "yearly" ? "120" : "12"}
@@ -118,9 +175,10 @@ export function Pricing() {
                     </div>
                     {parsedCustom !== null &&
                     Number.isFinite(parsedCustom) &&
+                    price !== null &&
                     parsedCustom < price ? (
                       <p className="mt-2 text-[12px] text-danger" role="alert">
-                        Minimum is ${price}/{plan === "yearly" ? "yr" : "mo"}.
+                        Minimum is ${fmtPrice(price)}/{plan === "yearly" ? "yr" : "mo"}.
                       </p>
                     ) : null}
                   </div>
@@ -148,7 +206,8 @@ export function Pricing() {
                   <button
                     type="button"
                     onClick={() => setCheckoutOpen(true)}
-                    className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    disabled={price === null}
+                    className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-cyan disabled:hover:text-navy"
                   >
                     Become a member
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -164,7 +223,7 @@ export function Pricing() {
       <CheckoutModal
         open={checkoutOpen}
         plan={plan}
-        defaultAmount={price}
+        defaultAmount={price ?? 0}
         customAmount={customValid ? (parsedCustom as number) : null}
         onClose={() => setCheckoutOpen(false)}
       />

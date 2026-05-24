@@ -4,6 +4,10 @@
 //
 // Strategy mirrors gift.test.ts: `mock.module('stripe', …)` swaps the Stripe
 // SDK for a recording fake; SC + Auth0 calls go through the global fetch mock.
+//
+// The endpoint resolves the subscription from a Checkout Session
+// (stripe.checkout.sessions.retrieve with the subscription + customer
+// expanded), so the fake wraps `nextSubscription` in a session object.
 
 import {
   describe,
@@ -64,6 +68,21 @@ class FakeStripe {
       return nextSubscription
     },
     list: async () => ({ data: [] }),
+  }
+  checkout = {
+    sessions: {
+      // Wraps `nextSubscription` (with its customer already an object) the way
+      // the endpoint expects it expanded. A null sub models a session whose
+      // payment hasn't completed yet.
+      retrieve: async (id: string, _opts?: unknown) => {
+        stripeCalls.push({ method: 'checkout.sessions.retrieve', args: [id] })
+        return {
+          id,
+          status: nextSubscription ? 'complete' : 'open',
+          subscription: nextSubscription,
+        }
+      },
+    },
   }
 }
 
@@ -299,7 +318,7 @@ describe('POST /api/auth/checkout-session — validation', () => {
 
   test('500 when STRIPE_SECRET_KEY is missing', async () => {
     const h = getHandler(PATH, { STRIPE_SECRET_KEY: '' })
-    const req = makeReq({ body: { subscription_id: 'sub_1', email: 'x@y.com' } })
+    const req = makeReq({ body: { checkout_session_id: 'cs_1', email: 'x@y.com' } })
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(500)
@@ -308,26 +327,26 @@ describe('POST /api/auth/checkout-session — validation', () => {
 
   test('500 when CHECKOUT_SESSION_SECRET is missing', async () => {
     const h = getHandler(PATH, { CHECKOUT_SESSION_SECRET: '' })
-    const req = makeReq({ body: { subscription_id: 'sub_1', email: 'x@y.com' } })
+    const req = makeReq({ body: { checkout_session_id: 'cs_1', email: 'x@y.com' } })
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(500)
     expect((res.__json() as { error: string }).error).toMatch(/checkout_session_secret/i)
   })
 
-  test('400 when subscription_id is missing', async () => {
+  test('400 when checkout_session_id is missing', async () => {
     const h = getHandler(PATH)
     const req = makeReq({ body: { email: 'x@y.com' } })
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(400)
-    expect((res.__json() as { error: string }).error).toMatch(/subscription_id/i)
+    expect((res.__json() as { error: string }).error).toMatch(/checkout_session_id/i)
     expect(stripeCalls).toHaveLength(0)
   })
 
   test('400 when email is missing', async () => {
     const h = getHandler(PATH)
-    const req = makeReq({ body: { subscription_id: 'sub_1' } })
+    const req = makeReq({ body: { checkout_session_id: 'cs_1' } })
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(400)
@@ -341,7 +360,7 @@ describe('POST /api/auth/checkout-session — validation', () => {
     })
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_1', email: 'attacker@example.com' },
+      body: { checkout_session_id: 'cs_1', email: 'attacker@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -354,7 +373,7 @@ describe('POST /api/auth/checkout-session — validation', () => {
     })
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -366,7 +385,7 @@ describe('POST /api/auth/checkout-session — validation', () => {
     nextSubscription = activeSub({ status: 'incomplete' })
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -390,7 +409,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     nextSubscription = activeSub()
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -436,7 +455,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     nextSubscription = activeSub()
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: '  User@Example.COM  ' },
+      body: { checkout_session_id: 'cs_test_1', email: '  User@Example.COM  ' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -448,7 +467,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     nextSubscription = activeSub()
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -477,7 +496,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     })
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -496,7 +515,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     nextSubscription = activeSub({ status: 'trialing' })
     const h = getHandler(PATH)
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -516,7 +535,7 @@ describe('POST /api/auth/checkout-session — rate limit', () => {
     // Burn through the 25-token bucket. The first 25 should succeed.
     for (let i = 0; i < 25; i++) {
       const req = makeReq({
-        body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+        body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
       })
       const res = makeRes()
       await runHandler(h, req, res)
@@ -525,7 +544,7 @@ describe('POST /api/auth/checkout-session — rate limit', () => {
 
     // The 26th gets rate-limited.
     const req = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -535,7 +554,7 @@ describe('POST /api/auth/checkout-session — rate limit', () => {
     expect(Number(retry)).toBeGreaterThan(0)
   })
 
-  test('rate limit is per-subscription — a different sub is not blocked', async () => {
+  test('rate limit is per-session — a different session is not blocked', async () => {
     nextSubscription = activeSub({ id: 'sub_A' })
     const h = getHandler(PATH)
 
@@ -543,7 +562,7 @@ describe('POST /api/auth/checkout-session — rate limit', () => {
     for (let i = 0; i < 25; i++) {
       nextSubscription = activeSub({ id: 'sub_A' })
       const req = makeReq({
-        body: { subscription_id: 'sub_A', email: 'user@example.com' },
+        body: { checkout_session_id: 'cs_A', email: 'user@example.com' },
       })
       const res = makeRes()
       await runHandler(h, req, res)
@@ -553,7 +572,7 @@ describe('POST /api/auth/checkout-session — rate limit', () => {
     // sub_B is still allowed.
     nextSubscription = activeSub({ id: 'sub_B' })
     const req = makeReq({
-      body: { subscription_id: 'sub_B', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_B', email: 'user@example.com' },
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -571,7 +590,7 @@ describe('Checkout cookie works with other authenticated endpoints', () => {
     nextSubscription = activeSub()
     const checkout = getHandler(PATH)
     const mintReq = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const mintRes = makeRes()
     await runHandler(checkout, mintReq, mintRes)
@@ -738,11 +757,11 @@ describe('Provisioning race — concurrent callers do not double-create', () => 
 
     const h = getHandler(PATH)
     const reqA = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const resA = makeRes()
     const reqB = makeReq({
-      body: { subscription_id: 'sub_test_1', email: 'user@example.com' },
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
     })
     const resB = makeRes()
 

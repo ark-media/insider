@@ -1,12 +1,12 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
-  Elements,
+  CheckoutElementsProvider,
+  CurrencySelectorElement,
   PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+  useCheckout,
+} from "@stripe/react-stripe-js/checkout";
 import { Modal } from "./Modal";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
@@ -19,11 +19,10 @@ type Step =
   | {
       kind: "payment";
       clientSecret: string;
-      subscriptionId: string;
+      checkoutSessionId: string;
       email: string;
-      amountCents: number;
     }
-  | { kind: "activating"; subscriptionId: string; email: string }
+  | { kind: "activating"; checkoutSessionId: string; email: string }
   | { kind: "processing"; email: string }
   | { kind: "error"; message: string };
 
@@ -53,10 +52,11 @@ type CheckoutSessionResult =
 // and returns 200 once Stripe marks the subscription `active` AND we've
 // provisioned the member's SC + Auth0 records; it returns 202 while we're
 // still waiting on Stripe's state transition. We poll because Stripe takes
-// a few hundred ms to flip incomplete -> active after the PaymentIntent
-// confirms. credentials:'include' is required so the cookie sticks.
+// a few hundred ms to flip the Checkout Session's subscription to active
+// after the payment confirms. credentials:'include' is required so the cookie
+// sticks.
 async function pollForCheckoutSession(
-  subscriptionId: string,
+  checkoutSessionId: string,
   email: string,
   timeoutMs = 20000,
 ): Promise<CheckoutSessionResult> {
@@ -70,7 +70,10 @@ async function pollForCheckoutSession(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ subscription_id: subscriptionId, email }),
+        body: JSON.stringify({
+          checkout_session_id: checkoutSessionId,
+          email,
+        }),
       });
     } catch {
       return { kind: "error", message: "Network error. Please try again." };
@@ -122,6 +125,12 @@ export function CheckoutModal({
   const [step, setStep] = useState<Step>({ kind: "details" });
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [promo, setPromo] = useState<{
+    name: string | null;
+    kind: "percent" | "amount";
+    percentOff?: number;
+    amountOffCents?: number;
+  } | null>(null);
   const navigate = useNavigate();
   const { refresh } = useSubscriberAuth();
   const { theme } = useTheme();
@@ -130,8 +139,46 @@ export function CheckoutModal({
     setStep({ kind: "details" });
     setEmail("");
     setName("");
+    setPromo(null);
     onClose();
   }, [onClose]);
+
+  // Auto-apply the active promo (if any) for this plan when the modal opens.
+  // The discount the server actually charges is re-discovered at create time;
+  // this is display-only, so failures fall back silently to full price.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/promo/active?plan=${plan}`);
+        const data = (await res.json().catch(() => ({}))) as {
+          active?: boolean;
+          name?: string | null;
+          kind?: "percent" | "amount";
+          percent_off?: number;
+          amount_off_cents?: number;
+        };
+        if (
+          !cancelled &&
+          data.active &&
+          (data.kind === "percent" || data.kind === "amount")
+        ) {
+          setPromo({
+            name: data.name ?? null,
+            kind: data.kind,
+            percentOff: data.percent_off,
+            amountOffCents: data.amount_off_cents,
+          });
+        }
+      } catch {
+        /* non-fatal: full price */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, plan]);
 
   const handleActivated = useCallback(async () => {
     try {
@@ -149,10 +196,20 @@ export function CheckoutModal({
     }
   }, [navigate, onClose, refresh]);
 
+  // USD source amount — the price Adaptive Pricing converts from. Shown on the
+  // details step; the buyer's localized total comes from Stripe on the payment
+  // step (see PaymentStep).
   const amountCents =
     customAmount !== null ? Math.round(customAmount * 100) : defaultAmount * 100;
-  const displayAmount = (amountCents / 100).toFixed(2);
+  const discountedCents = promo
+    ? promo.kind === "percent"
+      ? Math.round(amountCents * (1 - (promo.percentOff ?? 0) / 100))
+      : Math.max(0, amountCents - (promo.amountOffCents ?? 0))
+    : amountCents;
+  const displayAmount = (discountedCents / 100).toFixed(2);
+  const originalAmount = (amountCents / 100).toFixed(2);
   const intervalLabel = plan === "yearly" ? "year" : "month";
+  const showSourcePrice = step.kind === "details" || step.kind === "creating";
 
   const startCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,7 +223,7 @@ export function CheckoutModal({
     }
     setStep({ kind: "creating" });
     try {
-      const res = await fetch("/api/stripe/create-subscription", {
+      const res = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -178,11 +235,10 @@ export function CheckoutModal({
       });
       const data = (await res.json().catch(() => ({}))) as {
         client_secret?: string;
-        subscription_id?: string;
-        amount_cents?: number;
+        checkout_session_id?: string;
         error?: string;
       };
-      if (!res.ok || !data.client_secret || !data.subscription_id) {
+      if (!res.ok || !data.client_secret || !data.checkout_session_id) {
         setStep({
           kind: "error",
           message: data.error ?? "Could not start checkout.",
@@ -192,9 +248,8 @@ export function CheckoutModal({
       setStep({
         kind: "payment",
         clientSecret: data.client_secret,
-        subscriptionId: data.subscription_id,
+        checkoutSessionId: data.checkout_session_id,
         email: email.trim(),
-        amountCents: data.amount_cents ?? amountCents,
       });
     } catch {
       setStep({ kind: "error", message: "Network error. Please try again." });
@@ -214,15 +269,43 @@ export function CheckoutModal({
       <p id="checkout-desc" className="eyebrow">
         Insider Membership · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
-      <h2
-        id="checkout-title"
-        className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
-      >
-        ${displayAmount}{" "}
-        <span className="text-[14px] font-sans font-normal text-fg-muted">
-          / {intervalLabel}
-        </span>
-      </h2>
+      {showSourcePrice ? (
+        <h2
+          id="checkout-title"
+          className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
+        >
+          {promo ? (
+            <span className="mr-2 align-middle text-[0.58em] font-sans font-normal text-fg-muted line-through">
+              ${originalAmount}
+            </span>
+          ) : null}
+          ${displayAmount}{" "}
+          <span className="text-[14px] font-sans font-normal text-fg-muted">
+            / {intervalLabel}
+          </span>
+        </h2>
+      ) : (
+        <h2
+          id="checkout-title"
+          className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
+        >
+          Complete your membership
+        </h2>
+      )}
+
+      {showSourcePrice && promo ? (
+        <p
+          role="status"
+          className="mt-3 border border-cyan/50 bg-cyan/10 px-3 py-2 text-[13px] text-fg-strong"
+        >
+          <span className="font-semibold">
+            {promo.kind === "percent"
+              ? `${promo.percentOff}% off`
+              : `$${((promo.amountOffCents ?? 0) / 100).toFixed(2)} off`}
+          </span>{" "}
+          applied automatically{promo.name ? ` — ${promo.name}` : ""}.
+        </p>
+      ) : null}
 
       {step.kind === "details" || step.kind === "creating" ? (
         <form onSubmit={startCheckout} className="mt-6 space-y-4">
@@ -256,31 +339,39 @@ export function CheckoutModal({
             {step.kind === "creating" ? "Preparing checkout…" : "Continue to payment"}
           </button>
           <p className="text-[12px] leading-snug text-fg-muted">
-            Payment is securely processed by Stripe. You'll receive a sign-in
-            link by email once your membership is active.
+            Prices are in USD. You'll choose your currency and pay the local
+            equivalent on the next step. Payment is securely processed by
+            Stripe; you'll receive a sign-in link by email once your membership
+            is active.
           </p>
         </form>
       ) : null}
 
       {step.kind === "payment" && stripePromiseValue ? (
-        <Elements
+        <CheckoutElementsProvider
           stripe={stripePromiseValue}
           options={{
             clientSecret: step.clientSecret,
-            appearance: {
-              theme: theme === "light" ? "stripe" : "night",
-              labels: "floating",
+            elementsOptions: {
+              appearance: {
+                theme: theme === "light" ? "stripe" : "night",
+                labels: "floating",
+              },
             },
+            // Mark this integration as ready for Adaptive Pricing; Stripe then
+            // localizes the currency and powers the Currency Selector Element.
+            adaptivePricing: { allowed: true },
           }}
         >
           <PaymentStep
             email={step.email}
-            subscriptionId={step.subscriptionId}
+            checkoutSessionId={step.checkoutSessionId}
+            intervalLabel={intervalLabel}
             onError={(message) => setStep({ kind: "error", message })}
             onActivating={() =>
               setStep({
                 kind: "activating",
-                subscriptionId: step.subscriptionId,
+                checkoutSessionId: step.checkoutSessionId,
                 email: step.email,
               })
             }
@@ -289,7 +380,7 @@ export function CheckoutModal({
               setStep({ kind: "processing", email: step.email })
             }
           />
-        </Elements>
+        </CheckoutElementsProvider>
       ) : null}
 
       {step.kind === "activating" ? (
@@ -358,93 +449,108 @@ function Field({
 
 function PaymentStep({
   email,
-  subscriptionId,
+  checkoutSessionId,
+  intervalLabel,
   onError,
   onActivating,
   onActivated,
   onProcessing,
 }: {
   email: string;
-  subscriptionId: string;
+  checkoutSessionId: string;
+  intervalLabel: string;
   onError: (message: string) => void;
   onActivating: () => void;
   onActivated: () => void | Promise<void>;
   onProcessing: () => void;
 }) {
-  const stripe = useStripe();
-  const elements = useElements();
+  const checkoutState = useCheckout();
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
 
+  if (checkoutState.type === "loading") {
+    return (
+      <div
+        className="mt-6 flex items-center gap-3 text-sm text-fg"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
+        <span>Loading secure checkout…</span>
+      </div>
+    );
+  }
+
+  if (checkoutState.type === "error") {
+    return (
+      <p role="alert" className="mt-6 text-sm text-danger">
+        {checkoutState.error.message}
+      </p>
+    );
+  }
+
+  const { checkout } = checkoutState;
+  // Stripe-formatted, localized total (e.g. "$8.00" or "₪29.00") including any
+  // applied discount and the buyer's selected currency.
+  const localizedTotal = checkout.total.total.amount;
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stripe || !elements || submittedRef.current) return;
+    if (submittedRef.current) return;
     submittedRef.current = true;
     setSubmitting(true);
 
-    const result = await stripe.confirmPayment({
-      elements,
-      redirect: "if_required",
-      confirmParams: {
-        return_url: `${window.location.origin}/?checkout=complete`,
-        receipt_email: email,
-      },
-    });
+    // redirect: 'if_required' keeps card payments in the modal; methods that
+    // need an off-site step (e.g. 3DS) use the session's return_url.
+    const result = await checkout.confirm({ redirect: "if_required", email });
 
-    if (result.error) {
+    if (result.type === "error") {
       submittedRef.current = false;
       setSubmitting(false);
       onError(result.error.message ?? "Payment failed.");
       return;
     }
 
-    const pi = result.paymentIntent;
-    if (!pi) {
-      submittedRef.current = false;
-      setSubmitting(false);
-      onError("Unexpected payment state.");
-      return;
-    }
-
-    if (pi.status === "processing") {
+    // Confirmed in place. The subscription may take a moment to flip to
+    // active; poll until provisioning completes.
+    onActivating();
+    const poll = await pollForCheckoutSession(checkoutSessionId, email);
+    if (poll.kind === "ready") {
+      await onActivated();
+    } else if (poll.kind === "processing") {
       onProcessing();
-      return;
+    } else if (poll.kind === "error") {
+      onError(poll.message);
+    } else {
+      // Timeout: payment confirmed but provisioning didn't finish in 20s. The
+      // webhook completes it in the background and emails a sign-in link, so
+      // route to the bank-processing copy rather than stranding the user.
+      onProcessing();
     }
-
-    if (pi.status === "succeeded") {
-      onActivating();
-      const result = await pollForCheckoutSession(subscriptionId, email);
-      if (result.kind === "ready") {
-        await onActivated();
-      } else if (result.kind === "processing") {
-        onProcessing();
-      } else if (result.kind === "error") {
-        onError(result.message);
-      } else {
-        // Timeout: Stripe confirmed payment but our provisioning didn't
-        // finish in 20s. The webhook will complete it in the background and
-        // email a password-reset link, so route the user to the
-        // bank-processing copy rather than stranding them.
-        onProcessing();
-      }
-      return;
-    }
-
-    submittedRef.current = false;
-    setSubmitting(false);
-    onError(`Unexpected payment status: ${pi.status}`);
   };
 
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-4">
+      <div>
+        <span className="eyebrow text-fg-muted">Pay in</span>
+        <div className="mt-2">
+          <CurrencySelectorElement />
+        </div>
+      </div>
       <PaymentElement />
+      <div className="flex items-baseline justify-between border-t border-rule pt-3 text-sm">
+        <span className="text-fg-muted">Total</span>
+        <span className="font-semibold text-fg-strong">
+          {localizedTotal} / {intervalLabel}
+        </span>
+      </div>
       <button
         type="submit"
-        disabled={!stripe || submitting}
+        disabled={submitting}
         aria-busy={submitting}
         className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
       >
-        {submitting ? "Processing…" : "Pay & activate"}
+        {submitting ? "Processing…" : `Pay ${localizedTotal}`}
       </button>
     </form>
   );

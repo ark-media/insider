@@ -23,6 +23,8 @@ import { circleRoutes } from './routes/circle.js'
 import { cronRoutes } from './routes/cron.js'
 import { giftRoutes } from './routes/gift.js'
 import { meRoutes } from './routes/me.js'
+import { pricingRoutes } from './routes/pricing.js'
+import { promoRoutes } from './routes/promo.js'
 import { simplecastRoutes } from './routes/simplecast.js'
 import { smsRoutes } from './routes/sms.js'
 import { stripeRoutes } from './routes/stripe.js'
@@ -45,6 +47,8 @@ function buildApi(env: Env): Api {
     ...beehiivRoutes(deps),
     ...circleRoutes(deps),
     ...meRoutes(deps),
+    ...pricingRoutes(deps),
+    ...promoRoutes(deps),
     ...smsRoutes(deps),
     ...stripeRoutes(deps),
     ...giftRoutes(deps),

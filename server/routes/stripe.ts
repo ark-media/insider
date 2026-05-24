@@ -1,8 +1,11 @@
 // Stripe checkout + webhook routes.
 //
-//   POST /api/stripe/create-subscription   — create a Subscription with
-//     payment_behavior: 'default_incomplete' so the SPA can confirm the
-//     PaymentIntent client-side.
+//   POST /api/stripe/create-checkout-session — create a subscription-mode
+//     Checkout Session (ui_mode: 'elements') with Adaptive Pricing enabled,
+//     so the SPA can render Stripe's Payment + Currency Selector Elements and
+//     charge the buyer in their detected local currency. We use the Checkout
+//     Sessions API (not a bare Subscription) specifically because Adaptive
+//     Pricing is only available through Checkout Sessions.
 //   POST /api/stripe/cancel-subscription   — cancel at period end.
 //   GET  /api/stripe/subscription-status   — poll for activation after
 //     PaymentIntent confirm (the client races the webhook).
@@ -12,6 +15,8 @@
 import type Stripe from 'stripe'
 import { emailForStripeCustomer, syncEntitlement } from '../entitlement.js'
 import { createScClient } from '../lib/sc-client.js'
+import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
+import { getPlanPriceCents } from '../lib/pricing.js'
 import { makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { getSessionEmail } from '../lib/session.js'
 import type { Deps, Env, Route } from '../lib/route.js'
@@ -23,7 +28,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
   return [
     {
-      path: '/api/stripe/create-subscription',
+      path: '/api/stripe/create-checkout-session',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
         if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
@@ -43,8 +48,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         }
         const plan = body.plan
         const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
-        const defaultCents = plan === 'monthly' ? 800 : 8000
+        const defaultCents = await getPlanPriceCents(stripe, env, plan)
 
+        // The "name your price" amount is entered in USD — the source currency
+        // Adaptive Pricing converts from. The buyer sees and pays the localized
+        // equivalent at checkout.
         let amountCents = defaultCents
         if (
           typeof body.custom_amount_cents === 'number' &&
@@ -68,7 +76,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           (await stripe.customers.create({ email: body.email, name: body.name }))
 
         // Resolve price. Prefer the configured fixed price, else reuse a
-        // cached dynamic one, else create + cache a new one.
+        // cached dynamic one, else create + cache a new one. Always USD — the
+        // source currency Adaptive Pricing converts from per buyer.
         const fixedPriceId =
           plan === 'monthly' ? env.STRIPE_PRICE_MONTHLY : env.STRIPE_PRICE_YEARLY
         let priceId: string
@@ -93,28 +102,53 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
 
-        const subscription = await stripe.subscriptions.create({
+        // Auto-apply the best active promo for this plan. Discovered fresh from
+        // Stripe (the source of truth) — the client never influences the
+        // discount. Ranked against the USD source amount; Adaptive Pricing then
+        // converts the discounted total. The discount is optional, so a lookup
+        // failure must never block checkout: log and charge full price.
+        let discountCoupon: string | null = null
+        try {
+          const best = pickBestCoupon(await listActiveCoupons(stripe), plan, amountCents)
+          if (best) discountCoupon = best.id
+        } catch (err) {
+          console.error('[stripe] promo lookup failed; charging full price:', err)
+        }
+
+        const session = await stripe.checkout.sessions.create({
+          mode: 'subscription',
+          ui_mode: 'elements',
           customer: customer.id,
-          items: [{ price: priceId }],
-          payment_behavior: 'default_incomplete',
-          payment_settings: { save_default_payment_method: 'on_subscription' },
-          expand: ['latest_invoice.confirmation_secret'],
-          metadata: {
-            plan,
-            custom_amount_cents: String(amountCents),
+          line_items: [{ price: priceId, quantity: 1 }],
+          // Adaptive Pricing: Stripe detects the buyer's country from their IP
+          // and presents/charges in their local currency, with the USD price
+          // above as the source. Requires the account-level setting in the
+          // Stripe Dashboard (Settings → Adaptive Pricing) — this flag is inert
+          // until that is enabled.
+          adaptive_pricing: { enabled: true },
+          ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
+          // Stamp the subscription so the existing webhook
+          // (customer.subscription.created) activates SC + entitlement
+          // unchanged — the session is just the funnel that creates it.
+          subscription_data: {
+            metadata: {
+              plan,
+              custom_amount_cents: String(amountCents),
+            },
           },
+          // Required for ui_mode 'elements'; only used when a payment method
+          // needs an off-site redirect (e.g. 3DS). The modal otherwise confirms
+          // in place and polls /api/auth/checkout-session.
+          return_url: `${appBaseUrl}/?checkout=complete&session_id={CHECKOUT_SESSION_ID}`,
         })
 
-        const invoice = subscription.latest_invoice as Stripe.Invoice | null
-        const clientSecret = invoice?.confirmation_secret?.client_secret
-        if (!clientSecret) {
-          return json(500, { error: 'Could not obtain payment client secret' })
+        if (!session.client_secret) {
+          return json(500, { error: 'Could not obtain checkout client secret' })
         }
 
         json(200, {
-          subscription_id: subscription.id,
-          client_secret: clientSecret,
-          amount_cents: amountCents,
+          checkout_session_id: session.id,
+          client_secret: session.client_secret,
           plan,
         })
       },

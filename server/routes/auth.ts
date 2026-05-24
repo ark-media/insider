@@ -22,16 +22,16 @@ import { createRateLimiter } from '../lib/rate-limit.js'
 import { signCheckoutToken } from '../lib/session.js'
 import type { Deps, Route } from '../lib/route.js'
 
-// Defense against replay of leaked (subscription_id, email) pairs: auto-login
-// is only valid during the brief window right after checkout. After that, the
-// user logs in normally via Auth0 with the password they set from the reset
-// email.
+// Defense against replay of leaked (checkout_session_id, email) pairs:
+// auto-login is only valid during the brief window right after checkout. After
+// that, the user logs in normally via Auth0 with the password they set from the
+// reset email.
 const AUTO_LOGIN_WINDOW_SEC = 60 * 60
 
 export function authRoutes({ env, stripe, activator }: Deps): Route[] {
   // /api/auth/checkout-session is polled by the client (~1 req/s during the
-  // 20s window after payment). Cap per Stripe subscription to defend the
-  // upstream Stripe + Auth0 APIs from runaway loops or scripted abuse.
+  // 20s window after payment). Cap per Checkout Session to defend the upstream
+  // Stripe + Auth0 APIs from runaway loops or scripted abuse.
   const checkoutSessionLimiter = createRateLimiter({
     capacity: 25,
     refillPerSec: 1,
@@ -49,21 +49,33 @@ export function authRoutes({ env, stripe, activator }: Deps): Route[] {
         }
 
         const body =
-          (await readJson<{ subscription_id?: string; email?: string }>(req)) ?? {}
-        const subId = body.subscription_id?.trim()
+          (await readJson<{ checkout_session_id?: string; email?: string }>(req)) ?? {}
+        const sessionId = body.checkout_session_id?.trim()
         const emailParam = body.email?.trim().toLowerCase()
-        if (!subId) return json(400, { error: 'subscription_id required' })
+        if (!sessionId) return json(400, { error: 'checkout_session_id required' })
         if (!emailParam) return json(400, { error: 'email required' })
 
-        const wait = checkoutSessionLimiter.take(subId)
+        const wait = checkoutSessionLimiter.take(sessionId)
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'Too many attempts. Please wait a moment.' })
         }
 
-        const sub = await stripe.subscriptions.retrieve(subId, {
-          expand: ['customer'],
+        const session = await stripe.checkout.sessions.retrieve(sessionId, {
+          expand: ['subscription', 'subscription.customer'],
         })
+
+        // The Checkout Session creates the subscription only once payment
+        // completes. Until then there's nothing to provision — tell the client
+        // to retry.
+        const sub =
+          typeof session.subscription === 'object' && session.subscription
+            ? session.subscription
+            : null
+        if (!sub) {
+          return json(202, { ready: false, status: session.status ?? 'open' })
+        }
+
         const customer = sub.customer
         const customerEmail =
           typeof customer === 'object' &&
@@ -81,10 +93,10 @@ export function authRoutes({ env, stripe, activator }: Deps): Route[] {
           })
         }
 
-        // Stripe moves a default_incomplete subscription to `active` only
-        // after the PaymentIntent confirms. The client calls this endpoint
-        // right after confirmPayment resolves, but Stripe's internal state
-        // transition can lag by a few hundred ms. Tell the client to retry.
+        // Stripe activates the subscription only after the payment confirms.
+        // The client calls this endpoint right after checkout.confirm()
+        // resolves, but Stripe's internal state transition can lag by a few
+        // hundred ms. Tell the client to retry.
         if (sub.status !== 'active' && sub.status !== 'trialing') {
           return json(202, { ready: false, status: sub.status })
         }
