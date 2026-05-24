@@ -1,3 +1,5 @@
+import { showListenLinks } from "../config/urls";
+
 export type ShowSlug =
   | "call-me-back"
   | "inside-call-me-back"
@@ -27,6 +29,13 @@ export type Show = {
   description: string;
   hosts: string[];
   cadence: string;
+  /**
+   * Square (1:1) cover art served from `/public`. When present it's used
+   * everywhere the show is represented (hero, hub grid, related carousel);
+   * shows without one fall back to generated artwork. Drop a file in
+   * `public/shows/` and add its path here to give a show real branding.
+   */
+  coverArt?: string;
   /** Paid shows are gated behind Ark+ — no audio on the public site. */
   paid: boolean;
   /** Slugs of related shows (rendered in the carousel at the bottom of show pages). */
@@ -45,15 +54,10 @@ export const shows: Show[] = [
       "Dan Senor's flagship show un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     hosts: ["Dan Senor"],
     cadence: "New episodes Sundays and Thursdays",
+    coverArt: "/shows/call-me-back.jpg",
     paid: false,
     related: ["inside-call-me-back", "ark-news-daily", "for-heavens-sake"],
-    listen: [
-      { platform: "apple", url: "https://podcasts.apple.com/us/podcast/call-me-back-with-dan-senor/id1471232474" },
-      { platform: "spotify", url: "https://open.spotify.com/show/0VXHB5Wjd1RNwCWtRkM1HC" },
-      { platform: "overcast", url: "https://overcast.fm/itunes1471232474" },
-      { platform: "pocket-casts", url: "https://pca.st/podcast/9d6a14e0-bbcb-0137-8eea-0acc26574db2" },
-      { platform: "youtube", url: "https://www.youtube.com/@CallMeBackPodcast" },
-    ],
+    listen: showListenLinks["call-me-back"],
   },
   {
     slug: "inside-call-me-back",
@@ -65,9 +69,10 @@ export const shows: Show[] = [
       "Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.",
     hosts: ["Dan Senor"],
     cadence: "New episodes weekly",
+    coverArt: "/inside-cmb.jpg",
     paid: true,
     related: ["call-me-back", "for-heavens-sake", "whats-your-number"],
-    listen: [],
+    listen: showListenLinks["inside-call-me-back"],
   },
   {
     slug: "for-heavens-sake",
@@ -76,33 +81,28 @@ export const shows: Show[] = [
     shortTitle: "For Heaven's Sake",
     tagline: "A conversation about Israel, Jewish identity, and meaning.",
     description:
-      "Donniel Hartman and Yossi Klein Halevi in dialogue on the questions that don't go away.",
+      "Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of intense dialectic on all topics related to Israel, the Jewish diaspora, and the future of Zionism.",
     hosts: ["Donniel Hartman", "Yossi Klein Halevi"],
     cadence: "Weekly",
+    coverArt: "/shows/for-heavens-sake.jpg",
     paid: false,
     related: ["call-me-back", "whats-your-number", "ark-news-daily"],
-    listen: [
-      { platform: "apple", url: "https://podcasts.apple.com/us/podcast/for-heavens-sake/id1497635252" },
-      { platform: "spotify", url: "https://open.spotify.com/show/4eFsQEm56jeazfH5qzdxMq" },
-      { platform: "overcast", url: "https://overcast.fm/itunes1497635252" },
-    ],
+    listen: showListenLinks["for-heavens-sake"],
   },
   {
     slug: "whats-your-number",
     route: "/podcasts/whats-your-number",
-    title: "What's Your Number",
-    shortTitle: "What's Your Number",
-    tagline: "Numbers that explain the moment.",
+    title: "What's Your Number?",
+    shortTitle: "What's Your Number?",
+    tagline: "Looking at the Israeli economy through a global lens.",
     description:
-      "A single statistic, unpacked. What does it really tell us — and what doesn't it?",
-    hosts: ["Ark Media newsroom"],
+      "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? delves into the forces shaping the Israeli economy from within and without.",
+    hosts: ["Yonatan Adiri", "Michal Lev-Ram"],
     cadence: "Weekly",
+    coverArt: "/shows/whats-your-number.jpg",
     paid: false,
     related: ["ark-news-daily", "call-me-back", "for-heavens-sake"],
-    listen: [
-      { platform: "apple", url: "https://podcasts.apple.com/" },
-      { platform: "spotify", url: "https://open.spotify.com/" },
-    ],
+    listen: showListenLinks["whats-your-number"],
   },
   {
     slug: "ark-news-daily",
@@ -114,12 +114,10 @@ export const shows: Show[] = [
       "Ten minutes, every weekday. The single news item that matters most — explained without the noise.",
     hosts: ["Ark Media newsroom"],
     cadence: "Weekdays, 7:00 AM ET",
+    coverArt: "/shows/ark-news-daily.jpg",
     paid: false,
     related: ["call-me-back", "whats-your-number", "for-heavens-sake"],
-    listen: [
-      { platform: "apple", url: "https://podcasts.apple.com/" },
-      { platform: "spotify", url: "https://open.spotify.com/" },
-    ],
+    listen: showListenLinks["ark-news-daily"],
   },
 ];
 
@@ -134,6 +132,30 @@ export const LISTEN_PLATFORM_LABEL: Record<ListenPlatform, string> = {
   "pocket-casts": "Pocket Casts",
   youtube: "YouTube",
 };
+
+/**
+ * The atmospheric backdrop utility class for a show's hero and episode
+ * headers — a bespoke brand "wash" that gives each show its own sense of place
+ * instead of a flat panel. Each class shares one composition (see src/index.css)
+ * so the set reads as a family. Any unmapped show falls back to the house Ark
+ * wave; a new bespoke wash is one case here plus a class in src/index.css.
+ */
+export function showAtmosphere(slug: ShowSlug): string {
+  switch (slug) {
+    case "call-me-back":
+      return "cmb-bg";
+    case "inside-call-me-back":
+      return "icmb-bg";
+    case "for-heavens-sake":
+      return "fhs-bg";
+    case "whats-your-number":
+      return "wyn-bg";
+    case "ark-news-daily":
+      return "and-bg";
+    default:
+      return "ark-bg";
+  }
+}
 
 /**
  * Editorial schedule — used by the masthead live-status strip.

@@ -4,6 +4,7 @@ import {
 } from "../data/communityBroadcasts";
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import { upcomingEvents, type ArkEvent } from "../data/events";
+import { circleUrls, newsletterCircleSpaces } from "../config/urls";
 import type { NewsletterSource } from "./newsletterSources";
 
 /**
@@ -45,29 +46,14 @@ export async function fetchUpcomingEvents(): Promise<ArkEvent[]> {
  * land the user directly on the event view (member or guest).
  */
 export function circleEventLink(eventId: string): string {
-  return `https://community.arkmedia.org/events/${eventId}`;
+  return `${circleUrls.community}/events/${eventId}`;
 }
 
 /** Universal app-open link — used by /account "Open in app" buttons. */
 export const CIRCLE_OPEN_LINKS = {
-  ios: "https://apps.apple.com/app/circle-communities/id1525026498",
-  android:
-    "https://play.google.com/store/apps/details?id=com.circle.circleapp",
-  web: "https://app.arkmedia.org",
-};
-
-// Each Beehiiv-published newsletter has a paired Circle space where editorial
-// mirrors the post and members carry the conversation. The newsletter web page
-// surfaces a "Comment in Circle" link that deep-links here; /circle-sso wraps
-// it so signed-in members land directly inside Circle.
-const NEWSLETTER_CIRCLE_SPACES: Record<NewsletterSlug, string> = {
-  "the-call-me-back-newsletter":
-    "https://community.arkmedia.org/c/call-me-back-newsletter",
-  "ark-daily": "https://community.arkmedia.org/c/ark-daily",
-  "for-heavens-sake-newsletter":
-    "https://community.arkmedia.org/c/for-heavens-sake-letter",
-  "members-letter":
-    "https://community.arkmedia.org/c/members-letter",
+  ios: circleUrls.appStoreIos,
+  android: circleUrls.appStoreAndroid,
+  web: circleUrls.webApp,
 };
 
 /**
@@ -76,7 +62,7 @@ const NEWSLETTER_CIRCLE_SPACES: Record<NewsletterSlug, string> = {
  * prompted to set up a Circle account first.
  */
 export function newsletterCommentUrl(slug: NewsletterSlug): string {
-  const target = NEWSLETTER_CIRCLE_SPACES[slug];
+  const target = newsletterCircleSpaces[slug];
   return `/circle-sso?return_to=${encodeURIComponent(target)}`;
 }
 

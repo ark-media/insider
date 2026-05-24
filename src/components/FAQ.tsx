@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ARK_DOMAIN, contactEmails } from "../config/urls";
 
 const faqs = [
   {
@@ -15,7 +16,7 @@ const faqs = [
   },
   {
     q: "Where does the community live?",
-    a: "The Ark+ community lives in the Circle app — iOS, Android, and the web. After you join, you'll get a single sign-on link from arkmedia.org straight into the community.",
+    a: `The Ark+ community lives in the Circle app — iOS, Android, and the web. After you join, you'll get a single sign-on link from ${ARK_DOMAIN} straight into the community.`,
   },
   {
     q: "What are my payment options?",
@@ -31,7 +32,7 @@ const faqs = [
   },
   {
     q: "Who do I contact for support?",
-    a: "Email hello@arkmedia.org and our team will get back to you as quickly as possible.",
+    a: `Email ${contactEmails.general} and our team will get back to you as quickly as possible.`,
   },
 ];
 

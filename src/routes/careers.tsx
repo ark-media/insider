@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell } from "../components/PageShell";
+import { contactEmails } from "../config/urls";
 
 export const Route = createFileRoute("/careers")({
   component: CareersPage,
@@ -43,9 +44,9 @@ function CareersPage() {
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Open roles
-          </div>
+          </h2>
           <ul className="mt-10 divide-y divide-rule border-y border-rule">
             {openings.map((o) => (
               <li key={o.title} className="py-6">
@@ -63,7 +64,7 @@ function CareersPage() {
                   </div>
                   <div className="lg:col-span-2 lg:text-right">
                     <a
-                      href="mailto:careers@arkmedia.org"
+                      href={`mailto:${contactEmails.careers}`}
                       className="inline-flex items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                     >
                       Apply →
@@ -78,17 +79,17 @@ function CareersPage() {
 
       <section className="border-t border-rule bg-navy-800/40">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Don't see your role?
-          </div>
+          </h2>
           <p className="mt-6 max-w-2xl text-[14.5px] leading-[1.7] text-fg">
             We hire opportunistically when the fit is right. Send a note —
             short is fine — and a couple of links to{" "}
             <a
-              href="mailto:careers@arkmedia.org"
+              href={`mailto:${contactEmails.careers}`}
               className="text-cyan underline-offset-4 hover:underline"
             >
-              careers@arkmedia.org
+              {contactEmails.careers}
             </a>
             .
           </p>

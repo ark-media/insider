@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell } from "../components/PageShell";
+import { contactEmails } from "../config/urls";
 
 export const Route = createFileRoute("/contact")({
   component: ContactPage,
@@ -9,25 +10,25 @@ const lanes: { eyebrow: string; title: string; email: string; body: string }[] =
   {
     eyebrow: "Listener mail",
     title: "For show ideas, feedback, and corrections",
-    email: "hello@arkmedia.org",
+    email: contactEmails.general,
     body: "We read every note. Send a thought, a sharper way to put a thing, or a correction we missed.",
   },
   {
     eyebrow: "Press",
     title: "For press, interviews, and media inquiries",
-    email: "press@arkmedia.org",
+    email: contactEmails.press,
     body: "Booking requests for hosts, interview availability, and press credentials.",
   },
   {
     eyebrow: "Partnerships",
     title: "For sponsorships and partnerships",
-    email: "partners@arkmedia.org",
+    email: contactEmails.partnerships,
     body: "Brand partnerships, syndication, and editorial collaborations.",
   },
   {
     eyebrow: "Member support",
     title: "For Ark+ membership questions",
-    email: "support@arkmedia.org",
+    email: contactEmails.support,
     body: "Trouble with your private feed, billing, the Circle app, or anything else Ark+. Quickest reply if you write from the email on file.",
   },
 ];
@@ -51,9 +52,9 @@ function ContactPage() {
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
                   {l.eyebrow}
                 </div>
-                <h3 className="mt-4 font-display text-[20px] leading-tight text-fg-strong">
+                <h2 className="mt-4 font-display text-[20px] leading-tight text-fg-strong">
                   {l.title}
-                </h3>
+                </h2>
                 <p className="mt-3 text-[13.5px] leading-[1.6] text-fg-muted">
                   {l.body}
                 </p>
