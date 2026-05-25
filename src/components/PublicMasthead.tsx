@@ -199,6 +199,7 @@ export function PublicMasthead() {
                 {state.kind === "member" ? (
                   <MemberMenu
                     email={state.me.email}
+                    isAdmin={isAdmin}
                     onSignOut={() => {
                       setAccountOpen(false);
                       signOut();
@@ -652,10 +653,12 @@ function GuestMenu({
 
 function MemberMenu({
   email,
+  isAdmin,
   onSignOut,
   onClose,
 }: {
   email: string;
+  isAdmin: boolean;
   onSignOut: () => void;
   onClose: () => void;
 }) {
@@ -679,6 +682,15 @@ function MemberMenu({
       >
         Set up your feed
       </Link>
+      {isAdmin ? (
+        <Link
+          to="/admin"
+          onClick={onClose}
+          className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          Admin
+        </Link>
+      ) : null}
       <button
         type="button"
         onClick={onSignOut}

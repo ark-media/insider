@@ -223,7 +223,6 @@ export function Pricing() {
       <CheckoutModal
         open={checkoutOpen}
         plan={plan}
-        defaultAmount={price ?? 0}
         customAmount={customValid ? (parsedCustom as number) : null}
         onClose={() => setCheckoutOpen(false)}
       />

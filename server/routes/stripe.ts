@@ -36,13 +36,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         const body =
           (await readJson<{
-            email?: string
             plan?: 'monthly' | 'yearly'
             custom_amount_cents?: number
-            name?: string
           }>(req)) ?? {}
 
-        if (!body.email) return json(400, { error: 'Email is required' })
+        // No email here: the session is created the moment the modal opens (so
+        // the localized price shows on the first screen, before the email
+        // field). The buyer's email is collected client-side via
+        // checkout.updateEmail, and Stripe creates the Customer from it on
+        // confirm (see the subscription-mode note in the API ref).
         if (body.plan !== 'monthly' && body.plan !== 'yearly') {
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
         }
@@ -68,12 +70,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
           amountCents = Math.round(body.custom_amount_cents)
         }
-
-        // Find-or-create Stripe customer by email.
-        const existing = await stripe.customers.list({ email: body.email, limit: 1 })
-        const customer =
-          existing.data[0] ??
-          (await stripe.customers.create({ email: body.email, name: body.name }))
 
         // Resolve price. Prefer the configured fixed price, else reuse a
         // cached dynamic one, else create + cache a new one. Always USD — the
@@ -118,7 +114,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const session = await stripe.checkout.sessions.create({
           mode: 'subscription',
           ui_mode: 'elements',
-          customer: customer.id,
+          // No `customer`: in subscription mode Stripe creates the Customer
+          // from the email collected during the flow (checkout.updateEmail).
           line_items: [{ price: priceId, quantity: 1 }],
           // Adaptive Pricing: Stripe detects the buyer's country from their IP
           // and presents/charges in their local currency, with the USD price
@@ -164,16 +161,26 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const cancelEmail = await getSessionEmail(req, env)
         if (!cancelEmail) return json(401, { error: 'unauthenticated' })
 
-        const customers = await stripe.customers.list({ email: cancelEmail, limit: 1 })
-        const customer = customers.data[0]
-        if (!customer) return json(404, { error: 'No billing record found' })
+        // Checkout creates a Customer per session, so one email can map to
+        // several Stripe customers (e.g. churn-then-resubscribe). Search across
+        // all of them for the active subscription rather than assuming one.
+        const customers = await stripe.customers.list({ email: cancelEmail, limit: 100 })
+        if (customers.data.length === 0) {
+          return json(404, { error: 'No billing record found' })
+        }
 
-        const subs = await stripe.subscriptions.list({
-          customer: customer.id,
-          status: 'active',
-          limit: 1,
-        })
-        const sub = subs.data[0]
+        let sub: Stripe.Subscription | undefined
+        for (const customer of customers.data) {
+          const subs = await stripe.subscriptions.list({
+            customer: customer.id,
+            status: 'active',
+            limit: 1,
+          })
+          if (subs.data[0]) {
+            sub = subs.data[0]
+            break
+          }
+        }
         if (!sub) return json(404, { error: 'No active subscription found' })
 
         // Cancel at period end so they keep access until the billing cycle ends.

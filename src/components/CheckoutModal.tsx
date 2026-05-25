@@ -13,16 +13,19 @@ import { useTheme } from "../lib/theme";
 
 type Plan = "monthly" | "yearly";
 
+type PromoInfo = {
+  name: string | null;
+  kind: "percent" | "amount";
+  percentOff?: number;
+  amountOffCents?: number;
+};
+
 type Step =
-  | { kind: "details" }
-  | { kind: "creating" }
-  | {
-      kind: "payment";
-      clientSecret: string;
-      checkoutSessionId: string;
-      email: string;
-    }
-  | { kind: "activating"; checkoutSessionId: string; email: string }
+  // The Checkout Session is created the moment the modal opens so the buyer's
+  // localized price can show on the very first screen.
+  | { kind: "init" }
+  | { kind: "ready"; clientSecret: string; checkoutSessionId: string }
+  | { kind: "activating"; email: string }
   | { kind: "processing"; email: string }
   | { kind: "error"; message: string };
 
@@ -39,6 +42,12 @@ function getStripe() {
 
 const inputClass =
   "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-placeholder outline-none transition focus:border-cyan disabled:opacity-50";
+
+const ctaClass =
+  "inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60";
+
+const titleClass =
+  "display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong";
 
 const MAX_POLL_ATTEMPTS = 15;
 
@@ -112,40 +121,86 @@ async function pollForCheckoutSession(
 export function CheckoutModal({
   open,
   plan,
-  defaultAmount,
   customAmount,
   onClose,
 }: {
   open: boolean;
   plan: Plan;
-  defaultAmount: number;
   customAmount: number | null;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<Step>({ kind: "details" });
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [promo, setPromo] = useState<{
-    name: string | null;
-    kind: "percent" | "amount";
-    percentOff?: number;
-    amountOffCents?: number;
-  } | null>(null);
+  const [step, setStep] = useState<Step>({ kind: "init" });
+  const [reloadKey, setReloadKey] = useState(0);
+  const [promo, setPromo] = useState<PromoInfo | null>(null);
   const navigate = useNavigate();
   const { refresh } = useSubscriberAuth();
   const { theme } = useTheme();
 
   const handleClose = useCallback(() => {
-    setStep({ kind: "details" });
-    setEmail("");
-    setName("");
+    setStep({ kind: "init" });
     setPromo(null);
     onClose();
   }, [onClose]);
 
+  // Create the Checkout Session as soon as the modal opens. Stripe localizes
+  // the price (Adaptive Pricing) the moment the Elements provider loads it, so
+  // the first screen can show what the buyer will actually pay.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      if (!publishableKey) {
+        if (!cancelled) {
+          setStep({
+            kind: "error",
+            message:
+              "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+          });
+        }
+        return;
+      }
+      try {
+        const res = await fetch("/api/stripe/create-checkout-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plan,
+            custom_amount_cents:
+              customAmount !== null ? Math.round(customAmount * 100) : undefined,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          client_secret?: string;
+          checkout_session_id?: string;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || !data.client_secret || !data.checkout_session_id) {
+          setStep({
+            kind: "error",
+            message: data.error ?? "Could not start checkout.",
+          });
+          return;
+        }
+        setStep({
+          kind: "ready",
+          clientSecret: data.client_secret,
+          checkoutSessionId: data.checkout_session_id,
+        });
+      } catch {
+        if (!cancelled) {
+          setStep({ kind: "error", message: "Network error. Please try again." });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, plan, customAmount, reloadKey]);
+
   // Auto-apply the active promo (if any) for this plan when the modal opens.
-  // The discount the server actually charges is re-discovered at create time;
-  // this is display-only, so failures fall back silently to full price.
+  // Display-only (the coupon Stripe actually charges is attached server-side at
+  // session creation); failures fall back silently to full price.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -196,66 +251,6 @@ export function CheckoutModal({
     }
   }, [navigate, onClose, refresh]);
 
-  // USD source amount — the price Adaptive Pricing converts from. Shown on the
-  // details step; the buyer's localized total comes from Stripe on the payment
-  // step (see PaymentStep).
-  const amountCents =
-    customAmount !== null ? Math.round(customAmount * 100) : defaultAmount * 100;
-  const discountedCents = promo
-    ? promo.kind === "percent"
-      ? Math.round(amountCents * (1 - (promo.percentOff ?? 0) / 100))
-      : Math.max(0, amountCents - (promo.amountOffCents ?? 0))
-    : amountCents;
-  const displayAmount = (discountedCents / 100).toFixed(2);
-  const originalAmount = (amountCents / 100).toFixed(2);
-  const intervalLabel = plan === "yearly" ? "year" : "month";
-  const showSourcePrice = step.kind === "details" || step.kind === "creating";
-
-  const startCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) return;
-    if (!publishableKey) {
-      setStep({
-        kind: "error",
-        message: "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-      });
-      return;
-    }
-    setStep({ kind: "creating" });
-    try {
-      const res = await fetch("/api/stripe/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          name: name.trim() || undefined,
-          plan,
-          custom_amount_cents: customAmount !== null ? amountCents : undefined,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        client_secret?: string;
-        checkout_session_id?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.client_secret || !data.checkout_session_id) {
-        setStep({
-          kind: "error",
-          message: data.error ?? "Could not start checkout.",
-        });
-        return;
-      }
-      setStep({
-        kind: "payment",
-        clientSecret: data.client_secret,
-        checkoutSessionId: data.checkout_session_id,
-        email: email.trim(),
-      });
-    } catch {
-      setStep({ kind: "error", message: "Network error. Please try again." });
-    }
-  };
-
   const stripePromiseValue = getStripe();
 
   return (
@@ -269,85 +264,17 @@ export function CheckoutModal({
       <p id="checkout-desc" className="eyebrow">
         Insider Membership · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
-      {showSourcePrice ? (
-        <h2
-          id="checkout-title"
-          className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
-        >
-          {promo ? (
-            <span className="mr-2 align-middle text-[0.58em] font-sans font-normal text-fg-muted line-through">
-              ${originalAmount}
-            </span>
-          ) : null}
-          ${displayAmount}{" "}
-          <span className="text-[14px] font-sans font-normal text-fg-muted">
-            / {intervalLabel}
-          </span>
-        </h2>
-      ) : (
-        <h2
-          id="checkout-title"
-          className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
-        >
-          Complete your membership
-        </h2>
-      )}
 
-      {showSourcePrice && promo ? (
-        <p
-          role="status"
-          className="mt-3 border border-cyan/50 bg-cyan/10 px-3 py-2 text-[13px] text-fg-strong"
-        >
-          <span className="font-semibold">
-            {promo.kind === "percent"
-              ? `${promo.percentOff}% off`
-              : `$${((promo.amountOffCents ?? 0) / 100).toFixed(2)} off`}
-          </span>{" "}
-          applied automatically{promo.name ? ` — ${promo.name}` : ""}.
-        </p>
+      {step.kind === "init" ? (
+        <>
+          <h2 id="checkout-title" className={titleClass}>
+            Complete your membership
+          </h2>
+          <LoadingRow label="Preparing checkout…" />
+        </>
       ) : null}
 
-      {step.kind === "details" || step.kind === "creating" ? (
-        <form onSubmit={startCheckout} className="mt-6 space-y-4">
-          <Field label="Name (optional)">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={step.kind === "creating"}
-              placeholder="Jane Appleseed"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Email">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={step.kind === "creating"}
-              placeholder="you@example.com"
-              className={inputClass}
-            />
-          </Field>
-          <button
-            type="submit"
-            disabled={step.kind === "creating"}
-            aria-busy={step.kind === "creating"}
-            className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-          >
-            {step.kind === "creating" ? "Preparing checkout…" : "Continue to payment"}
-          </button>
-          <p className="text-[12px] leading-snug text-fg-muted">
-            Prices are in USD. You'll choose your currency and pay the local
-            equivalent on the next step. Payment is securely processed by
-            Stripe; you'll receive a sign-in link by email once your membership
-            is active.
-          </p>
-        </form>
-      ) : null}
-
-      {step.kind === "payment" && stripePromiseValue ? (
+      {step.kind === "ready" && stripePromiseValue ? (
         <CheckoutElementsProvider
           stripe={stripePromiseValue}
           options={{
@@ -363,72 +290,105 @@ export function CheckoutModal({
             adaptivePricing: { allowed: true },
           }}
         >
-          <PaymentStep
-            email={step.email}
+          <CheckoutForm
+            plan={plan}
             checkoutSessionId={step.checkoutSessionId}
-            intervalLabel={intervalLabel}
-            onError={(message) => setStep({ kind: "error", message })}
-            onActivating={() =>
-              setStep({
-                kind: "activating",
-                checkoutSessionId: step.checkoutSessionId,
-                email: step.email,
-              })
-            }
+            promo={promo}
+            onActivating={(email) => setStep({ kind: "activating", email })}
             onActivated={handleActivated}
-            onProcessing={() =>
-              setStep({ kind: "processing", email: step.email })
-            }
+            onProcessing={(email) => setStep({ kind: "processing", email })}
           />
         </CheckoutElementsProvider>
       ) : null}
 
       {step.kind === "activating" ? (
-        <div
-          className="mt-6 flex items-center gap-3 text-sm text-fg"
-          role="status"
-          aria-live="polite"
-        >
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
-          <span>Payment received — signing you in…</span>
-        </div>
+        <>
+          <h2 id="checkout-title" className={titleClass}>
+            Complete your membership
+          </h2>
+          <LoadingRow label="Payment received — signing you in…" />
+        </>
       ) : null}
 
       {step.kind === "processing" ? (
-        <div className="mt-6 space-y-3 text-sm text-fg">
-          <p>
-            Your payment is being processed by your bank. We'll email{" "}
-            <span
-              className="font-semibold text-fg-strong break-all"
-              title={step.email}
+        <>
+          <h2 id="checkout-title" className={titleClass}>
+            Almost there
+          </h2>
+          <div className="mt-6 space-y-3 text-sm text-fg">
+            <p>
+              Your payment is being processed by your bank. We'll email{" "}
+              <span
+                className="font-semibold text-fg-strong break-all"
+                title={step.email}
+              >
+                {step.email}
+              </span>{" "}
+              a sign-in link as soon as it clears (usually within a few minutes).
+            </p>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              {step.email}
-            </span>{" "}
-            a sign-in link as soon as it clears (usually within a few minutes).
-          </p>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Close
-          </button>
-        </div>
+              Close
+            </button>
+          </div>
+        </>
       ) : null}
 
       {step.kind === "error" ? (
-        <div className="mt-6 space-y-3 text-sm">
-          <p role="alert" className="text-danger">{step.message}</p>
-          <button
-            type="button"
-            onClick={() => setStep({ kind: "details" })}
-            className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Try again
-          </button>
-        </div>
+        <>
+          <h2 id="checkout-title" className={titleClass}>
+            Something went wrong
+          </h2>
+          <div className="mt-6 space-y-3 text-sm">
+            <p role="alert" className="text-danger">
+              {step.message}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setStep({ kind: "init" });
+                setReloadKey((k) => k + 1);
+              }}
+              className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Try again
+            </button>
+          </div>
+        </>
       ) : null}
     </Modal>
+  );
+}
+
+function LoadingRow({ label }: { label: string }) {
+  return (
+    <div
+      className="mt-6 flex items-center gap-3 text-sm text-fg"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function PromoBanner({ promo }: { promo: PromoInfo }) {
+  return (
+    <p
+      role="status"
+      className="mt-3 border border-cyan/50 bg-cyan/10 px-3 py-2 text-[13px] text-fg-strong"
+    >
+      <span className="font-semibold">
+        {promo.kind === "percent"
+          ? `${promo.percentOff}% off`
+          : `$${((promo.amountOffCents ?? 0) / 100).toFixed(2)} off`}
+      </span>{" "}
+      applied automatically{promo.name ? ` — ${promo.name}` : ""}.
+    </p>
   );
 }
 
@@ -447,111 +407,188 @@ function Field({
   );
 }
 
-function PaymentStep({
-  email,
+// Lives inside CheckoutElementsProvider, so useCheckout() gives us the buyer's
+// localized total (Adaptive Pricing) from the first screen. Two phases keep the
+// original UX: enter email → pay.
+function CheckoutForm({
+  plan,
   checkoutSessionId,
-  intervalLabel,
-  onError,
+  promo,
   onActivating,
   onActivated,
   onProcessing,
 }: {
-  email: string;
+  plan: Plan;
   checkoutSessionId: string;
-  intervalLabel: string;
-  onError: (message: string) => void;
-  onActivating: () => void;
+  promo: PromoInfo | null;
+  onActivating: (email: string) => void;
   onActivated: () => void | Promise<void>;
-  onProcessing: () => void;
+  onProcessing: (email: string) => void;
 }) {
   const checkoutState = useCheckout();
-  const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<"details" | "payment">("details");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
   const submittedRef = useRef(false);
 
   if (checkoutState.type === "loading") {
-    return (
-      <div
-        className="mt-6 flex items-center gap-3 text-sm text-fg"
-        role="status"
-        aria-live="polite"
-      >
-        <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
-        <span>Loading secure checkout…</span>
-      </div>
-    );
+    return <LoadingRow label="Loading secure checkout…" />;
   }
-
   if (checkoutState.type === "error") {
     return (
-      <p role="alert" className="mt-6 text-sm text-danger">
-        {checkoutState.error.message}
-      </p>
+      <>
+        <h2 id="checkout-title" className={titleClass}>
+          Complete your membership
+        </h2>
+        <p role="alert" className="mt-6 text-sm text-danger">
+          {checkoutState.error.message}
+        </p>
+      </>
     );
   }
 
   const { checkout } = checkoutState;
-  // Stripe-formatted, localized total (e.g. "$8.00" or "₪29.00") including any
-  // applied discount and the buyer's selected currency.
-  const localizedTotal = checkout.total.total.amount;
+  const intervalLabel = plan === "yearly" ? "year" : "month";
+  // Stripe-formatted, localized strings in the buyer's selected currency.
+  const total = checkout.total.total.amount; // after discount
+  const subtotal = checkout.total.subtotal.amount; // before discount
+  const hasDiscount = checkout.total.discount.minorUnitsAmount > 0;
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const continueToPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || working) return;
+    setWorking(true);
+    setEmailError(null);
+    const result = await checkout.updateEmail(email.trim());
+    setWorking(false);
+    if (result.type === "error") {
+      setEmailError(result.error.message ?? "Please enter a valid email.");
+      return;
+    }
+    setPhase("payment");
+  };
+
+  const pay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittedRef.current) return;
     submittedRef.current = true;
-    setSubmitting(true);
+    setWorking(true);
+    setPayError(null);
 
     // redirect: 'if_required' keeps card payments in the modal; methods that
     // need an off-site step (e.g. 3DS) use the session's return_url.
-    const result = await checkout.confirm({ redirect: "if_required", email });
+    const result = await checkout.confirm({
+      redirect: "if_required",
+      email: email.trim(),
+    });
 
     if (result.type === "error") {
+      // A decline is retryable — stay on the payment form rather than tearing
+      // down the session.
       submittedRef.current = false;
-      setSubmitting(false);
-      onError(result.error.message ?? "Payment failed.");
+      setWorking(false);
+      setPayError(result.error.message ?? "Payment failed. Please try again.");
       return;
     }
 
-    // Confirmed in place. The subscription may take a moment to flip to
-    // active; poll until provisioning completes.
-    onActivating();
-    const poll = await pollForCheckoutSession(checkoutSessionId, email);
+    // Payment confirmed. The subscription takes a moment to flip to active, so
+    // poll for provisioning. Anything short of "ready" routes to the
+    // bank-processing copy — never back to a pay button, which would risk a
+    // double charge (the webhook finishes provisioning and emails a link).
+    onActivating(email.trim());
+    const poll = await pollForCheckoutSession(checkoutSessionId, email.trim());
     if (poll.kind === "ready") {
       await onActivated();
-    } else if (poll.kind === "processing") {
-      onProcessing();
-    } else if (poll.kind === "error") {
-      onError(poll.message);
     } else {
-      // Timeout: payment confirmed but provisioning didn't finish in 20s. The
-      // webhook completes it in the background and emails a sign-in link, so
-      // route to the bank-processing copy rather than stranding the user.
-      onProcessing();
+      onProcessing(email.trim());
     }
   };
 
   return (
-    <form onSubmit={onSubmit} className="mt-6 space-y-4">
-      <div>
-        <span className="eyebrow text-fg-muted">Pay in</span>
-        <div className="mt-2">
-          <CurrencySelectorElement />
-        </div>
-      </div>
-      <PaymentElement />
-      <div className="flex items-baseline justify-between border-t border-rule pt-3 text-sm">
-        <span className="text-fg-muted">Total</span>
-        <span className="font-semibold text-fg-strong">
-          {localizedTotal} / {intervalLabel}
+    <>
+      <h2 id="checkout-title" className={titleClass}>
+        {hasDiscount ? (
+          <span className="mr-2 align-middle text-[0.58em] font-sans font-normal text-fg-muted line-through">
+            {subtotal}
+          </span>
+        ) : null}
+        {total}{" "}
+        <span className="text-[14px] font-sans font-normal text-fg-muted">
+          / {intervalLabel}
         </span>
-      </div>
-      <button
-        type="submit"
-        disabled={submitting}
-        aria-busy={submitting}
-        className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-      >
-        {submitting ? "Processing…" : `Pay ${localizedTotal}`}
-      </button>
-    </form>
+      </h2>
+
+      {promo ? <PromoBanner promo={promo} /> : null}
+
+      {phase === "details" ? (
+        <form onSubmit={continueToPayment} className="mt-6 space-y-4">
+          <div>
+            <span className="eyebrow text-fg-muted">Pay in</span>
+            <div className="mt-2">
+              <CurrencySelectorElement />
+            </div>
+          </div>
+          <Field label="Email">
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={working}
+              placeholder="you@example.com"
+              className={inputClass}
+            />
+          </Field>
+          {emailError ? (
+            <p role="alert" className="text-[12px] text-danger">
+              {emailError}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={working}
+            aria-busy={working}
+            className={ctaClass}
+          >
+            {working ? "Checking…" : "Continue to payment"}
+          </button>
+          <p className="text-[12px] leading-snug text-fg-muted">
+            Payment is securely processed by Stripe. You'll receive a sign-in
+            link by email once your membership is active.
+          </p>
+        </form>
+      ) : (
+        <form onSubmit={pay} className="mt-6 space-y-4">
+          <div>
+            <span className="eyebrow text-fg-muted">Pay in</span>
+            <div className="mt-2">
+              <CurrencySelectorElement />
+            </div>
+          </div>
+          <PaymentElement />
+          <div className="flex items-baseline justify-between border-t border-rule pt-3 text-sm">
+            <span className="text-fg-muted">Total</span>
+            <span className="font-semibold text-fg-strong">
+              {total} / {intervalLabel}
+            </span>
+          </div>
+          {payError ? (
+            <p role="alert" className="text-[12px] text-danger">
+              {payError}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={working}
+            aria-busy={working}
+            className={ctaClass}
+          >
+            {working ? "Processing…" : `Pay ${total}`}
+          </button>
+        </form>
+      )}
+    </>
   );
 }
