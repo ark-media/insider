@@ -38,18 +38,7 @@ const simplecastEpisodeCache = new Map<
   { at: number; notes: EpisodeNotes }
 >()
 
-// Per-podcast cache for the show-level description. Show descriptions change
-// very rarely — cache aggressively so we don't tax Simplecast for every page
-// view.
-const SIMPLECAST_PODCAST_CACHE_TTL_MS = 60 * 60 * 1000
-const simplecastPodcastCache = new Map<
-  string,
-  { at: number; description: string }
->()
-
 type ScEpisodesResponse = { collection?: ScEpisode[] }
-
-type ScPodcast = { description?: string }
 
 function resolveSimplecastPodcastId(env: Env, showSlug: string): string | undefined {
   // Accept only the slug pattern we expect so a caller can't probe arbitrary
@@ -112,27 +101,6 @@ async function fetchSimplecastEpisodeNotes(
   return notes
 }
 
-async function fetchSimplecastPodcastDescription(
-  podcastId: string,
-  token: string,
-): Promise<string> {
-  const cached = simplecastPodcastCache.get(podcastId)
-  if (cached && Date.now() - cached.at < SIMPLECAST_PODCAST_CACHE_TTL_MS) {
-    return cached.description
-  }
-  const url = `https://api.simplecast.com/podcasts/${encodeURIComponent(podcastId)}`
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-  })
-  if (!res.ok) {
-    throw new Error(`Simplecast ${res.status}: ${await res.text()}`)
-  }
-  const body = (await res.json()) as ScPodcast
-  const description = stripHtml(body.description ?? '')
-  simplecastPodcastCache.set(podcastId, { at: Date.now(), description })
-  return description
-}
-
 export function simplecastRoutes({ env }: Deps): Route[] {
   return [
     {
@@ -184,33 +152,6 @@ export function simplecastRoutes({ env }: Deps): Route[] {
           json(200, notes)
         } catch (err) {
           console.error('[simplecast] episode fetch failed:', err)
-          json(502, { error: 'simplecast_unavailable' })
-        }
-      },
-    },
-    {
-      path: '/api/simplecast/podcast',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
-        const url = new URL(req.url ?? '', 'http://x')
-        const show = url.searchParams.get('show')
-        if (!show) return json(400, { error: 'missing `show`' })
-
-        const podcastId = resolveSimplecastPodcastId(env, show)
-        const token = env.SIMPLECAST_API_TOKEN
-        if (!podcastId || !token) {
-          // Show has no Simplecast podcast configured, or the server has no
-          // token. Empty string → client uses its hardcoded fallback.
-          return json(200, { description: '' })
-        }
-
-        try {
-          const description = await fetchSimplecastPodcastDescription(podcastId, token)
-          json(200, { description })
-        } catch (err) {
-          console.error('[simplecast] podcast fetch failed:', err)
           json(502, { error: 'simplecast_unavailable' })
         }
       },

@@ -14,11 +14,7 @@ import {
   type Episode,
 } from "../data/episodes";
 import { hostsForShow } from "../data/hosts";
-import {
-  fetchPodcastDescription,
-  listEpisodes,
-  simplecastEpisodeSrc,
-} from "../lib/simplecast";
+import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
@@ -85,7 +81,6 @@ function PaidShowPage({ show }: { show: Show }) {
   const isMember = state.kind === "member";
   const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
-  const description = useShowDescription(show);
 
   // Drop episodes loaded in a prior member session once the viewer is no
   // longer a member, so a stale list can't flash if they sign back in.
@@ -105,8 +100,6 @@ function PaidShowPage({ show }: { show: Show }) {
   return (
     <main className="relative">
       <ShowHero show={show} />
-
-      <ShowAbout show={show} description={description} />
 
       {isMember ? (
         <EpisodeBrowser
@@ -795,36 +788,4 @@ function RelatedShows({
 
 function showHasPaidExtension(slug: ShowSlug): boolean {
   return slug === "call-me-back";
-}
-
-// Returns the show description, preferring the live copy from Simplecast and
-// falling back to the hardcoded one in `data/shows.ts`. The hook seeds with
-// the local string so the page paints with real content immediately; the
-// remote value is only adopted if it comes back non-empty and different,
-// which avoids a one-frame text swap when the two strings already agree.
-//
-// State carries the slug it was hydrated for so navigating between shows
-// resets the description during render (the React-recommended alternative to
-// `setState` inside an effect).
-function useShowDescription(show: Show): string {
-  const [state, setState] = useState({
-    slug: show.slug,
-    value: show.description,
-  });
-  if (state.slug !== show.slug) {
-    setState({ slug: show.slug, value: show.description });
-  }
-  useEffect(() => {
-    let live = true;
-    void fetchPodcastDescription(show.slug).then((d) => {
-      if (!live || !d || d === show.description) return;
-      setState((prev) =>
-        prev.slug === show.slug ? { slug: show.slug, value: d } : prev,
-      );
-    });
-    return () => {
-      live = false;
-    };
-  }, [show.slug, show.description]);
-  return state.value;
 }

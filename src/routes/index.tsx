@@ -7,9 +7,10 @@ import { Toast } from "../components/Toast";
 export const Route = createFileRoute("/")({
   // `?gift=complete` lands here after a gift checkout (both the inline flow and
   // Stripe's redirect-based return_url) so we can confirm it with a toast.
-  validateSearch: (search: Record<string, unknown>) => ({
-    gift: search.gift === "complete" ? ("complete" as const) : undefined,
-  }),
+  // `gift` is optional — omit the key entirely when absent so the router doesn't
+  // treat it as a required search param on every `Link to="/"`.
+  validateSearch: (search: Record<string, unknown>): { gift?: "complete" } =>
+    search.gift === "complete" ? { gift: "complete" } : {},
   component: HomePage,
 });
 
