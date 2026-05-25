@@ -78,7 +78,6 @@ function PublicShowPage({ show }: { show: Show }) {
 function PaidShowPage({ show }: { show: Show }) {
   const { state } = useSubscriberAuth();
   const isMember = state.kind === "member";
-  const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
 
   // Drop episodes loaded in a prior member session once the viewer is no
@@ -116,9 +115,7 @@ function PaidShowPage({ show }: { show: Show }) {
       ) : (
         <PaidShowJoinCta show={show} />
       )}
-
-      {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
-
+      <HostsSection show={show} />
       <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
   );
