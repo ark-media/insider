@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { fetchMe, type Me } from "./auth";
+import { fetchAdminMe } from "./admin";
 import { hasCheckoutCookie, setTokenGetter } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
 import { AUTH0_TIER_CLAIM } from "../../shared/auth0-claims";
@@ -21,6 +22,11 @@ type SubscriberAuthValue = {
   state: SubscriberAuthState;
   refresh: () => Promise<void>;
   signOut: () => void;
+  // Whether the signed-in user holds the "admin" role, per /api/admin/me
+  // (which re-verifies the Auth0 token server-side). `adminLoading` is true
+  // until that first check resolves for an authenticated user.
+  isAdmin: boolean;
+  adminLoading: boolean;
 };
 
 const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
@@ -28,6 +34,10 @@ const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
 export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading, getAccessTokenSilently, logout, user } = useAuth0();
   const [state, setState] = useState<SubscriberAuthState>({ kind: "loading" });
+  const [admin, setAdmin] = useState<{ loading: boolean; isAdmin: boolean }>({
+    loading: true,
+    isAdmin: false,
+  });
 
   // Make getAccessTokenSilently available to non-React code (fetchMe, etc.)
   useEffect(() => {
@@ -58,6 +68,26 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [isAuthenticated, isLoading, refresh]);
 
+  // Resolve admin status from the server (authoritative — it re-verifies the
+  // access token's role claim). Only authenticated Auth0 sessions can be admin;
+  // the post-checkout cookie session never is, so skip the call for it.
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isAuthenticated) {
+      // Resetting to the known guest state on sign-out; not a cascading render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAdmin({ loading: false, isAdmin: false });
+      return;
+    }
+    let cancelled = false;
+    void fetchAdminMe().then((r) => {
+      if (!cancelled) setAdmin({ loading: false, isAdmin: r.isAdmin });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, isLoading]);
+
   // Tie analytics/error identity to the auth lifecycle. Tier comes from the
   // Auth0 token claim when present; falls back to "has SC feeds" so a fresh
   // subscriber identifies correctly before the Action propagates the claim.
@@ -84,7 +114,15 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   }, [logout]);
 
   return (
-    <SubscriberAuthContext.Provider value={{ state, refresh, signOut }}>
+    <SubscriberAuthContext.Provider
+      value={{
+        state,
+        refresh,
+        signOut,
+        isAdmin: admin.isAdmin,
+        adminLoading: admin.loading,
+      }}
+    >
       {children}
     </SubscriberAuthContext.Provider>
   );

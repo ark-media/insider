@@ -11,6 +11,7 @@ import { AUTH0_DOMAIN } from '../auth0.js'
 import {
   AUTH0_AUDIENCE,
   AUTH0_EMAIL_CLAIM,
+  AUTH0_ROLES_CLAIM,
   AUTH0_TIER_CLAIM,
 } from '../../shared/auth0-claims.js'
 import {
@@ -41,6 +42,23 @@ export type Auth0Profile = {
   // as unknown (not as a safe default).
   tier?: 'subscriber' | 'free'
   emailVerified?: boolean
+  // Roles from the app_metadata.roles claim. Empty when the claim is absent —
+  // never assume admin from a missing claim.
+  roles: string[]
+}
+
+// Pulls the roles claim into a clean string[] regardless of how Auth0 encodes
+// it (array, or a lone string). Anything else → no roles. Pure, so it's
+// unit-tested directly.
+export function extractRoles(payload: Record<string, unknown>): string[] {
+  const raw = payload[AUTH0_ROLES_CLAIM]
+  if (Array.isArray(raw)) return raw.filter((r): r is string => typeof r === 'string')
+  if (typeof raw === 'string' && raw) return [raw]
+  return []
+}
+
+export function isAdminProfile(profile: Auth0Profile | null): boolean {
+  return profile !== null && profile.roles.includes('admin')
 }
 
 export async function verifyAuth0BearerProfile(
@@ -61,6 +79,7 @@ export async function verifyAuth0BearerProfile(
       tier: tier === 'subscriber' || tier === 'free' ? tier : undefined,
       emailVerified:
         verifiedClaim === true || verifiedClaim === false ? verifiedClaim : undefined,
+      roles: extractRoles(payload as Record<string, unknown>),
     }
   } catch {
     return null
@@ -117,4 +136,15 @@ export async function getSessionEmail(
   const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
   if (cookieToken) return verifyCheckoutToken(cookieToken, env)
   return null
+}
+
+// Admin gate for the back office. Only a verified Auth0 access token with the
+// "admin" role passes — the short-lived checkout cookie is deliberately not
+// accepted (it carries no roles, and admins always log in via Auth0). Returns
+// the profile so the caller can log who acted; null means "not an admin".
+export async function requireAdmin(req: IncomingMessage): Promise<Auth0Profile | null> {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) return null
+  const profile = await verifyAuth0BearerProfile(authHeader.slice(7))
+  return isAdminProfile(profile) ? profile : null
 }

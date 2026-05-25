@@ -17,6 +17,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import Stripe from 'stripe'
 import { createActivator } from './lib/activation.js'
 import type { Deps, Env, Handler, Route } from './lib/route.js'
+import { adminRoutes } from './routes/admin.js'
+import { announcementRoutes } from './routes/announcements.js'
 import { authRoutes } from './routes/auth.js'
 import { beehiivRoutes } from './routes/beehiiv.js'
 import { circleRoutes } from './routes/circle.js'
@@ -53,6 +55,8 @@ function buildApi(env: Env): Api {
     ...stripeRoutes(deps),
     ...giftRoutes(deps),
     ...authRoutes(deps),
+    ...announcementRoutes(deps),
+    ...adminRoutes(deps),
     ...cronRoutes(deps),
   ]
 

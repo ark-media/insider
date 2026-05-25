@@ -25,6 +25,7 @@ import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
 import { Route as PlusIndexRouteImport } from './routes/plus/index'
 import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
 import { Route as HostsIndexRouteImport } from './routes/hosts/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as ShowsShowRouteImport } from './routes/shows/$show'
 import { Route as PodcastsWhatsYourNumberRouteImport } from './routes/podcasts/whats-your-number'
@@ -35,6 +36,8 @@ import { Route as PlusRedeemRouteImport } from './routes/plus/redeem'
 import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
+import { Route as AdminPromosRouteImport } from './routes/admin/promos'
+import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
 import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
 import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
 import { Route as AccountBillingRouteImport } from './routes/account/billing'
@@ -124,6 +127,11 @@ const HostsIndexRoute = HostsIndexRouteImport.update({
   path: '/hosts/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AccountIndexRoute = AccountIndexRouteImport.update({
   id: '/account/',
   path: '/account/',
@@ -172,6 +180,16 @@ const PlusGiftRoute = PlusGiftRouteImport.update({
 const HostsSlugRoute = HostsSlugRouteImport.update({
   id: '/hosts/$slug',
   path: '/hosts/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminPromosRoute = AdminPromosRouteImport.update({
+  id: '/admin/promos',
+  path: '/admin/promos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
+  id: '/admin/announcements',
+  path: '/admin/announcements',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountPodcastFeedRoute = AccountPodcastFeedRouteImport.update({
@@ -231,6 +249,8 @@ export interface FileRoutesByFullPath {
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
+  '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
@@ -241,6 +261,7 @@ export interface FileRoutesByFullPath {
   '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
+  '/admin/': typeof AdminIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
   '/plus/': typeof PlusIndexRoute
@@ -267,6 +288,8 @@ export interface FileRoutesByTo {
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
+  '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
@@ -277,6 +300,7 @@ export interface FileRoutesByTo {
   '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account': typeof AccountIndexRoute
+  '/admin': typeof AdminIndexRoute
   '/hosts': typeof HostsIndexRoute
   '/newsletters': typeof NewslettersIndexRoute
   '/plus': typeof PlusIndexRoute
@@ -304,6 +328,8 @@ export interface FileRoutesById {
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
+  '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
@@ -314,6 +340,7 @@ export interface FileRoutesById {
   '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
+  '/admin/': typeof AdminIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
   '/plus/': typeof PlusIndexRoute
@@ -342,6 +369,8 @@ export interface FileRouteTypes {
     | '/account/billing'
     | '/account/newsletters'
     | '/account/podcast-feed'
+    | '/admin/announcements'
+    | '/admin/promos'
     | '/hosts/$slug'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
@@ -352,6 +381,7 @@ export interface FileRouteTypes {
     | '/podcasts/whats-your-number'
     | '/shows/$show'
     | '/account/'
+    | '/admin/'
     | '/hosts/'
     | '/newsletters/'
     | '/plus/'
@@ -378,6 +408,8 @@ export interface FileRouteTypes {
     | '/account/billing'
     | '/account/newsletters'
     | '/account/podcast-feed'
+    | '/admin/announcements'
+    | '/admin/promos'
     | '/hosts/$slug'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
@@ -388,6 +420,7 @@ export interface FileRouteTypes {
     | '/podcasts/whats-your-number'
     | '/shows/$show'
     | '/account'
+    | '/admin'
     | '/hosts'
     | '/newsletters'
     | '/plus'
@@ -414,6 +447,8 @@ export interface FileRouteTypes {
     | '/account/billing'
     | '/account/newsletters'
     | '/account/podcast-feed'
+    | '/admin/announcements'
+    | '/admin/promos'
     | '/hosts/$slug'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
@@ -424,6 +459,7 @@ export interface FileRouteTypes {
     | '/podcasts/whats-your-number'
     | '/shows/$show'
     | '/account/'
+    | '/admin/'
     | '/hosts/'
     | '/newsletters/'
     | '/plus/'
@@ -450,6 +486,8 @@ export interface RootRouteChildren {
   AccountBillingRoute: typeof AccountBillingRoute
   AccountNewslettersRoute: typeof AccountNewslettersRoute
   AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
+  AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
+  AdminPromosRoute: typeof AdminPromosRoute
   HostsSlugRoute: typeof HostsSlugRoute
   PlusGiftRoute: typeof PlusGiftRoute
   PlusInsideCallMeBackRoute: typeof PlusInsideCallMeBackRoute
@@ -460,6 +498,7 @@ export interface RootRouteChildren {
   PodcastsWhatsYourNumberRoute: typeof PodcastsWhatsYourNumberRoute
   ShowsShowRoute: typeof ShowsShowRouteWithChildren
   AccountIndexRoute: typeof AccountIndexRoute
+  AdminIndexRoute: typeof AdminIndexRoute
   HostsIndexRoute: typeof HostsIndexRoute
   NewslettersIndexRoute: typeof NewslettersIndexRoute
   PlusIndexRoute: typeof PlusIndexRoute
@@ -584,6 +623,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HostsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/account/': {
       id: '/account/'
       path: '/account'
@@ -652,6 +698,20 @@ declare module '@tanstack/react-router' {
       path: '/hosts/$slug'
       fullPath: '/hosts/$slug'
       preLoaderRoute: typeof HostsSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/promos': {
+      id: '/admin/promos'
+      path: '/admin/promos'
+      fullPath: '/admin/promos'
+      preLoaderRoute: typeof AdminPromosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/announcements': {
+      id: '/admin/announcements'
+      path: '/admin/announcements'
+      fullPath: '/admin/announcements'
+      preLoaderRoute: typeof AdminAnnouncementsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account/podcast-feed': {
@@ -750,6 +810,8 @@ const rootRouteChildren: RootRouteChildren = {
   AccountBillingRoute: AccountBillingRoute,
   AccountNewslettersRoute: AccountNewslettersRoute,
   AccountPodcastFeedRoute: AccountPodcastFeedRoute,
+  AdminAnnouncementsRoute: AdminAnnouncementsRoute,
+  AdminPromosRoute: AdminPromosRoute,
   HostsSlugRoute: HostsSlugRoute,
   PlusGiftRoute: PlusGiftRoute,
   PlusInsideCallMeBackRoute: PlusInsideCallMeBackRoute,
@@ -760,6 +822,7 @@ const rootRouteChildren: RootRouteChildren = {
   PodcastsWhatsYourNumberRoute: PodcastsWhatsYourNumberRoute,
   ShowsShowRoute: ShowsShowRouteWithChildren,
   AccountIndexRoute: AccountIndexRoute,
+  AdminIndexRoute: AdminIndexRoute,
   HostsIndexRoute: HostsIndexRoute,
   NewslettersIndexRoute: NewslettersIndexRoute,
   PlusIndexRoute: PlusIndexRoute,

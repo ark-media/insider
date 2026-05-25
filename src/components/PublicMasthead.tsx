@@ -76,6 +76,9 @@ const NAV_ITEMS: NavItem[] = [
   { variant: "pill", label: "Israel Votes", to: "/israel-votes" },
 ];
 
+// Appended to the nav only for admins (see useSubscriberAuth().isAdmin).
+const ADMIN_NAV_ITEM: NavItem = { variant: "text", label: "Admin", to: "/admin" };
+
 function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "children">) {
   if (item.matchPrefix && pathname.startsWith(item.matchPrefix)) return true;
   if (pathname === item.to) return true;
@@ -96,10 +99,12 @@ function visibleNavItems(isMember: boolean): NavItem[] {
 export function PublicMasthead() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { state, signOut } = useSubscriberAuth();
+  const { state, signOut, isAdmin } = useSubscriberAuth();
   const { loginWithRedirect } = useAuth0();
   const isMember = state.kind === "member";
-  const navItems = visibleNavItems(isMember);
+  const navItems = isAdmin
+    ? [...visibleNavItems(isMember), ADMIN_NAV_ITEM]
+    : visibleNavItems(isMember);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
@@ -125,7 +130,7 @@ export function PublicMasthead() {
   }, [accountOpen]);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-rule-soft bg-navy-900">
+    <header className="sticky top-[var(--ann-height,0px)] z-20 border-b border-rule-soft bg-navy-900">
       <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 pt-6 pb-4 sm:px-10 sm:pt-8">
         <Link
           to="/"
