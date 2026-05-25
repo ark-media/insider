@@ -59,7 +59,7 @@ function HostPage() {
                     <li key={s.slug}>
                       <Link
                         to={s.route}
-                        className="group block border border-rule bg-navy-800/40 p-5 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                        className="group flex h-full flex-col border border-rule bg-navy-800/40 p-5 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                       >
                         <h3 className="font-display text-[18px] leading-[1.2] text-fg-strong">
                           {s.title}
@@ -67,7 +67,7 @@ function HostPage() {
                         <p className="mt-2 text-[13px] leading-[1.5] text-fg-muted">
                           {s.tagline}
                         </p>
-                        <div className="mt-3 eyebrow text-fg-faint transition group-hover:text-cyan">
+                        <div className="mt-auto pt-3 eyebrow text-fg-faint transition group-hover:text-cyan">
                           Visit show →
                         </div>
                       </Link>
