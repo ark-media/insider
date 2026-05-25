@@ -10,6 +10,7 @@ import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { __resetCircleCachesForTests, circleRoutes } from './circle.js'
 import type { Deps } from '../lib/route.js'
+import { silenceExpectedConsole } from '../test-utils.js'
 
 const SPACE_POSTS_PATH = '/api/circle/space-posts'
 const BROADCASTS_PATH = '/api/circle/broadcasts'
@@ -91,6 +92,8 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestIni
   fetchCalls.push({ url })
   return fetchImpl(url, init)
 }) as typeof fetch
+
+silenceExpectedConsole()
 
 afterAll(() => {
   globalThis.fetch = originalFetch

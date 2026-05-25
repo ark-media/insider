@@ -10,6 +10,7 @@ import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { simplecastRoutes } from './simplecast.js'
 import type { Deps } from '../lib/route.js'
+import { silenceExpectedConsole } from '../test-utils.js'
 
 const PATH = '/api/simplecast/podcast'
 
@@ -91,6 +92,8 @@ globalThis.fetch = (async (
   fetchCalls.push({ url })
   return fetchImpl(url, init)
 }) as typeof fetch
+
+silenceExpectedConsole()
 
 afterAll(() => {
   globalThis.fetch = originalFetch

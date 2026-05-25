@@ -1,33 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
-  Elements,
+  CheckoutElementsProvider,
+  CurrencySelectorElement,
   PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+  useCheckout,
+} from "@stripe/react-stripe-js/checkout";
+import { useNavigate } from "@tanstack/react-router";
 import { Modal } from "./Modal";
-import { SuccessMark } from "./SuccessMark";
 import { useTheme } from "../lib/theme";
 import {
   createGiftCheckout,
   fetchGiftStatus,
   GIFT_LABEL,
-  GIFT_PRICE_DOLLARS,
   type GiftInput,
 } from "../lib/gift";
 
 type Step =
+  // The Checkout Session is created the moment the modal opens so the giver's
+  // localized price (Adaptive Pricing) shows on the first screen.
   | { kind: "creating" }
-  | {
-      kind: "payment";
-      clientSecret: string;
-      paymentIntentId: string;
-      amountCents: number;
-    }
-  | { kind: "activating"; paymentIntentId: string }
+  | { kind: "ready"; clientSecret: string; checkoutSessionId: string }
+  | { kind: "activating" }
   | { kind: "processing" }
-  | { kind: "done" }
   | { kind: "error"; message: string };
 
 const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as
@@ -41,10 +36,16 @@ function getStripe() {
   return stripePromise;
 }
 
+const titleClass =
+  "display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong";
+
+const closeButtonClass =
+  "mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+
 const MAX_POLL_ATTEMPTS = 15;
 
 async function pollUntilActivated(
-  paymentIntentId: string,
+  checkoutSessionId: string,
   giverEmail: string,
   timeoutMs = 15000,
 ): Promise<"activated" | "processing" | "timeout"> {
@@ -52,7 +53,7 @@ async function pollUntilActivated(
   let attempts = 0;
   while (attempts < MAX_POLL_ATTEMPTS) {
     attempts++;
-    const data = await fetchGiftStatus(paymentIntentId, giverEmail);
+    const data = await fetchGiftStatus(checkoutSessionId, giverEmail);
     if (data) {
       if (data.activated) return "activated";
       if (data.status === "processing") return "processing";
@@ -75,6 +76,7 @@ export function GiftCheckoutModal({
   const [step, setStep] = useState<Step>({ kind: "creating" });
   const startedFor = useRef<string | null>(null);
   const { theme } = useTheme();
+  const navigate = useNavigate();
 
   const handleClose = useCallback(() => {
     startedFor.current = null;
@@ -82,7 +84,7 @@ export function GiftCheckoutModal({
     onClose();
   }, [onClose]);
 
-  // Kick off the PaymentIntent creation once per open. Keyed on the input
+  // Kick off the Checkout Session creation once per open. Keyed on the input
   // identity so re-opening with a different gift restarts cleanly.
   const inputKey = input
     ? `${input.giverEmail}|${input.recipientEmail}|${input.term}`
@@ -93,7 +95,7 @@ export function GiftCheckoutModal({
     startedFor.current = inputKey;
     // Intentional: re-opening with a different gift must reset the prior
     // success/error state back to "creating" before we kick off the new
-    // PaymentIntent. Setting this in a callback would flash the stale state.
+    // Session. Setting this in a callback would flash the stale state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStep({ kind: "creating" });
     let cancelled = false;
@@ -114,10 +116,9 @@ export function GiftCheckoutModal({
         return;
       }
       setStep({
-        kind: "payment",
+        kind: "ready",
         clientSecret: result.data.client_secret,
-        paymentIntentId: result.data.payment_intent_id,
-        amountCents: result.data.amount_cents,
+        checkoutSessionId: result.data.checkout_session_id,
       });
     })();
     return () => {
@@ -126,9 +127,6 @@ export function GiftCheckoutModal({
   }, [open, input, inputKey]);
 
   const stripePromiseValue = getStripe();
-
-  const headerPrice = input ? GIFT_PRICE_DOLLARS[input.term] : 0;
-  const headerLabel = input ? GIFT_LABEL[input.term] : "";
 
   return (
     <Modal
@@ -139,15 +137,7 @@ export function GiftCheckoutModal({
       describedBy="gift-desc"
     >
       <p id="gift-desc" className="eyebrow">Gift · Inside Call Me Back</p>
-      <h2
-        id="gift-title"
-        className="display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong"
-      >
-        ${headerPrice}{" "}
-        <span className="text-[14px] font-sans font-normal text-fg-muted">
-          · {headerLabel}
-        </span>
-      </h2>
+
       {input ? (
         <p className="mt-3 text-[13px] text-fg-muted break-words">
           For{" "}
@@ -167,188 +157,205 @@ export function GiftCheckoutModal({
       ) : null}
 
       {step.kind === "creating" ? (
-        <p className="mt-6 text-sm text-fg" role="status" aria-live="polite">
-          Preparing checkout…
-        </p>
+        <>
+          <h2 id="gift-title" className={titleClass}>
+            Gift membership
+          </h2>
+          <LoadingRow label="Preparing checkout…" />
+        </>
       ) : null}
 
-      {step.kind === "payment" && stripePromiseValue && input ? (
-        <Elements
+      {step.kind === "ready" && stripePromiseValue && input ? (
+        <CheckoutElementsProvider
           stripe={stripePromiseValue}
           options={{
             clientSecret: step.clientSecret,
-            appearance: {
-              theme: theme === "light" ? "stripe" : "night",
-              labels: "floating",
+            elementsOptions: {
+              appearance: {
+                theme: theme === "light" ? "stripe" : "night",
+                labels: "floating",
+              },
             },
+            // Mark this integration as ready for Adaptive Pricing; Stripe then
+            // localizes the currency and powers the Currency Selector Element.
+            adaptivePricing: { allowed: true },
           }}
         >
-          <PaymentStep
-            giverEmail={input.giverEmail}
-            paymentIntentId={step.paymentIntentId}
+          <GiftPaymentForm
+            input={input}
+            checkoutSessionId={step.checkoutSessionId}
             onError={(message) => setStep({ kind: "error", message })}
-            onActivating={() =>
-              setStep({ kind: "activating", paymentIntentId: step.paymentIntentId })
-            }
+            onActivating={() => setStep({ kind: "activating" })}
             onProcessing={() => setStep({ kind: "processing" })}
-            onDone={() => setStep({ kind: "done" })}
+            onDone={() => {
+              handleClose();
+              void navigate({ to: "/", search: { gift: "complete" } });
+            }}
           />
-        </Elements>
+        </CheckoutElementsProvider>
       ) : null}
 
       {step.kind === "activating" ? (
-        <p className="mt-6 text-sm text-fg" role="status" aria-live="polite">
-          Payment received — setting up the gift…
-        </p>
+        <>
+          <h2 id="gift-title" className={titleClass}>
+            Almost there
+          </h2>
+          <LoadingRow label="Payment received — setting up the gift…" />
+        </>
       ) : null}
 
       {step.kind === "processing" && input ? (
-        <div className="mt-6 space-y-3 text-sm text-fg">
-          <p>
-            Your payment is being processed. We'll email{" "}
-            <span
-              className="font-semibold text-fg-strong break-all"
-              title={input.recipientEmail}
-            >
-              {input.recipientEmail}
-            </span>{" "}
-            as soon as it clears.
-          </p>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Close
-          </button>
-        </div>
-      ) : null}
-
-      {step.kind === "done" && input ? (
-        <SuccessMark title="Gift sent.">
-          <p>
-            We just emailed{" "}
-            <span
-              className="font-semibold text-fg-strong break-all"
-              title={input.recipientEmail}
-            >
-              {input.recipientEmail}
-            </span>{" "}
-            a welcome link to set up their feed.
-          </p>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="mt-6 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-[12px] font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Close
-          </button>
-        </SuccessMark>
+        <>
+          <h2 id="gift-title" className={titleClass}>
+            Almost there
+          </h2>
+          <div className="mt-6 space-y-3 text-sm text-fg">
+            <p>
+              Your payment is being processed. We'll email{" "}
+              <span
+                className="font-semibold text-fg-strong break-all"
+                title={input.recipientEmail}
+              >
+                {input.recipientEmail}
+              </span>{" "}
+              as soon as it clears.
+            </p>
+            <button type="button" onClick={handleClose} className={closeButtonClass}>
+              Close
+            </button>
+          </div>
+        </>
       ) : null}
 
       {step.kind === "error" ? (
-        <div className="mt-6 space-y-3 text-sm">
-          <p role="alert" className="text-danger">{step.message}</p>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Close
-          </button>
-        </div>
+        <>
+          <h2 id="gift-title" className={titleClass}>
+            Something went wrong
+          </h2>
+          <div className="mt-6 space-y-3 text-sm">
+            <p role="alert" className="text-danger">{step.message}</p>
+            <button type="button" onClick={handleClose} className={closeButtonClass}>
+              Close
+            </button>
+          </div>
+        </>
       ) : null}
     </Modal>
   );
 }
 
-function PaymentStep({
-  giverEmail,
-  paymentIntentId,
+function LoadingRow({ label }: { label: string }) {
+  return (
+    <div
+      className="mt-6 flex items-center gap-3 text-sm text-fg"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+// Lives inside CheckoutElementsProvider, so useCheckout() gives us the giver's
+// localized total (Adaptive Pricing) from the first screen. The giver's email
+// is already known (set as the Session customer server-side), so there's no
+// email step — currency + payment, then confirm.
+function GiftPaymentForm({
+  input,
+  checkoutSessionId,
   onError,
   onActivating,
   onProcessing,
   onDone,
 }: {
-  giverEmail: string;
-  paymentIntentId: string;
+  input: GiftInput;
+  checkoutSessionId: string;
   onError: (message: string) => void;
   onActivating: () => void;
   onProcessing: () => void;
   onDone: () => void;
 }) {
-  const stripe = useStripe();
-  const elements = useElements();
+  const checkoutState = useCheckout();
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
 
+  if (checkoutState.type === "loading") {
+    return <LoadingRow label="Loading secure checkout…" />;
+  }
+  if (checkoutState.type === "error") {
+    return (
+      <>
+        <h2 id="gift-title" className={titleClass}>
+          Gift membership
+        </h2>
+        <p role="alert" className="mt-6 text-sm text-danger">
+          {checkoutState.error.message}
+        </p>
+      </>
+    );
+  }
+
+  const { checkout } = checkoutState;
+  // Stripe-formatted, localized string in the giver's selected currency.
+  const total = checkout.total.total.amount;
+  const label = GIFT_LABEL[input.term];
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stripe || !elements || submittedRef.current) return;
+    if (submittedRef.current) return;
     submittedRef.current = true;
     setSubmitting(true);
 
-    const result = await stripe.confirmPayment({
-      elements,
-      redirect: "if_required",
-      confirmParams: {
-        return_url: `${window.location.origin}/?gift=complete`,
-        receipt_email: giverEmail,
-      },
-    });
+    // redirect: 'if_required' keeps card payments in the modal; methods that
+    // need an off-site step (e.g. 3DS) use the session's return_url.
+    const result = await checkout.confirm({ redirect: "if_required" });
 
-    if (result.error) {
+    if (result.type === "error") {
+      // A decline is retryable — stay on the payment form.
       submittedRef.current = false;
       setSubmitting(false);
-      onError(result.error.message ?? "Payment failed.");
+      onError(result.error.message ?? "Payment failed. Please try again.");
       return;
     }
 
-    const pi = result.paymentIntent;
-    if (!pi) {
-      submittedRef.current = false;
-      setSubmitting(false);
-      onError("Unexpected payment state.");
-      return;
-    }
-
-    if (pi.status === "processing") {
+    // Payment confirmed. The webhook provisions the gift a moment later, so
+    // poll for it. Anything short of "activated"/"processing" still resolves
+    // to done — the webhook finishes the job and emails the recipient.
+    onActivating();
+    const activation = await pollUntilActivated(checkoutSessionId, input.giverEmail);
+    if (activation === "processing") {
       onProcessing();
-      return;
+    } else {
+      onDone();
     }
-
-    if (pi.status === "succeeded") {
-      onActivating();
-      const activation = await pollUntilActivated(paymentIntentId, giverEmail);
-      if (activation === "activated") {
-        onDone();
-      } else if (activation === "processing") {
-        onProcessing();
-      } else {
-        // Stripe confirmed payment; activation is still pending. The webhook
-        // will finish the job in the background — show the done state so the
-        // giver isn't blocked.
-        onDone();
-      }
-      return;
-    }
-
-    submittedRef.current = false;
-    setSubmitting(false);
-    onError(`Unexpected payment status: ${pi.status}`);
   };
 
   return (
-    <form onSubmit={onSubmit} className="mt-6 space-y-4">
-      <PaymentElement />
-      <button
-        type="submit"
-        disabled={!stripe || submitting}
-        aria-busy={submitting}
-        className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-      >
-        {submitting ? "Processing…" : "Pay & send gift"}
-      </button>
-    </form>
+    <>
+      <h2 id="gift-title" className={titleClass}>
+        {total}{" "}
+        <span className="text-[14px] font-sans font-normal text-fg-muted">
+          · {label}
+        </span>
+      </h2>
+      <form onSubmit={onSubmit} className="mt-6 space-y-4">
+        <div>
+          <span className="eyebrow text-fg-muted">Pay in</span>
+          <div className="mt-2">
+            <CurrencySelectorElement />
+          </div>
+        </div>
+        <PaymentElement />
+        <button
+          type="submit"
+          disabled={submitting}
+          aria-busy={submitting}
+          className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+        >
+          {submitting ? "Processing…" : `Pay ${total} & send gift`}
+        </button>
+      </form>
+    </>
   );
 }

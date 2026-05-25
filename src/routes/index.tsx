@@ -1,9 +1,15 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { shows } from "../data/shows";
 import { LinkCard, NumberedRow } from "../components/ContentCard";
 import { ShowCover } from "../components/ShowCover";
+import { Toast } from "../components/Toast";
 
 export const Route = createFileRoute("/")({
+  // `?gift=complete` lands here after a gift checkout (both the inline flow and
+  // Stripe's redirect-based return_url) so we can confirm it with a toast.
+  validateSearch: (search: Record<string, unknown>) => ({
+    gift: search.gift === "complete" ? ("complete" as const) : undefined,
+  }),
   component: HomePage,
 });
 
@@ -32,6 +38,8 @@ const sections = [
 ];
 
 function HomePage() {
+  const { gift } = Route.useSearch();
+  const navigate = useNavigate();
   return (
     <main className="relative">
       <section className="relative">
@@ -151,6 +159,15 @@ function HomePage() {
           </div>
         </div>
       </section>
+
+      {gift === "complete" ? (
+        <Toast
+          message="Gift sent — we emailed your recipient their redemption link to set up their feed."
+          onDismiss={() =>
+            void navigate({ to: "/", search: {}, replace: true })
+          }
+        />
+      ) : null}
     </main>
   );
 }

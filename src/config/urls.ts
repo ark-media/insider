@@ -19,21 +19,18 @@ import type { ListenLink, ShowSlug } from "../data/shows";
  */
 
 /** The apex domain, for building addresses without retyping it. */
-export const ARK_DOMAIN = "arkmedia.org";
+export const ARK_DOMAIN = "ark-media.xyz";
 
 // ---------------------------------------------------------------------------
 // Social profiles
-//
-// PLACEHOLDER: every one of these is a "#" stub today. Drop in the real
-// Ark Media profile URLs and the footer links light up automatically.
 // ---------------------------------------------------------------------------
 export const socialUrls = {
-  instagram: "#",
-  x: "#",
-  linkedin: "#",
-  youtube: "#",
-  spotify: "#",
-  applePodcasts: "#",
+  instagram: "https://www.instagram.com/arkmediaorg/",
+  x: "https://x.com/dansenor",
+  linkedin: "https://www.linkedin.com/company/ark-media1/",
+  youtube: "https://www.youtube.com/@CallMeBackPodcast",
+  spotify: "https://open.spotify.com/show/3btft3E1KPwj0yCOcOvqhR",
+  applePodcasts: "https://podcasts.apple.com/us/podcast/call-me-back-with-dan-senor/id1539292794",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -57,7 +54,7 @@ export const contactEmails = {
 // ---------------------------------------------------------------------------
 export const circleUrls = {
   /** Web home of the Ark+ community (Circle). */
-  community: "https://community.arkmedia.org",
+  community: "https://app.arkmedia.org",
   /** Universal app-open / SSO landing for the web app. */
   webApp: "https://app.arkmedia.org",
   /** Circle Communities app in the App Store. */
@@ -80,17 +77,11 @@ export const newsletterCircleSpaces: Record<NewsletterSlug, string> = {
 
 // ---------------------------------------------------------------------------
 // Podcast platform links (per show)
-//
-// PLACEHOLDER: whats-your-number and ark-news-daily point at generic store
-// home pages — swap in the real show URLs once those shows are live.
-// Paid shows (inside-call-me-back) have no public platform links.
 // ---------------------------------------------------------------------------
 export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
   "call-me-back": [
-    { platform: "apple", url: "https://podcasts.apple.com/us/podcast/call-me-back-with-dan-senor/id1471232474" },
-    { platform: "spotify", url: "https://open.spotify.com/show/0VXHB5Wjd1RNwCWtRkM1HC" },
-    { platform: "overcast", url: "https://overcast.fm/itunes1471232474" },
-    { platform: "pocket-casts", url: "https://pca.st/podcast/9d6a14e0-bbcb-0137-8eea-0acc26574db2" },
+    { platform: "apple", url: "https://podcasts.apple.com/us/podcast/call-me-back-with-dan-senor/id1539292794" },
+    { platform: "spotify", url: "https://open.spotify.com/show/3btft3E1KPwj0yCOcOvqhR" },
     { platform: "youtube", url: "https://www.youtube.com/@CallMeBackPodcast" },
   ],
   "inside-call-me-back": [],
@@ -100,11 +91,12 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "youtube", url: "https://www.youtube.com/@the.fhs.podcast" },
   ],
   "whats-your-number": [
-    { platform: "apple", url: "https://podcasts.apple.com/" },
-    { platform: "spotify", url: "https://open.spotify.com/" },
+    { platform: "apple", url: "https://podcasts.apple.com/us/podcast/whats-your-number/id1810695711" },
+    { platform: "spotify", url: "https://open.spotify.com/show/575KzqLWPUyFLjmMPzqWXn" },
+    { platform: "youtube", url: "https://www.youtube.com/@wyn.podcast" },
   ],
   "ark-news-daily": [
-    { platform: "apple", url: "https://podcasts.apple.com/" },
-    { platform: "spotify", url: "https://open.spotify.com/" },
+    { platform: "apple", url: "https://podcasts.apple.com/us/podcast/ark-news-daily/id1885015768" },
+    { platform: "spotify", url: "https://open.spotify.com/show/1O5ohSo8vLhudPTdSpXSwZ" },
   ],
 };

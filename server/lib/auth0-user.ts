@@ -1,7 +1,8 @@
 // Auth0 user creation after a successful payment. The token + tenant base
-// helpers live in ../auth0.ts; this module only does the find-or-create
-// dance and triggers the password-reset email new members use to set their
-// first password.
+// helpers live in ../auth0.ts; this module does the find-or-create dance and
+// gets a first-login path to the new member — either Auth0's own
+// password-reset email (default) or, for the gift flow, a password-change
+// ticket URL the caller embeds in its own welcome email.
 
 import crypto from 'node:crypto'
 import { AUTH0_DOMAIN, auth0MgmtBase, getAuth0ManagementToken } from '../auth0.js'
@@ -25,7 +26,13 @@ export async function findOrCreateAuth0User(
   email: string,
   nameHint: string | undefined,
   env: Env,
+  // The gift path passes { emailPasswordReset: false } because it sends its
+  // own branded welcome email carrying a password-change ticket instead — see
+  // createAuth0PasswordChangeTicket below. The subscription path leaves this
+  // default so its change_password email keeps going out.
+  opts: { emailPasswordReset?: boolean } = {},
 ): Promise<Auth0UserResult | null> {
+  const emailPasswordReset = opts.emailPasswordReset ?? true
   const token = await getAuth0ManagementToken(env)
   if (!token) return null
 
@@ -69,6 +76,13 @@ export async function findOrCreateAuth0User(
   }
   const created = (await createRes.json()) as { user_id: string }
 
+  // Caller opted out of the Auth0 email (it will deliver the password-change
+  // link itself). The account exists with only a temp password; the caller is
+  // responsible for getting a set-password link to the user.
+  if (!emailPasswordReset) {
+    return { userId: created.user_id, created: true, passwordResetSent: false }
+  }
+
   // The user record exists but has only the random temp password. Without
   // the change_password email going through, they have no way to sign in —
   // surface this so the caller can flag for manual support resend.
@@ -97,4 +111,44 @@ export async function findOrCreateAuth0User(
   }
 
   return { userId: created.user_id, created: true, passwordResetSent }
+}
+
+// Mints a password-change ticket (a self-contained URL) via the Management API
+// instead of triggering Auth0's own email. Used by the gift flow so the
+// set-password link can ride inside our single branded welcome email. The M2M
+// app must hold the `create:user_tickets` scope. `resultUrl` is where Auth0
+// redirects after the password is set. Returns the ticket URL, or null on any
+// failure (caller soft-fails — the gift is already granted).
+export async function createAuth0PasswordChangeTicket(
+  userId: string,
+  resultUrl: string,
+  env: Env,
+): Promise<string | null> {
+  const token = await getAuth0ManagementToken(env)
+  if (!token) return null
+
+  try {
+    const res = await fetch(`${auth0MgmtBase(env)}/tickets/password-change`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        result_url: resultUrl,
+        mark_email_as_verified: true,
+      }),
+    })
+    if (!res.ok) {
+      console.error(
+        '[auth0] password-change ticket failed:',
+        res.status,
+        await res.text(),
+      )
+      return null
+    }
+    const data = (await res.json()) as { ticket?: string }
+    return data.ticket ?? null
+  } catch (err) {
+    console.error('[auth0] password-change ticket threw:', err)
+    return null
+  }
 }

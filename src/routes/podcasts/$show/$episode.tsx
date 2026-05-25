@@ -219,11 +219,10 @@ function EpisodeBreadcrumbs({
 const SHOW_NOTES_CLASS = [
   "mt-6 max-w-2xl text-[15px] leading-[1.75] text-fg",
   "[&_p]:mt-4 [&_p:first-child]:mt-0",
-  // Lists drop the default disc/decimal marker for a brand-cyan tick (see
-  // BULLET_MARKER in show-notes-renderer) so link lists read as editorial.
-  "[&_ul]:mt-5 [&_ul]:list-none [&_ul]:space-y-2.5 [&_ul]:pl-0",
-  "[&_ul>li]:relative [&_ul>li]:pl-5",
-  "[&_ul>li]:before:absolute [&_ul>li]:before:left-0 [&_ul>li]:before:top-[0.62em] [&_ul>li]:before:h-[2px] [&_ul>li]:before:w-[10px] [&_ul>li]:before:rounded-full [&_ul>li]:before:bg-cyan/70 [&_ul>li]:before:content-['']",
+  // Bulleted lists (e.g. Call Me Back's "More Ark Media" link directory) drop
+  // their markers entirely and read as a clean line-per-item stack, rather than
+  // a bulleted list. Ordered lists (e.g. "Chapters") keep their numbers.
+  "[&_ul]:mt-5 [&_ul]:list-none [&_ul]:space-y-1.5 [&_ul]:pl-0",
   "[&_ol]:mt-5 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol>li]:mt-1.5",
   "[&_h2]:mt-9 [&_h2]:font-display [&_h2]:text-[19px] [&_h2]:text-fg-strong",
   "[&_h3]:mt-7 [&_h3]:font-display [&_h3]:text-[16px] [&_h3]:text-fg-strong",

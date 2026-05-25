@@ -16,7 +16,15 @@
 
 import type Stripe from 'stripe'
 import { syncEntitlement } from '../entitlement.js'
-import { findOrCreateAuth0User } from './auth0-user.js'
+import {
+  createAuth0PasswordChangeTicket,
+  findOrCreateAuth0User,
+} from './auth0-user.js'
+import { sendEmail } from './email.js'
+import {
+  renderGiftWelcomeEmail,
+  renderSubscriberWelcomeEmail,
+} from './welcome-email.js'
 import {
   createScClient,
   findOrCreateScUser,
@@ -123,19 +131,39 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       { idempotencyKey: `stripe_sub_${subId}` },
     )
 
+    // Create the Auth0 login but suppress Auth0's own reset email — our single
+    // welcome email below carries the set-password link instead.
     let auth0Result: Awaited<ReturnType<typeof findOrCreateAuth0User>> = null
     try {
-      auth0Result = await findOrCreateAuth0User(email, activeCustomer.name ?? undefined, env)
+      auth0Result = await findOrCreateAuth0User(
+        email,
+        activeCustomer.name ?? undefined,
+        env,
+        { emailPasswordReset: false },
+      )
     } catch (err) {
       console.error('[auth0] findOrCreateAuth0User failed:', err)
     }
-    if (auth0Result?.created && !auth0Result.passwordResetSent) {
-      console.error(
-        '[auth0] new user created but password-reset email did not send:',
-        email,
-      )
-    }
     const auth0UserId = auth0Result?.userId ?? null
+
+    // New accounts get a password-change ticket embedded in the email; existing
+    // accounts already have a login, so the email points them at sign-in.
+    const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
+    let passwordSetupUrl: string | undefined
+    if (auth0Result?.created && auth0UserId) {
+      passwordSetupUrl =
+        (await createAuth0PasswordChangeTicket(
+          auth0UserId,
+          `${baseUrl}/welcome`,
+          env,
+        )) ?? undefined
+      if (!passwordSetupUrl) {
+        console.error(
+          '[auth0] new subscriber created but password-change ticket failed:',
+          email,
+        )
+      }
+    }
 
     await stripe.subscriptions.update(fresh.id, {
       metadata: {
@@ -145,6 +173,19 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         ...(auth0UserId ? { auth0_user_id: auth0UserId } : {}),
       },
     })
+
+    // One branded welcome email — replaces both the SC welcome email (feed
+    // setup lives on /welcome) and Auth0's reset email (link embedded above).
+    // Soft-fail: the subscription is already provisioned.
+    const { subject, html } = renderSubscriberWelcomeEmail({
+      name: activeCustomer.name ?? undefined,
+      welcomeUrl: `${baseUrl}/welcome`,
+      passwordSetupUrl,
+    })
+    const sent = await sendEmail(env, { to: email, subject, html })
+    if (!sent) {
+      console.error('[email] subscriber welcome email did not send:', email)
+    }
   }
 
   const activateScSubscriptionForStripeSub = async (
@@ -234,19 +275,36 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       { idempotencyKey: `stripe_pi_${pi.id}` },
     )
 
+    // Create the Auth0 login but suppress Auth0's own reset email — our single
+    // welcome email below carries the set-password link instead.
     let auth0Result: Awaited<ReturnType<typeof findOrCreateAuth0User>> = null
     try {
-      auth0Result = await findOrCreateAuth0User(recipientEmail, recipientName, env)
+      auth0Result = await findOrCreateAuth0User(recipientEmail, recipientName, env, {
+        emailPasswordReset: false,
+      })
     } catch (err) {
       console.error('[auth0] findOrCreateAuth0User (gift) failed:', err)
     }
-    if (auth0Result?.created && !auth0Result.passwordResetSent) {
-      console.error(
-        '[auth0] gift recipient created but password-reset email did not send:',
-        recipientEmail,
-      )
-    }
     const auth0UserId = auth0Result?.userId ?? null
+
+    // New accounts get a password-change ticket embedded in the email; existing
+    // accounts already have a login, so the email points them at sign-in.
+    const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
+    let passwordSetupUrl: string | undefined
+    if (auth0Result?.created && auth0UserId) {
+      passwordSetupUrl =
+        (await createAuth0PasswordChangeTicket(
+          auth0UserId,
+          `${baseUrl}/welcome`,
+          env,
+        )) ?? undefined
+      if (!passwordSetupUrl) {
+        console.error(
+          '[auth0] gift recipient created but password-change ticket failed:',
+          recipientEmail,
+        )
+      }
+    }
 
     await stripe.paymentIntents.update(pi.id, {
       metadata: {
@@ -257,11 +315,20 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       },
     })
 
-    // Welcome email to the recipient. Soft-fail: the gift is already granted.
-    try {
-      await sc.call('POST', `/users/${recipient.id}/send_welcome_email`, {})
-    } catch (err) {
-      console.error('[dev-api] gift send_welcome_email failed:', err)
+    // One branded welcome email — replaces both the SC welcome email (feed
+    // setup now lives on /welcome) and Auth0's reset email (link embedded
+    // above). Soft-fail: the gift is already granted.
+    const { subject, html } = renderGiftWelcomeEmail({
+      recipientName,
+      giverName,
+      term,
+      message,
+      welcomeUrl: `${baseUrl}/welcome`,
+      passwordSetupUrl,
+    })
+    const sent = await sendEmail(env, { to: recipientEmail, subject, html })
+    if (!sent) {
+      console.error('[email] gift welcome email did not send:', recipientEmail)
     }
 
     // Grant subscriber entitlement for the duration of the gift.

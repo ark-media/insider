@@ -10,6 +10,14 @@ import {
 } from "../../lib/admin";
 import { sanitizeInlinePreview } from "../../lib/announcements";
 import type { Announcement } from "../../lib/announcements";
+import {
+  COMMON_TIME_ZONES,
+  DEFAULT_TIME_ZONE,
+  browserTimeZone,
+  describeInstant,
+  utcToZonedWallClock,
+  zonedWallClockToUtc,
+} from "../../lib/datetime";
 
 export const Route = createFileRoute("/admin/announcements")({
   component: AnnouncementsAdmin,
@@ -18,15 +26,13 @@ export const Route = createFileRoute("/admin/announcements")({
 const DEFAULT_BAR = "#4a9fe8";
 const DEFAULT_TEXT = "#0a2540";
 
-// --- date helpers: ISO (UTC) <-> <input type="datetime-local"> (local) -----
-const pad = (n: number) => String(n).padStart(2, "0");
-function toLocalInput(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-}
-const isoToLocalInput = (iso: string) => toLocalInput(new Date(iso));
-const localInputToIso = (v: string) => new Date(v).toISOString();
+// Zones offered in the dropdown: the curated list, plus the admin's own browser
+// zone if it isn't already there (so a traveling/remote admin can pick it).
+const TIME_ZONE_OPTIONS = (() => {
+  const tz = browserTimeZone();
+  if (COMMON_TIME_ZONES.some((z) => z.value === tz)) return COMMON_TIME_ZONES;
+  return [{ value: tz, label: `${tz} (your timezone)` }, ...COMMON_TIME_ZONES];
+})();
 
 type FormState = {
   body: string;
@@ -35,8 +41,9 @@ type FormState = {
   textColor: string;
   dismissible: boolean;
   enabled: boolean;
-  startsAt: string; // datetime-local
-  endsAt: string; // datetime-local
+  timeZone: string; // IANA zone the wall-clock fields below are entered in
+  startsAt: string; // datetime-local (wall clock in timeZone)
+  endsAt: string; // datetime-local (wall clock in timeZone)
 };
 
 function emptyForm(): FormState {
@@ -49,12 +56,15 @@ function emptyForm(): FormState {
     textColor: DEFAULT_TEXT,
     dismissible: true,
     enabled: true,
-    startsAt: toLocalInput(now),
-    endsAt: toLocalInput(end),
+    timeZone: DEFAULT_TIME_ZONE,
+    startsAt: utcToZonedWallClock(now.toISOString(), DEFAULT_TIME_ZONE),
+    endsAt: utcToZonedWallClock(end.toISOString(), DEFAULT_TIME_ZONE),
   };
 }
 
 function formFrom(a: Announcement): FormState {
+  // The stored window is an absolute instant; we render it in the default zone
+  // (the original entry zone isn't persisted — only the instant is).
   return {
     body: a.body,
     actionUrl: a.actionUrl ?? "",
@@ -62,8 +72,9 @@ function formFrom(a: Announcement): FormState {
     textColor: a.textColor,
     dismissible: a.dismissible,
     enabled: a.enabled,
-    startsAt: isoToLocalInput(a.startsAt),
-    endsAt: isoToLocalInput(a.endsAt),
+    timeZone: DEFAULT_TIME_ZONE,
+    startsAt: utcToZonedWallClock(a.startsAt, DEFAULT_TIME_ZONE),
+    endsAt: utcToZonedWallClock(a.endsAt, DEFAULT_TIME_ZONE),
   };
 }
 
@@ -130,8 +141,8 @@ function AnnouncementsAdmin() {
       textColor: form.textColor,
       dismissible: form.dismissible,
       enabled: form.enabled,
-      startsAt: localInputToIso(form.startsAt),
-      endsAt: localInputToIso(form.endsAt),
+      startsAt: zonedWallClockToUtc(form.startsAt, form.timeZone),
+      endsAt: zonedWallClockToUtc(form.endsAt, form.timeZone),
     };
     try {
       await saveAnnouncement(draft, editingId ?? undefined);
@@ -250,6 +261,36 @@ function AnnouncementsAdmin() {
         </section>
       </div>
     </AdminShell>
+  );
+}
+
+// Confirms the absolute window the entered wall-clock times resolve to, shown
+// in the admin's own browser timezone so they can sanity-check across zones.
+// Only renders the cross-check when the chosen zone differs from the browser's.
+function ScheduleHint({
+  startsAt,
+  endsAt,
+  timeZone,
+}: {
+  startsAt: string;
+  endsAt: string;
+  timeZone: string;
+}) {
+  const localZone = browserTimeZone();
+  if (timeZone === localZone) return null;
+  let startIso: string;
+  let endIso: string;
+  try {
+    startIso = zonedWallClockToUtc(startsAt, timeZone);
+    endIso = zonedWallClockToUtc(endsAt, timeZone);
+  } catch {
+    return null;
+  }
+  return (
+    <p className="text-[11px] text-fg-muted">
+      In your timezone ({localZone}): {describeInstant(startIso, localZone)} →{" "}
+      {describeInstant(endIso, localZone)}
+    </p>
   );
 }
 
@@ -395,6 +436,27 @@ function AnnouncementForm({
           </div>
         </div>
 
+        <div>
+          <label htmlFor="ann-tz" className={label}>
+            Timezone
+          </label>
+          <select
+            id="ann-tz"
+            value={form.timeZone}
+            onChange={(e) => setForm((f) => ({ ...f, timeZone: e.target.value }))}
+            className={`mt-2 ${field}`}
+          >
+            {TIME_ZONE_OPTIONS.map((z) => (
+              <option key={z.value} value={z.value}>
+                {z.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-fg-muted">
+            The start and end times below are read in this timezone.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="ann-start" className={label}>
@@ -423,6 +485,12 @@ function AnnouncementForm({
             />
           </div>
         </div>
+
+        <ScheduleHint
+          startsAt={form.startsAt}
+          endsAt={form.endsAt}
+          timeZone={form.timeZone}
+        />
 
         <div className="flex flex-wrap gap-6">
           <label className="flex items-center gap-2 text-[14px] text-fg">

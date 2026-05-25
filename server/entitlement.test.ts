@@ -8,6 +8,7 @@
 
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
 import type Stripe from 'stripe'
+import { silenceExpectedConsole } from './test-utils'
 import {
   emailForStripeCustomer,
   reconcileEntitlements,
@@ -42,6 +43,8 @@ function jsonRes(status: number, body: unknown): Response {
     headers: { 'content-type': 'application/json' },
   })
 }
+
+silenceExpectedConsole()
 
 beforeEach(() => {
   calls = []

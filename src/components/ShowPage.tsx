@@ -56,7 +56,6 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
 function PublicShowPage({ show }: { show: Show }) {
   const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
-  const description = useShowDescription(show);
 
   useEffect(() => {
     let live = true;
@@ -69,8 +68,6 @@ function PublicShowPage({ show }: { show: Show }) {
   return (
     <main className="relative">
       <ShowHero show={show} />
-
-      <ShowAbout show={show} description={description} />
 
       {showHasPaidExtension(show.slug) ? <ShowUpsell show={show} /> : null}
 
@@ -212,45 +209,6 @@ function ShowHero({ show }: { show: Show }) {
           </div>
           <div className="lg:col-span-5">
             <ShowArtwork show={show} />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ShowAbout({
-  show,
-  description,
-}: {
-  show: Show;
-  description: string;
-}) {
-  return (
-    <section className="border-t border-rule bg-navy-900">
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
-          <div className="lg:col-span-7">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              About
-            </div>
-            <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-fg">
-              {description}
-            </p>
-          </div>
-          <div className="lg:col-span-5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
-              Cadence
-            </div>
-            <p className="mt-3 text-[14px] text-fg">{show.cadence}</p>
-            {show.listen.length > 0 ? (
-              <>
-                <div className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
-                  Listen on
-                </div>
-                <ListenRow listen={show.listen} className="mt-3" />
-              </>
-            ) : null}
           </div>
         </div>
       </div>
@@ -667,15 +625,24 @@ function ShowPlayer({
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="flex items-center gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-            {isLatest ? "Latest episode" : "Now playing"}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              {isLatest ? "Latest episode" : "Now playing"}
+            </div>
+            {isLatest ? (
+              <span className="border border-cyan px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan">
+                New
+              </span>
+            ) : null}
           </div>
-          {isLatest ? (
-            <span className="border border-cyan px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan">
-              New
-            </span>
-          ) : null}
+          <Link
+            to="/podcasts/$show/$episode"
+            params={{ show: episode.showSlug, episode: episode.slug } as never}
+            className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            View episode →
+          </Link>
         </div>
         <h2
           className="mt-4 max-w-3xl font-display text-[clamp(1.4rem,2.6vw,2rem)] leading-[1.15] text-fg-strong"

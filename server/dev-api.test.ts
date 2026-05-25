@@ -16,6 +16,7 @@ import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SignJWT } from 'jose'
 import { devApiPlugin } from './dev-api'
+import { silenceExpectedConsole } from './test-utils'
 
 const CHECKOUT_SECRET = 'test-checkout-secret-0123456789abcdef0123456789abcdef'
 const CHECKOUT_COOKIE = 'ark_checkout'
@@ -187,6 +188,8 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestIni
   }
   return fetchImpl(url, init)
 }) as typeof fetch
+
+silenceExpectedConsole()
 
 afterAll(() => {
   globalThis.fetch = originalFetch

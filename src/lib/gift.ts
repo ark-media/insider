@@ -10,9 +10,8 @@ export type GiftInput = {
 };
 
 export type CreateGiftResponse = {
-  payment_intent_id: string;
+  checkout_session_id: string;
   client_secret: string;
-  amount_cents: number;
   term: GiftTerm;
 };
 
@@ -45,7 +44,7 @@ export async function createGiftCheckout(
     const data = (await res.json().catch(() => ({}))) as
       | CreateGiftResponse
       | { error?: string };
-    if (!res.ok || !("client_secret" in data)) {
+    if (!res.ok || !("client_secret" in data) || !("checkout_session_id" in data)) {
       const err = (data as { error?: string }).error ?? "Could not start gift checkout.";
       return { ok: false, error: err };
     }
@@ -56,11 +55,11 @@ export async function createGiftCheckout(
 }
 
 export async function fetchGiftStatus(
-  paymentIntentId: string,
+  checkoutSessionId: string,
   giverEmail: string,
 ): Promise<{ status: string; activated: boolean } | null> {
   try {
-    const params = new URLSearchParams({ id: paymentIntentId, email: giverEmail });
+    const params = new URLSearchParams({ id: checkoutSessionId, email: giverEmail });
     const res = await fetch(`/api/gift/status?${params}`);
     if (!res.ok) return null;
     const data = (await res.json().catch(() => null)) as

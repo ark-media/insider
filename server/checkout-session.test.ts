@@ -20,6 +20,7 @@ import {
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { jwtVerify } from 'jose'
+import { silenceExpectedConsole } from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -262,6 +263,10 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestIni
   return fetchImpl(url, init)
 }) as typeof fetch
 
+// Several tests drive soft-fail paths (e.g. the welcome email skipping when
+// RESEND_API_KEY is unset) that log via console.error/warn — expected noise.
+silenceExpectedConsole()
+
 afterAll(() => {
   globalThis.fetch = originalFetch
 })
@@ -488,6 +493,43 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     const md = (update!.args[1] as { metadata: Record<string, string> }).metadata
     expect(md.sc_user_id).toBe('555')
     expect(md.sc_subscription_id).toBe('777')
+  })
+
+  test('sends the branded subscriber welcome email after provisioning', async () => {
+    nextSubscription = activeSub()
+    fetchImpl = async (url, init) => {
+      if (url.endsWith('/users/search')) {
+        return new Response(
+          JSON.stringify({ users: [{ id: 555, email: 'user@example.com' }] }),
+          { status: 200 },
+        )
+      }
+      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ subscription: { id: 777 } }), {
+          status: 200,
+        })
+      }
+      if (url.startsWith('https://api.resend.com')) {
+        return new Response(JSON.stringify({ id: 'email_1' }), { status: 200 })
+      }
+      return new Response('{}', { status: 200 })
+    }
+    const h = getHandler(PATH, { RESEND_API_KEY: 'rk_test' })
+    const req = makeReq({
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
+    })
+    const res = makeRes()
+    await runHandler(h, req, res)
+    expect(res.statusCode).toBe(200)
+
+    const emailCall = fetchCalls.find(
+      (c) => c.method === 'POST' && c.url.startsWith('https://api.resend.com'),
+    )
+    expect(emailCall).toBeDefined()
+    const body = emailCall!.body as { to: string; subject: string; html: string }
+    expect(body.to).toBe('user@example.com')
+    expect(body.subject).toBe('Welcome to Ark+')
+    expect(body.html).toContain('Welcome to Ark+.')
   })
 
   test('idempotent: skips SC provisioning if sc_subscription_id is already set', async () => {

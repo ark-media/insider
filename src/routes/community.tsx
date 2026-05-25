@@ -132,13 +132,6 @@ function CommunityPage() {
                   Open on web
                 </a>
               </div>
-              <p className="mt-6 text-[12px] leading-snug text-fg-muted">
-                Not yet a member?{" "}
-                <Link to="/plus" className="text-cyan underline-offset-4 hover:underline">
-                  See Ark+
-                </Link>
-                .
-              </p>
             </div>
           </div>
         </div>
