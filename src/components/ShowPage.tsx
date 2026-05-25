@@ -50,7 +50,6 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
 }
 
 function PublicShowPage({ show }: { show: Show }) {
-  const showHosts = hostsForShow(show.slug);
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
 
   useEffect(() => {
@@ -69,7 +68,7 @@ function PublicShowPage({ show }: { show: Show }) {
 
       <EpisodeBrowser show={show} episodes={episodes} />
 
-      {showHosts.length > 0 ? <HostsSection slugs={showHosts.map((h) => h.slug)} /> : null}
+      <HostsSection show={show} />
 
       <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
@@ -276,7 +275,7 @@ function ListenRow({
   );
 }
 
-// How many archive rows to reveal per "Show more" press.
+// How many rows to reveal per "Show more" press (search results).
 const ARCHIVE_PAGE_SIZE = 8;
 
 // Owns the show's episode-listening experience: an in-place player plus the
@@ -396,6 +395,7 @@ function EpisodeBrowser({
                   onPlay={play}
                   activeId={activeId}
                   label="All episodes"
+                  maxVisibleRows={4}
                 />
               ) : null}
             </>
@@ -427,9 +427,10 @@ function EpisodeSearch({
   );
 }
 
-// A flat, paginated episode list — used both for the back catalog and for
-// search results. Reveals ARCHIVE_PAGE_SIZE rows at a time so a long history
-// no longer hides inside a cramped internal scroll box.
+// A flat episode list used for both the back catalog and search results.
+// Search results paginate via "Show more". The back catalog passes
+// maxVisibleRows to become a fixed-height scroll box sized to exactly that
+// many rows instead.
 function EpisodeList({
   show,
   episodes,
@@ -437,6 +438,7 @@ function EpisodeList({
   activeId,
   label,
   emptyLabel,
+  maxVisibleRows,
 }: {
   show: Show;
   episodes: Episode[];
@@ -444,9 +446,34 @@ function EpisodeList({
   activeId: string | null;
   label: string;
   emptyLabel?: string;
+  maxVisibleRows?: number;
 }) {
   const [visible, setVisible] = useState(ARCHIVE_PAGE_SIZE);
-  const shown = episodes.slice(0, visible);
+
+  // When capped, the list scrolls inside a box sized to maxVisibleRows. The
+  // height is measured from the rendered rows so it tracks whatever the real
+  // row height is rather than assuming a fixed pixel value.
+  const scrollable =
+    maxVisibleRows != null && episodes.length > maxVisibleRows;
+  const listRef = useRef<HTMLUListElement>(null);
+  const [maxHeight, setMaxHeight] = useState<number>();
+  useEffect(() => {
+    if (!scrollable) {
+      setMaxHeight(undefined);
+      return;
+    }
+    const ul = listRef.current;
+    if (!ul) return;
+    const rows = Array.from(ul.children).slice(
+      0,
+      maxVisibleRows,
+    ) as HTMLElement[];
+    // +2 for the list's own top/bottom border (border-box sizing).
+    setMaxHeight(rows.reduce((h, row) => h + row.offsetHeight, 0) + 2);
+  }, [scrollable, maxVisibleRows, episodes]);
+
+  const shown =
+    maxVisibleRows != null ? episodes : episodes.slice(0, visible);
 
   return (
     <div id="all-episodes" className="mt-16">
@@ -459,7 +486,13 @@ function EpisodeList({
         </p>
       ) : (
         <>
-          <ul className="mt-6 divide-y divide-rule border-y border-rule">
+          <ul
+            ref={listRef}
+            style={maxHeight != null ? { maxHeight } : undefined}
+            className={`mt-6 divide-y divide-rule border-y border-rule${
+              scrollable ? " overflow-y-auto" : ""
+            }`}
+          >
             {shown.map((ep) => (
               <EpisodeRow
                 key={ep.slug}
@@ -470,7 +503,7 @@ function EpisodeList({
               />
             ))}
           </ul>
-          {episodes.length > visible ? (
+          {maxVisibleRows == null && episodes.length > visible ? (
             <button
               type="button"
               onClick={() => setVisible((v) => v + ARCHIVE_PAGE_SIZE)}
@@ -695,12 +728,9 @@ function EqualizerGlyph() {
   );
 }
 
-function HostsSection({ slugs }: { slugs: string[] }) {
-  const hosts = slugs
-    .map((s) => hostsForShow(s as ShowSlug))
-    .flat()
-    .filter((h, i, arr) => arr.findIndex((x) => x.slug === h.slug) === i);
-
+function HostsSection({ show }: { show: Show}) {
+  const hosts = hostsForShow(show.slug);
+  if (hosts.length === 0) return null;
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
