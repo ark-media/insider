@@ -284,11 +284,20 @@ async function dispatchWebhookEvent(
       if (isActive) {
         await activator.activateScSubscriptionForStripeSub(sub)
       }
+      const prev = (event.data.previous_attributes ?? {}) as Partial<Stripe.Subscription>
+
+      // Mirror Stripe's scheduled-cancel state onto the SC subscription so feed
+      // access self-expires on time even if the later
+      // customer.subscription.deleted webhook is missed. The entitlement
+      // reconciler heals Auth0/Circle drift but never touches SC, so without
+      // this SC is the one single point of failure for the paid product.
+      // Bidirectional: un-canceling (cancel_at cleared) restores autorenew.
+      await syncScCancelSchedule(sub, prev, env)
+
       // Skip the entitlement sync on metadata-only updates. Stripe fires
       // customer.subscription.updated for everything (payment method swaps,
       // metadata edits, etc.); only a status change can flip the user's tier.
       // `created` always counts as a status change.
-      const prev = (event.data.previous_attributes ?? {}) as Partial<Stripe.Subscription>
       const statusChanged =
         event.type === 'customer.subscription.created' || 'status' in prev
       if (!statusChanged) break
@@ -332,5 +341,37 @@ async function dispatchWebhookEvent(
     }
     default:
       break
+  }
+}
+
+// Push Stripe's scheduled-cancel state onto the SC subscription. Only acts when
+// the cancel schedule actually changed in this event (cancel_at /
+// cancel_at_period_end present in previous_attributes), so routine updates —
+// payment-method swaps, our own metadata stamp from activation — don't generate
+// spurious SC writes.
+//
+//   scheduled to cancel → ends_at = cancel_at, autorenew = false  (SC shows
+//     "Expiring"; the member keeps access until ends_at, then SC expires them)
+//   un-canceled         → ends_at = null,       autorenew = true
+//
+// `status` is left for SC to derive. Soft-fail like the DELETE path: a transient
+// SC error must not 500 the webhook (which would make Stripe retry the event).
+async function syncScCancelSchedule(
+  sub: Stripe.Subscription,
+  prev: Partial<Stripe.Subscription>,
+  env: Env,
+): Promise<void> {
+  const scheduleChanged = 'cancel_at' in prev || 'cancel_at_period_end' in prev
+  if (!scheduleChanged) return
+  const scSubId = sub.metadata?.sc_subscription_id
+  if (!scSubId) return
+  const body =
+    sub.cancel_at != null
+      ? { ends_at: new Date(sub.cancel_at * 1000).toISOString(), autorenew: false }
+      : { ends_at: null, autorenew: true }
+  try {
+    await createScClient(env).call('PATCH', `/subscriptions/${scSubId}`, body)
+  } catch (err) {
+    console.error('[dev-api] SC cancel-schedule sync failed:', err)
   }
 }
