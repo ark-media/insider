@@ -60,7 +60,10 @@ const NAV_ITEMS: NavItem[] = [
     to: "/plus",
     matchPrefix: "/plus",
     hideWhen: "member",
-    children: [{ label: "Gift Ark+", to: "/plus/gift" }],
+    children: [
+      { label: "Join Ark+", to: "/plus" },
+      { label: "Gift Ark+", to: "/plus/gift" },
+    ],
   },
   {
     variant: "menu",
