@@ -42,8 +42,9 @@ export type Auth0Profile = {
   // as unknown (not as a safe default).
   tier?: 'subscriber' | 'free'
   emailVerified?: boolean
-  // Roles from the app_metadata.roles claim. Empty when the claim is absent —
-  // never assume admin from a missing claim.
+  // Role names from the AUTH0_ROLES_CLAIM (the user's assigned Auth0 RBAC roles,
+  // emitted by the Login Action). Empty when the claim is absent — never assume
+  // admin from a missing claim.
   roles: string[]
 }
 
