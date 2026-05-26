@@ -9,7 +9,10 @@
     "build": "bun run routes && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "bun test"
+    "test": "bun test",
+    "migrate": "bun run scripts/migrate.ts",
+    "migrate:status": "bun run scripts/migrate.ts status",
+    "migrate:create": "bun run scripts/migrate.ts create"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.16.2",

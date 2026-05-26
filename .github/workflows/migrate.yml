@@ -1,0 +1,72 @@
+name: Migrate database
+
+# Runs Neon Postgres migrations against the production database.
+#
+# Triggers:
+#   • push to main when migrations/, the runner, or this workflow change
+#   • manual dispatch (Actions tab → Run workflow), useful for re-runs
+#
+# Approval gate:
+#   The job targets the `production-db` GitHub Environment. Configure required
+#   reviewers in repo Settings → Environments → production-db so the job pauses
+#   until an approver clicks through. The same environment must hold the
+#   DATABASE_URL secret (the prod Neon pooled URL).
+#
+# Why path-filtered: the migration runner is idempotent (a run with nothing
+# pending is a clean no-op), but each push would still queue an approval. The
+# filter scopes approval requests to commits that actually change schema.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'migrations/**'
+      - 'scripts/migrate.ts'
+      - '.github/workflows/migrate.yml'
+  workflow_dispatch:
+
+# Serialize: a second run that arrives while the first is waiting for approval
+# (or executing) gets queued behind it, so migrations never overlap.
+concurrency:
+  group: migrate-production-db
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply pending migrations
+    runs-on: ubuntu-latest
+    environment: production-db
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Show approvers exactly what will run before they merged-then-approve.
+      # Pending entries from this output should match the diff that triggered
+      # the workflow.
+      - name: Show status (before)
+        run: bun run migrate:status
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Apply pending migrations
+        run: bun run migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Show status (after)
+        if: always()
+        run: bun run migrate:status
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

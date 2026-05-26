@@ -6,21 +6,7 @@
 //   2. The public /api/beehiiv/posts route calls `listDiscussThreadsByNewsletter`
 //      to enrich projected NewsletterPosts with their per-article `discussUrl`.
 //
-// Schema (run once in Neon — this codebase has no migration tooling, same as
-// `announcements`):
-//
-//   create table discuss_threads (
-//     id uuid primary key default gen_random_uuid(),
-//     newsletter_slug text not null,
-//     beehiiv_post_id text not null unique,
-//     beehiiv_post_title text not null,
-//     circle_thread_url text not null,
-//     circle_space_id integer not null,
-//     circle_post_id text not null,
-//     beehiiv_body_patched boolean not null default false,
-//     created_at timestamptz not null default now()
-//   );
-//   create index on discuss_threads (newsletter_slug);
+// Schema lives in `migrations/` — run `bun run migrate` to apply.
 
 import type { Sql } from './db.js'
 import type { DiscussThread, BeehiivDraft } from '../../shared/discuss-thread.js'
