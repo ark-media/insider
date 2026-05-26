@@ -5,9 +5,7 @@
 import type { NewsletterSlug } from '../../src/data/newsletters.js'
 
 const NEWSLETTER_SLUGS = new Set<NewsletterSlug>([
-  'the-call-me-back-newsletter',
   'ark-daily',
-  'for-heavens-sake-newsletter',
   'members-letter',
 ])
 

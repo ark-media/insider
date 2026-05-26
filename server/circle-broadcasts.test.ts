@@ -59,7 +59,7 @@ describe('projectBroadcast', () => {
   }
 
   test('projects to NewsletterPost shape with stable slug', () => {
-    const out = projectBroadcast(base, 'the-call-me-back-newsletter', 'Dan Senor')
+    const out = projectBroadcast(base, 'ark-daily', 'Dan Senor')
     expect(out).not.toBeNull()
     expect(out!.slug).toBe('broadcast-42')
     expect(out!.title).toBe('The week in numbers')
@@ -73,7 +73,7 @@ describe('projectBroadcast', () => {
   test('promotes tier to ark-plus when broadcast carries members-only tag', () => {
     const out = projectBroadcast(
       { ...base, tags: ['call-me-back', 'members-only'] },
-      'the-call-me-back-newsletter',
+      'ark-daily',
       'Dan Senor',
     )
     expect(out!.tier).toBe('ark-plus')
@@ -82,7 +82,7 @@ describe('projectBroadcast', () => {
   test('drops broadcasts with no sent_at / scheduled_at / created_at', () => {
     const out = projectBroadcast(
       { ...base, sent_at: undefined, scheduled_at: undefined, created_at: undefined },
-      'the-call-me-back-newsletter',
+      'ark-daily',
       'Dan Senor',
     )
     expect(out).toBeNull()
@@ -91,7 +91,7 @@ describe('projectBroadcast', () => {
   test('falls back to stripped HTML for excerpt when preview_text missing', () => {
     const out = projectBroadcast(
       { ...base, preview_text: undefined, email_body_html: '<p>Hello <strong>world</strong>.</p>' },
-      'the-call-me-back-newsletter',
+      'ark-daily',
       'Dan Senor',
     )
     expect(out!.excerpt).toContain('Hello world')

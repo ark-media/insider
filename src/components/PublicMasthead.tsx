@@ -51,7 +51,10 @@ const NAV_ITEMS: NavItem[] = [
     to: "/community",
     matchPrefix: "/community",
     hideWhen: "guest",
-    children: [{ label: "Upcoming Events", to: "/events" }],
+    children: [
+      { label: "Upcoming Events", to: "/events" },
+      { label: "Gift Ark+", to: "/plus/gift" },
+    ],
   },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
   {

@@ -144,5 +144,6 @@ export function projectBeehiivPost(
     bodyHtml,
     tier,
     authorName: firstAuthorName(p, authorFallback),
+    beehiivPostId: p.id,
   }
 }

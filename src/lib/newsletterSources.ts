@@ -52,9 +52,7 @@ export function buildGatedPreview(post: NewsletterPost): NewsletterPost {
 }
 
 const sourceBySlug: Record<NewsletterSlug, NewsletterSource> = {
-  "the-call-me-back-newsletter": beehiivSource,
   "ark-daily": beehiivSource,
-  "for-heavens-sake-newsletter": beehiivSource,
   "members-letter": circleSpaceSource,
 };
 

@@ -15,6 +15,8 @@ import type {
   NewsletterPost,
   NewsletterSlug,
 } from '../../src/data/newsletters.js'
+import { getDb } from '../lib/db.js'
+import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
 import { makeJsonRes } from '../lib/http.js'
 import type { Deps, Env, Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
@@ -28,9 +30,7 @@ const beehiivPostsCache = makeTTLCache<NewsletterSlug, NewsletterPost[]>(
 // newsletter slug → author fallback for posts whose Beehiiv `authors[]` is
 // empty. Beehiiv usually populates authors, so this is just safety-net copy.
 const BEEHIIV_AUTHOR_FALLBACK: Partial<Record<NewsletterSlug, string>> = {
-  'the-call-me-back-newsletter': 'Dan Senor',
   'ark-daily': 'Ark Media newsroom',
-  'for-heavens-sake-newsletter': 'Donniel Hartman & Yossi Klein Halevi',
   'members-letter': 'Ark Media editorial',
 }
 
@@ -89,6 +89,32 @@ async function fetchBeehiivPosts(
   return posts
 }
 
+// Best-effort enrichment: attach `discussUrl` to each post whose Beehiiv id
+// has a matching mapping row. Runs after the cache so a mapping created in
+// /admin shows up on the next request even while the upstream Beehiiv list
+// is still cached. Soft-fails — a DB hiccup hides the buttons, not the posts.
+async function enrichWithDiscussUrls(
+  posts: NewsletterPost[],
+  newsletterSlug: NewsletterSlug,
+  env: Env,
+): Promise<NewsletterPost[]> {
+  if (!env.DATABASE_URL) return posts
+  try {
+    const sql = getDb(env)
+    const threads = await listDiscussThreadsByNewsletter(sql, newsletterSlug)
+    if (threads.length === 0) return posts
+    const byPostId = new Map(threads.map((t) => [t.beehiivPostId, t.circleThreadUrl]))
+    return posts.map((p) =>
+      p.beehiivPostId && byPostId.has(p.beehiivPostId)
+        ? { ...p, discussUrl: byPostId.get(p.beehiivPostId) }
+        : p,
+    )
+  } catch (err) {
+    console.error('[beehiiv] discuss-thread join failed:', err)
+    return posts
+  }
+}
+
 export function beehiivRoutes({ env }: Deps): Route[] {
   return [
     {
@@ -116,7 +142,8 @@ export function beehiivRoutes({ env }: Deps): Route[] {
 
         try {
           const posts = await fetchBeehiivPosts(slug, token, env)
-          json(200, { posts })
+          const enriched = await enrichWithDiscussUrls(posts, slug, env)
+          json(200, { posts: enriched })
         } catch (err) {
           console.error('[beehiiv] posts fetch failed:', err)
           json(502, { error: 'beehiiv_unavailable' })

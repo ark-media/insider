@@ -20,7 +20,7 @@ type NewsletterCard = {
 
 const cards: NewsletterCard[] = [
   {
-    slug: "the-call-me-back-newsletter",
+    slug: "ark-daily",
     shortTitle: "Ark Media",
     title: "The Ark Media Newsletter",
     description:

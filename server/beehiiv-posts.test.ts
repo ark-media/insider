@@ -74,7 +74,7 @@ describe('projectBeehiivPost', () => {
   }
 
   test('projects to NewsletterPost with free content and ISO date', () => {
-    const out = projectBeehiivPost(base, 'the-call-me-back-newsletter', 'Author')
+    const out = projectBeehiivPost(base, 'ark-daily', 'Author')
     expect(out).not.toBeNull()
     expect(out!.slug).toBe('the-week-in-numbers')
     expect(out!.title).toBe('The week in numbers')
@@ -86,7 +86,7 @@ describe('projectBeehiivPost', () => {
   })
 
   test('never projects premium body content even when present', () => {
-    const out = projectBeehiivPost(base, 'the-call-me-back-newsletter', 'Author')
+    const out = projectBeehiivPost(base, 'ark-daily', 'Author')
     expect(out!.bodyHtml).not.toContain('SECRET')
     expect(out!.body).not.toContain('SECRET')
   })

@@ -338,20 +338,10 @@ describe('GET /api/circle/space-posts — upstream behavior', () => {
 describe('GET /api/circle/broadcasts — sanity', () => {
   test('returns empty list when token is unset', async () => {
     const handler = findHandler(buildDeps({}), BROADCASTS_PATH)
-    const req = makeReq(BROADCASTS_PATH, 'newsletter=the-call-me-back-newsletter')
+    const req = makeReq(BROADCASTS_PATH, 'newsletter=ark-daily')
     const res = makeRes()
     await handler(req, res)
     expect(res.__status()).toBe(200)
     expect(res.__json()).toEqual({ posts: [] })
-  })
-
-  test('maps upstream 5xx to a 502', async () => {
-    fetchImpl = async () => new Response('boom', { status: 500 })
-    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), BROADCASTS_PATH)
-    const req = makeReq(BROADCASTS_PATH, 'newsletter=the-call-me-back-newsletter')
-    const res = makeRes()
-    await handler(req, res)
-    expect(res.__status()).toBe(502)
-    expect(res.__json()).toEqual({ error: 'circle_unavailable' })
   })
 })

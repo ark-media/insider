@@ -16,6 +16,7 @@ import { GIFT_PRICES_CENTS, type GiftTerm } from '../lib/activation.js'
 import { makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import type { Deps, Route } from '../lib/route.js'
+import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 
 export function giftRoutes({ stripe, appBaseUrl }: Deps): Route[] {
   // Each create-checkout call provisions a Stripe Checkout Session (and its
@@ -68,6 +69,20 @@ export function giftRoutes({ stripe, appBaseUrl }: Deps): Route[] {
         const amountCents = GIFT_PRICES_CENTS[term]
         const termLabel = term === '6mo' ? '6 months' : '1 year'
 
+        // Auto-apply the best active promo to gifts too. Per product decision,
+        // any auto-apply coupon qualifies regardless of its plan target, so we
+        // pass plan=null (a gift has no monthly/yearly plan). Ranked against the
+        // USD source amount; Adaptive Pricing then converts the discounted
+        // total. The discount is optional, so a lookup failure must never block
+        // checkout: log and charge full price.
+        let discountCoupon: string | null = null
+        try {
+          const best = pickBestCoupon(await listActiveCoupons(stripe), null, amountCents)
+          if (best) discountCoupon = best.id
+        } catch (err) {
+          console.error('[gift] promo lookup failed; charging full price:', err)
+        }
+
         const existing = await stripe.customers.list({ email: giverEmail, limit: 1 })
         const customer =
           existing.data[0] ??
@@ -102,6 +117,7 @@ export function giftRoutes({ stripe, appBaseUrl }: Deps): Route[] {
           // Stripe Dashboard (Settings → Adaptive Pricing) — this flag is inert
           // until that is enabled.
           adaptive_pricing: { enabled: true },
+          ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
           // Stamp the PaymentIntent so the existing webhook
           // (payment_intent.succeeded, kind:'gift') activates SC + entitlement
           // unchanged — the Session is just the funnel that creates it.

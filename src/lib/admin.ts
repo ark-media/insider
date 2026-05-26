@@ -5,8 +5,10 @@
 import { getToken } from "./tokenStore";
 import type { Announcement } from "./announcements";
 import type { Promo } from "../../shared/promo";
+import type { BeehiivDraft, DiscussThread } from "../../shared/discuss-thread";
+import type { NewsletterSlug } from "../data/newsletters";
 
-export type { Promo };
+export type { Promo, BeehiivDraft, DiscussThread };
 
 async function authHeaders(
   extra?: Record<string, string>,
@@ -134,5 +136,55 @@ export async function deletePromo(id: string): Promise<void> {
     headers: await authHeaders(),
     credentials: "include",
   });
+  if (!res.ok) throw new Error(await errorMessage(res));
+}
+
+// --- Discuss threads -----------------------------------------------------
+
+export async function listBeehiivDrafts(
+  newsletterSlug: NewsletterSlug,
+): Promise<BeehiivDraft[]> {
+  const res = await fetch(
+    `/api/admin/beehiiv-drafts?newsletter=${encodeURIComponent(newsletterSlug)}`,
+    { headers: await authHeaders(), credentials: "include" },
+  );
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { drafts: BeehiivDraft[] }).drafts;
+}
+
+export async function listDiscussThreads(): Promise<DiscussThread[]> {
+  const res = await fetch("/api/admin/discuss-threads", {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { threads: DiscussThread[] }).threads;
+}
+
+export type CreateDiscussThreadDraft = {
+  newsletterSlug: NewsletterSlug;
+  beehiivPostId: string;
+  beehiivPostTitle: string;
+  canonicalUrl?: string;
+};
+
+export async function createDiscussThread(
+  draft: CreateDiscussThreadDraft,
+): Promise<{ thread: DiscussThread; alreadyExisted: boolean }> {
+  const res = await fetch("/api/admin/discuss-threads", {
+    method: "POST",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify(draft),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return (await res.json()) as { thread: DiscussThread; alreadyExisted: boolean };
+}
+
+export async function deleteDiscussThread(id: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/discuss-threads?id=${encodeURIComponent(id)}`,
+    { method: "DELETE", headers: await authHeaders(), credentials: "include" },
+  );
   if (!res.ok) throw new Error(await errorMessage(res));
 }

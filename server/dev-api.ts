@@ -23,6 +23,7 @@ import { authRoutes } from './routes/auth.js'
 import { beehiivRoutes } from './routes/beehiiv.js'
 import { circleRoutes } from './routes/circle.js'
 import { cronRoutes } from './routes/cron.js'
+import { discussThreadsRoutes } from './routes/discuss-threads.js'
 import { giftRoutes } from './routes/gift.js'
 import { meRoutes } from './routes/me.js'
 import { pricingRoutes } from './routes/pricing.js'
@@ -57,6 +58,7 @@ function buildApi(env: Env): Api {
     ...authRoutes(deps),
     ...announcementRoutes(deps),
     ...adminRoutes(deps),
+    ...discussThreadsRoutes(deps),
     ...cronRoutes(deps),
   ]
 

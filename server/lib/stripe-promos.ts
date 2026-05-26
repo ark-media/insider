@@ -55,16 +55,17 @@ export function discountCents(c: CouponLike, baseCents: number): number {
 
 // Best auto-applicable coupon for a plan, ranked by actual discount on the
 // given base price — so percentage and fixed coupons compare correctly. Null
-// if nothing applies.
+// if nothing applies. Pass plan=null to ignore plan targeting entirely (any
+// auto-apply coupon qualifies) — used by the gift flow, which has no plan.
 export function pickBestCoupon<T extends CouponLike>(
   coupons: T[],
-  plan: Plan,
+  plan: Plan | null,
   baseCents: number,
 ): T | null {
   let best: T | null = null
   let bestDiscount = 0
   for (const c of coupons) {
-    if (!isAutoApply(c) || !appliesToPlan(c, plan)) continue
+    if (!isAutoApply(c) || (plan !== null && !appliesToPlan(c, plan))) continue
     const d = discountCents(c, baseCents)
     if (d > bestDiscount) {
       best = c

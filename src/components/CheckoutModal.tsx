@@ -137,7 +137,20 @@ export function CheckoutModal({
   customAmount: number | null;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<Step>({ kind: "email" });
+  // Stripe.js is required before we can render Elements. Surface a clear error
+  // up front if the publishable key isn't configured — it's a module-level
+  // build-time value, so we can decide the initial step synchronously rather
+  // than from an effect. Otherwise nothing else to do until the buyer submits
+  // their email, which triggers session creation.
+  const [step, setStep] = useState<Step>(() =>
+    publishableKey
+      ? { kind: "email" }
+      : {
+          kind: "error",
+          message:
+            "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+        },
+  );
   // Last submitted email — persists across retries so the form repopulates
   // after an error rather than asking the buyer to retype it.
   const [lastEmail, setLastEmail] = useState("");
@@ -147,25 +160,19 @@ export function CheckoutModal({
   const { theme } = useTheme();
 
   const handleClose = useCallback(() => {
-    setStep({ kind: "email" });
+    setStep(
+      publishableKey
+        ? { kind: "email" }
+        : {
+            kind: "error",
+            message:
+              "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+          },
+    );
     setLastEmail("");
     setPromo(null);
     onClose();
   }, [onClose]);
-
-  // Stripe.js is required before we can render Elements. Surface a clear error
-  // if the publishable key isn't configured; otherwise nothing else to do up
-  // front — the Session is created after the buyer submits their email.
-  useEffect(() => {
-    if (!open) return;
-    if (!publishableKey) {
-      setStep({
-        kind: "error",
-        message:
-          "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-      });
-    }
-  }, [open]);
 
   // Auto-apply the active promo (if any) for this plan when the modal opens.
   // Display-only (the coupon Stripe actually charges is attached server-side at

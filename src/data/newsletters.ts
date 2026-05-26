@@ -1,8 +1,4 @@
-export type NewsletterSlug =
-  | "the-call-me-back-newsletter"
-  | "ark-daily"
-  | "for-heavens-sake-newsletter"
-  | "members-letter";
+export type NewsletterSlug = "ark-daily" | "members-letter";
 
 export type Newsletter = {
   slug: NewsletterSlug;
@@ -33,46 +29,37 @@ export type NewsletterPost = {
   bodyHtml?: string;
   tier: "free" | "ark-plus";
   authorName: string;
+  /**
+   * Source-system identifier for the post (currently a Beehiiv post id). Set
+   * server-side for posts that came from Beehiiv so the read path can join
+   * the discuss-threads mapping table; undefined for Circle-sourced posts.
+   */
+  beehiivPostId?: string;
+  /**
+   * Companion Circle thread URL when one has been minted from /admin. The
+   * post page surfaces this as the "Discuss on forum →" button.
+   */
+  discussUrl?: string;
 };
 
 export const newsletters: Newsletter[] = [
   {
-    slug: "the-call-me-back-newsletter",
-    title: "The Call Me Back Newsletter",
-    shortTitle: "Call Me Back",
-    description:
-      "Dan Senor's weekly dispatch — the through-lines from this week's interviews and what they tell us about the week ahead.",
-    cadence: "Sundays",
-    tier: "free",
-    authorName: "Dan Senor",
-  },
-  {
     slug: "ark-daily",
-    title: "Ark Daily",
-    shortTitle: "Ark Daily",
+    title: "The Ark Media Newsletter",
+    shortTitle: "Ark Media",
     description:
-      "Ten lines on the day's most consequential story, from the Ark Media newsroom.",
-    cadence: "Weekdays, 7:00 AM ET",
+      "Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead.",
+    cadence: "Weekly",
     tier: "free",
     authorName: "Ark Media newsroom",
   },
   {
-    slug: "for-heavens-sake-newsletter",
-    title: "For Heaven's Sake Letter",
-    shortTitle: "For Heaven's Sake",
-    description:
-      "Donniel and Yossi's monthly letter — slower, longer, and unedited.",
-    cadence: "Monthly",
-    tier: "free",
-    authorName: "Donniel Hartman & Yossi Klein Halevi",
-  },
-  {
     slug: "members-letter",
-    title: "The Members Letter",
+    title: "The Ark+ Members Letter",
     shortTitle: "Members Letter",
     description:
-      "A weekly Ark+ members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading.",
-    cadence: "Thursdays",
+      "A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading.",
+    cadence: "Weekly",
     tier: "ark-plus",
     authorName: "Ark Media editorial",
   },

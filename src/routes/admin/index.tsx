@@ -16,6 +16,11 @@ const CARDS = [
     title: "Promo codes",
     body: "Create Stripe coupons and promotion codes. Auto-apply ones discount checkout immediately.",
   },
+  {
+    to: "/admin/discuss-threads",
+    title: "Discuss threads",
+    body: "Mint a Circle discussion thread for a Beehiiv draft, in one click. The article page picks up the link automatically.",
+  },
 ];
 
 function AdminHome() {

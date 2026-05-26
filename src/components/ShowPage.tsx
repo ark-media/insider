@@ -449,16 +449,16 @@ function EpisodeList({
 
   // When capped, the list scrolls inside a box sized to maxVisibleRows. The
   // height is measured from the rendered rows so it tracks whatever the real
-  // row height is rather than assuming a fixed pixel value.
+  // row height is rather than assuming a fixed pixel value. We track the raw
+  // measurement and derive the applied height — when the list shrinks below
+  // the cap, `scrollable` flips false and we render with no maxHeight without
+  // needing a state reset in the effect.
   const scrollable =
     maxVisibleRows != null && episodes.length > maxVisibleRows;
   const listRef = useRef<HTMLUListElement>(null);
-  const [maxHeight, setMaxHeight] = useState<number>();
+  const [measuredHeight, setMeasuredHeight] = useState<number>();
   useEffect(() => {
-    if (!scrollable) {
-      setMaxHeight(undefined);
-      return;
-    }
+    if (!scrollable) return;
     const ul = listRef.current;
     if (!ul) return;
     const rows = Array.from(ul.children).slice(
@@ -466,8 +466,9 @@ function EpisodeList({
       maxVisibleRows,
     ) as HTMLElement[];
     // +2 for the list's own top/bottom border (border-box sizing).
-    setMaxHeight(rows.reduce((h, row) => h + row.offsetHeight, 0) + 2);
+    setMeasuredHeight(rows.reduce((h, row) => h + row.offsetHeight, 0) + 2);
   }, [scrollable, maxVisibleRows, episodes]);
+  const maxHeight = scrollable ? measuredHeight : undefined;
 
   const shown =
     maxVisibleRows != null ? episodes : episodes.slice(0, visible);

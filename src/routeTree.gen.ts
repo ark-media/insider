@@ -37,6 +37,7 @@ import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-c
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
+import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
 import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
 import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
 import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
@@ -187,6 +188,11 @@ const AdminPromosRoute = AdminPromosRouteImport.update({
   path: '/admin/promos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminDiscussThreadsRoute = AdminDiscussThreadsRouteImport.update({
+  id: '/admin/discuss-threads',
+  path: '/admin/discuss-threads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
   id: '/admin/announcements',
   path: '/admin/announcements',
@@ -250,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
@@ -289,6 +296,7 @@ export interface FileRoutesByTo {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
@@ -329,6 +337,7 @@ export interface FileRoutesById {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/plus/gift': typeof PlusGiftRoute
@@ -370,6 +379,7 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/discuss-threads'
     | '/admin/promos'
     | '/hosts/$slug'
     | '/plus/gift'
@@ -409,6 +419,7 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/discuss-threads'
     | '/admin/promos'
     | '/hosts/$slug'
     | '/plus/gift'
@@ -448,6 +459,7 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/discuss-threads'
     | '/admin/promos'
     | '/hosts/$slug'
     | '/plus/gift'
@@ -487,6 +499,7 @@ export interface RootRouteChildren {
   AccountNewslettersRoute: typeof AccountNewslettersRoute
   AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
+  AdminDiscussThreadsRoute: typeof AdminDiscussThreadsRoute
   AdminPromosRoute: typeof AdminPromosRoute
   HostsSlugRoute: typeof HostsSlugRoute
   PlusGiftRoute: typeof PlusGiftRoute
@@ -707,6 +720,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPromosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/discuss-threads': {
+      id: '/admin/discuss-threads'
+      path: '/admin/discuss-threads'
+      fullPath: '/admin/discuss-threads'
+      preLoaderRoute: typeof AdminDiscussThreadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/announcements': {
       id: '/admin/announcements'
       path: '/admin/announcements'
@@ -811,6 +831,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountNewslettersRoute: AccountNewslettersRoute,
   AccountPodcastFeedRoute: AccountPodcastFeedRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
+  AdminDiscussThreadsRoute: AdminDiscussThreadsRoute,
   AdminPromosRoute: AdminPromosRoute,
   HostsSlugRoute: HostsSlugRoute,
   PlusGiftRoute: PlusGiftRoute,

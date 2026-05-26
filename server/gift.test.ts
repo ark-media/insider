@@ -44,6 +44,11 @@ let retrievedPI: FakePI | null = null
 let retrievedSession: FakeSession | null = null
 let webhookEvent: unknown = null
 
+// Coupons returned by stripe.coupons.list (used by the gift promo auto-apply
+// path). Default empty so existing tests see no discount.
+let availableCoupons: Array<Record<string, unknown>> = []
+let couponsListThrows = false
+
 class FakeStripe {
   constructor(_key: string) {}
   customers = {
@@ -113,6 +118,13 @@ class FakeStripe {
     update: async () => ({}),
     retrieve: async () => ({}),
     list: async () => ({ data: [] }),
+  }
+  coupons = {
+    list: async (args: { limit: number; starting_after?: string }) => {
+      stripeCalls.push({ method: 'coupons.list', args: [args] })
+      if (couponsListThrows) throw new Error('stripe coupons.list failed')
+      return { data: availableCoupons, has_more: false }
+    },
   }
 }
 
@@ -284,6 +296,8 @@ beforeEach(() => {
   retrievedPI = null
   retrievedSession = null
   webhookEvent = null
+  availableCoupons = []
+  couponsListThrows = false
   fetchImpl = async () => new Response('{}', { status: 200 })
 })
 
@@ -510,6 +524,125 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     expect(args.payment_intent_data.metadata.giver_email).toBe('giver@example.com')
     expect(args.payment_intent_data.metadata.recipient_email).toBe('recip@example.com')
     expect(args.metadata.giver_email).toBe('giver@example.com')
+  })
+})
+
+// ===========================================================================
+// POST /api/gift/create-checkout — promo auto-apply
+// ===========================================================================
+// Gifts auto-apply any active coupon whose metadata.auto_apply is "true",
+// regardless of metadata.plan targeting (a gift has no monthly/yearly plan,
+// so pickBestCoupon is called with plan=null). A lookup failure must never
+// block checkout — the buyer is charged the full price.
+
+type SessionWithDiscounts = SessionArgs & {
+  discounts?: Array<{ coupon: string }>
+}
+
+function couponLike(
+  id: string,
+  fields: {
+    percent_off?: number | null
+    amount_off?: number | null
+    currency?: string | null
+    metadata?: Record<string, string>
+  },
+): Record<string, unknown> {
+  return {
+    id,
+    valid: true,
+    name: null,
+    percent_off: fields.percent_off ?? null,
+    amount_off: fields.amount_off ?? null,
+    currency: fields.currency ?? null,
+    metadata: fields.metadata ?? {},
+  }
+}
+
+async function postGift1yr(): Promise<FakeRes> {
+  const h = getHandler(CREATE_PATH)
+  const req = makeReq({
+    body: { giver_email: 'g@x.com', recipient_email: 'r@x.com', term: '1yr' },
+  })
+  const res = makeRes()
+  await runHandler(h, req, res)
+  return res
+}
+
+describe('POST /api/gift/create-checkout — promo auto-apply', () => {
+  test('applies the best auto-apply coupon to the session', async () => {
+    availableCoupons = [
+      couponLike('coupon_pct20', {
+        percent_off: 20,
+        metadata: { auto_apply: 'true' },
+      }),
+    ]
+    const res = await postGift1yr()
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs() as SessionWithDiscounts
+    expect(args.discounts).toEqual([{ coupon: 'coupon_pct20' }])
+    // Source price is still the full $80 — Stripe applies the discount.
+    expect(args.line_items[0].price_data.unit_amount).toBe(8000)
+  })
+
+  test('no eligible coupon → no `discounts` field on the session', async () => {
+    availableCoupons = [
+      // Missing auto_apply: shouldn't be picked.
+      couponLike('coupon_code_only', { percent_off: 50, metadata: {} }),
+    ]
+    const res = await postGift1yr()
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs() as SessionWithDiscounts
+    expect(args.discounts).toBeUndefined()
+  })
+
+  test('picks the coupon yielding the largest discount on the gift base price', async () => {
+    // For a 1yr gift ($80 = 8000c): pct10 → 800c, $15 off → 1500c,
+    // pct25 → 2000c (winner).
+    availableCoupons = [
+      couponLike('coupon_pct10', {
+        percent_off: 10,
+        metadata: { auto_apply: 'true' },
+      }),
+      couponLike('coupon_15off', {
+        amount_off: 1500,
+        currency: 'usd',
+        metadata: { auto_apply: 'true' },
+      }),
+      couponLike('coupon_pct25', {
+        percent_off: 25,
+        metadata: { auto_apply: 'true' },
+      }),
+    ]
+    const res = await postGift1yr()
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs() as SessionWithDiscounts
+    expect(args.discounts).toEqual([{ coupon: 'coupon_pct25' }])
+  })
+
+  test('applies a sub-plan-targeted coupon to gifts too (any-plan policy)', async () => {
+    // A coupon targeted at "yearly" subs still applies to gifts, because gifts
+    // call pickBestCoupon with plan=null. This is the documented product call;
+    // if it ever changes to "untargeted-only", this test should change with it.
+    availableCoupons = [
+      couponLike('coupon_yearly_only', {
+        percent_off: 15,
+        metadata: { auto_apply: 'true', plan: 'yearly' },
+      }),
+    ]
+    const res = await postGift1yr()
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs() as SessionWithDiscounts
+    expect(args.discounts).toEqual([{ coupon: 'coupon_yearly_only' }])
+  })
+
+  test('coupon lookup error never blocks checkout (charges full price)', async () => {
+    couponsListThrows = true
+    const res = await postGift1yr()
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs() as SessionWithDiscounts
+    expect(args.discounts).toBeUndefined()
+    expect(args.line_items[0].price_data.unit_amount).toBe(8000)
   })
 })
 

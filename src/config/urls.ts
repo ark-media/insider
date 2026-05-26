@@ -69,9 +69,7 @@ export const circleUrls = {
  * doesn't always match the newsletter slug, so this mapping is explicit.
  */
 export const newsletterCircleSpaces: Record<NewsletterSlug, string> = {
-  "the-call-me-back-newsletter": `${circleUrls.community}/c/call-me-back-newsletter`,
   "ark-daily": `${circleUrls.community}/c/ark-daily`,
-  "for-heavens-sake-newsletter": `${circleUrls.community}/c/for-heavens-sake-letter`,
   "members-letter": `${circleUrls.community}/c/members-letter`,
 };
 

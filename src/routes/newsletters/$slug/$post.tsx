@@ -122,18 +122,23 @@ function PostPage() {
           <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                Keep the conversation going
+                {post.discussUrl ? "Discuss this piece" : "Keep the conversation going"}
               </div>
               <p className="mt-2 text-[14px] leading-[1.6] text-fg">
-                Comments and replies live in the Circle community. Sign in once
-                and they open straight to the thread.
+                {post.discussUrl
+                  ? "There's an open thread on this post in the Ark+ community."
+                  : "Comments and replies live in the Circle community. Sign in once and they open straight to the thread."}
               </p>
             </div>
             <a
-              href={newsletterCommentUrl(pub.slug)}
+              href={
+                post.discussUrl
+                  ? `/circle-sso?return_to=${encodeURIComponent(post.discussUrl)}`
+                  : newsletterCommentUrl(pub.slug)
+              }
               className="inline-flex shrink-0 items-center justify-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              Comment in Circle →
+              {post.discussUrl ? "Discuss on forum →" : "Comment in Circle →"}
             </a>
           </div>
         </section>

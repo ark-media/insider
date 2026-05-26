@@ -48,12 +48,7 @@ export function __resetCircleCachesForTests(): void {
 // newsletter slug → { tag editors apply on send, author for the byline }
 const CIRCLE_NEWSLETTER_BINDINGS: Partial<
   Record<NewsletterSlug, { tag: string; authorName: string }>
-> = {
-  'the-call-me-back-newsletter': {
-    tag: 'call-me-back',
-    authorName: 'Dan Senor',
-  },
-}
+> = {}
 
 // newsletter slug → { Circle space slug, author byline, tier the newsletter
 // publishes at }. Space posts (community discussion content) don't carry a
