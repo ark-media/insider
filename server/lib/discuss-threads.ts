@@ -295,9 +295,10 @@ async function createCircleSpacePost(opts: {
     )
   }
   const postId = String(created.id)
-  // The thread URL follows /c/<space-slug>/posts/<post-slug-or-id>.
+  // The thread URL follows /c/<space-slug>/<post-slug-or-id> — Circle does
+  // not include a /posts/ intermediate segment.
   const segment = created.slug && created.slug.trim() ? created.slug : postId
-  const threadUrl = `${opts.communityHost}/c/${opts.spaceSlug}/posts/${segment}`
+  const threadUrl = `${opts.communityHost}/c/${opts.spaceSlug}/${segment}`
   return { spaceId: opts.spaceId, postId, threadUrl }
 }
 
@@ -384,10 +385,14 @@ async function patchBeehiivDraftBody(opts: {
   beehiivPostId: string
   threadUrl: string
 }): Promise<boolean> {
-  // Beehiiv's PUT shape varies — `content.free.web` is the documented field on
-  // newer accounts. We fetch the existing draft, splice in the CTA, and PUT
-  // back. Any non-2xx is treated as "Beehiiv refused our update"; we don't
-  // fail the whole orchestration, the admin gets a flag back to paste manually.
+  // Beehiiv update flow:
+  //   GET /v2/publications/{pubId}/posts/{postId}?expand[]=free_web_content
+  //     → existing HTML at data.content.free.web
+  //   PATCH /v2/publications/{pubId}/posts/{postId}
+  //     body: { body_content: <html> } — wraps the HTML in an htmlSnippet block,
+  //     replacing the post's current content. PUT 404s on this route.
+  // Any non-2xx is treated as "Beehiiv refused our update"; we don't fail the
+  // whole orchestration, the admin gets a flag back to paste manually.
   const get = await fetch(
     `https://api.beehiiv.com/v2/publications/${opts.publicationId}/posts/${opts.beehiivPostId}?expand[]=free_web_content`,
     { headers: { Authorization: `Bearer ${opts.token}`, Accept: 'application/json' } },
@@ -403,24 +408,24 @@ async function patchBeehiivDraftBody(opts: {
   }
   const existing = fetched.data?.content?.free?.web ?? ''
   const next = spliceDiscussLink(existing, opts.threadUrl)
-  const put = await fetch(
+  const patch = await fetch(
     `https://api.beehiiv.com/v2/publications/${opts.publicationId}/posts/${opts.beehiivPostId}`,
     {
-      method: 'PUT',
+      method: 'PATCH',
       headers: {
         Authorization: `Bearer ${opts.token}`,
         Accept: 'application/json',
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ content: { free: { web: next } } }),
+      body: JSON.stringify({ body_content: next }),
     },
   )
-  if (!put.ok) {
+  if (!patch.ok) {
     console.error(
-      `[discuss-threads] beehiiv PUT ${put.status}: ${(await put.text()).slice(0, 500)}`,
+      `[discuss-threads] beehiiv PATCH ${patch.status}: ${(await patch.text()).slice(0, 500)}`,
     )
   }
-  return put.ok
+  return patch.ok
 }
 
 // --- Orchestration -------------------------------------------------------
