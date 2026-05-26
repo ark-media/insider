@@ -36,6 +36,13 @@ function resolveBeehiivPublicationId(
   return value && value.trim() ? value.trim() : undefined
 }
 
+// UUID v1-v5 shape. discuss_threads.id is gen_random_uuid() (v4), so this
+// is just enough validation to reject obvious garbage before it reaches the
+// DB. The DELETE query already parameterizes the value, so this is for
+// hygiene / error clarity rather than SQL safety.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
     {
@@ -85,6 +92,7 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (req.method === 'DELETE') {
           const id = url.searchParams.get('id')
           if (!id) return json(400, { error: 'id required' })
+          if (!UUID_RE.test(id)) return json(400, { error: 'invalid id format' })
           const ok = await deleteDiscussThread(sql, id)
           if (!ok) return json(404, { error: 'not_found' })
           return json(200, { ok: true })

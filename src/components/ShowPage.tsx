@@ -465,8 +465,16 @@ function EpisodeList({
       0,
       maxVisibleRows,
     ) as HTMLElement[];
-    // +2 for the list's own top/bottom border (border-box sizing).
-    setMeasuredHeight(rows.reduce((h, row) => h + row.offsetHeight, 0) + 2);
+    // Add the ul's own top/bottom border so the scroll box doesn't clip its
+    // bottom rule. Derived from computed style rather than hardcoded so a
+    // theme change to border thickness doesn't silently break the math.
+    const cs = window.getComputedStyle(ul);
+    const borderY =
+      (parseFloat(cs.borderTopWidth) || 0) +
+      (parseFloat(cs.borderBottomWidth) || 0);
+    setMeasuredHeight(
+      rows.reduce((h, row) => h + row.offsetHeight, 0) + borderY,
+    );
   }, [scrollable, maxVisibleRows, episodes]);
   const maxHeight = scrollable ? measuredHeight : undefined;
 
@@ -726,7 +734,7 @@ function EqualizerGlyph() {
   );
 }
 
-function HostsSection({ show }: { show: Show}) {
+function HostsSection({ show }: { show: Show }) {
   const hosts = hostsForShow(show.slug);
   if (hosts.length === 0) return null;
   return (

@@ -1,3 +1,5 @@
+import type { SanitizedHtml } from "../../shared/sanitized-html";
+
 export type NewsletterSlug = "ark-daily" | "members-letter";
 
 export type Newsletter = {
@@ -23,10 +25,11 @@ export type NewsletterPost = {
   /**
    * Sanitized HTML body. When present, the post renderer prefers this over
    * `body` and parses it through html-react-parser. Sources that natively
-   * produce HTML (e.g. Circle Broadcasts) populate this; plain-text sources
-   * leave it undefined.
+   * produce HTML (e.g. Circle Broadcasts, Beehiiv) populate this; plain-text
+   * sources leave it undefined. Branded as SanitizedHtml so a renderer can
+   * type its input narrowly and a caller can't quietly hand it raw HTML.
    */
-  bodyHtml?: string;
+  bodyHtml?: SanitizedHtml;
   tier: "free" | "ark-plus";
   authorName: string;
   /**

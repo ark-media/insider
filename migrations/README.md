@@ -49,10 +49,12 @@ workflow manually from the Actions tab. Same approval gate.
    New repository secret: `DATABASE_URL` = the prod Neon pooled URL.
 2. **Create the environment.** Repo Settings → Environments → New
    environment: `production-db`. Add yourself as a required reviewer.
-3. **Move the secret onto the environment** (recommended — environment
-   secrets are gated, repo secrets aren't): Settings → Environments →
-   `production-db` → Environment secrets → add `DATABASE_URL` there and
-   remove the repo-level one.
+3. **Move the secret onto the environment** (required — repo-level secrets
+   are readable from any workflow run, bypassing the approval gate;
+   environment secrets are only readable from runs that have been approved
+   for `production-db`): Settings → Environments → `production-db` →
+   Environment secrets → add `DATABASE_URL` there and remove the repo-level
+   one.
 
 After this, every PR that touches `migrations/` triggers a queued approval on
 merge — you click "Approve and deploy" on the workflow run to apply.
@@ -67,12 +69,27 @@ merge — you click "Approve and deploy" on the workflow run to apply.
   inherit the convention for consistency and so a partially-applied migration
   can be re-run.
 - Each file runs in a single transaction. If any statement fails, nothing
-  in that file is committed and `_migrations` is not updated.
+  in that file is committed and `_migrations` is not updated. Statements
+  that cannot run inside a transaction (`CREATE INDEX CONCURRENTLY`,
+  `VACUUM`, `ALTER TYPE … ADD VALUE` in older Postgres) therefore can't go
+  in a regular migration — split them into their own file and apply by hand
+  if you need them.
 - **No down migrations.** Pre-launch, breaking changes get a new forward
   migration, not a rollback. Add a `_down` companion only if a real rollback
   story emerges.
 - Don't edit a migration after it has been applied to any environment.
-  Create a new one instead.
+  Create a new one instead. The runner records each file's sha256 on apply
+  and `bun run migrate:status` flags any file whose hash diverges from
+  what's recorded.
+
+## Concurrency
+
+`bun run migrate` acquires a Postgres advisory lock (`pg_advisory_lock`) for
+the duration of the apply loop, so two concurrent invocations against the
+same database serialize through the DB rather than racing on the pending
+set. The CI concurrency group only protects the GitHub Action — the
+advisory lock is what defends against a local-dev run colliding with the
+CI run.
 
 ## Tracking
 
@@ -81,8 +98,11 @@ The runner maintains a `_migrations` table:
 ```sql
 create table _migrations (
   name text primary key,
-  applied_at timestamptz not null default now()
+  applied_at timestamptz not null default now(),
+  sha256 text
 );
 ```
 
-Created automatically on first run.
+Created automatically on first run. The `sha256` column is added by
+`alter table ... add column if not exists` so pre-existing tables get
+upgraded forward without a separate migration.

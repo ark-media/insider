@@ -14,17 +14,65 @@
 
 import type Stripe from 'stripe'
 import { emailForStripeCustomer, syncEntitlement } from '../entitlement.js'
+import { downgradeToFree, tryPush } from '../lib/beehiiv-sync.js'
+import { getDb } from '../lib/db.js'
 import { createScClient } from '../lib/sc-client.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import { getPlanPriceCents } from '../lib/pricing.js'
 import { makeJsonRes, readBody, readJson } from '../lib/http.js'
+import { createRateLimiter } from '../lib/rate-limit.js'
 import { getSessionEmail } from '../lib/session.js'
 import type { Deps, Env, Route } from '../lib/route.js'
+
+// Loose RFC-shaped check — sufficient to reject obvious junk before it
+// reaches stripe.customers.list/create. Stripe will validate canonical form
+// downstream; this just keeps us from minting Customer rows for "   foo".
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Stripe's hard limit is 256; we cap a touch lower to leave room.
+const MAX_NAME_LEN = 250
+
+// Find a Customer for this email or create one. Checkout has historically
+// created a Customer per Session, so one email can map to several customers
+// (churn-then-resubscribe). Prefer one without an active subscription so a
+// new sub doesn't end up on a customer that already has one — bounded scan
+// keeps the API cost modest even with many matches.
+async function findOrCreateSubscriber(
+  stripe: Stripe,
+  opts: { email: string; name?: string },
+): Promise<Stripe.Customer> {
+  const { email, name } = opts
+  const list = await stripe.customers.list({ email, limit: 100 })
+  if (list.data.length === 0) {
+    return stripe.customers.create({ email, name })
+  }
+  if (list.data.length === 1) return list.data[0]
+  // Multiple matches — try to pick a clean one. Cap the scan so a pathological
+  // case (many duplicates) doesn't fan out to dozens of Stripe calls.
+  for (const c of list.data.slice(0, 10)) {
+    const subs = await stripe.subscriptions.list({
+      customer: c.id,
+      status: 'active',
+      limit: 1,
+    })
+    if (subs.data.length === 0) return c
+  }
+  return list.data[0]
+}
 
 export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
   // Stripe price cache — keyed by `${plan}-${amountCents}` to avoid creating
   // a fresh Price object on every pay-what-you-want checkout.
   const priceCache = new Map<string, string>()
+
+  // Per-email cap on Checkout Session creation. Mirrors the gift flow: a
+  // scripted caller can't produce thousands of zombie Sessions / Customer
+  // rows. Small enough to catch abuse and large enough that a real buyer
+  // retrying a few times doesn't get blocked.
+  const subscribeLimiter = createRateLimiter({
+    capacity: 5,
+    refillPerSec: 5 / (60 * 60), // 5 per hour
+  })
 
   return [
     {
@@ -49,8 +97,24 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // customer.email is null and the webhook's activation 500s forever.
         const email = body.email?.trim().toLowerCase()
         if (!email) return json(400, { error: 'Email is required.' })
+        if (!EMAIL_RE.test(email)) {
+          return json(400, { error: 'Please enter a valid email.' })
+        }
+        if (body.name && body.name.length > MAX_NAME_LEN) {
+          return json(400, { error: 'Name is too long.' })
+        }
         if (body.plan !== 'monthly' && body.plan !== 'yearly') {
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
+        }
+
+        // Rate-limit after input validation so a clearly-malformed request
+        // doesn't consume a token from a legitimate retry.
+        const wait = subscribeLimiter.take(email)
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, {
+            error: 'Too many checkout attempts. Please wait a moment and try again.',
+          })
         }
         const plan = body.plan
         const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
@@ -115,16 +179,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           console.error('[stripe] promo lookup failed; charging full price:', err)
         }
 
-        // Find-or-reuse the giver's customer so we never get duplicate
-        // customers for the same email (and so the resulting subscription's
-        // customer always has an email — see the comment above).
-        const existing = await stripe.customers.list({ email, limit: 1 })
-        const customer =
-          existing.data[0] ??
-          (await stripe.customers.create({
-            email,
-            name: body.name,
-          }))
+        // Find-or-reuse a customer so we never mint duplicates for the same
+        // email (and so the resulting subscription's customer always has an
+        // email — see the comment above). Checkout has historically created
+        // a Customer per Session, so one email can map to several customers
+        // (churn-then-resubscribe). Prefer one without an active subscription
+        // so the new sub doesn't end up doubled up on a customer that
+        // already has one.
+        const customer = await findOrCreateSubscriber(stripe, {
+          email,
+          name: body.name,
+        })
 
         const session = await stripe.checkout.sessions.create({
           mode: 'subscription',
@@ -336,7 +401,17 @@ async function dispatchWebhookEvent(
         }
       }
       const email = await emailForStripeCustomer(sub.customer, stripe)
-      if (email) await syncEntitlement(env, email, 'free')
+      if (email) {
+        await syncEntitlement(env, email, 'free')
+        // Drop the premium tier in Beehiiv but keep them on the free list.
+        // They can opt out of the free dispatch themselves from
+        // /account/newsletters.
+        if (env.DATABASE_URL) {
+          await tryPush('downgrade (cancel)', () =>
+            downgradeToFree({ env, sql: getDb(env) }, email),
+          )
+        }
+      }
       break
     }
     case 'payment_intent.succeeded': {
@@ -375,14 +450,20 @@ async function syncScCancelSchedule(
   prev: Partial<Stripe.Subscription>,
   env: Env,
 ): Promise<void> {
-  const scheduleChanged = 'cancel_at' in prev || 'cancel_at_period_end' in prev
-  if (!scheduleChanged) return
+  // Named for what we actually check — fields present in `previous_attributes`
+  // — not "the schedule semantically changed," which Stripe doesn't tell us.
+  const cancelFieldsPresent =
+    'cancel_at' in prev || 'cancel_at_period_end' in prev
+  if (!cancelFieldsPresent) return
   const scSubId = sub.metadata?.sc_subscription_id
   if (!scSubId) return
-  const body =
-    sub.cancel_at != null
-      ? { ends_at: new Date(sub.cancel_at * 1000).toISOString(), autorenew: false }
-      : { ends_at: null, autorenew: true }
+  // Guard against a malformed payload pushing "Invalid Date" to SC, where it
+  // would silently 422 into the catch and produce an unhelpful log line.
+  const hasValidCancelAt =
+    sub.cancel_at != null && Number.isFinite(sub.cancel_at)
+  const body = hasValidCancelAt
+    ? { ends_at: new Date(sub.cancel_at! * 1000).toISOString(), autorenew: false }
+    : { ends_at: null, autorenew: true }
   try {
     await createScClient(env).call('PATCH', `/subscriptions/${scSubId}`, body)
   } catch (err) {

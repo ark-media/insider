@@ -32,6 +32,13 @@ export function discussSpaceSlugFor(slug: NewsletterSlug): string {
 type Row = Record<string, unknown>
 
 function mapRow(r: Row): DiscussThread {
+  // The Neon driver returns timestamptz as a Date today, but accept either
+  // shape so a driver upgrade can't crash mapRow on the cast.
+  const createdAtRaw = r.created_at
+  const createdAt =
+    createdAtRaw instanceof Date
+      ? createdAtRaw
+      : new Date(String(createdAtRaw))
   return {
     id: String(r.id),
     newsletterSlug: String(r.newsletter_slug) as NewsletterSlug,
@@ -41,7 +48,7 @@ function mapRow(r: Row): DiscussThread {
     circleSpaceId: Number(r.circle_space_id),
     circlePostId: String(r.circle_post_id),
     beehiivBodyPatched: Boolean(r.beehiiv_body_patched),
-    createdAt: new Date(r.created_at as string).toISOString(),
+    createdAt: createdAt.toISOString(),
   }
 }
 
@@ -172,13 +179,23 @@ export function validateCreateThreadInput(raw: unknown): ValidationResult {
 
 type CircleSpaceRecord = { id?: number; slug?: string }
 
+// Short-lived in-memory cache so a burst of admin actions doesn't re-page
+// the entire spaces list. 60s is well under any meaningful "we renamed the
+// space" turnaround, and a stale miss surfaces as a clean "space not found"
+// rather than corrupting state.
+const SPACE_ID_CACHE = new Map<string, { id: number; at: number }>()
+const SPACE_ID_TTL_MS = 60_000
+
 async function resolveCircleSpaceId(
   spaceSlug: string,
   token: string,
 ): Promise<number | null> {
-  // Same paging shape as the read-side resolver in routes/circle.ts. We don't
-  // share the cache because admin writes are infrequent and a stale cache
-  // miss here would surface as a clearer "space not found" error.
+  const cached = SPACE_ID_CACHE.get(spaceSlug)
+  if (cached && Date.now() - cached.at < SPACE_ID_TTL_MS) return cached.id
+
+  // Same paging shape as the read-side resolver in routes/circle.ts. We
+  // keep the cache here local rather than sharing read/write paths so a
+  // stale entry in one surface can't break the other.
   for (let page = 1; page <= 5; page += 1) {
     const url =
       `https://app.circle.so/api/admin/v2/spaces` +
@@ -193,7 +210,10 @@ async function resolveCircleSpaceId(
     const records = body.records ?? []
     if (records.length === 0) break
     const match = records.find((s) => s.slug === spaceSlug)
-    if (match?.id !== undefined) return match.id
+    if (match?.id !== undefined) {
+      SPACE_ID_CACHE.set(spaceSlug, { id: match.id, at: Date.now() })
+      return match.id
+    }
     if (records.length < 100) break
   }
   return null
@@ -310,15 +330,30 @@ export async function listBeehiivDrafts(opts: {
 
 const DISCUSS_LINK_MARKER = '<!-- ark:discuss-link -->'
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function buildDiscussLinkHtml(threadUrl: string): string {
   // Single-paragraph CTA appended to the Beehiiv draft body. The marker comment
   // around it lets a future edit recognize and replace its own insertion,
   // rather than stacking links if the editor re-runs the action.
+  //
+  // threadUrl comes from Circle's create-post response and is spliced into
+  // both an href attribute and the link text. HTML-escape it before
+  // interpolating so a slug containing `"` or `<` can't break out of either
+  // context — Beehiiv does not re-sanitize what we PUT into its draft body.
+  const safe = escapeHtml(threadUrl)
   return (
     `${DISCUSS_LINK_MARKER}` +
     `<p>` +
     `<strong>Discuss this piece →</strong> ` +
-    `<a href="${threadUrl}" target="_blank" rel="noopener noreferrer">${threadUrl}</a>` +
+    `<a href="${safe}" target="_blank" rel="noopener noreferrer">${safe}</a>` +
     `</p>` +
     `${DISCUSS_LINK_MARKER}`
   )

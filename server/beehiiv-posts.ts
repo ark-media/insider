@@ -13,6 +13,7 @@ import type {
   NewsletterPost,
   NewsletterSlug,
 } from '../src/data/newsletters.js'
+import type { SanitizedHtml } from '../shared/sanitized-html.js'
 
 // Beehiiv's v2 post shape — only the fields we actually project.
 // `audience` is what gates premium content; `content.free.web` is the HTML
@@ -72,7 +73,7 @@ export function stripHtml(html: string): string {
 // so we drop it before it reaches the page.
 const BEEHIIV_DEFAULT_AVATAR_RE = /\/static_assets\/gradient_avatar_/i
 
-export function sanitizeBeehiivHtml(html: string): string {
+export function sanitizeBeehiivHtml(html: string): SanitizedHtml {
   return sanitizeHtml(html, {
     allowedTags: [
       'p', 'br', 'hr', 'a', 'strong', 'b', 'em', 'i',
@@ -92,7 +93,7 @@ export function sanitizeBeehiivHtml(html: string): string {
     exclusiveFilter: (frame) =>
       frame.tag === 'img' &&
       BEEHIIV_DEFAULT_AVATAR_RE.test(frame.attribs?.src ?? ''),
-  })
+  }) as SanitizedHtml
 }
 
 function firstAuthorName(p: BeehiivPost, fallback: string): string {

@@ -256,21 +256,23 @@ export function CheckoutModal({
     [plan, customAmount],
   );
 
-  const handleActivated = useCallback(async () => {
-    try {
-      await refresh();
-      onClose();
-      void navigate({ to: "/setup" });
-    } catch (err) {
-      setStep({
-        kind: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Could not sign you in. Please try again.",
-      });
-    }
-  }, [navigate, onClose, refresh]);
+  const handleActivated = useCallback(
+    async (email: string) => {
+      try {
+        await refresh();
+        onClose();
+        void navigate({ to: "/setup" });
+      } catch {
+        // Payment confirmed and the webhook will provision the user; the
+        // refresh failed locally. Routing back to the EmailForm would risk
+        // a second Checkout Session (and potentially a double charge), so
+        // land on the processing screen — the buyer gets the "we'll email
+        // you a link" copy that matches the polling-timeout case.
+        setStep({ kind: "processing", email });
+      }
+    },
+    [navigate, onClose, refresh],
+  );
 
   const stripePromiseValue = getStripe();
 
@@ -534,7 +536,7 @@ function CheckoutForm({
   email: string;
   promo: PromoInfo | null;
   onActivating: (email: string) => void;
-  onActivated: () => void | Promise<void>;
+  onActivated: (email: string) => void | Promise<void>;
   onProcessing: (email: string) => void;
 }) {
   const checkoutState = useCheckout();
@@ -595,7 +597,7 @@ function CheckoutForm({
     onActivating(email);
     const poll = await pollForCheckoutSession(checkoutSessionId, email);
     if (poll.kind === "ready") {
-      await onActivated();
+      await onActivated(email);
     } else {
       onProcessing(email);
     }

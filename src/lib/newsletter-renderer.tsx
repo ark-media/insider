@@ -1,7 +1,12 @@
 // Beehiiv newsletter renderer.
 //
-// Trust boundary: input MUST come from `sanitizeBeehiivHtml` (server/beehiiv-posts.ts).
-// html-react-parser does not re-sanitize.
+// Trust boundary: input is typed as `SanitizedHtml`, which is produced by
+// `sanitizeBeehiivHtml` (server/beehiiv-posts.ts). html-react-parser does
+// not re-sanitize. The brand is enforced at compile time — a caller can't
+// hand raw HTML to <NewsletterArticle> without an explicit, greppable cast.
+// As defense in depth, anchor hrefs are also re-checked against a scheme
+// allowlist at render time so a regression in the upstream sanitizer config
+// can't silently leak `javascript:`/`data:` urls into the DOM.
 //
 // Why this exists alongside show-notes-renderer: Beehiiv newsletters are a
 // different shape from Simplecast show notes. They're Mailchimp-style
@@ -13,13 +18,39 @@
 // editorial blocks: a hero, a section header, a promo card, numbered
 // episode cards, and a closing flourish.
 
-import { Fragment, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   domToReact,
   htmlToDOM,
   type DOMNode,
   type HTMLReactParserOptions,
 } from "html-react-parser";
+import type { SanitizedHtml } from "../../shared/sanitized-html";
+
+// Anchor-href scheme allowlist. Mirrors the upstream sanitize-html config
+// (http/https/mailto) plus same-document fragments. Any other scheme (or a
+// missing href) renders the anchor's children as bare text rather than a
+// clickable link.
+const SAFE_HREF_RE = /^(?:https?:|mailto:|#)/i;
+
+function safeHref(href: string | undefined): string | undefined {
+  if (!href) return undefined;
+  const trimmed = href.trim();
+  return SAFE_HREF_RE.test(trimmed) ? trimmed : undefined;
+}
+
+// Normalize-compare for matching titles that Beehiiv may have smart-quoted,
+// re-cased, or padded. Avoids re-emitting the title in body content just
+// because the upstream apostrophe is curly vs straight.
+function normalizeForCompare(s: string): string {
+  return s
+    .normalize("NFKC")
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
 
 // ---------------------------------------------------------------------------
 // Node helpers (duck-typed — html-dom-parser ships its own domhandler copy so
@@ -80,8 +111,10 @@ function nextSignificant(nodes: DOMNode[], start: number): number | null {
 const NOISE_IMAGE_SRC = /cdn-images\.mailchimp\.com|static_assets\/gradient_avatar_/i;
 
 // Alt-text allowlist for noise: exact-match social/listen badges + the Ark
-// Media logo banner the email composer pins to top and bottom.
-const NOISE_IMAGE_ALT = /^(ark media|instagram|tiktok|x|twitter|youtube|facebook|threads|linkedin|spotify|apple podcasts|listen on .*)$/i;
+// Media logo banner the email composer pins to top and bottom. "x (twitter)"
+// (and variants) covers the renamed social icon without dropping editorial
+// images that happen to have alt text "x".
+const NOISE_IMAGE_ALT = /^(ark media|instagram|tiktok|x \(twitter\)|twitter|youtube|facebook|threads|linkedin|spotify|apple podcasts|listen on .*)$/i;
 
 function isNoiseImage(img: TagNode): boolean {
   const src = img.attribs.src ?? "";
@@ -107,7 +140,14 @@ function isMailingAddress(n: DOMNode): boolean {
   if (!isTag(n) || n.name !== "p") return false;
   const t = textOf(n).trim();
   // "Ark Media · 268 E Broadway · New York, NY 10002-5672 · USA"
-  return t.length < 200 && t.includes("·") && /\bUSA\b/i.test(t);
+  // Match the · separator + something that looks like a postal code (US ZIP
+  // or generic 4-7 char trailing token). Avoids hardcoding "USA" so a
+  // publication change of physical address doesn't leak through.
+  return (
+    t.length < 200 &&
+    (t.match(/·/g)?.length ?? 0) >= 2 &&
+    /\b\d{5}(?:-\d{4})?\b|\b[A-Z]{2,3}\d{1,4}[A-Z]{0,2}\b/.test(t)
+  );
 }
 
 function isBylineParagraph(n: DOMNode): boolean {
@@ -122,11 +162,13 @@ function isBylineParagraph(n: DOMNode): boolean {
 function isStrayTitleText(n: DOMNode, postTitle?: string): boolean {
   // Beehiiv leaks the post title as a bare text run at the very top of the
   // body. Drop it if it matches the title we already render in the masthead.
+  // Compare normalized so smart quotes / case / whitespace don't defeat the
+  // match.
   if (!isText(n)) return false;
   const t = n.data.trim();
   if (t === "") return true;
   if (!postTitle) return false;
-  return t === postTitle.trim();
+  return normalizeForCompare(t) === normalizeForCompare(postTitle);
 }
 
 function isNoise(n: DOMNode, postTitle?: string): boolean {
@@ -152,10 +194,15 @@ function extractPicture(n: DOMNode): Picture | null {
   if (isTag(n) && n.name === "a") {
     const img = findFirstImg(n);
     if (img && !isNoiseImage(img)) {
+      // Only treat the anchor's href as the picture's link target if it's
+      // a navigable http(s) URL. Mailto / fragment anchors wrapping a hero
+      // image would otherwise become misleading "click to listen" targets.
+      const href = n.attribs.href?.trim();
+      const linkable = href && /^https?:/i.test(href) ? href : undefined;
       return {
         src: img.attribs.src ?? "",
         alt: img.attribs.alt ?? "",
-        href: n.attribs.href,
+        href: linkable,
       };
     }
   }
@@ -306,8 +353,11 @@ const inlineOptions: HTMLReactParserOptions = {
   replace: (node) => {
     if (!isTag(node)) return undefined;
     if (node.name === "a") {
-      const href = node.attribs.href;
+      const href = safeHref(node.attribs.href);
       const children = domToReact(node.children, inlineOptions);
+      // Defense in depth: if the href failed the scheme allowlist (or is
+      // missing), render the children as bare text rather than a styled-
+      // but-dead link. Same behavior as the show-notes renderer.
       if (!href) return <>{children}</>;
       return (
         <a
@@ -399,21 +449,30 @@ function PromoCard({
         aria-hidden
         className="pointer-events-none absolute left-0 top-0 h-full w-[3px] bg-cyan"
       />
-      {picture ? (
-        <a
-          href={picture.href ?? cta?.href ?? "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="relative block overflow-hidden border-b border-cyan/25 lg:border-b-0 lg:border-r"
-        >
+      {picture ? (() => {
+        // Promo image links through to whichever destination we have (picture
+        // anchor first, falling back to the CTA). When neither resolves to a
+        // safe scheme, render an unwrapped figure so an empty href doesn't
+        // become an accidental "scroll to top" click target.
+        const linkTo = safeHref(picture.href) ?? safeHref(cta?.href);
+        const wrapClass =
+          "relative block overflow-hidden border-b border-cyan/25 lg:border-b-0 lg:border-r";
+        const img = (
           <img
             src={picture.src}
             alt={picture.alt}
             loading="lazy"
             className="block aspect-[16/10] w-full object-cover transition duration-700 hover:scale-[1.03] lg:aspect-auto lg:h-full"
           />
-        </a>
-      ) : null}
+        );
+        return linkTo ? (
+          <a href={linkTo} target="_blank" rel="noopener noreferrer" className={wrapClass}>
+            {img}
+          </a>
+        ) : (
+          <figure className={wrapClass}>{img}</figure>
+        );
+      })() : null}
       <div className="flex flex-col justify-center gap-4 p-7 lg:p-9">
         {titleText ? (
           <div className="font-display text-[12px] font-bold uppercase tracking-[0.28em] text-cyan">
@@ -425,27 +484,45 @@ function PromoCard({
             {renderInline(bodyLines)}
           </div>
         ) : null}
-        {cta ? (
-          <a
-            href={cta.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex w-fit items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan"
-          >
-            {cta.text} <span aria-hidden>→</span>
-          </a>
-        ) : null}
+        {(() => {
+          const ctaHref = safeHref(cta?.href);
+          return cta && ctaHref ? (
+            <a
+              href={ctaHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex w-fit items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan"
+            >
+              {cta.text} <span aria-hidden>→</span>
+            </a>
+          ) : null;
+        })()}
       </div>
     </aside>
   );
 }
 
-// Split the h3 episode title into "Show name" and "Date" on the first comma.
-// "Call me Back, May 20th, 2026" → ["Call me Back", "May 20th, 2026"]
+// Split the h3 episode title into "Show name" and "Date". Targets the
+// comma immediately preceding a date-shaped token ("May 20", "May 20th",
+// "5/20") rather than the first comma, so "Pod Save America, Special
+// Edition, May 20" keeps "Pod Save America, Special Edition" as the show
+// and "May 20" as the date instead of dropping the subtitle.
+const DATE_COMMA_RE =
+  /,\s*(?=(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\b|\d{1,2}[\/\.-]\d{1,2})/i;
+
 function splitEpisodeTitle(title: string): { show: string; date?: string } {
-  const idx = title.indexOf(",");
-  if (idx === -1) return { show: title };
-  return { show: title.slice(0, idx).trim(), date: title.slice(idx + 1).trim() };
+  const m = DATE_COMMA_RE.exec(title);
+  if (!m) {
+    // Fall back to a plain first-comma split when no date-shaped token
+    // is found, so episodes formatted "Show, freeform tail" still split.
+    const idx = title.indexOf(",");
+    if (idx === -1) return { show: title };
+    return { show: title.slice(0, idx).trim(), date: title.slice(idx + 1).trim() };
+  }
+  return {
+    show: title.slice(0, m.index).trim(),
+    date: title.slice(m.index + m[0].length).trim(),
+  };
 }
 
 function EpisodeCard({
@@ -461,28 +538,36 @@ function EpisodeCard({
 }) {
   const { show, date } = splitEpisodeTitle(title);
   const num = String(index).padStart(2, "0");
-  const listenHref = picture?.href;
+  const listenHref = safeHref(picture?.href);
 
   return (
     <article className="group relative grid grid-cols-1 gap-7 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:gap-10">
-      {picture ? (
-        <a
-          href={listenHref ?? "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="relative block overflow-hidden border border-rule bg-navy-800/40"
-        >
-          <img
-            src={picture.src}
-            alt={picture.alt}
-            loading="lazy"
-            className="block aspect-[16/9] w-full object-cover transition duration-700 group-hover:scale-[1.04]"
-          />
-          <span className="pointer-events-none absolute bottom-3 right-3 border border-cyan/60 bg-navy/90 px-2.5 py-1 font-display text-[10px] font-bold uppercase tracking-[0.28em] text-cyan backdrop-blur-sm">
-            № {num}
-          </span>
-        </a>
-      ) : (
+      {picture ? (() => {
+        // Skip the anchor wrapper when there's no safe href — an
+        // <a href="#"> here would silently scroll to top on click.
+        const wrapClass =
+          "relative block overflow-hidden border border-rule bg-navy-800/40";
+        const inner = (
+          <>
+            <img
+              src={picture.src}
+              alt={picture.alt}
+              loading="lazy"
+              className="block aspect-[16/9] w-full object-cover transition duration-700 group-hover:scale-[1.04]"
+            />
+            <span className="pointer-events-none absolute bottom-3 right-3 border border-cyan/60 bg-navy/90 px-2.5 py-1 font-display text-[10px] font-bold uppercase tracking-[0.28em] text-cyan backdrop-blur-sm">
+              № {num}
+            </span>
+          </>
+        );
+        return listenHref ? (
+          <a href={listenHref} target="_blank" rel="noopener noreferrer" className={wrapClass}>
+            {inner}
+          </a>
+        ) : (
+          <figure className={wrapClass}>{inner}</figure>
+        );
+      })() : (
         <div className="hidden lg:block" />
       )}
       <div className="flex flex-col">
@@ -542,7 +627,7 @@ export function NewsletterArticle({
   html,
   postTitle,
 }: {
-  html: string;
+  html: SanitizedHtml;
   postTitle?: string;
 }) {
   const dom = htmlToDOM(html) as DOMNode[];
@@ -608,8 +693,13 @@ export function NewsletterArticle({
           case "paragraph":
             return <PlainBlock key={key} node={block.node} />;
           default: {
+            // Exhaustiveness check. If a new Block kind is added without a
+            // case above, this assignment fails to compile. At runtime an
+            // unknown kind renders nothing rather than throwing inside
+            // React (which would tear down the whole article).
             const _exhaustive: never = block;
-            return <Fragment key={key}>{_exhaustive}</Fragment>;
+            void _exhaustive;
+            return null;
           }
         }
       })}
@@ -617,6 +707,9 @@ export function NewsletterArticle({
   );
 }
 
-export function renderNewsletter(html: string, postTitle?: string): ReactNode {
+export function renderNewsletter(
+  html: SanitizedHtml,
+  postTitle?: string,
+): ReactNode {
   return <NewsletterArticle html={html} postTitle={postTitle} />;
 }

@@ -13,6 +13,7 @@ import type {
   NewsletterPost,
   NewsletterSlug,
 } from '../src/data/newsletters.js'
+import type { SanitizedHtml } from '../shared/sanitized-html.js'
 
 export type CircleBroadcast = {
   id?: number | string
@@ -52,7 +53,7 @@ export function stripHtml(html: string): string {
 // but for the public newsletter surface we keep the allowlist tight — same
 // tags as show notes plus <img> for embedded screenshots, which is the
 // commonly-used extra.
-export function sanitizeBroadcastHtml(html: string): string {
+export function sanitizeBroadcastHtml(html: string): SanitizedHtml {
   return sanitizeHtml(html, {
     allowedTags: [
       'p', 'br', 'a', 'strong', 'b', 'em', 'i',
@@ -69,7 +70,7 @@ export function sanitizeBroadcastHtml(html: string): string {
         rel: 'noopener noreferrer',
       }),
     },
-  })
+  }) as SanitizedHtml
 }
 
 function tagNames(tags: CircleBroadcast['tags']): string[] {

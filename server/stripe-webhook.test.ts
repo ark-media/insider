@@ -146,13 +146,19 @@ function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
 }
 
 // ---------------------------------------------------------------------------
-// fetch mock (captures SC traffic)
+// fetch mock (captures SC traffic). Tests can install a per-URL/method
+// response override to simulate SC outages / 404s / etc. without rewriting
+// the whole mock.
 // ---------------------------------------------------------------------------
 const originalFetch = globalThis.fetch
 const fetchCalls: Array<{ url: string; method: string; body: unknown }> = []
+let responseOverride:
+  | ((url: string, method: string) => Response | null)
+  | null = null
 
 globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input.toString()
+  const method = init?.method ?? 'GET'
   let parsed: unknown
   if (init?.body && typeof init.body === 'string') {
     try {
@@ -161,8 +167,9 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestIni
       parsed = init.body
     }
   }
-  fetchCalls.push({ url, method: init?.method ?? 'GET', body: parsed })
-  return new Response('{}', { status: 200 })
+  fetchCalls.push({ url, method, body: parsed })
+  const override = responseOverride?.(url, method)
+  return override ?? new Response('{}', { status: 200 })
 }) as typeof fetch
 
 silenceExpectedConsole()
@@ -172,6 +179,7 @@ afterAll(() => {
 beforeEach(() => {
   fetchCalls.length = 0
   webhookEvent = null
+  responseOverride = null
 })
 
 // ---------------------------------------------------------------------------
@@ -246,14 +254,41 @@ describe('customer.subscription.updated — SC cancel-schedule mirroring', () =>
   })
 
   test('cancel scheduled but no sc_subscription_id metadata → no SC PATCH', async () => {
+    // status:'incomplete' keeps the activator from running so this test
+    // genuinely exercises only the missing-metadata guard (otherwise the
+    // PATCH=0 assertion passes for the wrong reason — activator traffic).
     await dispatch({
       type: 'customer.subscription.updated',
       data: {
-        object: makeSub({ metadata: {}, cancel_at: CANCEL_AT, cancel_at_period_end: true }),
+        object: makeSub({
+          status: 'incomplete',
+          metadata: {},
+          cancel_at: CANCEL_AT,
+          cancel_at_period_end: true,
+        }),
         previous_attributes: { cancel_at_period_end: false },
       },
     })
-    expect(fetchCalls.filter((c) => c.method === 'PATCH')).toHaveLength(0)
+    expect(fetchCalls).toEqual([])
+  })
+
+  test('SC PATCH returns 404 (webhook reorder) → handler still 200', async () => {
+    // If customer.subscription.deleted arrives before customer.subscription.updated,
+    // the SC sub has already been DELETE'd. The mirror PATCH then 404s.
+    // The handler must still return 200 (Stripe will otherwise retry forever).
+    responseOverride = (url, method) =>
+      method === 'PATCH' && url === `${SC_BASE}/subscriptions/3119346`
+        ? new Response('{}', { status: 404 })
+        : null
+    const res = await dispatch({
+      type: 'customer.subscription.updated',
+      data: {
+        object: makeSub({ cancel_at: CANCEL_AT, cancel_at_period_end: true }),
+        previous_attributes: { cancel_at_period_end: false },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(scPatches()).toHaveLength(1)
   })
 })
 
