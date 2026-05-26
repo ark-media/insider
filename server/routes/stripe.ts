@@ -36,15 +36,19 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         const body =
           (await readJson<{
+            email?: string
+            name?: string
             plan?: 'monthly' | 'yearly'
             custom_amount_cents?: number
           }>(req)) ?? {}
 
-        // No email here: the session is created the moment the modal opens (so
-        // the localized price shows on the first screen, before the email
-        // field). The buyer's email is collected client-side via
-        // checkout.updateEmail, and Stripe creates the Customer from it on
-        // confirm (see the subscription-mode note in the API ref).
+        // Email is required up front so we can pre-create the Stripe Customer
+        // with it (mirroring the gift flow). Without this, subscription-mode
+        // Checkout creates the Customer from whatever Elements collects later,
+        // which leaves a window — and any Dashboard-created test sub — where
+        // customer.email is null and the webhook's activation 500s forever.
+        const email = body.email?.trim().toLowerCase()
+        if (!email) return json(400, { error: 'Email is required.' })
         if (body.plan !== 'monthly' && body.plan !== 'yearly') {
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
         }
@@ -111,11 +115,21 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           console.error('[stripe] promo lookup failed; charging full price:', err)
         }
 
+        // Find-or-reuse the giver's customer so we never get duplicate
+        // customers for the same email (and so the resulting subscription's
+        // customer always has an email — see the comment above).
+        const existing = await stripe.customers.list({ email, limit: 1 })
+        const customer =
+          existing.data[0] ??
+          (await stripe.customers.create({
+            email,
+            name: body.name,
+          }))
+
         const session = await stripe.checkout.sessions.create({
           mode: 'subscription',
           ui_mode: 'elements',
-          // No `customer`: in subscription mode Stripe creates the Customer
-          // from the email collected during the flow (checkout.updateEmail).
+          customer: customer.id,
           line_items: [{ price: priceId, quantity: 1 }],
           // Adaptive Pricing: Stripe detects the buyer's country from their IP
           // and presents/charges in their local currency, with the USD price

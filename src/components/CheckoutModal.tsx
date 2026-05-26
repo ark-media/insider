@@ -21,10 +21,18 @@ type PromoInfo = {
 };
 
 type Step =
-  // The Checkout Session is created the moment the modal opens so the buyer's
-  // localized price can show on the very first screen.
-  | { kind: "init" }
-  | { kind: "ready"; clientSecret: string; checkoutSessionId: string }
+  // Email is collected before the Checkout Session is created so the server
+  // can pre-create the Stripe Customer with it — see the matching note in
+  // server/routes/stripe.ts. The localized price (Adaptive Pricing) renders
+  // on the payment screen once Elements has the session.
+  | { kind: "email" }
+  | { kind: "creating" }
+  | {
+      kind: "ready";
+      clientSecret: string;
+      checkoutSessionId: string;
+      email: string;
+    }
   | { kind: "activating"; email: string }
   | { kind: "processing"; email: string }
   | { kind: "error"; message: string };
@@ -129,74 +137,35 @@ export function CheckoutModal({
   customAmount: number | null;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<Step>({ kind: "init" });
-  const [reloadKey, setReloadKey] = useState(0);
+  const [step, setStep] = useState<Step>({ kind: "email" });
+  // Last submitted email — persists across retries so the form repopulates
+  // after an error rather than asking the buyer to retype it.
+  const [lastEmail, setLastEmail] = useState("");
   const [promo, setPromo] = useState<PromoInfo | null>(null);
   const navigate = useNavigate();
   const { refresh } = useSubscriberAuth();
   const { theme } = useTheme();
 
   const handleClose = useCallback(() => {
-    setStep({ kind: "init" });
+    setStep({ kind: "email" });
+    setLastEmail("");
     setPromo(null);
     onClose();
   }, [onClose]);
 
-  // Create the Checkout Session as soon as the modal opens. Stripe localizes
-  // the price (Adaptive Pricing) the moment the Elements provider loads it, so
-  // the first screen can show what the buyer will actually pay.
+  // Stripe.js is required before we can render Elements. Surface a clear error
+  // if the publishable key isn't configured; otherwise nothing else to do up
+  // front — the Session is created after the buyer submits their email.
   useEffect(() => {
     if (!open) return;
-    let cancelled = false;
-    void (async () => {
-      if (!publishableKey) {
-        if (!cancelled) {
-          setStep({
-            kind: "error",
-            message:
-              "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-          });
-        }
-        return;
-      }
-      try {
-        const res = await fetch("/api/stripe/create-checkout-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            plan,
-            custom_amount_cents:
-              customAmount !== null ? Math.round(customAmount * 100) : undefined,
-          }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          client_secret?: string;
-          checkout_session_id?: string;
-          error?: string;
-        };
-        if (cancelled) return;
-        if (!res.ok || !data.client_secret || !data.checkout_session_id) {
-          setStep({
-            kind: "error",
-            message: data.error ?? "Could not start checkout.",
-          });
-          return;
-        }
-        setStep({
-          kind: "ready",
-          clientSecret: data.client_secret,
-          checkoutSessionId: data.checkout_session_id,
-        });
-      } catch {
-        if (!cancelled) {
-          setStep({ kind: "error", message: "Network error. Please try again." });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, plan, customAmount, reloadKey]);
+    if (!publishableKey) {
+      setStep({
+        kind: "error",
+        message:
+          "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+      });
+    }
+  }, [open]);
 
   // Auto-apply the active promo (if any) for this plan when the modal opens.
   // Display-only (the coupon Stripe actually charges is attached server-side at
@@ -235,6 +204,51 @@ export function CheckoutModal({
     };
   }, [open, plan]);
 
+  const submitEmail = useCallback(
+    async (email: string) => {
+      setLastEmail(email);
+      setStep({ kind: "creating" });
+      try {
+        const res = await fetch("/api/stripe/create-checkout-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            plan,
+            custom_amount_cents:
+              customAmount !== null
+                ? Math.round(customAmount * 100)
+                : undefined,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          client_secret?: string;
+          checkout_session_id?: string;
+          error?: string;
+        };
+        if (!res.ok || !data.client_secret || !data.checkout_session_id) {
+          setStep({
+            kind: "error",
+            message: data.error ?? "Could not start checkout.",
+          });
+          return;
+        }
+        setStep({
+          kind: "ready",
+          clientSecret: data.client_secret,
+          checkoutSessionId: data.checkout_session_id,
+          email,
+        });
+      } catch {
+        setStep({
+          kind: "error",
+          message: "Network error. Please try again.",
+        });
+      }
+    },
+    [plan, customAmount],
+  );
+
   const handleActivated = useCallback(async () => {
     try {
       await refresh();
@@ -265,7 +279,16 @@ export function CheckoutModal({
         Insider Membership · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
 
-      {step.kind === "init" ? (
+      {step.kind === "email" ? (
+        <EmailForm
+          plan={plan}
+          initialEmail={lastEmail}
+          promo={promo}
+          onSubmit={submitEmail}
+        />
+      ) : null}
+
+      {step.kind === "creating" ? (
         <>
           <h2 id="checkout-title" className={titleClass}>
             Complete your membership
@@ -293,6 +316,7 @@ export function CheckoutModal({
           <CheckoutForm
             plan={plan}
             checkoutSessionId={step.checkoutSessionId}
+            email={step.email}
             promo={promo}
             onActivating={(email) => setStep({ kind: "activating", email })}
             onActivated={handleActivated}
@@ -348,10 +372,7 @@ export function CheckoutModal({
             </p>
             <button
               type="button"
-              onClick={() => {
-                setStep({ kind: "init" });
-                setReloadKey((k) => k + 1);
-              }}
+              onClick={() => setStep({ kind: "email" })}
               className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Try again
@@ -407,12 +428,95 @@ function Field({
   );
 }
 
+// First screen of the modal: just an email. Submitting creates the Checkout
+// Session server-side (with the Customer pre-set to this email) and advances
+// to the payment screen. Lives outside CheckoutElementsProvider — no Session
+// exists yet — so it can't use useCheckout.
+function EmailForm({
+  plan,
+  initialEmail,
+  promo,
+  onSubmit,
+}: {
+  plan: Plan;
+  initialEmail: string;
+  promo: PromoInfo | null;
+  onSubmit: (email: string) => void | Promise<void>;
+}) {
+  const [email, setEmail] = useState(initialEmail);
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const intervalLabel = plan === "yearly" ? "year" : "month";
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = email.trim();
+    if (!trimmed || working) return;
+    // Loose client-side check; the server is the real validator.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setError("Please enter a valid email.");
+      return;
+    }
+    setError(null);
+    setWorking(true);
+    try {
+      await onSubmit(trimmed);
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <>
+      <h2 id="checkout-title" className={titleClass}>
+        Complete your membership
+      </h2>
+      <p className="mt-2 text-sm text-fg-muted">
+        Billed {intervalLabel}ly. We'll send your sign-in link here.
+      </p>
+      {promo ? <PromoBanner promo={promo} /> : null}
+      <form onSubmit={submit} className="mt-6 space-y-4">
+        <Field label="Email">
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={working}
+            placeholder="you@example.com"
+            className={inputClass}
+            autoFocus
+          />
+        </Field>
+        {error ? (
+          <p role="alert" className="text-[12px] text-danger">
+            {error}
+          </p>
+        ) : null}
+        <button
+          type="submit"
+          disabled={working}
+          aria-busy={working}
+          className={ctaClass}
+        >
+          {working ? "Loading…" : "Continue to payment"}
+        </button>
+        <p className="text-[12px] leading-snug text-fg-muted">
+          Payment is securely processed by Stripe. You'll receive a sign-in
+          link by email once your membership is active.
+        </p>
+      </form>
+    </>
+  );
+}
+
 // Lives inside CheckoutElementsProvider, so useCheckout() gives us the buyer's
-// localized total (Adaptive Pricing) from the first screen. Two phases keep the
-// original UX: enter email → pay.
+// localized total (Adaptive Pricing). Email is already on the Customer (set
+// server-side when the Session was created), so this screen is payment-only.
 function CheckoutForm({
   plan,
   checkoutSessionId,
+  email,
   promo,
   onActivating,
   onActivated,
@@ -420,15 +524,13 @@ function CheckoutForm({
 }: {
   plan: Plan;
   checkoutSessionId: string;
+  email: string;
   promo: PromoInfo | null;
   onActivating: (email: string) => void;
   onActivated: () => void | Promise<void>;
   onProcessing: (email: string) => void;
 }) {
   const checkoutState = useCheckout();
-  const [phase, setPhase] = useState<"details" | "payment">("details");
-  const [email, setEmail] = useState("");
-  const [emailError, setEmailError] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const submittedRef = useRef(false);
@@ -456,20 +558,6 @@ function CheckoutForm({
   const subtotal = checkout.total.subtotal.amount; // before discount
   const hasDiscount = checkout.total.discount.minorUnitsAmount > 0;
 
-  const continueToPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim() || working) return;
-    setWorking(true);
-    setEmailError(null);
-    const result = await checkout.updateEmail(email.trim());
-    setWorking(false);
-    if (result.type === "error") {
-      setEmailError(result.error.message ?? "Please enter a valid email.");
-      return;
-    }
-    setPhase("payment");
-  };
-
   const pay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittedRef.current) return;
@@ -481,7 +569,7 @@ function CheckoutForm({
     // need an off-site step (e.g. 3DS) use the session's return_url.
     const result = await checkout.confirm({
       redirect: "if_required",
-      email: email.trim(),
+      email,
     });
 
     if (result.type === "error") {
@@ -497,12 +585,12 @@ function CheckoutForm({
     // poll for provisioning. Anything short of "ready" routes to the
     // bank-processing copy — never back to a pay button, which would risk a
     // double charge (the webhook finishes provisioning and emails a link).
-    onActivating(email.trim());
-    const poll = await pollForCheckoutSession(checkoutSessionId, email.trim());
+    onActivating(email);
+    const poll = await pollForCheckoutSession(checkoutSessionId, email);
     if (poll.kind === "ready") {
       await onActivated();
     } else {
-      onProcessing(email.trim());
+      onProcessing(email);
     }
   };
 
@@ -522,73 +610,34 @@ function CheckoutForm({
 
       {promo ? <PromoBanner promo={promo} /> : null}
 
-      {phase === "details" ? (
-        <form onSubmit={continueToPayment} className="mt-6 space-y-4">
-          <div>
-            <span className="eyebrow text-fg-muted">Pay in</span>
-            <div className="mt-2">
-              <CurrencySelectorElement />
-            </div>
+      <form onSubmit={pay} className="mt-6 space-y-4">
+        <div>
+          <span className="eyebrow text-fg-muted">Pay in</span>
+          <div className="mt-2">
+            <CurrencySelectorElement />
           </div>
-          <Field label="Email">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={working}
-              placeholder="you@example.com"
-              className={inputClass}
-            />
-          </Field>
-          {emailError ? (
-            <p role="alert" className="text-[12px] text-danger">
-              {emailError}
-            </p>
-          ) : null}
-          <button
-            type="submit"
-            disabled={working}
-            aria-busy={working}
-            className={ctaClass}
-          >
-            {working ? "Checking…" : "Continue to payment"}
-          </button>
-          <p className="text-[12px] leading-snug text-fg-muted">
-            Payment is securely processed by Stripe. You'll receive a sign-in
-            link by email once your membership is active.
+        </div>
+        <PaymentElement />
+        <div className="flex items-baseline justify-between border-t border-rule pt-3 text-sm">
+          <span className="text-fg-muted">Total</span>
+          <span className="font-semibold text-fg-strong">
+            {total} / {intervalLabel}
+          </span>
+        </div>
+        {payError ? (
+          <p role="alert" className="text-[12px] text-danger">
+            {payError}
           </p>
-        </form>
-      ) : (
-        <form onSubmit={pay} className="mt-6 space-y-4">
-          <div>
-            <span className="eyebrow text-fg-muted">Pay in</span>
-            <div className="mt-2">
-              <CurrencySelectorElement />
-            </div>
-          </div>
-          <PaymentElement />
-          <div className="flex items-baseline justify-between border-t border-rule pt-3 text-sm">
-            <span className="text-fg-muted">Total</span>
-            <span className="font-semibold text-fg-strong">
-              {total} / {intervalLabel}
-            </span>
-          </div>
-          {payError ? (
-            <p role="alert" className="text-[12px] text-danger">
-              {payError}
-            </p>
-          ) : null}
-          <button
-            type="submit"
-            disabled={working}
-            aria-busy={working}
-            className={ctaClass}
-          >
-            {working ? "Processing…" : `Pay ${total}`}
-          </button>
-        </form>
-      )}
+        ) : null}
+        <button
+          type="submit"
+          disabled={working}
+          aria-busy={working}
+          className={ctaClass}
+        >
+          {working ? "Processing…" : `Pay ${total}`}
+        </button>
+      </form>
     </>
   );
 }
