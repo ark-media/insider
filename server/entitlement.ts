@@ -36,6 +36,8 @@
 import { gunzipSync } from 'node:zlib'
 import type Stripe from 'stripe'
 import { auth0MgmtBase, getAuth0ManagementToken } from './auth0.js'
+import { downgradeToFree as beehiivDowngradeToFree, tryPush } from './lib/beehiiv-sync.js'
+import { getDb } from './lib/db.js'
 
 type Env = Record<string, string>
 
@@ -90,7 +92,7 @@ function logAndReturnError(
   return 'error'
 }
 
-function redactEmail(email: string): string {
+export function redactEmail(email: string): string {
   const at = email.indexOf('@')
   if (at < 2) return '***'
   return `${email[0]}***${email.slice(at)}`
@@ -339,6 +341,15 @@ export async function reconcileEntitlements(
     batchSize,
     (email) => syncEntitlement(env, email, 'free'),
   )
+
+  // Beehiiv: drop premium tier from the same set of emails. Soft-fail per
+  // address so a Beehiiv outage doesn't poison the reconciler summary.
+  if (env.DATABASE_URL && downgradeEmails.length > 0) {
+    const sql = getDb(env)
+    await batched(downgradeEmails, batchSize, (email) =>
+      tryPush('reconcile downgrade', () => beehiivDowngradeToFree({ env, sql }, email)),
+    )
+  }
 
   // Pass 3 — Circle drift. Soft-fail: a list error shouldn't fail the cron.
   const downgradeSet = new Set(downgradeEmails)

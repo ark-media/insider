@@ -20,6 +20,8 @@ import {
   createAuth0PasswordChangeTicket,
   findOrCreateAuth0User,
 } from './auth0-user.js'
+import { ensureSubscribedWithPremium, tryPush } from './beehiiv-sync.js'
+import { getDb } from './db.js'
 import { sendEmail } from './email.js'
 import {
   renderGiftWelcomeEmail,
@@ -186,6 +188,16 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     if (!sent) {
       console.error('[email] subscriber welcome email did not send:', email)
     }
+
+    // Push the member onto the Beehiiv list with the premium tier so they
+    // start receiving both the free dispatch and the members letter. Soft-
+    // fail: SC + Auth0 + Circle entitlement already landed, and the reconciler
+    // / next /account/newsletters edit can repair drift.
+    if (env.DATABASE_URL) {
+      await tryPush('ensure premium (sub)', () =>
+        ensureSubscribedWithPremium({ env, sql: getDb(env) }, email),
+      )
+    }
   }
 
   const activateScSubscriptionForStripeSub = async (
@@ -336,6 +348,12 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     // downgrade pass honors the gift even though there is no recurring
     // Stripe sub.
     await syncEntitlement(env, recipientEmail, 'subscriber', { giftExpiresAt: endsAt })
+
+    if (env.DATABASE_URL) {
+      await tryPush('ensure premium (gift)', () =>
+        ensureSubscribedWithPremium({ env, sql: getDb(env) }, recipientEmail),
+      )
+    }
   }
 
   return { activateScSubscriptionForStripeSub, activateScGiftForPaymentIntent }

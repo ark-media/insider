@@ -4,10 +4,7 @@ import {
   type NewsletterSlug,
 } from "../../../data/newsletters";
 import { getPublication } from "../../../lib/beehiiv";
-import {
-  buildGatedPreview,
-  sourceFor,
-} from "../../../lib/newsletterSources";
+import { sourceFor } from "../../../lib/newsletterSources";
 import { newsletterCommentUrl } from "../../../lib/circle";
 import { PageShell } from "../../../components/PageShell";
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
@@ -72,8 +69,12 @@ function PostPage() {
     );
   }
 
+  // The server already returns the appropriate body for the reader (premium
+  // HTML for members, the above-divider preview for everyone else), so we
+  // trust `found` directly. `gated` only drives the "Members only" CTA and
+  // hides the discuss footer for the same gated case.
   const gated = found.tier === "ark-plus" && !isMember;
-  const post = gated ? buildGatedPreview(found) : found;
+  const post = found;
 
   const issueDate = new Date(post.publishedAt);
   const issueMonthDay = isNaN(issueDate.valueOf())

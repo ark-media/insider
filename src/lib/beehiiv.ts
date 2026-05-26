@@ -5,6 +5,7 @@ import {
   type NewsletterSlug,
 } from "../data/newsletters";
 import type { NewsletterSource } from "./newsletterSources";
+import { getToken } from "./tokenStore";
 
 /**
  * Beehiiv client.
@@ -39,9 +40,16 @@ async function fetchPostsFromApi(
   slug: NewsletterSlug,
 ): Promise<NewsletterPost[]> {
   try {
+    // Attach the Auth0 bearer when present so the server can read the
+    // reader's tier claim and serve the full premium body to Ark+ members.
+    // Without it, the server falls back to the above-divider preview.
+    const token = await getToken();
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
     const res = await fetch(
       `/api/beehiiv/posts?newsletter=${encodeURIComponent(slug)}`,
-      { credentials: "same-origin" },
+      { headers, credentials: "same-origin" },
     );
     if (!res.ok) return [];
     const body = (await res.json()) as ApiResponse;

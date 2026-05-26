@@ -20,7 +20,7 @@ import { isNewsletterSlug } from '../routes/newsletter-slugs.js'
 // two paths. Space slugs map to space IDs via Circle's /spaces endpoint.
 const DISCUSS_SPACE_BINDINGS: Record<NewsletterSlug, string> = {
   'ark-daily': 'ark-daily',
-  'members-letter': 'members-letter',
+  'members-letter': 'inside-call-me-back',
 }
 
 export function discussSpaceSlugFor(slug: NewsletterSlug): string {
@@ -283,9 +283,16 @@ async function createCircleSpacePost(opts: {
   if (!res.ok) {
     throw new Error(`Circle create post ${res.status}: ${await res.text()}`)
   }
-  const created = (await res.json()) as { id?: number | string; slug?: string }
+  // Circle Admin v2 wraps the created record under `post`:
+  //   { message: "Post created.", post: { id, slug, ... } }
+  const body = (await res.json()) as {
+    post?: { id?: number | string; slug?: string }
+  }
+  const created = body.post ?? {}
   if (created.id === undefined || created.id === null) {
-    throw new Error('Circle create post: response missing id')
+    throw new Error(
+      `Circle create post: response missing post.id — got ${JSON.stringify(body).slice(0, 500)}`,
+    )
   }
   const postId = String(created.id)
   // The thread URL follows /c/<space-slug>/posts/<post-slug-or-id>.
@@ -385,7 +392,12 @@ async function patchBeehiivDraftBody(opts: {
     `https://api.beehiiv.com/v2/publications/${opts.publicationId}/posts/${opts.beehiivPostId}?expand[]=free_web_content`,
     { headers: { Authorization: `Bearer ${opts.token}`, Accept: 'application/json' } },
   )
-  if (!get.ok) return false
+  if (!get.ok) {
+    console.error(
+      `[discuss-threads] beehiiv GET ${get.status}: ${(await get.text()).slice(0, 500)}`,
+    )
+    return false
+  }
   const fetched = (await get.json()) as {
     data?: { content?: { free?: { web?: string } } }
   }
@@ -403,6 +415,11 @@ async function patchBeehiivDraftBody(opts: {
       body: JSON.stringify({ content: { free: { web: next } } }),
     },
   )
+  if (!put.ok) {
+    console.error(
+      `[discuss-threads] beehiiv PUT ${put.status}: ${(await put.text()).slice(0, 500)}`,
+    )
+  }
   return put.ok
 }
 

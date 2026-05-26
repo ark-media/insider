@@ -70,7 +70,7 @@ export const circleUrls = {
  */
 export const newsletterCircleSpaces: Record<NewsletterSlug, string> = {
   "ark-daily": `${circleUrls.community}/c/ark-daily`,
-  "members-letter": `${circleUrls.community}/c/members-letter`,
+  "members-letter": `${circleUrls.community}/c/inside-call-me-back`,
 };
 
 // ---------------------------------------------------------------------------

@@ -114,22 +114,39 @@ export function projectBeehiivPost(
   p: BeehiivPost,
   newsletterSlug: NewsletterSlug,
   authorFallback: string,
+  view: 'free' | 'premium' = 'free',
 ): NewsletterPost | null {
   if (!p.id || !p.slug) return null
   const publishedAt = toIsoDate(p.publish_date ?? p.displayed_date)
   if (!publishedAt) return null
 
-  // Use the free-audience HTML for projection. Premium-only posts may have
-  // empty `content.free.web` — that's intentional; we surface a gated preview
-  // (subtitle / preview_text) at the listing level and let the page-level
-  // gate handle the rest. Never read from content.premium.web here.
-  const rawHtml = p.content?.free?.web ?? p.content_html ?? ''
+  // `view: 'free'` picks the above-divider HTML (or the whole body for
+  // `audience: 'free'` posts). `view: 'premium'` picks the full premium body
+  // and falls back to free.web when no premium variant is present (e.g.
+  // pure-free posts that a member happens to request). Callers are responsible
+  // for only requesting `premium` after authenticating an Ark+ reader — this
+  // function trusts that decision.
+  const rawHtml =
+    view === 'premium'
+      ? p.content?.premium?.web?.trim() ||
+        p.content?.free?.web ||
+        p.content_html ||
+        ''
+      : p.content?.free?.web ?? p.content_html ?? ''
   const bodyHtml = sanitizeBeehiivHtml(rawHtml)
   const plain = stripHtml(rawHtml)
 
+  // Tier reflects "is this gated on the surface that requested it?" — not the
+  // post's intrinsic audience. A `both`-audience post is the free version on
+  // ark-daily (above-divider IS the published version), but the paywalled
+  // version on members-letter (members see full, others see the preview).
   const audience = (p.audience ?? 'free').toLowerCase()
-  const tier: 'free' | 'ark-plus' =
-    audience === 'premium' ? 'ark-plus' : 'free'
+  let tier: 'free' | 'ark-plus' = 'free'
+  if (audience === 'premium') {
+    tier = 'ark-plus'
+  } else if (audience === 'both') {
+    tier = newsletterSlug === 'members-letter' ? 'ark-plus' : 'free'
+  }
 
   const excerpt = (p.preview_text && p.preview_text.trim()) ||
     (p.subtitle && p.subtitle.trim()) ||

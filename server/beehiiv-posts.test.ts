@@ -85,10 +85,37 @@ describe('projectBeehiivPost', () => {
     expect(out!.authorName).toBe('Dan Senor')
   })
 
-  test('never projects premium body content even when present', () => {
+  test('never projects premium body content with the default (free) view', () => {
     const out = projectBeehiivPost(base, 'ark-daily', 'Author')
     expect(out!.bodyHtml).not.toContain('SECRET')
     expect(out!.body).not.toContain('SECRET')
+  })
+
+  test('projects the premium body when view=premium', () => {
+    const out = projectBeehiivPost(
+      { ...base, audience: 'premium' },
+      'members-letter',
+      'Author',
+      'premium',
+    )
+    expect(out!.bodyHtml).toContain('SECRET premium body')
+    expect(out!.body).toContain('SECRET premium body')
+  })
+
+  test('premium view falls back to free body when premium.web is empty', () => {
+    const out = projectBeehiivPost(
+      {
+        ...base,
+        content: {
+          free: { web: '<p>Free fallback.</p>' },
+          premium: { web: '   ' },
+        },
+      },
+      'members-letter',
+      'Author',
+      'premium',
+    )
+    expect(out!.bodyHtml).toContain('Free fallback')
   })
 
   test('promotes tier to ark-plus when audience is premium', () => {
@@ -100,13 +127,22 @@ describe('projectBeehiivPost', () => {
     expect(out!.tier).toBe('ark-plus')
   })
 
-  test('treats audience=both as free for public surface', () => {
+  test('treats audience=both as free on the free surface', () => {
     const out = projectBeehiivPost(
       { ...base, audience: 'both' },
       'ark-daily',
       'Author',
     )
     expect(out!.tier).toBe('free')
+  })
+
+  test('treats audience=both as ark-plus on the members surface', () => {
+    const out = projectBeehiivPost(
+      { ...base, audience: 'both' },
+      'members-letter',
+      'Author',
+    )
+    expect(out!.tier).toBe('ark-plus')
   })
 
   test('returns null when id or slug is missing', () => {

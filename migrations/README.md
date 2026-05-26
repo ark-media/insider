@@ -25,12 +25,16 @@ needs DDL privileges in that database.
 
 Three environments, three workflows:
 
-**Local development → a personal Neon branch.** Don't point local dev at the
-prod DB; you'll trip over your own schema changes. In the Neon dashboard,
-create a branch off `main` (Branches → New branch — name it whatever, e.g.
-`dev-hannah`). Copy the branch's *pooled* connection string into your local
-`.env` as `DATABASE_URL`, then run `bun run migrate` once to apply schema.
-The app's Neon HTTP driver works against branches with no code changes.
+**Local development → a separate `ark-insider-dev` Neon project.** Don't point
+local dev at the prod DB; you'll trip over your own schema changes. The dev
+project is fully isolated (separate compute, separate storage, separate
+billing line) — its pooled connection string is what your local `.env`
+`DATABASE_URL` should point at. After cloning, run `bun run migrate` once
+to bring the schema up to date.
+
+The dev project lives in the same `Hannah` Neon org as prod; grab its
+pooled URL from the console (Branches → `main` → Connection string → pick
+the pooled endpoint).
 
 **CI → production Neon main branch via GitHub Action.** Schema changes land
 in `migrations/` on a feature branch, get reviewed in a PR, and merge to

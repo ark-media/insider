@@ -12,7 +12,6 @@
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import { makeTTLCache } from "../../shared/ttl-cache";
 import { beehiivSource } from "./beehiiv";
-import { circleSpaceSource } from "./circle";
 
 export type FetchPostResult =
   | { kind: "ok"; post: NewsletterPost }
@@ -53,7 +52,7 @@ export function buildGatedPreview(post: NewsletterPost): NewsletterPost {
 
 const sourceBySlug: Record<NewsletterSlug, NewsletterSource> = {
   "ark-daily": beehiivSource,
-  "members-letter": circleSpaceSource,
+  "members-letter": beehiivSource,
 };
 
 // In-flight + result cache for `listPosts`. Sized to the newsletter universe,

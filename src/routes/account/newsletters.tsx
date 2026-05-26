@@ -1,10 +1,13 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { fetchMe } from "../../lib/auth";
+import {
+  fetchNewsletterPrefs,
+  saveNewsletterPrefs,
+  type NewsletterPrefs as Prefs,
+} from "../../lib/newsletterPrefs";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
-
-type PrefKey = "free" | "ark-plus";
 
 export const Route = createFileRoute("/account/newsletters")({
   beforeLoad: async () => {
@@ -12,31 +15,46 @@ export const Route = createFileRoute("/account/newsletters")({
     if (!me) throw redirect({ to: "/plus" });
     return { me };
   },
+  loader: async () => ({ prefs: await fetchNewsletterPrefs() }),
   component: NewsletterPrefs,
 });
 
 function NewsletterPrefs() {
   const { me } = Route.useRouteContext();
-  const isMember = me.feeds.length > 0;
-  const [prefs, setPrefs] = useState<Record<PrefKey, boolean>>({
-    free: true,
-    "ark-plus": isMember,
-  });
+  const { prefs: initial } = Route.useLoaderData();
+  const [prefs, setPrefs] = useState<Prefs>(
+    initial ?? { free: false, premium: false, canPremium: me.feeds.length > 0 },
+  );
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggle = (key: PrefKey) => {
-    setPrefs((p) => ({ ...p, [key]: !p[key] }));
+  const toggleFree = () => {
+    setPrefs((p) => ({ ...p, free: !p.free }));
     setSaved(false);
+    setError(null);
+  };
+  const togglePremium = () => {
+    setPrefs((p) => ({ ...p, premium: !p.premium }));
+    setSaved(false);
+    setError(null);
   };
 
-  /**
-   * Mock save — real implementation would PATCH the user's beehiiv subscription
-   * status across our free and paid publications and persist the choice in our DB.
-   */
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    await new Promise((r) => setTimeout(r, 300));
-    setSaved(true);
+    setSaving(true);
+    setError(null);
+    const result = await saveNewsletterPrefs({
+      free: prefs.free,
+      premium: prefs.premium,
+    });
+    setSaving(false);
+    if (result.ok && result.prefs) {
+      setPrefs(result.prefs);
+      setSaved(true);
+    } else {
+      setError(result.error ?? "Could not save. Please try again.");
+    }
   };
 
   return (
@@ -60,27 +78,32 @@ function NewsletterPrefs() {
             <ul className="divide-y divide-rule border-y border-rule">
               <PrefRow
                 title="The Ark Media Newsletter"
-                description="Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead."
+                description="Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead. Toggling off stops all Ark Media emails."
                 cadence="Weekly"
                 on={prefs.free}
-                onToggle={() => toggle("free")}
+                onToggle={toggleFree}
               />
               <PrefRow
                 title="The Ark+ Members Letter"
                 description="A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading."
                 cadence="Weekly"
                 badge="Ark+"
-                on={prefs["ark-plus"]}
-                onToggle={() => toggle("ark-plus")}
-                locked={!isMember}
+                on={prefs.premium}
+                onToggle={togglePremium}
+                locked={!prefs.canPremium}
               />
             </ul>
 
+            {error ? (
+              <p className="mt-6 text-[13px] text-red-400">{error}</p>
+            ) : null}
+
             <button
               type="submit"
-              className="mt-10 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              disabled={saving}
+              className="mt-10 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-50"
             >
-              {saved ? "Saved" : "Save preferences"} →
+              {saving ? "Saving" : saved ? "Saved" : "Save preferences"} →
             </button>
           </form>
         </div>
