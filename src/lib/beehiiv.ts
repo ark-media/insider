@@ -9,14 +9,10 @@ import type { NewsletterSource } from "./newsletterSources";
 /**
  * Beehiiv client.
  *
- * Read paths (`listPosts`, `getPost`) proxy `/api/beehiiv/posts`, which calls
- * Beehiiv's v2 API server-side with `BEEHIIV_API_KEY` and per-newsletter
- * publication-id env vars. The server returns an empty list when those are
- * unset — there is no client-side mock fallback.
- *
- * Subscription writes (`subscribeEmail`) remain mocked for now: Beehiiv stays
- * as the email-delivery layer during the Circle evaluation but the write path
- * isn't part of the read-side comparison.
+ * Read paths (`listPosts`, `getPost`) proxy `/api/beehiiv/posts` and writes
+ * (`subscribeEmail`) proxy `/api/beehiiv/subscribe`. Both call Beehiiv's v2
+ * API server-side with `BEEHIIV_API_KEY` and per-newsletter publication-id
+ * env vars.
  */
 
 const FAKE_LATENCY_MS = 60;
@@ -60,21 +56,44 @@ export const beehiivSource: NewsletterSource = {
 };
 
 /**
- * Subscribe an email to a newsletter. Mocked — real impl would call beehiiv's
- * Subscriptions API. Resolves immediately with `ok: true` for any well-formed
- * email. Used for every newsletter regardless of read source, since Beehiiv
- * stays as the email-delivery layer during the Circle test.
+ * Subscribe an email to a newsletter via `/api/beehiiv/subscribe`, which calls
+ * Beehiiv's v2 Subscriptions API server-side. Returns `ok: true` on success,
+ * with a user-facing `error` string otherwise.
  */
 export async function subscribeEmail(
   slug: NewsletterSlug,
   email: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  await jitter(180);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  const trimmed = email.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
     return { ok: false, error: "That doesn't look like a valid email." };
   }
   if (!newsletters.find((n) => n.slug === slug)) {
     return { ok: false, error: "Unknown newsletter." };
   }
-  return { ok: true };
+
+  try {
+    const res = await fetch("/api/beehiiv/subscribe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ newsletter: slug, email: trimmed }),
+    });
+    if (res.ok) return { ok: true };
+    const body = (await res
+      .json()
+      .catch(() => ({}))) as { error?: string };
+    switch (body.error) {
+      case "invalid_email":
+        return { ok: false, error: "That doesn't look like a valid email." };
+      case "already_subscribed":
+        return { ok: false, error: "Looks like you're already on the list." };
+      case "too_many_requests":
+        return { ok: false, error: "Too many attempts. Please wait a moment." };
+      default:
+        return { ok: false, error: "Could not subscribe. Please try again." };
+    }
+  } catch {
+    return { ok: false, error: "Network error. Please try again." };
+  }
 }
