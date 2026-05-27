@@ -5,6 +5,7 @@
 import { fetchAuth0TierForEmail, redactEmail } from '../entitlement.js'
 import {
   applyPreferences,
+  ensureFreeSubscription,
   getLocalSubscription,
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
@@ -102,6 +103,13 @@ export function meRoutes({ env }: Deps): Route[] {
           // checkout-cookie path (issued only after payment) a missing SC
           // user is a provisioning gap, so keep the 401 contract.
           if (source === 'auth0' && claimTier !== 'subscriber') {
+            // First-login auto-subscribe to the free newsletter.
+            // Soft-fails internally so a Beehiiv outage can't block login;
+            // skipped entirely when DATABASE_URL isn't configured (no
+            // mirror to anchor idempotency).
+            if (env.DATABASE_URL) {
+              await ensureFreeSubscription({ env, sql: getDb(env) }, email)
+            }
             return json(200, { email, tier: 'free', feeds: [] })
           }
           return json(401, { error: 'membership_not_found' })

@@ -9,7 +9,7 @@
 // so a missing SC user there is a provisioning gap, not a free user) and for
 // stale 'subscriber' JWTs whose SC record vanished.
 
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -18,6 +18,25 @@ import {
   signAuth0TestToken,
   silenceExpectedConsole,
 } from './test-utils'
+
+// ---------------------------------------------------------------------------
+// Neon mock — captures sql calls and lets each test stage a result.
+// ---------------------------------------------------------------------------
+type SqlCall = { sql: string; values: unknown[] }
+const sqlCalls: SqlCall[] = []
+let nextSqlResult: (sql: string) => unknown[] = () => []
+
+mock.module('@neondatabase/serverless', () => ({
+  neon: (_url: string) =>
+    ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const merged = strings.join('?')
+      sqlCalls.push({ sql: merged, values })
+      return Promise.resolve(nextSqlResult(merged))
+    }) as unknown,
+  __esModule: true,
+}))
+
+// Static imports AFTER mock.module so the plugin picks up the fake neon.
 import { devApiPlugin } from './dev-api'
 import { signCheckoutToken } from './lib/session'
 import { CHECKOUT_COOKIE_NAME } from './lib/cookies'
@@ -34,12 +53,19 @@ type Middleware = (
 ) => void
 
 const PATH = '/api/me'
+const PUB_ID = 'pub_test-me'
 
 const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'http://localhost:5173',
   SC_NETWORK_ID: 'test-net',
   SC_API_KEY: 'test-sc-key',
   CHECKOUT_SESSION_SECRET: 'checkout-secret-for-tests',
+  BEEHIIV_API_KEY: 'bk_test',
+  BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,
+  BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: PUB_ID,
+  // getDb() caches the neon() client by URL across the process; distinct URL
+  // per test file keeps each file's mocked sql closure isolated.
+  DATABASE_URL: 'postgres://stub-me-test',
 }
 
 function buildHandler(env: Record<string, string> = BASE_ENV): Middleware {
@@ -141,14 +167,18 @@ function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
 }
 
 // ---------------------------------------------------------------------------
-// fetch mock — serves JWKS + Simplecast endpoints.
+// fetch mock — serves JWKS, Simplecast, and Beehiiv.
 // ---------------------------------------------------------------------------
 type ScUserStub = { id: number; email: string } | null
 type ScFeedsStub = { id: number; name: string; url: string }[]
+type BeehiivCall = { url: string; method: string; body: unknown }
 
 let scUserByEmail: Map<string, ScUserStub> = new Map()
 let scFeedsByUserId: Map<number, ScFeedsStub> = new Map()
 let scThrowOnSearch = false
+let beehiivCalls: BeehiivCall[] = []
+let beehiivHandler: (call: BeehiivCall) => Response = () =>
+  new Response('{}', { status: 404 })
 
 const originalFetch = globalThis.fetch
 globalThis.fetch = (async (
@@ -189,6 +219,18 @@ globalThis.fetch = (async (
     return new Response(JSON.stringify({ feeds }), { status: 200 })
   }
 
+  // Beehiiv — defer to per-test handler so tests can stage create/lookup
+  // outcomes and assert which endpoints were hit.
+  if (url.includes('api.beehiiv.com')) {
+    let parsed: unknown
+    if (init?.body && typeof init.body === 'string') {
+      try { parsed = JSON.parse(init.body) } catch { parsed = init.body }
+    }
+    const call: BeehiivCall = { url, method: init?.method ?? 'GET', body: parsed }
+    beehiivCalls.push(call)
+    return beehiivHandler(call)
+  }
+
   return new Response('{}', { status: 500 })
 }) as typeof fetch
 
@@ -198,6 +240,10 @@ beforeEach(() => {
   scUserByEmail = new Map()
   scFeedsByUserId = new Map()
   scThrowOnSearch = false
+  sqlCalls.length = 0
+  nextSqlResult = () => []
+  beehiivCalls = []
+  beehiivHandler = () => new Response('{}', { status: 404 })
 })
 
 afterAll(() => {
@@ -381,5 +427,161 @@ describe('GET /api/me with checkout-cookie session', () => {
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
     expect((res.__json() as { tier: string }).tier).toBe('subscriber')
+  })
+})
+
+// ===========================================================================
+// First-login auto-subscribe to the free Beehiiv newsletter
+// ===========================================================================
+
+describe('GET /api/me free-tier first-login auto-subscribe', () => {
+  // Stages a sql closure that returns "no row" for the local subscription
+  // lookup and accepts the subsequent upsert.
+  function stageNoLocalRow() {
+    nextSqlResult = (sql) => {
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return []
+      }
+      return []
+    }
+  }
+
+  // Stages a sql closure that returns an existing row, so the gate trips
+  // and Beehiiv is never called.
+  function stageHasLocalRow(email: string) {
+    nextSqlResult = (sql) => {
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return [
+          {
+            email,
+            publication_id: PUB_ID,
+            beehiiv_subscription_id: 'sub_existing',
+            status: 'active',
+            has_premium: false,
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      }
+      return []
+    }
+  }
+
+  test('first login (no local row) → creates Beehiiv subscription, returns free shape', async () => {
+    stageNoLocalRow()
+    beehiivHandler = (call) => {
+      // by_email lookup → 404 (no upstream record yet)
+      if (call.url.includes('/subscriptions/by_email/')) {
+        return new Response('{}', { status: 404 })
+      }
+      // POST /subscriptions → create
+      if (call.url.endsWith('/subscriptions') && call.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'sub_new',
+              email: 'newfree@x.com',
+              status: 'active',
+              subscription_tier: 'free',
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 500 })
+    }
+
+    const token = await signAuth0Token({ email: 'newfree@x.com', tier: 'free' })
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({
+      email: 'newfree@x.com',
+      tier: 'free',
+      feeds: [],
+    })
+
+    // Beehiiv was hit: lookup + create.
+    expect(beehiivCalls.some((c) => c.url.includes('/by_email/'))).toBe(true)
+    expect(
+      beehiivCalls.some(
+        (c) => c.url.endsWith('/subscriptions') && c.method === 'POST',
+      ),
+    ).toBe(true)
+
+    // The mirror was upserted.
+    expect(
+      sqlCalls.some(
+        (c) => c.sql.includes('insert into beehiiv_subscription'),
+      ),
+    ).toBe(true)
+  })
+
+  test('repeat login (local row exists) → no Beehiiv call, no upsert', async () => {
+    stageHasLocalRow('returning@x.com')
+    const token = await signAuth0Token({ email: 'returning@x.com', tier: 'free' })
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { tier: string }).tier).toBe('free')
+    expect(beehiivCalls.length).toBe(0)
+    expect(
+      sqlCalls.some(
+        (c) => c.sql.includes('insert into beehiiv_subscription'),
+      ),
+    ).toBe(false)
+  })
+
+  test('Beehiiv outage → /api/me still returns 200 free (soft-fail)', async () => {
+    stageNoLocalRow()
+    beehiivHandler = () =>
+      new Response('{"error":"down"}', { status: 503 })
+
+    const token = await signAuth0Token({ email: 'unlucky@x.com', tier: 'free' })
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({
+      email: 'unlucky@x.com',
+      tier: 'free',
+      feeds: [],
+    })
+  })
+
+  test('DATABASE_URL unset → auto-subscribe is skipped entirely, no Beehiiv call', async () => {
+    // No DB to anchor idempotency → don't blindly write to Beehiiv every
+    // request. Login still succeeds.
+    const env = { ...BASE_ENV }
+    delete env.DATABASE_URL
+    const token = await signAuth0Token({ email: 'nodb@x.com', tier: 'free' })
+    const handler = buildHandler(env)
+    const res = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { tier: string }).tier).toBe('free')
+    expect(beehiivCalls.length).toBe(0)
+  })
+
+  test('subscriber path does NOT trigger free auto-subscribe', async () => {
+    scUserByEmail.set('paid@x.com', { id: 99, email: 'paid@x.com' })
+    scFeedsByUserId.set(99, [])
+    const token = await signAuth0Token({ email: 'paid@x.com', tier: 'subscriber' })
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), res)
+
+    expect((res.__json() as { tier: string }).tier).toBe('subscriber')
+    expect(beehiivCalls.length).toBe(0)
+    expect(
+      sqlCalls.some(
+        (c) => c.sql.includes('beehiiv_subscription'),
+      ),
+    ).toBe(false)
   })
 })

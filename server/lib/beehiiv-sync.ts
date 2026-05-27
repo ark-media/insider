@@ -258,6 +258,29 @@ function beehiivConfigured(env: Env): { pubId: string; token: string } | null {
   return { pubId, token }
 }
 
+// First-login auto-subscribe for a new free Auth0 account. Idempotent on
+// three layers:
+//   1. Local Neon mirror — if we already have a row, skip entirely (no
+//      Beehiiv round-trip, no upsert).
+//   2. Beehiiv's per-publication by_email lookup inside applyPreferences
+//      finds any pre-existing subscription and falls back to a PUT instead
+//      of a duplicate POST.
+//   3. createSubscription sends reactivate_existing:true so even a racing
+//      POST won't error.
+// Soft-fails: callers must keep returning 200 if Beehiiv is unreachable,
+// otherwise a third-party blip would block account login.
+export async function ensureFreeSubscription(
+  deps: PushDeps,
+  email: string,
+): Promise<void> {
+  if (!beehiivConfigured(deps.env)) return
+  const existing = await getLocalSubscription(deps.sql, email.toLowerCase())
+  if (existing) return
+  await tryPush('first-login subscribe', async () => {
+    await applyPreferences(deps, email, { free: true })
+  })
+}
+
 // Subscribe (or upgrade) a reader to the premium tier. Used on Stripe sub
 // activation and gift redemption. Idempotent: re-running for an already-
 // premium-and-active reader skips the upstream PUT.
