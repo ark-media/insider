@@ -12,8 +12,9 @@ import { shows } from "../data/shows";
 //
 // Items render in array order — reorder here, the nav reflows. Each item's
 // variant chooses the renderer (text link / pill / menu). `hideWhen` removes
-// the item for the named auth state ('member' or 'guest'). Items with
-// `children` open a dropdown; the parent link stays clickable.
+// the item for the named tier ('subscriber' = hide from paid; 'nonSubscriber'
+// = hide from guests + free users). Items with `children` open a dropdown;
+// the parent link stays clickable.
 type NavVariant = "text" | "pill" | "menu";
 type NavChild = {
   label: string;
@@ -26,9 +27,11 @@ type NavItem = {
   to: string;
   variant: NavVariant;
   matchPrefix?: string;
-  hideWhen?: "member" | "guest";
+  hideWhen?: "subscriber" | "nonSubscriber";
   children?: NavChild[];
 };
+
+type Tier = "guest" | "free" | "subscriber";
 
 const podcastChildren: NavChild[] = shows.map((show) => ({
   label: show.shortTitle,
@@ -50,7 +53,8 @@ const NAV_ITEMS: NavItem[] = [
     label: "Community",
     to: "/community",
     matchPrefix: "/community",
-    hideWhen: "guest",
+    // The Circle community is paid-only — free accounts don't have access.
+    hideWhen: "nonSubscriber",
     children: [
       { label: "Upcoming Events", to: "/events" },
       { label: "Gift Ark+", to: "/plus/gift" },
@@ -62,7 +66,8 @@ const NAV_ITEMS: NavItem[] = [
     label: "Ark+",
     to: "/plus",
     matchPrefix: "/plus",
-    hideWhen: "member",
+    // Upgrade CTA — free users still need to see this, only subscribers don't.
+    hideWhen: "subscriber",
     children: [
       { label: "Join Ark+", to: "/plus" },
       { label: "Gift Ark+", to: "/plus/gift" },
@@ -94,10 +99,11 @@ function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "
   return false;
 }
 
-function visibleNavItems(isMember: boolean): NavItem[] {
+function visibleNavItems(tier: Tier): NavItem[] {
+  const isSubscriber = tier === "subscriber";
   return NAV_ITEMS.filter((item) => {
-    if (item.hideWhen === "member") return !isMember;
-    if (item.hideWhen === "guest") return isMember;
+    if (item.hideWhen === "subscriber") return !isSubscriber;
+    if (item.hideWhen === "nonSubscriber") return isSubscriber;
     return true;
   });
 }
@@ -107,10 +113,12 @@ export function PublicMasthead() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { state, signOut, isAdmin } = useSubscriberAuth();
   const { loginWithRedirect } = useAuth0();
-  const isMember = state.kind === "member";
+  const tier: Tier =
+    state.kind === "member" ? state.me.tier : "guest";
+  const isSubscriber = tier === "subscriber";
   const navItems = isAdmin
-    ? [...visibleNavItems(isMember), ADMIN_NAV_ITEM]
-    : visibleNavItems(isMember);
+    ? [...visibleNavItems(tier), ADMIN_NAV_ITEM]
+    : visibleNavItems(tier);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
@@ -206,6 +214,7 @@ export function PublicMasthead() {
                     <MemberMenu
                       email={state.me.email}
                       isAdmin={isAdmin}
+                      isSubscriber={isSubscriber}
                       onSignOut={() => {
                         setAccountOpen(false);
                         signOut();
@@ -657,11 +666,13 @@ function ThemeToggle() {
 function MemberMenu({
   email,
   isAdmin,
+  isSubscriber,
   onSignOut,
   onClose,
 }: {
   email: string;
   isAdmin: boolean;
+  isSubscriber: boolean;
   onSignOut: () => void;
   onClose: () => void;
 }) {
@@ -678,13 +689,15 @@ function MemberMenu({
       >
         Account settings
       </Link>
-      <Link
-        to="/setup"
-        onClick={onClose}
-        className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        Set up your feed
-      </Link>
+      {isSubscriber ? (
+        <Link
+          to="/setup"
+          onClick={onClose}
+          className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          Set up your feed
+        </Link>
+      ) : null}
       {isAdmin ? (
         <Link
           to="/admin"

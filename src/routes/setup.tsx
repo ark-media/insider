@@ -15,8 +15,14 @@ function SetupPage() {
   useEffect(() => {
     if (state.kind === "guest") {
       void navigate({ to: "/plus" });
+      return;
     }
-  }, [state.kind, navigate]);
+    // Free accounts have no Simplecast record to set up. Send them to the
+    // upgrade pitch so the route can't be reached by URL-poking.
+    if (state.kind === "member" && state.me.tier !== "subscriber") {
+      void navigate({ to: "/plus" });
+    }
+  }, [state, navigate]);
 
   if (state.kind === "loading") {
     return (
@@ -27,6 +33,7 @@ function SetupPage() {
   }
 
   if (state.kind === "guest") return null;
+  if (state.me.tier !== "subscriber") return null;
 
   return <SetupFlow me={state.me} />;
 }

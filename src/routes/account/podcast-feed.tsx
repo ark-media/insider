@@ -9,6 +9,9 @@ export const Route = createFileRoute("/account/podcast-feed")({
   beforeLoad: async () => {
     const me = await fetchMe();
     if (!me) throw redirect({ to: "/plus" });
+    // The private podcast feed is a paid feature — only subscribers have a
+    // Simplecast record to set up.
+    if (me.tier !== "subscriber") throw redirect({ to: "/plus" });
     return { me };
   },
   component: PodcastFeedPage,

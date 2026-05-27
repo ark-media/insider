@@ -9,6 +9,9 @@ export const Route = createFileRoute("/account/billing")({
   beforeLoad: async () => {
     const me = await fetchMe();
     if (!me) throw redirect({ to: "/plus" });
+    // Free accounts have no Stripe customer to bill — bounce them to the
+    // upgrade page rather than rendering an empty/broken billing shell.
+    if (me.tier !== "subscriber") throw redirect({ to: "/plus" });
     return { me };
   },
   component: BillingPage,
