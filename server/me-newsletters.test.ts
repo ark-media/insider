@@ -15,7 +15,6 @@ import {
   describe,
   test,
   expect,
-  beforeAll,
   beforeEach,
   afterAll,
   mock,
@@ -23,18 +22,11 @@ import {
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
-  exportJWK,
-  generateKeyPair,
-  SignJWT,
-  type CryptoKey,
-  type JWK,
-} from 'jose'
-import { silenceExpectedConsole } from './test-utils'
-import {
-  AUTH0_AUDIENCE,
-  AUTH0_EMAIL_CLAIM,
-  AUTH0_TIER_CLAIM,
-} from '../shared/auth0-claims'
+  AUTH0_TEST_JWKS_URL,
+  getAuth0TestKeys,
+  signAuth0TestToken,
+  silenceExpectedConsole,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Neon mock (same shape as beehiiv-webhook.test.ts)
@@ -56,40 +48,7 @@ mock.module('@neondatabase/serverless', () => ({
 // Static import AFTER mock.module so the plugin picks up the fake neon.
 import { devApiPlugin } from './dev-api'
 
-// ---------------------------------------------------------------------------
-// Test keypair + JWKS
-// ---------------------------------------------------------------------------
-const AUTH0_DOMAIN = 'https://auth.ark-plus.xyz'
-const JWKS_URL = `${AUTH0_DOMAIN}/.well-known/jwks.json`
-const KID = 'test-key-1'
-
-let privateKey: CryptoKey
-let publicJwk: JWK
-
-beforeAll(async () => {
-  const { publicKey, privateKey: priv } = await generateKeyPair('RS256', {
-    extractable: true,
-  })
-  privateKey = priv
-  publicJwk = { ...(await exportJWK(publicKey)), use: 'sig', alg: 'RS256', kid: KID }
-})
-
-async function signAuth0Token(claims: {
-  email: string
-  tier?: 'subscriber' | 'free'
-}): Promise<string> {
-  const payload: Record<string, unknown> = {
-    [AUTH0_EMAIL_CLAIM]: claims.email,
-  }
-  if (claims.tier) payload[AUTH0_TIER_CLAIM] = claims.tier
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: 'RS256', kid: KID })
-    .setIssuer(`${AUTH0_DOMAIN}/`)
-    .setAudience(AUTH0_AUDIENCE)
-    .setIssuedAt()
-    .setExpirationTime('5m')
-    .sign(privateKey)
-}
+const signAuth0Token = signAuth0TestToken
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -248,7 +207,8 @@ globalThis.fetch = (async (
   fetchCalls.push(call)
 
   // JWKS endpoint — served by jose's createRemoteJWKSet.
-  if (url === JWKS_URL) {
+  if (url === AUTH0_TEST_JWKS_URL) {
+    const { publicJwk } = await getAuth0TestKeys()
     return new Response(JSON.stringify({ keys: [publicJwk] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },

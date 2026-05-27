@@ -1,4 +1,16 @@
 import { afterAll, beforeEach } from 'bun:test'
+import {
+  exportJWK,
+  generateKeyPair,
+  SignJWT,
+  type CryptoKey,
+  type JWK,
+} from 'jose'
+import {
+  AUTH0_AUDIENCE,
+  AUTH0_EMAIL_CLAIM,
+  AUTH0_TIER_CLAIM,
+} from '../shared/auth0-claims'
 
 /**
  * Silences console.error/warn for the calling test file. Several suites
@@ -19,4 +31,50 @@ export function silenceExpectedConsole() {
     console.error = originalError
     console.warn = originalWarn
   })
+}
+
+// jose's createRemoteJWKSet caches keys process-wide keyed on the JWKS URL.
+// Every test file that signs Auth0 tokens hits the same URL, so if two files
+// each generated their own keypair the first to run would seed the cache and
+// the second file's tokens would fail to verify. One shared keypair avoids it.
+export const AUTH0_TEST_DOMAIN = 'https://auth.ark-plus.xyz'
+export const AUTH0_TEST_JWKS_URL = `${AUTH0_TEST_DOMAIN}/.well-known/jwks.json`
+export const AUTH0_TEST_KID = 'shared-test-key'
+
+let cached: { privateKey: CryptoKey; publicJwk: JWK } | null = null
+
+export async function getAuth0TestKeys(): Promise<{
+  privateKey: CryptoKey
+  publicJwk: JWK
+}> {
+  if (cached) return cached
+  const { publicKey, privateKey } = await generateKeyPair('RS256', {
+    extractable: true,
+  })
+  const publicJwk = {
+    ...(await exportJWK(publicKey)),
+    use: 'sig',
+    alg: 'RS256',
+    kid: AUTH0_TEST_KID,
+  }
+  cached = { privateKey, publicJwk }
+  return cached
+}
+
+export async function signAuth0TestToken(claims: {
+  email: string
+  tier?: 'subscriber' | 'free'
+}): Promise<string> {
+  const { privateKey } = await getAuth0TestKeys()
+  const payload: Record<string, unknown> = {
+    [AUTH0_EMAIL_CLAIM]: claims.email,
+  }
+  if (claims.tier) payload[AUTH0_TIER_CLAIM] = claims.tier
+  return new SignJWT(payload)
+    .setProtectedHeader({ alg: 'RS256', kid: AUTH0_TEST_KID })
+    .setIssuer(`${AUTH0_TEST_DOMAIN}/`)
+    .setAudience(AUTH0_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(privateKey)
 }

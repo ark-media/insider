@@ -11,7 +11,6 @@ import { fetchMe, type Me } from "./auth";
 import { fetchAdminMe } from "./admin";
 import { hasCheckoutCookie, setTokenGetter } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
-import { AUTH0_TIER_CLAIM } from "../../shared/auth0-claims";
 
 export type SubscriberAuthState =
   | { kind: "loading" }
@@ -88,18 +87,14 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, isLoading]);
 
-  // Tie analytics/error identity to the auth lifecycle. Tier comes from the
-  // Auth0 token claim when present; falls back to "has SC feeds" so a fresh
-  // subscriber identifies correctly before the Action propagates the claim.
+  // Tie analytics/error identity to the auth lifecycle. /api/me returns the
+  // authoritative tier (SC presence wins over a stale JWT claim).
   useEffect(() => {
     if (state.kind === "member") {
-      const tierClaim = user?.[AUTH0_TIER_CLAIM];
-      const tier: "subscriber" | "free" =
-        tierClaim === "subscriber" || state.me.feeds.length > 0 ? "subscriber" : "free";
       identifyUser({
         id: user?.sub ?? state.me.email,
         email: state.me.email,
-        tier,
+        tier: state.me.tier,
       });
     } else if (state.kind === "guest") {
       resetIdentity();

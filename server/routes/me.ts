@@ -7,10 +7,14 @@ import {
   applyPreferences,
   getLocalSubscription,
 } from '../lib/beehiiv-sync.js'
+import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
 import { makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
-import { getSessionEmail, verifyAuth0BearerProfile } from '../lib/session.js'
+import {
+  verifyAuth0BearerProfile,
+  verifyCheckoutToken,
+} from '../lib/session.js'
 import {
   createScClient,
   findScUserByEmail,
@@ -33,25 +37,74 @@ export function meRoutes({ env }: Deps): Route[] {
       path: '/api/me',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
-        const email = await getSessionEmail(req, env)
-        if (!email) return json(401, { error: 'unauthenticated' })
 
+        // Resolve the session: an Auth0 bearer (the long-term login, carries
+        // a tier claim) or the short-lived checkout token (cookie or bearer,
+        // issued only post-payment so always implies subscriber). We need
+        // both the email and which source authenticated, because a missing
+        // SC record means different things for each: for Auth0 it means
+        // "logged-in free user"; for checkout it means "provisioning gap".
+        let email: string | null = null
+        let claimTier: 'subscriber' | 'free' | undefined
+        let source: 'auth0' | 'checkout' | null = null
+
+        const authHeader = req.headers.authorization
+        if (authHeader?.startsWith('Bearer ')) {
+          const token = authHeader.slice(7)
+          const profile = await verifyAuth0BearerProfile(token)
+          if (profile?.email) {
+            source = 'auth0'
+            email = profile.email
+            claimTier = profile.tier
+          } else {
+            const e = await verifyCheckoutToken(token, env)
+            if (e) {
+              source = 'checkout'
+              email = e
+            }
+          }
+        }
+        if (!email) {
+          const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
+          if (cookieToken) {
+            const e = await verifyCheckoutToken(cookieToken, env)
+            if (e) {
+              source = 'checkout'
+              email = e
+            }
+          }
+        }
+        if (!email || !source) return json(401, { error: 'unauthenticated' })
+
+        // Always look up SC: presence there is authoritative for paid tier,
+        // so a stale 'free' JWT for a recently-upgraded user still surfaces
+        // subscriber state without waiting for the next token refresh.
         try {
           const sc = createScClient(env)
           const user = await findScUserByEmail(sc, email)
-          if (!user) return json(401, { error: 'membership_not_found' })
-          let feeds: ScUserFeed[] = []
-          try {
-            const feedsRes = await sc.call<{ feeds: ScUserFeed[] }>(
-              'GET',
-              `/users/${user.id}/feeds`,
-            )
-            feeds = feedsRes.feeds ?? []
-          } catch (feedErr) {
-            if ((feedErr as ScError).status !== 404) throw feedErr
-            // 404 means no feeds set up yet — treat as empty.
+          if (user) {
+            let feeds: ScUserFeed[] = []
+            try {
+              const feedsRes = await sc.call<{ feeds: ScUserFeed[] }>(
+                'GET',
+                `/users/${user.id}/feeds`,
+              )
+              feeds = feedsRes.feeds ?? []
+            } catch (feedErr) {
+              if ((feedErr as ScError).status !== 404) throw feedErr
+              // 404 means no feeds set up yet — treat as empty.
+            }
+            return json(200, { email, tier: 'subscriber', feeds })
           }
-          json(200, { email, feeds })
+
+          // No SC record. For Auth0 sessions whose JWT isn't claiming
+          // 'subscriber', treat as a logged-in free user. For the
+          // checkout-cookie path (issued only after payment) a missing SC
+          // user is a provisioning gap, so keep the 401 contract.
+          if (source === 'auth0' && claimTier !== 'subscriber') {
+            return json(200, { email, tier: 'free', feeds: [] })
+          }
+          return json(401, { error: 'membership_not_found' })
         } catch (err) {
           console.error('[me] sc lookup failed:', err)
           const status = (err as ScError).status ?? 502

@@ -23,7 +23,7 @@ function NewsletterPrefs() {
   const { me } = Route.useRouteContext();
   const { prefs: initial } = Route.useLoaderData();
   const [prefs, setPrefs] = useState<Prefs>(
-    initial ?? { free: false, premium: false, canPremium: me.feeds.length > 0 },
+    initial ?? { free: false, premium: false, canPremium: me.tier === "subscriber" },
   );
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);

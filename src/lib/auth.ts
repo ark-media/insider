@@ -17,6 +17,9 @@ export type UserFeed = {
 
 export type Me = {
   email: string;
+  // 'subscriber' = paid (has Simplecast record). 'free' = logged-in via
+  // Auth0 with no SC record. Always present on the server response.
+  tier: "subscriber" | "free";
   feeds: UserFeed[];
 };
 
