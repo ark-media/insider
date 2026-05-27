@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useAuth0 } from "@auth0/auth0-react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
   CheckoutElementsProvider,
@@ -35,6 +36,7 @@ type Step =
     }
   | { kind: "activating"; email: string }
   | { kind: "processing"; email: string }
+  | { kind: "already_subscribed"; email: string; message: string }
   | { kind: "error"; message: string };
 
 const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as
@@ -62,6 +64,7 @@ const MAX_POLL_ATTEMPTS = 15;
 type CheckoutSessionResult =
   | { kind: "ready" }
   | { kind: "processing" }
+  | { kind: "already_subscribed"; message: string }
   | { kind: "error"; message: string }
   | { kind: "timeout" };
 
@@ -112,8 +115,21 @@ async function pollForCheckoutSession(
       continue;
     } else if (res.status >= 400) {
       // Anything else (403 forbidden, 410 expired window, 5xx) won't fix
-      // itself by polling — surface the message and stop.
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      // itself by polling — surface the message and stop. 409 with the
+      // already_subscribed code is a distinct terminal state: the buyer paid
+      // but already had an active membership, so we route them to a sign-in
+      // screen instead of a generic retry.
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+      };
+      if (res.status === 409 && data.code === "already_subscribed") {
+        return {
+          kind: "already_subscribed",
+          message:
+            data.error ?? "This email already has an active membership.",
+        };
+      }
       return {
         kind: "error",
         message:
@@ -157,6 +173,7 @@ export function CheckoutModal({
   const [promo, setPromo] = useState<PromoInfo | null>(null);
   const navigate = useNavigate();
   const { refresh } = useSubscriberAuth();
+  const { loginWithRedirect } = useAuth0();
   const { theme } = useTheme();
 
   const handleClose = useCallback(() => {
@@ -330,6 +347,9 @@ export function CheckoutModal({
             onActivating={(email) => setStep({ kind: "activating", email })}
             onActivated={handleActivated}
             onProcessing={(email) => setStep({ kind: "processing", email })}
+            onAlreadySubscribed={(email, message) =>
+              setStep({ kind: "already_subscribed", email, message })
+            }
           />
         </CheckoutElementsProvider>
       ) : null}
@@ -340,6 +360,35 @@ export function CheckoutModal({
             Complete your membership
           </h2>
           <LoadingRow label="Payment received — signing you in…" />
+        </>
+      ) : null}
+
+      {step.kind === "already_subscribed" ? (
+        <>
+          <h2 id="checkout-title" className={titleClass}>
+            You're already a member
+          </h2>
+          <div className="mt-6 space-y-4 text-sm text-fg">
+            <p role="alert">{step.message}</p>
+            <button
+              type="button"
+              onClick={() =>
+                void loginWithRedirect({
+                  authorizationParams: { login_hint: step.email },
+                })
+              }
+              className={ctaClass}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Close
+            </button>
+          </div>
         </>
       ) : null}
 
@@ -530,6 +579,7 @@ function CheckoutForm({
   onActivating,
   onActivated,
   onProcessing,
+  onAlreadySubscribed,
 }: {
   plan: Plan;
   checkoutSessionId: string;
@@ -538,6 +588,7 @@ function CheckoutForm({
   onActivating: (email: string) => void;
   onActivated: (email: string) => void | Promise<void>;
   onProcessing: (email: string) => void;
+  onAlreadySubscribed: (email: string, message: string) => void;
 }) {
   const checkoutState = useCheckout();
   const [payError, setPayError] = useState<string | null>(null);
@@ -599,6 +650,8 @@ function CheckoutForm({
     const poll = await pollForCheckoutSession(checkoutSessionId, email);
     if (poll.kind === "ready") {
       await onActivated(email);
+    } else if (poll.kind === "already_subscribed") {
+      onAlreadySubscribed(email, poll.message);
     } else {
       onProcessing(email);
     }

@@ -12,6 +12,7 @@
 //     out without leaving a 30-min cookie behind.
 
 import type Stripe from 'stripe'
+import { AlreadySubscribedError } from '../lib/activation.js'
 import {
   CHECKOUT_TOKEN_TTL_SEC,
   clearCheckoutCookies,
@@ -108,6 +109,17 @@ export function authRoutes({ env, stripe, activator }: Deps): Route[] {
         try {
           await activator.activateScSubscriptionForStripeSub(sub)
         } catch (err) {
+          if (err instanceof AlreadySubscribedError) {
+            // The new Stripe sub paid through, but SC already has an active sub
+            // for this user — usually a prior membership that wasn't fully torn
+            // down. Tell the buyer rather than the generic provisioning error;
+            // billing reconciliation is a separate manual step.
+            return json(409, {
+              error:
+                'This email already has an active Insider membership. Please sign in instead — and email support@arkmedia.org if you were charged for this second attempt.',
+              code: 'already_subscribed',
+            })
+          }
           console.error('[auth/checkout-session] provision failed:', err)
           return json(502, {
             error: 'Could not finish setting up your account. Please try again.',

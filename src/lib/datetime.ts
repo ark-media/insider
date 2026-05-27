@@ -88,12 +88,16 @@ export function utcToZonedWallClock(iso: string, timeZone: string): string {
 }
 
 // Human-readable rendering of an instant in a given zone, for confirmation
-// hints (e.g. "May 26, 2026, 9:00 AM EDT").
+// hints (e.g. "May 26, 2026, 9:00 AM EDT"). `timeZoneName` can't be combined
+// with `dateStyle`/`timeStyle`, so spell out the components explicitly.
 export function describeInstant(iso: string, timeZone: string): string {
   return new Date(iso).toLocaleString("en-US", {
     timeZone,
-    dateStyle: "medium",
-    timeStyle: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZoneName: "short",
   });
 }

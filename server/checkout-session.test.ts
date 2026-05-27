@@ -553,6 +553,39 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
   })
 
+  test('409 with already_subscribed code when SC rejects a second active sub', async () => {
+    nextSubscription = activeSub()
+    fetchImpl = async (url, init) => {
+      if (url.endsWith('/users/search')) {
+        return new Response(
+          JSON.stringify({ users: [{ id: 555, email: 'user@example.com' }] }),
+          { status: 200 },
+        )
+      }
+      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            message: 'This network limits users to only one active subscription at a time.',
+          }),
+          { status: 409 },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }
+    const h = getHandler(PATH)
+    const req = makeReq({
+      body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
+    })
+    const res = makeRes()
+    await runHandler(h, req, res)
+    expect(res.statusCode).toBe(409)
+    const body = res.__json() as { error: string; code: string }
+    expect(body.code).toBe('already_subscribed')
+    expect(body.error).toMatch(/already has an active/i)
+    // No session cookie should be set when provisioning fails.
+    expect(res.__header('set-cookie')).toBeUndefined()
+  })
+
   test('trialing status is accepted (not just active)', async () => {
     nextSubscription = activeSub({ status: 'trialing' })
     const h = getHandler(PATH)

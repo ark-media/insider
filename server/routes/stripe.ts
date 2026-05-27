@@ -13,6 +13,7 @@
 //     Stripe; the source of truth for SC + entitlement state.
 
 import type Stripe from 'stripe'
+import { AlreadySubscribedError } from '../lib/activation.js'
 import { emailForStripeCustomer, syncEntitlement } from '../entitlement.js'
 import { downgradeToFree, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
@@ -336,6 +337,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           await dispatchWebhookEvent(event, stripe, env, activator)
           json(200, { received: true })
         } catch (err) {
+          if (err instanceof AlreadySubscribedError) {
+            // The buyer already has an active SC sub — retrying the webhook
+            // won't fix that, so ack 200 and rely on the auth route's 409 to
+            // surface the situation to the buyer. Manual billing follow-up.
+            console.warn('[dev-api] webhook: already subscribed:', err.email)
+            return json(200, { received: true, skipped: 'already_subscribed' })
+          }
           console.error('[dev-api] webhook handler error:', err)
           if (err && typeof err === 'object' && 'data' in err) {
             console.error('[dev-api] webhook error data:', JSON.stringify((err as { data: unknown }).data, null, 2))

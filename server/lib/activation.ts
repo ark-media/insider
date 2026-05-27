@@ -64,6 +64,17 @@ export type Activator = {
   activateScGiftForPaymentIntent: (pi: Stripe.PaymentIntent) => Promise<void>
 }
 
+// SC rejects a second active subscription per user with HTTP 409. We translate
+// that to this typed error so callers (the post-checkout route + the webhook)
+// can react differently from a generic provisioning failure.
+export class AlreadySubscribedError extends Error {
+  readonly kind = 'already_subscribed' as const
+  constructor(public readonly email: string) {
+    super(`User ${email} already has an active subscription on this network.`)
+    this.name = 'AlreadySubscribedError'
+  }
+}
+
 export function createActivator(env: Env, stripe: Stripe | null): Activator {
   const resolveScPriceId = (plan: 'monthly' | 'yearly'): string => {
     const id =
@@ -126,12 +137,19 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     const recheck = await stripe.subscriptions.retrieve(subId)
     if (recheck.metadata?.sc_subscription_id) return
 
-    const created = await sc.call<{ subscription: { id: number } }>(
-      'POST',
-      '/subscriptions',
-      { user_id: user.id, subscription_price_id: Number(scPriceId) },
-      { idempotencyKey: `stripe_sub_${subId}` },
-    )
+    let created: { subscription: { id: number } }
+    try {
+      created = await sc.call<{ subscription: { id: number } }>(
+        'POST',
+        '/subscriptions',
+        { user_id: user.id, subscription_price_id: Number(scPriceId) },
+        { idempotencyKey: `stripe_sub_${subId}` },
+      )
+    } catch (err) {
+      const e = err as { status?: number }
+      if (e?.status === 409) throw new AlreadySubscribedError(email)
+      throw err
+    }
 
     // Create the Auth0 login but suppress Auth0's own reset email — our single
     // welcome email below carries the set-password link instead.
