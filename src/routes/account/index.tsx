@@ -30,11 +30,24 @@ function AccountDashboard() {
 
   const { me } = state;
 
+  if (me.tier === "free") {
+    return <FreeDashboard email={me.email} onSignOut={signOut} />;
+  }
+  return <SubscriberDashboard email={me.email} onSignOut={signOut} />;
+}
+
+function SubscriberDashboard({
+  email,
+  onSignOut,
+}: {
+  email: string;
+  onSignOut: () => void;
+}) {
   return (
     <PageShell
       eyebrow="Member dashboard"
       title="Welcome back."
-      lede={`Signed in as ${me.email}. The community is the main event — open the Circle app to dive in.`}
+      lede={`Signed in as ${email}. The community is the main event — open the Circle app to dive in.`}
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
@@ -81,7 +94,7 @@ function AccountDashboard() {
             <div className="lg:col-span-5">
               <div className="border border-rule bg-navy-800/40 p-8">
                 <div className="eyebrow">Your account</div>
-                <p className="mt-4 text-[14px] text-fg">{me.email}</p>
+                <p className="mt-4 text-[14px] text-fg">{email}</p>
                 <ul className="mt-6 space-y-2">
                   <AccountLink to="/account/podcast-feed" label="Set up your private podcast feed" />
                   <AccountLink to="/account/newsletters" label="Newsletter preferences" />
@@ -89,7 +102,67 @@ function AccountDashboard() {
                 </ul>
                 <button
                   type="button"
-                  onClick={signOut}
+                  onClick={onSignOut}
+                  className="mt-6 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-[14px] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </PageShell>
+  );
+}
+
+function FreeDashboard({
+  email,
+  onSignOut,
+}: {
+  email: string;
+  onSignOut: () => void;
+}) {
+  return (
+    <PageShell
+      eyebrow="Your account"
+      title="You're signed in."
+      lede={`Signed in as ${email}. Manage what lands in your inbox, or join Ark+ for the private feed and community.`}
+    >
+      <section className="border-t border-rule bg-navy-900">
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              <div className="border border-cyan/40 bg-navy-800/40 p-8">
+                <div className="eyebrow">Become an Ark+ member</div>
+                <h2 className="mt-4 font-display text-[clamp(1.6rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
+                  Go deeper with Ark+.
+                </h2>
+                <ul className="mt-6 space-y-2 text-[14px] leading-[1.6] text-fg">
+                  <li>— Inside Call Me Back, the members-only show</li>
+                  <li>— Private podcast feed, ad-free</li>
+                  <li>— Members-only newsletter</li>
+                  <li>— Circle community access</li>
+                </ul>
+                <Link
+                  to="/plus"
+                  className="mt-6 inline-flex min-h-12 items-center justify-center border border-cyan bg-cyan px-6 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  Become a member →
+                </Link>
+              </div>
+            </div>
+
+            <div className="lg:col-span-5">
+              <div className="border border-rule bg-navy-800/40 p-8">
+                <div className="eyebrow">Your account</div>
+                <p className="mt-4 text-[14px] text-fg">{email}</p>
+                <ul className="mt-6 space-y-2">
+                  <AccountLink to="/account/newsletters" label="Newsletter preferences" />
+                </ul>
+                <button
+                  type="button"
+                  onClick={onSignOut}
                   className="mt-6 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-[14px] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Sign out
