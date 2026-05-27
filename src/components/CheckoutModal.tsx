@@ -575,10 +575,11 @@ function CheckoutForm({
     setPayError(null);
 
     // redirect: 'if_required' keeps card payments in the modal; methods that
-    // need an off-site step (e.g. 3DS) use the session's return_url.
+    // need an off-site step (e.g. 3DS) use the session's return_url. Email is
+    // already on the Customer attached to the Session, so passing it here is
+    // rejected by Stripe with an IntegrationError.
     const result = await checkout.confirm({
       redirect: "if_required",
-      email,
     });
 
     if (result.type === "error") {
