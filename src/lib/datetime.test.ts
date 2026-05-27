@@ -4,7 +4,11 @@
 // the round trip, so both seasons are pinned for a couple of zones.
 
 import { describe, test, expect } from "bun:test";
-import { zonedWallClockToUtc, utcToZonedWallClock } from "./datetime";
+import {
+  describeInstant,
+  utcToZonedWallClock,
+  zonedWallClockToUtc,
+} from "./datetime";
 
 describe("zonedWallClockToUtc", () => {
   test("UTC passes through unchanged", () => {
@@ -41,6 +45,15 @@ describe("utcToZonedWallClock", () => {
     expect(
       utcToZonedWallClock("2026-07-15T13:00:00.000Z", "America/New_York"),
     ).toBe("2026-07-15T09:00");
+  });
+
+  test("round-trips with describeInstant in a non-local zone", () => {
+    // Regression: combining dateStyle/timeStyle with timeZoneName threw
+    // "Invalid option : option" in V8, crashing the admin ScheduleHint.
+    const out = describeInstant("2026-07-15T13:00:00.000Z", "America/New_York");
+    expect(out).toMatch(/Jul 15, 2026/);
+    expect(out).toMatch(/9:00\sAM/);
+    expect(out).toMatch(/EDT/);
   });
 
   test("round-trips with zonedWallClockToUtc across zones and seasons", () => {

@@ -508,7 +508,7 @@ function PromoCard({
 // Edition, May 20" keeps "Pod Save America, Special Edition" as the show
 // and "May 20" as the date instead of dropping the subtitle.
 const DATE_COMMA_RE =
-  /,\s*(?=(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\b|\d{1,2}[\/\.-]\d{1,2})/i;
+  /,\s*(?=(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\b|\d{1,2}[/.-]\d{1,2})/i;
 
 function splitEpisodeTitle(title: string): { show: string; date?: string } {
   const m = DATE_COMMA_RE.exec(title);
@@ -619,8 +619,7 @@ function PlainBlock({ node }: { node: DOMNode }) {
 }
 
 // ---------------------------------------------------------------------------
-// Top-level render. Use <NewsletterArticle> to render directly (preferred)
-// or call renderNewsletter(html) when you only have a fragment.
+// Top-level render. Use <NewsletterArticle> to render the sanitized HTML.
 // ---------------------------------------------------------------------------
 
 export function NewsletterArticle({
@@ -707,9 +706,3 @@ export function NewsletterArticle({
   );
 }
 
-export function renderNewsletter(
-  html: SanitizedHtml,
-  postTitle?: string,
-): ReactNode {
-  return <NewsletterArticle html={html} postTitle={postTitle} />;
-}

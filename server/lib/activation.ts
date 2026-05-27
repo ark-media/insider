@@ -69,9 +69,11 @@ export type Activator = {
 // can react differently from a generic provisioning failure.
 export class AlreadySubscribedError extends Error {
   readonly kind = 'already_subscribed' as const
-  constructor(public readonly email: string) {
+  readonly email: string
+  constructor(email: string) {
     super(`User ${email} already has an active subscription on this network.`)
     this.name = 'AlreadySubscribedError'
+    this.email = email
   }
 }
 
