@@ -516,6 +516,62 @@ describe('PUT /api/me/newsletters', () => {
     })
   })
 
+  test('free user toggling free=true re-subscribes WITHOUT premium tier', async () => {
+    // Mirrors the subscriber version above, but the implicit premium re-apply
+    // must NOT happen — free users have no entitlement, and silently
+    // upgrading them on a re-subscribe would be a privilege escalation.
+    const token = await signAuth0Token({ email: 'freere@x.com', tier: 'free' })
+    liveTierByEmail.set('freere@x.com', 'free')
+    beehiivHandler = ({ method, url }) => {
+      if (method === 'GET' && url.includes('/by_email/')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'sub_freere',
+              email: 'freere@x.com',
+              status: 'inactive',
+              subscription_tier: 'free',
+              subscription_premium_tier_names: [],
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      if (method === 'PUT') {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'sub_freere',
+              email: 'freere@x.com',
+              status: 'active',
+              subscription_tier: 'free',
+              subscription_premium_tier_names: [],
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 500 })
+    }
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(
+      handler,
+      makeReq({
+        method: 'PUT',
+        bearer: token,
+        body: { free: true },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    const put = fetchCalls.find(
+      (c) => c.method === 'PUT' && c.url.includes('api.beehiiv.com'),
+    )
+    expect(put?.body).toMatchObject({ unsubscribe: false })
+    expect((put?.body as Record<string, unknown>).premium_tier_ids).toBeUndefined()
+  })
+
   test('429 once the per-email rate bucket is empty', async () => {
     const token = await signAuth0Token({ email: 'spammy@x.com', tier: 'subscriber' })
     beehiivHandler = ({ method }) => {
