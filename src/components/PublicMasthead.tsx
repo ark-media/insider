@@ -182,47 +182,61 @@ export function PublicMasthead() {
           <ThemeToggle />
 
           <div ref={dropdownRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setAccountOpen((v) => !v)}
-              aria-expanded={accountOpen}
-              disabled={state.kind === "loading"}
-              className="hidden min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60 sm:inline-flex"
-            >
-              {state.kind === "member" ? (
-                "Account"
-              ) : state.kind === "loading" ? (
-                <span aria-label="Loading account state" className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
-              ) : (
-                "Log in"
-              )}
-            </button>
-
-            {accountOpen ? (
-              <div
-                className="absolute right-0 mt-2 w-64 border border-rule bg-navy-900 p-4 text-[13px] text-fg shadow-xl"
+            {state.kind === "loading" ? (
+              <button
+                type="button"
+                disabled
+                aria-label="Loading account state"
+                className="hidden min-h-11 items-center border border-rule-strong px-4 opacity-60 sm:inline-flex"
               >
-                {state.kind === "member" ? (
-                  <MemberMenu
-                    email={state.me.email}
-                    isAdmin={isAdmin}
-                    onSignOut={() => {
-                      setAccountOpen(false);
-                      signOut();
-                    }}
-                    onClose={() => setAccountOpen(false)}
-                  />
-                ) : (
-                  <GuestMenu
-                    onSignIn={() => {
-                      setAccountOpen(false);
-                      void loginWithRedirect();
-                    }}
-                    onClose={() => setAccountOpen(false)}
-                  />
-                )}
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
+              </button>
+            ) : state.kind === "member" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setAccountOpen((v) => !v)}
+                  aria-expanded={accountOpen}
+                  className="hidden min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:inline-flex"
+                >
+                  Account
+                </button>
+                {accountOpen ? (
+                  <div className="absolute right-0 mt-2 w-64 border border-rule bg-navy-900 p-4 text-[13px] text-fg shadow-xl">
+                    <MemberMenu
+                      email={state.me.email}
+                      isAdmin={isAdmin}
+                      onSignOut={() => {
+                        setAccountOpen(false);
+                        signOut();
+                      }}
+                      onClose={() => setAccountOpen(false)}
+                    />
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="hidden items-center gap-2 sm:flex">
+                <button
+                  type="button"
+                  onClick={() =>
+                    void loginWithRedirect({
+                      authorizationParams: { screen_hint: "signup" },
+                    })
+                  }
+                  className="inline-flex min-h-11 items-center border border-cyan bg-cyan px-4 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  Sign up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loginWithRedirect()}
+                  className="inline-flex min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  Sign in
+                </button>
               </div>
-            ) : null}
+            )}
           </div>
 
           <button
@@ -276,16 +290,30 @@ export function PublicMasthead() {
                 Account
               </Link>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileOpen(false);
-                  void loginWithRedirect();
-                }}
-                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
-              >
-                Log in
-              </button>
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    void loginWithRedirect({
+                      authorizationParams: { screen_hint: "signup" },
+                    });
+                  }}
+                  className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
+                >
+                  Sign up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    void loginWithRedirect();
+                  }}
+                  className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+                >
+                  Sign in
+                </button>
+              </div>
             )}
             {navItems
               // Pills already render in the top bar at every breakpoint;
@@ -623,37 +651,6 @@ function ThemeToggle() {
         </svg>
       )}
     </button>
-  );
-}
-
-function GuestMenu({
-  onSignIn,
-  onClose,
-}: {
-  onSignIn: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <p className="eyebrow">Member sign in</p>
-      <p className="text-[12px] leading-snug text-fg-muted">
-        Already an Ark+ member? Sign in to access your account.
-      </p>
-      <button
-        type="button"
-        onClick={onSignIn}
-        className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        Sign in
-      </button>
-      <Link
-        to="/plus"
-        onClick={onClose}
-        className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        Become a member
-      </Link>
-    </div>
   );
 }
 
