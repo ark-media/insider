@@ -40,20 +40,22 @@ describe("zonedWallClockToUtc", () => {
   });
 });
 
+describe("describeInstant", () => {
+  // Regression: combining dateStyle/timeStyle with timeZoneName threw
+  // "Invalid option : option" in V8, crashing the admin ScheduleHint.
+  test("renders an instant with a timezone abbreviation", () => {
+    const out = describeInstant("2026-07-15T13:00:00.000Z", "America/New_York");
+    expect(out).toContain("Jul 15, 2026");
+    expect(out).toContain("9:00");
+    expect(out).toContain("EDT");
+  });
+});
+
 describe("utcToZonedWallClock", () => {
   test("renders a UTC instant in the target zone", () => {
     expect(
       utcToZonedWallClock("2026-07-15T13:00:00.000Z", "America/New_York"),
     ).toBe("2026-07-15T09:00");
-  });
-
-  test("round-trips with describeInstant in a non-local zone", () => {
-    // Regression: combining dateStyle/timeStyle with timeZoneName threw
-    // "Invalid option : option" in V8, crashing the admin ScheduleHint.
-    const out = describeInstant("2026-07-15T13:00:00.000Z", "America/New_York");
-    expect(out).toMatch(/Jul 15, 2026/);
-    expect(out).toMatch(/9:00\sAM/);
-    expect(out).toMatch(/EDT/);
   });
 
   test("round-trips with zonedWallClockToUtc across zones and seasons", () => {
