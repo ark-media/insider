@@ -2,7 +2,6 @@ import { Outlet, createRootRoute, useMatches } from "@tanstack/react-router";
 import { useAuth0 } from "@auth0/auth0-react";
 import { PublicMasthead } from "../components/PublicMasthead";
 import { Footer } from "../components/Footer";
-import { LiveStatus } from "../components/LiveStatus";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
 import { hasCheckoutCookie } from "../lib/tokenStore";
