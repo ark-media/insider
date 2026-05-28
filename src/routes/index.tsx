@@ -44,7 +44,7 @@ function HomePage() {
   return (
     <main className="relative">
       <section className="relative">
-        <div className="mx-auto max-w-[1280px] pb-10">
+        <div className="mx-auto max-w-[1280px] pb-10 sm:px-10">
           {/* Animated brand mark. The GIF has a baked-in navy background, so it
               sits in a fixed-navy tile (--color-navy doesn't flip with the
               theme) and stays seamless in both light and dark. */}
