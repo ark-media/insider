@@ -11,7 +11,7 @@ function ShowsHub() {
   return (
     <PageShell
       eyebrow="Podcasts"
-      title="Five shows. One newsroom."
+      title="Four shows. One newsroom."
       lede="Long-form interviews, fast briefs, and ongoing conversations on the questions that matter."
     >
       <section className="border-t border-rule bg-navy-900">

@@ -44,11 +44,11 @@ function HomePage() {
   return (
     <main className="relative">
       <section className="relative">
-        <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-20 sm:px-10 sm:pt-20">
+        <div className="mx-auto max-w-[1280px] pb-10">
           {/* Animated brand mark. The GIF has a baked-in navy background, so it
               sits in a fixed-navy tile (--color-navy doesn't flip with the
               theme) and stays seamless in both light and dark. */}
-          <div className="rise rise-1 mb-6 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-navy ring-1 ring-cyan/30">
+          {/* <div className="rise rise-1 mb-6 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-navy ring-1 ring-cyan/30">
             <img
               src="/brand/ark-icon-loop.gif"
               alt="Ark Media"
@@ -56,8 +56,8 @@ function HomePage() {
               height={64}
               className="h-full w-full object-cover"
             />
-          </div>
-          <p className="inside-tab rise rise-1 text-[12px]">Ark Media</p>
+          </div> */}
+          {/* <p className="inside-tab rise rise-1 text-[12px]">Ark Media</p> */}
           <h1 className="mt-10 max-w-4xl text-fg-strong">
             <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
               Connecting Jewish{" "}
@@ -107,7 +107,7 @@ function HomePage() {
               <div className="eyebrow">Podcasts</div>
               <h2 className="mt-3 text-fg-strong">
                 <span className="display-upright block text-[clamp(1.8rem,3.5vw,2.6rem)]">
-                  Five shows.
+                  Four shows.
                 </span>
               </h2>
             </div>
@@ -165,7 +165,11 @@ function HomePage() {
         <Toast
           message="Gift sent — we emailed your recipient their redemption link to set up their feed."
           onDismiss={() =>
-            void navigate({ to: "/", search: {}, replace: true })
+            void navigate({
+              to: "/",
+              search: (() => ({})) as never,
+              replace: true,
+            })
           }
         />
       ) : null}

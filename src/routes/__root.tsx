@@ -53,7 +53,7 @@ function RootContent() {
       {chromeless ? null : (
         <>
           <AnnouncementBanner />
-          <LiveStatus />
+          {/* <LiveStatus /> */}
           <PublicMasthead />
         </>
       )}

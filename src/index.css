@@ -67,20 +67,21 @@
 [data-theme="light"] {
   --color-cyan: #0a6fad;
 
-  /* 900 = page paper — a soft, cool "newsprint" canvas. Kept a touch deeper than a
-     bright off-white *on purpose*: true-white cards (800/700) need real tonal room
-     to lift against it. The luminous feel comes from the atmospheric .bg-app wash at
-     the top of the page, not from a pale flat fill (which read as washed-out before).
+  /* 900 = page paper — a luminous cool-newsprint canvas. Lighter than a flat grey
+     but still tinted enough that true-white cards (800/700) read as elevated. The
+     hue is pulled toward the brand navy (not neutral grey) so the page reads as a
+     navy-family paper, echoing the dark theme's identity in daytime.
      800 = card surface (true white). Cards use bg-navy-800/40 — 40% white over the
-     newsprint canvas, plus the layered card shadow + 1px navy hairline below, lands a
+     newsprint canvas, plus a soft layered card shadow + navy hairline, lands a
      clean editorial lift.
      700 = elevated/popover surface (true white).
-     600/500 = decorative borders, chips, and progress fills. */
-  --color-navy-900: #e2e8f4;
+     600/500 = decorative borders, chips, and progress fills — pulled from a cool
+     navy-grey scale so dividers feel crisp instead of washed-out. */
+  --color-navy-900: #eef3fc;
   --color-navy-800: #ffffff;
   --color-navy-700: #ffffff;
-  --color-navy-600: #c6d2e8;
-  --color-navy-500: #a3b3d3;
+  --color-navy-600: #cad5e4;
+  --color-navy-500: #8ca1bf;
 
   /* Ark News Daily — light orchid paper. Same inversion: page is tinted, cards are white. */
   --color-and-purple-900: #e8d7f0;
@@ -213,9 +214,10 @@ body {
 [data-theme="light"] .bg-app {
   background-color: var(--color-navy-900);
   background-image:
-    radial-gradient(58% 52% at 86% -6%, rgba(62, 181, 249, 0.22) 0%, transparent 60%),
-    radial-gradient(70% 60% at 22% -14%, rgba(255, 255, 255, 0.92) 0%, transparent 56%),
-    linear-gradient(180deg, #f2f6fd 0%, #eaf0fa 38%, var(--color-navy-900) 86%);
+    radial-gradient(52% 48% at 88% -4%, rgba(62, 181, 249, 0.30) 0%, transparent 62%),
+    radial-gradient(48% 44% at 14% -6%, rgba(11, 21, 60, 0.07) 0%, transparent 60%),
+    radial-gradient(70% 60% at 50% -16%, rgba(255, 255, 255, 0.95) 0%, transparent 58%),
+    linear-gradient(180deg, #f7fafe 0%, #eef3fc 44%, var(--color-navy-900) 86%);
   background-repeat: no-repeat;
   background-position: top center;
   background-size: 100% 860px;
@@ -230,11 +232,11 @@ body {
 }
 [data-theme="light"] .ark-bg {
   background:
-    radial-gradient(ellipse 62% 55% at 80% 12%, rgba(62, 181, 249, 0.38) 0%, transparent 60%),
-    radial-gradient(ellipse 52% 60% at 14% 92%, rgba(10, 111, 173, 0.16) 0%, transparent 64%),
-    radial-gradient(ellipse 90% 65% at 38% 30%, rgba(255, 255, 255, 0.85) 0%, transparent 62%),
-    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(11, 21, 60, 0.07) 0%, transparent 60%),
-    linear-gradient(180deg, #eef4fd 0%, #e9f0fb 48%, #e3eaf6 100%);
+    radial-gradient(ellipse 60% 52% at 82% 14%, rgba(62, 181, 249, 0.40) 0%, transparent 62%),
+    radial-gradient(ellipse 48% 52% at 12% 88%, rgba(11, 21, 60, 0.12) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 42% 28%, rgba(255, 255, 255, 0.92) 0%, transparent 62%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(11, 21, 60, 0.10) 0%, transparent 60%),
+    linear-gradient(180deg, #f5f8fe 0%, #edf2fb 48%, #e4ecf7 100%);
 }
 
 /* Ark News Daily backdrop — show-specific purple wash */
@@ -350,38 +352,48 @@ body {
 }
 
 /* Editorial card lift — only in light mode, only on the card-pattern utilities the
-   codebase actually uses (bg-navy-800/40, /50, /60). True-white cards on tinted
-   paper need a soft cast shadow to read as elevated rather than as paint. The
-   selector matches the Tailwind opacity variants without affecting full-bleed
-   bg-navy-800 sections (Marquee, mobile menu) which intentionally span edge to edge. */
+   codebase actually uses (bg-navy-800/40, /50, /60). On luminous paper, the lift
+   comes from a thin navy-tinted hairline doing most of the edge definition + a
+   soft, diffuse shadow for depth. The hairline (1px box-shadow ring at ~6% navy)
+   is what makes the card edge feel "drawn" like the efficio reference rather than
+   floating in a halo. The selector matches the Tailwind opacity variants without
+   affecting full-bleed bg-navy-800 sections (Marquee, mobile menu) which
+   intentionally span edge to edge. */
 [data-theme="light"] [class*="bg-navy-800/"]:not([class*="hover:bg-navy-800"]),
 [data-theme="light"] [class*="bg-navy-700/"]:not([class*="hover:bg-navy-700"]) {
   box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.9) inset,
-    0 18px 38px -20px rgb(11 21 60 / 0.28),
-    0 4px 12px -6px rgb(11 21 60 / 0.12);
+    0 0 0 1px rgb(11 21 60 / 0.06),
+    0 1px 0 rgb(255 255 255 / 0.95) inset,
+    0 1px 2px rgb(11 21 60 / 0.04),
+    0 14px 32px -18px rgb(11 21 60 / 0.18);
 }
 
 /* Cyan-on-paper contrast.
    In light mode --color-cyan is the darkened #0a6fad so cyan *text* (eyebrows, links,
    "Voices") and *borders* clear AA as ink on paper. As a button FILL with the hardcoded
-   navy label, though, cyan reads poorly. So filled cyan controls get an explicit deep
-   ocean-cyan + white label (~7:1) — written as literal values, NOT the --color-cyan
-   token, so the button contrast can never depend on how/when the theme variable resolves
-   (a brief flash of the bright dark-mode cyan under white text is what looked washed out).
-   Dividers / dots / the eyebrow rule are bg-cyan with no text, so they keep the token. */
-[data-theme="light"] .bg-cyan.text-navy,
+   navy label, though, cyan reads poorly — so filled cyan controls get an explicit deep
+   navy-blue (~9:1 with white). The fill is pulled toward the brand navy #0b153c rather
+   than staying a pure dark cyan, so the primary CTA reads as a rich navy-blue (the
+   brandbook "cyan + navy" fused) instead of a muddy teal. Written as literal values,
+   NOT the --color-cyan token, so the button contrast can never depend on how/when the
+   theme variable resolves. Dividers / dots / the eyebrow rule are bg-cyan with no text,
+   so they keep the token.
+   The :not(:hover) qualifier is critical — without it, this override's specificity
+   beats Tailwind's hover:* rules and the button has no visible hover state. Scoping to
+   the resting state lets each button's declared hover intent (invert to fg-strong, or
+   reveal as outlined cyan) come through unblocked. */
+[data-theme="light"] .bg-cyan.text-navy:not(:hover),
 [data-theme="light"] .hover\:bg-cyan.hover\:text-navy:hover {
-  background-color: #0a5f93;
-  border-color: #0a5f93;
+  background-color: #0d3e74;
+  border-color: #0d3e74;
   color: #fff;
 }
 [data-theme="light"] .skip-link {
-  background: #0a5f93;
+  background: #0d3e74;
   color: #fff;
 }
 [data-theme="light"] ::selection {
-  background: #0a5f93;
+  background: #0d3e74;
   color: #fff;
 }
 /* The INSIDE tab is a brand motif echoing the bright-cyan podcast cover, so it keeps
@@ -389,6 +401,17 @@ body {
 [data-theme="light"] .inside-tab {
   background: #3eb5f9;
   box-shadow: 0 6px 0 0 rgb(11 21 60 / 0.1);
+}
+
+/* Hero-scale italic accent words ("experience", "Voices", "unusually good", "terms")
+   use a punchier, more vivid cyan in light mode — the deep AA-safe token reads as
+   muddy teal at display size. Only the .display class qualifies (the giant italic
+   accent), so this never touches body links, the 11px eyebrow, or any text that
+   needs the stricter 4.5:1 AA-normal contrast. Display text is ≫24px bold italic,
+   so the 3:1 AA-large threshold is the right bar (~3.1:1 here). */
+[data-theme="light"] .display.text-cyan,
+[data-theme="light"] .display-upright.text-cyan {
+  color: #1992d4;
 }
 
 /* Subtle grain to kill banding on the gradients */
@@ -413,6 +436,11 @@ body {
 .hairline {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(62, 181, 249, 0.45), transparent);
+}
+/* Bright cyan at 45% disappears on luminous paper. Light mode uses the deep cyan
+   token at full opacity instead — same brand color family, present without shouting. */
+[data-theme="light"] .hairline {
+  background: linear-gradient(90deg, transparent, rgba(10, 111, 173, 0.55), transparent);
 }
 
 @keyframes rise {

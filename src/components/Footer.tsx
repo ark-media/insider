@@ -24,21 +24,21 @@ const sections: { title: string; links: FooterLink[] }[] = [
     ],
   },
   {
-    title: "Ark+",
-    links: [
-      { label: "Become a member", to: "/plus" },
-      { label: "Gift Ark+", to: "/plus/gift" },
-      { label: "Redeem a code", to: "/plus/redeem" },
-      { label: "Member dashboard", to: "/account" },
-    ],
-  },
-  {
     title: "Connect",
     links: [
       { label: "Community", to: "/community" },
       { label: "Events", to: "/events" },
       { label: "Contact", to: "/contact" },
       { label: "Careers", to: "/careers" },
+    ],
+  },
+  {
+    title: "Ark+",
+    links: [
+      { label: "Become a member", to: "/plus" },
+      { label: "Gift Ark+", to: "/plus/gift" },
+      { label: "Redeem a code", to: "/plus/redeem" },
+      { label: "Member dashboard", to: "/account" },
     ],
   },
 ];

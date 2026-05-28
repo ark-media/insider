@@ -84,7 +84,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Get in touch", to: "/contact" },
     ],
   },
-  { variant: "pill", label: "Israel Votes", to: "/israel-votes" },
+  { variant: "text", label: "Israel Votes", to: "/israel-votes" },
 ];
 
 // Appended to the nav only for admins (see useSubscriberAuth().isAdmin).
@@ -187,7 +187,7 @@ export function PublicMasthead() {
             }
           })}
 
-          <ThemeToggle />
+          {/* <ThemeToggle /> */}
 
           <div ref={dropdownRef} className="relative">
             {state.kind === "loading" ? (
@@ -226,7 +226,7 @@ export function PublicMasthead() {
               </>
             ) : (
               <div className="hidden items-center gap-2 sm:flex">
-                <button
+                {/* <button
                   type="button"
                   onClick={() =>
                     void loginWithRedirect({
@@ -236,7 +236,7 @@ export function PublicMasthead() {
                   className="inline-flex min-h-11 items-center border border-cyan bg-cyan px-4 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Sign up
-                </button>
+                </button> */}
                 <button
                   type="button"
                   onClick={() => void loginWithRedirect()}

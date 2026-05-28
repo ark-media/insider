@@ -77,24 +77,6 @@ function CareersPage() {
         </div>
       </section>
 
-      <section className="border-t border-rule bg-navy-800/40">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-            Don't see your role?
-          </h2>
-          <p className="mt-6 max-w-2xl text-[14.5px] leading-[1.7] text-fg">
-            We hire opportunistically when the fit is right. Send a note —
-            short is fine — and a couple of links to{" "}
-            <a
-              href={`mailto:${contactEmails.careers}`}
-              className="text-cyan underline-offset-4 hover:underline"
-            >
-              {contactEmails.careers}
-            </a>
-            .
-          </p>
-        </div>
-      </section>
     </PageShell>
   );
 }
