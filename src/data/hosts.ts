@@ -5,7 +5,9 @@ export type HostSlug =
   | "donniel-hartman"
   | "yossi-klein-halevi"
   | "nadav-eyal"
-  | "amit-segal";
+  | "amit-segal"
+  | "yonatan-adiri"
+  | "yael-wissner-levy";
 
 export type Host = {
   slug: HostSlug;
@@ -83,6 +85,27 @@ export const hosts: Host[] = [
     initials: "AS",
     headshot: "/hosts/amit-segal.jpg",
   },
+  {
+    slug: "yonatan-adiri",
+    name: "Yonatan Adiri",
+    role: "Host, What's Your Number",
+    shortBio:
+      "Yonatan Adiri is an Israeli entrepreneur and co-host of Ark Media’s What’s Your Number? podcast. ",
+    longBio: "Yonatan Adiri is an Israeli entrepreneur. From 2008-2011, Yonatan served as Chief Technology Officer for former Israeli President Shimon Peres. In 2013, Yonatan established Healthy.io, a digital healthcare start-up that helps doctors diagnose patients using images from smartphones. In 2020, he was selected to Fortune Magazine’s 40 under 40 list.",
+    shows: ["whats-your-number"],
+    initials: "YA",
+    headshot: "/hosts/yonatan-adiri.jpg",
+  },
+  {
+    slug: "yael-wissner-levy",
+    name: "Yael Wissner-Levy",
+    role: "Host, What's Your Number",
+    shortBio: "Yael Wissner-Levy is co-host of Ark Media’s What’s Your Number? podcast and the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company",
+    longBio: "Yael Wissner-Levy is the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company building AI hackers to ensure enterprises deliver unbreakable code. Previously, she served as VP Communications at Lemonade, a NYSE-traded insurance company powered by AI, from seed stage to public markets. Prior to that, she served as a speechwriter and communications consultant for Israeli political and business leaders, and in media, as both a television news presenter and journalist at various outlets including i24 News (i24news.com), Israel’s Channel 10 (now Channel 13), and an editor at Ha’aretz (haaretz.com). She started her career working for former US Representative Steve Israel in the US Congress. Yael holds a MSc in International Relations from the London School of Economics.",
+    shows: ["whats-your-number"],
+    initials: "YW",
+    headshot: "/hosts/yael-wissner-levy.jpg",
+  }
 ];
 
 export function getHost(slug: string): Host | undefined {

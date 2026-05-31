@@ -52,8 +52,8 @@ const NAV_ITEMS: NavItem[] = [
     label: "Community",
     to: "/community",
     matchPrefix: "/community",
-    // The Circle community is paid-only — free accounts don't have access.
-    hideWhen: "nonSubscriber",
+    // Visible to everyone — the page itself shows a "Join Ark+" CTA to
+    // non-subscribers in place of the members-only Circle app links.
     children: [
       { label: "Upcoming Events", to: "/events" },
       { label: "Gift Ark+", to: "/plus/gift" },

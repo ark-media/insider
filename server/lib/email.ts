@@ -17,7 +17,7 @@ const DEFAULT_FROM = 'Ark+ <hello@ark-plus.xyz>'
 
 export async function sendEmail(
   env: Env,
-  msg: { to: string; subject: string; html: string },
+  msg: { to: string; subject: string; html: string; replyTo?: string },
 ): Promise<boolean> {
   const apiKey = env.RESEND_API_KEY
   if (!apiKey) {
@@ -38,6 +38,9 @@ export async function sendEmail(
         to: msg.to,
         subject: msg.subject,
         html: msg.html,
+        // Lets the team reply straight to the original sender (e.g. a contact
+        // form submitter) instead of to the verified `from` address.
+        ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
       }),
     })
     if (!r.ok) {

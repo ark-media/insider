@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { ClampedText } from "./ClampedText";
 
 type CommonProps = {
   eyebrow: string;
@@ -25,42 +26,54 @@ type StaticCardProps = CommonProps & {
 };
 
 const cardClass =
-  "group relative block border border-rule bg-navy-800/40 p-6 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+  "group relative block overflow-hidden border border-rule bg-navy-800/40 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
-function CardBody({ eyebrow, title, body, cta, badge, media }: CommonProps) {
-  const heading = (
-    <>
-      <div className="eyebrow">{eyebrow}</div>
-      <div
-        className={`${media ? "mt-2" : "mt-4"} line-clamp-3 font-display text-[22px] leading-[1.15] text-fg-strong`}
-      >
-        {title}
-      </div>
-    </>
-  );
+function CardText({ eyebrow, title, body, cta }: CommonProps) {
   return (
     <>
-      {badge ?? null}
-      {media ? (
-        <div className="flex items-start gap-4">
-          <div className="w-14 shrink-0 overflow-hidden border border-rule">
-            {media}
-          </div>
-          <div className="min-w-0 flex-1">{heading}</div>
-        </div>
-      ) : (
-        heading
-      )}
+      <div className="eyebrow">{eyebrow}</div>
+      <div className="mt-4 line-clamp-3 font-display text-[22px] leading-[1.15] text-fg-strong">
+        {title}
+      </div>
       {body ? (
-        <p className="mt-3 line-clamp-4 text-[13px] leading-[1.6] text-fg-muted">
-          {body}
-        </p>
+        <ClampedText
+          text={body}
+          className="mt-3 line-clamp-4 text-[13px] leading-[1.6] text-fg-muted"
+        />
       ) : null}
       {cta ? (
         <div className="mt-6 eyebrow text-fg-faint transition group-hover:text-cyan">
           {cta} →
         </div>
       ) : null}
+    </>
+  );
+}
+
+function CardBody({ badge, media, ...text }: CommonProps) {
+  if (media) {
+    // Split layout: the full (square) cover sits in the left half, inset with
+    // padding and vertically centered; text and CTA fill the right half.
+    return (
+      <>
+        {badge ?? null}
+        <div className="flex items-stretch">
+          <div className="flex w-1/2 shrink-0 items-center border-r border-rule p-6">
+            <div className="w-full">{media}</div>
+          </div>
+          <div className="flex w-1/2 flex-col justify-center p-6">
+            <CardText {...text} />
+          </div>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      {badge ?? null}
+      <div className="p-6">
+        <CardText {...text} />
+      </div>
     </>
   );
 }
@@ -86,9 +99,9 @@ export function AnchorCard({ href, external, ...rest }: AnchorCardProps) {
 
 export function StaticCard({ children, ...rest }: StaticCardProps) {
   return (
-    <article className="relative border border-rule bg-navy-800/40 p-6">
+    <article className="relative overflow-hidden border border-rule bg-navy-800/40">
       <CardBody {...rest} />
-      {children ? <div className="mt-6">{children}</div> : null}
+      {children ? <div className="px-6 pb-6">{children}</div> : null}
     </article>
   );
 }
@@ -103,12 +116,19 @@ export function NumberedRow({
   body,
   cta,
   to,
+  action,
 }: {
   number: string;
   title: ReactNode;
   body: ReactNode;
   cta?: string;
   to?: string;
+  /**
+   * Optional interactive content (e.g. an inline form) rendered in place of the
+   * `cta`. When present the row is never wrapped in a Link — a form can't live
+   * inside an anchor — so pass this instead of `to`.
+   */
+  action?: ReactNode;
 }) {
   const content = (
     <>
@@ -122,7 +142,9 @@ export function NumberedRow({
         <p className="mt-3 line-clamp-4 max-w-2xl text-[14px] leading-[1.6] text-fg-muted">
           {body}
         </p>
-        {cta ? (
+        {action ? (
+          <div className="mt-5 max-w-md">{action}</div>
+        ) : cta ? (
           <div className="mt-4 eyebrow text-fg-faint transition group-hover:text-cyan">
             {cta} →
           </div>
@@ -132,9 +154,9 @@ export function NumberedRow({
   );
 
   const containerClass =
-    "group grid grid-cols-[auto_1fr] items-start gap-x-5 border-t border-rule py-8 transition first:border-t-0 first:pt-0 sm:gap-x-12";
+    "group grid grid-cols-[auto_1fr] items-start gap-x-5 border-t border-rule py-8 transition first:border-t-0 first:pt-4 sm:gap-x-12";
 
-  if (to) {
+  if (to && !action) {
     return (
       <Link
         to={to}

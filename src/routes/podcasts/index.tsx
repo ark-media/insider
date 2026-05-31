@@ -2,12 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { shows } from "../../data/shows";
 import { PageShell } from "../../components/PageShell";
 import { ShowCover } from "../../components/ShowCover";
+import { ClampedText } from "../../components/ClampedText";
+import { useShowDescriptions } from "../../lib/useShowDescription";
 
 export const Route = createFileRoute("/podcasts/")({
   component: ShowsHub,
 });
 
 function ShowsHub() {
+  const descriptions = useShowDescriptions(shows.map((s) => s.slug));
   return (
     <PageShell
       eyebrow="Podcasts"
@@ -34,9 +37,10 @@ function ShowsHub() {
                   <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
                     {show.title}
                   </h2>
-                  <p className="mt-3 text-[13px] leading-[1.6] text-fg-muted">
-                    {show.tagline}
-                  </p>
+                  <ClampedText
+                    text={descriptions[show.slug] || show.tagline}
+                    className="mt-3 line-clamp-3 text-[13px] leading-[1.6] text-fg-muted"
+                  />
                   <div className="mt-6 eyebrow text-fg-faint transition group-hover:text-cyan">
                     Visit show →
                   </div>

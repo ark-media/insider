@@ -13,6 +13,8 @@ export type ProjectedEpisode = {
   description: string
   showNotesHtml: string
   id: string
+  /** Per-episode artwork from Simplecast. Empty string when unset. */
+  imageUrl: string
 }
 
 export type ScEpisode = {
@@ -25,6 +27,14 @@ export type ScEpisode = {
   published_at?: string
   status?: string
   is_published?: boolean
+  /** Episode-level artwork. Absent until a producer uploads it. */
+  image_url?: string
+}
+
+export type ScPodcast = {
+  id?: string
+  title?: string
+  description?: string
 }
 
 export function stripHtml(html: string): string {
@@ -76,6 +86,7 @@ export function projectScEpisode(e: ScEpisode, showSlug: string): ProjectedEpiso
     durationMinutes: Math.max(0, Math.round((e.duration ?? 0) / 60)),
     description: stripHtml(e.description ?? ''),
     showNotesHtml: sanitizeShowNotes(rawShowNotes),
+    imageUrl: e.image_url ?? '',
   }
 }
 

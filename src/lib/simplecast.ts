@@ -68,6 +68,26 @@ export async function fetchEpisodeNotes(
 }
 
 /**
+ * Fetches the show-level description from Simplecast for a show. Returns an
+ * empty string when the show has no Simplecast podcast configured, the server
+ * has no token, or the request fails — callers fall back to the hand-written
+ * tagline in that case.
+ */
+export async function fetchShowDescription(showSlug: ShowSlug): Promise<string> {
+  try {
+    const res = await fetch(
+      `/api/simplecast/podcast?show=${encodeURIComponent(showSlug)}`,
+      { credentials: "same-origin" },
+    );
+    if (!res.ok) return "";
+    const body = (await res.json()) as { description?: string };
+    return body.description ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Per-episode Simplecast player. Takes the Simplecast episode UUID
  * (Episode.id from the API). Dark theme to match the rest of the site.
  */

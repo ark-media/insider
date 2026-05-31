@@ -1,4 +1,4 @@
-import type { ShowSlug } from "./shows";
+import type { Show, ShowSlug } from "./shows";
 
 /**
  * Episode types + formatting helpers.
@@ -25,11 +25,25 @@ export type Episode = {
    */
   id?: string;
   /**
+   * Per-episode artwork URL from Simplecast. Absent until a producer uploads
+   * episode art — callers fall back to the show cover.
+   */
+  imageUrl?: string;
+  /**
    * Sanitized HTML show notes from Simplecast. Allowlisted on the server
    * before it reaches the client.
    */
   showNotesHtml?: string;
 };
+
+/**
+ * Resolves the artwork to show for an episode: the episode's own image when a
+ * producer has uploaded one, otherwise the show cover. Returns null when
+ * neither exists so callers can omit the media area entirely.
+ */
+export function episodeImage(episode: Episode, show: Show): string | null {
+  return episode.imageUrl || show.coverArt || null;
+}
 
 export function formatEpisodeDate(iso: string): string {
   const d = new Date(iso);

@@ -210,6 +210,48 @@ describe('createCatchAllHandler — dispatch via _path query param', () => {
     ).toBe(false)
   })
 
+  test('/api/simplecast/podcast returns the stripped show description', async () => {
+    fetchImpl = async (url) => {
+      if (url === 'https://api.simplecast.com/podcasts/pod-cmb') {
+        return new Response(
+          JSON.stringify({
+            id: 'pod-cmb',
+            title: 'Call Me Back',
+            description: '<p>The forces shaping the Israeli economy.</p>',
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }
+
+    const handler = buildHandler()
+    const req = makeReq({
+      url: '/api/handler?_path=simplecast/podcast&show=call-me-back',
+    })
+    const res = makeRes()
+    await handler(req, res)
+
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as { description: string }
+    expect(body.description).toBe('The forces shaping the Israeli economy.')
+  })
+
+  test('/api/simplecast/podcast returns empty description for an unconfigured show without hitting Simplecast', async () => {
+    const handler = buildHandler()
+    const req = makeReq({
+      url: '/api/handler?_path=simplecast/podcast&show=unknown-show',
+    })
+    const res = makeRes()
+    await handler(req, res)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ description: '' })
+    expect(
+      fetchCalls.some((c) => c.url.includes('simplecast.com')),
+    ).toBe(false)
+  })
+
   test('unknown _path returns the catch-all JSON 404', async () => {
     const handler = buildHandler()
     const req = makeReq({ url: '/api/handler?_path=nope/does-not-exist' })

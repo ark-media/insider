@@ -1,24 +1,25 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  LISTEN_PLATFORM_LABEL,
   getShow,
   showAtmosphere,
-  type ListenLink,
   type Show,
   type ShowSlug,
 } from "../data/shows";
 import {
+  episodeImage,
   formatDuration,
   formatEpisodeDate,
   type Episode,
 } from "../data/episodes";
 import { hostsForShow } from "../data/hosts";
 import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
+import { useShowDescription } from "../lib/useShowDescription";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
 import { ShowCover } from "./ShowCover";
+import { ListenLinks } from "./ListenLinks";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 export function ShowPage({ slug }: { slug: ShowSlug }) {
@@ -163,6 +164,11 @@ function PaidShowJoinCta({ show }: { show: Show }) {
 }
 
 function ShowHero({ show }: { show: Show }) {
+  // Prefer the live Simplecast show description; fall back to the hand-written
+  // tagline while loading, when the show has no Simplecast podcast, or on
+  // failure.
+  const description = useShowDescription(show.slug) || show.tagline;
+
   return (
     <section className={`relative ${showAtmosphere(show.slug)}`}>
       <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
@@ -190,11 +196,9 @@ function ShowHero({ show }: { show: Show }) {
               </p>
             ) : null}
             <p className="rise rise-4 mt-6 max-w-xl text-[15px] leading-[1.65] text-fg">
-              {show.tagline}
+              {description}
             </p>
-            {show.listen.length > 0 ? (
-              <ListenRow listen={show.listen} className="mt-10" />
-            ) : null}
+            <ListenLinks listen={show.listen} className="mt-10" />
           </div>
           <div className="lg:col-span-5">
             <ShowArtwork show={show} />
@@ -241,34 +245,6 @@ function ShowArtwork({ show }: { show: Show }) {
       priority
       className="w-full max-w-md border border-rule shadow-cover"
     />
-  );
-}
-
-function ListenRow({
-  listen,
-  className,
-}: {
-  listen: ListenLink[];
-  className?: string;
-}) {
-  return (
-    <div
-      className={`flex flex-wrap items-center gap-x-5 gap-y-3 text-[13px] text-fg-muted ${
-        className ?? ""
-      }`}
-    >
-      {listen.map((l) => (
-        <a
-          key={l.platform}
-          href={l.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="border border-rule-strong px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          {LISTEN_PLATFORM_LABEL[l.platform]}
-        </a>
-      ))}
-    </div>
   );
 }
 
@@ -536,6 +512,7 @@ function EpisodeRow({
   onPlay: (ep: Episode) => void;
   isActive: boolean;
 }) {
+  const image = episodeImage(episode, show);
   return (
     <li
       className={`group flex items-center gap-4 py-4 transition ${
@@ -554,6 +531,22 @@ function EpisodeRow({
       ) : (
         <span className="h-8 w-8 shrink-0" aria-hidden="true" />
       )}
+      {image ? (
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: show.slug, episode: episode.slug } as never}
+          className="hidden aspect-video w-20 shrink-0 overflow-hidden border border-rule bg-navy-900 p-1 sm:block"
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-contain"
+          />
+        </Link>
+      ) : null}
       <Link
         to="/podcasts/$show/$episode"
         params={{ show: show.slug, episode: episode.slug } as never}
@@ -590,12 +583,29 @@ function EpisodeCard({
   onPlay: () => void;
   isActive: boolean;
 }) {
+  const image = episodeImage(episode, show);
   return (
     <div
       className={`group flex h-full flex-col border bg-navy-800/40 p-6 transition ${
         isActive ? "border-cyan" : "border-rule"
       }`}
     >
+      {image ? (
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: show.slug, episode: episode.slug } as never}
+          className="-mx-6 -mt-6 mb-6 block aspect-video overflow-hidden border-b border-rule bg-navy-900 p-2"
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-contain transition group-hover:opacity-95"
+          />
+        </Link>
+      ) : null}
       <div className="flex items-center justify-between gap-3">
         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
           {formatEpisodeDate(episode.publishedAt)} ·{" "}

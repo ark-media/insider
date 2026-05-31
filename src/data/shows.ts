@@ -98,10 +98,10 @@ export const shows: Show[] = [
     title: "What's Your Number?",
     shortTitle: "What's Your Number?",
     tagline:
-      "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
+      "Hosted by Yonatan Adiri and Yael Wissner-Levy, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
     description:
-      "Hosted by Yonatan Adiri and Michal Lev-Ram, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
-    hosts: ["Yonatan Adiri", "Michal Lev-Ram"],
+      "Hosted by Yonatan Adiri and Yael Wissner-Levy, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
+    hosts: ["Yonatan Adiri", "Yael Wissner-Levy"],
     cadence: "Weekly",
     coverArt: "/shows/whats-your-number.jpg",
     paid: false,

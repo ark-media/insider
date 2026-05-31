@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import {
@@ -23,16 +23,13 @@ export const Route = createFileRoute("/community")({
 });
 
 function CommunityPage() {
-  const navigate = useNavigate();
   const { state } = useSubscriberAuth();
   const [broadcasts, setBroadcasts] = useState<CommunityBroadcast[] | null>(null);
   const [events, setEvents] = useState<ArkEvent[] | null>(null);
 
-  useEffect(() => {
-    if (state.kind === "guest") {
-      void navigate({ to: "/plus" });
-    }
-  }, [state.kind, navigate]);
+  // The Circle community is open to Ark+ members; guests and free accounts see
+  // the same overview but with a "Join Ark+" CTA in place of the app-open card.
+  const isSubscriber = state.kind === "member" && state.me.tier === "subscriber";
 
   useEffect(() => {
     let live = true;
@@ -47,7 +44,7 @@ function CommunityPage() {
     };
   }, []);
 
-  if (state.kind === "loading" || state.kind === "guest") return null;
+  if (state.kind === "loading") return null;
 
   return (
     <PageShell
@@ -98,41 +95,68 @@ function CommunityPage() {
             </ul>
           </div>
           <div className="lg:col-span-5">
-            <div className="border border-rule bg-navy-800/40 p-8">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                Open in the Circle app
+            {isSubscriber ? (
+              <div className="border border-rule bg-navy-800/40 p-8">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                  Open in the Circle app
+                </div>
+                <p className="mt-4 text-[14px] leading-[1.6] text-fg">
+                  Members open the community in the Circle app — iOS, Android, or
+                  the web. Sign in with your Ark+ account; no second login.
+                </p>
+                <div className="mt-6 flex flex-col gap-3">
+                  <a
+                    href={CIRCLE_OPEN_LINKS.ios}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Open on iOS
+                  </a>
+                  <a
+                    href={CIRCLE_OPEN_LINKS.android}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Open on Android
+                  </a>
+                  <a
+                    href={CIRCLE_OPEN_LINKS.web}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Open on web
+                  </a>
+                </div>
               </div>
-              <p className="mt-4 text-[14px] leading-[1.6] text-fg">
-                Members open the community in the Circle app — iOS, Android, or
-                the web. Sign in with your Ark+ account; no second login.
-              </p>
-              <div className="mt-6 flex flex-col gap-3">
-                <a
-                  href={CIRCLE_OPEN_LINKS.ios}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Open on iOS
-                </a>
-                <a
-                  href={CIRCLE_OPEN_LINKS.android}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Open on Android
-                </a>
-                <a
-                  href={CIRCLE_OPEN_LINKS.web}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Open on web
-                </a>
+            ) : (
+              <div className="border border-rule bg-navy-800/40 p-8">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                  Get in the room
+                </div>
+                <p className="mt-4 text-[14px] leading-[1.6] text-fg">
+                  The community is open to Ark+ members, in the Circle app —
+                  iOS, Android, or the web. One membership, one login: your Ark+
+                  account is your way in.
+                </p>
+                <div className="mt-6 flex flex-col gap-3">
+                  <Link
+                    to="/plus"
+                    className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Join Ark+
+                  </Link>
+                  <Link
+                    to="/plus/gift"
+                    className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Gift Ark+
+                  </Link>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </section>
@@ -166,7 +190,7 @@ function CommunityPage() {
             <ul className="mt-10 divide-y divide-rule border-y border-rule">
               {events.slice(0, 4).map((e) => (
                 <li key={e.id} className="py-6">
-                  <CommunityEventRow event={e} />
+                  <CommunityEventRow event={e} isSubscriber={isSubscriber} />
                 </li>
               ))}
             </ul>
@@ -210,8 +234,17 @@ function CommunityPage() {
   );
 }
 
-function CommunityEventRow({ event }: { event: ArkEvent }) {
+function CommunityEventRow({
+  event,
+  isSubscriber,
+}: {
+  event: ArkEvent;
+  isSubscriber: boolean;
+}) {
   const isMemberOnly = event.access === "ark-plus";
+  // Member-only events are a dead end for non-subscribers, so point them at the
+  // join page instead of a Circle link they can't open.
+  const gated = isMemberOnly && !isSubscriber;
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-8">
       <div className="lg:col-span-3">
@@ -241,14 +274,23 @@ function CommunityEventRow({ event }: { event: ArkEvent }) {
         >
           {isMemberOnly ? "Ark+ only" : "Open to all"}
         </span>
-        <a
-          href={circleEventLink(event.id)}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="mt-3 inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          {isMemberOnly ? "Open in Circle" : "RSVP"} →
-        </a>
+        {gated ? (
+          <Link
+            to="/plus"
+            className="mt-3 inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            Join to attend →
+          </Link>
+        ) : (
+          <a
+            href={circleEventLink(event.id)}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="mt-3 inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            {isMemberOnly ? "Open in Circle" : "RSVP"} →
+          </a>
+        )}
       </div>
     </div>
   );

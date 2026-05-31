@@ -9,7 +9,7 @@ const sections: { title: string; links: FooterLink[] }[] = [
     links: [
       { label: "All podcasts", to: "/podcasts" },
       { label: "Call Me Back", to: "/podcasts/call-me-back" },
-      { label: "Inside Call Me Back", to: "/plus/inside-call-me-back" },
+      { label: "What's Your Number", to: "/podcasts/whats-your-number" },
       { label: "For Heaven's Sake", to: "/podcasts/for-heavens-sake" },
       { label: "Ark News Daily", to: "/podcasts/ark-news-daily" },
     ],
@@ -37,7 +37,6 @@ const sections: { title: string; links: FooterLink[] }[] = [
     links: [
       { label: "Become a member", to: "/plus" },
       { label: "Gift Ark+", to: "/plus/gift" },
-      { label: "Redeem a code", to: "/plus/redeem" },
       { label: "Member dashboard", to: "/account" },
     ],
   },

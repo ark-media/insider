@@ -49,6 +49,36 @@ export const contactEmails = {
   careers: `careers@${ARK_DOMAIN}`,
 } as const;
 
+/**
+ * Topics offered by the /contact form. Each maps to the inbox the submission
+ * is forwarded to. Shared by the form (dropdown) and the server route
+ * (topic → destination address), so the two can never drift.
+ */
+export const contactTopics = [
+  {
+    value: "general",
+    label: "Show ideas, feedback & corrections",
+    email: contactEmails.general,
+  },
+  {
+    value: "press",
+    label: "Press, interviews & media",
+    email: contactEmails.press,
+  },
+  {
+    value: "partnerships",
+    label: "Sponsorships & partnerships",
+    email: contactEmails.partnerships,
+  },
+  {
+    value: "support",
+    label: "Ark+ membership support",
+    email: contactEmails.support,
+  },
+] as const;
+
+export type ContactTopic = (typeof contactTopics)[number]["value"];
+
 // ---------------------------------------------------------------------------
 // Circle community + companion apps
 // ---------------------------------------------------------------------------

@@ -108,6 +108,16 @@ describe('projectScEpisode', () => {
     expect(out.durationMinutes).toBe(64)
   })
 
+  test('carries episode artwork when present, empty string otherwise', () => {
+    expect(
+      projectScEpisode(
+        { ...baseEpisode, image_url: 'https://img.test/ep-1.jpg' },
+        'call-me-back',
+      ).imageUrl,
+    ).toBe('https://img.test/ep-1.jpg')
+    expect(projectScEpisode(baseEpisode, 'call-me-back').imageUrl).toBe('')
+  })
+
   test('handles missing fields without throwing', () => {
     const out = projectScEpisode({}, 'call-me-back')
     expect(out.id).toBe('')
@@ -117,6 +127,7 @@ describe('projectScEpisode', () => {
     expect(out.durationMinutes).toBe(0)
     expect(out.description).toBe('')
     expect(out.showNotesHtml).toBe('')
+    expect(out.imageUrl).toBe('')
   })
 })
 

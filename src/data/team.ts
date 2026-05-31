@@ -19,7 +19,7 @@ export const team: TeamMember[] = [
   { name: "Dan Senor", photo: "/team/dan.jpg" },
   { name: "Amit Segal", photo: "/team/amit.jpg" },
   { name: "Nadav Eyal", photo: "/team/nadav.jpg" },
-  { name: "Michal Lev-Ram", photo: "/team/michal.jpg" },
+  { name: "Yael Wissner-Levy", photo: "/team/yael.jpg" },
   { name: "Andrej", photo: "/team/andrej.jpg" },
   { name: "Ava", photo: "/team/ava.jpg" },
   { name: "Gabe", photo: "/team/gabe.jpg" },

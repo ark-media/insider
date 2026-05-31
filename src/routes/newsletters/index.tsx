@@ -1,11 +1,29 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { PageShell } from "../../components/PageShell";
-import type { NewsletterSlug } from "../../data/newsletters";
-import { subscribeEmail } from "../../lib/beehiiv";
+import { NewsletterSignupForm } from "../../components/NewsletterSignupForm";
+import {
+  formatPostDate,
+  type NewsletterPost,
+  type NewsletterSlug,
+} from "../../data/newsletters";
+import { sourceFor } from "../../lib/newsletterSources";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
 
 export const Route = createFileRoute("/newsletters/")({
+  loader: async () => {
+    const entries = await Promise.all(
+      cards.map(
+        async (c) => [c.slug, await sourceFor(c.slug).listPosts(c.slug)] as const,
+      ),
+    );
+    return {
+      postsBySlug: Object.fromEntries(entries) as Record<
+        NewsletterSlug,
+        NewsletterPost[]
+      >,
+    };
+  },
   component: NewslettersPage,
 });
 
@@ -41,6 +59,7 @@ const cards: NewsletterCard[] = [
 
 function NewslettersPage() {
   const { state } = useSubscriberAuth();
+  const { postsBySlug } = Route.useLoaderData();
   const isMember = state.kind === "member";
 
   return (
@@ -60,11 +79,10 @@ function NewslettersPage() {
               return (
                 <article
                   key={n.slug}
-                  className="flex flex-col justify-between gap-6 border border-rule bg-navy-800/40 p-7"
+                  className="flex flex-col gap-6 border border-rule bg-navy-800/40 p-7"
                 >
                   <div>
-                    <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.22em]">
-                      <span className="text-cyan">{n.shortTitle}</span>
+                    <div className="flex items-center justify-end text-[11px] font-semibold uppercase tracking-[0.22em]">
                       {n.tier === "ark-plus" ? (
                         <span className="border border-cyan/60 px-2 py-0.5 text-[10px] tracking-[0.18em] text-cyan">
                           Ark+
@@ -84,16 +102,16 @@ function NewslettersPage() {
                     </p>
                   </div>
 
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                    <Link
-                      to="/newsletters/$slug"
-                      params={{ slug: n.slug }}
-                      className="inline-flex min-h-11 items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                    >
-                      Recent issues →
-                    </Link>
-                    {locked ? <JoinArkPlusCta /> : <SignupForm slug={n.slug} />}
-                  </div>
+                  {locked ? (
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                      <SignInButton />
+                      <JoinArkPlusCta />
+                    </div>
+                  ) : (
+                    <NewsletterSignupForm slug={n.slug} />
+                  )}
+
+                  <RecentIssues slug={n.slug} posts={postsBySlug[n.slug]} />
                 </article>
               );
             })}
@@ -101,6 +119,19 @@ function NewslettersPage() {
         </div>
       </section>
     </PageShell>
+  );
+}
+
+function SignInButton() {
+  const { loginWithRedirect } = useAuth0();
+  return (
+    <button
+      type="button"
+      onClick={() => void loginWithRedirect()}
+      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 border border-rule-strong px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+    >
+      Sign in
+    </button>
   );
 }
 
@@ -116,59 +147,37 @@ function JoinArkPlusCta() {
   );
 }
 
-function SignupForm({ slug }: { slug: NewsletterSlug }) {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "submitting" | "ok" | "error">(
-    "idle",
-  );
-  const [message, setMessage] = useState<string | null>(null);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus("submitting");
-    const r = await subscribeEmail(slug, email.trim());
-    if (r.ok) {
-      setStatus("ok");
-      setMessage("You're on the list.");
-      setEmail("");
-    } else {
-      setStatus("error");
-      setMessage(r.error ?? "Could not subscribe.");
-    }
-  };
-
+function RecentIssues({
+  slug,
+  posts,
+}: {
+  slug: NewsletterSlug;
+  posts: NewsletterPost[];
+}) {
+  if (posts.length === 0) return null;
   return (
-    <form onSubmit={onSubmit} className="flex flex-1 items-center">
-      <label className="block flex-1">
-        <span className="sr-only">Email</span>
-        <div className="flex items-center border border-rule-strong bg-transparent transition focus-within:border-cyan">
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            className="min-h-11 w-full bg-transparent px-3 py-2 text-[13px] text-fg-strong outline-none placeholder:text-fg-muted"
-          />
-          <button
-            type="submit"
-            disabled={status === "submitting"}
-            className="min-h-11 border-l border-rule-strong bg-cyan px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-          >
-            {status === "ok" ? "Subscribed" : "Subscribe"}
-          </button>
-        </div>
-        {message ? (
-          <p
-            className={`mt-2 text-[11px] ${
-              status === "error" ? "text-danger" : "text-cyan"
-            }`}
-            aria-live="polite"
-          >
-            {message}
-          </p>
-        ) : null}
-      </label>
-    </form>
+    <div className="border-t border-rule pt-5">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        Recent issues
+      </div>
+      <ul className="mt-4 divide-y divide-rule">
+        {posts.slice(0, 3).map((p) => (
+          <li key={p.slug}>
+            <Link
+              to="/newsletters/$slug/$post"
+              params={{ slug, post: p.slug }}
+              className="group flex flex-col gap-1 py-3 transition hover:text-cyan sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
+            >
+              <span className="min-w-0 flex-1 break-words text-[14px] leading-snug text-fg-strong group-hover:text-cyan">
+                {p.title}
+              </span>
+              <span className="shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan">
+                {formatPostDate(p.publishedAt)}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -5,6 +5,7 @@
 //
 //   GET /api/simplecast/episodes — list. Slim summaries; no show notes.
 //   GET /api/simplecast/episode  — single episode with show notes html.
+//   GET /api/simplecast/podcast  — show-level metadata (description).
 //
 // Both are cached in-process. The cache resets on each serverless cold
 // start, which is fine — Simplecast updates on the order of days, not
@@ -18,6 +19,7 @@ import {
   type ProjectedEpisode,
   type ScEpisode,
 } from '../show-notes.js'
+import type { ScPodcast } from '../show-notes.js'
 import { makeJsonRes } from '../lib/http.js'
 import type { Deps, Env, Route } from '../lib/route.js'
 
@@ -36,6 +38,15 @@ type EpisodeNotes = { showNotesHtml: string; description: string }
 const simplecastEpisodeCache = new Map<
   string,
   { at: number; notes: EpisodeNotes }
+>()
+
+// Show-level metadata (title, description) changes very rarely — on the order
+// of months — so it gets a much longer TTL than episodes or show notes. The
+// cache still resets on each serverless cold start, bounding staleness.
+const SIMPLECAST_PODCAST_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const simplecastPodcastCache = new Map<
+  string,
+  { at: number; description: string }
 >()
 
 type ScEpisodesResponse = { collection?: ScEpisode[] }
@@ -101,6 +112,27 @@ async function fetchSimplecastEpisodeNotes(
   return notes
 }
 
+async function fetchSimplecastPodcastDescription(
+  podcastId: string,
+  token: string,
+): Promise<string> {
+  const cached = simplecastPodcastCache.get(podcastId)
+  if (cached && Date.now() - cached.at < SIMPLECAST_PODCAST_CACHE_TTL_MS) {
+    return cached.description
+  }
+  const url = `https://api.simplecast.com/podcasts/${encodeURIComponent(podcastId)}`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  })
+  if (!res.ok) {
+    throw new Error(`Simplecast ${res.status}: ${await res.text()}`)
+  }
+  const body = (await res.json()) as ScPodcast
+  const description = stripHtml(body.description ?? '')
+  simplecastPodcastCache.set(podcastId, { at: Date.now(), description })
+  return description
+}
+
 export function simplecastRoutes({ env }: Deps): Route[] {
   return [
     {
@@ -152,6 +184,34 @@ export function simplecastRoutes({ env }: Deps): Route[] {
           json(200, notes)
         } catch (err) {
           console.error('[simplecast] episode fetch failed:', err)
+          json(502, { error: 'simplecast_unavailable' })
+        }
+      },
+    },
+    {
+      path: '/api/simplecast/podcast',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+        const url = new URL(req.url ?? '', 'http://x')
+        const show = url.searchParams.get('show')
+        if (!show) return json(400, { error: 'missing `show`' })
+
+        const podcastId = resolveSimplecastPodcastId(env, show)
+        const token = env.SIMPLECAST_API_TOKEN
+        if (!podcastId || !token) {
+          // Show has no Simplecast podcast configured, or the server has no
+          // token. Return an empty description — the client falls back to the
+          // hand-written tagline.
+          return json(200, { description: '' })
+        }
+
+        try {
+          const description = await fetchSimplecastPodcastDescription(podcastId, token)
+          json(200, { description })
+        } catch (err) {
+          console.error('[simplecast] podcast fetch failed:', err)
           json(502, { error: 'simplecast_unavailable' })
         }
       },

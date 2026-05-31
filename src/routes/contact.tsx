@@ -1,69 +1,147 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { PageShell } from "../components/PageShell";
-import { contactEmails } from "../config/urls";
+import { contactTopics, type ContactTopic } from "../config/urls";
+import { sendContactMessage } from "../lib/contact";
 
 export const Route = createFileRoute("/contact")({
   component: ContactPage,
 });
 
-const lanes: { eyebrow: string; title: string; email: string; body: string }[] = [
-  {
-    eyebrow: "Listener mail",
-    title: "For show ideas, feedback, and corrections",
-    email: contactEmails.general,
-    body: "We read every note. Send a thought, a sharper way to put a thing, or a correction we missed.",
-  },
-  {
-    eyebrow: "Press",
-    title: "For press, interviews, and media inquiries",
-    email: contactEmails.press,
-    body: "Booking requests for hosts, interview availability, and press credentials.",
-  },
-  {
-    eyebrow: "Partnerships",
-    title: "For sponsorships and partnerships",
-    email: contactEmails.partnerships,
-    body: "Brand partnerships, syndication, and editorial collaborations.",
-  },
-  {
-    eyebrow: "Member support",
-    title: "For Ark+ membership questions",
-    email: contactEmails.support,
-    body: "Trouble with your private feed, billing, the Circle app, or anything else Ark+. Quickest reply if you write from the email on file.",
-  },
-];
+const inputClass =
+  "min-h-11 w-full border border-rule-strong bg-transparent px-3 py-2 text-[14px] text-fg-strong outline-none transition placeholder:text-fg-muted focus:border-cyan";
+const labelClass =
+  "text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan";
 
 function ContactPage() {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [topic, setTopic] = useState<ContactTopic>(contactTopics[0].value);
+  const [message, setMessage] = useState("");
+  // Honeypot — see server/routes/contact.ts. Real users leave it blank.
+  const [company, setCompany] = useState("");
+  const [status, setStatus] = useState<"idle" | "submitting" | "ok" | "error">(
+    "idle",
+  );
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (company.trim() !== "") return; // bot tripped the honeypot
+    setStatus("submitting");
+    setFeedback(null);
+    const r = await sendContactMessage({ name, email, topic, message });
+    if (r.ok) {
+      setStatus("ok");
+      setFeedback("Thanks — your message is on its way. We'll be in touch.");
+      setName("");
+      setEmail("");
+      setMessage("");
+      setTopic(contactTopics[0].value);
+    } else {
+      setStatus("error");
+      setFeedback(r.error ?? "Could not send. Please try again.");
+    }
+  };
+
   return (
     <PageShell
       eyebrow="Contact"
       title="Get in touch."
-      lede="A few addresses for a few different conversations."
+      lede="Send us a note and it'll reach the right desk. Pick a topic, tell us what's on your mind, and we'll follow up by email."
     >
       <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {lanes.map((l) => (
-              <a
-                key={l.email}
-                href={`mailto:${l.email}`}
-                className="group block border border-rule bg-navy-800/40 p-7 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        <div className="mx-auto max-w-[680px] px-6 py-16 sm:px-10">
+          <form
+            onSubmit={onSubmit}
+            className="border border-rule bg-navy-800/40 p-7 sm:p-9"
+          >
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <label className="block">
+                <span className={labelClass}>Name</span>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                  className={`mt-3 ${inputClass}`}
+                />
+              </label>
+              <label className="block">
+                <span className={labelClass}>Email</span>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className={`mt-3 ${inputClass}`}
+                />
+              </label>
+            </div>
+
+            <label className="mt-6 block">
+              <span className={labelClass}>Topic</span>
+              <select
+                value={topic}
+                onChange={(e) => setTopic(e.target.value as ContactTopic)}
+                className={`mt-3 ${inputClass}`}
               >
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                  {l.eyebrow}
-                </div>
-                <h2 className="mt-4 font-display text-[20px] leading-tight text-fg-strong">
-                  {l.title}
-                </h2>
-                <p className="mt-3 text-[13.5px] leading-[1.6] text-fg-muted">
-                  {l.body}
+                {contactTopics.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mt-6 block">
+              <span className={labelClass}>Message</span>
+              <textarea
+                required
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="What's on your mind?"
+                rows={6}
+                className={`mt-3 ${inputClass} resize-y`}
+              />
+            </label>
+
+            {/* Honeypot: visually hidden, off the tab order, ignored by humans. */}
+            <div aria-hidden className="hidden">
+              <label>
+                Company
+                <input
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="mt-7 flex flex-wrap items-center gap-4">
+              <button
+                type="submit"
+                disabled={status === "submitting"}
+                className="min-h-11 bg-cyan px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+              >
+                {status === "submitting" ? "Sending…" : "Send message"}
+              </button>
+              {feedback ? (
+                <p
+                  className={`text-[12px] ${
+                    status === "error" ? "text-danger" : "text-cyan"
+                  }`}
+                  aria-live="polite"
+                >
+                  {feedback}
                 </p>
-                <div className="mt-5 text-[14px] text-fg transition group-hover:text-cyan">
-                  {l.email} →
-                </div>
-              </a>
-            ))}
-          </div>
+              ) : null}
+            </div>
+          </form>
         </div>
       </section>
     </PageShell>

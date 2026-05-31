@@ -1,8 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState, type ReactNode } from "react";
 import { shows } from "../data/shows";
+import { useShowDescriptions } from "../lib/useShowDescription";
 import { LinkCard, NumberedRow } from "../components/ContentCard";
+import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { Toast } from "../components/Toast";
+import { fetchNewsletterPrefs } from "../lib/newsletterPrefs";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createFileRoute("/")({
   // `?gift=complete` lands here after a gift checkout (both the inline flow and
@@ -14,33 +19,122 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
-const sections = [
+// The newsletter row carries an inline signup form instead of linking out, so
+// it's modeled separately from the click-through rows below.
+const newsletterRow = {
+  eyebrow: "Newsletter",
+  title: "In your inbox.",
+  body: "Subscribe to our newsletter and get new episodes every Friday.",
+};
+
+const linkRows = [
   {
-    number: "01",
-    eyebrow: "Newsletters",
-    title: "In your inbox.",
-    to: "/newsletters",
-    body: "Curated dispatches from the Ark Media newsroom — free letters and members-only editions.",
-  },
-  {
-    number: "02",
     eyebrow: "Community",
     title: "In the room.",
     to: "/community",
-    body: "The Ark+ community — Nadav, Amit and Tal in conversation with members.",
+    body: "Nadav, Amit and Tal in conversation with members — in the Circle app.",
+    cta: "Learn more",
   },
   {
-    number: "03",
     eyebrow: "Ark+",
     title: "All in.",
     to: "/plus",
     body: "One membership for the paid feed, members-only newsletters, and the community.",
+    cta: "Explore Ark+",
   },
 ];
+
+// `eyebrow` is the section name (Newsletter / Community / Ark+) and leads as the
+// prominent title — it inherits NumberedRow's big display size. `title` is the
+// punchy tagline, rendered smaller and in cyan inline beside it.
+function rowTitle(eyebrow: string, title: string): ReactNode {
+  return (
+    <>
+      {eyebrow}
+      <span className="ml-3 align-baseline font-display text-[15px] font-normal text-cyan sm:text-[16px]">
+        {title}
+      </span>
+    </>
+  );
+}
+
+function AlsoFromArkMedia() {
+  const { state } = useSubscriberAuth();
+  const [freeSub, setFreeSub] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (state.kind !== "member") return;
+    let live = true;
+    void fetchNewsletterPrefs()
+      .then((p) => {
+        if (live) setFreeSub(p?.free ?? false);
+      })
+      .catch(() => {
+        if (live) setFreeSub(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [state.kind]);
+
+  // Everyone gets the inline signup except a signed-in member we know is
+  // already on the free list. While a member's prefs are still loading we
+  // withhold the row (rather than show-then-hide) so already-subscribed
+  // members never see it flash; guests get it immediately.
+  const showNewsletter = state.kind !== "member" || freeSub === false;
+
+  // Build the visible rows, then number them by position so hiding the
+  // newsletter row leaves no gap (Community becomes 01, Ark+ becomes 02).
+  const rows = [
+    ...(showNewsletter
+      ? [
+          {
+            key: "newsletter",
+            title: rowTitle(newsletterRow.eyebrow, newsletterRow.title),
+            body: newsletterRow.body,
+            action: <NewsletterSignupForm slug="ark-daily" />,
+          },
+        ]
+      : []),
+    ...linkRows.map((s) => ({
+      key: s.to,
+      title: rowTitle(s.eyebrow, s.title),
+      body: s.body,
+      cta: s.cta,
+      to: s.to,
+    })),
+  ];
+
+  return (
+    <section className="border-t border-rule bg-navy-900">
+      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="mb-8">
+          <div className="eyebrow text-[18px] sm:text-[22px]">
+            Also from Ark Media
+          </div>
+        </div>
+        <div>
+          {rows.map((row, i) => (
+            <NumberedRow
+              key={row.key}
+              number={String(i + 1).padStart(2, "0")}
+              title={row.title}
+              body={row.body}
+              cta={"cta" in row ? row.cta : undefined}
+              to={"to" in row ? row.to : undefined}
+              action={"action" in row ? row.action : undefined}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function HomePage() {
   const { gift } = Route.useSearch();
   const navigate = useNavigate();
+  const descriptions = useShowDescriptions(shows.map((s) => s.slug));
   return (
     <main className="relative">
       <section className="relative">
@@ -101,10 +195,10 @@ function HomePage() {
 
       {/* Podcast row — card grid (good for browsing) */}
       <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="mx-auto max-w-[1280px] px-6 py-8 sm:px-10">
           <div className="flex items-end justify-between">
             <div>
-              <div className="eyebrow">Podcasts</div>
+              <div className="eyebrow text-[18px] sm:text-[22px]">Podcasts</div>
               <h2 className="mt-3 text-fg-strong">
                 <span className="display-upright block text-[clamp(1.8rem,3.5vw,2.6rem)]">
                   Four shows.
@@ -119,14 +213,14 @@ function HomePage() {
             </Link>
           </div>
 
-          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {shows.map((show) => (
               <LinkCard
                 key={show.slug}
                 to={show.route}
                 eyebrow={show.shortTitle}
                 title={show.title}
-                body={show.tagline}
+                body={descriptions[show.slug] || show.tagline}
                 cta="Visit show"
                 media={<ShowCover show={show} />}
               />
@@ -135,31 +229,9 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Three sections — editorial numbered stack (visually distinct from cards above) */}
-      <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="mb-8">
-            <div className="eyebrow">Also from Ark Media</div>
-          </div>
-          <div>
-            {sections.map((s) => (
-              <NumberedRow
-                key={s.to}
-                number={s.number}
-                title={
-                  <>
-                    <span className="eyebrow mr-3 align-middle">{s.eyebrow}</span>
-                    {s.title}
-                  </>
-                }
-                body={s.body}
-                cta="Learn more"
-                to={s.to}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Also from Ark Media — editorial numbered stack (newsletter signup +
+          links to the community and Ark+ hubs) */}
+      <AlsoFromArkMedia />
 
       {gift === "complete" ? (
         <Toast

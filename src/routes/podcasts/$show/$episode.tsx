@@ -6,7 +6,6 @@ import {
   type Episode,
 } from "../../../data/episodes";
 import {
-  LISTEN_PLATFORM_LABEL,
   getShow,
   showAtmosphere,
   type Show,
@@ -21,6 +20,7 @@ import { renderShowNotes } from "../../../lib/show-notes-renderer";
 import { useSubscriberAuth } from "../../../lib/subscriberAuth";
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
 import { ShowCover } from "../../../components/ShowCover";
+import { ListenLinks } from "../../../components/ListenLinks";
 
 export const Route = createFileRoute("/podcasts/$show/$episode")({
   loader: ({ params }) => {
@@ -102,6 +102,14 @@ function EpisodePage() {
               </>
             ) : null}
           </div>
+          {episode.imageUrl ? (
+            <img
+              src={episode.imageUrl}
+              alt=""
+              loading="lazy"
+              className="rise rise-4 mt-9 aspect-video w-full max-w-3xl border border-rule bg-navy-900 object-contain p-2 shadow-cover"
+            />
+          ) : null}
         </div>
       </section>
 
@@ -179,19 +187,7 @@ function EpisodeAside({ show }: { show: Show }) {
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
             Subscribe
           </h2>
-          <div className="mt-4 flex flex-wrap gap-2.5">
-            {show.listen.map((l) => (
-              <a
-                key={l.platform}
-                href={l.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="border border-rule-strong px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-              >
-                {LISTEN_PLATFORM_LABEL[l.platform]}
-              </a>
-            ))}
-          </div>
+          <ListenLinks listen={show.listen} className="mt-4" />
         </div>
       ) : null}
     </div>
