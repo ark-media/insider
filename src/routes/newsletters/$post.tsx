@@ -29,7 +29,17 @@ export const Route = createFileRoute("/newsletters/$post")({
   },
   loader: async () => {
     const token = await getToken();
-    const me = token ? await fetchMe({ accessToken: token }) : null;
+    // Tier hint only — the page re-derives membership from useSubscriberAuth and
+    // invalidates. A failed /api/me shouldn't break the post, so fall back to
+    // the free reader on error rather than letting the loader reject.
+    let me = null;
+    if (token) {
+      try {
+        me = await fetchMe({ accessToken: token });
+      } catch {
+        me = null;
+      }
+    }
     const slug = newsletterSlugForReader(me?.tier === "ark-plus-member");
     const pub = await getPublication(slug);
     if (!pub) throw notFound();

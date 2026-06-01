@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { CIRCLE_OPEN_LINKS } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
+import { ContentError } from "../../components/ContentError";
 
 export const Route = createFileRoute("/account/")({
   component: AccountDashboard,
@@ -10,13 +11,28 @@ export const Route = createFileRoute("/account/")({
 
 function AccountDashboard() {
   const navigate = useNavigate();
-  const { state, signOut } = useSubscriberAuth();
+  const { state, authError, refresh, signOut } = useSubscriberAuth();
 
   useEffect(() => {
-    if (state.kind === "guest") {
+    // Don't bounce to /plus when "guest" is just an unreachable /api/me — the
+    // error+retry below owns that case.
+    if (!authError && state.kind === "guest") {
       void navigate({ to: "/plus" });
     }
-  }, [state.kind, navigate]);
+  }, [state.kind, authError, navigate]);
+
+  if (authError) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900 p-6">
+        <div className="w-full max-w-md">
+          <ContentError
+            message="We couldn't load your account. Refresh to try again."
+            onRetry={refresh}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (state.kind === "loading") {
     return (

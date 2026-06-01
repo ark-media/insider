@@ -61,23 +61,6 @@ function tenantBase(event) {
 }
 
 exports.onExecutePostLogin = async (event, api) => {
-  try {
-    return await run(event, api);
-  } catch (err) {
-    // TEMP DIAGNOSTIC — surfaces the real cause in error_description instead of
-    // the opaque "fetch failed". Remove once the login is working again.
-    const dom = event.secrets.AUTH0_TENANT_DOMAIN;
-    const seen =
-      dom === undefined ? 'UNSET'
-      : dom === '' ? 'EMPTY'
-      : `"${dom}" -> ${tenantBase(event)}`;
-    return api.access.deny(
-      `DEBUG ${err.name}: ${err.message} | conn=${event.connection?.name} strategy=${event.connection?.strategy} | DOMAIN secret=${seen} | mgmtId=${event.secrets.MGMT_CLIENT_ID ? 'set' : 'UNSET'}`,
-    );
-  }
-};
-
-const run = async (event, api) => {
   // The user who just authenticated, and their roles, are the defaults used
   // for both the Database-login and already-linked-social cases.
   let resolved = event.user;

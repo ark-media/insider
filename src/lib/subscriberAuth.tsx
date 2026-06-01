@@ -22,6 +22,11 @@ export type SubscriberAuthState =
 type SubscriberAuthValue = {
   state: SubscriberAuthState;
   refresh: () => Promise<void>;
+  // True when /api/me couldn't be reached (network / server error, not a 401).
+  // Member-data pages show an error+retry on this; `refresh` is the retry. Kept
+  // separate from `state` so a transient outage doesn't ripple a new variant
+  // through the ~20 components that switch on `state.kind`.
+  authError: boolean;
   signOut: () => void;
   // Whether the signed-in user holds the "admin" role, per /api/admin/me
   // (which re-verifies the Auth0 token server-side). `adminLoading` is true
@@ -35,6 +40,7 @@ const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
 export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading, getAccessTokenSilently, logout, user } = useAuth0();
   const [state, setState] = useState<SubscriberAuthState>({ kind: "loading" });
+  const [authError, setAuthError] = useState(false);
   const [admin, setAdmin] = useState<{ loading: boolean; isAdmin: boolean }>({
     loading: true,
     isAdmin: false,
@@ -57,23 +63,32 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!isAuthenticated && !hasCheckoutCookie()) {
       setState({ kind: "guest" });
+      setAuthError(false);
       return;
     }
 
-    let me: Me | null = null;
     try {
+      let token: string | null = null;
       if (isAuthenticated) {
-        const token = await getApiAccessToken();
-        me = await fetchMe({ accessToken: token });
-      } else {
-        // Post-checkout httpOnly session — credentials only, no Bearer.
-        me = await fetchMe({ accessToken: null });
+        // Silent token renewal can fail briefly; fall back to the cookie
+        // session (no Bearer) rather than treating it as a hard error.
+        try {
+          token = await getApiAccessToken();
+        } catch {
+          token = null;
+        }
       }
+      // Post-checkout sessions ride the httpOnly cookie (credentials), no Bearer.
+      const me = await fetchMe({ accessToken: token });
+      setState(me ? { kind: "member", me } : { kind: "guest" });
+      setAuthError(false);
     } catch {
-      // Silent token renewal can fail briefly; still try cookie session.
-      me = await fetchMe();
+      // Couldn't reach /api/me (network / server error). Surface error+retry on
+      // member-data pages, but don't flash an existing member back to guest —
+      // only resolve the initial "loading" so other consumers aren't stuck.
+      setAuthError(true);
+      setState((prev) => (prev.kind === "member" ? prev : { kind: "guest" }));
     }
-    setState(me ? { kind: "member", me } : { kind: "guest" });
   }, [isAuthenticated, getApiAccessToken]);
 
   useEffect(() => {
@@ -141,6 +156,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
       value={{
         state,
         refresh,
+        authError,
         signOut,
         isAdmin: admin.isAdmin,
         adminLoading: admin.loading,

@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CheckoutModal } from "./CheckoutModal";
+import { ContentError } from "./ContentError";
+import { useAsyncResource } from "../lib/useAsyncResource";
 
 function fmtPrice(dollars: number): string {
   return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
@@ -16,37 +18,28 @@ export function Pricing() {
 
   // Prices come from Stripe (the source of truth) via /api/pricing — never
   // hardcoded, so the displayed amount can't drift from what we actually
-  // charge. (USD source amount; buyers pay the localized equivalent.)
-  const [prices, setPrices] = useState<{ monthly: number; yearly: number } | null>(
-    null,
-  );
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/pricing");
-        const data = (await res.json().catch(() => ({}))) as {
-          monthly_cents?: number;
-          yearly_cents?: number;
-        };
-        if (
-          !cancelled &&
-          typeof data.monthly_cents === "number" &&
-          typeof data.yearly_cents === "number"
-        ) {
-          setPrices({
-            monthly: data.monthly_cents / 100,
-            yearly: data.yearly_cents / 100,
-          });
-        }
-      } catch {
-        /* leave prices null — UI shows a loading state */
-      }
-    })();
-    return () => {
-      cancelled = true;
+  // charge. (USD source amount; buyers pay the localized equivalent.) A failed
+  // or malformed response rejects, so the UI shows an error+retry instead of
+  // spinning on the skeleton forever.
+  const pricing = useAsyncResource(async () => {
+    const res = await fetch("/api/pricing");
+    if (!res.ok) throw new Error("pricing request failed");
+    const data = (await res.json().catch(() => ({}))) as {
+      monthly_cents?: number;
+      yearly_cents?: number;
+    };
+    if (
+      typeof data.monthly_cents !== "number" ||
+      typeof data.yearly_cents !== "number"
+    ) {
+      throw new Error("pricing response malformed");
+    }
+    return {
+      monthly: data.monthly_cents / 100,
+      yearly: data.yearly_cents / 100,
     };
   }, []);
+  const prices = pricing.status === "ready" ? pricing.data : null;
 
   const price = prices ? (plan === "yearly" ? prices.yearly : prices.monthly) : null;
   const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
@@ -100,6 +93,13 @@ export function Pricing() {
           </div>
 
           <div className="lg:col-span-7">
+            {pricing.status === "error" ? (
+              <ContentError
+                message="We couldn't load pricing right now. Refresh to try again."
+                onRetry={pricing.retry}
+              />
+            ) : (
+            <>
             {/* Plan toggle */}
             <div role="group" aria-label="Billing period" className="inline-flex border border-rule-strong p-1">
               {(["monthly", "yearly"] as const).map((p) => (
@@ -218,6 +218,8 @@ export function Pricing() {
                 </div>
               </div>
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>

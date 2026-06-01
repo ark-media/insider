@@ -1,8 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { shows } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
-import { LinkCard, NumberedRow } from "../components/ContentCard";
+import { LinkCard } from "../components/ContentCard";
+import { formatPostDate, type NewsletterPost } from "../data/newsletters";
+import { listPostsPublic } from "../lib/beehiiv";
+import { fetchEventStrip, type EventStripItem } from "../lib/circle";
+import { formatEventStart, type ArkEvent } from "../data/events";
 import { LatestEpisodes } from "../components/LatestEpisodes";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
@@ -20,42 +24,306 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
-// The newsletter row carries an inline signup form instead of linking out, so
-// it's modeled separately from the click-through rows below.
-const newsletterRow = {
-  eyebrow: "Newsletter",
-  title: "In your inbox.",
-  body: "Subscribe to our newsletter and get new episodes every Friday.",
+// Shared CTA style for the feature bands — an outline button that fills cyan on
+// hover. Distinct from the hero's solid CTA so these read as peer offerings, not
+// a second call to the same action.
+const bandCtaClass =
+  "mt-7 inline-flex min-h-12 w-fit items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+
+// ---------------------------------------------------------------------------
+// Newsletter visual — styled to read like an actual email/newsletter: a navy
+// masthead over a white "paper" body with a real issue (latest free ark-daily
+// post). Fixed colors (not theme tokens) so it reads as a real email in both
+// the light and dark site themes — the same convention the app mockups use.
+// ---------------------------------------------------------------------------
+function NewsletterVisual() {
+  const [post, setPost] = useState<NewsletterPost | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void listPostsPublic("ark-daily").then((posts) => {
+      if (alive && posts.length) setPost(posts[0]);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <div className="relative isolate mx-auto w-full max-w-md">
+      <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-cyan/10 blur-2xl" />
+      <div className="overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
+        {/* Masthead */}
+        <div className="bg-navy px-6 py-6 text-center">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-cyan">
+            The Ark Media Newsletter
+          </div>
+          <div className="mt-2 font-display text-[26px] font-bold leading-none text-white">
+            Ark Media
+          </div>
+          <div className="mx-auto mt-3 h-px w-10 bg-cyan/60" />
+        </div>
+
+        {/* Issue body — real latest issue, with an evergreen fallback. */}
+        <div className="bg-white px-6 py-6">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-[#0b153c]/45">
+            {post ? formatPostDate(post.publishedAt) : "Weekly dispatch"}
+          </div>
+          <h4 className="mt-2 font-display text-[19px] font-bold leading-snug text-[#0b153c]">
+            {post ? post.title : "This week from Ark Media"}
+          </h4>
+          <p className="mt-3 line-clamp-4 text-[12.5px] leading-relaxed text-[#0b153c]/65">
+            {post
+              ? post.excerpt
+              : "The through-lines from this week's interviews — and what they tell us about the week ahead."}
+          </p>
+          <div className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-navy px-4 py-2 text-[11px] font-bold text-white">
+            Read the issue →
+          </div>
+        </div>
+
+        {/* Email footer */}
+        <div className="border-t border-black/[0.08] bg-[#f5f6f9] px-6 py-3 text-center text-[10px] text-[#0b153c]/40">
+          You&apos;re reading the free weekly edition ·{" "}
+          <span className="underline">Unsubscribe</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const FORMAT_LABEL: Record<ArkEvent["format"], string> = {
+  "audio-room": "Audio room",
+  "video-ama": "Video AMA",
+  "watch-party": "Watch party",
+  "in-person": "In person",
 };
 
-const linkRows = [
-  {
-    eyebrow: "Community",
-    title: "In the room.",
-    to: "/community",
-    body: "Nadav, Amit and Tal in conversation with members — in the Community app.",
-    cta: "Learn more",
-  },
-  {
-    eyebrow: "Ark+",
-    title: "All in.",
-    to: "/plus",
-    body: "The paid feed, members-only newsletters, and the community — all included.",
-    cta: "Explore Ark+",
-  },
+// A phone shell mirroring the app mockups on /community — fixed dark colors so
+// it reads as a real screenshot in both themes.
+function PhoneFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative isolate mx-auto w-[212px] shrink-0 sm:w-[232px]">
+      <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-cyan/10 blur-2xl" />
+      <div className="relative aspect-[9/19] overflow-hidden rounded-[2.4rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
+        <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
+          {/* notch */}
+          <div className="absolute left-1/2 top-[10px] z-20 h-[20px] w-[88px] -translate-x-1/2 rounded-full bg-black/70" />
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhoneStatusBar() {
+  return (
+    <div className="flex items-center justify-between px-5 pt-3 text-[11px] font-semibold text-white/90">
+      <span>9:41</span>
+      <span className="ml-0.5 flex h-[11px] w-[20px] items-center rounded-[3px] border border-white/60 px-[2px]">
+        <span className="h-[6px] w-[12px] rounded-[1px] bg-white/90" />
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Community visual — the community app on a phone. Shows the next real
+// live/upcoming event as an in-app card, with an evergreen fallback.
+// ---------------------------------------------------------------------------
+function CommunityVisual() {
+  const [item, setItem] = useState<EventStripItem | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchEventStrip().then((items) => {
+      if (alive && items.length) setItem(items[0]);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const ev = item?.event;
+  const isLive = item?.status === "live";
+
+  return (
+    <PhoneFrame>
+      <div className="flex h-full flex-col text-white">
+        <PhoneStatusBar />
+
+        {/* App header */}
+        <div className="flex items-center justify-between px-5 pt-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
+              Ark+ Community
+            </div>
+            <div className="mt-0.5 text-[17px] font-bold">In the room</div>
+          </div>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-[12px] font-bold">
+            A
+          </span>
+        </div>
+
+        {/* Live / upcoming event card */}
+        <div className="mt-4 px-4">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-white/45">
+            Live &amp; upcoming
+          </div>
+          <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/55">
+                {ev ? (ev.formatLabel ?? FORMAT_LABEL[ev.format]) : "Live room"}
+              </span>
+              {isLive ? (
+                <span className="rounded-full bg-cyan px-2 py-[2px] text-[9px] font-bold uppercase tracking-wide text-navy">
+                  Live
+                </span>
+              ) : (
+                <span className="rounded-full border border-white/25 px-2 py-[2px] text-[9px] font-bold uppercase tracking-wide text-white/55">
+                  Upcoming
+                </span>
+              )}
+            </div>
+            <div className="mt-2 line-clamp-2 text-[14px] font-bold leading-snug">
+              {ev ? ev.title : "Live Q&A with the hosts"}
+            </div>
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-white/60">
+              <span className="inline-block h-[6px] w-[6px] shrink-0 rounded-full bg-cyan" />
+              {ev ? formatEventStart(ev.startsAt) : "This week"}
+            </div>
+            <div className="mt-3 w-full rounded-full bg-cyan py-2 text-center text-[11px] font-bold text-navy">
+              {isLive ? "Join now" : "RSVP"}
+            </div>
+          </div>
+        </div>
+
+        {/* From-the-community snippet */}
+        <div className="mt-4 flex-1 px-4">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-white/45">
+            From the community
+          </div>
+          <div className="mt-2 flex items-start gap-2.5">
+            <img
+              src="/hosts/dan-senor.jpg"
+              alt=""
+              className="h-7 w-7 rounded-full object-cover"
+            />
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold text-white/85">
+                Dan Senor
+              </div>
+              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-white/55">
+                Thanks for all the questions on tonight&apos;s vote — recording
+                the bonus segment now.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex items-center justify-around border-t border-white/10 px-6 py-3">
+          <span className="h-[7px] w-[7px] rounded-full bg-cyan" />
+          <span className="h-[7px] w-[7px] rounded-full bg-white/25" />
+          <span className="h-[7px] w-[7px] rounded-full bg-white/25" />
+        </div>
+      </div>
+    </PhoneFrame>
+  );
+}
+
+// A small framed tile for the Ark+ "what's included" checklist. Uses theme
+// tokens so it adapts to light and dark.
+const plusIncludes = [
+  "The ad-free paid feed",
+  "Members-only newsletters",
+  "The community app",
 ];
 
-// `eyebrow` is the section name (Newsletter / Community / Ark+) and leads as the
-// prominent title — it inherits NumberedRow's big display size. `title` is the
-// punchy tagline, rendered smaller and in cyan inline beside it.
-function rowTitle(eyebrow: string, title: string): ReactNode {
+function PlusVisual() {
   return (
-    <>
-      {eyebrow}
-      <span className="ml-3 align-baseline text-body-lg font-display font-normal text-cyan sm:text-base">
-        {title}
-      </span>
-    </>
+    <div className="relative isolate mx-auto w-full max-w-sm">
+      <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-cyan/10 blur-2xl" />
+      <div className="overflow-hidden rounded-2xl border border-rule bg-navy-800/40 p-6 shadow-xl">
+        <div className="eyebrow text-[10px] text-cyan">Ark+ membership</div>
+        <div className="mt-2 font-display text-[20px] font-bold text-fg-strong">
+          Everything, included.
+        </div>
+        <ul className="mt-5 space-y-3">
+          {plusIncludes.map((item) => (
+            <li
+              key={item}
+              className="flex items-center gap-3 text-[13px] text-fg-muted"
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan/15 text-cyan">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  className="h-3 w-3"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3.5 8.5l3 3 6-7"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// Each offering is its own top-level <section> so it picks up the page's zebra
+// striping. Layout is fixed (text left, visual right) — no alternation. The
+// newsletter band passes `action` (the inline signup form) in place of a CTA.
+function FeatureBand({
+  eyebrow,
+  title,
+  body,
+  visual,
+  cta,
+  to,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  visual: ReactNode;
+  cta?: string;
+  to?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <section>
+      <div className="page-section">
+        <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-16">
+          <div className="flex flex-col">
+            <div className="eyebrow text-[18px] text-cyan sm:text-[22px]">
+              {eyebrow}
+            </div>
+            <h2 className="mt-3 font-display text-[clamp(1.9rem,3.6vw,2.8rem)] leading-[1.04] text-fg-strong">
+              {title}
+            </h2>
+            <p className="mt-5 max-w-md text-body-lg text-fg-muted">{body}</p>
+            {action ? (
+              <div className="mt-7 max-w-md">{action}</div>
+            ) : cta && to ? (
+              <Link to={to} className={bandCtaClass}>
+                {cta} →
+              </Link>
+            ) : null}
+          </div>
+          <div className="w-full">{visual}</div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -67,52 +335,38 @@ function AlsoFromArkMedia() {
   // Guests and signed-in readers not on the Beehiiv list get the inline signup.
   // Beehiiv subscribers see a link to recent issues instead. While prefs load
   // for a member we withhold both so the form never flashes.
-  const showSignup =
-    !isMember || (!prefsLoading && !isSubscribed);
-
-  const rows = [
-    {
-      key: "newsletter",
-      title: rowTitle(newsletterRow.eyebrow, newsletterRow.title),
-      body: newsletterRow.body,
-      ...(showSignup
-        ? { action: <NewsletterSignupForm slug="ark-daily" /> }
-        : isMember && !prefsLoading
-          ? { cta: "Read newsletters", to: "/newsletters" }
-          : {}),
-    },
-    ...linkRows.map((s) => ({
-      key: s.to,
-      title: rowTitle(s.eyebrow, s.title),
-      body: s.body,
-      cta: s.cta,
-      to: s.to,
-    })),
-  ];
+  const showSignup = !isMember || (!prefsLoading && !isSubscribed);
 
   return (
-    <section>
-      <div className="page-section">
-        <div className="mb-8">
-          <div className="eyebrow text-[18px] sm:text-[22px]">
-            Also from Ark Media
-          </div>
-        </div>
-        <div>
-          {rows.map((row, i) => (
-            <NumberedRow
-              key={row.key}
-              number={String(i + 1).padStart(2, "0")}
-              title={row.title}
-              body={row.body}
-              cta={"cta" in row ? row.cta : undefined}
-              to={"to" in row ? row.to : undefined}
-              action={"action" in row ? row.action : undefined}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
+    <>
+      <FeatureBand
+        eyebrow="Newsletter"
+        title="In your inbox."
+        body="Subscribe to our newsletter and get new episodes every Friday."
+        visual={<NewsletterVisual />}
+        {...(showSignup
+          ? { action: <NewsletterSignupForm slug="ark-daily" /> }
+          : isMember && !prefsLoading
+            ? { cta: "Read newsletters", to: "/newsletters" }
+            : {})}
+      />
+      <FeatureBand
+        eyebrow="Community"
+        title="In the room."
+        body="Nadav, Amit and Tal in conversation with members — in the Community app."
+        visual={<CommunityVisual />}
+        cta="Learn more"
+        to="/community"
+      />
+      <FeatureBand
+        eyebrow="Ark+"
+        title="All in."
+        body="The paid feed, members-only newsletters, and the community — all included."
+        visual={<PlusVisual />}
+        cta="Explore Ark+"
+        to="/plus"
+      />
+    </>
   );
 }
 
@@ -218,8 +472,8 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Also from Ark Media — editorial numbered stack (newsletter signup +
-          links to the community and Ark+ hubs) */}
+      {/* Also from Ark Media — full-width feature bands giving the newsletter,
+          community, and Ark+ offerings equal weight beside the podcasts */}
       <AlsoFromArkMedia />
 
       {gift === "complete" ? (

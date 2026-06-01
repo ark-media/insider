@@ -1,15 +1,13 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import {
   episodeImage,
   formatEpisodeDateLong,
   type Episode,
 } from "../data/episodes";
 import type { Show } from "../data/shows";
-import {
-  listLatestEpisodes,
-  type EpisodeWithShow,
-} from "../lib/simplecast";
+import { listLatestEpisodes } from "../lib/simplecast";
+import { useAsyncResource } from "../lib/useAsyncResource";
+import { ContentError } from "./ContentError";
 
 const DISPLAY_LIMIT = 3;
 
@@ -115,19 +113,12 @@ function NewRowBadge() {
 }
 
 export function LatestEpisodes() {
-  const [episodes, setEpisodes] = useState<Array<EpisodeWithShow> | null>(null);
+  const { status, data: episodes, retry } = useAsyncResource(
+    () => listLatestEpisodes(DISPLAY_LIMIT),
+    [],
+  );
 
-  useEffect(() => {
-    let live = true;
-    void listLatestEpisodes(DISPLAY_LIMIT).then((result) => {
-      if (live) setEpisodes(result);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  if (episodes === null) {
+  if (status === "loading") {
     return (
       <section>
         <div className="page-section">
@@ -138,7 +129,23 @@ export function LatestEpisodes() {
     );
   }
 
-  if (episodes.length === 0) return null;
+  if (status === "error") {
+    return (
+      <section>
+        <div className="page-section">
+          <SectionHeading />
+          <div className="mt-8">
+            <ContentError
+              message="We couldn't load the latest episodes. Refresh to try again."
+              onRetry={retry}
+            />
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!episodes || episodes.length === 0) return null;
 
   return (
     <section>

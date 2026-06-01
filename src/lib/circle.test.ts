@@ -1,61 +1,89 @@
 /// <reference types="bun" />
-// The v1 subscriber-feed read functions. These guard the v1→v2 data contract:
-// the projection must expose only preview fields (no raw CommunityBroadcast
-// body/visibility leaking through), the digest must be null in v1, and the
-// empty-state spaces must be non-empty.
+// The v1 subscriber-feed read functions. After dropping the mock fallback these
+// hit their /api/circle/* endpoints and THROW on failure (so /community can show
+// an error+retry). These tests stub global fetch to cover both paths: a 200
+// response is passed through (preserving the CommunityFeedItem / SuggestedSpace
+// contract), and a failure rejects rather than silently degrading.
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, afterEach } from "bun:test";
 import {
   fetchActivityDigest,
   fetchCommunityFeed,
   fetchSuggestedSpaces,
 } from "./circle";
-import { communityBroadcasts } from "../data/communityBroadcasts";
+
+const realFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+function stubFetch(impl: (url: string) => Response | Promise<Response>) {
+  globalThis.fetch = ((input: Request | string | URL) =>
+    Promise.resolve(impl(String(input)))) as typeof fetch;
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 describe("fetchCommunityFeed", () => {
-  test("projects every broadcast into the CommunityFeedItem shape", async () => {
-    const items = await fetchCommunityFeed();
-    expect(items.length).toBe(communityBroadcasts.length);
+  test("returns the endpoint's items on success", async () => {
+    const item = {
+      id: "p1",
+      authorName: "Dan Senor",
+      authorRole: "Host",
+      publishedAt: "2026-05-01T00:00:00.000Z",
+      excerpt: "A preview line.",
+      href: "/circle-sso?return_to=%2Fc",
+    };
+    stubFetch(() => jsonResponse({ items: [item] }));
 
-    for (const item of items) {
-      expect(Object.keys(item).sort()).toEqual(
-        ["authorName", "authorRole", "excerpt", "href", "id", "publishedAt"].sort(),
-      );
-    }
+    const items = await fetchCommunityFeed();
+    expect(items).toEqual([item]);
   });
 
-  test("does not leak raw broadcast fields (body, visibility)", async () => {
-    const items = await fetchCommunityFeed();
-    for (const item of items) {
-      expect(item).not.toHaveProperty("body");
-      expect(item).not.toHaveProperty("visibility");
-    }
+  test("honors a reachable-but-empty response", async () => {
+    stubFetch(() => jsonResponse({}));
+    expect(await fetchCommunityFeed()).toEqual([]);
   });
 
-  test("preview fields and a deep link are carried through", async () => {
-    const items = await fetchCommunityFeed();
-    const first = items[0]!;
-    const source = communityBroadcasts[0]!;
-    expect(first.id).toBe(source.id);
-    expect(first.excerpt).toBe(source.excerpt);
-    // Read-only: actions deep-link into the app via the circle-sso bridge.
-    expect(first.href).toContain("/circle-sso");
+  test("rejects on a non-2xx response", async () => {
+    stubFetch(() => new Response("nope", { status: 500 }));
+    await expect(fetchCommunityFeed()).rejects.toThrow();
+  });
+
+  test("rejects on a network error", async () => {
+    stubFetch(() => {
+      throw new Error("offline");
+    });
+    await expect(fetchCommunityFeed()).rejects.toThrow();
+  });
+});
+
+describe("fetchSuggestedSpaces", () => {
+  test("returns the endpoint's spaces on success", async () => {
+    const space = {
+      id: "call-me-back",
+      name: "Inside Call Me Back",
+      description: "The room around the flagship show.",
+      memberCount: 4120,
+      href: "/circle-sso?return_to=%2Fc",
+    };
+    stubFetch(() => jsonResponse({ spaces: [space] }));
+    expect(await fetchSuggestedSpaces()).toEqual([space]);
+  });
+
+  test("rejects on failure", async () => {
+    stubFetch(() => new Response("nope", { status: 503 }));
+    await expect(fetchSuggestedSpaces()).rejects.toThrow();
   });
 });
 
 describe("fetchActivityDigest", () => {
   test("returns null in v1 (no per-member reads yet)", async () => {
     expect(await fetchActivityDigest()).toBeNull();
-  });
-});
-
-describe("fetchSuggestedSpaces", () => {
-  test("returns a non-empty list, each with a deep link", async () => {
-    const spaces = await fetchSuggestedSpaces();
-    expect(spaces.length).toBeGreaterThan(0);
-    for (const space of spaces) {
-      expect(space.href).toContain("/circle-sso");
-      expect(space.memberCount).toBeGreaterThan(0);
-    }
   });
 });

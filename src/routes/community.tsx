@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { PageShell } from "../components/PageShell";
+import { ContentError } from "../components/ContentError";
 import {
   CIRCLE_OPEN_LINKS,
   fetchActivityDigest,
@@ -42,37 +43,53 @@ const POLL_MS = 45_000;
  * visible (no websockets — see SPEC). Each poll re-derives live event status
  * against the current instant, so an event going live appears within ~45s.
  */
+type CommunityData = {
+  events: EventStripItem[];
+  feed: CommunityFeedItem[];
+  digest: ActivityDigest | null;
+  spaces: SuggestedSpace[];
+};
+
 function useCommunityData() {
-  const [events, setEvents] = useState<EventStripItem[] | null>(null);
-  const [feed, setFeed] = useState<CommunityFeedItem[] | null>(null);
-  const [digest, setDigest] = useState<ActivityDigest | null>(null);
-  const [spaces, setSpaces] = useState<SuggestedSpace[] | null>(null);
+  const [data, setData] = useState<CommunityData | null>(null);
+  const [status, setStatus] = useState<"loading" | "error" | "ready">(
+    "loading",
+  );
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     let alive = true;
 
     // Full load: everything. Used on mount and when the tab is refocused (the
-    // feed/spaces may have changed while it was hidden).
+    // feed/spaces may have changed while it was hidden). Any fetch rejecting
+    // (Circle unreachable / errored) surfaces the error+retry card.
     const load = async () => {
-      const [e, f, d, s] = await Promise.all([
-        fetchEventStrip(),
-        fetchCommunityFeed(),
-        fetchActivityDigest(),
-        fetchSuggestedSpaces(),
-      ]);
-      if (!alive) return;
-      setEvents(e);
-      setFeed(f);
-      setDigest(d);
-      setSpaces(s);
+      try {
+        const [events, feed, digest, spaces] = await Promise.all([
+          fetchEventStrip(),
+          fetchCommunityFeed(),
+          fetchActivityDigest(),
+          fetchSuggestedSpaces(),
+        ]);
+        if (!alive) return;
+        setData({ events, feed, digest, spaces });
+        setStatus("ready");
+      } catch {
+        if (alive) setStatus("error");
+      }
     };
 
     // The 45s poll only refreshes events — that's the sole surface whose live
     // state changes minute-to-minute; re-fetching the feed/spaces every tick is
-    // wasted work.
+    // wasted work. A failed poll surfaces the error so a section that dies
+    // mid-session doesn't keep showing stale data silently.
     const loadEvents = async () => {
-      const e = await fetchEventStrip();
-      if (alive) setEvents(e);
+      try {
+        const events = await fetchEventStrip();
+        if (alive) setData((prev) => (prev ? { ...prev, events } : prev));
+      } catch {
+        if (alive) setStatus("error");
+      }
     };
 
     void load();
@@ -91,36 +108,59 @@ function useCommunityData() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
+  }, [nonce]);
+
+  // Reset to loading here (in the handler, not the effect) so retry shows the
+  // loading state without the effect resetting on every tab refocus.
+  const retry = useCallback(() => {
+    setStatus("loading");
+    setData(null);
+    setNonce((n) => n + 1);
   }, []);
 
-  return { events, feed, digest, spaces };
+  return { data, status, retry };
 }
 
 function SubscriberCommunity() {
-  const { events, feed, digest, spaces } = useCommunityData();
+  const { data, status, retry } = useCommunityData();
 
   return (
     <PageShell
       title="Welcome back to the room."
       lede="What's live, what's happening, and what the community is talking about right now. Jump in — every conversation continues in the app."
     >
-      <section>
-        <div className="page-gutter flex flex-col gap-10 py-10">
-          <div>
-            <h2 className="label text-cyan">Live &amp; upcoming</h2>
-            <div className="mt-6">
-              <LiveEventsStrip items={events} />
-            </div>
+      {status === "error" ? (
+        <section>
+          <div className="page-gutter py-10">
+            <ContentError
+              message="We couldn't load your community feed. Refresh to try again."
+              onRetry={retry}
+            />
           </div>
+        </section>
+      ) : (
+        <section>
+          <div className="page-gutter flex flex-col gap-10 py-10">
+            <div>
+              <h2 className="label text-cyan">Live &amp; upcoming</h2>
+              <div className="mt-6">
+                <LiveEventsStrip items={data?.events ?? null} />
+              </div>
+            </div>
 
-          <div>
-            <h2 className="label text-cyan">From the community</h2>
-            <div className="mt-6">
-              <CommunityFeed items={feed} digest={digest} spaces={spaces} />
+            <div>
+              <h2 className="label text-cyan">From the community</h2>
+              <div className="mt-6">
+                <CommunityFeed
+                  items={data?.feed ?? null}
+                  digest={data?.digest ?? null}
+                  spaces={data?.spaces ?? null}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <OpenInAppCard />
     </PageShell>

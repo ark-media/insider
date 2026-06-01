@@ -5,7 +5,6 @@ import {
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import {
   classifyLiveUpcoming,
-  liveAndUpcomingEvents,
   upcomingEvents,
   type ArkEvent,
   type EventWithStatus,
@@ -33,37 +32,29 @@ function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
 }
 
 /**
- * GET + parse JSON, returning null ONLY on a network/parse/non-2xx failure (or
- * a missing endpoint, e.g. unit tests). A successful empty response is NOT
- * null — callers distinguish "offline → mock" from "reachable but empty → real
- * empty state". Public endpoints; no credentials so they stay edge-cacheable.
+ * GET + parse JSON. THROWS on a network/parse/non-2xx failure so the /community
+ * UI can show an error+retry instead of silently degrading; a successful empty
+ * response is a genuine empty state. Public endpoints; no credentials so they
+ * stay edge-cacheable.
  */
-async function getJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} failed (${res.status})`);
+  return (await res.json()) as T;
 }
 
 /**
  * Like `getJson` but attaches the member session: the Auth0 bearer (when
  * present) plus credentials so the post-checkout cookie rides along. Used for
- * member-gated endpoints (the curated feed).
+ * member-gated endpoints (the curated feed). Throws on failure (see `getJson`).
  */
-async function getJsonAuthed<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url, {
-      headers: await authHeaders(),
-      credentials: "include",
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
+async function getJsonAuthed<T>(url: string): Promise<T> {
+  const res = await fetch(url, {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`${url} failed (${res.status})`);
+  return (await res.json()) as T;
 }
 
 export async function fetchPublicBroadcasts(): Promise<CommunityBroadcast[]> {
@@ -104,56 +95,16 @@ import type {
 export type EventStripItem = EventWithStatus;
 
 /**
- * Wrap a Circle destination in the /circle-sso bridge so a signed-in member
- * lands directly on it (guests are sent to set up Circle first). Mirrors
- * `newsletterCommentUrl`.
- */
-function circleSsoLink(returnTo: string): string {
-  return `/circle-sso?return_to=${encodeURIComponent(returnTo)}`;
-}
-
-/**
- * Mock "most active" spaces for the empty-state nudge. In v2 this is replaced
- * by the member's join-eligible spaces from Circle; the projection below keeps
- * `SuggestedSpace` stable across that swap.
- */
-const MOCK_SPACES: ReadonlyArray<Omit<SuggestedSpace, "href">> = [
-  {
-    id: "call-me-back",
-    name: "Inside Call Me Back",
-    description:
-      "The room around the flagship show — daily threads on the news Dan and Amit are tracking.",
-    memberCount: 4120,
-  },
-  {
-    id: "for-heavens-sake",
-    name: "For Heaven's Sake",
-    description:
-      "Members picking up where Donniel and Yossi leave off, between episodes.",
-    memberCount: 1870,
-  },
-  {
-    id: "meetups",
-    name: "City meetups",
-    description:
-      "Members organizing in-person coffees and watch parties, city by city.",
-    memberCount: 920,
-  },
-];
-
-/**
  * Live + upcoming events for the strip, classified against the current instant.
  * Re-derives each call so polling reflects an event going live. Real Circle
- * events come from `/api/circle/community-events`; falls back to mock events
- * (token-less dev / tests).
+ * events come from `/api/circle/community-events`; throws on failure.
  */
 export async function fetchEventStrip(): Promise<EventStripItem[]> {
   const data = await getJson<{ events?: ArkEvent[] }>(
     "/api/circle/community-events",
   );
-  // null = endpoint unreachable (offline / tests) → mock; a reachable-but-empty
-  // result is honored as a genuinely empty calendar.
-  if (data === null) return liveAndUpcomingEvents();
+  // Throws on failure (handled upstream); a reachable-but-empty result is
+  // honored as a genuinely empty calendar.
   return classifyLiveUpcoming(data.events ?? [], new Date());
 }
 
@@ -163,25 +114,13 @@ export async function fetchEventStrip(): Promise<EventStripItem[]> {
  * the member's joined-space personalized feed. Falls back to mock highlights.
  */
 export async function fetchCommunityFeed(): Promise<CommunityFeedItem[]> {
-  // Member-gated endpoint → authenticated fetch. null = unreachable (offline /
-  // tests) → mock; a reachable result (even empty) is honored, so the empty
-  // state can render in a real deployment.
+  // Member-gated endpoint → authenticated fetch. Throws on failure (handled
+  // upstream); a reachable result (even empty) is honored, so the empty state
+  // can render in a real deployment.
   const data = await getJsonAuthed<{ items?: CommunityFeedItem[] }>(
     "/api/circle/community-feed",
   );
-  if (data !== null) return data.items ?? [];
-
-  // Mock fallback — project preview-only fields (`body`/`visibility` never leak)
-  // and land the member in the app home via SSO, since the mock posts have no
-  // real Circle permalink.
-  return communityBroadcasts.map((b: CommunityBroadcast) => ({
-    id: b.id,
-    authorName: b.authorName,
-    authorRole: b.authorRole,
-    publishedAt: b.publishedAt,
-    excerpt: b.excerpt,
-    href: circleSsoLink(circleUrls.community),
-  }));
+  return data.items ?? [];
 }
 
 /**
@@ -201,13 +140,8 @@ export async function fetchSuggestedSpaces(): Promise<SuggestedSpace[]> {
   const data = await getJson<{ spaces?: SuggestedSpace[] }>(
     "/api/circle/spaces",
   );
-  if (data !== null) return data.spaces ?? [];
-
-  // Mock fallback (offline / tests) — each suggestion lands in the app home.
-  return MOCK_SPACES.map((s) => ({
-    ...s,
-    href: circleSsoLink(circleUrls.community),
-  }));
+  // Throws on failure (handled upstream); a reachable-but-empty result honored.
+  return data.spaces ?? [];
 }
 
 /**

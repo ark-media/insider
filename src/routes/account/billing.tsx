@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { cancelSubscription } from "../../lib/auth";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
+import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { Modal } from "../../components/Modal";
 
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/account/billing")({
 
 function BillingPage() {
   const navigate = useNavigate();
-  const { state } = useSubscriberAuth();
+  const { state, authError, refresh } = useSubscriberAuth();
   const [status, setStatus] = useState<
     | { kind: "idle" }
     | { kind: "cancelling" }
@@ -22,6 +23,8 @@ function BillingPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
+    // Skip the redirect when "guest" is just an unreachable /api/me.
+    if (authError) return;
     if (state.kind === "guest") {
       void navigate({ to: "/plus" });
       return;
@@ -29,7 +32,20 @@ function BillingPage() {
     if (state.kind === "member" && state.me.tier !== "ark-plus-member") {
       void navigate({ to: "/plus" });
     }
-  }, [state, navigate]);
+  }, [state, authError, navigate]);
+
+  if (authError) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900 p-6">
+        <div className="w-full max-w-md">
+          <ContentError
+            message="We couldn't load your billing details. Refresh to try again."
+            onRetry={refresh}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (state.kind === "loading") {
     return (

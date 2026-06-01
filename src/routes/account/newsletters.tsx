@@ -7,6 +7,7 @@ import {
 } from "../../lib/newsletterPrefs";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
+import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 
 export const Route = createFileRoute("/account/newsletters")({
@@ -15,13 +16,27 @@ export const Route = createFileRoute("/account/newsletters")({
 
 function NewsletterPrefs() {
   const navigate = useNavigate();
-  const { state } = useSubscriberAuth();
+  const { state, authError, refresh } = useSubscriberAuth();
 
   useEffect(() => {
-    if (state.kind === "guest") {
+    // Skip the redirect when "guest" is just an unreachable /api/me.
+    if (!authError && state.kind === "guest") {
       void navigate({ to: "/plus" });
     }
-  }, [state.kind, navigate]);
+  }, [state.kind, authError, navigate]);
+
+  if (authError) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900 p-6">
+        <div className="w-full max-w-md">
+          <ContentError
+            message="We couldn't load your newsletter settings. Refresh to try again."
+            onRetry={refresh}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (state.kind === "loading") {
     return (

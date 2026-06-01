@@ -36,14 +36,11 @@ export async function getPublication(
 
 type ApiResponse = { posts?: NewsletterPost[] };
 
-async function fetchPostsFromApi(
+async function fetchPosts(
   slug: NewsletterSlug,
+  token: string | null,
 ): Promise<NewsletterPost[]> {
   try {
-    // Attach the Auth0 bearer when present so the server can read the
-    // reader's tier claim and serve the full premium body to Ark+ members.
-    // Without it, the server falls back to the above-divider preview.
-    const token = await getToken();
     const headers: Record<string, string> = token
       ? { Authorization: `Bearer ${token}` }
       : {};
@@ -59,9 +56,32 @@ async function fetchPostsFromApi(
   }
 }
 
+async function fetchPostsFromApi(
+  slug: NewsletterSlug,
+): Promise<NewsletterPost[]> {
+  // Attach the Auth0 bearer when present so the server can read the reader's
+  // tier claim and serve the full premium body to Ark+ members. Without it,
+  // the server falls back to the above-divider preview.
+  const token = await getToken();
+  return fetchPosts(slug, token);
+}
+
 export const beehiivSource: NewsletterSource = {
   listPosts: fetchPostsFromApi,
 };
+
+/**
+ * Auth-free listing for public landing-page teasers (e.g. the homepage
+ * newsletter preview). Unlike `beehiivSource.listPosts`, this never awaits the
+ * Auth0 token getter — which can stay pending while a guest's session is still
+ * resolving — so a public page never blocks on auth to show a free preview.
+ * Returns the same above-divider preview a guest would see on the reading page.
+ */
+export function listPostsPublic(
+  slug: NewsletterSlug,
+): Promise<NewsletterPost[]> {
+  return fetchPosts(slug, null);
+}
 
 /**
  * Subscribe an email to a newsletter via `/api/beehiiv/subscribe`, which calls

@@ -5,29 +5,26 @@ import { shows, type Show, type ShowSlug } from "../data/shows";
  * Simplecast client. Fetches episodes from /api/simplecast/episodes, which
  * proxies the Simplecast API server-side (the API token can't ride along
  * with the client). Simplecast is the single source of truth for episode
- * data — there is no local catalog. When the server returns nothing (paid
- * show with no Simplecast podcast, or dev environment without a token), the
- * caller gets an empty list and the UI shows an empty state.
+ * data — there is no local catalog. A successful empty response is a genuine
+ * empty state (paid show with no Simplecast podcast, or dev without a token);
+ * a network/non-2xx failure THROWS so callers can distinguish "failed to load"
+ * from "no episodes" and render an error+retry instead of spinning forever.
  */
 
 type ApiResponse = { episodes?: Episode[] };
 
-async function fetchEpisodesFromApi(showSlug: ShowSlug): Promise<Episode[] | null> {
-  try {
-    const res = await fetch(
-      `/api/simplecast/episodes?show=${encodeURIComponent(showSlug)}`,
-      { credentials: "same-origin" },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as ApiResponse;
-    return body.episodes ?? [];
-  } catch {
-    return null;
-  }
+async function fetchEpisodesFromApi(showSlug: ShowSlug): Promise<Episode[]> {
+  const res = await fetch(
+    `/api/simplecast/episodes?show=${encodeURIComponent(showSlug)}`,
+    { credentials: "same-origin" },
+  );
+  if (!res.ok) throw new Error(`episodes request failed (${res.status})`);
+  const body = (await res.json()) as ApiResponse;
+  return body.episodes ?? [];
 }
 
 export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
-  return (await fetchEpisodesFromApi(showSlug)) ?? [];
+  return fetchEpisodesFromApi(showSlug);
 }
 
 export type EpisodeWithShow = Episode & { show: Show };
@@ -56,8 +53,14 @@ export async function getEpisode(
   showSlug: ShowSlug,
   slug: string,
 ): Promise<Episode | null> {
-  const all = await listEpisodes(showSlug);
-  return all.find((e) => e.slug === slug) ?? null;
+  // The single-episode route degrades to its pre-loaded summary on failure, so
+  // keep this tolerant (null) rather than propagating the throw from listEpisodes.
+  try {
+    const all = await listEpisodes(showSlug);
+    return all.find((e) => e.slug === slug) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

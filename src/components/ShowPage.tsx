@@ -15,6 +15,8 @@ import {
 import { contributorsForShow, hostsForShow } from "../data/hosts";
 import type { Host } from "../data/hosts";
 import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
+import { useAsyncResource } from "../lib/useAsyncResource";
+import { ContentError } from "./ContentError";
 import { useShowDescription } from "../lib/useShowDescription";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
@@ -52,15 +54,10 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
 }
 
 function PublicShowPage({ show }: { show: Show }) {
-  const [episodes, setEpisodes] = useState<Episode[] | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void listEpisodes(show.slug).then((r) => live && setEpisodes(r));
-    return () => {
-      live = false;
-    };
-  }, [show.slug]);
+  const { status, data: episodes, retry } = useAsyncResource(
+    () => listEpisodes(show.slug),
+    [show.slug],
+  );
 
   return (
     <main className="relative">
@@ -68,7 +65,12 @@ function PublicShowPage({ show }: { show: Show }) {
 
       {showHasPaidExtension(show.slug) ? <ShowUpsell show={show} /> : null}
 
-      <EpisodeBrowser show={show} episodes={episodes} />
+      <EpisodeBrowser
+        show={show}
+        episodes={episodes}
+        error={status === "error"}
+        onRetry={retry}
+      />
 
       <ShowPeopleSections show={show} />
 
@@ -80,22 +82,14 @@ function PublicShowPage({ show }: { show: Show }) {
 function PaidShowPage({ show }: { show: Show }) {
   const { state } = useSubscriberAuth();
   const isMember = state.kind === "member";
-  const [episodes, setEpisodes] = useState<Episode[] | null>(null);
 
-  // Drop episodes loaded in a prior member session once the viewer is no
-  // longer a member, so a stale list can't flash if they sign back in.
-  if (!isMember && episodes !== null) {
-    setEpisodes(null);
-  }
-
-  useEffect(() => {
-    if (!isMember) return;
-    let live = true;
-    void listEpisodes(show.slug).then((r) => live && setEpisodes(r));
-    return () => {
-      live = false;
-    };
-  }, [show.slug, isMember]);
+  // Only fetch for members; non-members see the join CTA, not the browser. The
+  // hook re-runs (and resets to loading) when membership flips, so a stale list
+  // from a prior session can't flash.
+  const { status, data: episodes, retry } = useAsyncResource(
+    () => (isMember ? listEpisodes(show.slug) : Promise.resolve<Episode[]>([])),
+    [show.slug, isMember],
+  );
 
   return (
     <main className="relative">
@@ -105,6 +99,8 @@ function PaidShowPage({ show }: { show: Show }) {
         <EpisodeBrowser
           show={show}
           episodes={episodes}
+          error={status === "error"}
+          onRetry={retry}
           headerLink={
             <Link
               to="/account/podcast-feed"
@@ -258,10 +254,14 @@ const ARCHIVE_PAGE_SIZE = 8;
 function EpisodeBrowser({
   show,
   episodes,
+  error,
+  onRetry,
   headerLink,
 }: {
   show: Show;
   episodes: Episode[] | null;
+  error?: boolean;
+  onRetry?: () => void;
   headerLink?: ReactNode;
 }) {
   // Reset the player selection when navigating between shows so an episode
@@ -326,7 +326,14 @@ function EpisodeBrowser({
             </div>
           </div>
 
-          {episodes === null ? (
+          {error ? (
+            <div className="mt-8">
+              <ContentError
+                message="We couldn't load episodes. Refresh to try again."
+                onRetry={onRetry ?? (() => {})}
+              />
+            </div>
+          ) : episodes === null ? (
             <p className="mt-8 text-body-sm">Loading episodes…</p>
           ) : remaining.length === 0 ? (
             <p className="mt-8 text-body-sm">

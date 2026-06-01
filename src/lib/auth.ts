@@ -42,21 +42,21 @@ export async function authHeaders(opts?: {
   return { Authorization: `Bearer ${token}` };
 }
 
+// Resolves to `null` for a genuine guest (401 — no valid session) and to a `Me`
+// for a signed-in member. A network failure or non-401 server error THROWS, so
+// the auth provider can distinguish "logged out" from "couldn't reach the
+// server" and surface an error+retry instead of silently demoting to guest.
 export async function fetchMe(opts?: {
   accessToken?: string | null;
 }): Promise<Me | null> {
-  try {
-    const headers = await authHeaders(opts);
-    const res = await fetch("/api/me", {
-      headers,
-      credentials: "include",
-    });
-    if (res.status === 401) return null;
-    if (!res.ok) return null;
-    return (await res.json()) as Me;
-  } catch {
-    return null;
-  }
+  const headers = await authHeaders(opts);
+  const res = await fetch("/api/me", {
+    headers,
+    credentials: "include",
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`/api/me failed (${res.status})`);
+  return (await res.json()) as Me;
 }
 
 export async function cancelSubscription(): Promise<{
