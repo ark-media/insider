@@ -33,7 +33,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => void loginWithRedirect()}
-              className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Sign in
             </button>

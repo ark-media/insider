@@ -127,6 +127,7 @@ function NewsletterPrefsForm({ me }: { me: { email: string; tier: "subscriber" |
       title="Pick what lands in your inbox."
       lede={`Signed in as ${me.email}. Adjust at any time — toggling off won't delete past issues from your archive.`}
     >
+      <section>
       <div className="mx-auto max-w-[1280px] -mt-4 px-6 pb-20 sm:px-10">
         <div className="max-w-xl">
           <div className="border border-rule bg-navy-800/40 p-6 sm:p-8">
@@ -164,12 +165,13 @@ function NewsletterPrefsForm({ me }: { me: { email: string; tier: "subscriber" |
           </div>
 
           {error ? (
-            <p className="mt-4 text-[13px] text-red-400" role="alert">
+            <p className="mt-4 text-body-sm text-red-400" role="alert">
               {error}
             </p>
           ) : null}
         </div>
       </div>
+      </section>
     </PageShell>
   );
 }
@@ -200,13 +202,13 @@ function PrefError({
 }) {
   return (
     <div>
-      <p className="text-[13px] text-red-400" role="alert">
+      <p className="text-body-sm text-red-400" role="alert">
         {message}
       </p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-4 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-cyan underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="mt-4 button-text font-display font-bold text-cyan underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Try again
       </button>
@@ -235,7 +237,7 @@ function PrefRow({
 }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+      <p className="label text-cyan">
         {label}
       </p>
 
@@ -246,7 +248,7 @@ function PrefRow({
               {title}
             </h2>
             {badge ? (
-              <span className="border border-cyan/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
+              <span className="border border-cyan/60 px-2 py-0.5 label text-cyan">
                 {badge}
               </span>
             ) : null}
@@ -255,10 +257,10 @@ function PrefRow({
         <Toggle on={on} onClick={onToggle} busy={busy} />
       </div>
 
-      <p className="mt-3 text-[14px] leading-[1.65] text-fg-muted">
+      <p className="mt-3 text-body-sm">
         {description}
       </p>
-      <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-faint">
+      <p className="mt-3 label text-fg-faint">
         {cadence}
       </p>
     </div>

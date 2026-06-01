@@ -31,7 +31,12 @@ function NewslettersPage() {
   const router = useRouter();
   const { pub, posts } = Route.useLoaderData();
   const { state } = useSubscriberAuth();
-  const { isSubscribed, prefsLoading, isMember } = useNewsletterSubscription();
+  const {
+    isSubscribed,
+    prefsLoading,
+    isMember,
+    isSubscriber,
+  } = useNewsletterSubscription();
 
   // First loader pass may run before Auth0 token is ready; reload for Ark+ slug.
   useEffect(() => {
@@ -40,10 +45,16 @@ function NewslettersPage() {
     void router.invalidate();
   }, [state, router, pub.slug]);
 
-  // Guests see signup; signed-in Ark+ members and free-list subscribers see
-  // recent issues only. While prefs load for free-tier members we withhold
-  // the card so subscribed readers never get a flash of the form.
-  const showSignup = !isMember || (!prefsLoading && !isSubscribed);
+  // Guests see signup. Ark-daily: hide the email form when Beehiiv says you're
+  // on the list. Members letter: hide the Ark+ CTA for subscribers (JWT tier).
+  // While Beehiiv prefs load we withhold the card so the form never flashes.
+  const showSignup =
+    !isMember ||
+    (prefsLoading
+      ? false
+      : pub.slug === "members-letter"
+        ? !isSubscriber
+        : !isSubscribed);
 
   return (
     <PageShell
@@ -59,7 +70,7 @@ function NewslettersPage() {
       title={pub.title}
       lede={pub.description}
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
           {showSignup ? (
             <div className="lg:col-span-5">
@@ -67,13 +78,9 @@ function NewslettersPage() {
             </div>
           ) : null}
           <div className={showSignup ? "lg:col-span-7" : "lg:col-span-12"}>
-            <div className="text-[13px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              Recent issues
-            </div>
+            <div className="label text-cyan">Recent issues</div>
             {posts.length === 0 ? (
-              <p className="mt-8 text-[14px] text-fg-muted">
-                No recent issues yet.
-              </p>
+              <p className="mt-8 text-body-sm">No recent issues yet.</p>
             ) : (
               <ul
                 className={`mt-8 divide-y divide-rule border-y border-rule overflow-y-auto overscroll-y-contain ${
@@ -90,17 +97,15 @@ function NewslettersPage() {
                       className="group block py-5 transition hover:text-cyan"
                     >
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
-                        <span className="min-w-0 flex-1 break-words font-display text-[18px] tracking-[-0.005em] text-fg-strong group-hover:text-cyan">
+                        <span className="min-w-0 flex-1 break-words text-h3 group-hover:text-cyan">
                           {p.title}
                         </span>
-                        <span className="shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted group-hover:text-cyan">
+                        <span className="meta shrink-0 group-hover:text-cyan">
                           {formatPostDate(p.publishedAt)}
                           {p.tier === "ark-plus" ? " · Ark+" : ""}
                         </span>
                       </div>
-                      <p className="mt-2 max-w-2xl text-[13.5px] leading-[1.6] text-fg-muted">
-                        {p.excerpt}
-                      </p>
+                      <p className="mt-2 max-w-2xl text-body-sm">{p.excerpt}</p>
                     </Link>
                   </li>
                 ))}
@@ -136,10 +141,8 @@ function SignupCard({ pub }: { pub: Newsletter }) {
 
   return (
     <div className="border border-rule bg-navy-800/40 p-7">
-      <div className="text-[13px] font-semibold uppercase tracking-[0.22em] text-cyan">
-        Subscribe
-      </div>
-      <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
+      <div className="label text-cyan">Subscribe</div>
+      <p className="mt-4 max-w-md text-body-sm text-fg">
         {pub.cadence}. Written by {pub.authorName}.
         {pub.tier === "ark-plus"
           ? " Members-only — included with Ark+."
@@ -148,7 +151,7 @@ function SignupCard({ pub }: { pub: Newsletter }) {
       {pub.tier === "ark-plus" ? (
         <Link
           to="/plus"
-          className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan"
+          className="button-text mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan"
         >
           Become an Ark+ member →
         </Link>
@@ -163,12 +166,12 @@ function SignupCard({ pub }: { pub: Newsletter }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="min-h-11 w-full bg-transparent px-3 py-2.5 text-[14px] text-fg-strong outline-none placeholder:text-fg-muted"
+                className="min-h-11 w-full bg-transparent px-3 py-2.5 text-body text-fg-strong outline-none placeholder:text-fg-muted"
               />
               <button
                 type="submit"
                 disabled={status === "submitting"}
-                className="flex shrink-0 items-center justify-center self-stretch border-l border-rule-strong bg-cyan pl-5 pr-[calc(1.25rem+0.18em)] text-[12px] font-semibold uppercase leading-none tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
+                className="button-text flex shrink-0 items-center justify-center self-stretch border-l border-rule-strong bg-cyan pl-5 pr-[calc(1.25rem+0.18em)] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:opacity-60"
               >
                 {status === "ok" ? "Subscribed" : "Subscribe"}
               </button>
@@ -176,7 +179,7 @@ function SignupCard({ pub }: { pub: Newsletter }) {
           </label>
           {message ? (
             <p
-              className={`mt-3 text-[12px] ${
+              className={`mt-3 text-body-sm ${
                 status === "error" ? "text-danger" : "text-cyan"
               }`}
               aria-live="polite"

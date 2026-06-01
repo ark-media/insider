@@ -56,7 +56,7 @@ function RootContent() {
           <PublicMasthead />
         </>
       )}
-      <div id="main-content">
+      <div id="main-content" className="page-stripes">
         <Outlet />
       </div>
       {chromeless ? null : <Footer />}

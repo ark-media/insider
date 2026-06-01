@@ -17,7 +17,7 @@ function HostsHub() {
       title="The bylines."
       lede="The hosts and contributors behind Ark Media."
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <PeopleGrid eyebrow="Hosts" people={showHosts} startIndex={0} />
           {showContributors.length > 0 ? (
@@ -47,7 +47,7 @@ function PeopleGrid({
 }) {
   return (
     <div className={className}>
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+      <h2 className="label text-cyan">
         {eyebrow}
       </h2>
       <div className="mt-10 grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-3">
@@ -70,7 +70,7 @@ function PeopleGrid({
               <h3 className="mt-5 font-display text-[22px] leading-tight text-fg-strong transition group-hover:text-cyan">
                 {h.name}
               </h3>
-              <p className="mt-2 max-w-sm text-[13px] leading-[1.55] text-fg-muted">
+              <p className="mt-2 max-w-sm text-body-sm">
                 {h.shortBio}
               </p>
             </Link>

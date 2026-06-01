@@ -62,7 +62,7 @@ export function Toast({
         </svg>
       </span>
       <div className="flex-1">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <p className="label text-cyan">
           Confirmed
         </p>
         <p className="mt-1.5 text-sm leading-[1.5]">{message}</p>

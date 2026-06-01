@@ -26,10 +26,10 @@ const hosts = [
 
 export function Hosts() {
   return (
-    <section className="relative bg-navy-900">
+    <section className="relative">
       <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10 md:pb-48">
         <div className="mb-16 max-w-2xl">
-          <div className="inside-tab text-[13px]">The bylines</div>
+          <div className="inside-tab text-xs">The bylines</div>
           <h2 className="mt-10 text-fg-strong">
             <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
               Three voices.
@@ -60,7 +60,7 @@ export function Hosts() {
               <h3 className="display-upright text-[22px] leading-tight text-fg-strong">
                 {h.name}
               </h3>
-              <p className="mt-2 max-w-sm text-[13px] leading-[1.55] text-fg-muted">
+              <p className="mt-2 max-w-sm text-body-sm">
                 {h.bio}
               </p>
             </article>

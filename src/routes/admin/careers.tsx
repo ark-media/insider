@@ -151,18 +151,18 @@ function CareersAdmin() {
             <button
               type="button"
               onClick={startNew}
-              className="text-[12px] font-bold uppercase tracking-button text-cyan hover:underline"
+              className="button-text font-bold text-cyan hover:underline"
             >
               + New
             </button>
           </div>
 
           {loading ? (
-            <p className="mt-6 text-[14px] text-fg-muted">Loading…</p>
+            <p className="mt-6 text-body-sm">Loading…</p>
           ) : listError ? (
-            <p className="mt-6 text-[14px] text-red-400">{listError}</p>
+            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
           ) : items.length === 0 ? (
-            <p className="mt-6 text-[14px] text-fg-muted">
+            <p className="mt-6 text-body-sm">
               No positions yet. Create one with the form.
             </p>
           ) : (
@@ -176,7 +176,7 @@ function CareersAdmin() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span
-                      className={`inline-flex items-center border px-2 py-0.5 text-[10px] font-bold uppercase tracking-button ${
+                      className={`inline-flex items-center border px-2 py-0.5 label font-bold ${
                         c.enabled
                           ? "border-cyan/60 text-cyan"
                           : "border-rule-strong text-fg-faint"
@@ -184,7 +184,7 @@ function CareersAdmin() {
                     >
                       {c.enabled ? "Published" : "Hidden"}
                     </span>
-                    <span className="flex gap-3 text-[12px] font-bold uppercase tracking-button">
+                    <span className="flex gap-3 button-text font-bold">
                       <button
                         type="button"
                         onClick={() => startEdit(c)}
@@ -205,9 +205,9 @@ function CareersAdmin() {
                   <h3 className="mt-3 font-display text-[16px] text-fg-strong">
                     {c.title}
                   </h3>
-                  <p className="mt-1 text-[13px] text-fg-muted">{c.summary}</p>
+                  <p className="mt-1 text-body-sm">{c.summary}</p>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-muted">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
                     <span className="text-fg-faint">/careers/{c.slug}</span>
                     {[c.team, c.location, c.employmentType]
                       .filter(Boolean)
@@ -281,9 +281,9 @@ function CareerForm({
   };
 
   const field =
-    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-[14px] text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
+    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
   const label =
-    "block font-display text-[12px] font-bold uppercase tracking-button text-fg-strong";
+    "block button-text font-display font-bold text-fg-strong";
 
   return (
     <section aria-label={editing ? "Edit position" : "New position"}>
@@ -319,7 +319,7 @@ function CareerForm({
             placeholder="senior-producer (auto from title if blank)"
             className={`mt-2 ${field}`}
           />
-          <p className="mt-1 text-[11px] text-fg-muted">
+          <p className="mt-1 text-body-sm">
             The page lives at /careers/<span className="text-fg">{form.slug.trim() || "…"}</span>.
             Leave blank to derive it from the title.
           </p>
@@ -382,7 +382,7 @@ function CareerForm({
             placeholder="One or two lines shown on the careers list."
             className={`mt-2 ${field}`}
           />
-          <p className="mt-1 text-[11px] text-fg-muted">
+          <p className="mt-1 text-body-sm">
             Plain text, shown on the /careers list card.
           </p>
         </div>
@@ -397,7 +397,7 @@ function CareerForm({
                 key={b.label}
                 type="button"
                 onClick={() => applyTag(b.open, b.close)}
-                className="inline-flex h-8 min-w-8 items-center justify-center border border-rule-strong px-2 text-[12px] text-fg-strong transition hover:border-cyan hover:text-cyan"
+                className="inline-flex h-8 min-w-8 items-center justify-center border border-rule-strong px-2 text-body-sm text-fg-strong transition hover:border-cyan hover:text-cyan"
               >
                 {b.label}
               </button>
@@ -413,9 +413,9 @@ function CareerForm({
               setForm((f) => ({ ...f, description: e.target.value }))
             }
             placeholder="<h2>About the role</h2><p>…</p>"
-            className={`mt-2 font-mono text-[13px] ${field}`}
+            className={`mt-2 font-mono text-body-sm ${field}`}
           />
-          <p className="mt-1 text-[11px] text-fg-muted">
+          <p className="mt-1 text-body-sm">
             HTML — headings, paragraphs, lists, bold/italic, and links. Anything
             else is stripped on save.
           </p>
@@ -426,11 +426,11 @@ function CareerForm({
           <p className="eyebrow mb-2">Preview</p>
           <div className="rounded border border-rule bg-navy-900 p-4">
             {form.description.trim() ? (
-              <div className="space-y-3 text-[14px] leading-[1.7] text-fg [&_a]:text-cyan [&_a]:underline [&_h2]:mt-5 [&_h2]:font-display [&_h2]:text-[18px] [&_h2]:text-fg-strong [&_h3]:mt-4 [&_h3]:font-semibold [&_h3]:text-fg-strong [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_strong]:text-fg-strong [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5">
+              <div className="space-y-3 text-body-lg [&_a]:text-cyan [&_a]:underline [&_h2]:mt-5 [&_h2]:font-display [&_h2]:text-[18px] [&_h2]:text-fg-strong [&_h3]:mt-4 [&_h3]:font-semibold [&_h3]:text-fg-strong [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_strong]:text-fg-strong [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5">
                 {parse(sanitizeRichPreview(form.description))}
               </div>
             ) : (
-              <p className="text-[13px] text-fg-faint">
+              <p className="text-body-sm text-fg-faint">
                 The job description preview will appear here.
               </p>
             )}
@@ -449,7 +449,7 @@ function CareerForm({
             placeholder="https://app.testgorilla.com/s/…"
             className={`mt-2 ${field}`}
           />
-          <p className="mt-1 text-[11px] text-fg-muted">
+          <p className="mt-1 text-body-sm">
             Where “Apply to this job” sends candidates (e.g. the TestGorilla
             assessment). Leave blank to fall back to the careers inbox.
           </p>
@@ -469,11 +469,11 @@ function CareerForm({
               }
               className={`mt-2 ${field}`}
             />
-            <p className="mt-1 text-[11px] text-fg-muted">
+            <p className="mt-1 text-body-sm">
               Lower numbers appear first.
             </p>
           </div>
-          <label className="flex items-end gap-2 pb-2 text-[14px] text-fg">
+          <label className="flex items-end gap-2 pb-2 text-body-sm text-fg">
             <input
               type="checkbox"
               checked={form.enabled}
@@ -486,13 +486,13 @@ function CareerForm({
           </label>
         </div>
 
-        {error ? <p className="text-[13px] text-red-400">{error}</p> : null}
+        {error ? <p className="text-body-sm text-red-400">{error}</p> : null}
 
         <div className="flex gap-3">
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+            className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
           >
             {saving ? "Saving…" : editing ? "Save changes" : "Create"}
           </button>
@@ -500,7 +500,7 @@ function CareerForm({
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-5 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan"
             >
               Cancel
             </button>

@@ -76,7 +76,7 @@ function EpisodePage() {
 
   return (
     <main className="relative">
-      <section className={`relative ${showAtmosphere(show.slug)}`}>
+      <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
         <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-14 sm:px-10 sm:pt-16">
           <EpisodeBreadcrumbs
             className="rise rise-1"
@@ -87,11 +87,11 @@ function EpisodePage() {
             {episode.title}
           </h1>
           {description ? (
-            <p className="rise rise-3 mt-6 max-w-2xl text-[15px] leading-[1.7] text-fg">
+            <p className="rise rise-3 mt-6 max-w-2xl text-body-lg">
               {description}
             </p>
           ) : null}
-          <div className="rise rise-4 mt-7 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
+          <div className="rise rise-4 mt-7 flex flex-wrap items-center gap-x-3 gap-y-2 meta">
             <span>{formatDuration(episode.durationMinutes)}</span>
             {episode.guests && episode.guests.length > 0 ? (
               <>
@@ -113,11 +113,11 @@ function EpisodePage() {
         </div>
       </section>
 
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-14 sm:px-10 sm:py-16">
           <div className="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <h2 className="label text-cyan">
                 Listen
               </h2>
               <div className="mt-5">
@@ -128,7 +128,7 @@ function EpisodePage() {
                 )}
               </div>
 
-              <h2 className="mt-14 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <h2 className="mt-14 label text-cyan">
                 Show notes
               </h2>
               <ShowNotes html={enriched?.showNotesHtml || episode.showNotesHtml} />
@@ -162,19 +162,19 @@ function EpisodeAside({ show }: { show: Show }) {
             className="w-full border border-rule shadow-cover transition group-hover:opacity-95"
           />
         </Link>
-        <div className="mt-5 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+        <div className="mt-5 label text-fg-muted">
           From the show
         </div>
         <Link
           to={show.route}
-          className="mt-2 block font-display text-[20px] leading-[1.15] text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="mt-2 block text-h3 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           {show.title}
         </Link>
-        <p className="mt-3 text-[13px] leading-[1.6] text-fg-muted">
+        <p className="mt-3 text-body-sm">
           {show.tagline}
         </p>
-        <div className="mt-5 border-t border-rule pt-5 text-[12px] text-fg-muted">
+        <div className="mt-5 border-t border-rule pt-5 text-body-sm">
           <span className="font-semibold uppercase tracking-[0.18em] text-fg-faint">
             New episodes
           </span>
@@ -184,7 +184,7 @@ function EpisodeAside({ show }: { show: Show }) {
 
       {show.listen.length > 0 ? (
         <div className="mt-8">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="label text-cyan">
             Subscribe
           </h2>
           <ListenLinks listen={show.listen} className="mt-4" />
@@ -213,7 +213,7 @@ function EpisodeBreadcrumbs({
 }
 
 const SHOW_NOTES_CLASS = [
-  "mt-6 max-w-2xl text-[15px] leading-[1.75] text-fg",
+  "mt-6 max-w-2xl text-body-lg",
   "[&_p]:mt-4 [&_p:first-child]:mt-0",
   // Bulleted lists (e.g. Call Me Back's "More Ark Media" link directory) drop
   // their markers entirely and read as a clean line-per-item stack, rather than
@@ -229,7 +229,7 @@ const SHOW_NOTES_CLASS = [
 function ShowNotes({ html }: { html: string | undefined }) {
   if (!html || !html.trim()) {
     return (
-      <p className="mt-6 max-w-2xl text-[14px] leading-[1.7] text-fg-muted">
+      <p className="mt-6 max-w-2xl text-body-sm">
         Show notes for this episode aren't published yet. The summary above is
         the full description for now.
       </p>
@@ -243,10 +243,10 @@ function PlayerBlock({ episode }: { episode: Episode }) {
   if (!episode.id) {
     return (
       <div className="border border-rule bg-navy-800/40 p-6">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <div className="label text-cyan">
           Listen
         </div>
-        <p className="mt-3 text-[13px] leading-[1.6] text-fg-muted">
+        <p className="mt-3 text-body-sm">
           This episode isn't available in our embedded player yet. Listen
           through your podcast app of choice.
         </p>
@@ -279,15 +279,15 @@ function PaidEpisodeBlock({ episode }: { episode: Episode }) {
 
   return (
     <div className="border border-cyan/40 bg-navy-800/40 p-8">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+      <div className="label text-cyan">
         Ark+ members only
       </div>
-      <p className="mt-4 max-w-2xl text-[14px] leading-[1.6] text-fg">
+      <p className="mt-4 max-w-2xl text-body-sm text-fg">
         This episode is part of Inside Call Me Back. Join Ark+ to listen.
       </p>
       <Link
         to="/plus"
-        className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Become an Ark+ member →
       </Link>
@@ -297,11 +297,11 @@ function PaidEpisodeBlock({ episode }: { episode: Episode }) {
 
 function BackToShow({ show }: { show: Show }) {
   return (
-    <section className="border-t border-rule bg-navy-900">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-12 sm:px-10">
         <Link
           to={show.route}
-          className="group inline-flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="group inline-flex items-center gap-3 label text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           <span
             aria-hidden="true"
@@ -320,7 +320,7 @@ function EpisodeSkeleton({ show }: { show: Show }) {
   return (
     <main className="relative" aria-busy="true" aria-live="polite">
       <span className="sr-only">Loading episode</span>
-      <section className={`relative ${showAtmosphere(show.slug)}`}>
+      <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
         <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-14 sm:px-10 sm:pt-16">
           <EpisodeBreadcrumbs show={show} />
           <div className="mt-6 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
@@ -332,15 +332,15 @@ function EpisodeSkeleton({ show }: { show: Show }) {
         </div>
       </section>
 
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-14 sm:px-10 sm:py-16">
           <div className="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <div className="label text-cyan">
                 Listen
               </div>
               <div className="mt-5 h-[200px] w-full animate-pulse border border-rule bg-navy-800/40" />
-              <div className="mt-14 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <div className="mt-14 label text-cyan">
                 Show notes
               </div>
               <div className="mt-6 max-w-2xl space-y-2.5">
@@ -363,19 +363,19 @@ function EpisodeSkeleton({ show }: { show: Show }) {
 function EpisodeNotFound({ show }: { show: Show }) {
   return (
     <main className="relative">
-      <section className="relative">
+      <section className="section-hero relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
           <EpisodeBreadcrumbs show={show} trailing="Episode not found" />
           <h1 className="mt-8 max-w-3xl font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-fg-strong">
             We couldn't find that episode.
           </h1>
-          <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-fg">
+          <p className="mt-6 max-w-2xl text-body-lg">
             The link may have changed, or the episode hasn't been published
             yet. Head back to the show for the full archive.
           </p>
           <Link
             to={show.route}
-            className="mt-10 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            className="mt-10 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             <span aria-hidden="true">←</span>
             Back to {show.title}

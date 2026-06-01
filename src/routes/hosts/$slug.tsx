@@ -35,7 +35,7 @@ function HostPage() {
       title={host.name}
       lede={host.role}
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <HostArtwork
@@ -47,7 +47,7 @@ function HostPage() {
           </div>
           <div className="lg:col-span-7">
             <h2 className="eyebrow">Bio</h2>
-            <p className="mt-6 max-w-2xl text-[15px] leading-[1.7] text-fg">
+            <p className="mt-6 max-w-2xl text-body-lg">
               {host.longBio}
             </p>
 
@@ -64,7 +64,7 @@ function HostPage() {
                         <h3 className="font-display text-[18px] leading-[1.2] text-fg-strong">
                           {s.title}
                         </h3>
-                        <p className="mt-2 text-[13px] leading-[1.5] text-fg-muted">
+                        <p className="mt-2 text-body-sm">
                           {s.tagline}
                         </p>
                         <div className="mt-auto pt-3 eyebrow text-fg-faint transition group-hover:text-cyan">

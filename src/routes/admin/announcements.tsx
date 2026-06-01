@@ -185,18 +185,18 @@ function AnnouncementsAdmin() {
             <button
               type="button"
               onClick={startNew}
-              className="text-[12px] font-bold uppercase tracking-button text-cyan hover:underline"
+              className="button-text font-bold text-cyan hover:underline"
             >
               + New
             </button>
           </div>
 
           {loading ? (
-            <p className="mt-6 text-[14px] text-fg-muted">Loading…</p>
+            <p className="mt-6 text-body-sm">Loading…</p>
           ) : listError ? (
-            <p className="mt-6 text-[14px] text-red-400">{listError}</p>
+            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
           ) : items.length === 0 ? (
-            <p className="mt-6 text-[14px] text-fg-muted">
+            <p className="mt-6 text-body-sm">
               No announcements yet. Create one with the form.
             </p>
           ) : (
@@ -212,11 +212,11 @@ function AnnouncementsAdmin() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <span
-                        className={`inline-flex items-center border px-2 py-0.5 text-[10px] font-bold uppercase tracking-button ${STATUS_STYLE[status]}`}
+                        className={`inline-flex items-center border px-2 py-0.5 label font-bold ${STATUS_STYLE[status]}`}
                       >
                         {status}
                       </span>
-                      <span className="flex gap-3 text-[12px] font-bold uppercase tracking-button">
+                      <span className="flex gap-3 button-text font-bold">
                         <button
                           type="button"
                           onClick={() => startEdit(a)}
@@ -234,11 +234,11 @@ function AnnouncementsAdmin() {
                       </span>
                     </div>
 
-                    <div className="mt-3 truncate text-[13px] text-fg">
+                    <div className="mt-3 truncate text-body-sm text-fg">
                       {parse(a.body)}
                     </div>
 
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-muted">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
                       <span>
                         {new Date(a.startsAt).toLocaleString()} →{" "}
                         {new Date(a.endsAt).toLocaleString()}
@@ -287,7 +287,7 @@ function ScheduleHint({
     return null;
   }
   return (
-    <p className="text-[11px] text-fg-muted">
+    <p className="text-body-sm">
       In your timezone ({localZone}): {describeInstant(startIso, localZone)} →{" "}
       {describeInstant(endIso, localZone)}
     </p>
@@ -339,8 +339,8 @@ function AnnouncementForm({
     });
   };
 
-  const field = "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-[14px] text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
-  const label = "block font-display text-[12px] font-bold uppercase tracking-button text-fg-strong";
+  const field = "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
+  const label = "block button-text font-display font-bold text-fg-strong";
 
   return (
     <section aria-label={editing ? "Edit announcement" : "New announcement"}>
@@ -352,7 +352,7 @@ function AnnouncementForm({
       <div className="mt-4">
         <p className="eyebrow mb-2">Preview</p>
         <div
-          className="flex items-center justify-center px-8 py-2.5 text-center text-[13px] font-medium [&_a]:underline"
+          className="flex items-center justify-center px-8 py-2.5 text-center text-body-sm font-medium [&_a]:underline"
           style={{ backgroundColor: form.barColor, color: form.textColor }}
         >
           {form.body.trim() ? parse(sanitizeInlinePreview(form.body)) : <span className="opacity-60">Your announcement text…</span>}
@@ -370,7 +370,7 @@ function AnnouncementForm({
                 key={b.tag}
                 type="button"
                 onClick={() => applyTag(b.tag)}
-                className="inline-flex h-8 min-w-8 items-center justify-center border border-rule-strong px-2 text-[12px] text-fg-strong transition hover:border-cyan hover:text-cyan"
+                className="inline-flex h-8 min-w-8 items-center justify-center border border-rule-strong px-2 text-body-sm text-fg-strong transition hover:border-cyan hover:text-cyan"
               >
                 {b.label}
               </button>
@@ -386,7 +386,7 @@ function AnnouncementForm({
             placeholder="🎉 Limited time offer! Use code SPRING60 …"
             className={`mt-2 ${field}`}
           />
-          <p className="mt-1 text-[11px] text-fg-muted">
+          <p className="mt-1 text-body-sm">
             Inline formatting only (bold, italic, underline, strike, links).
             Anything else is stripped on save.
           </p>
@@ -404,7 +404,7 @@ function AnnouncementForm({
             placeholder="/plus  or  https://…"
             className={`mt-2 ${field}`}
           />
-          <p className="mt-1 text-[11px] text-fg-muted">
+          <p className="mt-1 text-body-sm">
             Where the bar links when clicked. Leave blank for none.
           </p>
         </div>
@@ -452,7 +452,7 @@ function AnnouncementForm({
               </option>
             ))}
           </select>
-          <p className="mt-1 text-[11px] text-fg-muted">
+          <p className="mt-1 text-body-sm">
             The start and end times below are read in this timezone.
           </p>
         </div>
@@ -493,7 +493,7 @@ function AnnouncementForm({
         />
 
         <div className="flex flex-wrap gap-6">
-          <label className="flex items-center gap-2 text-[14px] text-fg">
+          <label className="flex items-center gap-2 text-body-sm text-fg">
             <input
               type="checkbox"
               checked={form.enabled}
@@ -502,7 +502,7 @@ function AnnouncementForm({
             />
             Enabled
           </label>
-          <label className="flex items-center gap-2 text-[14px] text-fg">
+          <label className="flex items-center gap-2 text-body-sm text-fg">
             <input
               type="checkbox"
               checked={form.dismissible}
@@ -513,13 +513,13 @@ function AnnouncementForm({
           </label>
         </div>
 
-        {error ? <p className="text-[13px] text-red-400">{error}</p> : null}
+        {error ? <p className="text-body-sm text-red-400">{error}</p> : null}
 
         <div className="flex gap-3">
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+            className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
           >
             {saving ? "Saving…" : editing ? "Save changes" : "Create"}
           </button>
@@ -527,7 +527,7 @@ function AnnouncementForm({
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-5 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan"
             >
               Cancel
             </button>

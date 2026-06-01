@@ -108,7 +108,7 @@ function PaidShowPage({ show }: { show: Show }) {
           headerLink={
             <Link
               to="/account/podcast-feed"
-              className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted transition hover:text-cyan"
+              className="whitespace-nowrap label text-fg-muted transition hover:text-cyan"
             >
               Set up private feed →
             </Link>
@@ -125,17 +125,17 @@ function PaidShowPage({ show }: { show: Show }) {
 
 function PaidShowJoinCta({ show }: { show: Show }) {
   return (
-    <section className="border-t border-rule bg-navy-900">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            <div className="label text-cyan">
               Ark+ members only
             </div>
             <h2 className="mt-6 max-w-2xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
               Join Ark+ to listen to {show.title}.
             </h2>
-            <p className="mt-4 max-w-2xl text-[15px] leading-[1.7] text-fg">
+            <p className="mt-4 max-w-2xl text-body-lg">
               Members get extended interviews, ad-free episodes, members-only
               Q&amp;As, the Ark+ newsletter, and the community — one membership,
               one bill.
@@ -143,15 +143,15 @@ function PaidShowJoinCta({ show }: { show: Show }) {
           </div>
           <div className="lg:col-span-5">
             <div className="border border-rule bg-navy-800/40 p-8">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <div className="label text-cyan">
                 Get Ark+
               </div>
-              <p className="mt-4 text-[14px] leading-[1.6] text-fg">
+              <p className="mt-4 text-body-sm text-fg">
                 Full access to {show.title} plus everything else in Ark+.
               </p>
               <Link
                 to="/plus"
-                className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900"
+                className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
               >
                 See Ark+ membership
                 <span aria-hidden="true">→</span>
@@ -171,7 +171,7 @@ function ShowHero({ show }: { show: Show }) {
   const description = useShowDescription(show.slug) || show.tagline;
 
   return (
-    <section className={`relative ${showAtmosphere(show.slug)}`}>
+    <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
       <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
         <Breadcrumbs
           className="rise rise-1 mb-6"
@@ -181,7 +181,7 @@ function ShowHero({ show }: { show: Show }) {
             { label: show.shortTitle },
           ]}
         />
-        <p className="inside-tab rise rise-1 text-[12px]">
+        <p className="inside-tab rise rise-1 text-xs">
           {show.shortTitle}
         </p>
         <div className="mt-10 grid grid-cols-1 gap-12 lg:grid-cols-12">
@@ -192,11 +192,11 @@ function ShowHero({ show }: { show: Show }) {
               </span>
             </h1>
             {show.hosts.length > 0 ? (
-              <p className="rise rise-3 mt-6 text-[14px] uppercase tracking-[0.22em] text-fg-muted">
+              <p className="rise rise-3 mt-6 meta text-fg-muted">
                 with {show.hosts.join(" · ")}
               </p>
             ) : null}
-            <p className="rise rise-4 mt-6 max-w-xl text-[15px] leading-[1.65] text-fg">
+            <p className="rise rise-4 mt-6 max-w-xl text-body-lg">
               {description}
             </p>
             <ListenLinks listen={show.listen} className="mt-10" />
@@ -212,14 +212,14 @@ function ShowHero({ show }: { show: Show }) {
 
 function ShowUpsell({ show: _show }: { show: Show }) {
   return (
-    <section className="border-t border-rule bg-navy-800/40">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-12 sm:px-10">
         <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-12">
           <div className="lg:col-span-8">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            <div className="label text-cyan">
               Want more?
             </div>
-            <p className="mt-3 max-w-2xl text-[15px] leading-[1.6] text-fg">
+            <p className="mt-3 max-w-2xl text-body-lg">
               <span className="font-display text-[18px]">Inside Call Me Back</span>{" "}
               delivers extended interviews, ad-free episodes, and
               members-only Q&amp;As — included with Ark+.
@@ -228,7 +228,7 @@ function ShowUpsell({ show: _show }: { show: Show }) {
           <div className="lg:col-span-4 lg:text-right">
             <Link
               to="/plus"
-              className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Become an Ark+ member →
             </Link>
@@ -316,7 +316,7 @@ function EpisodeBrowser({
         ) : null}
       </div>
 
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="episode-label">
@@ -331,9 +331,9 @@ function EpisodeBrowser({
           </div>
 
           {episodes === null ? (
-            <p className="mt-8 text-[14px] text-fg-muted">Loading episodes…</p>
+            <p className="mt-8 text-body-sm">Loading episodes…</p>
           ) : remaining.length === 0 ? (
-            <p className="mt-8 text-[14px] text-fg-muted">
+            <p className="mt-8 text-body-sm">
               {featuredEpisode
                 ? "That's the only episode so far — more coming soon."
                 : "No episodes yet — check back soon."}
@@ -395,7 +395,7 @@ function EpisodeSearch({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search episodes"
-        className="w-full min-w-[12rem] border border-rule bg-navy-800/40 px-3 py-1.5 text-[13px] text-fg placeholder:text-fg-muted transition focus:border-cyan focus-visible:outline-none sm:w-56"
+        className="w-full min-w-[12rem] border border-rule bg-navy-800/40 px-3 py-1.5 text-body-sm text-fg placeholder:text-fg-muted transition focus:border-cyan focus-visible:outline-none sm:w-56"
       />
     </label>
   );
@@ -460,11 +460,11 @@ function EpisodeList({
 
   return (
     <div id="all-episodes" className="mt-16">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+      <div className="label text-fg-muted">
         {label}
       </div>
       {episodes.length === 0 ? (
-        <p className="mt-6 text-[14px] text-fg-muted">
+        <p className="mt-6 text-body-sm">
           {emptyLabel ?? "No episodes."}
         </p>
       ) : (
@@ -490,7 +490,7 @@ function EpisodeList({
             <button
               type="button"
               onClick={() => setVisible((v) => v + ARCHIVE_PAGE_SIZE)}
-              className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-4 py-2 label text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Show more episodes
               <span aria-hidden="true">↓</span>
@@ -554,18 +554,18 @@ function EpisodeRow({
         className="min-w-0 flex-1 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         <span
-          className="line-clamp-1 font-display text-[14px] tracking-[-0.005em]"
+          className="line-clamp-1 text-body-sm font-display tracking-[-0.005em]"
           title={episode.title}
         >
           {episode.title}
         </span>
         {episode.guests && episode.guests.length > 0 ? (
-          <span className="mt-0.5 block truncate text-[11px] text-fg-muted">
+          <span className="mt-0.5 block truncate text-body-sm">
             With {episode.guests.join(", ")}
           </span>
         ) : null}
       </Link>
-      <span className="shrink-0 text-[11px] uppercase tracking-[0.18em] text-fg-muted">
+      <span className="meta shrink-0">
         {formatEpisodeDate(episode.publishedAt)} ·{" "}
         {formatDuration(episode.durationMinutes)}
       </span>
@@ -613,7 +613,7 @@ function EpisodeCard({
           {formatDuration(episode.durationMinutes)}
         </div>
         {isActive ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.14em] text-cyan">
+          <span className="inline-flex shrink-0 items-center gap-1.5 label tracking-[0.14em] text-cyan">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan" aria-hidden="true" />
             Now playing
           </span>
@@ -622,17 +622,17 @@ function EpisodeCard({
       <Link
         to="/podcasts/$show/$episode"
         params={{ show: show.slug, episode: episode.slug } as never}
-        className="mt-4 line-clamp-2 font-display text-[18px] leading-[1.2] text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="mt-4 line-clamp-2 text-h4 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         title={episode.title}
       >
         {episode.title}
       </Link>
       {episode.guests && episode.guests.length > 0 ? (
-        <p className="mt-2 text-[12px] uppercase tracking-[0.14em] text-fg-muted">
+        <p className="mt-2 meta tracking-[0.14em]">
           With {episode.guests.join(", ")}
         </p>
       ) : null}
-      <p className="mt-3 line-clamp-3 text-[13px] leading-[1.6] text-fg-muted">
+      <p className="mt-3 line-clamp-3 text-body-sm">
         {episode.description}
       </p>
       <div className="mt-auto flex items-center gap-4 pt-6">
@@ -640,7 +640,7 @@ function EpisodeCard({
           <button
             type="button"
             onClick={onPlay}
-            className="inline-flex items-center gap-2 border border-cyan px-3 py-2 text-[13px] font-semibold uppercase tracking-[0.16em] text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            className="button-text inline-flex items-center gap-2 border border-cyan px-3 py-2 text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             <PlayGlyph />
             Play
@@ -666,14 +666,14 @@ function ShowPlayer({
   isLatest: boolean;
 }) {
   return (
-    <section className="border-t border-rule bg-navy-900">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="flex flex-wrap items-center gap-3">
           <div className="episode-label">
             {isLatest ? "Latest episode" : "Now playing"}
           </div>
           {isLatest ? (
-            <span className="border border-cyan px-2.5 py-1 text-[12px] font-bold uppercase tracking-[0.14em] text-cyan">
+            <span className="border border-cyan px-2.5 py-1 label font-bold tracking-[0.14em] text-cyan">
               New
             </span>
           ) : null}
@@ -762,9 +762,9 @@ function ShowPeopleSections({ show }: { show: Show }) {
 
 function PeopleSection({ title, people }: { title: string; people: Host[] }) {
   return (
-    <section className="border-t border-rule bg-navy-900">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <div className="label text-cyan">
           {title}
         </div>
         <div className="mt-10 grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-3">
@@ -782,10 +782,10 @@ function PeopleSection({ title, people }: { title: string; people: Host[] }) {
                 name={h.name}
                 variant={i % 2 === 0 ? "primary" : "secondary"}
               />
-              <h3 className="mt-5 font-display text-[20px] leading-tight text-fg-strong transition group-hover:text-cyan">
+              <h3 className="mt-5 text-h3 leading-tight transition group-hover:text-cyan">
                 {h.name}
               </h3>
-              <p className="mt-2 max-w-sm text-[13px] leading-[1.55] text-fg-muted">
+              <p className="mt-2 max-w-sm text-body-sm">
                 {h.shortBio}
               </p>
             </Link>
@@ -811,9 +811,9 @@ function RelatedShows({
   if (related.length === 0) return null;
 
   return (
-    <section className="border-t border-rule bg-navy-900">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <div className="label text-cyan">
           Related shows
         </div>
         <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -825,16 +825,16 @@ function RelatedShows({
             >
               <ShowCover show={s} className="border-b border-rule" />
               <div className="p-6">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                <div className="label text-cyan">
                   {s.shortTitle}
                 </div>
-                <div className="mt-4 font-display text-[20px] leading-[1.15] text-fg-strong">
+                <div className="mt-4 text-h3">
                   {s.title}
                 </div>
-                <p className="mt-3 text-[13px] leading-[1.6] text-fg-muted">
+                <p className="mt-3 text-body-sm">
                   {s.tagline}
                 </p>
-                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition group-hover:text-cyan">
+                <div className="mt-6 label text-fg-muted transition group-hover:text-cyan">
                   Visit show →
                 </div>
               </div>

@@ -47,9 +47,7 @@ export function Footer() {
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="flex items-center gap-3 text-fg-strong">
-              <ArkLogo height={64} />
-            </div>
+            <ArkLogo height={64} />
             <p className="mt-10 max-w-lg text-fg-strong">
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
                 Connecting Jewish{" "}
@@ -68,7 +66,7 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-20 flex flex-col gap-6 border-t border-rule pt-8 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-16 flex flex-col gap-6 border-t border-rule-soft pt-8 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
             © {new Date().getFullYear()} Ark Media LLC
           </span>

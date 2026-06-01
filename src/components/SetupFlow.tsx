@@ -269,7 +269,7 @@ export function SetupFlow({ me }: { me: Me }) {
     <div className="ark-bg grain-overlay min-h-dvh text-fg-strong">
       {/* Dateline bar */}
       <div className="border-b border-rule-soft bg-navy-900">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-6 py-2 text-[11px] font-medium uppercase tracking-[0.22em] text-fg-muted sm:px-10">
+        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-6 py-2 label font-medium text-fg-muted sm:px-10">
           <span className="hidden sm:inline">Vol. I · No. 214</span>
           <span className="flex items-center gap-2">
             <span className="live-dot inline-block size-1.5 rounded-full bg-cyan" />
@@ -284,11 +284,11 @@ export function SetupFlow({ me }: { me: Me }) {
         <Link to="/" className="flex items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan">
           <ArkLogo height={60} />
           <span className="ml-2 hidden h-4 w-px bg-rule-strong sm:inline-block" />
-          <span className="ml-2 hidden text-[11px] font-medium uppercase tracking-eyebrow text-cyan sm:inline">
+          <span className="ml-2 label hidden font-medium tracking-eyebrow text-cyan sm:inline">
             The Insider
           </span>
         </Link>
-        <div className="flex min-w-0 items-center gap-6 text-[13px] text-fg">
+        <div className="flex min-w-0 items-center gap-6 text-body-sm text-fg">
           <span className="hidden min-w-0 max-w-[260px] truncate sm:inline-block">
             Signed in as{" "}
             <span className="text-fg-strong" title={me.email}>
@@ -321,7 +321,7 @@ export function SetupFlow({ me }: { me: Me }) {
             />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-3 text-[12px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            <div className="label flex items-center gap-3 text-cyan">
               <span className="h-px w-10 bg-cyan" />
               You're in
             </div>
@@ -333,7 +333,7 @@ export function SetupFlow({ me }: { me: Me }) {
                 <span className="display text-cyan">listening.</span>
               </span>
             </h1>
-            <p className="mt-5 max-w-md text-[15px] leading-[1.6] text-fg">
+            <p className="mt-5 max-w-md text-body-lg">
               Get your exclusive Inside Call Me Back episodes in your podcast
               app of choice — in just a few steps.
             </p>
@@ -406,7 +406,7 @@ export function SetupFlow({ me }: { me: Me }) {
             <button
               type="button"
               onClick={() => setAppKey("manual")}
-              className={`mt-3 w-full border px-4 py-3 text-left text-[13px] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:text-center ${
+              className={`mt-3 w-full border px-4 py-3 text-left text-body-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:text-center ${
                 appKey === "manual"
                   ? "border-cyan bg-cyan/10 text-fg-strong"
                   : "border-rule text-fg hover:border-cyan/60 hover:text-fg-strong"
@@ -433,10 +433,10 @@ export function SetupFlow({ me }: { me: Me }) {
         >
           {selectedApp ? (
             <div className="rise rise-1 space-y-6">
-              <ol className="space-y-3 border border-rule bg-navy-800/60 p-6 text-[14px] leading-[1.65] text-fg sm:text-[15px]">
+              <ol className="space-y-3 border border-rule bg-navy-800/60 p-6 text-body-sm text-fg sm:text-body">
                 {selectedApp.instructions.map((step, i) => (
                   <li key={i} className="flex gap-3">
-                    <span className="font-display text-[13px] font-bold text-cyan">
+                    <span className="text-body-sm font-display font-bold text-cyan">
                       {String(i + 1).padStart(2, "0")}
                     </span>
                     <span>{step}</span>
@@ -449,7 +449,7 @@ export function SetupFlow({ me }: { me: Me }) {
                   <button
                     type="button"
                     onClick={copyFeed}
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     {copied ? "Copied ✓" : selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -461,7 +461,7 @@ export function SetupFlow({ me }: { me: Me }) {
                     href={selectedAppUrl || feedUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     {selectedApp.ctaLabel}
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -473,7 +473,7 @@ export function SetupFlow({ me }: { me: Me }) {
                 <button
                   type="button"
                   onClick={copyFeed}
-                  className="text-[13px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  className="text-body-sm underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   {copied ? "Feed URL copied" : "Or copy the raw feed URL"}
                 </button>
@@ -507,13 +507,13 @@ export function SetupFlow({ me }: { me: Me }) {
               {feedUrl ? (
                 <CopyableUrl url={feedUrl} />
               ) : (
-                <div className="border border-rule bg-navy-900/60 p-4 font-mono text-[13px] text-fg-muted sm:text-[12px]">
+                <div className="border border-rule bg-navy-900/60 p-4 font-mono text-body-sm ">
                   No feed available for this membership yet.
                 </div>
               )}
 
               {selectedApp.note ? (
-                <div className="border-l-2 border-signal/70 bg-signal/10 p-4 text-[13px] leading-[1.6] text-fg">
+                <div className="border-l-2 border-signal/70 bg-signal/10 p-4 text-body-sm text-fg">
                   <span className="mr-1 font-semibold text-danger">Note —</span>
                   {selectedApp.note}
                 </div>
@@ -528,7 +528,7 @@ export function SetupFlow({ me }: { me: Me }) {
             <button
               type="button"
               onClick={() => setCancelState("confirming")}
-              className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-danger hover:decoration-danger/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className="text-body-sm underline decoration-rule-strong underline-offset-[6px] transition hover:text-danger hover:decoration-danger/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Cancel my subscription
             </button>
@@ -536,7 +536,7 @@ export function SetupFlow({ me }: { me: Me }) {
 
           {cancelState === "confirming" ? (
             <div className="max-w-md space-y-4">
-              <p className="text-[14px] leading-[1.6] text-fg">
+              <p className="text-body-sm text-fg">
                 Are you sure you want to cancel? You'll keep access until the
                 end of your current billing period.
               </p>
@@ -544,14 +544,14 @@ export function SetupFlow({ me }: { me: Me }) {
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="bg-danger px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-cta text-navy transition hover:bg-danger-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  className="button-text bg-danger px-5 py-2.5 font-display font-bold tracking-cta text-navy transition hover:bg-danger-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Yes, cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => setCancelState("idle")}
-                  className="text-[13px] text-fg-muted underline decoration-rule-strong underline-offset-[6px] transition hover:text-fg-strong hover:decoration-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  className="text-body-sm underline decoration-rule-strong underline-offset-[6px] transition hover:text-fg-strong hover:decoration-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Never mind
                 </button>
@@ -560,12 +560,12 @@ export function SetupFlow({ me }: { me: Me }) {
           ) : null}
 
           {cancelState === "cancelling" ? (
-            <p className="text-[14px] text-fg-muted">Cancelling...</p>
+            <p className="text-body-sm">Cancelling...</p>
           ) : null}
 
           {cancelState === "cancelled" ? (
             <div className="max-w-md space-y-2">
-              <p className="text-[14px] leading-[1.6] text-fg">
+              <p className="text-body-sm text-fg">
                 Your subscription has been cancelled.
                 {accessUntil ? (
                   <>
@@ -586,13 +586,13 @@ export function SetupFlow({ me }: { me: Me }) {
 
           {cancelState === "error" ? (
             <div className="max-w-md space-y-3">
-              <p className="text-[14px] text-danger">
+              <p className="text-body-sm text-danger">
                 {cancelError}
               </p>
               <button
                 type="button"
                 onClick={() => setCancelState("idle")}
-                className="text-[13px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                className="text-body-sm underline decoration-current underline-offset-[6px] transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
                 Try again
               </button>
@@ -631,7 +631,7 @@ function Section({
     >
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <span
-          className={`font-display text-[13px] font-bold uppercase tracking-[0.22em] ${
+          className={`label font-display font-bold ${
             done ? "text-cyan/70" : active ? "text-cyan" : "text-fg-faint"
           }`}
         >
@@ -644,7 +644,7 @@ function Section({
           </span>
         </h2>
       </div>
-      <p className="mt-2 max-w-xl text-[13px] text-fg-muted">{subtitle}</p>
+      <p className="mt-2 max-w-xl text-body-sm">{subtitle}</p>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -678,10 +678,10 @@ function DeviceCard({
       >
         {icon}
       </span>
-      <span className="font-display text-[15px] font-bold uppercase tracking-[0.08em] text-fg-strong">
+      <span className="label font-display font-bold tracking-cta text-fg-strong">
         {label}
       </span>
-      <span className="text-[12px] text-fg-muted">{hint}</span>
+      <span className="text-body-sm">{hint}</span>
     </button>
   );
 }
@@ -705,10 +705,10 @@ function AppCard({
           : "border-rule hover:border-cyan/60 hover:bg-fg-strong/[0.03]"
       }`}
     >
-      <span className="font-display text-[14px] font-bold uppercase tracking-[0.06em] text-fg-strong">
+      <span className="label font-display font-bold tracking-[0.06em] text-fg-strong">
         {app.name}
       </span>
-      <span className="text-[11px] uppercase tracking-[0.18em] text-fg-muted">
+      <span className="meta">
         {app.tagline}
       </span>
     </button>
@@ -730,7 +730,7 @@ function CopyableUrl({ url }: { url: string }) {
     <div className="flex items-stretch border border-rule bg-navy-900/60">
       <span
         title={url}
-        className="min-w-0 flex-1 truncate px-4 py-3 font-mono text-[13px] text-fg-muted sm:text-[12px]"
+        className="min-w-0 flex-1 truncate px-4 py-3 font-mono text-body-sm "
       >
         {url}
       </span>
@@ -740,7 +740,7 @@ function CopyableUrl({ url }: { url: string }) {
         aria-label={
           copied ? "Feed URL copied to clipboard" : "Copy feed URL to clipboard"
         }
-        className="flex shrink-0 items-center gap-2 border-l border-rule px-4 py-3 font-display text-[11px] font-bold uppercase tracking-[0.12em] text-fg-muted transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
+        className="flex shrink-0 items-center gap-2 border-l border-rule px-4 py-3 button-text font-display font-bold tracking-[0.12em] text-fg-muted transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
       >
         {copied ? <CheckIcon /> : <CopyIcon />}
         <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
@@ -783,14 +783,14 @@ function QrHandoff({
         />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <div className="flex items-center gap-3 label text-cyan">
           <span className="h-px w-6 bg-cyan" />
           {eyebrow}
         </div>
         <h3 className="mt-3 font-display text-[17px] font-bold uppercase tracking-[0.04em] text-fg-strong">
           {heading}
         </h3>
-        <p className="mt-2 text-[13px] leading-[1.6] text-fg-muted">{body}</p>
+        <p className="mt-2 text-body-sm">{body}</p>
         <div className="mt-4">
           <CopyableUrl url={target} />
         </div>
@@ -818,11 +818,11 @@ function SmsHandoff({
 }) {
   return (
     <div className="border border-rule bg-navy-900/40 p-6">
-      <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+      <div className="flex items-center gap-3 label text-cyan">
         <span className="h-px w-6 bg-cyan" />
         Text me the setup link
       </div>
-      <p className="mt-2 text-[13px] leading-[1.6] text-fg-muted">
+      <p className="mt-2 text-body-sm">
         We'll text you a link that opens your feed. Useful if you'd rather set
         this up on a different phone.
       </p>
@@ -833,13 +833,13 @@ function SmsHandoff({
           aria-live="polite"
           className="mt-4 flex items-center justify-between gap-4 border border-cyan/40 bg-cyan/10 p-4"
         >
-          <p className="text-[13px] leading-[1.6] text-fg-strong">
+          <p className="text-body-sm text-fg-strong">
             Sent. Check your messages — tap the link to finish setup.
           </p>
           <button
             type="button"
             onClick={onReset}
-            className="text-[12px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            className="text-body-sm underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Send another
           </button>
@@ -857,14 +857,14 @@ function SmsHandoff({
             placeholder="+1 555 123 4567"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="flex-1 border border-rule bg-navy-900/60 px-4 py-3 font-mono text-[14px] text-fg-strong placeholder:text-fg-placeholder focus:border-cyan focus:outline-none"
+            className="flex-1 border border-rule bg-navy-900/60 px-4 py-3 font-mono text-body text-fg-strong placeholder:text-fg-placeholder focus:border-cyan focus:outline-none"
             disabled={state === "sending"}
           />
           <button
             type="submit"
             disabled={!phone.trim() || state === "sending"}
             aria-busy={state === "sending"}
-            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             {state === "sending" ? "Sending..." : "Text me the link"}
             <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -875,7 +875,7 @@ function SmsHandoff({
       )}
 
       {state === "error" && error ? (
-        <p role="alert" className="mt-3 text-[13px] text-danger">
+        <p role="alert" className="mt-3 text-body-sm text-danger">
           {error}
         </p>
       ) : null}
@@ -883,7 +883,7 @@ function SmsHandoff({
       {selfSmsHref ? (
         <a
           href={selfSmsHref}
-          className="mt-4 inline-block text-[12px] text-fg-muted underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="mt-4 inline-block text-body-sm underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           Or open Messages with the link pre-filled →
         </a>

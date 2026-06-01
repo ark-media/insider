@@ -139,7 +139,7 @@ export function GiftCheckoutModal({
       <p id="gift-desc" className="eyebrow">Gift · Inside Call Me Back</p>
 
       {input ? (
-        <p className="mt-3 text-[13px] text-fg-muted break-words">
+        <p className="mt-3 text-body-sm break-words">
           For{" "}
           <span
             className="font-semibold text-fg-strong break-all"
@@ -335,7 +335,7 @@ function GiftPaymentForm({
     <>
       <h2 id="gift-title" className={titleClass}>
         {total}{" "}
-        <span className="text-[14px] font-sans font-normal text-fg-muted">
+        <span className="text-body-sm font-sans font-normal">
           · {label}
         </span>
       </h2>

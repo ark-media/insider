@@ -9,9 +9,9 @@ export const Route = createFileRoute("/contact")({
 });
 
 const inputClass =
-  "min-h-11 w-full border border-rule-strong bg-transparent px-3 py-2 text-[14px] text-fg-strong outline-none transition placeholder:text-fg-muted focus:border-cyan";
+  "min-h-11 w-full border border-rule-strong bg-transparent px-3 py-2 text-body text-fg-strong outline-none transition placeholder:text-fg-muted focus:border-cyan";
 const labelClass =
-  "text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan";
+  "label text-cyan";
 
 function ContactPage() {
   const [name, setName] = useState("");
@@ -50,11 +50,11 @@ function ContactPage() {
       title="Get in touch."
       lede="Send us a note and it'll reach the right desk. Pick a topic, tell us what's on your mind, and we'll follow up by email."
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[680px] px-6 py-16 sm:px-10">
           <form
             onSubmit={onSubmit}
-            className="border border-rule bg-navy-800/40 p-7 sm:p-9"
+            className="border border-rule bg-navy-800/40 p-6 sm:p-8"
           >
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <label className="block">
@@ -86,7 +86,7 @@ function ContactPage() {
               <select
                 value={topic}
                 onChange={(e) => setTopic(e.target.value as ContactTopic)}
-                className={`mt-3 ${inputClass}`}
+                className={`mt-3 ${inputClass} appearance-none bg-[length:16px] bg-[right_1rem_center] bg-no-repeat pr-10 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>')]`}
               >
                 {contactTopics.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -122,17 +122,17 @@ function ContactPage() {
               </label>
             </div>
 
-            <div className="mt-7 flex flex-wrap items-center gap-4">
+            <div className="mt-8 flex flex-wrap items-center gap-4">
               <button
                 type="submit"
                 disabled={status === "submitting"}
-                className="min-h-11 bg-cyan px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                className="min-h-11 bg-cyan px-6 py-2 button-text text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
               >
                 {status === "submitting" ? "Sending…" : "Send message"}
               </button>
               {feedback ? (
                 <p
-                  className={`text-[12px] ${
+                  className={`text-body-sm ${
                     status === "error" ? "text-danger" : "text-cyan"
                   }`}
                   aria-live="polite"

@@ -2,11 +2,11 @@ import { Link } from "@tanstack/react-router";
 
 export function Hero() {
   return (
-    <section className="ark-bg grain-overlay relative overflow-hidden">
+    <section className="section-hero ark-bg grain-overlay relative overflow-hidden">
       <div className="relative mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 pt-14 pb-20 sm:px-10 sm:pt-16 lg:grid-cols-12 lg:gap-10 lg:pt-24 lg:pb-28">
         {/* Left — headline */}
         <div className="relative z-10 lg:col-span-7">
-          <div className="rise rise-1 flex items-center gap-3 text-[12px] font-semibold uppercase tracking-eyebrow text-cyan">
+          <div className="rise rise-1 flex items-center gap-3 eyebrow">
             <span className="h-px w-10 bg-cyan" />
             Ark+
           </div>
@@ -21,13 +21,13 @@ export function Hero() {
             </span>
           </h1>
 
-          <p className="rise rise-3 mt-8 max-w-lg text-[15px] leading-[1.6] text-fg">
+          <p className="rise rise-3 mt-8 max-w-lg text-body-lg">
             One membership for the paid feed, members-only newsletters, the
             community, and live events.{" "}
             <span className="text-fg-strong">One bill. One login.</span>
           </p>
 
-          <ul className="rise rise-4 mt-8 space-y-2 text-[14px] text-fg">
+          <ul className="rise rise-4 mt-8 space-y-2 text-body-sm text-fg">
             {[
               "Inside Call Me Back — extended interviews, ad-free",
               "Members-only newsletters — sharper analysis, weekly",
@@ -45,7 +45,7 @@ export function Hero() {
           <div className="rise rise-5 mt-10 flex flex-wrap items-center gap-6">
             <a
               href="#pricing"
-              className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
+              className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
             >
               Become a member
               <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -54,7 +54,7 @@ export function Hero() {
             </a>
             <Link
               to="/plus/gift"
-              className="inline-flex min-h-11 items-center text-[15px] text-fg underline decoration-rule-strong underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
+              className="inline-flex min-h-11 items-center text-body-lg text-fg underline decoration-rule-strong underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
             >
               Gift Ark+
             </Link>
@@ -88,7 +88,7 @@ export function Hero() {
             </div>
 
             {/* Corner mark */}
-            <div className="absolute -top-5 -right-5 inside-tab text-[14px]">
+            <div className="absolute -top-5 -right-5 inside-tab text-xs">
               New
             </div>
           </div>

@@ -29,7 +29,7 @@ export function ListenLinks({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-3 text-[13px] text-fg-muted ${className}`}
+      className={`flex flex-wrap items-center gap-3 text-body-sm ${className}`}
     >
       {listen.map((l) => (
         <a
@@ -37,7 +37,7 @@ export function ListenLinks({
           href={l.url}
           target="_blank"
           rel="noreferrer noopener"
-          className="inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 button-text font-semibold text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           {PLATFORM_ICON[l.platform] ?? null}
           {LISTEN_PLATFORM_LABEL[l.platform]}

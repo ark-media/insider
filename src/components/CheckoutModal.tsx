@@ -459,7 +459,7 @@ function PromoBanner({ promo }: { promo: PromoInfo }) {
   return (
     <p
       role="status"
-      className="mt-3 border border-cyan/50 bg-cyan/10 px-3 py-2 text-[13px] text-fg-strong"
+      className="mt-3 border border-cyan/50 bg-cyan/10 px-3 py-2 text-body-sm text-fg-strong"
     >
       <span className="font-semibold">
         {promo.kind === "percent"
@@ -547,7 +547,7 @@ function EmailForm({
           />
         </Field>
         {error ? (
-          <p role="alert" className="text-[12px] text-danger">
+          <p role="alert" className="text-body-sm text-danger">
             {error}
           </p>
         ) : null}
@@ -559,7 +559,7 @@ function EmailForm({
         >
           {working ? "Loading…" : "Continue to payment"}
         </button>
-        <p className="text-[12px] leading-snug text-fg-muted">
+        <p className="text-body-sm">
           Payment is securely processed by Stripe. You'll receive a sign-in
           link by email once your membership is active.
         </p>
@@ -666,7 +666,7 @@ function CheckoutForm({
           </span>
         ) : null}
         {total}{" "}
-        <span className="text-[14px] font-sans font-normal text-fg-muted">
+        <span className="text-body-sm font-sans font-normal">
           / {intervalLabel}
         </span>
       </h2>
@@ -688,7 +688,7 @@ function CheckoutForm({
           </span>
         </div>
         {payError ? (
-          <p role="alert" className="text-[12px] text-danger">
+          <p role="alert" className="text-body-sm text-danger">
             {payError}
           </p>
         ) : null}

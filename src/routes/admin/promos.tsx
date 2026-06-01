@@ -141,16 +141,16 @@ function PromosAdmin() {
   };
 
   const field =
-    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-[14px] text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
+    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
   const label =
-    "block font-display text-[12px] font-bold uppercase tracking-button text-fg-strong";
+    "block button-text font-display font-bold text-fg-strong";
 
   return (
     <AdminShell active="promos" title="Promo codes">
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
         <section aria-label="New promo code">
           <h2 className="font-display text-lg text-fg-strong">New promo</h2>
-          <p className="mt-2 text-[13px] text-fg-muted">
+          <p className="mt-2 text-body-sm">
             Creates a Stripe coupon (and a promotion code if you set one). Promos
             marked <strong className="text-fg">auto-apply</strong> discount the
             targeted plan at checkout automatically.
@@ -170,7 +170,7 @@ function PromosAdmin() {
                   placeholder="SPRING60"
                   className={`mt-2 ${field}`}
                 />
-                <p className="mt-1 text-[11px] text-fg-muted">Optional label code.</p>
+                <p className="mt-1 text-body-sm">Optional label code.</p>
               </div>
               <div>
                 <label htmlFor="p-name" className={label}>
@@ -344,7 +344,7 @@ function PromosAdmin() {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-[14px] text-fg">
+            <label className="flex items-center gap-2 text-body-sm text-fg">
               <input
                 type="checkbox"
                 checked={form.autoApply}
@@ -356,13 +356,13 @@ function PromosAdmin() {
               Auto-apply at checkout (no code needed)
             </label>
 
-            {formError ? <p className="text-[13px] text-red-400">{formError}</p> : null}
-            {notice ? <p className="text-[13px] text-cyan">{notice}</p> : null}
+            {formError ? <p className="text-body-sm text-red-400">{formError}</p> : null}
+            {notice ? <p className="text-body-sm text-cyan">{notice}</p> : null}
 
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+              className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
             >
               {saving ? "Creating…" : "Create promo"}
             </button>
@@ -372,29 +372,29 @@ function PromosAdmin() {
         <section aria-label="Existing promos">
           <h2 className="font-display text-lg text-fg-strong">All promos</h2>
           {loading ? (
-            <p className="mt-6 text-[14px] text-fg-muted">Loading…</p>
+            <p className="mt-6 text-body-sm">Loading…</p>
           ) : listError ? (
-            <p className="mt-6 text-[14px] text-red-400">{listError}</p>
+            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
           ) : items.length === 0 ? (
-            <p className="mt-6 text-[14px] text-fg-muted">No coupons in Stripe yet.</p>
+            <p className="mt-6 text-body-sm">No coupons in Stripe yet.</p>
           ) : (
             <ul className="mt-4 space-y-3">
               {items.map((p) => (
                 <li key={p.id} className="border border-rule p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-display text-[15px] text-fg-strong">
+                    <span className="text-body-lg font-display text-fg-strong">
                       {p.code ?? p.name ?? p.id}
                     </span>
                     <button
                       type="button"
                       onClick={() => void remove(p)}
-                      className="text-[12px] font-bold uppercase tracking-button text-red-400 hover:text-red-300"
+                      className="button-text font-bold text-red-400 hover:text-red-300"
                     >
                       Delete
                     </button>
                   </div>
-                  <p className="mt-1 text-[13px] text-fg">{describeDiscount(p)}</p>
-                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-button">
+                  <p className="mt-1 text-body-sm text-fg">{describeDiscount(p)}</p>
+                  <div className="mt-2 flex flex-wrap gap-2 label font-bold">
                     <Badge on={p.autoApply} label={p.autoApply ? "auto-apply" : "code only"} />
                     <Badge on={p.valid} label={p.valid ? "valid" : "expired"} />
                     {p.plan ? <Tag>{p.plan}</Tag> : <Tag>both plans</Tag>}

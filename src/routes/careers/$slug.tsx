@@ -44,10 +44,10 @@ function CareerDetailPage() {
       title={career.title}
       lede={meta || undefined}
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
           <div className="lg:col-span-8">
-            <div className="space-y-4 text-[15px] leading-[1.7] text-fg [&_a]:text-cyan [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-rule-strong [&_blockquote]:pl-4 [&_blockquote]:text-fg-muted [&_h2]:mt-10 [&_h2]:font-display [&_h2]:text-[22px] [&_h2]:leading-tight [&_h2]:text-fg-strong [&_h3]:mt-6 [&_h3]:font-display [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-fg-strong [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_strong]:text-fg-strong [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
+            <div className="space-y-4 text-body-lg [&_a]:text-cyan [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-rule-strong [&_blockquote]:pl-4 [&_blockquote]:text-fg-muted [&_h2]:mt-10 [&_h2]:font-display [&_h2]:text-[22px] [&_h2]:leading-tight [&_h2]:text-fg-strong [&_h3]:mt-6 [&_h3]:font-display [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-fg-strong [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_strong]:text-fg-strong [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
               {parse(career.description)}
             </div>
           </div>
@@ -59,18 +59,18 @@ function CareerDetailPage() {
                 Interested?
               </h2>
               {meta ? (
-                <p className="mt-2 text-[13px] text-fg-muted">{meta}</p>
+                <p className="mt-2 text-body-sm">{meta}</p>
               ) : null}
               <a
                 href={applyHref}
                 {...(applyIsExternal
                   ? { target: "_blank", rel: "noopener noreferrer" }
                   : {})}
-                className="mt-5 inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-5 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
                 Apply to this job →
               </a>
-              <p className="mt-3 text-[11px] leading-[1.5] text-fg-faint">
+              <p className="mt-3 text-body-sm text-fg-faint">
                 {applyIsExternal
                   ? "Opens our application in a new tab."
                   : "Opens your email to send an application."}

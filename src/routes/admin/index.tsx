@@ -41,10 +41,10 @@ function AdminHome() {
             <h2 className="font-display text-lg text-fg-strong group-hover:text-cyan">
               {card.title}
             </h2>
-            <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">
+            <p className="mt-2 text-body-sm">
               {card.body}
             </p>
-            <span className="mt-4 inline-block text-[12px] font-bold uppercase tracking-button text-cyan">
+            <span className="mt-4 inline-block button-text font-bold text-cyan">
               Open →
             </span>
           </Link>

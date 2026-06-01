@@ -40,11 +40,11 @@ export function FAQ() {
   const [open, setOpen] = useState<number | null>(0);
 
   return (
-    <section id="faq" className="relative bg-navy-800/40">
+    <section id="faq" className="relative">
       <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-4">
-            <div className="inside-tab text-[13px]">The fine print</div>
+            <div className="inside-tab text-xs">The fine print</div>
             <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 Frequently
@@ -53,7 +53,7 @@ export function FAQ() {
                 <span className="display text-cyan">asked.</span>
               </span>
             </h2>
-            <p className="mt-8 max-w-sm text-[15px] leading-[1.6] text-fg-muted">
+            <p className="mt-8 max-w-sm text-body-lg">
               Everything you need to know before joining Ark+. Still stuck?
               Drop us a line.
             </p>
@@ -74,7 +74,7 @@ export function FAQ() {
                       aria-controls={panelId}
                       className="flex min-h-12 w-full items-start justify-between gap-6 py-4 text-left transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                     >
-                      <span className="display-upright text-[15px] leading-snug text-fg-strong sm:text-[16px]">
+                      <span className="display-upright text-body-lg leading-snug text-fg-strong sm:text-base">
                         {f.q}
                       </span>
                       <span
@@ -93,7 +93,7 @@ export function FAQ() {
                       hidden={!isOpen}
                       className="overflow-hidden"
                     >
-                      <p className="max-w-2xl pb-5 text-[14px] leading-[1.65] text-fg-muted">
+                      <p className="max-w-2xl pb-5 text-body-sm">
                         {f.a}
                       </p>
                     </div>

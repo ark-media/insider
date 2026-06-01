@@ -38,9 +38,9 @@ function AboutPage() {
       lede="Ark Media is a podcast network focused on spirited debate and learning about Jewish life,
 Israel, the Middle East, and our larger geopolitics."
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="label text-cyan">
             What Ark Media does
           </h2>
           <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-12">
@@ -51,7 +51,7 @@ Israel, the Middle East, and our larger geopolitics."
               around the world, Ark Media aims to build a global community
               driven by curiosity and meaningful dialogue.
             </p>
-            <div className="text-[14px] leading-[1.7] text-fg-muted lg:col-span-5">
+            <div className="text-body-sm lg:col-span-5">
               <p>
                 The company sits behind <em>Call Me Back with Dan Senor</em>,{" "}
                 <em>For Heaven's Sake</em> with Donniel Hartman and Yossi
@@ -63,7 +63,7 @@ Israel, the Middle East, and our larger geopolitics."
         </div>
       </section>
 
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {aboutLinks.map((link) => (
@@ -72,16 +72,16 @@ Israel, the Middle East, and our larger geopolitics."
                 to={link.to}
                 className="group flex flex-col border border-rule bg-navy-800/40 p-7 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                <div className="label text-cyan">
                   {link.eyebrow}
                 </div>
-                <h3 className="mt-4 font-display text-[20px] leading-[1.2] text-fg-strong">
+                <h3 className="mt-4 text-h3">
                   {link.title}
                 </h3>
-                <p className="mt-3 flex-1 text-[13.5px] leading-[1.6] text-fg-muted">
+                <p className="mt-3 flex-1 text-body-sm">
                   {link.body}
                 </p>
-                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition group-hover:text-cyan">
+                <div className="mt-6 label text-fg-muted transition group-hover:text-cyan">
                   {link.cta}
                 </div>
               </Link>

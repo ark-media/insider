@@ -65,11 +65,11 @@ function LatestEpisodeCard({
       <div className="flex flex-1 flex-col p-5 sm:p-6">
         <time
           dateTime={episode.publishedAt}
-          className="text-[13px] text-fg-muted"
+          className="text-body-sm"
         >
           {formatEpisodeDateLong(episode.publishedAt)}
         </time>
-        <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-strong">
+        <div className="mt-2 label text-fg-strong">
           {show.shortTitle}
         </div>
         <Link
@@ -83,7 +83,7 @@ function LatestEpisodeCard({
         <Link
           to="/podcasts/$show/$episode"
           params={episodeParams}
-          className="mt-auto inline-flex items-center gap-2.5 pt-6 text-[12px] font-semibold uppercase tracking-[0.16em] text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="button-text mt-auto inline-flex items-center gap-2.5 pt-6 font-semibold text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan text-navy">
             <PlayGlyph />
@@ -107,7 +107,7 @@ function NewRowBadge() {
   return (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute -left-6 top-0 z-10 flex h-14 w-14 -translate-y-1/2 -rotate-12 items-center justify-center rounded-full border-[3px] border-cyan bg-cyan font-display text-[11px] font-black uppercase tracking-[0.08em] text-navy shadow-[0_4px_14px_rgb(62_181_249_/_0.35)] sm:-left-8 sm:h-16 sm:w-16 sm:text-[12px]"
+      className="pointer-events-none absolute -left-6 top-0 z-10 flex h-14 w-14 -translate-y-1/2 -rotate-12 items-center justify-center rounded-full border-[3px] border-cyan bg-cyan button-text font-display font-black tracking-cta text-navy shadow-[0_4px_14px_rgb(62_181_249_/_0.35)] sm:-left-8 sm:h-16 sm:w-16 "
     >
       New
     </span>
@@ -129,10 +129,10 @@ export function LatestEpisodes() {
 
   if (episodes === null) {
     return (
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <SectionHeading />
-          <p className="mt-8 text-[14px] text-fg-muted">Loading episodes…</p>
+          <p className="mt-8 text-body-sm">Loading episodes…</p>
         </div>
       </section>
     );
@@ -141,7 +141,7 @@ export function LatestEpisodes() {
   if (episodes.length === 0) return null;
 
   return (
-    <section className="border-t border-rule bg-navy-900">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <SectionHeading />
 

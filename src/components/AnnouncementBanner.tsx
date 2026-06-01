@@ -84,7 +84,7 @@ export function AnnouncementBanner() {
       <div className="mx-auto flex max-w-[1280px] items-center justify-center px-10 py-2.5 sm:px-12">
         {/* Text ignores pointer events so clicks fall through to the overlay
             link; the body's own <a> tags opt back in so they stay clickable. */}
-        <div className="pointer-events-none relative z-10 text-center text-[13px] font-medium leading-snug sm:text-[14px] [&_a]:pointer-events-auto [&_a]:underline [&_a]:underline-offset-2">
+        <div className="pointer-events-none relative z-10 text-center text-body-sm font-medium leading-snug  [&_a]:pointer-events-auto [&_a]:underline [&_a]:underline-offset-2">
           {parse(body)}
         </div>
       </div>

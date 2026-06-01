@@ -52,7 +52,7 @@ function rowTitle(eyebrow: string, title: string): ReactNode {
   return (
     <>
       {eyebrow}
-      <span className="ml-3 align-baseline font-display text-[15px] font-normal text-cyan sm:text-[16px]">
+      <span className="ml-3 align-baseline text-body-lg font-display font-normal text-cyan sm:text-base">
         {title}
       </span>
     </>
@@ -63,25 +63,24 @@ function AlsoFromArkMedia() {
   const { state } = useSubscriberAuth();
   const { isSubscribed, prefsLoading } = useNewsletterSubscription();
 
-  // Everyone gets the inline signup except a signed-in member we know is
-  // already subscribed (free or Ark+). While prefs are still loading we
-  // withhold the row so already-subscribed members never see it flash.
-  const showNewsletter =
-    state.kind !== "member" || (!prefsLoading && !isSubscribed);
+  const isMember = state.kind === "member";
+  // Guests and signed-in readers not on the Beehiiv list get the inline signup.
+  // Beehiiv subscribers see a link to recent issues instead. While prefs load
+  // for a member we withhold both so the form never flashes.
+  const showSignup =
+    !isMember || (!prefsLoading && !isSubscribed);
 
-  // Build the visible rows, then number them by position so hiding the
-  // newsletter row leaves no gap (Community becomes 01, Ark+ becomes 02).
   const rows = [
-    ...(showNewsletter
-      ? [
-          {
-            key: "newsletter",
-            title: rowTitle(newsletterRow.eyebrow, newsletterRow.title),
-            body: newsletterRow.body,
-            action: <NewsletterSignupForm slug="ark-daily" />,
-          },
-        ]
-      : []),
+    {
+      key: "newsletter",
+      title: rowTitle(newsletterRow.eyebrow, newsletterRow.title),
+      body: newsletterRow.body,
+      ...(showSignup
+        ? { action: <NewsletterSignupForm slug="ark-daily" /> }
+        : isMember && !prefsLoading
+          ? { cta: "Read newsletters", to: "/newsletters" }
+          : {}),
+    },
     ...linkRows.map((s) => ({
       key: s.to,
       title: rowTitle(s.eyebrow, s.title),
@@ -92,7 +91,7 @@ function AlsoFromArkMedia() {
   ];
 
   return (
-    <section className="border-t border-rule bg-navy-900">
+    <section>
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="mb-8">
           <div className="eyebrow text-[18px] sm:text-[22px]">
@@ -126,8 +125,8 @@ function HomePage() {
     state.kind === "member" && state.me.tier === "subscriber";
   return (
     <main className="relative">
-      <section className="relative">
-        <div className="mx-auto max-w-[1280px] pb-10 sm:px-10">
+      <section className="section-hero relative">
+        <div className="mx-auto max-w-[1280px] px-6 pb-10 sm:px-10">
           {/* Animated brand mark. The GIF has a baked-in navy background, so it
               sits in a fixed-navy tile (--color-navy doesn't flip with the
               theme) and stays seamless in both light and dark. */}
@@ -140,7 +139,7 @@ function HomePage() {
               className="h-full w-full object-cover"
             />
           </div> */}
-          {/* <p className="inside-tab rise rise-1 text-[12px]">Ark Media</p> */}
+          {/* <p className="inside-tab rise rise-1 text-xs">Ark Media</p> */}
           <h1 className="mt-10 max-w-4xl text-fg-strong">
             <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
               Connecting Jewish{" "}
@@ -155,7 +154,7 @@ function HomePage() {
             className="draw-rule mt-10 h-px w-24 origin-left bg-cyan"
             style={{ animationDelay: "0.7s" }}
           />
-          <p className="rise rise-5 mt-8 max-w-2xl text-[15px] leading-[1.65] text-fg">
+          <p className="rise rise-5 mt-8 max-w-2xl text-body-lg">
             Ark Media is a podcast network that explores the big questions
             shaping Jewish life, Israel's future, and our rapidly changing
             world. Through conversations with leading Jewish thinkers from
@@ -168,13 +167,13 @@ function HomePage() {
           >
             <Link
               to="/podcasts"
-              className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Explore podcasts →
             </Link>
             <Link
               to={isSubscriber ? "/community" : "/plus"}
-              className="inline-flex min-h-12 items-center gap-2 border border-rule-strong px-5 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className="inline-flex min-h-12 items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               {isSubscriber ? "Explore community" : "Become an Ark+ member"}
             </Link>
@@ -185,8 +184,8 @@ function HomePage() {
       <LatestEpisodes />
 
       {/* Podcast row — card grid (good for browsing) */}
-      <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-8 sm:px-10">
+      <section>
+        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="flex items-end justify-between">
             <div>
               <div className="eyebrow text-[18px] sm:text-[22px]">Podcasts</div>
@@ -198,7 +197,7 @@ function HomePage() {
             </div>
             <Link
               to="/podcasts"
-              className="hidden text-[12px] font-semibold uppercase tracking-button text-fg-muted transition hover:text-cyan sm:inline"
+              className="hidden button-text font-semibold text-fg-muted transition hover:text-cyan sm:inline"
             >
               All podcasts →
             </Link>

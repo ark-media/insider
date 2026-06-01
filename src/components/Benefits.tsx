@@ -23,11 +23,11 @@ const benefits = [
 
 export function Benefits() {
   return (
-    <section id="benefits" className="relative bg-navy-900">
+    <section id="benefits" className="relative">
       <div className="mx-auto max-w-[1280px] px-6 pt-20 pb-24 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="inside-tab text-[13px]">What's included</div>
+            <div className="inside-tab text-xs">What's included</div>
             <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 Four things,
@@ -36,7 +36,7 @@ export function Benefits() {
                 <span className="display text-cyan">one</span> membership.
               </span>
             </h2>
-            <p className="mt-8 max-w-md text-[14px] leading-[1.6] text-fg-muted">
+            <p className="mt-8 max-w-md text-body-sm">
               No fragmented platforms, no separate logins, no FAQ explaining
               why Discord is locked to Substack. One Ark+ membership covers
               everything below.
@@ -56,7 +56,7 @@ export function Benefits() {
                   <h3 className="display-upright text-[20px] leading-tight text-fg-strong sm:text-[22px]">
                     {b.title}
                   </h3>
-                  <p className="mt-3 text-[14px] leading-[1.6] text-fg-muted">
+                  <p className="mt-3 text-body-sm">
                     {b.body}
                   </p>
                 </div>

@@ -72,39 +72,39 @@ function BillingPage() {
       title="Your Ark+ membership."
       lede={`Signed in as ${me.email}.`}
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="border border-rule bg-navy-800/40 p-8">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <h2 className="label text-cyan">
                 Manage payment & invoices
               </h2>
-              <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
+              <p className="mt-4 max-w-md text-body-sm text-fg">
                 Update your card, change your billing email, or download
                 invoices in the Stripe Customer Portal.
               </p>
               <button
                 type="button"
                 disabled
-                className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-muted opacity-60"
+                className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-muted opacity-60"
               >
                 Open Stripe portal →
               </button>
-              <p className="mt-3 text-[11px] leading-snug text-fg-muted">
+              <p className="mt-3 text-body-sm">
                 Stripe portal redirect not yet wired in this preview build.
               </p>
             </div>
 
             <div className="border border-rule bg-navy-800/40 p-8">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              <h2 className="label text-cyan">
                 Cancel
               </h2>
-              <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">
+              <p className="mt-4 max-w-md text-body-sm text-fg">
                 Cancel anytime. You'll keep access through the end of your
                 current billing period.
               </p>
               {status.kind === "ok" ? (
-                <p className="mt-6 text-[13px] text-cyan" aria-live="polite">
+                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
                   Cancellation confirmed.{" "}
                   {status.until
                     ? `Access continues until ${new Date(status.until).toLocaleDateString()}.`
@@ -115,7 +115,7 @@ function BillingPage() {
                   type="button"
                   onClick={() => setConfirmOpen(true)}
                   disabled={status.kind === "cancelling"}
-                  className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   {status.kind === "cancelling"
                     ? "Cancelling…"
@@ -124,7 +124,7 @@ function BillingPage() {
               )}
               {status.kind === "error" ? (
                 <p
-                  className="mt-3 text-[12px] text-danger"
+                  className="mt-3 text-body-sm text-danger"
                   aria-live="polite"
                 >
                   {status.message}
@@ -151,7 +151,7 @@ function BillingPage() {
         >
           Cancel your Ark+ membership?
         </h2>
-        <p className="mt-4 text-[14px] leading-[1.6] text-fg">
+        <p className="mt-4 text-body-sm text-fg">
           You'll keep access until the end of your current billing period.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">

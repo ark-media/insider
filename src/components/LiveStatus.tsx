@@ -14,7 +14,7 @@ export function LiveStatus() {
 
   return (
     <div className="border-b border-rule-soft bg-navy-900">
-      <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 py-2 text-[11px] font-medium uppercase tracking-eyebrow text-fg-muted sm:px-10">
+      <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 py-2 label font-medium tracking-eyebrow text-fg-muted sm:px-10">
         <span className="flex items-center gap-2">
           <span
             className="live-dot inline-block size-1.5 rounded-full bg-cyan"

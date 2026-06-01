@@ -38,7 +38,7 @@ function CardText({ eyebrow, title, body, cta }: CommonProps) {
       {body ? (
         <ClampedText
           text={body}
-          className="mt-3 line-clamp-4 text-[13px] leading-[1.6] text-fg-muted"
+          className="mt-3 line-clamp-4 text-body-sm"
         />
       ) : null}
       {cta ? (
@@ -136,10 +136,10 @@ export function NumberedRow({
         {number}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="line-clamp-3 font-display text-[20px] leading-[1.2] text-fg-strong sm:text-[24px]">
+        <div className="line-clamp-3 text-h3 sm:text-[24px]">
           {title}
         </div>
-        <p className="mt-3 line-clamp-4 max-w-2xl text-[14px] leading-[1.6] text-fg-muted">
+        <p className="mt-3 line-clamp-4 max-w-2xl text-body-sm">
           {body}
         </p>
         {action ? (

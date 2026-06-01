@@ -43,7 +43,7 @@ export function HostArtwork({
               aria-hidden="true"
               className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-navy/85 to-transparent"
             />
-            <div className="absolute bottom-5 left-5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/90">
+            <div className="absolute bottom-5 left-5 label tracking-[0.2em] text-white/90">
               {role}
             </div>
           </>

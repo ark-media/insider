@@ -60,11 +60,11 @@ export function Pricing() {
     : null;
 
   return (
-    <section id="pricing" className="relative border-t border-rule bg-navy-800/40">
+    <section id="pricing" className="relative">
       <div className="mx-auto max-w-[1280px] px-6 pt-20 pb-24 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="inside-tab text-[13px]">Become a member</div>
+            <div className="inside-tab text-xs">Become a member</div>
             <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                 Pick your
@@ -73,14 +73,14 @@ export function Pricing() {
                 own <span className="display text-cyan">terms.</span>
               </span>
             </h2>
-            <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-fg">
+            <p className="mt-6 max-w-md text-body-sm text-fg">
               {prices
                 ? `$${fmtPrice(prices.monthly)} a month or $${fmtPrice(prices.yearly)} a year`
                 : "Monthly or annual"}{" "}
               — or name a higher amount to support the work. Every Ark+ member
               gets the same bundle, the same paid feed, the same community.
             </p>
-            <ul className="mt-10 space-y-2 text-[13px] text-fg-muted">
+            <ul className="mt-10 space-y-2 text-body-sm">
               <li className="flex items-center gap-2">
                 <span className="inline-block size-1.5 rounded-full bg-cyan" />
                 Cancel anytime
@@ -109,7 +109,7 @@ export function Pricing() {
                   type="button"
                   aria-pressed={plan === p}
                   onClick={() => setPlan(p)}
-                  className={`relative inline-flex min-h-11 items-center px-6 font-display text-[12px] font-bold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                  className={`relative inline-flex min-h-11 items-center px-6 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
                     plan === p
                       ? "bg-cyan text-navy"
                       : "text-fg-muted hover:text-fg-strong"
@@ -118,7 +118,7 @@ export function Pricing() {
                   {p}
                   {p === "yearly" && savingsPct ? (
                     <span
-                      className={`ml-2 text-[10px] ${plan === p ? "opacity-80" : "text-cyan"}`}
+                      className={`ml-2 text-xs ${plan === p ? "opacity-80" : "text-cyan"}`}
                     >
                       −{savingsPct}%
                     </span>
@@ -143,11 +143,11 @@ export function Pricing() {
                         <span className="inline-block h-[0.7em] w-28 animate-pulse rounded bg-rule-strong/40 align-middle" />
                       )}
                     </span>
-                    <span className="text-[14px] text-fg-muted">
+                    <span className="text-body-sm">
                       / {plan === "yearly" ? "year" : "month"}
                     </span>
                   </div>
-                  <div className="mt-3 text-[13px] text-fg-muted">
+                  <div className="mt-3 text-body-sm">
                     {plan === "yearly"
                       ? prices
                         ? `Works out to $${(prices.yearly / 12).toFixed(2)} a month.`
@@ -171,7 +171,7 @@ export function Pricing() {
                         placeholder={plan === "yearly" ? "120" : "12"}
                         className="w-full bg-transparent text-[22px] text-fg-strong outline-none placeholder:text-fg-placeholder"
                       />
-                      <span className="text-[12px] text-fg-muted">
+                      <span className="text-body-sm">
                         / {plan === "yearly" ? "yr" : "mo"}
                       </span>
                     </div>
@@ -179,7 +179,7 @@ export function Pricing() {
                     Number.isFinite(parsedCustom) &&
                     price !== null &&
                     parsedCustom < price ? (
-                      <p className="mt-2 text-[12px] text-danger" role="alert">
+                      <p className="mt-2 text-body-sm text-danger" role="alert">
                         Minimum is ${fmtPrice(price)}/{plan === "yearly" ? "yr" : "mo"}.
                       </p>
                     ) : null}
@@ -189,7 +189,7 @@ export function Pricing() {
                     type="button"
                     onClick={() => setCheckoutOpen(true)}
                     disabled={price === null}
-                    className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 font-display text-[13px] font-bold uppercase tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-cyan disabled:hover:text-navy"
+                    className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-cyan disabled:hover:text-navy"
                   >
                     Become a member
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
@@ -203,7 +203,7 @@ export function Pricing() {
                   <div className="eyebrow text-fg-muted">
                     Every Ark+ member gets
                   </div>
-                  <ul className="mt-5 space-y-3 text-[14px] text-fg">
+                  <ul className="mt-5 space-y-3 text-body-sm text-fg">
                     {[
                       "Inside Call Me Back — private, ad-free feed",
                       "Members-only newsletters",

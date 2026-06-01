@@ -409,7 +409,7 @@ function SectionHeading({ text }: { text: string }) {
   return (
     <div className="flex items-baseline gap-4 pt-2">
       <span aria-hidden className="h-px flex-1 bg-rule" />
-      <h2 className="text-center font-display text-[11px] font-semibold uppercase tracking-[0.32em] text-cyan">
+      <h2 className="label text-center font-display tracking-[0.32em] text-cyan">
         {text}
       </h2>
       <span aria-hidden className="h-px flex-1 bg-rule" />
@@ -475,7 +475,7 @@ function PromoCard({
       })() : null}
       <div className="flex flex-col justify-center gap-4 p-7 lg:p-9">
         {titleText ? (
-          <div className="font-display text-[12px] font-bold uppercase tracking-[0.28em] text-cyan">
+          <div className="label font-display font-bold tracking-[0.28em] text-cyan">
             {titleText}
           </div>
         ) : null}
@@ -491,7 +491,7 @@ function PromoCard({
               href={ctaHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-flex w-fit items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan"
+              className="mt-2 inline-flex w-fit items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan"
             >
               {cta.text} <span aria-hidden>→</span>
             </a>
@@ -555,7 +555,7 @@ function EpisodeCard({
               loading="lazy"
               className="block aspect-[16/9] w-full object-cover transition duration-700 group-hover:scale-[1.04]"
             />
-            <span className="pointer-events-none absolute bottom-3 right-3 border border-cyan/60 bg-navy/90 px-2.5 py-1 font-display text-[10px] font-bold uppercase tracking-[0.28em] text-cyan backdrop-blur-sm">
+            <span className="label pointer-events-none absolute bottom-3 right-3 border border-cyan/60 bg-navy/90 px-2.5 py-1 font-display font-bold tracking-[0.28em] text-cyan backdrop-blur-sm">
               № {num}
             </span>
           </>
@@ -572,11 +572,11 @@ function EpisodeCard({
       )}
       <div className="flex flex-col">
         <div className="flex items-baseline justify-between gap-4 border-b border-rule pb-3">
-          <span className="font-display text-[11.5px] font-bold uppercase tracking-[0.22em] text-cyan">
+          <span className="label font-display font-bold text-cyan">
             {show}
           </span>
           {date ? (
-            <span className="shrink-0 text-[10.5px] uppercase tracking-[0.22em] text-fg-faint">
+            <span className="meta shrink-0 text-fg-faint">
               {date}
             </span>
           ) : null}
@@ -587,7 +587,7 @@ function EpisodeCard({
             href={listenHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="group/listen mt-6 inline-flex w-fit items-center gap-2 self-start font-display text-[11.5px] font-bold uppercase tracking-[0.22em] text-cyan transition hover:text-fg-strong"
+            className="button-text group/listen mt-6 inline-flex w-fit items-center gap-2 self-start font-display font-bold text-cyan transition hover:text-fg-strong"
           >
             Listen
             <span

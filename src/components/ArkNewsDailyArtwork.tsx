@@ -120,7 +120,7 @@ export function ArkNewsDailyArtwork({
             d="M14 130 C 30 122, 80 118, 100 118 C 120 118, 170 122, 186 130 L 168 158 L 32 158 Z M30 104 C 50 94, 82 90, 100 90 C 118 90, 150 94, 170 104 L 156 120 L 44 120 Z M86 40 L 114 40 L 132 84 L 68 84 Z"
           />
         </svg>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
+        <span className="label text-white/70">
           Ark Media
         </span>
       </div>

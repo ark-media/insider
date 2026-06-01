@@ -23,7 +23,7 @@ export function SuccessMark({
         >
           <path className="draw-check" d="M5 14.5l5.5 5L23 8.5" />
         </svg>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <span className="label text-cyan">
           Confirmed
         </span>
       </div>
@@ -36,7 +36,7 @@ export function SuccessMark({
         style={{ animationDelay: "0.55s" }}
       />
       {children ? (
-        <div className="mt-5 text-[14px] leading-[1.6] text-fg">
+        <div className="mt-5 text-body-sm text-fg">
           {children}
         </div>
       ) : null}

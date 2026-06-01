@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageShell } from "../../components/PageShell";
 import { fetchCareers } from "../../lib/careers";
-import { contactEmails } from "../../config/urls";
 
 export const Route = createFileRoute("/careers/")({
   loader: async () => ({ careers: await fetchCareers() }),
@@ -17,30 +16,23 @@ function CareersPage() {
       title="Build Ark Media."
       lede="We're a small team building independent journalism for an audience that wants more than a hot take. Roles below; speculative notes welcome."
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="flex items-baseline gap-3">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            <h2 className="label text-cyan">
               Open roles
             </h2>
             {careers.length > 0 ? (
-              <span className="text-[12px] tabular-nums text-fg-faint">
+              <span className="text-body-sm tabular-nums text-fg-faint">
                 {careers.length}
               </span>
             ) : null}
           </div>
 
           {careers.length === 0 ? (
-            <p className="mt-10 max-w-2xl text-[14px] leading-[1.7] text-fg-muted">
-              No open roles right now — but we're always glad to hear from
-              talented people. Send a speculative note to{" "}
-              <a
-                href={`mailto:${contactEmails.careers}`}
-                className="text-cyan underline underline-offset-4 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-              >
-                {contactEmails.careers}
-              </a>
-              .
+            <p className="mt-10 max-w-2xl text-body-sm">
+              No open roles right now. Check back in the future — we post new
+              positions here as they open up.
             </p>
           ) : (
             <ul className="mt-8 border-t border-rule">
@@ -60,15 +52,15 @@ function CareersPage() {
                         <h3 className="font-display text-[22px] leading-tight text-fg-strong transition-colors duration-300 group-hover:text-cyan">
                           {c.title}
                         </h3>
-                        <p className="mt-2 max-w-xl text-[13.5px] leading-[1.6] text-fg-muted">
+                        <p className="mt-2 max-w-xl text-body-sm">
                           {c.summary}
                         </p>
                       </div>
-                      <div className="text-[13px] leading-[1.5] text-fg-muted lg:col-span-3">
+                      <div className="text-body-sm lg:col-span-3">
                         {meta}
                       </div>
                       <div className="lg:col-span-2 lg:text-right">
-                        <span className="inline-flex items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-button text-fg transition-colors duration-300 group-hover:border-cyan group-hover:text-cyan">
+                        <span className="inline-flex items-center gap-2 border border-rule-strong px-4 py-2 button-text font-semibold text-fg transition-colors duration-300 group-hover:border-cyan group-hover:text-cyan">
                           Apply
                           <span
                             aria-hidden

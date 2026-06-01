@@ -63,12 +63,12 @@ function GiftPage() {
 
   return (
     <>
-      <section className="relative">
+      <section className="section-hero relative">
         <div className="mx-auto max-w-[1280px] px-6 pt-16 pb-24 sm:px-10">
           <div className="grid grid-cols-1 gap-14 lg:grid-cols-12">
             {/* Left: pitch */}
             <div className="lg:col-span-5">
-              <div className="inside-tab text-[13px]">Gift Ark+</div>
+              <div className="inside-tab text-xs">Gift Ark+</div>
               <h1 className="mt-10 text-fg-strong">
                 <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                   Give the full
@@ -78,13 +78,13 @@ function GiftPage() {
                   <span className="display text-cyan">experience.</span>
                 </span>
               </h1>
-              <p className="mt-6 max-w-md text-[14px] leading-[1.6] text-fg">
+              <p className="mt-6 max-w-md text-body-sm text-fg">
                 A fixed-term gift of Ark+ — Inside Call Me Back, members-only
                 newsletters, the community, and live events. No autorenew. We
                 email the recipient a redemption link the moment your payment
                 clears.
               </p>
-              <ul className="mt-10 space-y-2 text-[13px] text-fg-muted">
+              <ul className="mt-10 space-y-2 text-body-sm">
                 <li className="flex items-center gap-2">
                   <span className="inline-block size-1.5 rounded-full bg-cyan" />
                   No autorenew — the gift ends when the term ends
@@ -106,7 +106,7 @@ function GiftPage() {
                 onSubmit={onSubmit}
                 className="border border-rule bg-navy-800/50 p-5 sm:p-8"
               >
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+                <div className="label text-fg-muted">
                   Gift length
                 </div>
                 <div
@@ -138,7 +138,7 @@ function GiftPage() {
                           ${GIFT_PRICE_DOLLARS[t]}
                         </span>
                         <span
-                          className={`text-[12px] font-semibold uppercase tracking-[0.18em] ${
+                          className={`button-text font-semibold ${
                             selected ? "opacity-80" : "text-fg-muted"
                           }`}
                         >
@@ -149,7 +149,7 @@ function GiftPage() {
                   })}
                 </div>
 
-                <div className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+                <div className="mt-8 label text-fg-muted">
                   From
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -176,7 +176,7 @@ function GiftPage() {
                   </label>
                 </div>
 
-                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+                <div className="mt-6 label text-fg-muted">
                   To
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -205,7 +205,7 @@ function GiftPage() {
 
                 <div className="mt-6">
                   <label className="block">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+                    <span className="label text-fg-muted">
                       Message (optional)
                     </span>
                     <textarea
@@ -218,7 +218,7 @@ function GiftPage() {
                     />
                   </label>
                   <div
-                    className={`mt-1 text-right text-[11px] tabular-nums ${
+                    className={`mt-1 text-right text-body-sm tabular-nums ${
                       message.length >= 450 ? "text-cyan" : "text-fg-muted"
                     }`}
                     aria-live="polite"
@@ -230,14 +230,14 @@ function GiftPage() {
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 py-3 font-display text-[13px] font-bold uppercase tracking-[0.08em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   Continue to payment · ${GIFT_PRICE_DOLLARS[term]}
                   <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                     →
                   </span>
                 </button>
-                <p className="mt-3 text-[11px] leading-snug text-fg-muted">
+                <p className="mt-3 text-body-sm">
                   Payment is securely processed by Stripe. The recipient
                   receives a redemption email as soon as it clears.
                 </p>

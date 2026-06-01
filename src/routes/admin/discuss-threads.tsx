@@ -143,9 +143,9 @@ function DiscussThreadsAdmin() {
   };
 
   const field =
-    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-[14px] text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
+    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
   const labelClass =
-    "block font-display text-[12px] font-bold uppercase tracking-button text-fg-strong";
+    "block button-text font-display font-bold text-fg-strong";
 
   return (
     <AdminShell active="discuss-threads" title="Discuss threads">
@@ -154,7 +154,7 @@ function DiscussThreadsAdmin() {
           <h2 className="font-display text-lg text-fg-strong">
             Create discussion thread
           </h2>
-          <p className="mt-2 text-[13px] leading-relaxed text-fg-muted">
+          <p className="mt-2 text-body-sm">
             Pick a Beehiiv draft and we&rsquo;ll mint a Circle thread in the matching
             community space, then patch the draft body with a &ldquo;Discuss on
             forum&rdquo; link. The article&rsquo;s &ldquo;Discuss on forum &rarr;&rdquo;
@@ -210,7 +210,7 @@ function DiscussThreadsAdmin() {
                   })
                 )}
               </select>
-              <p className="mt-1 text-[11px] text-fg-muted">
+              <p className="mt-1 text-body-sm">
                 Only Beehiiv drafts are listed — confirmed posts can&rsquo;t reliably
                 have their body updated, so create the thread before publishing.
               </p>
@@ -218,7 +218,7 @@ function DiscussThreadsAdmin() {
 
             {flash ? (
               <p
-                className={`text-[13px] ${
+                className={`text-body-sm ${
                   flash.kind === "success"
                     ? "text-cyan"
                     : flash.kind === "warn"
@@ -234,7 +234,7 @@ function DiscussThreadsAdmin() {
               <button
                 type="submit"
                 disabled={submitting || !selectedDraft}
-                className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
               >
                 {submitting ? "Creating…" : "Create companion thread"}
               </button>
@@ -248,11 +248,11 @@ function DiscussThreadsAdmin() {
           </div>
 
           {loadingThreads ? (
-            <p className="mt-6 text-[14px] text-fg-muted">Loading…</p>
+            <p className="mt-6 text-body-sm">Loading…</p>
           ) : listError ? (
-            <p className="mt-6 text-[14px] text-red-400">{listError}</p>
+            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
           ) : threads.length === 0 ? (
-            <p className="mt-6 text-[14px] text-fg-muted">
+            <p className="mt-6 text-body-sm">
               No threads yet. Create one with the form.
             </p>
           ) : (
@@ -260,10 +260,10 @@ function DiscussThreadsAdmin() {
               {threads.map((t) => (
                 <li key={t.id} className="border border-rule p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="inline-flex items-center border border-rule-strong px-2 py-0.5 text-[10px] font-bold uppercase tracking-button text-fg-muted">
+                    <span className="inline-flex items-center border border-rule-strong px-2 py-0.5 label font-bold text-fg-muted">
                       {t.newsletterSlug}
                     </span>
-                    <span className="flex gap-3 text-[12px] font-bold uppercase tracking-button">
+                    <span className="flex gap-3 button-text font-bold">
                       <button
                         type="button"
                         onClick={() => void copy(t.circleThreadUrl)}
@@ -289,13 +289,13 @@ function DiscussThreadsAdmin() {
                     </span>
                   </div>
 
-                  <div className="mt-3 text-[14px] text-fg-strong">
+                  <div className="mt-3 text-body text-fg-strong">
                     {t.beehiivPostTitle}
                   </div>
-                  <div className="mt-1 truncate text-[12px] text-fg-muted">
+                  <div className="mt-1 truncate text-body-sm">
                     {t.circleThreadUrl}
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-muted">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
                     <span>Created {new Date(t.createdAt).toLocaleString()}</span>
                     {t.beehiivBodyPatched ? (
                       <span className="text-cyan">Beehiiv body patched</span>

@@ -61,9 +61,9 @@ function NetworkPage() {
       title="The Ark Media network."
       lede="Every property we run, one page. Connecting Jewish voices, near and far."
     >
-      <section className="border-t border-rule bg-navy-900">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="label text-cyan">
             Properties
           </h2>
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -73,16 +73,16 @@ function NetworkPage() {
                 to={p.to}
                 className="group block border border-rule bg-navy-800/40 p-7 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+                <div className="label text-cyan">
                   {p.kind}
                 </div>
                 <h3 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
                   {p.title}
                 </h3>
-                <p className="mt-3 text-[13.5px] leading-[1.6] text-fg-muted">
+                <p className="mt-3 text-body-sm">
                   {p.description}
                 </p>
-                <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition group-hover:text-cyan">
+                <div className="mt-6 label text-fg-muted transition group-hover:text-cyan">
                   Visit →
                 </div>
               </Link>
@@ -91,9 +91,9 @@ function NetworkPage() {
         </div>
       </section>
 
-      <section className="border-t border-rule bg-navy-800/40">
+      <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+          <h2 className="label text-cyan">
             Shows by name
           </h2>
           <ul className="mt-8 divide-y divide-rule border-y border-rule">
@@ -106,7 +106,7 @@ function NetworkPage() {
                   <span className="font-display text-[18px] leading-[1.2] text-fg-strong group-hover:text-cyan">
                     {s.title}
                   </span>
-                  <span className="text-[12px] uppercase tracking-[0.18em] text-fg-muted">
+                  <span className="meta">
                     {s.cadence}
                     {s.paid ? " · Ark+ only" : ""}
                   </span>
