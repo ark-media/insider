@@ -19,9 +19,16 @@ function CareersPage() {
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-            Open roles
-          </h2>
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+              Open roles
+            </h2>
+            {careers.length > 0 ? (
+              <span className="text-[12px] tabular-nums text-fg-faint">
+                {careers.length}
+              </span>
+            ) : null}
+          </div>
 
           {careers.length === 0 ? (
             <p className="mt-10 max-w-2xl text-[14px] leading-[1.7] text-fg-muted">
@@ -29,42 +36,49 @@ function CareersPage() {
               talented people. Send a speculative note to{" "}
               <a
                 href={`mailto:${contactEmails.careers}`}
-                className="text-cyan underline"
+                className="text-cyan underline underline-offset-4 transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
                 {contactEmails.careers}
               </a>
               .
             </p>
           ) : (
-            <ul className="mt-10 divide-y divide-rule border-y border-rule">
-              {careers.map((c) => {
+            <ul className="mt-8 border-t border-rule">
+              {careers.map((c, i) => {
                 const meta = [c.team, c.location, c.employmentType]
                   .filter(Boolean)
                   .join(" · ");
                 return (
-                  <li key={c.id} className="py-6">
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-8">
+                  <li key={c.id}>
+                    <Link
+                      to="/careers/$slug"
+                      params={{ slug: c.slug }}
+                      style={{ animationDelay: `${Math.min(i, 6) * 70}ms` }}
+                      className="rise group grid grid-cols-1 gap-x-8 gap-y-3 border-b border-rule py-7 transition-colors duration-300 hover:border-cyan/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan lg:grid-cols-12 lg:items-center lg:gap-8"
+                    >
                       <div className="lg:col-span-7">
-                        <h3 className="font-display text-[22px] leading-tight text-fg-strong">
+                        <h3 className="font-display text-[22px] leading-tight text-fg-strong transition-colors duration-300 group-hover:text-cyan">
                           {c.title}
                         </h3>
-                        <p className="mt-2 text-[13.5px] leading-[1.6] text-fg-muted">
+                        <p className="mt-2 max-w-xl text-[13.5px] leading-[1.6] text-fg-muted">
                           {c.summary}
                         </p>
                       </div>
-                      <div className="text-[13px] text-fg-muted lg:col-span-3">
+                      <div className="text-[13px] leading-[1.5] text-fg-muted lg:col-span-3">
                         {meta}
                       </div>
                       <div className="lg:col-span-2 lg:text-right">
-                        <Link
-                          to="/careers/$slug"
-                          params={{ slug: c.slug }}
-                          className="inline-flex items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                        >
-                          Apply →
-                        </Link>
+                        <span className="inline-flex items-center gap-2 border border-rule-strong px-4 py-2 text-[12px] font-semibold uppercase tracking-button text-fg transition-colors duration-300 group-hover:border-cyan group-hover:text-cyan">
+                          Apply
+                          <span
+                            aria-hidden
+                            className="transition-transform duration-300 ease-out group-hover:translate-x-0.5 motion-reduce:transition-none"
+                          >
+                            →
+                          </span>
+                        </span>
                       </div>
-                    </div>
+                    </Link>
                   </li>
                 );
               })}
