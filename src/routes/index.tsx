@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { shows } from "../data/shows";
+import { shows, getShow, type ShowSlug } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
 import { LinkCard } from "../components/ContentCard";
 import { formatPostDate, type NewsletterPost } from "../data/newsletters";
@@ -100,18 +100,35 @@ const FORMAT_LABEL: Record<ArkEvent["format"], string> = {
 };
 
 // A phone shell mirroring the app mockups on /community — fixed dark colors so
-// it reads as a real screenshot in both themes.
-function PhoneFrame({ children }: { children: ReactNode }) {
+// it reads as a real screenshot in both themes. `bleed` top-anchors the device
+// in a capped window that fades out at the bottom, so it reads as "rising into
+// frame" instead of dominating the band with its full height.
+function PhoneFrame({
+  children,
+  bleed = false,
+}: {
+  children: ReactNode;
+  bleed?: boolean;
+}) {
+  const frame = (
+    <div className="relative aspect-[9/19] overflow-hidden rounded-[2.4rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
+      <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
+        {/* notch */}
+        <div className="absolute left-1/2 top-[10px] z-20 h-[20px] w-[88px] -translate-x-1/2 rounded-full bg-black/70" />
+        {children}
+      </div>
+    </div>
+  );
   return (
     <div className="relative isolate mx-auto w-[212px] shrink-0 sm:w-[232px]">
       <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-cyan/10 blur-2xl" />
-      <div className="relative aspect-[9/19] overflow-hidden rounded-[2.4rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
-        <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
-          {/* notch */}
-          <div className="absolute left-1/2 top-[10px] z-20 h-[20px] w-[88px] -translate-x-1/2 rounded-full bg-black/70" />
-          {children}
+      {bleed ? (
+        <div className="relative h-[380px] overflow-hidden [-webkit-mask-image:linear-gradient(to_bottom,#000_70%,transparent)] [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]">
+          {frame}
         </div>
-      </div>
+      ) : (
+        frame
+      )}
     </div>
   );
 }
@@ -148,7 +165,7 @@ function CommunityVisual() {
   const isLive = item?.status === "live";
 
   return (
-    <PhoneFrame>
+    <PhoneFrame bleed>
       <div className="flex h-full flex-col text-white">
         <PhoneStatusBar />
 
@@ -280,9 +297,61 @@ function PlusVisual() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Hero visual — the four show covers fanned like a deck, giving the hero a
+// right-side anchor that mirrors the feature bands below. The covers are
+// decorative here (the "Four shows" grid further down is the real browse path),
+// so the stack is aria-hidden and not interactive. Each card rises in on its
+// own delay, continuing the hero's staggered entrance.
+// ---------------------------------------------------------------------------
+const heroFan: {
+  slug: ShowSlug;
+  x: number;
+  y: number;
+  r: number;
+  z: number;
+  delay: string;
+}[] = [
+  { slug: "for-heavens-sake", x: -52, y: -6, r: -14, z: 10, delay: "0.5s" },
+  { slug: "whats-your-number", x: 52, y: -2, r: 13, z: 20, delay: "0.62s" },
+  { slug: "ark-news-daily", x: -24, y: 12, r: -6, z: 30, delay: "0.74s" },
+  { slug: "call-me-back", x: 22, y: 6, r: 5, z: 40, delay: "0.86s" },
+];
+
+function HeroShowStack() {
+  return (
+    <div
+      aria-hidden="true"
+      className="relative isolate mx-auto aspect-square w-full max-w-[340px] sm:max-w-[400px]"
+    >
+      <div className="absolute inset-[14%] -z-10 rounded-full bg-cyan/15 blur-3xl" />
+      {heroFan.map(({ slug, x, y, r, z, delay }) => {
+        const show = getShow(slug);
+        if (!show) return null;
+        return (
+          <div
+            key={slug}
+            className="rise absolute inset-0 flex items-center justify-center"
+            style={{ animationDelay: delay, zIndex: z }}
+          >
+            <div
+              className="w-1/2 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10"
+              style={{ transform: `translate(${x}%, ${y}%) rotate(${r}deg)` }}
+            >
+              <ShowCover show={show} priority />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Each offering is its own top-level <section> so it picks up the page's zebra
-// striping. Layout is fixed (text left, visual right) — no alternation. The
-// newsletter band passes `action` (the inline signup form) in place of a CTA.
+// striping. Bands alternate sides via `flip` to give the stack rhythm — text and
+// visual stay in reading order in the DOM (text first), and only their on-screen
+// columns swap at `lg`, so mobile always leads with the copy. The newsletter band
+// passes `action` (the inline signup form) in place of a CTA.
 function FeatureBand({
   eyebrow,
   title,
@@ -291,6 +360,7 @@ function FeatureBand({
   cta,
   to,
   action,
+  flip = false,
 }: {
   eyebrow: string;
   title: string;
@@ -299,12 +369,13 @@ function FeatureBand({
   cta?: string;
   to?: string;
   action?: ReactNode;
+  flip?: boolean;
 }) {
   return (
     <section>
       <div className="page-section">
         <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-16">
-          <div className="flex flex-col">
+          <div className={`flex flex-col${flip ? " lg:order-2" : ""}`}>
             <div className="eyebrow text-[18px] text-cyan sm:text-[22px]">
               {eyebrow}
             </div>
@@ -320,7 +391,7 @@ function FeatureBand({
               </Link>
             ) : null}
           </div>
-          <div className="w-full">{visual}</div>
+          <div className={`w-full${flip ? " lg:order-1" : ""}`}>{visual}</div>
         </div>
       </div>
     </section>
@@ -357,6 +428,7 @@ function AlsoFromArkMedia() {
         visual={<CommunityVisual />}
         cta="Learn more"
         to="/community"
+        flip
       />
       <FeatureBand
         eyebrow="Ark+"
@@ -380,57 +452,51 @@ function HomePage() {
   return (
     <main className="relative">
       <section className="section-hero relative">
-        <div className="page-gutter pb-8">
-          {/* Animated brand mark. The GIF has a baked-in navy background, so it
-              sits in a fixed-navy tile (--color-navy doesn't flip with the
-              theme) and stays seamless in both light and dark. */}
-          {/* <div className="rise rise-1 mb-6 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-navy ring-1 ring-cyan/30">
-            <img
-              src="/brand/ark-icon-loop.gif"
-              alt="Ark Media"
-              width={64}
-              height={64}
-              className="h-full w-full object-cover"
-            />
-          </div> */}
-          {/* <p className="inside-tab rise rise-1 text-xs">Ark Media</p> */}
-          <h1 className="mt-10 max-w-4xl text-fg-strong">
-            <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
-              Connecting Jewish{" "}
-              <span className="display text-cyan">Voices</span>,
-            </span>
-            <span className="rise rise-3 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
-              Near and Far.
-            </span>
-          </h1>
-          <div
-            aria-hidden="true"
-            className="draw-rule mt-10 h-px w-24 origin-left bg-cyan"
-            style={{ animationDelay: "0.7s" }}
-          />
-          <p className="rise rise-5 mt-8 max-w-2xl text-body-lg">
-            Ark Media is a podcast network that explores the big questions
-            shaping Jewish life, Israel's future, and our rapidly changing
-            world. Through conversations with leading Jewish thinkers from
-            around the world, Ark Media aims to build a global community driven
-            by curiosity and meaningful dialogue.
-          </p>
-          <div
-            className="rise mt-10 flex flex-wrap gap-3"
-            style={{ animationDelay: "0.78s" }}
-          >
-            <Link
-              to="/podcasts"
-              className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-            >
-              Explore podcasts →
-            </Link>
-            <Link
-              to={isSubscriber ? "/community" : "/plus"}
-              className="inline-flex min-h-12 items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-            >
-              {isSubscriber ? "Explore community" : "Become an Ark+ member"}
-            </Link>
+        <div className="page-gutter pb-8 lg:pt-10">
+          <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
+            <div>
+              <h1 className="max-w-4xl text-fg-strong">
+                <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
+                  Connecting Jewish{" "}
+                  <span className="display text-cyan">Voices</span>,
+                </span>
+                <span className="rise rise-3 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
+                  Near and Far.
+                </span>
+              </h1>
+              <div
+                aria-hidden="true"
+                className="draw-rule mt-10 h-px w-24 origin-left bg-cyan"
+                style={{ animationDelay: "0.7s" }}
+              />
+              <p className="rise rise-5 mt-8 max-w-2xl text-body-lg">
+                Ark Media is a podcast network that explores the big questions
+                shaping Jewish life, Israel's future, and our rapidly changing
+                world. Through conversations with leading Jewish thinkers from
+                around the world, Ark Media aims to build a global community
+                driven by curiosity and meaningful dialogue.
+              </p>
+              <div
+                className="rise mt-10 flex flex-wrap gap-3"
+                style={{ animationDelay: "0.78s" }}
+              >
+                <Link
+                  to="/podcasts"
+                  className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  Explore podcasts →
+                </Link>
+                <Link
+                  to={isSubscriber ? "/community" : "/plus"}
+                  className="inline-flex min-h-12 items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  {isSubscriber ? "Explore community" : "Become an Ark+ member"}
+                </Link>
+              </div>
+            </div>
+            <div className="hidden lg:block">
+              <HeroShowStack />
+            </div>
           </div>
         </div>
       </section>
