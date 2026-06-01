@@ -17,20 +17,14 @@ function CareersPage() {
       lede="We're a small team building independent journalism for an audience that wants more than a hot take. Roles below; speculative notes welcome."
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="flex items-center gap-4">
-            <h2 className="label whitespace-nowrap text-cyan">
-              Open roles
-            </h2>
+        <div className="mx-auto max-w-[1280px] px-6 py-8 sm:px-10">
+          <div className="flex items-baseline gap-3">
+            <h2 className="label text-cyan">Open roles</h2>
             {careers.length > 0 ? (
               <span className="text-body-sm tabular-nums text-fg-faint">
                 {careers.length}
               </span>
             ) : null}
-            <span
-              aria-hidden
-              className="h-px flex-1 bg-gradient-to-r from-rule-strong to-transparent"
-            />
           </div>
 
           {careers.length === 0 ? (
@@ -39,7 +33,7 @@ function CareersPage() {
               positions here as they open up.
             </p>
           ) : (
-            <ul className="mt-8 border-y border-rule-strong">
+            <ul className="mt-5">
               {careers.map((c, i) => {
                 const metaParts = [c.team, c.location, c.employmentType].filter(
                   Boolean,
@@ -53,7 +47,7 @@ function CareersPage() {
                       to="/careers/$slug"
                       params={{ slug: c.slug }}
                       style={{ animationDelay: `${Math.min(i, 6) * 70}ms` }}
-                      className="rise group grid grid-cols-1 gap-x-8 gap-y-3 py-7 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan lg:grid-cols-12 lg:items-center lg:gap-8"
+                      className="rise group grid grid-cols-1 gap-x-8 gap-y-2 py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan lg:grid-cols-12 lg:items-center lg:gap-8"
                     >
                       <div className="lg:col-span-7">
                         <h3 className="font-display text-[22px] leading-tight text-fg-strong">
