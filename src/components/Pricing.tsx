@@ -117,7 +117,9 @@ export function Pricing() {
                 >
                   {p}
                   {p === "yearly" && savingsPct ? (
-                    <span className={`ml-2 text-[10px] ${plan === p ? "text-navy" : "text-cyan"}`}>
+                    <span
+                      className={`ml-2 text-[10px] ${plan === p ? "opacity-80" : "text-cyan"}`}
+                    >
                       −{savingsPct}%
                     </span>
                   ) : null}

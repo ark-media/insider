@@ -144,6 +144,7 @@ function CommunityPage() {
                 <div className="mt-6 flex flex-col gap-3">
                   <Link
                     to="/plus"
+                    hash="pricing"
                     className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     Join Ark+

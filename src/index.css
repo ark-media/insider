@@ -177,6 +177,8 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   color-scheme: dark;
+  /* Sticky announcement + masthead — hash links scroll to content below both. */
+  scroll-padding-top: calc(var(--ann-height, 0px) + var(--masthead-height, 5.5rem));
 }
 
 [data-theme="light"] {

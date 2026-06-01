@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth0 } from "@auth0/auth0-react";
 import { ArkLogo } from "./ArkLogo";
@@ -18,6 +18,7 @@ type NavVariant = "text" | "pill" | "menu";
 type NavChild = {
   label: string;
   to: string;
+  hash?: string;
   description?: string;
   paid?: boolean;
 };
@@ -71,7 +72,7 @@ const NAV_ITEMS: NavItem[] = [
     // Upgrade CTA — free users still need to see this, only subscribers don't.
     hideWhen: "subscriber",
     children: [
-      { label: "Join Ark+", to: "/plus" },
+      { label: "Join Ark+", to: "/plus", hash: "pricing" },
       { label: "Gift Ark+", to: "/plus/gift" },
     ],
   },
@@ -121,7 +122,25 @@ export function PublicMasthead() {
     ? [...visibleNavItems(tier), ADMIN_NAV_ITEM]
     : visibleNavItems(tier);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
   const location = useLocation();
+
+  // Publish masthead height so hash links (e.g. /plus#pricing) scroll clear of
+  // the sticky header — paired with --ann-height from AnnouncementBanner.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const el = headerRef.current;
+    if (!el) return;
+    const apply = () =>
+      root.style.setProperty("--masthead-height", `${el.offsetHeight}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--masthead-height");
+    };
+  }, []);
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -145,7 +164,10 @@ export function PublicMasthead() {
   }, [accountOpen]);
 
   return (
-    <header className="sticky top-[var(--ann-height,0px)] z-20 border-b border-rule-soft bg-navy-900">
+    <header
+      ref={headerRef}
+      className="sticky top-[var(--ann-height,0px)] z-20 border-b border-rule-soft bg-navy-900"
+    >
       <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 pt-6 pb-4 sm:px-10 sm:pt-8">
         <Link
           to="/"
@@ -472,8 +494,9 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string }) {
               pathname === child.to || pathname.startsWith(`${child.to}/`);
             return (
               <Link
-                key={child.to}
+                key={child.hash ? `${child.to}#${child.hash}` : child.to}
                 to={child.to}
+                hash={child.hash}
                 aria-current={childActive ? "page" : undefined}
                 className={`flex items-start justify-between gap-3 border-b border-rule-soft px-3 py-3 text-[13px] transition last:border-b-0 hover:bg-navy-800/60 ${
                   childActive ? "text-cyan" : "text-fg hover:text-fg-strong"
@@ -541,9 +564,10 @@ function MobileNavSection({
             const childActive =
               pathname === child.to || pathname.startsWith(`${child.to}/`);
             return (
-              <li key={child.to}>
+              <li key={child.hash ? `${child.to}#${child.hash}` : child.to}>
                 <Link
                   to={child.to}
+                  hash={child.hash}
                   aria-current={childActive ? "page" : undefined}
                   onClick={onNavigate}
                   className={`flex min-h-10 items-center justify-between py-2 text-[13px] transition ${

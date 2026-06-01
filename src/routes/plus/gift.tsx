@@ -139,7 +139,7 @@ function GiftPage() {
                         </span>
                         <span
                           className={`text-[12px] font-semibold uppercase tracking-[0.18em] ${
-                            selected ? "text-navy/70" : "text-fg-muted"
+                            selected ? "opacity-80" : "text-fg-muted"
                           }`}
                         >
                           {GIFT_LABEL[t]}
