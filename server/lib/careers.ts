@@ -8,6 +8,7 @@
 // sanitizer here allows block-level tags (headings, lists, paragraphs).
 
 import sanitizeHtml from 'sanitize-html'
+import { sanitizeRichText } from './richText.js'
 import type { Sql } from './db.js'
 import type { Career } from '../../shared/career.js'
 
@@ -26,24 +27,11 @@ export type CareerInput = {
   displayOrder: number
 }
 
-// The detail page renders a real document, so block tags are allowed — but only
-// a safe document subset. Scripts, styles, images, iframes, and event handlers
-// are stripped. Links are forced to open safely in a new tab.
+// The detail page renders a real document, using the shared back-office
+// allowlist (see server/lib/richText.ts) — headings, paragraphs, lists, inline
+// formatting, and links. Scripts, styles, images, and event handlers stripped.
 export function sanitizeCareerDescription(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: [
-      'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'a',
-      'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'blockquote',
-    ],
-    allowedAttributes: { a: ['href', 'title', 'target', 'rel'] },
-    allowedSchemes: ['http', 'https', 'mailto'],
-    transformTags: {
-      a: sanitizeHtml.simpleTransform('a', {
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      }),
-    },
-  })
+  return sanitizeRichText(html)
 }
 
 // A short, plain-text blurb for the list card — strip all markup.

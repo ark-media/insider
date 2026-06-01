@@ -101,6 +101,37 @@ export function upcomingEvents(now: Date = new Date()): ArkEvent[] {
     );
 }
 
+export type EventStatus = "live" | "upcoming";
+
+export type EventWithStatus = { event: ArkEvent; status: EventStatus };
+
+/**
+ * Classify events for the community "live + upcoming" strip. An event is:
+ *   - `live`     when `now` falls within [startsAt, startsAt + duration)
+ *   - `upcoming` when it starts in the future
+ *   - excluded   once it has ended
+ * Sorted live-first, then soonest-starting. `now` is injectable so polling can
+ * re-derive against the current instant (and tests can pin a fixed clock).
+ */
+export function liveAndUpcomingEvents(now: Date = new Date()): EventWithStatus[] {
+  const ms = now.getTime();
+  return events
+    .map((event): EventWithStatus | null => {
+      const start = new Date(event.startsAt).getTime();
+      const end = start + event.durationMinutes * 60 * 1000;
+      if (ms >= end) return null;
+      return { event, status: ms >= start ? "live" : "upcoming" };
+    })
+    .filter((x): x is EventWithStatus => x !== null)
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "live" ? -1 : 1;
+      return (
+        new Date(a.event.startsAt).getTime() -
+        new Date(b.event.startsAt).getTime()
+      );
+    });
+}
+
 export function formatEventStart(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString("en-US", {

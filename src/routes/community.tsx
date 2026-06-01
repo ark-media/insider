@@ -1,8 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { PageShell } from "../components/PageShell";
-import { CIRCLE_OPEN_LINKS } from "../lib/circle";
+import {
+  CIRCLE_OPEN_LINKS,
+  fetchActivityDigest,
+  fetchCommunityFeed,
+  fetchEventStrip,
+  fetchSuggestedSpaces,
+  type ActivityDigest,
+  type CommunityFeedItem,
+  type EventStripItem,
+  type SuggestedSpace,
+} from "../lib/circle";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { CommunityFeed } from "../components/community/CommunityFeed";
+import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
 
 export const Route = createFileRoute("/community")({
   component: CommunityPage,
@@ -11,12 +23,139 @@ export const Route = createFileRoute("/community")({
 function CommunityPage() {
   const { state } = useSubscriberAuth();
 
-  // The community lives in the Community app, open to Ark+ members. Subscribers
-  // get the app-open card; everyone else sees the same showcase with a join CTA.
-  const isSubscriber = state.kind === "member" && state.me.tier === "subscriber";
-
+  // The community lives in the Community app, open to Ark+ members. Signed-in
+  // subscribers get a personalized read-only feed; everyone else sees the
+  // marketing showcase with a join CTA.
   if (state.kind === "loading") return null;
 
+  const isSubscriber =
+    state.kind === "member" && state.me.tier === "ark-plus-member";
+
+  return isSubscriber ? <SubscriberCommunity /> : <MarketingShowcase />;
+}
+
+/** Poll interval for live community data while the tab is visible. */
+const POLL_MS = 45_000;
+
+/**
+ * Fetch the subscriber feed on load and re-poll ~every 45s while the tab is
+ * visible (no websockets — see SPEC). Each poll re-derives live event status
+ * against the current instant, so an event going live appears within ~45s.
+ */
+function useCommunityData() {
+  const [events, setEvents] = useState<EventStripItem[] | null>(null);
+  const [feed, setFeed] = useState<CommunityFeedItem[] | null>(null);
+  const [digest, setDigest] = useState<ActivityDigest | null>(null);
+  const [spaces, setSpaces] = useState<SuggestedSpace[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    const load = async () => {
+      const [e, f, d, s] = await Promise.all([
+        fetchEventStrip(),
+        fetchCommunityFeed(),
+        fetchActivityDigest(),
+        fetchSuggestedSpaces(),
+      ]);
+      if (!alive) return;
+      setEvents(e);
+      setFeed(f);
+      setDigest(d);
+      setSpaces(s);
+    };
+
+    void load();
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, POLL_MS);
+    // Catch up immediately when the tab is refocused after being hidden.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      alive = false;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  return { events, feed, digest, spaces };
+}
+
+function SubscriberCommunity() {
+  const { events, feed, digest, spaces } = useCommunityData();
+
+  return (
+    <PageShell
+      eyebrow="Community"
+      title="Welcome back to the room."
+      lede="What's live, what's happening, and what the community is talking about right now. Jump in — every conversation continues in the app."
+    >
+      <section>
+        <div className="mx-auto flex max-w-[1280px] flex-col gap-16 px-6 py-16 sm:px-10">
+          <div>
+            <h2 className="label text-cyan">Live &amp; upcoming</h2>
+            <div className="mt-6">
+              <LiveEventsStrip items={events} />
+            </div>
+          </div>
+
+          <div>
+            <h2 className="label text-cyan">From the community</h2>
+            <div className="mt-6">
+              <CommunityFeed items={feed} digest={digest} spaces={spaces} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <OpenInAppCard />
+    </PageShell>
+  );
+}
+
+/** Persistent "Open in app" card — the home of all engagement is the app. */
+function OpenInAppCard() {
+  return (
+    <section>
+      <div className="mx-auto max-w-[1280px] px-6 pb-24 sm:px-10">
+        <div className="border border-rule bg-navy-800/40 p-8 pt-12 sm:p-12 sm:pt-16">
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              <div className="inside-tab text-xs">Open the app</div>
+              <h2 className="mt-8 max-w-xl">
+                <span className="display-upright block text-[clamp(1.6rem,3.2vw,2.4rem)] text-fg-strong">
+                  One membership, one login.
+                </span>
+              </h2>
+              <p className="mt-6 max-w-xl text-body-sm">
+                Like, reply, post, and RSVP in the Community app — iOS, Android,
+                or the web.
+              </p>
+            </div>
+            <div className="lg:col-span-5">
+              <div className="flex flex-col gap-3">
+                <AppLink href={CIRCLE_OPEN_LINKS.ios} primary>
+                  Open on iOS
+                </AppLink>
+                <AppLink href={CIRCLE_OPEN_LINKS.android}>
+                  Open on Android
+                </AppLink>
+                <AppLink href={CIRCLE_OPEN_LINKS.web}>Open on web</AppLink>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MarketingShowcase() {
   return (
     <PageShell
       eyebrow="Community"
@@ -65,53 +204,37 @@ function CommunityPage() {
 
       <section>
         <div className="mx-auto max-w-[1280px] px-6 pb-24 sm:px-10">
-          <div className="border border-rule bg-navy-800/40 p-8 sm:p-12">
+          <div className="border border-rule bg-navy-800/40 p-8 pt-12 sm:p-12 sm:pt-16">
             <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
               <div className="lg:col-span-7">
-                <div className="inside-tab text-xs">
-                  {isSubscriber ? "Open the app" : "Get in the room"}
-                </div>
+                <div className="inside-tab text-xs">Get in the room</div>
                 <h2 className="mt-8 max-w-xl">
                   <span className="display-upright block text-[clamp(1.6rem,3.2vw,2.4rem)] text-fg-strong">
-                    {isSubscriber
-                      ? "One membership, one login."
-                      : "The community is open to Ark+ members."}
+                    The community is open to Ark+ members.
                   </span>
                 </h2>
                 <p className="mt-6 max-w-xl text-body-sm">
-                  {isSubscriber
-                    ? "Open the community in the Community app — iOS, Android, or the web."
-                    : "One Ark+ membership is your way in — the same account opens the app on iOS, Android, and the web. No fragmented platforms, no separate password."}
+                  One Ark+ membership is your way in — the same account opens the
+                  app on iOS, Android, and the web. No fragmented platforms, no
+                  separate password.
                 </p>
               </div>
               <div className="lg:col-span-5">
-                {isSubscriber ? (
-                  <div className="flex flex-col gap-3">
-                    <AppLink href={CIRCLE_OPEN_LINKS.ios} primary>
-                      Open on iOS
-                    </AppLink>
-                    <AppLink href={CIRCLE_OPEN_LINKS.android}>
-                      Open on Android
-                    </AppLink>
-                    <AppLink href={CIRCLE_OPEN_LINKS.web}>Open on web</AppLink>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <Link
-                      to="/plus"
-                      hash="pricing"
-                      className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                    >
-                      Join Ark+
-                    </Link>
-                    <Link
-                      to="/plus/gift"
-                      className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                    >
-                      Gift Ark+
-                    </Link>
-                  </div>
-                )}
+                <div className="flex flex-col gap-3">
+                  <Link
+                    to="/plus"
+                    hash="pricing"
+                    className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Join Ark+
+                  </Link>
+                  <Link
+                    to="/plus/gift"
+                    className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Gift Ark+
+                  </Link>
+                </div>
               </div>
             </div>
           </div>

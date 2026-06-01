@@ -7,6 +7,7 @@
 // the public endpoint never loads the full table.
 
 import sanitizeHtml from 'sanitize-html'
+import { sanitizeRichText } from './richText.js'
 import type { Sql } from './db.js'
 import type { Announcement } from '../../shared/announcement.js'
 
@@ -28,21 +29,12 @@ export type AnnouncementInput = {
 export const DEFAULT_BAR_COLOR = '#4a9fe8'
 export const DEFAULT_TEXT_COLOR = '#ffffff'
 
-// The banner is a single line, so only inline formatting is allowed — the same
-// B/I/U/S an admin gets in the editor, plus links. Block tags (p, div, lists)
-// are stripped so pasted rich text can't break the bar layout.
+// The banner uses the same shared back-office allowlist as every other admin
+// editor (see server/lib/richText.ts), so it offers — and keeps — the full
+// formatting set. Admins typically write one short line; block content (lists,
+// headings, multiple paragraphs) is permitted and renders in the bar.
 export function sanitizeAnnouncementBody(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: ['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'a', 'br'],
-    allowedAttributes: { a: ['href', 'title', 'target', 'rel'] },
-    allowedSchemes: ['http', 'https', 'mailto'],
-    transformTags: {
-      a: sanitizeHtml.simpleTransform('a', {
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      }),
-    },
-  })
+  return sanitizeRichText(html)
 }
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i

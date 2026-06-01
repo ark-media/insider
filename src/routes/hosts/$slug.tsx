@@ -54,7 +54,11 @@ function HostPage() {
             {shows.length > 0 ? (
               <>
                 <h2 className="mt-12 eyebrow">Shows</h2>
-                <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <ul
+                  className={`mt-4 grid grid-cols-1 gap-3 ${
+                    shows.length > 1 ? "sm:grid-cols-2" : ""
+                  }`}
+                >
                   {shows.map((s) => (
                     <li key={s.slug}>
                       <Link

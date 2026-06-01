@@ -90,6 +90,13 @@ export const circleUrls = {
   community: "https://app.arkmedia.org",
   /** Universal app-open / SSO landing for the web app. */
   webApp: "https://app.arkmedia.org",
+  /**
+   * The events space, where every event lives in the app. Circle space/post
+   * URLs are opaque hash-suffixed slugs (e.g. /c/events-71d23b/ep-106-…-78c2ff)
+   * that aren't derivable from our mock ids, so v1 deep-links to the space
+   * itself rather than a fabricated per-event permalink.
+   */
+  eventsSpace: "https://app.arkmedia.org/c/events-71d23b",
   /** Circle Communities app in the App Store. */
   appStoreIos: "https://apps.apple.com/app/circle-communities/id1525026498",
   /** Community app on Google Play. */

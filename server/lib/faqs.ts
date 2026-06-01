@@ -9,6 +9,7 @@
 // not headings (an answer doesn't need document structure).
 
 import sanitizeHtml from 'sanitize-html'
+import { sanitizeRichText } from './richText.js'
 import type { Sql } from './db.js'
 import type { Faq } from '../../shared/faq.js'
 
@@ -21,23 +22,11 @@ export type FaqInput = {
   displayOrder: number
 }
 
-// The answer renders rich text, so a safe inline/paragraph subset is allowed.
-// Scripts, styles, images, iframes, headings, and event handlers are stripped.
-// Links are forced to open safely in a new tab.
+// The answer renders rich text via the shared back-office allowlist (see
+// server/lib/richText.ts) — paragraphs, lists, headings, inline formatting,
+// and links. Scripts, styles, images, and event handlers are stripped.
 export function sanitizeFaqAnswer(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: [
-      'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'a', 'ul', 'ol', 'li',
-    ],
-    allowedAttributes: { a: ['href', 'title', 'target', 'rel'] },
-    allowedSchemes: ['http', 'https', 'mailto'],
-    transformTags: {
-      a: sanitizeHtml.simpleTransform('a', {
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      }),
-    },
-  })
+  return sanitizeRichText(html)
 }
 
 // The question is a plain-text label — strip all markup.

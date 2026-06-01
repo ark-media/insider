@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import parse from "html-react-parser";
 import { AdminShell } from "../../components/AdminShell";
+import { RichTextEditor } from "../../components/RichTextEditor";
 import { deleteFaq, listFaqs, saveFaq, type FaqDraft } from "../../lib/admin";
-import { sanitizeAnswerPreview, type Faq } from "../../lib/faqs";
+import type { Faq } from "../../lib/faqs";
+import { RICH_TEXT_CLASS, sanitizeRichPreview } from "../../lib/richTextPreview";
 
 export const Route = createFileRoute("/admin/faqs")({
   component: FaqsAdmin,
@@ -68,6 +70,10 @@ function FaqsAdmin() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.answer.trim()) {
+      setFormError("Answer is required.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     const draft: FaqDraft = {
@@ -188,14 +194,6 @@ function FaqsAdmin() {
   );
 }
 
-const FORMAT_BUTTONS: { open: string; close: string; label: string }[] = [
-  { open: "<p>", close: "</p>", label: "¶" },
-  { open: "<ul>\n  <li>", close: "</li>\n</ul>", label: "List" },
-  { open: "<strong>", close: "</strong>", label: "B" },
-  { open: "<em>", close: "</em>", label: "I" },
-  { open: '<a href="https://">', close: "</a>", label: "Link" },
-];
-
 function FaqForm({
   editing,
   form,
@@ -213,25 +211,6 @@ function FaqForm({
   onSubmit: (e: React.FormEvent) => void;
   onCancel: () => void;
 }) {
-  const answerRef = useRef<HTMLTextAreaElement>(null);
-
-  // Wrap the current textarea selection in a block/inline tag, then restore the
-  // selection inside it. Mirrors the careers editor's helper.
-  const applyTag = (open: string, close: string) => {
-    const ta = answerRef.current;
-    if (!ta) return;
-    const { selectionStart: start, selectionEnd: end } = ta;
-    const selected = form.answer.slice(start, end);
-    const next =
-      form.answer.slice(0, start) + open + selected + close + form.answer.slice(end);
-    setForm((f) => ({ ...f, answer: next }));
-    requestAnimationFrame(() => {
-      ta.focus();
-      const pos = start + open.length;
-      ta.setSelectionRange(pos, pos + selected.length);
-    });
-  };
-
   const field =
     "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
   const label = "block button-text font-display font-bold text-fg-strong";
@@ -262,35 +241,15 @@ function FaqForm({
         </div>
 
         <div>
-          <label htmlFor="faq-answer" className={label}>
-            Answer
-          </label>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {FORMAT_BUTTONS.map((b) => (
-              <button
-                key={b.label}
-                type="button"
-                onClick={() => applyTag(b.open, b.close)}
-                className="inline-flex h-8 min-w-8 items-center justify-center border border-rule-strong px-2 text-body-sm text-fg-strong transition hover:border-cyan hover:text-cyan"
-              >
-                {b.label}
-              </button>
-            ))}
+          <span className={label}>Answer</span>
+          <div className="mt-2">
+            <RichTextEditor
+              ariaLabel="FAQ answer"
+              value={form.answer}
+              onChange={(html) => setForm((f) => ({ ...f, answer: html }))}
+              minHeight="10rem"
+            />
           </div>
-          <textarea
-            id="faq-answer"
-            ref={answerRef}
-            required
-            rows={8}
-            value={form.answer}
-            onChange={(e) => setForm((f) => ({ ...f, answer: e.target.value }))}
-            placeholder="<p>Yes! The feed is free…</p>"
-            className={`mt-2 font-mono text-body-sm ${field}`}
-          />
-          <p className="mt-1 text-body-sm">
-            HTML — paragraphs, lists, bold/italic, and links. Anything else is
-            stripped on save.
-          </p>
         </div>
 
         {/* Live preview using the same allowlist the FAQ section renders. */}
@@ -298,8 +257,8 @@ function FaqForm({
           <p className="eyebrow mb-2">Preview</p>
           <div className="rounded border border-rule bg-navy-900 p-4">
             {form.answer.trim() ? (
-              <div className="space-y-3 text-body-sm [&_a]:text-cyan [&_a]:underline [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_strong]:text-fg-strong [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5">
-                {parse(sanitizeAnswerPreview(form.answer))}
+              <div className={`text-body-sm ${RICH_TEXT_CLASS}`}>
+                {parse(sanitizeRichPreview(form.answer))}
               </div>
             ) : (
               <p className="text-body-sm text-fg-faint">

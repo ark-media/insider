@@ -3,7 +3,12 @@ import {
   type CommunityBroadcast,
 } from "../data/communityBroadcasts";
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
-import { upcomingEvents, type ArkEvent } from "../data/events";
+import {
+  liveAndUpcomingEvents,
+  upcomingEvents,
+  type ArkEvent,
+  type EventWithStatus,
+} from "../data/events";
 import { circleUrls, newsletterCircleSpaces } from "../config/urls";
 import type { NewsletterSource } from "./newsletterSources";
 
@@ -40,13 +45,152 @@ export async function fetchUpcomingEvents(): Promise<ArkEvent[]> {
   return upcomingEvents();
 }
 
+// ---------------------------------------------------------------------------
+// Subscriber community feed (v1)
+//
+// These power the signed-in Ark+ subscriber's /community feed. Their return
+// shapes are the v1→v2 contract: v1 projects the admin/mock data path below;
+// v2 swaps the backing source to authenticated per-member Circle reads without
+// changing these types or the UI that consumes them. The UI only ever sees
+// these projections — never the raw `CommunityBroadcast` shape.
+// ---------------------------------------------------------------------------
+
+/** A read-only feed teaser. Every action on it deep-links into the app. */
+export type CommunityFeedItem = {
+  id: string;
+  authorName: string;
+  authorRole: string;
+  /** ISO date */
+  publishedAt: string;
+  /** Preview text only — the full body stays in the app. */
+  excerpt: string;
+  /** Deep link that lands the member on this discussion in the app. */
+  href: string;
+};
+
 /**
- * Build a deep link into the Community app for a given event. Real implementation
- * would call Circle's deep-link endpoint, which signs the link so the app can
- * land the user directly on the event view (member or guest).
+ * Per-member "since you were last here" digest. v1 always returns null — true
+ * unread/reply counts need authenticated per-member reads (v2). The UI hides
+ * the digest entirely while this is null.
  */
-export function circleEventLink(eventId: string): string {
-  return `${circleUrls.community}/events/${eventId}`;
+export type ActivityDigest = {
+  /** ISO timestamp of the baseline this digest is measured from. */
+  since: string;
+  newPosts: number;
+  replies: number;
+  mentions: number;
+};
+
+/** A space to suggest in the empty/quiet-feed onboarding nudge. */
+export type SuggestedSpace = {
+  id: string;
+  name: string;
+  description: string;
+  memberCount: number;
+  /** Deep link that lands the member in this space in the app. */
+  href: string;
+};
+
+/** A live/upcoming event for the strip, with its derived status. */
+export type EventStripItem = EventWithStatus;
+
+/**
+ * Wrap a Circle destination in the /circle-sso bridge so a signed-in member
+ * lands directly on it (guests are sent to set up Circle first). Mirrors
+ * `newsletterCommentUrl`.
+ */
+function circleSsoLink(returnTo: string): string {
+  return `/circle-sso?return_to=${encodeURIComponent(returnTo)}`;
+}
+
+/**
+ * Mock "most active" spaces for the empty-state nudge. In v2 this is replaced
+ * by the member's join-eligible spaces from Circle; the projection below keeps
+ * `SuggestedSpace` stable across that swap.
+ */
+const MOCK_SPACES: ReadonlyArray<Omit<SuggestedSpace, "href">> = [
+  {
+    id: "call-me-back",
+    name: "Inside Call Me Back",
+    description:
+      "The room around the flagship show — daily threads on the news Dan and Amit are tracking.",
+    memberCount: 4120,
+  },
+  {
+    id: "for-heavens-sake",
+    name: "For Heaven's Sake",
+    description:
+      "Members picking up where Donniel and Yossi leave off, between episodes.",
+    memberCount: 1870,
+  },
+  {
+    id: "meetups",
+    name: "City meetups",
+    description:
+      "Members organizing in-person coffees and watch parties, city by city.",
+    memberCount: 920,
+  },
+];
+
+/**
+ * Live + upcoming events for the strip, classified against the current instant.
+ * Re-derives each call so polling reflects an event going live.
+ */
+export async function fetchEventStrip(): Promise<EventStripItem[]> {
+  await jitter();
+  return liveAndUpcomingEvents();
+}
+
+/**
+ * Feed posts. v1: curated, editorially-permissioned highlights (same for every
+ * subscriber). v2: the member's joined-space personalized feed.
+ */
+export async function fetchCommunityFeed(): Promise<CommunityFeedItem[]> {
+  await jitter();
+  // Project preview-only fields — `body` and `visibility` never leak to the UI.
+  // v1 has no real per-post Circle URLs (those are opaque hash-suffixed slugs),
+  // so every teaser lands the member in the community app home via SSO; v2's
+  // per-member reads will carry the real post permalink.
+  return communityBroadcasts.map((b: CommunityBroadcast) => ({
+    id: b.id,
+    authorName: b.authorName,
+    authorRole: b.authorRole,
+    publishedAt: b.publishedAt,
+    excerpt: b.excerpt,
+    href: circleSsoLink(circleUrls.community),
+  }));
+}
+
+/**
+ * Per-member activity digest. v1 returns null (no per-member reads yet); v2
+ * returns real unread/reply/mention counts.
+ */
+export async function fetchActivityDigest(): Promise<ActivityDigest | null> {
+  await jitter();
+  return null;
+}
+
+/** Spaces to suggest in the empty-state nudge. Always non-empty. */
+export async function fetchSuggestedSpaces(): Promise<SuggestedSpace[]> {
+  await jitter();
+  // v1 has no real per-space slugs for these mock spaces (Circle's are opaque,
+  // e.g. /c/events-71d23b), so each suggestion lands the member in the app home
+  // via SSO; v2's per-member reads will carry the real space URL.
+  return MOCK_SPACES.map((s) => ({
+    ...s,
+    href: circleSsoLink(circleUrls.community),
+  }));
+}
+
+/**
+ * Deep link to the events space in the Community app, where every event lives.
+ * Circle's per-event URLs are opaque, hash-suffixed slugs that aren't derivable
+ * from our event ids, so v1 lands the member on the events space rather than a
+ * fabricated permalink. The real implementation will call Circle's deep-link
+ * endpoint for a signed per-event URL.
+ */
+export function circleEventLink(): string {
+  return circleUrls.eventsSpace;
 }
 
 /** Universal app-open link — used by /account "Open in app" buttons. */

@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import parse from "html-react-parser";
 import { AdminShell } from "../../components/AdminShell";
+import { RichTextEditor } from "../../components/RichTextEditor";
 import {
   deleteAnnouncement,
   listAnnouncements,
   saveAnnouncement,
   type AnnouncementDraft,
 } from "../../lib/admin";
-import { sanitizeInlinePreview } from "../../lib/announcements";
 import type { Announcement } from "../../lib/announcements";
+import { sanitizeRichPreview } from "../../lib/richTextPreview";
 import {
   COMMON_TIME_ZONES,
   DEFAULT_TIME_ZONE,
@@ -132,6 +133,10 @@ function AnnouncementsAdmin() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.body.trim()) {
+      setFormError("Body is required.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     const draft: AnnouncementDraft = {
@@ -294,14 +299,6 @@ function ScheduleHint({
   );
 }
 
-const FORMAT_BUTTONS: { tag: string; label: string }[] = [
-  { tag: "b", label: "B" },
-  { tag: "i", label: "I" },
-  { tag: "u", label: "U" },
-  { tag: "s", label: "S" },
-  { tag: "a", label: "Link" },
-];
-
 function AnnouncementForm({
   editing,
   form,
@@ -319,26 +316,6 @@ function AnnouncementForm({
   onSubmit: (e: React.FormEvent) => void;
   onCancel: () => void;
 }) {
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
-
-  // Wrap the current textarea selection in an inline tag (the same B/I/U/S a
-  // supporting-cast editor offers), then restore the selection.
-  const applyTag = (tag: string) => {
-    const ta = bodyRef.current;
-    if (!ta) return;
-    const { selectionStart: start, selectionEnd: end } = ta;
-    const selected = form.body.slice(start, end);
-    const open = tag === "a" ? '<a href="https://">' : `<${tag}>`;
-    const close = `</${tag}>`;
-    const next = form.body.slice(0, start) + open + selected + close + form.body.slice(end);
-    setForm((f) => ({ ...f, body: next }));
-    requestAnimationFrame(() => {
-      ta.focus();
-      const pos = start + open.length;
-      ta.setSelectionRange(pos, pos + selected.length);
-    });
-  };
-
   const field = "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
   const label = "block button-text font-display font-bold text-fg-strong";
 
@@ -355,41 +332,21 @@ function AnnouncementForm({
           className="flex items-center justify-center px-8 py-2.5 text-center text-body-sm font-medium [&_a]:underline"
           style={{ backgroundColor: form.barColor, color: form.textColor }}
         >
-          {form.body.trim() ? parse(sanitizeInlinePreview(form.body)) : <span className="opacity-60">Your announcement text…</span>}
+          {form.body.trim() ? parse(sanitizeRichPreview(form.body)) : <span className="opacity-60">Your announcement text…</span>}
         </div>
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-5">
         <div>
-          <label htmlFor="ann-body" className={label}>
-            Body
-          </label>
-          <div className="mt-2 flex gap-1">
-            {FORMAT_BUTTONS.map((b) => (
-              <button
-                key={b.tag}
-                type="button"
-                onClick={() => applyTag(b.tag)}
-                className="inline-flex h-8 min-w-8 items-center justify-center border border-rule-strong px-2 text-body-sm text-fg-strong transition hover:border-cyan hover:text-cyan"
-              >
-                {b.label}
-              </button>
-            ))}
+          <span className={label}>Body</span>
+          <div className="mt-2">
+            <RichTextEditor
+              ariaLabel="Announcement body"
+              value={form.body}
+              onChange={(html) => setForm((f) => ({ ...f, body: html }))}
+              minHeight="5rem"
+            />
           </div>
-          <textarea
-            id="ann-body"
-            ref={bodyRef}
-            required
-            rows={3}
-            value={form.body}
-            onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-            placeholder="🎉 Limited time offer! Use code SPRING60 …"
-            className={`mt-2 ${field}`}
-          />
-          <p className="mt-1 text-body-sm">
-            Inline formatting only (bold, italic, underline, strike, links).
-            Anything else is stripped on save.
-          </p>
         </div>
 
         <div>

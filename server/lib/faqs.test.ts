@@ -28,10 +28,13 @@ describe('sanitizeFaqAnswer', () => {
     const out = sanitizeFaqAnswer('<a href="mailto:help@x.com">help</a>')
     expect(out).toContain('href="mailto:help@x.com"')
   })
-  test('strips scripts, headings and unknown tags', () => {
-    const out = sanitizeFaqAnswer('<h2>Title</h2><script>alert(1)</script><p>ok</p>')
+  test('keeps headings, strips scripts and unknown tags', () => {
+    const out = sanitizeFaqAnswer(
+      '<h2>Title</h2><script>alert(1)</script><div>x</div><p>ok</p>',
+    )
     expect(out).not.toContain('<script')
-    expect(out).not.toContain('<h2')
+    expect(out).not.toContain('<div')
+    expect(out).toContain('<h2>Title</h2>')
     expect(out).toContain('<p>ok</p>')
   })
   test('drops javascript: URLs', () => {

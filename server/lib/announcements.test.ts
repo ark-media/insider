@@ -23,9 +23,10 @@ describe('sanitizeAnnouncementBody', () => {
     expect(sanitizeAnnouncementBody('<b>Save</b> <a href="/plus">now</a>')).toContain('<b>Save</b>')
     expect(sanitizeAnnouncementBody('<a href="/plus">now</a>')).toContain('href="/plus"')
   })
-  test('strips script and block tags', () => {
+  test('strips scripts but keeps block formatting', () => {
     expect(sanitizeAnnouncementBody('<script>alert(1)</script>Hello')).toBe('Hello')
-    expect(sanitizeAnnouncementBody('<p>Hi</p>')).toBe('Hi')
+    expect(sanitizeAnnouncementBody('<p>Hi</p>')).toBe('<p>Hi</p>')
+    expect(sanitizeAnnouncementBody('<ul><li>x</li></ul>')).toContain('<li>x</li>')
   })
   test('adds target/rel to links', () => {
     const out = sanitizeAnnouncementBody('<a href="https://x.com">x</a>')
