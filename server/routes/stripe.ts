@@ -392,7 +392,7 @@ async function dispatchWebhookEvent(
       // block podcast feed access (the paid product).
       const email = await emailForStripeCustomer(sub.customer, stripe)
       if (email) {
-        await syncEntitlement(env, email, isActive ? 'subscriber' : 'free')
+        await syncEntitlement(env, email, isActive ? 'ark-plus-member' : 'free')
       }
       break
     }

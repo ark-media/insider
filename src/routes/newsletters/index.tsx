@@ -18,7 +18,7 @@ export const Route = createFileRoute("/newsletters/")({
   loader: async () => {
     const token = await getToken();
     const me = token ? await fetchMe({ accessToken: token }) : null;
-    const slug = newsletterSlugForReader(me?.tier === "subscriber");
+    const slug = newsletterSlugForReader(me?.tier === "ark-plus-member");
     const pub = await getPublication(slug);
     if (!pub) throw notFound();
     const posts = await sourceFor(slug).listPosts(slug);
@@ -40,7 +40,7 @@ function NewslettersPage() {
 
   // First loader pass may run before Auth0 token is ready; reload for Ark+ slug.
   useEffect(() => {
-    if (state.kind !== "member" || state.me.tier !== "subscriber") return;
+    if (state.kind !== "member" || state.me.tier !== "ark-plus-member") return;
     if (pub.slug === "members-letter") return;
     void router.invalidate();
   }, [state, router, pub.slug]);

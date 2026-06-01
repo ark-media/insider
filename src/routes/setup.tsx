@@ -19,7 +19,7 @@ function SetupPage() {
     }
     // Free accounts have no Simplecast record to set up. Send them to the
     // upgrade pitch so the route can't be reached by URL-poking.
-    if (state.kind === "member" && state.me.tier !== "subscriber") {
+    if (state.kind === "member" && state.me.tier !== "ark-plus-member") {
       void navigate({ to: "/plus" });
     }
   }, [state, navigate]);
@@ -33,7 +33,7 @@ function SetupPage() {
   }
 
   if (state.kind === "guest") return null;
-  if (state.me.tier !== "subscriber") return null;
+  if (state.me.tier !== "ark-plus-member") return null;
 
   return <SetupFlow me={state.me} />;
 }

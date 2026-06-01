@@ -67,7 +67,7 @@ async function hashEmail(email: string): Promise<string> {
 export function identifyUser(opts: {
   id: string
   email?: string
-  tier?: 'subscriber' | 'free'
+  tier?: 'ark-plus-member' | 'free'
 }) {
   Sentry.setUser({ id: opts.id, email: opts.email })
   if (!posthogReady) return

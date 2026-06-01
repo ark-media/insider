@@ -40,7 +40,7 @@ export type Auth0Profile = {
   // `tier` and `emailVerified` come from custom claims; the Auth0 Action must
   // be configured for them to be present. Callers should treat missing values
   // as unknown (not as a safe default).
-  tier?: 'subscriber' | 'free'
+  tier?: 'ark-plus-member' | 'free'
   emailVerified?: boolean
   // Role names from the AUTH0_ROLES_CLAIM (the user's assigned Auth0 RBAC roles,
   // emitted by the Login Action). Empty when the claim is absent — never assume
@@ -77,7 +77,7 @@ export async function verifyAuth0BearerProfile(
     return {
       email,
       name: (payload['name'] as string | undefined) ?? undefined,
-      tier: tier === 'subscriber' || tier === 'free' ? tier : undefined,
+      tier: tier === 'ark-plus-member' || tier === 'free' ? tier : undefined,
       emailVerified:
         verifiedClaim === true || verifiedClaim === false ? verifiedClaim : undefined,
       roles: extractRoles(payload as Record<string, unknown>),

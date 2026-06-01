@@ -30,7 +30,7 @@ export const Route = createFileRoute("/newsletters/$post")({
   loader: async () => {
     const token = await getToken();
     const me = token ? await fetchMe({ accessToken: token }) : null;
-    const slug = newsletterSlugForReader(me?.tier === "subscriber");
+    const slug = newsletterSlugForReader(me?.tier === "ark-plus-member");
     const pub = await getPublication(slug);
     if (!pub) throw notFound();
     const posts = await sourceFor(slug).listPosts(slug);
@@ -45,10 +45,10 @@ function PostPage() {
   const { post: postSlug } = Route.useParams();
   const { state } = useSubscriberAuth();
   const isArkPlusSubscriber =
-    state.kind === "member" && state.me.tier === "subscriber";
+    state.kind === "member" && state.me.tier === "ark-plus-member";
 
   useEffect(() => {
-    if (state.kind !== "member" || state.me.tier !== "subscriber") return;
+    if (state.kind !== "member" || state.me.tier !== "ark-plus-member") return;
     if (pub.slug === "members-letter") return;
     void router.invalidate();
   }, [state, router, pub.slug]);

@@ -63,7 +63,7 @@ export async function getAuth0TestKeys(): Promise<{
 
 export async function signAuth0TestToken(claims: {
   email: string
-  tier?: 'subscriber' | 'free'
+  tier?: 'ark-plus-member' | 'free'
 }): Promise<string> {
   const { privateKey } = await getAuth0TestKeys()
   const payload: Record<string, unknown> = {

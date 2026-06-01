@@ -76,13 +76,13 @@ function happyPath(): FetchHandler {
 describe('syncEntitlement', () => {
   test('subscriber: PATCHes Auth0 with tier and POSTs Circle access group', async () => {
     installFetch(happyPath())
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
-    expect(res).toEqual({ email: 'a@x.com', tier: 'subscriber', auth0: 'ok', circle: 'ok' })
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
+    expect(res).toEqual({ email: 'a@x.com', tier: 'ark-plus-member', auth0: 'ok', circle: 'ok' })
 
     const patch = calls.find((c) => c.init?.method === 'PATCH')
     expect(patch).toBeDefined()
     const patchBody = JSON.parse(String(patch!.init!.body))
-    expect(patchBody.app_metadata.tier).toBe('subscriber')
+    expect(patchBody.app_metadata.tier).toBe('ark-plus-member')
     // No gift => gift_expires_at not set on subscriber upgrade.
     expect(patchBody.app_metadata.gift_expires_at).toBeUndefined()
 
@@ -123,7 +123,7 @@ describe('syncEntitlement', () => {
       }
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.auth0).toBe('no-user')
     expect(res.circle).toBe('ok')
   })
@@ -138,7 +138,7 @@ describe('syncEntitlement', () => {
       }
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.auth0).toBe('ok')
     expect(res.circle).toBe('no-member')
   })
@@ -156,7 +156,7 @@ describe('syncEntitlement', () => {
       }
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.circle).toBe('ok')
   })
 
@@ -173,7 +173,7 @@ describe('syncEntitlement', () => {
       }
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.circle).toBe('ok')
   })
 
@@ -190,7 +190,7 @@ describe('syncEntitlement', () => {
       }
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.circle).toBe('error')
   })
 
@@ -223,7 +223,7 @@ describe('syncEntitlement', () => {
       }
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.auth0).toBe('error')
     expect(res.circle).toBe('ok')
   })
@@ -238,7 +238,7 @@ describe('syncEntitlement', () => {
       }
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.auth0).toBe('ok')
     expect(res.circle).toBe('error')
   })
@@ -251,7 +251,7 @@ describe('syncEntitlement', () => {
       return jsonRes(500, { unexpected: url })
     })
     const env = { ...BASE_ENV, AUTH0_MANAGEMENT_CLIENT_ID: '', AUTH0_MANAGEMENT_CLIENT_SECRET: '' }
-    const res = await syncEntitlement(env, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(env, 'a@x.com', 'ark-plus-member')
     expect(res.auth0).toBe('skipped')
     expect(res.circle).toBe('ok')
     // No token fetch should have happened.
@@ -266,7 +266,7 @@ describe('syncEntitlement', () => {
       return jsonRes(500, { unexpected: url })
     })
     const env = { ...BASE_ENV, CIRCLE_API_TOKEN: '' }
-    const res = await syncEntitlement(env, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(env, 'a@x.com', 'ark-plus-member')
     expect(res.auth0).toBe('ok')
     expect(res.circle).toBe('skipped')
   })
@@ -279,7 +279,7 @@ describe('syncEntitlement', () => {
       return jsonRes(500, { unexpected: url })
     })
     const env = { ...BASE_ENV, CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: '' }
-    const res = await syncEntitlement(env, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(env, 'a@x.com', 'ark-plus-member')
     expect(res.circle).toBe('skipped')
   })
 
@@ -293,7 +293,7 @@ describe('syncEntitlement', () => {
       if (url.includes('/access_groups/ag-99/community_members')) return jsonRes(200, {})
       return jsonRes(500, { unexpected: url })
     })
-    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber')
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member')
     expect(res.auth0).toBe('ok')
     const patches = calls.filter((c) => c.init?.method === 'PATCH')
     expect(patches.length).toBe(2)
@@ -302,10 +302,10 @@ describe('syncEntitlement', () => {
   test('gift: subscriber with giftExpiresAt writes the date to Auth0', async () => {
     installFetch(happyPath())
     const expires = '2027-01-01T00:00:00.000Z'
-    await syncEntitlement(BASE_ENV, 'a@x.com', 'subscriber', { giftExpiresAt: expires })
+    await syncEntitlement(BASE_ENV, 'a@x.com', 'ark-plus-member', { giftExpiresAt: expires })
     const patch = calls.find((c) => c.init?.method === 'PATCH')!
     const body = JSON.parse(String(patch.init!.body))
-    expect(body.app_metadata.tier).toBe('subscriber')
+    expect(body.app_metadata.tier).toBe('ark-plus-member')
     expect(body.app_metadata.gift_expires_at).toBe(expires)
   })
 })
@@ -472,7 +472,7 @@ describe('reconcileEntitlements', () => {
     const patches = calls.filter((c) => c.init?.method === 'PATCH')
     expect(patches.length).toBe(1)
     const body = JSON.parse(String(patches[0]!.init!.body))
-    expect(body.app_metadata.tier).toBe('subscriber')
+    expect(body.app_metadata.tier).toBe('ark-plus-member')
   })
 
   test('downgrade pass: Auth0 subscriber with no active Stripe sub flips to free', async () => {
@@ -670,7 +670,7 @@ describe('listAuth0Subscribers export-job fallback', () => {
     const ndjson =
       JSON.stringify({
         email: 'paid@x.com',
-        app_metadata: { tier: 'subscriber', gift_expires_at: '2099-01-01' },
+        app_metadata: { tier: 'ark-plus-member', gift_expires_at: '2099-01-01' },
       }) +
       '\n' +
       JSON.stringify({ email: 'free@x.com', app_metadata: { tier: 'free' } }) +

@@ -41,7 +41,7 @@ import { getDb } from './lib/db.js'
 
 type Env = Record<string, string>
 
-export type Tier = 'subscriber' | 'free'
+export type Tier = 'ark-plus-member' | 'free'
 
 export type Auth0Status = 'ok' | 'no-user' | 'skipped' | 'error'
 export type CircleStatus = 'ok' | 'no-member' | 'skipped' | 'error'
@@ -54,7 +54,7 @@ export type EntitlementResult = {
 }
 
 export type SyncOptions = {
-  // ISO date string. When set with tier='subscriber', stored in Auth0
+  // ISO date string. When set with tier='ark-plus-member', stored in Auth0
   // app_metadata.gift_expires_at so the reconciler keeps the user as a
   // subscriber through the gift period even when no Stripe sub exists.
   // Ignored for tier='free' (which clears the field).
@@ -128,7 +128,7 @@ async function setAuth0Tier(
   // app_metadata PATCH is a shallow merge: keys we omit are preserved on the
   // user, so we explicitly null gift_expires_at on downgrade to clear it.
   const appMetadata: Record<string, unknown> = { tier }
-  if (tier === 'subscriber' && opts.giftExpiresAt) {
+  if (tier === 'ark-plus-member' && opts.giftExpiresAt) {
     appMetadata.gift_expires_at = opts.giftExpiresAt
   } else if (tier === 'free') {
     appMetadata.gift_expires_at = null
@@ -174,7 +174,7 @@ export async function fetchAuth0TierForEmail(
   if (!res.ok) return null
   const users = (await res.json()) as Array<{ app_metadata?: { tier?: string } }>
   for (const u of users) {
-    if (u.app_metadata?.tier === 'subscriber') return 'subscriber'
+    if (u.app_metadata?.tier === 'ark-plus-member') return 'ark-plus-member'
   }
   return users.length > 0 ? 'free' : null
 }
@@ -229,7 +229,7 @@ async function setCircleAccessGroup(
   }
   const base = `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members`
 
-  if (tier === 'subscriber') {
+  if (tier === 'ark-plus-member') {
     const res = await fetch(base, {
       method: 'POST',
       headers,
@@ -280,9 +280,9 @@ export async function emailForStripeCustomer(
 
 // --- Reconciliation ---------------------------------------------------------
 // Three passes:
-//   1. Walk Stripe active+trialing subs, sync each to 'subscriber'. This
+//   1. Walk Stripe active+trialing subs, sync each to 'ark-plus-member'. This
 //      heals any missed webhook upgrades.
-//   2. Walk Auth0 users with tier='subscriber'. For any whose email is not
+//   2. Walk Auth0 users with tier='ark-plus-member'. For any whose email is not
 //      in the active set AND whose gift hasn't expired, leave alone. The
 //      rest get synced to 'free'. This heals any missed webhook downgrades.
 //   3. Walk Circle's subscriber access group. Remove any members who aren't
@@ -322,7 +322,7 @@ export async function reconcileEntitlements(
   const upgradeResults = await batched(
     [...activeEmails],
     batchSize,
-    (email) => syncEntitlement(env, email, 'subscriber'),
+    (email) => syncEntitlement(env, email, 'ark-plus-member'),
   )
 
   const auth0Subs = await listAuth0Subscribers(env, maxAuth0Pages)
@@ -424,7 +424,7 @@ async function listAuth0Subscribers(
   const base = auth0MgmtBase(env)
   const headers = { Authorization: `Bearer ${token}` }
   const out: Auth0SubscriberRow[] = []
-  const query = encodeURIComponent('app_metadata.tier:"subscriber"')
+  const query = encodeURIComponent('app_metadata.tier:"ark-plus-member"')
   let lastPageFull = false
   let pagesWalked = 0
   for (let page = 0; page < maxPages; page += 1) {
@@ -559,7 +559,7 @@ async function listAuth0SubscribersViaExport(
     } catch {
       continue
     }
-    if (row.app_metadata?.tier !== 'subscriber') continue
+    if (row.app_metadata?.tier !== 'ark-plus-member') continue
     if (!row.email) continue
     out.push({
       email: row.email.toLowerCase(),

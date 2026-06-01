@@ -188,7 +188,7 @@ const fetchCalls: FetchCall[] = []
 // Per-test config:
 let beehiivHandler: (call: FetchCall) => Response = () =>
   new Response('{}', { status: 404 })
-let liveTierByEmail: Map<string, 'subscriber' | 'free' | null> = new Map()
+let liveTierByEmail: Map<string, 'ark-plus-member' | 'free' | null> = new Map()
 
 const originalFetch = globalThis.fetch
 globalThis.fetch = (async (
@@ -273,7 +273,7 @@ describe('newsletters auth', () => {
   })
 
   test('405 on POST', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'a@x.com', tier: 'ark-plus-member' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(
@@ -291,7 +291,7 @@ describe('newsletters auth', () => {
 
 describe('GET /api/me/newsletters', () => {
   test('returns Beehiiv state after refresh (overrides stale local row)', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'a@x.com', tier: 'ark-plus-member' })
     beehiivHandler = ({ url, method }) => {
       if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
         return new Response(
@@ -443,7 +443,7 @@ describe('GET /api/me/newsletters', () => {
 
   test('canPremium flips on live tier lookup when JWT says free', async () => {
     const token = await signAuth0Token({ email: 'stale@x.com', tier: 'free' })
-    liveTierByEmail.set('stale@x.com', 'subscriber')
+    liveTierByEmail.set('stale@x.com', 'ark-plus-member')
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -457,7 +457,7 @@ describe('GET /api/me/newsletters', () => {
 
 describe('PUT /api/me/newsletters', () => {
   test('400 when no fields supplied', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'a@x.com', tier: 'ark-plus-member' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(
@@ -482,7 +482,7 @@ describe('PUT /api/me/newsletters', () => {
   })
 
   test('member can enable premium via combined PUT', async () => {
-    const token = await signAuth0Token({ email: 'm@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'm@x.com', tier: 'ark-plus-member' })
     beehiivHandler = ({ url, method }) => {
       if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
         return new Response(
@@ -538,7 +538,7 @@ describe('PUT /api/me/newsletters', () => {
 
   test('stale JWT but live-tier subscriber → premium toggle allowed', async () => {
     const token = await signAuth0Token({ email: 'upgraded@x.com', tier: 'free' })
-    liveTierByEmail.set('upgraded@x.com', 'subscriber')
+    liveTierByEmail.set('upgraded@x.com', 'ark-plus-member')
     beehiivHandler = ({ method }) => {
       if (method === 'GET') return new Response('{}', { status: 404 })
       if (method === 'POST') {
@@ -576,7 +576,7 @@ describe('PUT /api/me/newsletters', () => {
     // subscription — only the create endpoint with `reactivate_existing:true`
     // does. Toggling free back on for a subscriber must reactivate AND carry
     // the premium tier through the create call.
-    const token = await signAuth0Token({ email: 're@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 're@x.com', tier: 'ark-plus-member' })
     beehiivHandler = ({ method, url }) => {
       if (method === 'GET' && url.includes('/by_email/')) {
         return new Response(
@@ -719,7 +719,7 @@ describe('PUT /api/me/newsletters', () => {
   })
 
   test('429 once the per-email rate bucket is empty', async () => {
-    const token = await signAuth0Token({ email: 'spammy@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'spammy@x.com', tier: 'ark-plus-member' })
     beehiivHandler = ({ method }) => {
       if (method === 'GET') return new Response('{}', { status: 404 })
       if (method === 'POST') {

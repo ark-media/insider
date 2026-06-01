@@ -122,7 +122,7 @@ function HomePage() {
   const { state } = useSubscriberAuth();
   const descriptions = useShowDescriptions(shows.map((s) => s.slug));
   const isSubscriber =
-    state.kind === "member" && state.me.tier === "subscriber";
+    state.kind === "member" && state.me.tier === "ark-plus-member";
   return (
     <main className="relative">
       <section className="section-hero relative">

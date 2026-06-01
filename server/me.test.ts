@@ -2,12 +2,12 @@
 //
 // Covers the post-free-account world where /api/me has two healthy outcomes
 // instead of one:
-//   - SC user found → 200 { tier: 'subscriber', feeds }
+//   - SC user found → 200 { tier: 'ark-plus-member', feeds }
 //   - SC user not found AND the session is an Auth0 bearer whose tier claim
-//     is not 'subscriber' → 200 { tier: 'free', feeds: [] }
+//     is not 'ark-plus-member' → 200 { tier: 'free', feeds: [] }
 // The legacy 401 stays only for the checkout-cookie path (issued post-payment,
 // so a missing SC user there is a provisioning gap, not a free user) and for
-// stale 'subscriber' JWTs whose SC record vanished.
+// stale 'ark-plus-member' JWTs whose SC record vanished.
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import { Readable } from 'node:stream'
@@ -294,14 +294,14 @@ describe('GET /api/me with Auth0 bearer', () => {
     scFeedsByUserId.set(42, [
       { id: 1, name: 'Private feed', url: 'https://example.com/feed.xml' },
     ])
-    const token = await signAuth0Token({ email: 'paid@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'paid@x.com', tier: 'ark-plus-member' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'paid@x.com',
-      tier: 'subscriber',
+      tier: 'ark-plus-member',
       feeds: [
         { id: 1, name: 'Private feed', url: 'https://example.com/feed.xml' },
       ],
@@ -321,16 +321,16 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'upgraded@x.com',
-      tier: 'subscriber',
+      tier: 'ark-plus-member',
       feeds: [],
     })
   })
 
   test('tier=subscriber claim but SC user missing → 401 (legacy contract)', async () => {
-    // A 'subscriber' claim with no SC record is a real inconsistency, not a
+    // A 'ark-plus-member' claim with no SC record is a real inconsistency, not a
     // free user. Keep the explicit 401 so the client surfaces an error
     // instead of silently downgrading the dashboard.
-    const token = await signAuth0Token({ email: 'gone@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'gone@x.com', tier: 'ark-plus-member' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -354,14 +354,14 @@ describe('GET /api/me with Auth0 bearer', () => {
   test('SC feeds 404 is tolerated; returns subscriber with empty feeds', async () => {
     scUserByEmail.set('newpaid@x.com', { id: 100, email: 'newpaid@x.com' })
     // scFeedsByUserId intentionally not set → mock returns 404.
-    const token = await signAuth0Token({ email: 'newpaid@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'newpaid@x.com', tier: 'ark-plus-member' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'newpaid@x.com',
-      tier: 'subscriber',
+      tier: 'ark-plus-member',
       feeds: [],
     })
   })
@@ -397,7 +397,7 @@ describe('GET /api/me with checkout-cookie session', () => {
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'fresh@x.com',
-      tier: 'subscriber',
+      tier: 'ark-plus-member',
       feeds: [],
     })
   })
@@ -426,7 +426,7 @@ describe('GET /api/me with checkout-cookie session', () => {
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
-    expect((res.__json() as { tier: string }).tier).toBe('subscriber')
+    expect((res.__json() as { tier: string }).tier).toBe('ark-plus-member')
   })
 })
 
@@ -571,12 +571,12 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
   test('subscriber path does NOT trigger free auto-subscribe', async () => {
     scUserByEmail.set('paid@x.com', { id: 99, email: 'paid@x.com' })
     scFeedsByUserId.set(99, [])
-    const token = await signAuth0Token({ email: 'paid@x.com', tier: 'subscriber' })
+    const token = await signAuth0Token({ email: 'paid@x.com', tier: 'ark-plus-member' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
 
-    expect((res.__json() as { tier: string }).tier).toBe('subscriber')
+    expect((res.__json() as { tier: string }).tier).toBe('ark-plus-member')
     expect(beehiivCalls.length).toBe(0)
     expect(
       sqlCalls.some(

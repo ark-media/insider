@@ -248,7 +248,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         }
 
         // Identify Ark+ membership from the bearer token's tier claim.
-        // Anonymous (no token, or a token without `tier: 'subscriber'`) gets
+        // Anonymous (no token, or a token without `tier: 'ark-plus-member'`) gets
         // the above-divider preview; members get the full premium body. The
         // checkout-cookie session is deliberately not consulted — it carries
         // no tier claim and pre-dates entitlement sync.
@@ -256,7 +256,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         let isMember = false
         if (authHeader?.startsWith('Bearer ')) {
           const profile = await verifyAuth0BearerProfile(authHeader.slice(7))
-          isMember = profile?.tier === 'subscriber'
+          isMember = profile?.tier === 'ark-plus-member'
         }
 
         // Member responses include the gated body, so they must NOT be

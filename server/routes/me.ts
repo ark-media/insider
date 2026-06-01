@@ -47,7 +47,7 @@ export function meRoutes({ env }: Deps): Route[] {
         // SC record means different things for each: for Auth0 it means
         // "logged-in free user"; for checkout it means "provisioning gap".
         let email: string | null = null
-        let claimTier: 'subscriber' | 'free' | undefined
+        let claimTier: 'ark-plus-member' | 'free' | undefined
         let source: 'auth0' | 'checkout' | null = null
 
         const authHeader = req.headers.authorization
@@ -96,14 +96,14 @@ export function meRoutes({ env }: Deps): Route[] {
               if ((feedErr as ScError).status !== 404) throw feedErr
               // 404 means no feeds set up yet — treat as empty.
             }
-            return json(200, { email, tier: 'subscriber', feeds })
+            return json(200, { email, tier: 'ark-plus-member', feeds })
           }
 
           // No SC record. For Auth0 sessions whose JWT isn't claiming
-          // 'subscriber', treat as a logged-in free user. For the
+          // 'ark-plus-member', treat as a logged-in free user. For the
           // checkout-cookie path (issued only after payment) a missing SC
           // user is a provisioning gap, so keep the 401 contract.
-          if (source === 'auth0' && claimTier !== 'subscriber') {
+          if (source === 'auth0' && claimTier !== 'ark-plus-member') {
             // First-login auto-subscribe to the free newsletter.
             // Soft-fails internally so a Beehiiv outage can't block login;
             // skipped entirely when DATABASE_URL isn't configured (no
@@ -153,10 +153,10 @@ export function meRoutes({ env }: Deps): Route[] {
         // check Auth0 server-side — a member who upgraded after their last
         // login still has 'free' in their cached token and would otherwise
         // be denied premium toggles wrongly.
-        let isMember = profile.tier === 'subscriber'
+        let isMember = profile.tier === 'ark-plus-member'
         if (!isMember) {
           const live = await fetchAuth0TierForEmail(env, email)
-          isMember = live === 'subscriber'
+          isMember = live === 'ark-plus-member'
         }
 
         if (!env.DATABASE_URL) {

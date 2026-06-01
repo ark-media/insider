@@ -26,7 +26,7 @@ function BillingPage() {
       void navigate({ to: "/plus" });
       return;
     }
-    if (state.kind === "member" && state.me.tier !== "subscriber") {
+    if (state.kind === "member" && state.me.tier !== "ark-plus-member") {
       void navigate({ to: "/plus" });
     }
   }, [state, navigate]);
@@ -39,7 +39,7 @@ function BillingPage() {
     );
   }
 
-  if (state.kind === "guest" || state.me.tier !== "subscriber") return null;
+  if (state.kind === "guest" || state.me.tier !== "ark-plus-member") return null;
 
   const me = state.me;
 

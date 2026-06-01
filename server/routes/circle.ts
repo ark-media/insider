@@ -315,7 +315,7 @@ export function circleRoutes({ env }: Deps): Route[] {
 
         let email: string | null = null
         let name: string | undefined
-        let tier: 'subscriber' | 'free' = 'free'
+        let tier: 'ark-plus-member' | 'free' = 'free'
         let tierFromClaim = false
         // Checkout-session tokens are minted server-side immediately after a
         // confirmed Stripe payment, so they already vouch for the email's
@@ -341,7 +341,7 @@ export function circleRoutes({ env }: Deps): Route[] {
             // mistakenly passed as Bearer (older clients).
             email = await verifyCheckoutToken(token, env)
             if (email) {
-              tier = 'subscriber'
+              tier = 'ark-plus-member'
               tierFromClaim = true
               emailVouchedFor = true
             }
@@ -352,7 +352,7 @@ export function circleRoutes({ env }: Deps): Route[] {
           if (cookieToken) {
             email = await verifyCheckoutToken(cookieToken, env)
             if (email) {
-              tier = 'subscriber'
+              tier = 'ark-plus-member'
               tierFromClaim = true
               emailVouchedFor = true
             }

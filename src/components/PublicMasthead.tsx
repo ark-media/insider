@@ -31,7 +31,7 @@ type NavItem = {
   children?: NavChild[];
 };
 
-type Tier = "guest" | "free" | "subscriber";
+type Tier = "guest" | "free" | "ark-plus-member";
 
 const podcastChildren: NavChild[] = [
   { label: "All", to: "/podcasts" },
@@ -102,7 +102,7 @@ function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "
 }
 
 function visibleNavItems(tier: Tier): NavItem[] {
-  const isSubscriber = tier === "subscriber";
+  const isSubscriber = tier === "ark-plus-member";
   return NAV_ITEMS.filter((item) => {
     if (item.hideWhen === "subscriber") return !isSubscriber;
     if (item.hideWhen === "nonSubscriber") return isSubscriber;
@@ -117,7 +117,7 @@ export function PublicMasthead() {
   const { loginWithRedirect } = useAuth0();
   const tier: Tier =
     state.kind === "member" ? state.me.tier : "guest";
-  const isSubscriber = tier === "subscriber";
+  const isSubscriber = tier === "ark-plus-member";
   const navItems = isAdmin
     ? [...visibleNavItems(tier), ADMIN_NAV_ITEM]
     : visibleNavItems(tier);

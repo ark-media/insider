@@ -43,7 +43,7 @@ export function useNewsletterSubscription() {
   }, [state.kind, email]);
 
   const isMember = state.kind === "member";
-  const isSubscriber = isMember && state.me.tier === "subscriber";
+  const isSubscriber = isMember && state.me.tier === "ark-plus-member";
   const prefsLoading = isMember && prefs === undefined && !prefsError;
 
   // `prefs.free` is refreshed from Beehiiv on GET /api/me/newsletters (active or
