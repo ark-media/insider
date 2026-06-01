@@ -170,7 +170,7 @@ export function Pricing() {
                         placeholder={plan === "yearly" ? "120" : "12"}
                         className="w-full bg-transparent text-[22px] text-fg-strong outline-none placeholder:text-fg-placeholder"
                       />
-                      <span className="text-body-sm">
+                      <span className="ml-2 shrink-0 whitespace-nowrap text-body-sm">
                         / {plan === "yearly" ? "yr" : "mo"}
                       </span>
                     </div>

@@ -379,7 +379,7 @@ function FeatureBand({
             <div className="eyebrow text-[18px] text-cyan sm:text-[22px]">
               {eyebrow}
             </div>
-            <h2 className="mt-3 font-display text-[clamp(1.9rem,3.6vw,2.8rem)] leading-[1.04] text-fg-strong">
+            <h2 className="mt-3 display-upright text-[clamp(1.9rem,3.6vw,2.8rem)] leading-[1.04] text-fg-strong">
               {title}
             </h2>
             <p className="mt-5 max-w-md text-body-lg text-fg-muted">{body}</p>

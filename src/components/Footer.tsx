@@ -84,12 +84,12 @@ function FooterCol({ title, links }: { title: string; links: FooterLink[] }) {
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
         {title}
       </div>
-      <ul className="mt-3 space-y-2">
+      <ul className="mt-2 space-y-0.5">
         {links.map((l) => (
           <li key={l.to}>
             <Link
               to={l.to}
-              className="text-fg transition hover:text-cyan"
+              className="inline-block py-1 text-fg transition hover:text-cyan"
             >
               {l.label}
             </Link>
