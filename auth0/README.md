@@ -58,7 +58,7 @@ on every login.
 4. **Secrets** (Action → Settings → Secrets):
    | Name | Value |
    |---|---|
-   | `AUTH0_TENANT_DOMAIN` | native tenant domain, e.g. `ark-plus.us.auth0.com` — **not** the custom login domain `auth.ark-plus.xyz`. The Management API lives on the native domain (see `server/auth0.ts`). |
+   | `AUTH0_TENANT_DOMAIN` | native tenant domain, e.g. `ark-media.us.auth0.com` (scheme optional — `https://ark-media.us.auth0.com` also works; `tenantBase()` normalizes it to match the app's env in `server/auth0.ts`). **Not** the custom login domain `auth.ark-plus.xyz` — the Management API lives on the native domain. |
    | `MGMT_CLIENT_ID` | Ark Plus M2M client id |
    | `MGMT_CLIENT_SECRET` | Ark Plus M2M client secret |
 

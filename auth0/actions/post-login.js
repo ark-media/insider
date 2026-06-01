@@ -34,10 +34,12 @@
  *
  * ---------------------------------------------------------------------------
  * Secrets (Action → Settings → Secrets):
- *   AUTH0_TENANT_DOMAIN   native tenant domain, e.g. ark-plus.us.auth0.com
- *                         (NOT the custom login domain auth.ark-plus.xyz — the
- *                         Management API lives on the native domain; see
- *                         server/auth0.ts).
+ *   AUTH0_TENANT_DOMAIN   native tenant domain, e.g. ark-media.us.auth0.com or
+ *                         https://ark-media.us.auth0.com (scheme optional —
+ *                         tenantBase() normalizes it, matching the app's env in
+ *                         server/auth0.ts, which includes the scheme). NOT the
+ *                         custom login domain auth.ark-plus.xyz — the Management
+ *                         API lives on the native domain.
  *   MGMT_CLIENT_ID        Ark Plus M2M client id.
  *   MGMT_CLIENT_SECRET    Ark Plus M2M client secret.
  *
@@ -50,7 +52,32 @@
 const NS = 'https://ark-plus.xyz';
 const DB_CONNECTION = 'Username-Password-Authentication';
 
+// The AUTH0_TENANT_DOMAIN secret may be set with or without a scheme/trailing
+// slash — the app's own env (server/auth0.ts) includes the scheme, so accept
+// either rather than assuming a bare host. Returns e.g. https://foo.us.auth0.com.
+function tenantBase(event) {
+  const raw = (event.secrets.AUTH0_TENANT_DOMAIN || '').trim().replace(/\/+$/, '');
+  return /^https?:\/\//.test(raw) ? raw : `https://${raw}`;
+}
+
 exports.onExecutePostLogin = async (event, api) => {
+  try {
+    return await run(event, api);
+  } catch (err) {
+    // TEMP DIAGNOSTIC — surfaces the real cause in error_description instead of
+    // the opaque "fetch failed". Remove once the login is working again.
+    const dom = event.secrets.AUTH0_TENANT_DOMAIN;
+    const seen =
+      dom === undefined ? 'UNSET'
+      : dom === '' ? 'EMPTY'
+      : `"${dom}" -> ${tenantBase(event)}`;
+    return api.access.deny(
+      `DEBUG ${err.name}: ${err.message} | conn=${event.connection?.name} strategy=${event.connection?.strategy} | DOMAIN secret=${seen} | mgmtId=${event.secrets.MGMT_CLIENT_ID ? 'set' : 'UNSET'}`,
+    );
+  }
+};
+
+const run = async (event, api) => {
   // The user who just authenticated, and their roles, are the defaults used
   // for both the Database-login and already-linked-social cases.
   let resolved = event.user;
@@ -136,15 +163,15 @@ async function mgmtToken(event, api) {
   const cached = api.cache.get('mgmt_token');
   if (cached) return cached.value;
 
-  const domain = event.secrets.AUTH0_TENANT_DOMAIN;
-  const res = await fetch(`https://${domain}/oauth/token`, {
+  const base = tenantBase(event);
+  const res = await fetch(`${base}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       grant_type: 'client_credentials',
       client_id: event.secrets.MGMT_CLIENT_ID,
       client_secret: event.secrets.MGMT_CLIENT_SECRET,
-      audience: `https://${domain}/api/v2/`,
+      audience: `${base}/api/v2/`,
     }),
   });
   if (!res.ok) return null;
@@ -158,7 +185,7 @@ async function mgmtToken(event, api) {
 
 async function usersByEmail(event, token, email) {
   const res = await fetch(
-    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users-by-email?email=${encodeURIComponent(email)}`,
+    `${tenantBase(event)}/api/v2/users-by-email?email=${encodeURIComponent(email)}`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!res.ok) return [];
@@ -167,7 +194,7 @@ async function usersByEmail(event, token, email) {
 
 async function userRoles(event, token, userId) {
   const res = await fetch(
-    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users/${encodeURIComponent(userId)}/roles`,
+    `${tenantBase(event)}/api/v2/users/${encodeURIComponent(userId)}/roles`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!res.ok) return null;
@@ -176,7 +203,7 @@ async function userRoles(event, token, userId) {
 
 async function linkIdentity(event, token, primaryUserId, secondary) {
   const res = await fetch(
-    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users/${encodeURIComponent(primaryUserId)}/identities`,
+    `${tenantBase(event)}/api/v2/users/${encodeURIComponent(primaryUserId)}/identities`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -189,7 +216,7 @@ async function linkIdentity(event, token, primaryUserId, secondary) {
 
 async function deleteUser(event, token, userId) {
   await fetch(
-    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users/${encodeURIComponent(userId)}`,
+    `${tenantBase(event)}/api/v2/users/${encodeURIComponent(userId)}`,
     { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
   );
 }
