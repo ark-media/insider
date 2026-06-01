@@ -3,6 +3,7 @@ import { type ReactNode } from "react";
 import { shows } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
 import { LinkCard, NumberedRow } from "../components/ContentCard";
+import { LatestEpisodes } from "../components/LatestEpisodes";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { Toast } from "../components/Toast";
@@ -180,6 +181,8 @@ function HomePage() {
           </div>
         </div>
       </section>
+
+      <LatestEpisodes />
 
       {/* Podcast row — card grid (good for browsing) */}
       <section className="border-t border-rule bg-navy-900">

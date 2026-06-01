@@ -1,5 +1,5 @@
 import type { Episode } from "../data/episodes";
-import type { ShowSlug } from "../data/shows";
+import { shows, type Show, type ShowSlug } from "../data/shows";
 
 /**
  * Simplecast client. Fetches episodes from /api/simplecast/episodes, which
@@ -28,6 +28,28 @@ async function fetchEpisodesFromApi(showSlug: ShowSlug): Promise<Episode[] | nul
 
 export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
   return (await fetchEpisodesFromApi(showSlug)) ?? [];
+}
+
+export type EpisodeWithShow = Episode & { show: Show };
+
+/** Most recent episodes across all public shows, newest first. */
+export async function listLatestEpisodes(
+  limit = 3,
+): Promise<Array<EpisodeWithShow>> {
+  const publicShows = shows.filter((show) => !show.paid);
+  const byShow = await Promise.all(
+    publicShows.map(async (show) => {
+      const episodes = await listEpisodes(show.slug);
+      return episodes.map((episode) => ({ ...episode, show }));
+    }),
+  );
+  return byShow
+    .flat()
+    .sort(
+      (a, b) =>
+        new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+    )
+    .slice(0, limit);
 }
 
 export async function getEpisode(

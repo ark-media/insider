@@ -67,7 +67,7 @@ function NewslettersPage() {
             </div>
           ) : null}
           <div className={showSignup ? "lg:col-span-7" : "lg:col-span-12"}>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            <div className="text-[13px] font-semibold uppercase tracking-[0.22em] text-cyan">
               Recent issues
             </div>
             {posts.length === 0 ? (
@@ -136,7 +136,7 @@ function SignupCard({ pub }: { pub: Newsletter }) {
 
   return (
     <div className="border border-rule bg-navy-800/40 p-7">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+      <div className="text-[13px] font-semibold uppercase tracking-[0.22em] text-cyan">
         Subscribe
       </div>
       <p className="mt-4 max-w-md text-[14px] leading-[1.6] text-fg">

@@ -54,6 +54,15 @@ export function formatEpisodeDate(iso: string): string {
   });
 }
 
+export function formatEpisodeDateLong(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
 export function formatDuration(minutes: number): string {
   if (minutes <= 0) return "—";
   if (minutes < 60) return `${minutes} min`;

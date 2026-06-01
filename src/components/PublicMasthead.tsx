@@ -32,12 +32,15 @@ type NavItem = {
 
 type Tier = "guest" | "free" | "subscriber";
 
-const podcastChildren: NavChild[] = shows.map((show) => ({
-  label: show.shortTitle,
-  to: show.route,
-  description: show.cadence,
-  paid: show.paid,
-}));
+const podcastChildren: NavChild[] = [
+  { label: "All", to: "/podcasts" },
+  ...shows.map((show) => ({
+    label: show.shortTitle,
+    to: show.route,
+    description: show.cadence,
+    paid: show.paid,
+  })),
+];
 
 const NAV_ITEMS: NavItem[] = [
   {
