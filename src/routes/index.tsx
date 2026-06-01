@@ -452,7 +452,7 @@ function HomePage() {
   return (
     <main className="relative">
       <section className="section-hero relative">
-        <div className="page-gutter pb-8 lg:pt-10">
+        <div className="page-gutter pt-8 pb-8 lg:pt-10">
           <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
             <div>
               <h1 className="max-w-4xl text-fg-strong">
