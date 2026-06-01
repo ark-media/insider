@@ -51,6 +51,8 @@ function useCommunityData() {
   useEffect(() => {
     let alive = true;
 
+    // Full load: everything. Used on mount and when the tab is refocused (the
+    // feed/spaces may have changed while it was hidden).
     const load = async () => {
       const [e, f, d, s] = await Promise.all([
         fetchEventStrip(),
@@ -65,12 +67,20 @@ function useCommunityData() {
       setSpaces(s);
     };
 
+    // The 45s poll only refreshes events — that's the sole surface whose live
+    // state changes minute-to-minute; re-fetching the feed/spaces every tick is
+    // wasted work.
+    const loadEvents = async () => {
+      const e = await fetchEventStrip();
+      if (alive) setEvents(e);
+    };
+
     void load();
 
     const interval = setInterval(() => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void loadEvents();
     }, POLL_MS);
-    // Catch up immediately when the tab is refocused after being hidden.
+    // Catch up fully when the tab is refocused after being hidden.
     const onVisible = () => {
       if (document.visibilityState === "visible") void load();
     };
@@ -123,13 +133,13 @@ function OpenInAppCard() {
   return (
     <section>
       <div className="mx-auto max-w-[1280px] px-6 pb-24 sm:px-10">
-        <div className="border border-rule bg-navy-800/40 p-8 pt-12 sm:p-12 sm:pt-16">
+        <div className="border border-rule bg-navy-800/40 p-8 sm:p-12">
           <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <div className="inside-tab text-xs">Open the app</div>
               <h2 className="mt-8 max-w-xl">
                 <span className="display-upright block text-[clamp(1.6rem,3.2vw,2.4rem)] text-fg-strong">
-                  One membership, one login.
+                  Your community, wherever you are.
                 </span>
               </h2>
               <p className="mt-6 max-w-xl text-body-sm">
@@ -204,7 +214,7 @@ function MarketingShowcase() {
 
       <section>
         <div className="mx-auto max-w-[1280px] px-6 pb-24 sm:px-10">
-          <div className="border border-rule bg-navy-800/40 p-8 pt-12 sm:p-12 sm:pt-16">
+          <div className="border border-rule bg-navy-800/40 p-8 sm:p-12">
             <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
               <div className="lg:col-span-7">
                 <div className="inside-tab text-xs">Get in the room</div>

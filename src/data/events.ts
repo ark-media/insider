@@ -9,6 +9,12 @@ export type ArkEvent = {
   startsAt: string;
   durationMinutes: number;
   format: EventFormat;
+  /**
+   * Human label for the format. Set when a source (e.g. Circle's `location_type`)
+   * carries a label that doesn't map cleanly onto `format`; the UI prefers it
+   * over `FORMAT_LABEL[format]` when present.
+   */
+  formatLabel?: string;
   access: EventAccess;
   hosts: string[];
   description: string;
@@ -16,6 +22,12 @@ export type ArkEvent = {
   location: "circle-app" | "youtube-live" | "in-person";
   /** Optional venue (for in-person) */
   venue?: string;
+  /**
+   * Ready-to-use deep link into the app for this event (already SSO-wrapped by
+   * the data layer). Present for real Circle events; absent for mock events,
+   * where the UI falls back to the events-space link.
+   */
+  deepLink?: string;
 };
 
 const dayMs = 24 * 60 * 60 * 1000;
@@ -113,11 +125,15 @@ export type EventWithStatus = { event: ArkEvent; status: EventStatus };
  * Sorted live-first, then soonest-starting. `now` is injectable so polling can
  * re-derive against the current instant (and tests can pin a fixed clock).
  */
-export function liveAndUpcomingEvents(now: Date = new Date()): EventWithStatus[] {
+export function classifyLiveUpcoming(
+  source: ArkEvent[],
+  now: Date = new Date(),
+): EventWithStatus[] {
   const ms = now.getTime();
-  return events
+  return source
     .map((event): EventWithStatus | null => {
       const start = new Date(event.startsAt).getTime();
+      if (Number.isNaN(start)) return null;
       const end = start + event.durationMinutes * 60 * 1000;
       if (ms >= end) return null;
       return { event, status: ms >= start ? "live" : "upcoming" };
@@ -130,6 +146,10 @@ export function liveAndUpcomingEvents(now: Date = new Date()): EventWithStatus[]
         new Date(b.event.startsAt).getTime()
       );
     });
+}
+
+export function liveAndUpcomingEvents(now: Date = new Date()): EventWithStatus[] {
+  return classifyLiveUpcoming(events, now);
 }
 
 export function formatEventStart(iso: string): string {

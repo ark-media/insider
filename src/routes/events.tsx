@@ -101,7 +101,7 @@ function EventRow({ event }: { event: ArkEvent }) {
           rel="noreferrer noopener"
           className="mt-4 button-text inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
-          {isMemberOnly ? "Open in Circle" : "RSVP in Circle"} →
+          {isMemberOnly ? "Open in the app" : "RSVP in the app"} →
         </a>
       </div>
     </div>

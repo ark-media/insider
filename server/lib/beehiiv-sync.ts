@@ -421,6 +421,17 @@ export async function downgradeToFree(
 //   premium=false → tier 'free' (downgrade, do not unsubscribe)
 export type PreferenceInput = { free?: boolean; premium?: boolean }
 
+// Thrown when a caller asks to enable premium but no premium tier is configured
+// for the publication (BEEHIIV_PREMIUM_TIER_ID unset). Distinct from a transient
+// Beehiiv failure so the route can return a specific status instead of pretending
+// the change landed.
+export class PremiumNotConfiguredError extends Error {
+  constructor() {
+    super('BEEHIIV_PREMIUM_TIER_ID not set; cannot enable premium')
+    this.name = 'PremiumNotConfiguredError'
+  }
+}
+
 export async function applyPreferences(
   deps: PushDeps,
   email: string,
@@ -434,8 +445,9 @@ export async function applyPreferences(
 
   const premiumTierId = deps.env.BEEHIIV_PREMIUM_TIER_ID
   if (prefs.premium === true && !premiumTierId) {
-    console.error('[beehiiv-sync] BEEHIIV_PREMIUM_TIER_ID not set; cannot enable premium')
-    return getLocalSubscription(deps.sql, email.toLowerCase())
+    // Surface this instead of silently returning the unchanged row — otherwise
+    // the route responds 200 and the toggle looks like it worked when it didn't.
+    throw new PremiumNotConfiguredError()
   }
 
   const normalized = email.toLowerCase()

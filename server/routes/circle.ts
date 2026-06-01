@@ -1,9 +1,11 @@
 // Circle integration routes.
 //
-//   GET  /api/circle/broadcasts — pulls "sent" broadcasts from Circle Admin
-//     v2 and projects them to NewsletterPosts. Each newsletter slug maps to
-//     a tag editors apply on send.
-//   POST /api/circle-sso        — mints a signed JWT so an authenticated
+//   GET  /api/circle/broadcasts        — "sent" broadcasts → NewsletterPosts.
+//   GET  /api/circle/space-posts       — published space posts → NewsletterPosts.
+//   GET  /api/circle/community-events  — Admin v2 events → ArkEvent[] (strip).
+//   GET  /api/circle/community-feed    — curated space posts → CommunityFeedItem[].
+//   GET  /api/circle/spaces            — member-facing spaces → SuggestedSpace[].
+//   POST /api/circle-sso               — mints a signed JWT so an authenticated
 //     subscriber can SSO into Circle without a second login.
 
 import { SignJWT } from 'jose'
@@ -17,10 +19,21 @@ import {
   projectSpacePost,
   type CirclePost,
 } from '../circle-space-posts.js'
+import {
+  isPublishedFeedPost,
+  projectEvent,
+  projectFeedPost,
+  projectSpaces,
+  type CircleEvent,
+  type CircleFeedPost,
+  type CircleSpace,
+} from '../circle-community.js'
 import type {
   NewsletterPost,
   NewsletterSlug,
 } from '../../src/data/newsletters.js'
+import type { ArkEvent } from '../../src/data/events.js'
+import type { CommunityFeedItem, SuggestedSpace } from '../../shared/community.js'
 import { fetchAuth0EmailVerified, fetchAuth0TierForEmail } from '../entitlement.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { makeJsonRes, readJson } from '../lib/http.js'
@@ -31,6 +44,34 @@ import {
 import type { Deps, Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug } from './newsletter-slugs.js'
+import type { IncomingMessage } from 'node:http'
+
+/**
+ * Is the caller an authenticated Ark+ member? Mirrors the tier resolution in
+ * /api/circle-sso: a verified Auth0 bearer (tier claim, with a Management API
+ * fallback when the claim is absent) or the post-checkout session cookie
+ * (always paid). Guests resolve to false. Used to gate member-only content.
+ */
+async function callerIsArkPlusMember(
+  req: IncomingMessage,
+  env: Deps['env'],
+): Promise<boolean> {
+  const authHeader = req.headers.authorization
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7)
+    const profile = await verifyAuth0BearerProfile(token)
+    if (profile) {
+      if (profile.tier) return profile.tier === 'ark-plus-member'
+      // Tier claim absent (Action not deployed yet) — authoritative lookup.
+      return (await fetchAuth0TierForEmail(env, profile.email)) === 'ark-plus-member'
+    }
+    // Older clients may pass the checkout-session token as a bearer.
+    if (await verifyCheckoutToken(token, env)) return true
+  }
+  const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
+  if (cookieToken) return Boolean(await verifyCheckoutToken(cookieToken, env))
+  return false
+}
 
 const CIRCLE_CACHE_TTL_MS = 5 * 60 * 1000
 const circleBroadcastsCache = makeTTLCache<NewsletterSlug, NewsletterPost[]>(
@@ -43,6 +84,9 @@ export function __resetCircleCachesForTests(): void {
   circleBroadcastsCache.clear()
   circleSpacePostsCache.clear()
   circleSpaceIdCache.clear()
+  circleEventsCache.clear()
+  circleCommunityFeedCache.clear()
+  circleSpacesCache.clear()
 }
 
 // newsletter slug → { tag editors apply on send, author for the byline }
@@ -236,6 +280,136 @@ async function fetchCircleSpacePosts(
   return posts
 }
 
+// ---------------------------------------------------------------------------
+// /community subscriber feed — events, curated highlights, suggested spaces
+//
+// Same Admin v2 + paginate + project + cache pattern as above, but feeding the
+// signed-in subscriber view on /community. Projections live in
+// circle-community.ts; this file owns the HTTP/pagination/caching.
+// ---------------------------------------------------------------------------
+
+const circleEventsCache = makeTTLCache<string, ArkEvent[]>(CIRCLE_CACHE_TTL_MS)
+const circleCommunityFeedCache = makeTTLCache<string, CommunityFeedItem[]>(
+  CIRCLE_CACHE_TTL_MS,
+)
+const circleSpacesCache = makeTTLCache<string, SuggestedSpace[]>(
+  CIRCLE_CACHE_TTL_MS,
+)
+
+const CIRCLE_EVENTS_PAGE_SIZE = 100
+const CIRCLE_EVENTS_MAX_PAGES = 3
+
+// The space whose published posts power the curated highlights feed (decided
+// with product). Resolved to a Circle space id via `resolveSpaceIdBySlug`.
+const COMMUNITY_FEED_SPACE_SLUG = 'exclusive-ark-content'
+
+async function fetchCircleEvents(token: string): Promise<ArkEvent[]> {
+  const cached = circleEventsCache.get('events')
+  if (cached) return cached
+
+  const out: ArkEvent[] = []
+  for (let page = 1; page <= CIRCLE_EVENTS_MAX_PAGES; page += 1) {
+    const url =
+      `https://app.circle.so/api/admin/v2/events` +
+      `?per_page=${CIRCLE_EVENTS_PAGE_SIZE}&page=${page}`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      throw new Error(`Circle ${res.status}: ${await res.text()}`)
+    }
+    const body = (await res.json()) as {
+      records?: CircleEvent[]
+      has_next_page?: boolean
+    }
+    const records = body.records ?? []
+    if (records.length === 0) break
+    for (const r of records) {
+      const ev = projectEvent(r)
+      if (ev) out.push(ev)
+    }
+    if (body.has_next_page === false) break
+    if (records.length < CIRCLE_EVENTS_PAGE_SIZE) break
+  }
+
+  circleEventsCache.set('events', out)
+  return out
+}
+
+async function fetchCircleCommunityFeed(
+  token: string,
+): Promise<CommunityFeedItem[]> {
+  const cached = circleCommunityFeedCache.get(COMMUNITY_FEED_SPACE_SLUG)
+  if (cached) return cached
+
+  const spaceId = await resolveSpaceIdBySlug(COMMUNITY_FEED_SPACE_SLUG, token)
+  if (spaceId === null) return []
+
+  const matches: CircleFeedPost[] = []
+  for (let page = 1; page <= CIRCLE_SPACE_POSTS_MAX_PAGES; page += 1) {
+    const url =
+      `https://app.circle.so/api/admin/v2/posts` +
+      `?space_id=${spaceId}` +
+      `&status=published` +
+      `&per_page=${CIRCLE_SPACE_POSTS_PAGE_SIZE}&page=${page}`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      throw new Error(`Circle ${res.status}: ${await res.text()}`)
+    }
+    const body = (await res.json()) as { records?: CircleFeedPost[] }
+    const records = body.records ?? []
+    if (records.length === 0) break
+    for (const p of records) {
+      if (isPublishedFeedPost(p)) {
+        matches.push(p)
+        if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
+      }
+    }
+    if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
+    if (records.length < CIRCLE_SPACE_POSTS_PAGE_SIZE) break
+  }
+
+  const items: CommunityFeedItem[] = matches
+    .map((p) => projectFeedPost(p))
+    .filter((p): p is CommunityFeedItem => p !== null)
+    .sort(
+      (a, b) =>
+        b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id),
+    )
+
+  circleCommunityFeedCache.set(COMMUNITY_FEED_SPACE_SLUG, items)
+  return items
+}
+
+async function fetchMemberSpaces(token: string): Promise<SuggestedSpace[]> {
+  const cached = circleSpacesCache.get('spaces')
+  if (cached) return cached
+
+  const all: CircleSpace[] = []
+  for (let page = 1; page <= CIRCLE_SPACES_MAX_PAGES; page += 1) {
+    const url =
+      `https://app.circle.so/api/admin/v2/spaces` +
+      `?per_page=${CIRCLE_SPACES_PAGE_SIZE}&page=${page}`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      throw new Error(`Circle ${res.status}: ${await res.text()}`)
+    }
+    const body = (await res.json()) as { records?: CircleSpace[] }
+    const records = body.records ?? []
+    if (records.length === 0) break
+    all.push(...records)
+    if (records.length < CIRCLE_SPACES_PAGE_SIZE) break
+  }
+
+  const spaces = projectSpaces(all)
+  circleSpacesCache.set('spaces', spaces)
+  return spaces
+}
+
 export function circleRoutes({ env }: Deps): Route[] {
   return [
     {
@@ -266,6 +440,84 @@ export function circleRoutes({ env }: Deps): Route[] {
           json(200, { posts })
         } catch (err) {
           console.error('[circle] broadcasts fetch failed:', err)
+          json(502, { error: 'circle_unavailable' })
+        }
+      },
+    },
+    {
+      path: '/api/circle/community-events',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+        // Events shift on editorial cadence; SWR absorbs traffic between cold
+        // starts. The client re-derives live/upcoming from `starts_at` on each
+        // 45s poll, so a short cache here doesn't delay the "live" flip.
+        res.setHeader(
+          'cache-control',
+          'public, s-maxage=300, stale-while-revalidate=3600',
+        )
+
+        const token = env.CIRCLE_ADMIN_API_TOKEN
+        if (!token) return json(200, { events: [] })
+
+        try {
+          const events = await fetchCircleEvents(token)
+          json(200, { events })
+        } catch (err) {
+          console.error('[circle] events fetch failed:', err)
+          json(502, { error: 'circle_unavailable' })
+        }
+      },
+    },
+    {
+      path: '/api/circle/community-feed',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+        // Member-only content (the Ark+ "Exclusive" space). Gate on a verified
+        // subscriber and never let a shared cache hold it — the response is
+        // identity-scoped, not public.
+        res.setHeader('cache-control', 'private, no-store')
+
+        const token = env.CIRCLE_ADMIN_API_TOKEN
+        if (!token) return json(200, { items: [] })
+
+        // Withhold the content from non-subscribers (returns empty rather than
+        // 403 so the client renders the real empty state, not a mock fallback).
+        if (!(await callerIsArkPlusMember(req, env))) {
+          return json(200, { items: [] })
+        }
+
+        try {
+          const items = await fetchCircleCommunityFeed(token)
+          json(200, { items })
+        } catch (err) {
+          console.error('[circle] community feed fetch failed:', err)
+          json(502, { error: 'circle_unavailable' })
+        }
+      },
+    },
+    {
+      path: '/api/circle/spaces',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+        res.setHeader(
+          'cache-control',
+          'public, s-maxage=300, stale-while-revalidate=3600',
+        )
+
+        const token = env.CIRCLE_ADMIN_API_TOKEN
+        if (!token) return json(200, { spaces: [] })
+
+        try {
+          const spaces = await fetchMemberSpaces(token)
+          json(200, { spaces })
+        } catch (err) {
+          console.error('[circle] spaces fetch failed:', err)
           json(502, { error: 'circle_unavailable' })
         }
       },

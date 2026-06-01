@@ -4,6 +4,7 @@ import {
 } from "../data/communityBroadcasts";
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import {
+  classifyLiveUpcoming,
   liveAndUpcomingEvents,
   upcomingEvents,
   type ArkEvent,
@@ -11,28 +12,58 @@ import {
 } from "../data/events";
 import { circleUrls, newsletterCircleSpaces } from "../config/urls";
 import type { NewsletterSource } from "./newsletterSources";
+import { authHeaders } from "./auth";
 
 /**
- * Mock Circle headless client.
+ * Circle headless client.
  *
- * Real implementation would call Circle's admin API with a server-side token
- * (BCommunity SSO + headless reads). Each function here returns the same shape
- * the real API would, after light projection — so the UI is stable when we
- * swap to a real fetcher.
- *
- * Two surfaces share this module:
- *   1. The /community page reads `fetchPublicBroadcasts` / `fetchUpcomingEvents`
- *      to render Ark+-gated community content.
- *   2. The newsletter pages read `circleSource` (a `NewsletterSource`) for
- *      newsletters bound to Circle Broadcasts during the Beehiiv vs Circle
- *      evaluation. `circleSource` proxies `/api/circle/broadcasts` and falls
- *      back to mock newsletter posts when the server has no Admin API token.
+ * The /community subscriber feed reads `fetchEventStrip` / `fetchCommunityFeed`
+ * / `fetchSuggestedSpaces`, which proxy the `/api/circle/community-*` server
+ * routes (real Circle Admin v2 reads, projected to the stable client shapes)
+ * and fall back to local mock data when the server has no Admin API token —
+ * the same pattern the newsletter `circleSource` uses. The mock keeps local
+ * dev and unit tests working without a token and preserves the v1→v2 contract:
+ * only the data source behind these functions changes, never their shapes.
  */
 
 const FAKE_LATENCY_MS = 80;
 
 function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
   return new Promise((r) => setTimeout(r, ms + Math.random() * 40));
+}
+
+/**
+ * GET + parse JSON, returning null ONLY on a network/parse/non-2xx failure (or
+ * a missing endpoint, e.g. unit tests). A successful empty response is NOT
+ * null — callers distinguish "offline → mock" from "reachable but empty → real
+ * empty state". Public endpoints; no credentials so they stay edge-cacheable.
+ */
+async function getJson<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Like `getJson` but attaches the member session: the Auth0 bearer (when
+ * present) plus credentials so the post-checkout cookie rides along. Used for
+ * member-gated endpoints (the curated feed).
+ */
+async function getJsonAuthed<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      headers: await authHeaders(),
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchPublicBroadcasts(): Promise<CommunityBroadcast[]> {
@@ -55,41 +86,19 @@ export async function fetchUpcomingEvents(): Promise<ArkEvent[]> {
 // these projections — never the raw `CommunityBroadcast` shape.
 // ---------------------------------------------------------------------------
 
-/** A read-only feed teaser. Every action on it deep-links into the app. */
-export type CommunityFeedItem = {
-  id: string;
-  authorName: string;
-  authorRole: string;
-  /** ISO date */
-  publishedAt: string;
-  /** Preview text only — the full body stays in the app. */
-  excerpt: string;
-  /** Deep link that lands the member on this discussion in the app. */
-  href: string;
-};
-
-/**
- * Per-member "since you were last here" digest. v1 always returns null — true
- * unread/reply counts need authenticated per-member reads (v2). The UI hides
- * the digest entirely while this is null.
- */
-export type ActivityDigest = {
-  /** ISO timestamp of the baseline this digest is measured from. */
-  since: string;
-  newPosts: number;
-  replies: number;
-  mentions: number;
-};
-
-/** A space to suggest in the empty/quiet-feed onboarding nudge. */
-export type SuggestedSpace = {
-  id: string;
-  name: string;
-  description: string;
-  memberCount: number;
-  /** Deep link that lands the member in this space in the app. */
-  href: string;
-};
+// The feed/digest/space DTOs live in shared/ so the Node server can produce
+// them without importing browser-coupled client code. Re-exported here so
+// client callers keep importing them from "../lib/circle".
+export type {
+  ActivityDigest,
+  CommunityFeedItem,
+  SuggestedSpace,
+} from "../../shared/community";
+import type {
+  ActivityDigest,
+  CommunityFeedItem,
+  SuggestedSpace,
+} from "../../shared/community";
 
 /** A live/upcoming event for the strip, with its derived status. */
 export type EventStripItem = EventWithStatus;
@@ -134,23 +143,37 @@ const MOCK_SPACES: ReadonlyArray<Omit<SuggestedSpace, "href">> = [
 
 /**
  * Live + upcoming events for the strip, classified against the current instant.
- * Re-derives each call so polling reflects an event going live.
+ * Re-derives each call so polling reflects an event going live. Real Circle
+ * events come from `/api/circle/community-events`; falls back to mock events
+ * (token-less dev / tests).
  */
 export async function fetchEventStrip(): Promise<EventStripItem[]> {
-  await jitter();
-  return liveAndUpcomingEvents();
+  const data = await getJson<{ events?: ArkEvent[] }>(
+    "/api/circle/community-events",
+  );
+  // null = endpoint unreachable (offline / tests) → mock; a reachable-but-empty
+  // result is honored as a genuinely empty calendar.
+  if (data === null) return liveAndUpcomingEvents();
+  return classifyLiveUpcoming(data.events ?? [], new Date());
 }
 
 /**
  * Feed posts. v1: curated, editorially-permissioned highlights (same for every
- * subscriber). v2: the member's joined-space personalized feed.
+ * subscriber) from a real Circle space via `/api/circle/community-feed`. v2:
+ * the member's joined-space personalized feed. Falls back to mock highlights.
  */
 export async function fetchCommunityFeed(): Promise<CommunityFeedItem[]> {
-  await jitter();
-  // Project preview-only fields — `body` and `visibility` never leak to the UI.
-  // v1 has no real per-post Circle URLs (those are opaque hash-suffixed slugs),
-  // so every teaser lands the member in the community app home via SSO; v2's
-  // per-member reads will carry the real post permalink.
+  // Member-gated endpoint → authenticated fetch. null = unreachable (offline /
+  // tests) → mock; a reachable result (even empty) is honored, so the empty
+  // state can render in a real deployment.
+  const data = await getJsonAuthed<{ items?: CommunityFeedItem[] }>(
+    "/api/circle/community-feed",
+  );
+  if (data !== null) return data.items ?? [];
+
+  // Mock fallback — project preview-only fields (`body`/`visibility` never leak)
+  // and land the member in the app home via SSO, since the mock posts have no
+  // real Circle permalink.
   return communityBroadcasts.map((b: CommunityBroadcast) => ({
     id: b.id,
     authorName: b.authorName,
@@ -170,12 +193,17 @@ export async function fetchActivityDigest(): Promise<ActivityDigest | null> {
   return null;
 }
 
-/** Spaces to suggest in the empty-state nudge. Always non-empty. */
+/**
+ * Spaces to suggest in the empty-state nudge. Real member-facing spaces come
+ * from `/api/circle/spaces`; falls back to mock spaces. Always non-empty.
+ */
 export async function fetchSuggestedSpaces(): Promise<SuggestedSpace[]> {
-  await jitter();
-  // v1 has no real per-space slugs for these mock spaces (Circle's are opaque,
-  // e.g. /c/events-71d23b), so each suggestion lands the member in the app home
-  // via SSO; v2's per-member reads will carry the real space URL.
+  const data = await getJson<{ spaces?: SuggestedSpace[] }>(
+    "/api/circle/spaces",
+  );
+  if (data !== null) return data.spaces ?? [];
+
+  // Mock fallback (offline / tests) — each suggestion lands in the app home.
   return MOCK_SPACES.map((s) => ({
     ...s,
     href: circleSsoLink(circleUrls.community),

@@ -7,6 +7,7 @@ import {
   applyPreferences,
   ensureFreeSubscription,
   isReceivingEmails,
+  PremiumNotConfiguredError,
   refreshSubscriptionFromBeehiiv,
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
@@ -213,6 +214,10 @@ export function meRoutes({ env }: Deps): Route[] {
             canPremium: isMember,
           })
         } catch (err) {
+          if (err instanceof PremiumNotConfiguredError) {
+            console.error(`[me] premium toggle unavailable for ${redactEmail(email)}: no tier configured`)
+            return json(503, { error: 'premium_unavailable' })
+          }
           console.error(
             `[me] newsletter preferences update failed for ${redactEmail(email)}:`,
             err,

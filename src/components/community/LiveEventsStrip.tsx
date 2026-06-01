@@ -10,7 +10,7 @@ const FORMAT_LABEL: Record<ArkEvent["format"], string> = {
 
 /**
  * The live + upcoming events strip. Read-only: each card deep-links into the
- * Circle app to join or RSVP — nothing happens on the web. `items === null`
+ * the app to join or RSVP — nothing happens on the web. `items === null`
  * means still loading.
  */
 export function LiveEventsStrip({ items }: { items: EventStripItem[] | null }) {
@@ -35,7 +35,7 @@ export function LiveEventsStrip({ items }: { items: EventStripItem[] | null }) {
       {items.map(({ event, status }) => (
         <li key={event.id} className="w-[280px] shrink-0">
           <a
-            href={circleEventLink()}
+            href={event.deepLink ?? circleEventLink()}
             target="_blank"
             rel="noreferrer noopener"
             className="group flex h-full flex-col border border-rule bg-navy-800/40 p-5 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
@@ -56,7 +56,7 @@ export function LiveEventsStrip({ items }: { items: EventStripItem[] | null }) {
               {event.title}
             </h3>
             <p className="mt-2 meta">
-              {FORMAT_LABEL[event.format]}
+              {event.formatLabel ?? FORMAT_LABEL[event.format]}
               {event.venue ? ` · ${event.venue}` : ""}
             </p>
             <p className="mt-auto pt-4 button-text font-display font-bold text-cyan">

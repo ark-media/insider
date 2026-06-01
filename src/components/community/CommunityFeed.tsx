@@ -3,12 +3,22 @@ import {
   type CommunityFeedItem,
   type SuggestedSpace,
 } from "../../lib/circle";
-import { formatEventStart } from "../../data/events";
 import { FeedEmptyState } from "./FeedEmptyState";
+
+function formatPostDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+}
 
 /**
  * The subscriber's community feed: read-only teasers of curated highlights.
- * Every card deep-links into the Circle app — there's no like/reply/post UI on
+ * Every card deep-links into the app — there's no like/reply/post UI on
  * the web. `items === null` is loading; an empty list renders the onboarding
  * nudge instead of a blank panel.
  */
@@ -56,12 +66,14 @@ function FeedCard({ item }: { item: CommunityFeedItem }) {
       className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
     >
       <div className="flex items-baseline justify-between gap-4">
-        <div className="button-text font-display font-bold text-fg-strong">
-          {item.authorName}
+        <div className="button-text font-display font-bold text-fg-strong transition group-hover:text-cyan">
+          {item.title ?? item.authorName}
         </div>
-        <div className="meta shrink-0">{formatEventStart(item.publishedAt)}</div>
+        <div className="meta shrink-0">{formatPostDate(item.publishedAt)}</div>
       </div>
-      <p className="mt-1 meta">{item.authorRole}</p>
+      <p className="mt-1 meta">
+        {item.title ? `${item.authorName} · ${item.authorRole}` : item.authorRole}
+      </p>
       <p className="mt-3 max-w-2xl text-body-sm">{item.excerpt}</p>
       <p className="mt-3 button-text font-display font-bold text-cyan transition group-hover:underline">
         Read &amp; reply in the app →

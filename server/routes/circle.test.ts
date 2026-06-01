@@ -10,7 +10,18 @@ import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { __resetCircleCachesForTests, circleRoutes } from './circle.js'
 import type { Deps } from '../lib/route.js'
+import { signCheckoutToken } from '../lib/session.js'
 import { silenceExpectedConsole } from '../test-utils.js'
+
+// A post-checkout session secret + a request carrying a valid member cookie,
+// used to pass the community-feed subscriber gate without an Auth0 round trip.
+const MEMBER_ENV = { CIRCLE_ADMIN_API_TOKEN: 't', CHECKOUT_SESSION_SECRET: 'test-secret' }
+async function makeMemberReq(path: string): Promise<IncomingMessage> {
+  const token = await signCheckoutToken('member@example.com', MEMBER_ENV)
+  const req = makeReq(path, '')
+  ;(req.headers as Record<string, string>).cookie = `ark_checkout=${token}`
+  return req
+}
 
 const SPACE_POSTS_PATH = '/api/circle/space-posts'
 const BROADCASTS_PATH = '/api/circle/broadcasts'
@@ -343,5 +354,179 @@ describe('GET /api/circle/broadcasts — sanity', () => {
     await handler(req, res)
     expect(res.__status()).toBe(200)
     expect(res.__json()).toEqual({ posts: [] })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// /community subscriber feed routes
+// ---------------------------------------------------------------------------
+
+const EVENTS_PATH = '/api/circle/community-events'
+const FEED_PATH = '/api/circle/community-feed'
+const SPACES_PATH = '/api/circle/spaces'
+
+describe('GET /api/circle/community-events', () => {
+  test('returns { events: [] } when token is unset, no upstream call', async () => {
+    const handler = findHandler(buildDeps({}), EVENTS_PATH)
+    const res = makeRes()
+    await handler(makeReq(EVENTS_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ events: [] })
+    expect(fetchCalls.length).toBe(0)
+  })
+
+  test('rejects non-GET with 405', async () => {
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), EVENTS_PATH)
+    const req = makeReq(EVENTS_PATH, '')
+    ;(req as { method: string }).method = 'POST'
+    const res = makeRes()
+    await handler(req, res)
+    expect(res.__status()).toBe(405)
+  })
+
+  test('maps upstream 5xx to 502', async () => {
+    fetchImpl = async () => new Response('down', { status: 500 })
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), EVENTS_PATH)
+    const res = makeRes()
+    await handler(makeReq(EVENTS_PATH, ''), res)
+    expect(res.__status()).toBe(502)
+    expect(res.__json()).toEqual({ error: 'circle_unavailable' })
+  })
+
+  test('projects events and sets SWR cache-control', async () => {
+    fetchImpl = async () =>
+      new Response(
+        JSON.stringify({
+          has_next_page: false,
+          records: [
+            {
+              id: 1,
+              name: 'Coalition Roundtable',
+              slug: 'coalition-roundtable',
+              starts_at: '2026-06-07T19:00:00.000Z',
+              duration_in_seconds: 3600,
+              location_type: 'live_room',
+              host: 'Noa',
+              url: 'https://app.arkmedia.org/c/events-71d23b/coalition-roundtable',
+            },
+          ],
+        }),
+        { status: 200 },
+      )
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), EVENTS_PATH)
+    const res = makeRes()
+    await handler(makeReq(EVENTS_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    const body = res.__json() as { events: Array<{ id: string; deepLink: string }> }
+    expect(body.events.length).toBe(1)
+    expect(body.events[0]!.id).toBe('coalition-roundtable')
+    expect(body.events[0]!.deepLink).toContain('/circle-sso')
+    expect(res.__header('cache-control')).toBe(
+      'public, s-maxage=300, stale-while-revalidate=3600',
+    )
+  })
+})
+
+describe('GET /api/circle/community-feed', () => {
+  test('returns { items: [] } when token is unset', async () => {
+    const handler = findHandler(buildDeps({}), FEED_PATH)
+    const res = makeRes()
+    await handler(makeReq(FEED_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ items: [] })
+  })
+
+  test('withholds content from an unauthenticated caller (subscriber gate)', async () => {
+    // Token present, but no member session on the request → empty, no upstream.
+    fetchImpl = async (url) => {
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), FEED_PATH)
+    const res = makeRes()
+    await handler(makeReq(FEED_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ items: [] })
+    expect(res.__header('cache-control')).toBe('private, no-store')
+    expect(fetchCalls.length).toBe(0)
+  })
+
+  test('resolves the feed space, projects posts, sorts newest-first (member)', async () => {
+    fetchImpl = async (url) => {
+      if (url.includes('/spaces')) {
+        return new Response(
+          JSON.stringify({ records: [{ id: 77, slug: 'exclusive-ark-content' }] }),
+          { status: 200 },
+        )
+      }
+      if (url.includes('/posts')) {
+        return new Response(
+          JSON.stringify({
+            records: [
+              {
+                id: 1,
+                name: 'Older',
+                body: '<p>Older.</p>',
+                published_at: '2026-01-01T00:00:00Z',
+                status: 'published',
+                user_name: 'Ava',
+                space_name: 'Exclusive Ark+ Content',
+                url: 'https://app.arkmedia.org/c/exclusive-ark-content/older',
+              },
+              {
+                id: 2,
+                name: 'Newer',
+                body: '<p>Newer.</p>',
+                published_at: '2026-02-01T00:00:00Z',
+                status: 'published',
+                user_name: 'Ava',
+                space_name: 'Exclusive Ark+ Content',
+                url: 'https://app.arkmedia.org/c/exclusive-ark-content/newer',
+              },
+            ],
+          }),
+          { status: 200 },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+    const handler = findHandler(buildDeps(MEMBER_ENV), FEED_PATH)
+    const res = makeRes()
+    await handler(await makeMemberReq(FEED_PATH), res)
+    const body = res.__json() as { items: Array<{ id: string; title: string }> }
+    expect(body.items.map((i) => i.title)).toEqual(['Newer', 'Older'])
+  })
+})
+
+describe('GET /api/circle/spaces', () => {
+  test('returns { spaces: [] } when token is unset', async () => {
+    const handler = findHandler(buildDeps({}), SPACES_PATH)
+    const res = makeRes()
+    await handler(makeReq(SPACES_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ spaces: [] })
+  })
+
+  test('projects member-facing spaces, excluding system/event spaces', async () => {
+    fetchImpl = async (url) => {
+      if (url.includes('/spaces')) {
+        return new Response(
+          JSON.stringify({
+            records: [
+              { id: 1, slug: 'events-71d23b', name: 'Virtual Events', space_type: 'event' },
+              { id: 2, slug: 'start-here', name: 'Welcome!', space_type: 'basic' },
+              { id: 3, slug: 'world', name: 'World', space_type: 'basic', url: 'https://app.arkmedia.org/c/world' },
+            ],
+          }),
+          { status: 200 },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SPACES_PATH)
+    const res = makeRes()
+    await handler(makeReq(SPACES_PATH, ''), res)
+    const body = res.__json() as { spaces: Array<{ id: string; href: string }> }
+    expect(body.spaces.map((s) => s.id)).toEqual(['world'])
+    expect(body.spaces[0]!.href).toContain('/circle-sso')
   })
 })

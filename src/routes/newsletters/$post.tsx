@@ -200,8 +200,8 @@ function PostPage() {
               The rest of this post is for Ark+ members.
             </h2>
             <p className="mt-4 max-w-2xl text-body-lg">
-              Ark+ membership is one bill, one login. It includes the paid
-              feed, members-only newsletters, and the community.
+              Ark+ includes the paid feed, members-only newsletters, and the
+              community.
             </p>
             <Link
               to="/plus"

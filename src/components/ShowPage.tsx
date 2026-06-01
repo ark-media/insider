@@ -137,8 +137,7 @@ function PaidShowJoinCta({ show }: { show: Show }) {
             </h2>
             <p className="mt-4 max-w-2xl text-body-lg">
               Members get extended interviews, ad-free episodes, members-only
-              Q&amp;As, the Ark+ newsletter, and the community — one membership,
-              one bill.
+              Q&amp;As, the Ark+ newsletter, and the community.
             </p>
           </div>
           <div className="lg:col-span-5">

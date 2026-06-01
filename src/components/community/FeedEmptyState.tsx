@@ -3,7 +3,7 @@ import type { SuggestedSpace } from "../../lib/circle";
 /**
  * Shown when the feed is empty/quiet. Instead of a blank panel, nudge the
  * member to join a space — each suggestion deep-links into the app. Read-only:
- * joining happens in Circle, not here.
+ * joining happens in the app, not here.
  */
 export function FeedEmptyState({
   spaces,
@@ -36,10 +36,14 @@ export function FeedEmptyState({
                   <div className="button-text font-display font-bold text-fg-strong transition group-hover:text-cyan">
                     {space.name}
                   </div>
-                  <p className="mt-1 text-body-sm">{space.description}</p>
-                  <p className="mt-1 meta">
-                    {space.memberCount.toLocaleString()} members
-                  </p>
+                  {space.description ? (
+                    <p className="mt-1 text-body-sm">{space.description}</p>
+                  ) : null}
+                  {space.memberCount ? (
+                    <p className="mt-1 meta">
+                      {space.memberCount.toLocaleString()} members
+                    </p>
+                  ) : null}
                 </div>
                 <div className="sm:col-span-3 sm:text-right">
                   <span className="button-text font-display font-bold text-cyan">

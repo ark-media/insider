@@ -40,7 +40,7 @@ const linkRows = [
     eyebrow: "Ark+",
     title: "All in.",
     to: "/plus",
-    body: "One membership for the paid feed, members-only newsletters, and the community.",
+    body: "The paid feed, members-only newsletters, and the community — all included.",
     cta: "Explore Ark+",
   },
 ];

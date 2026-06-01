@@ -536,6 +536,26 @@ describe('PUT /api/me/newsletters', () => {
     })
   })
 
+  test('503 premium_unavailable when no premium tier is configured', async () => {
+    const token = await signAuth0Token({ email: 'm@x.com', tier: 'ark-plus-member' })
+    // No Beehiiv call should be attempted — the guard fires first.
+    beehiivHandler = () => new Response('{}', { status: 500 })
+    const { BEEHIIV_PREMIUM_TIER_ID: _omit, ...envNoTier } = BASE_ENV
+    const handler = buildHandler(envNoTier)
+    const res = makeRes()
+    await runHandler(
+      handler,
+      makeReq({ method: 'PUT', bearer: token, body: { premium: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(503)
+    expect(res.__json()).toEqual({ error: 'premium_unavailable' })
+    // Confirm we never hit Beehiiv for this request.
+    expect(
+      fetchCalls.some((c) => c.url.includes('api.beehiiv.com')),
+    ).toBe(false)
+  })
+
   test('stale JWT but live-tier subscriber → premium toggle allowed', async () => {
     const token = await signAuth0Token({ email: 'upgraded@x.com', tier: 'free' })
     liveTierByEmail.set('upgraded@x.com', 'ark-plus-member')

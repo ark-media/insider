@@ -142,7 +142,7 @@ function FreeDashboard({
                   <li>— Inside Call Me Back, the members-only show</li>
                   <li>— Private podcast feed, ad-free</li>
                   <li>— Members-only newsletter</li>
-                  <li>— Circle community access</li>
+                  <li>— The Ark+ community in the app</li>
                 </ul>
                 <Link
                   to="/plus"
