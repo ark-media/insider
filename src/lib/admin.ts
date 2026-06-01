@@ -4,6 +4,7 @@
 
 import { getToken } from "./tokenStore";
 import type { Announcement } from "./announcements";
+import type { Career } from "./careers";
 import type { Promo } from "../../shared/promo";
 import type { BeehiivDraft, DiscussThread } from "../../shared/discuss-thread";
 import type { NewsletterSlug } from "../data/newsletters";
@@ -91,6 +92,56 @@ export async function deleteAnnouncement(id: string): Promise<void> {
     `/api/admin/announcements?id=${encodeURIComponent(id)}`,
     { method: "DELETE", headers: await authHeaders(), credentials: "include" },
   );
+  if (!res.ok) throw new Error(await errorMessage(res));
+}
+
+// --- Careers -------------------------------------------------------------
+
+// What the editor submits. The server derives/normalizes the slug, sanitizes
+// the description, and validates the apply URL before storing.
+export type CareerDraft = {
+  slug: string;
+  title: string;
+  team: string;
+  location: string;
+  employmentType: string;
+  summary: string;
+  description: string;
+  applyUrl: string;
+  enabled: boolean;
+  displayOrder: number;
+};
+
+export async function listCareers(): Promise<Career[]> {
+  const res = await fetch("/api/admin/careers", {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { careers: Career[] }).careers;
+}
+
+export async function saveCareer(draft: CareerDraft, id?: string): Promise<Career> {
+  const url = id
+    ? `/api/admin/careers?id=${encodeURIComponent(id)}`
+    : "/api/admin/careers";
+  const res = await fetch(url, {
+    // PUT, not PATCH: the editor always submits the full record (full replace).
+    method: id ? "PUT" : "POST",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify(draft),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { career: Career }).career;
+}
+
+export async function deleteCareer(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/careers?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(await errorMessage(res));
 }
 

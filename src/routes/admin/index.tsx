@@ -12,6 +12,11 @@ const CARDS = [
     body: "Create and schedule the dismissible banner at the top of the site.",
   },
   {
+    to: "/admin/careers",
+    title: "Careers",
+    body: "Post and edit open positions. Each links out to its application (e.g. a TestGorilla assessment).",
+  },
+  {
     to: "/admin/promos",
     title: "Promo codes",
     body: "Create Stripe coupons and promotion codes. Auto-apply ones discount checkout immediately.",

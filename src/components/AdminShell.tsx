@@ -2,11 +2,12 @@ import { type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { AdminGuard } from "./AdminGuard";
 
-type Tab = "home" | "announcements" | "promos" | "discuss-threads";
+type Tab = "home" | "announcements" | "careers" | "promos" | "discuss-threads";
 
 const TABS: { id: Tab; label: string; to: string }[] = [
   { id: "home", label: "Overview", to: "/admin" },
   { id: "announcements", label: "Announcements", to: "/admin/announcements" },
+  { id: "careers", label: "Careers", to: "/admin/careers" },
   { id: "promos", label: "Promo codes", to: "/admin/promos" },
   { id: "discuss-threads", label: "Discuss threads", to: "/admin/discuss-threads" },
 ];

@@ -17,7 +17,6 @@ import { Route as EventsRouteImport } from './routes/events'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CommunityRouteImport } from './routes/community'
 import { Route as CircleSsoRouteImport } from './routes/circle-sso'
-import { Route as CareersRouteImport } from './routes/careers'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShowsIndexRouteImport } from './routes/shows/index'
@@ -25,6 +24,7 @@ import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
 import { Route as PlusIndexRouteImport } from './routes/plus/index'
 import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
 import { Route as HostsIndexRouteImport } from './routes/hosts/index'
+import { Route as CareersIndexRouteImport } from './routes/careers/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as ShowsShowRouteImport } from './routes/shows/$show'
@@ -36,8 +36,10 @@ import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-c
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
+import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
 import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
+import { Route as AdminCareersRouteImport } from './routes/admin/careers'
 import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
 import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
 import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
@@ -87,11 +89,6 @@ const CircleSsoRoute = CircleSsoRouteImport.update({
   path: '/circle-sso',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CareersRoute = CareersRouteImport.update({
-  id: '/careers',
-  path: '/careers',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -125,6 +122,11 @@ const NewslettersIndexRoute = NewslettersIndexRouteImport.update({
 const HostsIndexRoute = HostsIndexRouteImport.update({
   id: '/hosts/',
   path: '/hosts/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CareersIndexRoute = CareersIndexRouteImport.update({
+  id: '/careers/',
+  path: '/careers/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -182,6 +184,11 @@ const HostsSlugRoute = HostsSlugRouteImport.update({
   path: '/hosts/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CareersSlugRoute = CareersSlugRouteImport.update({
+  id: '/careers/$slug',
+  path: '/careers/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminPromosRoute = AdminPromosRouteImport.update({
   id: '/admin/promos',
   path: '/admin/promos',
@@ -190,6 +197,11 @@ const AdminPromosRoute = AdminPromosRouteImport.update({
 const AdminDiscussThreadsRoute = AdminDiscussThreadsRouteImport.update({
   id: '/admin/discuss-threads',
   path: '/admin/discuss-threads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminCareersRoute = AdminCareersRouteImport.update({
+  id: '/admin/careers',
+  path: '/admin/careers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
@@ -236,7 +248,6 @@ const NewslettersSlugPostRoute = NewslettersSlugPostRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRouteWithChildren
-  '/careers': typeof CareersRoute
   '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
@@ -250,8 +261,10 @@ export interface FileRoutesByFullPath {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
+  '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
@@ -263,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
+  '/careers/': typeof CareersIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
   '/plus/': typeof PlusIndexRoute
@@ -275,7 +289,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRouteWithChildren
-  '/careers': typeof CareersRoute
   '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
@@ -289,8 +302,10 @@ export interface FileRoutesByTo {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
+  '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
@@ -302,6 +317,7 @@ export interface FileRoutesByTo {
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account': typeof AccountIndexRoute
   '/admin': typeof AdminIndexRoute
+  '/careers': typeof CareersIndexRoute
   '/hosts': typeof HostsIndexRoute
   '/newsletters': typeof NewslettersIndexRoute
   '/plus': typeof PlusIndexRoute
@@ -315,7 +331,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRouteWithChildren
-  '/careers': typeof CareersRoute
   '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
@@ -329,8 +344,10 @@ export interface FileRoutesById {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
+  '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
@@ -342,6 +359,7 @@ export interface FileRoutesById {
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
+  '/careers/': typeof CareersIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
   '/plus/': typeof PlusIndexRoute
@@ -356,7 +374,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
-    | '/careers'
     | '/circle-sso'
     | '/community'
     | '/contact'
@@ -370,8 +387,10 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/promos'
+    | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
     | '/plus/gift'
@@ -383,6 +402,7 @@ export interface FileRouteTypes {
     | '/shows/$show'
     | '/account/'
     | '/admin/'
+    | '/careers/'
     | '/hosts/'
     | '/newsletters/'
     | '/plus/'
@@ -395,7 +415,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
-    | '/careers'
     | '/circle-sso'
     | '/community'
     | '/contact'
@@ -409,8 +428,10 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/promos'
+    | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
     | '/plus/gift'
@@ -422,6 +443,7 @@ export interface FileRouteTypes {
     | '/shows/$show'
     | '/account'
     | '/admin'
+    | '/careers'
     | '/hosts'
     | '/newsletters'
     | '/plus'
@@ -434,7 +456,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
-    | '/careers'
     | '/circle-sso'
     | '/community'
     | '/contact'
@@ -448,8 +469,10 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/promos'
+    | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
     | '/plus/gift'
@@ -461,6 +484,7 @@ export interface FileRouteTypes {
     | '/shows/$show'
     | '/account/'
     | '/admin/'
+    | '/careers/'
     | '/hosts/'
     | '/newsletters/'
     | '/plus/'
@@ -474,7 +498,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRouteWithChildren
-  CareersRoute: typeof CareersRoute
   CircleSsoRoute: typeof CircleSsoRoute
   CommunityRoute: typeof CommunityRoute
   ContactRoute: typeof ContactRoute
@@ -487,8 +510,10 @@ export interface RootRouteChildren {
   AccountNewslettersRoute: typeof AccountNewslettersRoute
   AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
+  AdminCareersRoute: typeof AdminCareersRoute
   AdminDiscussThreadsRoute: typeof AdminDiscussThreadsRoute
   AdminPromosRoute: typeof AdminPromosRoute
+  CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
   PlusGiftRoute: typeof PlusGiftRoute
@@ -500,6 +525,7 @@ export interface RootRouteChildren {
   ShowsShowRoute: typeof ShowsShowRouteWithChildren
   AccountIndexRoute: typeof AccountIndexRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  CareersIndexRoute: typeof CareersIndexRoute
   HostsIndexRoute: typeof HostsIndexRoute
   NewslettersIndexRoute: typeof NewslettersIndexRoute
   PlusIndexRoute: typeof PlusIndexRoute
@@ -567,13 +593,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CircleSsoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/careers': {
-      id: '/careers'
-      path: '/careers'
-      fullPath: '/careers'
-      preLoaderRoute: typeof CareersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -621,6 +640,13 @@ declare module '@tanstack/react-router' {
       path: '/hosts'
       fullPath: '/hosts/'
       preLoaderRoute: typeof HostsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/careers/': {
+      id: '/careers/'
+      path: '/careers'
+      fullPath: '/careers/'
+      preLoaderRoute: typeof CareersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -700,6 +726,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HostsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/careers/$slug': {
+      id: '/careers/$slug'
+      path: '/careers/$slug'
+      fullPath: '/careers/$slug'
+      preLoaderRoute: typeof CareersSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/promos': {
       id: '/admin/promos'
       path: '/admin/promos'
@@ -712,6 +745,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/discuss-threads'
       fullPath: '/admin/discuss-threads'
       preLoaderRoute: typeof AdminDiscussThreadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/careers': {
+      id: '/admin/careers'
+      path: '/admin/careers'
+      fullPath: '/admin/careers'
+      preLoaderRoute: typeof AdminCareersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/announcements': {
@@ -798,7 +838,6 @@ const ShowsShowRouteWithChildren = ShowsShowRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRouteWithChildren,
-  CareersRoute: CareersRoute,
   CircleSsoRoute: CircleSsoRoute,
   CommunityRoute: CommunityRoute,
   ContactRoute: ContactRoute,
@@ -811,8 +850,10 @@ const rootRouteChildren: RootRouteChildren = {
   AccountNewslettersRoute: AccountNewslettersRoute,
   AccountPodcastFeedRoute: AccountPodcastFeedRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
+  AdminCareersRoute: AdminCareersRoute,
   AdminDiscussThreadsRoute: AdminDiscussThreadsRoute,
   AdminPromosRoute: AdminPromosRoute,
+  CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,
   PlusGiftRoute: PlusGiftRoute,
@@ -824,6 +865,7 @@ const rootRouteChildren: RootRouteChildren = {
   ShowsShowRoute: ShowsShowRouteWithChildren,
   AccountIndexRoute: AccountIndexRoute,
   AdminIndexRoute: AdminIndexRoute,
+  CareersIndexRoute: CareersIndexRoute,
   HostsIndexRoute: HostsIndexRoute,
   NewslettersIndexRoute: NewslettersIndexRoute,
   PlusIndexRoute: PlusIndexRoute,
