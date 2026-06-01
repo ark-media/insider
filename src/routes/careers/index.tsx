@@ -18,8 +18,8 @@ function CareersPage() {
     >
       <section>
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <div className="flex items-baseline gap-3">
-            <h2 className="label text-cyan">
+          <div className="flex items-center gap-4">
+            <h2 className="label whitespace-nowrap text-cyan">
               Open roles
             </h2>
             {careers.length > 0 ? (
@@ -27,6 +27,10 @@ function CareersPage() {
                 {careers.length}
               </span>
             ) : null}
+            <span
+              aria-hidden
+              className="h-px flex-1 bg-gradient-to-r from-rule-strong to-transparent"
+            />
           </div>
 
           {careers.length === 0 ? (
@@ -35,29 +39,43 @@ function CareersPage() {
               positions here as they open up.
             </p>
           ) : (
-            <ul className="mt-8 border-t border-rule">
+            <ul className="mt-8 border-y border-rule-strong">
               {careers.map((c, i) => {
-                const meta = [c.team, c.location, c.employmentType]
-                  .filter(Boolean)
-                  .join(" · ");
+                const metaParts = [c.team, c.location, c.employmentType].filter(
+                  Boolean,
+                );
                 return (
-                  <li key={c.id}>
+                  <li
+                    key={c.id}
+                    className="border-b border-rule last:border-b-0"
+                  >
                     <Link
                       to="/careers/$slug"
                       params={{ slug: c.slug }}
                       style={{ animationDelay: `${Math.min(i, 6) * 70}ms` }}
-                      className="rise group grid grid-cols-1 gap-x-8 gap-y-3 border-b border-rule py-7 transition-colors duration-300 hover:border-cyan/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan lg:grid-cols-12 lg:items-center lg:gap-8"
+                      className="rise group grid grid-cols-1 gap-x-8 gap-y-3 py-7 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan lg:grid-cols-12 lg:items-center lg:gap-8"
                     >
                       <div className="lg:col-span-7">
-                        <h3 className="font-display text-[22px] leading-tight text-fg-strong transition-colors duration-300 group-hover:text-cyan">
-                          {c.title}
+                        <h3 className="font-display text-[22px] leading-tight text-fg-strong">
+                          <span className="relative inline-block transition-colors duration-300 after:absolute after:-bottom-1 after:left-0 after:h-px after:w-full after:origin-left after:scale-x-0 after:bg-cyan after:transition-transform after:duration-300 after:ease-out group-hover:text-cyan group-hover:after:scale-x-100 motion-reduce:after:transition-none">
+                            {c.title}
+                          </span>
                         </h3>
                         <p className="mt-2 max-w-xl text-body-sm">
                           {c.summary}
                         </p>
                       </div>
                       <div className="text-body-sm lg:col-span-3">
-                        {meta}
+                        {metaParts.map((part, idx) => (
+                          <span key={idx}>
+                            {idx > 0 ? (
+                              <span aria-hidden className="px-2 text-fg-faint">
+                                ·
+                              </span>
+                            ) : null}
+                            {part}
+                          </span>
+                        ))}
                       </div>
                       <div className="lg:col-span-2 lg:text-right">
                         <span className="inline-flex items-center gap-2 border border-rule-strong px-4 py-2 button-text font-semibold text-fg transition-colors duration-300 group-hover:border-cyan group-hover:text-cyan">
