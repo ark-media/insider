@@ -420,7 +420,9 @@ describe('GET /api/circle/community-events', () => {
     const body = res.__json() as { events: Array<{ id: string; deepLink: string }> }
     expect(body.events.length).toBe(1)
     expect(body.events[0]!.id).toBe('coalition-roundtable')
-    expect(body.events[0]!.deepLink).toContain('/circle-sso')
+    expect(body.events[0]!.deepLink).toBe(
+      'https://app.arkmedia.org/c/events-71d23b/coalition-roundtable',
+    )
     expect(res.__header('cache-control')).toBe(
       'public, s-maxage=300, stale-while-revalidate=3600',
     )
@@ -527,6 +529,6 @@ describe('GET /api/circle/spaces', () => {
     await handler(makeReq(SPACES_PATH, ''), res)
     const body = res.__json() as { spaces: Array<{ id: string; href: string }> }
     expect(body.spaces.map((s) => s.id)).toEqual(['world'])
-    expect(body.spaces[0]!.href).toContain('/circle-sso')
+    expect(body.spaces[0]!.href).toBe('https://app.arkmedia.org/c/world')
   })
 })

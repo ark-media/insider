@@ -35,11 +35,9 @@ describe('projectEvent', () => {
     expect(ev.hosts).toEqual(['Noa'])
   })
 
-  test('wraps the real event url in the /circle-sso bridge', () => {
+  test('deep-links straight to the real Circle event url', () => {
     const ev = projectEvent(base)!
-    expect(ev.deepLink).toBe(
-      `/circle-sso?return_to=${encodeURIComponent(base.url)}`,
-    )
+    expect(ev.deepLink).toBe(base.url)
   })
 
   test('maps in_person events to the in-person format + venue', () => {
@@ -73,7 +71,7 @@ describe('projectFeedPost', () => {
     url: 'https://app.arkmedia.org/c/exclusive-ark-content/inside-mossad',
   }
 
-  test('projects title/author/role + plain-text excerpt + sso href', () => {
+  test('projects title/author/role + plain-text excerpt + Circle href', () => {
     const item = projectFeedPost(base)!
     expect(item.id).toBe('42')
     expect(item.title).toBe('Inside Mossad’s Shadow War')
@@ -83,9 +81,7 @@ describe('projectFeedPost', () => {
       'The current Iran War is just one chapter in a much longer war.',
     )
     expect(item.excerpt).not.toContain('<p>') // HTML stripped
-    expect(item.href).toBe(
-      `/circle-sso?return_to=${encodeURIComponent(base.url)}`,
-    )
+    expect(item.href).toBe(base.url)
   })
 
   test('accepts the rich_text {body} body shape', () => {
@@ -126,15 +122,11 @@ describe('projectSpaces', () => {
     expect(spaces.map((s) => s.id)).toEqual(['world', 'life'])
   })
 
-  test('uses the real space url for the sso href, falls back to /c/<slug>', () => {
+  test('uses the real space url, falls back to /c/<slug>', () => {
     const spaces = projectSpaces(records)
     const world = spaces.find((s) => s.id === 'world')!
     const life = spaces.find((s) => s.id === 'life')!
-    expect(world.href).toBe(
-      `/circle-sso?return_to=${encodeURIComponent('https://app.arkmedia.org/c/world')}`,
-    )
-    expect(life.href).toBe(
-      `/circle-sso?return_to=${encodeURIComponent('https://app.arkmedia.org/c/life')}`,
-    )
+    expect(world.href).toBe('https://app.arkmedia.org/c/world')
+    expect(life.href).toBe('https://app.arkmedia.org/c/life')
   })
 })

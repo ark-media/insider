@@ -16,7 +16,6 @@ import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CommunityRouteImport } from './routes/community'
-import { Route as CircleSsoRouteImport } from './routes/circle-sso'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShowsIndexRouteImport } from './routes/shows/index'
@@ -85,11 +84,6 @@ const ContactRoute = ContactRouteImport.update({
 const CommunityRoute = CommunityRouteImport.update({
   id: '/community',
   path: '/community',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CircleSsoRoute = CircleSsoRouteImport.update({
-  id: '/circle-sso',
-  path: '/circle-sso',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -266,7 +260,6 @@ const NewslettersSlugPostRoute = NewslettersSlugPostRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRouteWithChildren
-  '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
@@ -310,7 +303,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRouteWithChildren
-  '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
@@ -355,7 +347,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRouteWithChildren
-  '/circle-sso': typeof CircleSsoRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
@@ -401,7 +392,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
-    | '/circle-sso'
     | '/community'
     | '/contact'
     | '/events'
@@ -445,7 +435,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
-    | '/circle-sso'
     | '/community'
     | '/contact'
     | '/events'
@@ -489,7 +478,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
-    | '/circle-sso'
     | '/community'
     | '/contact'
     | '/events'
@@ -534,7 +522,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRouteWithChildren
-  CircleSsoRoute: typeof CircleSsoRoute
   CommunityRoute: typeof CommunityRoute
   ContactRoute: typeof ContactRoute
   EventsRoute: typeof EventsRoute
@@ -623,13 +610,6 @@ declare module '@tanstack/react-router' {
       path: '/community'
       fullPath: '/community'
       preLoaderRoute: typeof CommunityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/circle-sso': {
-      id: '/circle-sso'
-      path: '/circle-sso'
-      fullPath: '/circle-sso'
-      preLoaderRoute: typeof CircleSsoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -898,7 +878,6 @@ const ShowsShowRouteWithChildren = ShowsShowRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRouteWithChildren,
-  CircleSsoRoute: CircleSsoRoute,
   CommunityRoute: CommunityRoute,
   ContactRoute: ContactRoute,
   EventsRoute: EventsRoute,

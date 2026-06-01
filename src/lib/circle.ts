@@ -163,13 +163,12 @@ export const CIRCLE_OPEN_LINKS = {
 };
 
 /**
- * Build the comment URL for a newsletter post. Wraps the Circle space link in
- * /circle-sso so signed-in members land directly on the discussion; guests are
- * prompted to set up a Circle account first.
+ * Build the comment URL for a newsletter post — the post's Circle space.
+ * Circle owns auth (SSO against our Auth0 tenant), so a signed-in member lands
+ * on the discussion and a signed-out one is bounced through Auth0 first.
  */
 export function newsletterCommentUrl(slug: NewsletterSlug): string {
-  const target = newsletterCircleSpaces[slug];
-  return `/circle-sso?return_to=${encodeURIComponent(target)}`;
+  return newsletterCircleSpaces[slug];
 }
 
 // ---------------------------------------------------------------------------

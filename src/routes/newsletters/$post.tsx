@@ -186,11 +186,9 @@ function PostPage() {
               </p>
             </div>
             <a
-              href={
-                post.discussUrl
-                  ? `/circle-sso?return_to=${encodeURIComponent(post.discussUrl)}`
-                  : newsletterCommentUrl(pub.slug)
-              }
+              href={post.discussUrl ?? newsletterCommentUrl(pub.slug)}
+              target="_blank"
+              rel="noreferrer noopener"
               className="inline-flex shrink-0 items-center justify-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               {post.discussUrl ? "Discuss on forum →" : "Comment in the app →"}

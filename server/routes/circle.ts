@@ -5,10 +5,10 @@
 //   GET  /api/circle/community-events  — Admin v2 events → ArkEvent[] (strip).
 //   GET  /api/circle/community-feed    — curated space posts → CommunityFeedItem[].
 //   GET  /api/circle/spaces            — member-facing spaces → SuggestedSpace[].
-//   POST /api/circle-sso               — mints a signed JWT so an authenticated
-//     subscriber can SSO into Circle without a second login.
+//
+// Member sign-in into Circle is handled by Circle's own SSO (configured against
+// our Auth0 tenant), not this server — deep links point straight at Circle URLs.
 
-import { SignJWT } from 'jose'
 import {
   isSentBroadcast,
   projectBroadcast,
@@ -34,9 +34,9 @@ import type {
 } from '../../src/data/newsletters.js'
 import type { ArkEvent } from '../../src/data/events.js'
 import type { CommunityFeedItem, SuggestedSpace } from '../../shared/community.js'
-import { fetchAuth0EmailVerified, fetchAuth0TierForEmail } from '../entitlement.js'
+import { fetchAuth0TierForEmail } from '../entitlement.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { makeJsonRes } from '../lib/http.js'
 import {
   verifyAuth0BearerProfile,
   verifyCheckoutToken,
@@ -47,10 +47,10 @@ import { isNewsletterSlug } from './newsletter-slugs.js'
 import type { IncomingMessage } from 'node:http'
 
 /**
- * Is the caller an authenticated Ark+ member? Mirrors the tier resolution in
- * /api/circle-sso: a verified Auth0 bearer (tier claim, with a Management API
- * fallback when the claim is absent) or the post-checkout session cookie
- * (always paid). Guests resolve to false. Used to gate member-only content.
+ * Is the caller an authenticated Ark+ member? A verified Auth0 bearer (tier
+ * claim, with a Management API fallback when the claim is absent) or the
+ * post-checkout session cookie (always paid). Guests resolve to false. Used to
+ * gate member-only content.
  */
 async function callerIsArkPlusMember(
   req: IncomingMessage,
@@ -550,108 +550,6 @@ export function circleRoutes({ env }: Deps): Route[] {
           console.error('[circle] space posts fetch failed:', err)
           json(502, { error: 'circle_unavailable' })
         }
-      },
-    },
-    {
-      // Circle redirects unauthenticated users to <your_sso_url>?return_to=<dest>.
-      // The frontend /circle-sso page calls this endpoint with the Auth0
-      // Bearer token; we verify it, sign a Circle JWT (HS256), and return
-      // the redirect URL.
-      path: '/api/circle-sso',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
-
-        const circleSecret = env.CIRCLE_SSO_SECRET
-        if (!circleSecret) return json(500, { error: 'CIRCLE_SSO_SECRET not configured' })
-
-        let email: string | null = null
-        let name: string | undefined
-        let tier: 'ark-plus-member' | 'free' = 'free'
-        let tierFromClaim = false
-        // Checkout-session tokens are minted server-side immediately after a
-        // confirmed Stripe payment, so they already vouch for the email's
-        // legitimacy. Auth0 access tokens, by contrast, can be issued for
-        // unverified addresses (social logins, freshly-created accounts), so
-        // we require an explicit email_verified signal before letting the
-        // bearer SSO into Circle as that identity.
-        let emailVouchedFor = false
-        const authHeader = req.headers.authorization
-        if (authHeader?.startsWith('Bearer ')) {
-          const token = authHeader.slice(7)
-          const profile = await verifyAuth0BearerProfile(token)
-          if (profile) {
-            email = profile.email
-            name = profile.name
-            if (profile.tier) {
-              tier = profile.tier
-              tierFromClaim = true
-            }
-            if (profile.emailVerified === true) emailVouchedFor = true
-          } else {
-            // Not an Auth0 token — could still be a checkout-session token
-            // mistakenly passed as Bearer (older clients).
-            email = await verifyCheckoutToken(token, env)
-            if (email) {
-              tier = 'ark-plus-member'
-              tierFromClaim = true
-              emailVouchedFor = true
-            }
-          }
-        }
-        if (!email) {
-          const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
-          if (cookieToken) {
-            email = await verifyCheckoutToken(cookieToken, env)
-            if (email) {
-              tier = 'ark-plus-member'
-              tierFromClaim = true
-              emailVouchedFor = true
-            }
-          }
-        }
-        if (!email) return json(401, { error: 'unauthenticated' })
-
-        // Email verification gate. The Auth0 access token may not carry an
-        // email_verified claim (the Action must be configured to add it), so
-        // fall back to a Management API lookup. Fail closed: any ambiguity
-        // (null lookup) blocks SSO rather than letting an unverified bearer
-        // through.
-        if (!emailVouchedFor) {
-          const verified = await fetchAuth0EmailVerified(env, email)
-          if (verified !== true) {
-            return json(403, { error: 'email_not_verified' })
-          }
-        }
-
-        // Tier fallback: token didn't carry the tier claim (Auth0 Action not
-        // yet deployed, or the access token predates it). Look up
-        // app_metadata directly. Soft-fail — if the lookup errors, keep the
-        // 'free' default rather than blocking SSO.
-        if (!tierFromClaim) {
-          const looked = await fetchAuth0TierForEmail(env, email)
-          if (looked) tier = looked
-        }
-
-        const body = (await readJson<{ return_to?: unknown }>(req)) ?? {}
-        const returnTo = typeof body.return_to === 'string' ? body.return_to : '/'
-
-        const secret = new TextEncoder().encode(circleSecret)
-        const circleJwt = await new SignJWT({
-          email,
-          name: name ?? email.split('@')[0],
-          user_token: email,
-          tier,
-        })
-          .setProtectedHeader({ alg: 'HS256' })
-          .setIssuedAt()
-          .setExpirationTime('10m')
-          .sign(secret)
-
-        json(200, {
-          jwt: circleJwt,
-          redirect_url: `https://app.arkmedia.org/sso?jwt=${encodeURIComponent(circleJwt)}&return_to=${encodeURIComponent(returnTo)}`,
-        })
       },
     },
   ]

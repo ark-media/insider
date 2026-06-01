@@ -10,18 +10,19 @@
 //   space posts → CommunityFeedItem[]   (curated highlights feed)
 //   spaces      → SuggestedSpace[]      (empty-state nudge)
 //
-// Every deep link is wrapped in the /circle-sso bridge so a signed-in member
-// lands authenticated on the destination instead of hitting a login wall.
+// Deep links point straight at the member-facing Circle URL. Circle owns auth:
+// it's configured for SSO against our Auth0 tenant (the `/oauth2/initiate` →
+// `auth.ark-plus.xyz` chain), so an unauthenticated click is bounced through
+// Auth0 and lands on the destination. (The old `/circle-sso` JWT bridge pointed
+// at a non-existent Circle `/sso` endpoint and 404'd — removed.)
 
 import { stripHtml } from './circle-broadcasts.js'
 import { toIsoDate } from './lib/dates.js'
 import type { ArkEvent, EventFormat } from '../src/data/events.js'
 import type { CommunityFeedItem, SuggestedSpace } from '../shared/community.js'
 
-/** Wrap a Circle destination in the frontend /circle-sso bridge. */
-function ssoLink(returnTo: string): string {
-  return `/circle-sso?return_to=${encodeURIComponent(returnTo)}`
-}
+// Fallback Circle destination when a record carries no canonical url.
+const CIRCLE_APP_URL = 'https://app.arkmedia.org'
 
 // ---------------------------------------------------------------------------
 // Events  →  ArkEvent
@@ -79,7 +80,7 @@ export function projectEvent(e: CircleEvent): ArkEvent | null {
     description: '',
     location: loc === 'in_person' ? 'in-person' : 'circle-app',
     venue,
-    deepLink: e.url ? ssoLink(e.url) : undefined,
+    deepLink: e.url || undefined,
   }
 }
 
@@ -132,7 +133,7 @@ export function projectFeedPost(p: CircleFeedPost): CommunityFeedItem | null {
     authorRole: p.space_name?.trim() || 'Community',
     publishedAt,
     excerpt,
-    href: p.url ? ssoLink(p.url) : ssoLink('https://app.arkmedia.org'),
+    href: p.url || CIRCLE_APP_URL,
   }
 }
 
@@ -166,7 +167,7 @@ export function projectSpaces(records: CircleSpace[]): SuggestedSpace[] {
     out.push({
       id: slug,
       name: s.name?.trim() || slug,
-      href: ssoLink(s.url?.trim() || `https://app.arkmedia.org/c/${slug}`),
+      href: s.url?.trim() || `${CIRCLE_APP_URL}/c/${slug}`,
     })
   }
   return out
