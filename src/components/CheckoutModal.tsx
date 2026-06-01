@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { useAuth0 } from "@auth0/auth0-react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
@@ -171,7 +170,6 @@ export function CheckoutModal({
   // after an error rather than asking the buyer to retype it.
   const [lastEmail, setLastEmail] = useState("");
   const [promo, setPromo] = useState<PromoInfo | null>(null);
-  const navigate = useNavigate();
   const { refresh } = useSubscriberAuth();
   const { loginWithRedirect } = useAuth0();
   const { theme } = useTheme();
@@ -278,7 +276,8 @@ export function CheckoutModal({
       try {
         await refresh();
         onClose();
-        void navigate({ to: "/setup" });
+        // Hand off to the Ark+ welcome flow (lives on the ark-plus.xyz host).
+        window.location.assign("https://ark-plus.xyz/welcome");
       } catch {
         // Payment confirmed and the webhook will provision the user; the
         // refresh failed locally. Routing back to the EmailForm would risk
@@ -288,7 +287,7 @@ export function CheckoutModal({
         setStep({ kind: "processing", email });
       }
     },
-    [navigate, onClose, refresh],
+    [onClose, refresh],
   );
 
   const stripePromiseValue = getStripe();
@@ -302,7 +301,7 @@ export function CheckoutModal({
       describedBy="checkout-desc"
     >
       <p id="checkout-desc" className="eyebrow">
-        Insider Membership · {plan === "yearly" ? "Annual" : "Monthly"}
+        Ark+ Membership · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
 
       {step.kind === "email" ? (

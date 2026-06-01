@@ -1,23 +1,18 @@
 const benefits = [
   {
     no: "01",
-    title: "Inside Call Me Back",
-    body: "Extended interviews, ad-free episodes, members-only Q&As, and the full archive — delivered as a private feed in the podcast app you already use.",
+    title: "Call Me Back Ark+ Feed",
+    body: "Extra weekly episode, ad-free episodes, and members-only Q&As — delivered as a private feed in the podcast app you already use.",
   },
   {
     no: "02",
-    title: "Members-only newsletters",
-    body: "A weekly Ark+ members letter with sharper analysis, source notes, and what we're reading. Plus full archives of every Ark Media newsletter, paid and free.",
+    title: "Members-only newsletter",
+    body: "A weekly Ark+ members newsletter with our full analysis, source notes, and more, delivered straight to your inbox.",
   },
   {
     no: "03",
-    title: "The Ark+ community",
-    body: "Nadav, Amit and Tal in the room with members in the Community. Discussion threads, watch parties, and live audio events — not a comments section.",
-  },
-  {
-    no: "04",
-    title: "Live events & early access",
-    body: "Audio rooms, video AMAs, and member-priority access to live recordings. New shows land in the Ark+ feed first.",
+    title: "The Ark Community",
+    body: "Full access to the Ark community app, exclusive members-only spaces, and opportunities to connect with fellow members — plus access to Inside Call Me Back Q&A sessions.",
   },
 ];
 
@@ -30,7 +25,7 @@ export function Benefits() {
             <div className="inside-tab text-xs">What's included</div>
             <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
-                Four things,
+                Three things,
               </span>
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 <span className="display text-cyan">one</span> membership.

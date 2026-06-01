@@ -22,9 +22,9 @@ export function Hero() {
           </h1>
 
           <p className="rise rise-3 mt-8 max-w-lg text-body-lg">
-            One membership for the paid feed, members-only newsletters, the
-            community, and live events.{" "}
-            <span className="text-fg-strong">One bill. One login.</span>
+            Ark+ is our premium membership, offering ad-free podcasts,
+            unlimited access to all written content, and full access to the
+            Ark community.
           </p>
 
           <ul className="rise rise-4 mt-8 space-y-2 text-body-sm text-fg">
@@ -61,22 +61,20 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Right — podcast artwork */}
+        {/* Right — Ark+ logo placeholder */}
         <div className="relative lg:col-span-5">
           <div className="rise rise-2 relative mx-auto max-w-[380px]">
             <div
-              className="relative aspect-square overflow-hidden shadow-cover"
+              className="relative flex aspect-square items-center justify-center overflow-hidden border border-rule-strong bg-navy-900/60 shadow-cover"
               style={{ transform: "rotate(-1.5deg)" }}
             >
-              <img
-                src="/inside-cmb.jpg"
-                alt="Inside Call Me Back — podcast cover"
-                width={760}
-                height={760}
-                fetchPriority="high"
-                decoding="async"
-                className="h-full w-full object-cover"
-              />
+              {/* Placeholder Ark+ mark — final artwork TBD */}
+              <div className="text-center">
+                <div className="display-upright text-[clamp(3rem,9vw,5rem)] leading-none text-fg-strong">
+                  Ark<span className="display text-cyan">+</span>
+                </div>
+                <div className="mt-3 eyebrow text-fg-muted">Membership</div>
+              </div>
             </div>
 
             {/* Floating member badge */}
@@ -85,11 +83,6 @@ export function Hero() {
               <div className="display-upright mt-1 text-[22px]">
                 No. 00214
               </div>
-            </div>
-
-            {/* Corner mark */}
-            <div className="absolute -top-5 -right-5 inside-tab text-xs">
-              New
             </div>
           </div>
         </div>

@@ -21,7 +21,7 @@ function CommunityPage() {
     <PageShell
       eyebrow="Community"
       title="The room behind the show — in the app."
-      lede="Our Community app puts Nadav, Amit and Tal in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web."
+      lede="Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web."
     >
       <section>
         <div className="mx-auto flex max-w-[1280px] flex-col gap-24 px-6 py-20 sm:px-10 sm:py-24">
@@ -29,7 +29,7 @@ function CommunityPage() {
             no="01"
             title="Inside Call Me Back"
             kicker="Weekly Q&As with your favorite Ark Media hosts."
-            body="Ask questions. Get actual answers — not a comments section, not a bot. Bring what's on your mind to the people making the show."
+            body="Ask questions. Get actual answers - not a comments section, not a bot. Bring what's on your mind to the people making the show."
             mockup={<QAScreen />}
           />
           <FeatureBlock
@@ -37,7 +37,7 @@ function CommunityPage() {
             flip
             title="Community Connection"
             kicker="Join conversations with thousands of other members."
-            body="The room keeps going between episodes — members debating the news, sharing what they're reading, and starting meetups in their own cities."
+            body="The room keeps going between episodes - members debating the news, sharing what they're reading, and starting meetups in their own cities."
             mockup={<FeedScreen />}
           />
           {/* Placeholders — the feature lineup isn't settled yet. Swap the title,
@@ -80,7 +80,7 @@ function CommunityPage() {
                 </h2>
                 <p className="mt-6 max-w-xl text-body-sm">
                   {isSubscriber
-                    ? "Open the community in the Community app — iOS, Android, or the web. Sign in with your Ark+ account; there's no second login."
+                    ? "Open the community in the Community app — iOS, Android, or the web."
                     : "One Ark+ membership is your way in — the same account opens the app on iOS, Android, and the web. No fragmented platforms, no separate password."}
                 </p>
               </div>

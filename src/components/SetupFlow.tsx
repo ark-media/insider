@@ -3,6 +3,13 @@ import { Link } from "@tanstack/react-router";
 import QRCode from "qrcode";
 import { ArkLogo } from "./ArkLogo";
 import {
+  ApplePodcastsIcon,
+  OvercastIcon,
+  PocketCastsIcon,
+  SpotifyIcon,
+  YouTubeIcon,
+} from "./PlatformIcons";
+import {
   cancelSubscription,
   sendSetupSms,
   type Me,
@@ -686,6 +693,18 @@ function DeviceCard({
   );
 }
 
+// Full-color brand marks, matching the show page's "listen on" row. Apps
+// without an official vector mark (downcast) fall back to a lettered tile.
+const BRAND_ICON: Partial<
+  Record<AppKey, (props: { className?: string }) => React.JSX.Element>
+> = {
+  apple: ApplePodcastsIcon,
+  spotify: SpotifyIcon,
+  youtube: YouTubeIcon,
+  overcast: OvercastIcon,
+  pocketcasts: PocketCastsIcon,
+};
+
 function AppCard({
   app,
   selected,
@@ -695,6 +714,7 @@ function AppCard({
   selected: boolean;
   onClick: () => void;
 }) {
+  const Icon = BRAND_ICON[app.key];
   return (
     <button
       type="button"
@@ -705,8 +725,20 @@ function AppCard({
           : "border-rule hover:border-cyan/60 hover:bg-fg-strong/[0.03]"
       }`}
     >
-      <span className="label font-display font-bold tracking-[0.06em] text-fg-strong">
-        {app.name}
+      <span className="flex items-center gap-2.5">
+        {Icon ? (
+          <Icon className="size-7 shrink-0" />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-navy-900 text-[13px] font-display font-bold text-cyan ring-1 ring-rule"
+          >
+            {app.name.charAt(0)}
+          </span>
+        )}
+        <span className="label font-display font-bold tracking-[0.06em] text-fg-strong">
+          {app.name}
+        </span>
       </span>
       <span className="meta">
         {app.tagline}

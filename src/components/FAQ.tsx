@@ -44,7 +44,6 @@ export function FAQ() {
       <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-4">
-            <div className="inside-tab text-xs">The fine print</div>
             <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 Frequently
