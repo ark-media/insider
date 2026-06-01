@@ -45,6 +45,9 @@ export const contactEmails = {
   partnerships: `partners@${ARK_DOMAIN}`,
   /** Ark+ membership support. */
   support: `support@${ARK_DOMAIN}`,
+  /** Inside Call Me Back subscription/billing support, handled by SupportingCast
+      (the podcast subscription platform) — not a brand-domain inbox. */
+  podcastSupport: "help@supportingcast.fm",
   /** Job applications. */
   careers: `careers@${ARK_DOMAIN}`,
 } as const;

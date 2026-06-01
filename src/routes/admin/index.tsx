@@ -17,6 +17,11 @@ const CARDS = [
     body: "Post and edit open positions. Each links out to its application (e.g. a TestGorilla assessment).",
   },
   {
+    to: "/admin/faqs",
+    title: "FAQs",
+    body: "Write and reorder the questions in the FAQ section on the /plus page.",
+  },
+  {
     to: "/admin/promos",
     title: "Promo codes",
     body: "Create Stripe coupons and promotion codes. Auto-apply ones discount checkout immediately.",

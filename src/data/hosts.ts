@@ -7,7 +7,8 @@ export type HostSlug =
   | "nadav-eyal"
   | "amit-segal"
   | "yonatan-adiri"
-  | "yael-wissner-levy";
+  | "yael-wissner-levy"
+  | "deborah-pardes";
 
 export type HostKind = "host" | "contributor";
 
@@ -115,7 +116,20 @@ export const hosts: Host[] = [
     shows: ["whats-your-number"],
     initials: "YW",
     headshot: "/hosts/yael-wissner-levy.jpg",
-  }
+  },
+  {
+    slug: "deborah-pardes",
+    name: "Deborah Pardes",
+    kind: "host",
+    role: "Host, Ark News Daily",
+    shortBio:
+      "Founder of The Play Full Society. Former VP of Stories & Voices at Swell; founded Artists for Literacy, recognized by The New York Times, NPR, and Rolling Stone.",
+    longBio:
+      "Deborah Pardes is a visionary executive, storyteller, and founder of The Play Full Society, a new membership-based club reimagining how adults connect—through play, creativity, and authentic human interaction. With decades of leadership in content, community, and culture, she has shaped transformative experiences across media, education, and technology. Previously, as VP of Stories & Voices at Swell, Deborah championed accessibility in podcasting and helped thousands of creators find their voice. Her earlier work includes founding Artists for Literacy, a national arts and education movement recognized by The New York Times, Rolling Stone, and NPR. A Barnard College alum and lifelong creator, Deborah continues to build spaces and stories that inspire joy, empathy, and connection.",
+    shows: ["ark-news-daily"],
+    initials: "DP",
+    headshot: "/hosts/deborah-pardes.jpg",
+  },
 ];
 
 export function getHost(slug: string): Host | undefined {

@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { ArkLogo } from "./ArkLogo";
 import {
   ApplePodcastsIcon,
+  DowncastIcon,
   OvercastIcon,
   PocketCastsIcon,
   SpotifyIcon,
@@ -693,8 +694,8 @@ function DeviceCard({
   );
 }
 
-// Full-color brand marks, matching the show page's "listen on" row. Apps
-// without an official vector mark (downcast) fall back to a lettered tile.
+// Full-color brand marks, matching the show page's "listen on" row. The
+// "manual" option keeps the lettered-tile fallback (it isn't a single app).
 const BRAND_ICON: Partial<
   Record<AppKey, (props: { className?: string }) => React.JSX.Element>
 > = {
@@ -703,6 +704,7 @@ const BRAND_ICON: Partial<
   youtube: YouTubeIcon,
   overcast: OvercastIcon,
   pocketcasts: PocketCastsIcon,
+  downcast: DowncastIcon,
 };
 
 function AppCard({

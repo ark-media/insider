@@ -1,43 +1,13 @@
 import { useState } from "react";
-import { ARK_DOMAIN, contactEmails } from "../config/urls";
+import parse from "html-react-parser";
+import type { Faq } from "../lib/faqs";
 
-const faqs = [
-  {
-    q: "Is this one membership or multiple?",
-    a: "One. Ark+ is a single membership — one bill, one login — that covers Inside Call Me Back, members-only newsletters, the community, and live events. No fragmented platforms. No separate subscriptions to keep track of.",
-  },
-  {
-    q: "Can I still listen to Call Me Back for free?",
-    a: "Yes. Call Me Back continues to drop free episodes every Sunday and Thursday. Ark+ adds Inside Call Me Back — extended interviews, ad-free episodes, and members-only Q&As — alongside everything else in the bundle.",
-  },
-  {
-    q: "How do I listen to Inside Call Me Back?",
-    a: "After you join, you'll get a private RSS feed and one-tap setup links for Apple Podcasts, Overcast, Pocket Casts, Spotify, and most other major podcast apps. Episodes show up automatically, just like the free feed.",
-  },
-  {
-    q: "Where does the community live?",
-    a: `The Ark+ community lives in the Community app — iOS, Android, and the web. After you join, you'll get a single sign-on link from ${ARK_DOMAIN} straight into the community.`,
-  },
-  {
-    q: "What are my payment options?",
-    a: "Monthly or annual, or name a higher amount to support the work. We accept all major credit and debit cards, plus Apple Pay and Google Pay where available. Checkout is processed by Stripe.",
-  },
-  {
-    q: "How do I cancel?",
-    a: "From your member dashboard at any time. Your access continues through the end of the current billing period.",
-  },
-  {
-    q: "Can I gift Ark+?",
-    a: "Yes. Gift Ark+ for 6 months or 1 year — see the Gift Ark+ page. Gifts are one-time payments, not auto-renewing subscriptions, and the recipient gets a code by email the moment payment clears.",
-  },
-  {
-    q: "Who do I contact for support?",
-    a: `Email ${contactEmails.general} and our team will get back to you as quickly as possible.`,
-  },
-];
+export function FAQ({ faqs }: { faqs: Faq[] }) {
+  const [open, setOpen] = useState<number | null>(null);
 
-export function FAQ() {
-  const [open, setOpen] = useState<number | null>(0);
+  // Nothing published, or the fetch degraded to empty — drop the whole section
+  // rather than render an empty heading.
+  if (faqs.length === 0) return null;
 
   return (
     <section id="faq" className="relative">
@@ -65,20 +35,37 @@ export function FAQ() {
                 const panelId = `faq-panel-${i}`;
                 const buttonId = `faq-trigger-${i}`;
                 return (
-                  <li key={f.q} className="border-b border-rule">
+                  <li
+                    key={f.id}
+                    style={{ animationDelay: `${Math.min(i, 6) * 60}ms` }}
+                    className="rise relative border-b border-rule"
+                  >
+                    {/* Accent rail — scales in from the top edge on the open row */}
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none absolute left-0 top-0 h-full w-[2px] origin-top bg-cyan transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+                        isOpen ? "scale-y-100" : "scale-y-0"
+                      }`}
+                    />
                     <button
                       id={buttonId}
                       onClick={() => setOpen(isOpen ? null : i)}
                       aria-expanded={isOpen}
                       aria-controls={panelId}
-                      className="flex min-h-12 w-full items-start justify-between gap-6 py-4 text-left transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                      className={`flex min-h-12 w-full items-start justify-between gap-6 py-4 text-left transition-[color,padding] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan motion-reduce:transition-none ${
+                        isOpen ? "pl-4" : "pl-0"
+                      }`}
                     >
-                      <span className="display-upright text-body-lg leading-snug text-fg-strong sm:text-base">
-                        {f.q}
+                      <span
+                        className={`display-upright text-body-lg leading-snug transition-colors duration-300 sm:text-base ${
+                          isOpen ? "text-cyan" : "text-fg-strong"
+                        }`}
+                      >
+                        {f.question}
                       </span>
                       <span
-                        className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center text-[18px] text-fg-strong transition ${
-                          isOpen ? "rotate-45 text-cyan" : ""
+                        className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center text-[18px] transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none ${
+                          isOpen ? "rotate-[225deg] scale-110 text-cyan" : "text-fg-strong"
                         }`}
                         aria-hidden="true"
                       >
@@ -89,12 +76,20 @@ export function FAQ() {
                       id={panelId}
                       role="region"
                       aria-labelledby={buttonId}
-                      hidden={!isOpen}
-                      className="overflow-hidden"
+                      inert={!isOpen}
+                      className={`grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+                        isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                      }`}
                     >
-                      <p className="max-w-2xl pb-5 text-body-sm">
-                        {f.a}
-                      </p>
+                      <div className="overflow-hidden">
+                        <div
+                          className={`max-w-2xl -mt-2 space-y-3 pb-5 pl-4 text-body-sm transition-opacity duration-300 [&_a]:underline [&_a]:decoration-current [&_a]:underline-offset-[6px] [&_a]:transition hover:[&_a]:text-cyan hover:[&_a]:decoration-cyan [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 motion-reduce:transition-none ${
+                            isOpen ? "opacity-100" : "opacity-0"
+                          }`}
+                        >
+                          {parse(f.answer)}
+                        </div>
+                      </div>
                     </div>
                   </li>
                 );

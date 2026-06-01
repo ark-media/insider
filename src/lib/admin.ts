@@ -5,6 +5,7 @@
 import { getToken } from "./tokenStore";
 import type { Announcement } from "./announcements";
 import type { Career } from "./careers";
+import type { Faq } from "./faqs";
 import type { Promo } from "../../shared/promo";
 import type { BeehiivDraft, DiscussThread } from "../../shared/discuss-thread";
 import type { NewsletterSlug } from "../data/newsletters";
@@ -138,6 +139,50 @@ export async function saveCareer(draft: CareerDraft, id?: string): Promise<Caree
 
 export async function deleteCareer(id: string): Promise<void> {
   const res = await fetch(`/api/admin/careers?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+}
+
+// --- FAQs -----------------------------------------------------------------
+
+// What the editor submits. The server sanitizes the question (plain text) and
+// answer (rich HTML) before storing.
+export type FaqDraft = {
+  question: string;
+  answer: string;
+  enabled: boolean;
+  displayOrder: number;
+};
+
+export async function listFaqs(): Promise<Faq[]> {
+  const res = await fetch("/api/admin/faqs", {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { faqs: Faq[] }).faqs;
+}
+
+export async function saveFaq(draft: FaqDraft, id?: string): Promise<Faq> {
+  const url = id
+    ? `/api/admin/faqs?id=${encodeURIComponent(id)}`
+    : "/api/admin/faqs";
+  const res = await fetch(url, {
+    // PUT, not PATCH: the editor always submits the full record (full replace).
+    method: id ? "PUT" : "POST",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify(draft),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { faq: Faq }).faq;
+}
+
+export async function deleteFaq(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/faqs?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
     headers: await authHeaders(),
     credentials: "include",

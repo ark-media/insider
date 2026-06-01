@@ -1,0 +1,82 @@
+// FAQ routes.
+//
+//   GET /api/faqs — public. Enabled FAQs only, in display order. Read on the
+//     public site, so failures degrade to an empty list rather than breaking
+//     render.
+//   /api/admin/faqs — admin-only CRUD (GET list, POST create, PUT ?id,
+//     DELETE ?id). Gated by the Auth0 "admin" role.
+
+import { makeJsonRes, readJson } from '../lib/http.js'
+import { requireAdmin } from '../lib/session.js'
+import { getDb } from '../lib/db.js'
+import {
+  createFaq,
+  deleteFaq,
+  listEnabledFaqs,
+  listFaqs,
+  updateFaq,
+  validateFaqInput,
+} from '../lib/faqs.js'
+import type { Deps, Route } from '../lib/route.js'
+
+export function faqRoutes({ env }: Deps): Route[] {
+  return [
+    {
+      path: '/api/faqs',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+        // FAQs change rarely; a short edge cache with SWR keeps the section
+        // snappy without going stale for long.
+        res.setHeader('cache-control', 'public, s-maxage=60, stale-while-revalidate=300')
+
+        if (!env.DATABASE_URL) return json(200, { faqs: [] })
+        try {
+          const sql = getDb(env)
+          return json(200, { faqs: await listEnabledFaqs(sql) })
+        } catch (err) {
+          // A DB hiccup shouldn't break the page — show nothing.
+          console.error('[faqs] public lookup failed:', err)
+          return json(200, { faqs: [] })
+        }
+      },
+    },
+    {
+      path: '/api/admin/faqs',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        const admin = await requireAdmin(req)
+        if (!admin) return json(403, { error: 'forbidden' })
+
+        const sql = getDb(env)
+        const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id')
+
+        if (req.method === 'GET') {
+          return json(200, { faqs: await listFaqs(sql) })
+        }
+        if (req.method === 'POST') {
+          const v = validateFaqInput(await readJson(req))
+          if (!v.ok) return json(400, { error: v.error })
+          const faq = await createFaq(sql, v.value)
+          return json(200, { faq })
+        }
+        // PUT (full replace) — the editor always submits the whole record.
+        if (req.method === 'PUT') {
+          if (!id) return json(400, { error: 'id required' })
+          const v = validateFaqInput(await readJson(req))
+          if (!v.ok) return json(400, { error: v.error })
+          const updated = await updateFaq(sql, id, v.value)
+          if (!updated) return json(404, { error: 'not_found' })
+          return json(200, { faq: updated })
+        }
+        if (req.method === 'DELETE') {
+          if (!id) return json(400, { error: 'id required' })
+          const ok = await deleteFaq(sql, id)
+          if (!ok) return json(404, { error: 'not_found' })
+          return json(200, { ok: true })
+        }
+        return json(405, { error: 'Method Not Allowed' })
+      },
+    },
+  ]
+}

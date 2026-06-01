@@ -1,0 +1,156 @@
+// FAQs: admin-managed frequently-asked questions, shown on the /plus FAQ
+// section. Managed from the admin back office; the public endpoint reads only
+// enabled rows. Mirrors the careers module (server/lib/careers.ts) minus the
+// slug/detail-page concerns — an FAQ has no standalone URL.
+//
+// Split into pure helpers (sanitize/validate — unit-tested with plain objects)
+// and thin DB accessors over `Sql`. The answer is a short rich-text block, so
+// the sanitizer allows paragraphs, lists, inline formatting, and links — but
+// not headings (an answer doesn't need document structure).
+
+import sanitizeHtml from 'sanitize-html'
+import type { Sql } from './db.js'
+import type { Faq } from '../../shared/faq.js'
+
+export type { Faq }
+
+export type FaqInput = {
+  question: string
+  answer: string
+  enabled: boolean
+  displayOrder: number
+}
+
+// The answer renders rich text, so a safe inline/paragraph subset is allowed.
+// Scripts, styles, images, iframes, headings, and event handlers are stripped.
+// Links are forced to open safely in a new tab.
+export function sanitizeFaqAnswer(html: string): string {
+  return sanitizeHtml(html, {
+    allowedTags: [
+      'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'a', 'ul', 'ol', 'li',
+    ],
+    allowedAttributes: { a: ['href', 'title', 'target', 'rel'] },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', {
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      }),
+    },
+  })
+}
+
+// The question is a plain-text label — strip all markup.
+export function sanitizeQuestion(text: string): string {
+  return sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} }).trim()
+}
+
+export type ValidationResult =
+  | { ok: true; value: FaqInput }
+  | { ok: false; error: string }
+
+// Validates + normalizes raw admin JSON into a storable FaqInput. Pure (no DB),
+// so it's unit-tested directly. The answer is sanitized here; after stripping
+// markup it must still contain visible text.
+export function validateFaqInput(raw: unknown): ValidationResult {
+  if (typeof raw !== 'object' || raw === null) {
+    return { ok: false, error: 'Request body must be a JSON object.' }
+  }
+  const r = raw as Record<string, unknown>
+
+  if (typeof r.question !== 'string' || !sanitizeQuestion(r.question)) {
+    return { ok: false, error: 'Question is required.' }
+  }
+  const question = sanitizeQuestion(r.question)
+
+  if (typeof r.answer !== 'string' || !r.answer.trim()) {
+    return { ok: false, error: 'Answer is required.' }
+  }
+  const answer = sanitizeFaqAnswer(r.answer).trim()
+  const textOnly = sanitizeHtml(answer, { allowedTags: [], allowedAttributes: {} }).trim()
+  if (!textOnly) {
+    return { ok: false, error: 'Answer has no visible text after sanitizing.' }
+  }
+
+  const enabled = r.enabled == null ? true : r.enabled === true
+
+  let displayOrder = 0
+  if (r.displayOrder != null) {
+    const n = Number(r.displayOrder)
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      return { ok: false, error: 'Display order must be a whole number.' }
+    }
+    displayOrder = n
+  }
+
+  return { ok: true, value: { question, answer, enabled, displayOrder } }
+}
+
+// --- DB accessors --------------------------------------------------------
+
+type Row = Record<string, unknown>
+
+function mapRow(r: Row): Faq {
+  return {
+    id: String(r.id),
+    question: String(r.question),
+    answer: String(r.answer),
+    enabled: Boolean(r.enabled),
+    displayOrder: Number(r.display_order),
+    createdAt: new Date(r.created_at as string).toISOString(),
+    updatedAt: new Date(r.updated_at as string).toISOString(),
+  }
+}
+
+const COLUMNS = `id, question, answer, enabled, display_order, created_at, updated_at`
+
+// All FAQs, for the admin list (enabled or not).
+export async function listFaqs(sql: Sql): Promise<Faq[]> {
+  const rows = (await sql`
+    select ${sql.unsafe(COLUMNS)} from faqs
+    order by display_order asc, created_at asc
+  `) as Row[]
+  return rows.map(mapRow)
+}
+
+// Enabled FAQs only, for the public /plus section.
+export async function listEnabledFaqs(sql: Sql): Promise<Faq[]> {
+  const rows = (await sql`
+    select ${sql.unsafe(COLUMNS)} from faqs
+    where enabled = true
+    order by display_order asc, created_at asc
+  `) as Row[]
+  return rows.map(mapRow)
+}
+
+export async function createFaq(sql: Sql, input: FaqInput): Promise<Faq> {
+  const rows = (await sql`
+    insert into faqs (question, answer, enabled, display_order)
+    values (${input.question}, ${input.answer}, ${input.enabled}, ${input.displayOrder})
+    returning ${sql.unsafe(COLUMNS)}
+  `) as Row[]
+  return mapRow(rows[0])
+}
+
+export async function updateFaq(
+  sql: Sql,
+  id: string,
+  input: FaqInput,
+): Promise<Faq | null> {
+  const rows = (await sql`
+    update faqs set
+      question = ${input.question},
+      answer = ${input.answer},
+      enabled = ${input.enabled},
+      display_order = ${input.displayOrder},
+      updated_at = now()
+    where id = ${id}
+    returning ${sql.unsafe(COLUMNS)}
+  `) as Row[]
+  return rows[0] ? mapRow(rows[0]) : null
+}
+
+export async function deleteFaq(sql: Sql, id: string): Promise<boolean> {
+  const rows = (await sql`delete from faqs where id = ${id} returning id`) as Row[]
+  return rows.length > 0
+}
