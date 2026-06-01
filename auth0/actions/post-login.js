@@ -1,0 +1,195 @@
+/**
+ * Auth0 Post-Login Action — Ark Plus.
+ *
+ * This is the SINGLE Post-Login action in the Login flow. It does three things:
+ *
+ *   1. Account linking. When a member logs in with a social connection (Google)
+ *      for the first time, link that identity into the canonical Database
+ *      account (Username-Password-Authentication) and make the Database account
+ *      primary for the session. Members are always provisioned on the Database
+ *      connection by the activation webhook (server/lib/auth0-user.ts) before
+ *      they ever log in, so the Database record is the source of truth for
+ *      app_metadata.tier and roles.
+ *
+ *   2. Signup gate. Self-signup on the Database connection is disabled in the
+ *      dashboard, but social connections JIT-provision a new user on first
+ *      login with no toggle to stop it. So a social login with NO matching
+ *      Database account is a self-signup: reject it and delete the orphan
+ *      record Auth0 created before this action ran.
+ *
+ *   3. Claims. Set the email / roles / tier custom claims the app reads. These
+ *      MUST be resolved from the primary (Database) user: after
+ *      api.authentication.setPrimaryUser(), event.user / event.authorization
+ *      still reference the secondary social user for the rest of this run, so
+ *      reading roles/tier off `event` would be wrong on the linking login.
+ *      Consolidating all claim-setting here is deliberate — a separate claims
+ *      action running afterwards could read the secondary user and clobber the
+ *      tier with 'free'.
+ *
+ * Why the Management API calls are unavoidable: `event` is a snapshot of the
+ * one authenticating user; it cannot see whether a *different* record exists
+ * for the same email (users-by-email), nor persist an identity merge
+ * (POST /users/{id}/identities), nor delete a record. setPrimaryUser only
+ * changes the token subject for this session — it does not durably link.
+ *
+ * ---------------------------------------------------------------------------
+ * Secrets (Action → Settings → Secrets):
+ *   AUTH0_TENANT_DOMAIN   native tenant domain, e.g. ark-plus.us.auth0.com
+ *                         (NOT the custom login domain auth.ark-plus.xyz — the
+ *                         Management API lives on the native domain; see
+ *                         server/auth0.ts).
+ *   MGMT_CLIENT_ID        Ark Plus M2M client id.
+ *   MGMT_CLIENT_SECRET    Ark Plus M2M client secret.
+ *
+ * M2M scopes required: read:users, update:users, delete:users, read:roles.
+ *
+ * Claim namespace must match AUTH0_CLAIM_NAMESPACE in shared/auth0-claims.ts.
+ * ---------------------------------------------------------------------------
+ */
+
+const NS = 'https://ark-plus.xyz';
+const DB_CONNECTION = 'Username-Password-Authentication';
+
+exports.onExecutePostLogin = async (event, api) => {
+  // The user who just authenticated, and their roles, are the defaults used
+  // for both the Database-login and already-linked-social cases.
+  let resolved = event.user;
+  let roles = event.authorization?.roles ?? [];
+
+  const isSocial = event.connection.strategy !== 'auth0';
+  const alreadyLinked = (event.user.identities || []).some(
+    (i) => i.connection === DB_CONNECTION,
+  );
+
+  // --- Account linking + signup gate (unlinked social logins only) ---------
+  if (isSocial && !alreadyLinked) {
+    const email = event.user.email;
+    // Only act on a verified email, or linking could attach to someone else's
+    // account (or a self-signup could slip through with a spoofed address).
+    if (!email || event.user.email_verified !== true) {
+      return api.access.deny('A verified email is required to sign in.');
+    }
+
+    const token = await mgmtToken(event, api);
+    if (!token) {
+      return api.access.deny('Could not verify membership. Please try again.');
+    }
+
+    // Look for the canonical Database account provisioned by the webhook.
+    const users = await usersByEmail(event, token, email);
+    const primary = users.find(
+      (u) =>
+        u.user_id !== event.user.user_id &&
+        (u.identities || []).some((i) => i.connection === DB_CONNECTION),
+    );
+
+    // No Database account → self-signup. Block and clean up the orphan.
+    if (!primary || primary.email_verified !== true) {
+      await deleteUser(event, token, event.user.user_id).catch(() => {});
+      return api.access.deny(
+        'Membership is required to sign in. Please subscribe at arkmedia.org first.',
+      );
+    }
+
+    // Link this social identity into the Database account; keep DB primary.
+    const social = event.user.identities[0]; // the connection we just used
+    try {
+      await linkIdentity(event, token, primary.user_id, {
+        provider: social.provider,
+        user_id: social.user_id,
+      });
+    } catch (_err) {
+      // Fail closed rather than leave an unlinked orphan social account.
+      return api.access.deny('Could not link your account. Please contact support.');
+    }
+
+    // Continue the session as the Database account (carries tier + roles).
+    api.authentication.setPrimaryUser(primary.user_id);
+
+    // event.* still references the secondary social user for the rest of this
+    // run, so resolve claims from the primary directly.
+    resolved = primary;
+    const primaryRoles = await userRoles(event, token, primary.user_id).catch(() => null);
+    if (primaryRoles) roles = primaryRoles;
+  }
+
+  // --- Claims (set on every login, from the resolved user) ------------------
+  api.accessToken.setCustomClaim(`${NS}/email`, resolved.email);
+
+  if (roles.length > 0) {
+    api.accessToken.setCustomClaim(`${NS}/roles`, roles);
+    api.idToken.setCustomClaim(`${NS}/roles`, roles);
+  }
+
+  const tier = resolved.app_metadata?.tier ?? 'free';
+  api.accessToken.setCustomClaim(`${NS}/tier`, tier);
+  api.idToken.setCustomClaim(`${NS}/tier`, tier);
+};
+
+// --- Management API helpers -------------------------------------------------
+
+// Client-credentials token, cached across executions via api.cache so we only
+// hit /oauth/token when the cached token is near expiry. The per-user store
+// calls below still run when needed, but this keeps the token mint off the
+// common login path.
+async function mgmtToken(event, api) {
+  const cached = api.cache.get('mgmt_token');
+  if (cached) return cached.value;
+
+  const domain = event.secrets.AUTH0_TENANT_DOMAIN;
+  const res = await fetch(`https://${domain}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'client_credentials',
+      client_id: event.secrets.MGMT_CLIENT_ID,
+      client_secret: event.secrets.MGMT_CLIENT_SECRET,
+      audience: `https://${domain}/api/v2/`,
+    }),
+  });
+  if (!res.ok) return null;
+  const { access_token, expires_in } = await res.json();
+  // Refresh a minute before Auth0 expires the token.
+  api.cache.set('mgmt_token', access_token, {
+    ttl: Math.max(60, (expires_in ?? 86400) - 60) * 1000,
+  });
+  return access_token;
+}
+
+async function usersByEmail(event, token, email) {
+  const res = await fetch(
+    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users-by-email?email=${encodeURIComponent(email)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) return [];
+  return res.json(); // each record includes identities + app_metadata
+}
+
+async function userRoles(event, token, userId) {
+  const res = await fetch(
+    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users/${encodeURIComponent(userId)}/roles`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) return null;
+  return (await res.json()).map((r) => r.name); // match the string[] claim shape
+}
+
+async function linkIdentity(event, token, primaryUserId, secondary) {
+  const res = await fetch(
+    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users/${encodeURIComponent(primaryUserId)}/identities`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(secondary), // { provider, user_id }
+    },
+  );
+  if (!res.ok) throw new Error(`link ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function deleteUser(event, token, userId) {
+  await fetch(
+    `https://${event.secrets.AUTH0_TENANT_DOMAIN}/api/v2/users/${encodeURIComponent(userId)}`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+  );
+}
