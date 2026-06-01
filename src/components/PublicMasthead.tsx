@@ -53,7 +53,7 @@ const NAV_ITEMS: NavItem[] = [
     to: "/community",
     matchPrefix: "/community",
     // Visible to everyone — the page itself shows a "Join Ark+" CTA to
-    // non-subscribers in place of the members-only Circle app links.
+    // non-subscribers in place of the members-only Community app links.
     children: [
       { label: "Upcoming Events", to: "/events" },
       { label: "Gift Ark+", to: "/plus/gift" },
@@ -78,7 +78,6 @@ const NAV_ITEMS: NavItem[] = [
     to: "/about",
     matchPrefix: "/about",
     children: [
-      { label: "Network", to: "/about/network" },
       { label: "Careers", to: "/careers" },
       { label: "Get in touch", to: "/contact" },
     ],

@@ -31,7 +31,7 @@ function HostPage() {
           ]}
         />
       }
-      eyebrow="Host"
+      eyebrow={host.kind === "contributor" ? "Contributor" : "Host"}
       title={host.name}
       lede={host.role}
     >

@@ -50,7 +50,7 @@ function CommunityPage() {
     <PageShell
       eyebrow="Community"
       title="The room behind the show."
-      lede="Nadav, Amit and Tal in conversation with members — on the day's news, the week's reading, and what didn't make the cut. In the Circle app."
+      lede="Nadav, Amit and Tal in conversation with members — on the day's news, the week's reading, and what didn't make the cut. In the Community app."
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
@@ -98,10 +98,10 @@ function CommunityPage() {
             {isSubscriber ? (
               <div className="border border-rule bg-navy-800/40 p-8">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-                  Open in the Circle app
+                  Open in the Community app
                 </div>
                 <p className="mt-4 text-[14px] leading-[1.6] text-fg">
-                  Members open the community in the Circle app — iOS, Android, or
+                  Members open the community in the Community app — iOS, Android, or
                   the web. Sign in with your Ark+ account; no second login.
                 </p>
                 <div className="mt-6 flex flex-col gap-3">
@@ -137,7 +137,7 @@ function CommunityPage() {
                   Get in the room
                 </div>
                 <p className="mt-4 text-[14px] leading-[1.6] text-fg">
-                  The community is open to Ark+ members, in the Circle app —
+                  The community is open to Ark+ members, in the Community app —
                   iOS, Android, or the web. One membership, one login: your Ark+
                   account is your way in.
                 </p>

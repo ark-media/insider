@@ -8,8 +8,11 @@ import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
 import { silenceExpectedConsole } from './test-utils'
 import {
   applyPreferences,
+  clearNewsletterRefreshCache,
   downgradeToFree,
   ensureSubscribedWithPremium,
+  isReceivingEmails,
+  refreshSubscriptionFromBeehiiv,
   tryPush,
 } from './lib/beehiiv-sync'
 import type { Sql } from './lib/db'
@@ -42,6 +45,7 @@ function jsonRes(status: number, body: unknown): Response {
 }
 
 beforeEach(() => {
+  clearNewsletterRefreshCache()
   fetchCalls = []
   fetchHandler = () => jsonRes(500, { unexpected: 'no handler' })
   globalThis.fetch = (async (
@@ -393,6 +397,105 @@ describe('applyPreferences', () => {
     expect(post?.body).toMatchObject({
       premium_tier_ids: [PREMIUM_TIER],
     })
+  })
+})
+
+// ============================================================================
+// isReceivingEmails
+// ============================================================================
+
+describe('isReceivingEmails', () => {
+  test('active and pending count as receiving', () => {
+    expect(isReceivingEmails('active')).toBe(true)
+    expect(isReceivingEmails('pending')).toBe(true)
+  })
+
+  test('inactive and paused do not', () => {
+    expect(isReceivingEmails('inactive')).toBe(false)
+    expect(isReceivingEmails('paused')).toBe(false)
+  })
+})
+
+// ============================================================================
+// refreshSubscriptionFromBeehiiv
+// ============================================================================
+
+describe('refreshSubscriptionFromBeehiiv', () => {
+  test('deletes local row when Beehiiv returns 404', async () => {
+    fetchHandler = ({ url, method }) => {
+      if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
+        return jsonRes(404, {})
+      }
+      return jsonRes(500, { unexpected: url })
+    }
+    const { sql, calls } = makeSqlStub(emptyRows)
+    const row = await refreshSubscriptionFromBeehiiv(
+      { env: BASE_ENV, sql },
+      'gone@example.com',
+    )
+    expect(row).toBeNull()
+    expect(
+      calls.some((c) => c.sql.includes('delete from beehiiv_subscription')),
+    ).toBe(true)
+    expect(fetchCalls).toHaveLength(1)
+  })
+
+  test('falls back to local mirror when Beehiiv errors', async () => {
+    fetchHandler = () => jsonRes(503, { error: 'upstream' })
+    const { sql, calls } = makeSqlStub((sql) => {
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return [
+          {
+            email: 'local@example.com',
+            publication_id: PUB_ID,
+            beehiiv_subscription_id: 'sub_local',
+            status: 'active',
+            has_premium: false,
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      }
+      return []
+    })
+    const row = await refreshSubscriptionFromBeehiiv(
+      { env: BASE_ENV, sql },
+      'local@example.com',
+    )
+    expect(row?.beehiivSubscriptionId).toBe('sub_local')
+    expect(
+      calls.some((c) => c.sql.includes('delete from beehiiv_subscription')),
+    ).toBe(false)
+  })
+
+  test('uses cache on second call within TTL', async () => {
+    let lookups = 0
+    fetchHandler = ({ url, method }) => {
+      if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
+        lookups += 1
+        return jsonRes(200, beehiivSub({ id: 'sub_c', email: 'cache@example.com' }))
+      }
+      return jsonRes(500, { unexpected: url })
+    }
+    const { sql } = makeSqlStub((sql) => {
+      if (sql.includes('insert into beehiiv_subscription')) return []
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return [
+          {
+            email: 'cache@example.com',
+            publication_id: PUB_ID,
+            beehiiv_subscription_id: 'sub_c',
+            status: 'active',
+            has_premium: false,
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      }
+      return []
+    })
+    const deps = { env: BASE_ENV, sql }
+    await refreshSubscriptionFromBeehiiv(deps, 'cache@example.com')
+    await refreshSubscriptionFromBeehiiv(deps, 'cache@example.com')
+    expect(lookups).toBe(1)
   })
 })
 

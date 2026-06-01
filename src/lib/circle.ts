@@ -41,7 +41,7 @@ export async function fetchUpcomingEvents(): Promise<ArkEvent[]> {
 }
 
 /**
- * Build a deep link into the Circle app for a given event. Real implementation
+ * Build a deep link into the Community app for a given event. Real implementation
  * would call Circle's deep-link endpoint, which signs the link so the app can
  * land the user directly on the event view (member or guest).
  */

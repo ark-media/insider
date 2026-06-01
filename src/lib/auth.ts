@@ -28,15 +28,25 @@ export type Me = {
 //   - Checkout-session token → httpOnly cookie attached by credentials:'include'
 // We always include credentials so the cookie attaches when present, and add
 // the Bearer header when getToken() returns one.
-async function authHeaders(): Promise<Record<string, string>> {
-  const token = await getToken();
+//
+// Pass `accessToken` from getAccessTokenSilently when calling before the token
+// getter is registered (e.g. SubscriberAuthProvider.refresh).
+export async function authHeaders(opts?: {
+  accessToken?: string | null;
+}): Promise<Record<string, string>> {
+  const token =
+    opts && "accessToken" in opts
+      ? (opts.accessToken ?? null)
+      : await getToken();
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
 }
 
-export async function fetchMe(): Promise<Me | null> {
+export async function fetchMe(opts?: {
+  accessToken?: string | null;
+}): Promise<Me | null> {
   try {
-    const headers = await authHeaders();
+    const headers = await authHeaders(opts);
     const res = await fetch("/api/me", {
       headers,
       credentials: "include",

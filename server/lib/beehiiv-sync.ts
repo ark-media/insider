@@ -23,7 +23,44 @@
 // All push paths soft-fail with a logged error — the SC subscription / Auth0
 // patch / Stripe webhook ack should never 500 because Beehiiv burped.
 
+import { makeTTLCache } from '../../shared/ttl-cache.js'
 import type { Sql } from './db.js'
+
+// Beehiiv statuses where the reader is still on the list (not fully unsubscribed).
+const RECEIVING_EMAIL_STATUSES = new Set(['active', 'pending'])
+
+export function isReceivingEmails(status: string): boolean {
+  return RECEIVING_EMAIL_STATUSES.has(status)
+}
+
+function redactEmail(email: string): string {
+  const at = email.indexOf('@')
+  if (at < 2) return '***'
+  return `${email[0]}***${email.slice(at)}`
+}
+
+// Dedupe concurrent GET /api/me/newsletters refreshes on one instance.
+const REFRESH_CACHE_TTL_MS = 45_000
+type RefreshCacheEntry = { row: LocalSubscriptionRow | null }
+const refreshCache = makeTTLCache<string, RefreshCacheEntry>(
+  REFRESH_CACHE_TTL_MS,
+)
+
+export function invalidateNewsletterRefreshCache(email: string): void {
+  refreshCache.delete(email.toLowerCase())
+}
+
+export function setNewsletterRefreshCache(
+  email: string,
+  row: LocalSubscriptionRow | null,
+): void {
+  refreshCache.set(email.toLowerCase(), { row })
+}
+
+/** Resets the process-global refresh cache (unit tests only). */
+export function clearNewsletterRefreshCache(): void {
+  refreshCache.clear()
+}
 
 type Env = Record<string, string>
 
@@ -184,6 +221,39 @@ function mapRow(r: Row): LocalSubscriptionRow {
     status: String(r.status),
     hasPremium: Boolean(r.has_premium),
     updatedAt: new Date(r.updated_at as string).toISOString(),
+  }
+}
+
+// Pull the reader's live Beehiiv record into Neon so GET preferences reflect
+// upstream state (signup via site, Beehiiv UI, or a stale mirror).
+export async function refreshSubscriptionFromBeehiiv(
+  deps: PushDeps,
+  email: string,
+): Promise<LocalSubscriptionRow | null> {
+  const cfg = beehiivConfigured(deps.env)
+  const normalized = email.toLowerCase()
+  if (!cfg) return getLocalSubscription(deps.sql, normalized)
+
+  const cached = refreshCache.get(normalized)
+  if (cached) return cached.row
+
+  try {
+    const sub = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+    if (!sub) {
+      await deleteLocalSubscription(deps.sql, normalized)
+      refreshCache.set(normalized, { row: null })
+      return null
+    }
+    await persistFromBeehiiv(deps.sql, cfg.pubId, sub)
+    const row = await getLocalSubscription(deps.sql, normalized)
+    refreshCache.set(normalized, { row })
+    return row
+  } catch (err) {
+    console.error(
+      `[beehiiv-sync] refresh failed for ${redactEmail(email)}:`,
+      err,
+    )
+    return getLocalSubscription(deps.sql, normalized)
   }
 }
 
@@ -391,11 +461,31 @@ export async function applyPreferences(
     result = await createSubscription(cfg.pubId, cfg.token, normalized, {
       premiumTierId: prefs.premium === true ? premiumTierId : undefined,
     })
+  } else if (prefs.free === true && !isReceivingEmails(existing.status)) {
+    // Re-subscribing a churned record. Beehiiv's PUT `unsubscribe:false` does
+    // NOT reactivate an `inactive`/unsubscribed subscription — only the create
+    // endpoint with `reactivate_existing:true` flips it back to `active`. Carry
+    // the premium tier through the reactivation: keep an existing premium tier
+    // unless the caller is explicitly turning premium off.
+    const keepPremium =
+      prefs.premium === true || (prefs.premium === undefined && existing.hasPremium)
+    result = await createSubscription(cfg.pubId, cfg.token, normalized, {
+      premiumTierId: keepPremium ? premiumTierId : undefined,
+    })
+    // An explicit premium downgrade requested alongside reactivation: apply it
+    // in a follow-up PUT (create can't express tier=free).
+    if (prefs.premium === false) {
+      result = await updateSubscription(cfg.pubId, cfg.token, result.id, {
+        tier: 'free',
+      })
+    }
   } else {
     result = await updateSubscription(cfg.pubId, cfg.token, existing.id, body)
   }
   await persistFromBeehiiv(deps.sql, cfg.pubId, result)
-  return getLocalSubscription(deps.sql, normalized)
+  const row = await getLocalSubscription(deps.sql, normalized)
+  setNewsletterRefreshCache(normalized, row)
+  return row
 }
 
 // Soft-fail wrapper for activation / webhook paths. Logs and swallows so an

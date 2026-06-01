@@ -11,22 +11,31 @@ export type NewsletterPrefs = {
   canPremium: boolean;
 };
 
+export type FetchNewsletterPrefsResult =
+  | { ok: true; prefs: NewsletterPrefs }
+  | { ok: false; reason: "unauthenticated" | "unavailable" };
+
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export async function fetchNewsletterPrefs(): Promise<NewsletterPrefs | null> {
+export async function fetchNewsletterPrefs(): Promise<FetchNewsletterPrefsResult> {
   try {
     const headers = await authHeaders();
     const res = await fetch("/api/me/newsletters", {
       headers,
       credentials: "include",
     });
-    if (!res.ok) return null;
-    return (await res.json()) as NewsletterPrefs;
+    if (res.status === 401) {
+      return { ok: false, reason: "unauthenticated" };
+    }
+    if (!res.ok) {
+      return { ok: false, reason: "unavailable" };
+    }
+    return { ok: true, prefs: (await res.json()) as NewsletterPrefs };
   } catch {
-    return null;
+    return { ok: false, reason: "unavailable" };
   }
 }
 
@@ -48,6 +57,12 @@ export async function saveNewsletterPrefs(
       const err = (body as { error?: string }).error;
       if (err === "not_entitled") {
         return { ok: false, error: "Ark+ membership required." };
+      }
+      if (err === "beehiiv_update_failed") {
+        return {
+          ok: false,
+          error: "Could not update newsletter preferences. Please try again.",
+        };
       }
       return { ok: false, error: "Could not save. Please try again." };
     }

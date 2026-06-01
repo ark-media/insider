@@ -9,9 +9,12 @@ export type HostSlug =
   | "yonatan-adiri"
   | "yael-wissner-levy";
 
+export type HostKind = "host" | "contributor";
+
 export type Host = {
   slug: HostSlug;
   name: string;
+  kind: HostKind;
   role: string;
   shortBio: string;
   longBio: string;
@@ -28,6 +31,7 @@ export const hosts: Host[] = [
   {
     slug: "dan-senor",
     name: "Dan Senor",
+    kind: "host",
     role: "Host, Call Me Back",
     shortBio:
       "Author of The Genius of Israel and Start-Up Nation. Former foreign policy advisor.",
@@ -40,6 +44,7 @@ export const hosts: Host[] = [
   {
     slug: "donniel-hartman",
     name: "Donniel Hartman",
+    kind: "host",
     role: "Host, For Heaven's Sake",
     shortBio:
       "President of the Shalom Hartman Institute. Modern Orthodox rabbi, philosopher, author.",
@@ -52,6 +57,7 @@ export const hosts: Host[] = [
   {
     slug: "yossi-klein-halevi",
     name: "Yossi Klein Halevi",
+    kind: "host",
     role: "Host, For Heaven's Sake",
     shortBio:
       "Senior Fellow at the Shalom Hartman Institute. Author of Letters to My Palestinian Neighbor.",
@@ -64,7 +70,8 @@ export const hosts: Host[] = [
   {
     slug: "nadav-eyal",
     name: "Nadav Eyal",
-    role: "Recurring guest, Call Me Back",
+    kind: "contributor",
+    role: "Call Me Back Contributor",
     shortBio:
       "Columnist at Yedioth Ahronoth. Author of Revolt. One of Israel's most read journalists.",
     longBio:
@@ -76,7 +83,8 @@ export const hosts: Host[] = [
   {
     slug: "amit-segal",
     name: "Amit Segal",
-    role: "Recurring guest, Call Me Back",
+    kind: "contributor",
+    role: "Call Me Back Contributor",
     shortBio:
       "Chief political analyst for Channel 12 News. The most quoted political voice in Israel.",
     longBio:
@@ -88,6 +96,7 @@ export const hosts: Host[] = [
   {
     slug: "yonatan-adiri",
     name: "Yonatan Adiri",
+    kind: "host",
     role: "Host, What's Your Number",
     shortBio:
       "Yonatan Adiri is an Israeli entrepreneur and co-host of Ark Media’s What’s Your Number? podcast. ",
@@ -99,6 +108,7 @@ export const hosts: Host[] = [
   {
     slug: "yael-wissner-levy",
     name: "Yael Wissner-Levy",
+    kind: "host",
     role: "Host, What's Your Number",
     shortBio: "Yael Wissner-Levy is co-host of Ark Media’s What’s Your Number? podcast and the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company",
     longBio: "Yael Wissner-Levy is the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company building AI hackers to ensure enterprises deliver unbreakable code. Previously, she served as VP Communications at Lemonade, a NYSE-traded insurance company powered by AI, from seed stage to public markets. Prior to that, she served as a speechwriter and communications consultant for Israeli political and business leaders, and in media, as both a television news presenter and journalist at various outlets including i24 News (i24news.com), Israel’s Channel 10 (now Channel 13), and an editor at Ha’aretz (haaretz.com). She started her career working for former US Representative Steve Israel in the US Congress. Yael holds a MSc in International Relations from the London School of Economics.",
@@ -112,6 +122,14 @@ export function getHost(slug: string): Host | undefined {
   return hosts.find((h) => h.slug === slug);
 }
 
+function peopleForShow(showSlug: ShowSlug, kind: HostKind): Host[] {
+  return hosts.filter((h) => h.shows.includes(showSlug) && h.kind === kind);
+}
+
 export function hostsForShow(showSlug: ShowSlug): Host[] {
-  return hosts.filter((h) => h.shows.includes(showSlug));
+  return peopleForShow(showSlug, "host");
+}
+
+export function contributorsForShow(showSlug: ShowSlug): Host[] {
+  return peopleForShow(showSlug, "contributor");
 }

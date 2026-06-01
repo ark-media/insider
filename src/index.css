@@ -123,6 +123,30 @@
   color: var(--color-cyan);
 }
 
+/* Show / episode UI — readable uppercase labels without the 11px floor */
+@utility episode-label {
+  font-size: 0.8125rem; /* 13px */
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-cyan);
+}
+
+@utility episode-meta {
+  font-size: 0.8125rem; /* 13px */
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+}
+
+@utility episode-action {
+  font-size: 0.875rem; /* 14px */
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-cyan);
+}
+
 /* Skip-to-content link — visually hidden until focused */
 .skip-link {
   position: absolute;
@@ -357,7 +381,7 @@ body {
    soft, diffuse shadow for depth. The hairline (1px box-shadow ring at ~6% navy)
    is what makes the card edge feel "drawn" like the efficio reference rather than
    floating in a halo. The selector matches the Tailwind opacity variants without
-   affecting full-bleed bg-navy-800 sections (Marquee, mobile menu) which
+   affecting full-bleed bg-navy-800 sections (mobile menu) which
    intentionally span edge to edge. */
 [data-theme="light"] [class*="bg-navy-800/"]:not([class*="hover:bg-navy-800"]),
 [data-theme="light"] [class*="bg-navy-700/"]:not([class*="hover:bg-navy-700"]) {
@@ -454,12 +478,6 @@ body {
 .rise-4 { animation-delay: 0.42s; }
 .rise-5 { animation-delay: 0.58s; }
 
-@keyframes marquee {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
-}
-.marquee-track { animation: marquee 48s linear infinite; }
-
 @keyframes blink {
   0%, 60%, 100% { opacity: 1; }
   30% { opacity: 0.15; }
@@ -495,15 +513,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rise, .marquee-track, .live-dot, .draw-rule, .drift, .draw-check,
+  .rise, .live-dot, .draw-rule, .drift, .draw-check,
   .animate-spin {
     animation: none !important;
   }
   .draw-rule { transform: scaleX(1); }
   .draw-check { stroke-dashoffset: 0; }
-}
-
-/* Marquee pause when the user hovers the track (and via JS for explicit control) */
-.marquee-track[data-paused="true"] {
-  animation-play-state: paused;
 }

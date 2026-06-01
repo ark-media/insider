@@ -74,7 +74,7 @@ export const events: ArkEvent[] = [
     access: "public",
     hosts: ["Dan Senor", "Donniel Hartman"],
     description:
-      "An open audio conversation marking a year of Ark Media. Open to everyone — RSVP in the Circle app.",
+      "An open audio conversation marking a year of Ark Media. Open to everyone — RSVP in the Community app.",
     location: "circle-app",
   },
   {

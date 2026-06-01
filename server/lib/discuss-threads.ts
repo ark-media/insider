@@ -466,7 +466,7 @@ export async function createCompanionThread(
 
   const canonical =
     input.canonicalUrl ??
-    `${deps.appBaseUrl.replace(/\/$/, '')}/newsletters/${input.newsletterSlug}`
+    `${deps.appBaseUrl.replace(/\/$/, '')}/newsletters`
   const bodyDoc = buildThreadTiptapDoc({
     intro: `Discussion for "${input.beehiivPostTitle}". Reactions, pushback, and follow-up questions welcome — the Ark team checks in throughout the week.`,
     linkText: 'Read the full piece on Ark Media →',

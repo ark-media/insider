@@ -32,7 +32,7 @@ export function NewsletterSignupForm({ slug }: { slug: NewsletterSlug }) {
     <form onSubmit={onSubmit} className="flex flex-1 items-center">
       <label className="block flex-1">
         <span className="sr-only">Email</span>
-        <div className="flex items-center border border-rule-strong bg-transparent transition focus-within:border-cyan">
+        <div className="flex border border-rule-strong bg-transparent transition focus-within:border-cyan">
           <input
             type="email"
             required
@@ -44,7 +44,7 @@ export function NewsletterSignupForm({ slug }: { slug: NewsletterSlug }) {
           <button
             type="submit"
             disabled={status === "submitting"}
-            className="min-h-11 border-l border-rule-strong bg-cyan px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+            className="flex shrink-0 items-center justify-center self-stretch border-l border-rule-strong bg-cyan pl-4 pr-[calc(1rem+0.18em)] text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
           >
             {status === "ok" ? "Subscribed" : "Subscribe"}
           </button>

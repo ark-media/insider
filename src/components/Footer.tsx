@@ -37,7 +37,6 @@ const sections: { title: string; links: FooterLink[] }[] = [
     links: [
       { label: "Become a member", to: "/plus" },
       { label: "Gift Ark+", to: "/plus/gift" },
-      { label: "Member dashboard", to: "/account" },
     ],
   },
 ];

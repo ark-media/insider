@@ -3,10 +3,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
   type ReactNode,
 } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
+import { AUTH0_AUDIENCE } from "../../shared/auth0-claims";
 import { fetchMe, type Me } from "./auth";
 import { fetchAdminMe } from "./admin";
 import { hasCheckoutCookie, setTokenGetter } from "./tokenStore";
@@ -38,15 +40,41 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     isAdmin: false,
   });
 
-  // Make getAccessTokenSilently available to non-React code (fetchMe, etc.)
-  useEffect(() => {
-    setTokenGetter(() => getAccessTokenSilently());
-  }, [getAccessTokenSilently]);
+  const getApiAccessToken = useCallback(
+    () =>
+      getAccessTokenSilently({
+        authorizationParams: { audience: AUTH0_AUDIENCE },
+      }),
+    [getAccessTokenSilently],
+  );
+
+  // Register before paint so route loaders and other early fetchMe callers
+  // can attach the Auth0 bearer (useEffect runs too late on first navigation).
+  useLayoutEffect(() => {
+    setTokenGetter(getApiAccessToken);
+  }, [getApiAccessToken]);
 
   const refresh = useCallback(async () => {
-    const me = await fetchMe();
+    if (!isAuthenticated && !hasCheckoutCookie()) {
+      setState({ kind: "guest" });
+      return;
+    }
+
+    let me: Me | null = null;
+    try {
+      if (isAuthenticated) {
+        const token = await getApiAccessToken();
+        me = await fetchMe({ accessToken: token });
+      } else {
+        // Post-checkout httpOnly session — credentials only, no Bearer.
+        me = await fetchMe({ accessToken: null });
+      }
+    } catch {
+      // Silent token renewal can fail briefly; still try cookie session.
+      me = await fetchMe();
+    }
     setState(me ? { kind: "member", me } : { kind: "guest" });
-  }, []);
+  }, [isAuthenticated, getApiAccessToken]);
 
   useEffect(() => {
     // The post-checkout session lives in an httpOnly cookie that JS can't

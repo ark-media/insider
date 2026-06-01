@@ -12,7 +12,8 @@ import {
   formatEpisodeDate,
   type Episode,
 } from "../data/episodes";
-import { hostsForShow } from "../data/hosts";
+import { contributorsForShow, hostsForShow } from "../data/hosts";
+import type { Host } from "../data/hosts";
 import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
 import { useShowDescription } from "../lib/useShowDescription";
 import { PageShell, PlaceholderSection } from "./PageShell";
@@ -69,7 +70,7 @@ function PublicShowPage({ show }: { show: Show }) {
 
       <EpisodeBrowser show={show} episodes={episodes} />
 
-      <HostsSection show={show} />
+      <ShowPeopleSections show={show} />
 
       <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
@@ -116,7 +117,7 @@ function PaidShowPage({ show }: { show: Show }) {
       ) : (
         <PaidShowJoinCta show={show} />
       )}
-      <HostsSection show={show} />
+      <ShowPeopleSections show={show} />
       <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
   );
@@ -318,7 +319,7 @@ function EpisodeBrowser({
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+            <div className="episode-label">
               {featuredEpisode ? "More episodes" : "Latest episodes"}
             </div>
             <div className="flex items-center gap-5">
@@ -607,12 +608,12 @@ function EpisodeCard({
         </Link>
       ) : null}
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        <div className="episode-meta text-cyan">
           {formatEpisodeDate(episode.publishedAt)} ·{" "}
           {formatDuration(episode.durationMinutes)}
         </div>
         {isActive ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.14em] text-cyan">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan" aria-hidden="true" />
             Now playing
           </span>
@@ -639,7 +640,7 @@ function EpisodeCard({
           <button
             type="button"
             onClick={onPlay}
-            className="inline-flex items-center gap-2 border border-cyan px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            className="inline-flex items-center gap-2 border border-cyan px-3 py-2 text-[13px] font-semibold uppercase tracking-[0.16em] text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             <PlayGlyph />
             Play
@@ -648,7 +649,7 @@ function EpisodeCard({
         <Link
           to="/podcasts/$show/$episode"
           params={{ show: show.slug, episode: episode.slug } as never}
-          className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="episode-action transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           View episode →
         </Link>
@@ -667,35 +668,33 @@ function ShowPlayer({
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-              {isLatest ? "Latest episode" : "Now playing"}
-            </div>
-            {isLatest ? (
-              <span className="border border-cyan px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan">
-                New
-              </span>
-            ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="episode-label">
+            {isLatest ? "Latest episode" : "Now playing"}
           </div>
-          <Link
-            to="/podcasts/$show/$episode"
-            params={{ show: episode.showSlug, episode: episode.slug } as never}
-            className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            View episode →
-          </Link>
+          {isLatest ? (
+            <span className="border border-cyan px-2.5 py-1 text-[12px] font-bold uppercase tracking-[0.14em] text-cyan">
+              New
+            </span>
+          ) : null}
         </div>
         <h2
-          className="mt-4 max-w-3xl font-display text-[clamp(1.4rem,2.6vw,2rem)] leading-[1.15] text-fg-strong"
+          className="mt-5 max-w-3xl font-display text-[clamp(1.35rem,2.4vw,1.875rem)] leading-[1.2] text-fg-strong"
           title={episode.title}
         >
           {episode.title}
         </h2>
-        <div className="mt-3 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
+        <div className="episode-meta mt-3">
           {formatEpisodeDate(episode.publishedAt)} ·{" "}
           {formatDuration(episode.durationMinutes)}
         </div>
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: episode.showSlug, episode: episode.slug } as never}
+          className="episode-action mt-3 inline-block transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          View episode →
+        </Link>
         <div className="mt-8 border border-rule bg-navy-800/40">
           <iframe
             key={episode.id}
@@ -744,17 +743,32 @@ function EqualizerGlyph() {
   );
 }
 
-function HostsSection({ show }: { show: Show }) {
-  const hosts = hostsForShow(show.slug);
-  if (hosts.length === 0) return null;
+function ShowPeopleSections({ show }: { show: Show }) {
+  const showHosts = hostsForShow(show.slug);
+  const showContributors = contributorsForShow(show.slug);
+  if (showHosts.length === 0 && showContributors.length === 0) return null;
+
+  return (
+    <>
+      {showHosts.length > 0 ? (
+        <PeopleSection title="Hosts" people={showHosts} />
+      ) : null}
+      {showContributors.length > 0 ? (
+        <PeopleSection title="Contributors" people={showContributors} />
+      ) : null}
+    </>
+  );
+}
+
+function PeopleSection({ title, people }: { title: string; people: Host[] }) {
   return (
     <section className="border-t border-rule bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
-          Hosts
+          {title}
         </div>
         <div className="mt-10 grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-3">
-          {hosts.map((h, i) => (
+          {people.map((h, i) => (
             <Link
               key={h.slug}
               to="/hosts/$slug"

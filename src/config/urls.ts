@@ -89,7 +89,7 @@ export const circleUrls = {
   webApp: "https://app.arkmedia.org",
   /** Circle Communities app in the App Store. */
   appStoreIos: "https://apps.apple.com/app/circle-communities/id1525026498",
-  /** Circle app on Google Play. */
+  /** Community app on Google Play. */
   appStoreAndroid:
     "https://play.google.com/store/apps/details?id=com.circle.circleapp",
 } as const;

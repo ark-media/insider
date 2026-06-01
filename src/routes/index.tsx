@@ -1,13 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { shows } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
 import { LinkCard, NumberedRow } from "../components/ContentCard";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { Toast } from "../components/Toast";
-import { fetchNewsletterPrefs } from "../lib/newsletterPrefs";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { useNewsletterSubscription } from "../lib/useNewsletterSubscription";
 
 export const Route = createFileRoute("/")({
   // `?gift=complete` lands here after a gift checkout (both the inline flow and
@@ -32,7 +32,7 @@ const linkRows = [
     eyebrow: "Community",
     title: "In the room.",
     to: "/community",
-    body: "Nadav, Amit and Tal in conversation with members — in the Circle app.",
+    body: "Nadav, Amit and Tal in conversation with members — in the Community app.",
     cta: "Learn more",
   },
   {
@@ -60,28 +60,13 @@ function rowTitle(eyebrow: string, title: string): ReactNode {
 
 function AlsoFromArkMedia() {
   const { state } = useSubscriberAuth();
-  const [freeSub, setFreeSub] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (state.kind !== "member") return;
-    let live = true;
-    void fetchNewsletterPrefs()
-      .then((p) => {
-        if (live) setFreeSub(p?.free ?? false);
-      })
-      .catch(() => {
-        if (live) setFreeSub(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [state.kind]);
+  const { isSubscribed, prefsLoading } = useNewsletterSubscription();
 
   // Everyone gets the inline signup except a signed-in member we know is
-  // already on the free list. While a member's prefs are still loading we
-  // withhold the row (rather than show-then-hide) so already-subscribed
-  // members never see it flash; guests get it immediately.
-  const showNewsletter = state.kind !== "member" || freeSub === false;
+  // already subscribed (free or Ark+). While prefs are still loading we
+  // withhold the row so already-subscribed members never see it flash.
+  const showNewsletter =
+    state.kind !== "member" || (!prefsLoading && !isSubscribed);
 
   // Build the visible rows, then number them by position so hiding the
   // newsletter row leaves no gap (Community becomes 01, Ark+ becomes 02).
@@ -134,7 +119,10 @@ function AlsoFromArkMedia() {
 function HomePage() {
   const { gift } = Route.useSearch();
   const navigate = useNavigate();
+  const { state } = useSubscriberAuth();
   const descriptions = useShowDescriptions(shows.map((s) => s.slug));
+  const isSubscriber =
+    state.kind === "member" && state.me.tier === "subscriber";
   return (
     <main className="relative">
       <section className="relative">
@@ -184,10 +172,10 @@ function HomePage() {
               Explore podcasts →
             </Link>
             <Link
-              to="/plus"
+              to={isSubscriber ? "/community" : "/plus"}
               className="inline-flex min-h-12 items-center gap-2 border border-rule-strong px-5 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              Become an Ark+ member
+              {isSubscriber ? "Explore community" : "Become an Ark+ member"}
             </Link>
           </div>
         </div>

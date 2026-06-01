@@ -10,14 +10,14 @@ const hosts = [
   },
   {
     name: "Nadav Eyal",
-    role: "Regular",
+    role: "Call Me Back Contributor",
     bio: "Columnist at Yedioth Ahronoth. Author of Revolt. One of Israel's most read journalists.",
     initials: "NE",
     headshot: "/hosts/nadav-eyal.jpg",
   },
   {
     name: "Amit Segal",
-    role: "Regular",
+    role: "Call Me Back Contributor",
     bio: "Chief political analyst for Channel 12 News. The most quoted political voice in Israel.",
     initials: "AS",
     headshot: "/hosts/amit-segal.jpg",
@@ -26,7 +26,7 @@ const hosts = [
 
 export function Hosts() {
   return (
-    <section className="relative bg-navy-800/40">
+    <section className="relative bg-navy-900">
       <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10 md:pb-48">
         <div className="mb-16 max-w-2xl">
           <div className="inside-tab text-[13px]">The bylines</div>

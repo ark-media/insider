@@ -154,7 +154,7 @@ function isBylineParagraph(n: DOMNode): boolean {
   // First paragraph that wraps an /authors/ link plus a date — we render the
   // byline in the masthead, so suppress it inside the article body.
   if (!isTag(n) || n.name !== "p") return false;
-  return n.children.some(
+  return (n.children as DOMNode[]).some(
     (c) => isTag(c) && c.name === "a" && /\/authors\//i.test(c.attribs.href ?? ""),
   );
 }

@@ -72,6 +72,16 @@ export function getNewsletter(slug: string): Newsletter | undefined {
   return newsletters.find((n) => n.slug === slug);
 }
 
+/** Beehiiv publication slugs — not post slugs. Used to redirect legacy URLs. */
+export function isNewsletterPublicationSlug(s: string): s is NewsletterSlug {
+  return s === "ark-daily" || s === "members-letter";
+}
+
+/** Which newsletter surface a reader should see on /newsletters. */
+export function newsletterSlugForReader(isArkPlusSubscriber: boolean): NewsletterSlug {
+  return isArkPlusSubscriber ? "members-letter" : "ark-daily";
+}
+
 export function formatPostDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", {

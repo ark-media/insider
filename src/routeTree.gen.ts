@@ -34,6 +34,7 @@ import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-m
 import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-news-daily'
 import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
+import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
 import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
@@ -42,7 +43,6 @@ import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast
 import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
 import { Route as AccountBillingRouteImport } from './routes/account/billing'
 import { Route as AboutNetworkRouteImport } from './routes/about/network'
-import { Route as NewslettersSlugIndexRouteImport } from './routes/newsletters/$slug/index'
 import { Route as ShowsShowEpisodeRouteImport } from './routes/shows/$show/$episode'
 import { Route as PodcastsShowEpisodeRouteImport } from './routes/podcasts/$show/$episode'
 import { Route as NewslettersSlugPostRouteImport } from './routes/newsletters/$slug/$post'
@@ -172,6 +172,11 @@ const PlusGiftRoute = PlusGiftRouteImport.update({
   path: '/plus/gift',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NewslettersPostRoute = NewslettersPostRouteImport.update({
+  id: '/newsletters/$post',
+  path: '/newsletters/$post',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HostsSlugRoute = HostsSlugRouteImport.update({
   id: '/hosts/$slug',
   path: '/hosts/$slug',
@@ -212,11 +217,6 @@ const AboutNetworkRoute = AboutNetworkRouteImport.update({
   path: '/network',
   getParentRoute: () => AboutRoute,
 } as any)
-const NewslettersSlugIndexRoute = NewslettersSlugIndexRouteImport.update({
-  id: '/newsletters/$slug/',
-  path: '/newsletters/$slug/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ShowsShowEpisodeRoute = ShowsShowEpisodeRouteImport.update({
   id: '/$episode',
   path: '/$episode',
@@ -253,6 +253,7 @@ export interface FileRoutesByFullPath {
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
+  '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -270,7 +271,6 @@ export interface FileRoutesByFullPath {
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
   '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
-  '/newsletters/$slug/': typeof NewslettersSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -292,6 +292,7 @@ export interface FileRoutesByTo {
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
+  '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -309,7 +310,6 @@ export interface FileRoutesByTo {
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
   '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
-  '/newsletters/$slug': typeof NewslettersSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -332,6 +332,7 @@ export interface FileRoutesById {
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/promos': typeof AdminPromosRoute
   '/hosts/$slug': typeof HostsSlugRoute
+  '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -349,7 +350,6 @@ export interface FileRoutesById {
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
   '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
-  '/newsletters/$slug/': typeof NewslettersSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -373,6 +373,7 @@ export interface FileRouteTypes {
     | '/admin/discuss-threads'
     | '/admin/promos'
     | '/hosts/$slug'
+    | '/newsletters/$post'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -390,7 +391,6 @@ export interface FileRouteTypes {
     | '/newsletters/$slug/$post'
     | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
-    | '/newsletters/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -412,6 +412,7 @@ export interface FileRouteTypes {
     | '/admin/discuss-threads'
     | '/admin/promos'
     | '/hosts/$slug'
+    | '/newsletters/$post'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -429,7 +430,6 @@ export interface FileRouteTypes {
     | '/newsletters/$slug/$post'
     | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
-    | '/newsletters/$slug'
   id:
     | '__root__'
     | '/'
@@ -451,6 +451,7 @@ export interface FileRouteTypes {
     | '/admin/discuss-threads'
     | '/admin/promos'
     | '/hosts/$slug'
+    | '/newsletters/$post'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -468,7 +469,6 @@ export interface FileRouteTypes {
     | '/newsletters/$slug/$post'
     | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
-    | '/newsletters/$slug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -490,6 +490,7 @@ export interface RootRouteChildren {
   AdminDiscussThreadsRoute: typeof AdminDiscussThreadsRoute
   AdminPromosRoute: typeof AdminPromosRoute
   HostsSlugRoute: typeof HostsSlugRoute
+  NewslettersPostRoute: typeof NewslettersPostRoute
   PlusGiftRoute: typeof PlusGiftRoute
   PlusInsideCallMeBackRoute: typeof PlusInsideCallMeBackRoute
   PodcastsArkNewsDailyRoute: typeof PodcastsArkNewsDailyRoute
@@ -506,7 +507,6 @@ export interface RootRouteChildren {
   ShowsIndexRoute: typeof ShowsIndexRoute
   NewslettersSlugPostRoute: typeof NewslettersSlugPostRoute
   PodcastsShowEpisodeRoute: typeof PodcastsShowEpisodeRoute
-  NewslettersSlugIndexRoute: typeof NewslettersSlugIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -686,6 +686,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlusGiftRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/newsletters/$post': {
+      id: '/newsletters/$post'
+      path: '/newsletters/$post'
+      fullPath: '/newsletters/$post'
+      preLoaderRoute: typeof NewslettersPostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hosts/$slug': {
       id: '/hosts/$slug'
       path: '/hosts/$slug'
@@ -741,13 +748,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/about/network'
       preLoaderRoute: typeof AboutNetworkRouteImport
       parentRoute: typeof AboutRoute
-    }
-    '/newsletters/$slug/': {
-      id: '/newsletters/$slug/'
-      path: '/newsletters/$slug'
-      fullPath: '/newsletters/$slug/'
-      preLoaderRoute: typeof NewslettersSlugIndexRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/shows/$show/$episode': {
       id: '/shows/$show/$episode'
@@ -814,6 +814,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminDiscussThreadsRoute: AdminDiscussThreadsRoute,
   AdminPromosRoute: AdminPromosRoute,
   HostsSlugRoute: HostsSlugRoute,
+  NewslettersPostRoute: NewslettersPostRoute,
   PlusGiftRoute: PlusGiftRoute,
   PlusInsideCallMeBackRoute: PlusInsideCallMeBackRoute,
   PodcastsArkNewsDailyRoute: PodcastsArkNewsDailyRoute,
@@ -830,7 +831,6 @@ const rootRouteChildren: RootRouteChildren = {
   ShowsIndexRoute: ShowsIndexRoute,
   NewslettersSlugPostRoute: NewslettersSlugPostRoute,
   PodcastsShowEpisodeRoute: PodcastsShowEpisodeRoute,
-  NewslettersSlugIndexRoute: NewslettersSlugIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

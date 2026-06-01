@@ -47,14 +47,14 @@ function SubscriberDashboard({
     <PageShell
       eyebrow="Member dashboard"
       title="Welcome back."
-      lede={`Signed in as ${email}. The community is the main event — open the Circle app to dive in.`}
+      lede={`Signed in as ${email}. The community is the main event — open the Community app to dive in.`}
     >
       <section className="border-t border-rule bg-navy-900">
         <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <div className="border border-cyan/40 bg-navy-800/40 p-8">
-                <div className="eyebrow">Open in the Circle app</div>
+                <div className="eyebrow">Open in the Community app</div>
                 <h2 className="mt-4 font-display text-[clamp(1.6rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
                   The community is in the app.
                 </h2>

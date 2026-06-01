@@ -1,60 +1,115 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
-import { fetchMe } from "../../lib/auth";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchNewsletterPrefs,
   saveNewsletterPrefs,
   type NewsletterPrefs as Prefs,
 } from "../../lib/newsletterPrefs";
+import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 
 export const Route = createFileRoute("/account/newsletters")({
-  beforeLoad: async () => {
-    const me = await fetchMe();
-    if (!me) throw redirect({ to: "/plus" });
-    return { me };
-  },
-  loader: async () => ({ prefs: await fetchNewsletterPrefs() }),
   component: NewsletterPrefs,
 });
 
 function NewsletterPrefs() {
-  const { me } = Route.useRouteContext();
-  const { prefs: initial } = Route.useLoaderData();
-  const [prefs, setPrefs] = useState<Prefs>(
-    initial ?? { free: false, premium: false, canPremium: me.tier === "subscriber" },
-  );
-  const [saved, setSaved] = useState(false);
+  const navigate = useNavigate();
+  const { state } = useSubscriberAuth();
+
+  useEffect(() => {
+    if (state.kind === "guest") {
+      void navigate({ to: "/plus" });
+    }
+  }, [state.kind, navigate]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900">
+        <p className="text-fg-muted">Loading…</p>
+      </div>
+    );
+  }
+
+  if (state.kind === "guest") return null;
+
+  return <NewsletterPrefsForm me={state.me} />;
+}
+
+function NewsletterPrefsForm({ me }: { me: { email: string; tier: "subscriber" | "free" } }) {
+  const isMember = me.tier === "subscriber";
+  const [prefs, setPrefs] = useState<Prefs | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadGeneration = useRef(0);
 
-  const toggleFree = () => {
-    setPrefs((p) => ({ ...p, free: !p.free }));
-    setSaved(false);
-    setError(null);
-  };
-  const togglePremium = () => {
-    setPrefs((p) => ({ ...p, premium: !p.premium }));
-    setSaved(false);
-    setError(null);
-  };
+  const loadPrefs = useCallback(() => {
+    const generation = ++loadGeneration.current;
+    setLoading(true);
+    setLoadError(null);
+    return fetchNewsletterPrefs().then((result) => {
+      if (generation !== loadGeneration.current) return;
+      if (result.ok) {
+        setPrefs(result.prefs);
+        return;
+      }
+      setPrefs(null);
+      setLoadError(
+        result.reason === "unauthenticated"
+          ? "Session expired. Sign in again to manage preferences."
+          : "Could not load preferences. Please refresh the page.",
+      );
+    });
+  }, []);
 
-  const onSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    let live = true;
+    // loadPrefs synchronously sets the loading state before fetching; this is a
+    // deliberate reset on account/email change, not a cascading render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadPrefs()
+      .catch(() => {
+        if (!live) return;
+        setPrefs(null);
+        setLoadError("Could not load preferences. Please refresh the page.");
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [isMember, me.email, loadPrefs]);
+
+  const on = isMember ? (prefs?.premium ?? false) : (prefs?.free ?? false);
+
+  const onToggle = async () => {
+    if (!prefs || saving || loading || loadError) return;
+    const nextOn = !on;
+    const previous = prefs;
+    loadGeneration.current += 1;
+    setPrefs((p) =>
+      p
+        ? isMember
+          ? { ...p, premium: nextOn }
+          : { ...p, free: nextOn }
+        : p,
+    );
     setSaving(true);
     setError(null);
-    const result = await saveNewsletterPrefs({
-      free: prefs.free,
-      premium: prefs.premium,
-    });
+    const result = await saveNewsletterPrefs(
+      isMember ? { premium: nextOn } : { free: nextOn },
+    );
     setSaving(false);
     if (result.ok && result.prefs) {
+      loadGeneration.current += 1;
       setPrefs(result.prefs);
-      setSaved(true);
-    } else {
-      setError(result.error ?? "Could not save. Please try again.");
+      return;
     }
+    setPrefs(previous);
+    setError(result.error ?? "Could not update. Please try again.");
   };
 
   return (
@@ -72,107 +127,165 @@ function NewsletterPrefs() {
       title="Pick what lands in your inbox."
       lede={`Signed in as ${me.email}. Adjust at any time — toggling off won't delete past issues from your archive.`}
     >
-      <section className="border-t border-rule bg-navy-900">
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-          <form onSubmit={onSave} className="max-w-3xl">
-            <ul className="divide-y divide-rule border-y border-rule">
+      <div className="mx-auto max-w-[1280px] -mt-4 px-6 pb-20 sm:px-10">
+        <div className="max-w-xl">
+          <div className="border border-rule bg-navy-800/40 p-6 sm:p-8">
+            {loading ? (
+              <PrefSkeleton />
+            ) : loadError ? (
+              <PrefError
+                message={loadError}
+                onRetry={() => {
+                  void loadPrefs().finally(() => setLoading(false));
+                }}
+              />
+            ) : isMember ? (
               <PrefRow
+                label="Members letter"
+                title="The Ark+ Members Letter"
+                description="A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading. Turning off keeps you on the free newsletter."
+                cadence="Weekly"
+                badge="Ark+"
+                on={on}
+                onToggle={() => void onToggle()}
+                busy={saving}
+              />
+            ) : (
+              <PrefRow
+                label="Free newsletter"
                 title="The Ark Media Newsletter"
                 description="Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead. Toggling off stops all Ark Media emails."
                 cadence="Weekly"
-                on={prefs.free}
-                onToggle={toggleFree}
+                on={on}
+                onToggle={() => void onToggle()}
+                busy={saving}
               />
-              <PrefRow
-                title="The Ark+ Members Letter"
-                description="A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading."
-                cadence="Weekly"
-                badge="Ark+"
-                on={prefs.premium}
-                onToggle={togglePremium}
-                locked={!prefs.canPremium}
-              />
-            </ul>
+            )}
+          </div>
 
-            {error ? (
-              <p className="mt-6 text-[13px] text-red-400">{error}</p>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="mt-10 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-50"
-            >
-              {saving ? "Saving" : saved ? "Saved" : "Save preferences"} →
-            </button>
-          </form>
+          {error ? (
+            <p className="mt-4 text-[13px] text-red-400" role="alert">
+              {error}
+            </p>
+          ) : null}
         </div>
-      </section>
+      </div>
     </PageShell>
   );
 }
 
+function PrefSkeleton() {
+  return (
+    <div className="animate-pulse motion-reduce:animate-none">
+      <div className="h-3 w-28 rounded-sm bg-rule-soft" />
+      <div className="mt-6 flex items-start justify-between gap-4">
+        <div className="h-6 w-48 rounded-sm bg-rule-soft" />
+        <div className="h-7 w-12 shrink-0 bg-rule-soft" />
+      </div>
+      <div className="mt-4 space-y-2">
+        <div className="h-3 w-full rounded-sm bg-rule-soft" />
+        <div className="h-3 w-4/5 rounded-sm bg-rule-soft" />
+      </div>
+      <div className="mt-4 h-3 w-16 rounded-sm bg-rule-soft" />
+    </div>
+  );
+}
+
+function PrefError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div>
+      <p className="text-[13px] text-red-400" role="alert">
+        {message}
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-4 font-display text-[12px] font-bold uppercase tracking-[0.18em] text-cyan underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
 function PrefRow({
+  label,
   title,
   description,
   cadence,
   badge,
   on,
   onToggle,
-  locked = false,
+  busy = false,
 }: {
+  label: string;
   title: string;
   description: string;
   cadence: string;
   badge?: string;
   on: boolean;
   onToggle: () => void;
-  locked?: boolean;
+  busy?: boolean;
 }) {
   return (
-    <li className="flex items-start justify-between gap-6 py-5">
-      <div>
-        <div className="flex items-center gap-3">
-          <span className="font-display text-[18px] leading-tight text-fg-strong">
-            {title}
-          </span>
-          {badge ? (
-            <span className="border border-cyan/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
-              {badge}
-            </span>
-          ) : null}
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
+        {label}
+      </p>
+
+      <div className="mt-5 flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="font-display text-[1.125rem] leading-snug text-fg-strong sm:text-[1.25rem]">
+              {title}
+            </h2>
+            {badge ? (
+              <span className="border border-cyan/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
+                {badge}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <p className="mt-2 max-w-md text-[13.5px] leading-[1.55] text-fg-muted">
-          {description}
-        </p>
-        <p className="mt-2 text-[12px] uppercase tracking-[0.18em] text-fg-muted">
-          {locked ? "Ark+ members only" : cadence}
-        </p>
+        <Toggle on={on} onClick={onToggle} busy={busy} />
       </div>
-      <Toggle on={on} onClick={onToggle} disabled={locked} />
-    </li>
+
+      <p className="mt-3 text-[14px] leading-[1.65] text-fg-muted">
+        {description}
+      </p>
+      <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-faint">
+        {cadence}
+      </p>
+    </div>
   );
 }
 
 function Toggle({
   on,
   onClick,
-  disabled = false,
+  busy = false,
 }: {
   on: boolean;
   onClick: () => void;
-  disabled?: boolean;
+  busy?: boolean;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
+      aria-busy={busy}
+      aria-label={on ? "Subscribed" : "Not subscribed"}
       onClick={onClick}
-      disabled={disabled}
+      disabled={busy}
       className={`relative inline-flex h-7 w-12 shrink-0 items-center border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
-        disabled
-          ? "cursor-not-allowed border-rule bg-transparent opacity-40"
+        busy
+          ? "cursor-wait border-rule bg-transparent opacity-40"
           : on
             ? "border-cyan bg-cyan/20"
             : "border-rule-strong bg-transparent hover:border-cyan"

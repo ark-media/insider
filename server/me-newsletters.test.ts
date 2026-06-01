@@ -46,6 +46,7 @@ mock.module('@neondatabase/serverless', () => ({
 }))
 
 // Static import AFTER mock.module so the plugin picks up the fake neon.
+import { clearNewsletterRefreshCache } from './lib/beehiiv-sync.js'
 import { devApiPlugin } from './dev-api'
 
 const signAuth0Token = signAuth0TestToken
@@ -245,6 +246,7 @@ beforeEach(() => {
   liveTierByEmail = new Map()
   nextSqlResult = () => []
   beehiivHandler = () => new Response('{}', { status: 404 })
+  clearNewsletterRefreshCache()
 })
 
 afterAll(() => {
@@ -288,8 +290,25 @@ describe('newsletters auth', () => {
 // ===========================================================================
 
 describe('GET /api/me/newsletters', () => {
-  test('returns local-row state when present', async () => {
+  test('returns Beehiiv state after refresh (overrides stale local row)', async () => {
     const token = await signAuth0Token({ email: 'a@x.com', tier: 'subscriber' })
+    beehiivHandler = ({ url, method }) => {
+      if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'sub_1',
+              email: 'a@x.com',
+              status: 'active',
+              subscription_tier: 'premium',
+              subscription_premium_tier_names: ['Premium'],
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 404 })
+    }
     nextSqlResult = (sql) => {
       if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
         return [
@@ -317,7 +336,7 @@ describe('GET /api/me/newsletters', () => {
     })
   })
 
-  test('returns all-false when no local row', async () => {
+  test('returns all-false when Beehiiv has no subscription', async () => {
     const token = await signAuth0Token({ email: 'b@x.com', tier: 'free' })
     const handler = buildHandler()
     const res = makeRes()
@@ -329,6 +348,97 @@ describe('GET /api/me/newsletters', () => {
       premium: false,
       canPremium: false,
     })
+  })
+
+  test('syncs active free subscription from Beehiiv when mirror is empty', async () => {
+    const token = await signAuth0Token({ email: 'sync@x.com', tier: 'free' })
+    beehiivHandler = ({ url, method }) => {
+      if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'sub_sync',
+              email: 'sync@x.com',
+              status: 'active',
+              subscription_tier: 'free',
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 404 })
+    }
+    nextSqlResult = (sql) => {
+      if (sql.includes('insert into beehiiv_subscription')) {
+        return []
+      }
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return [
+          {
+            email: 'sync@x.com',
+            publication_id: PUB_ID,
+            beehiiv_subscription_id: 'sub_sync',
+            status: 'active',
+            has_premium: false,
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      }
+      return []
+    }
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), res)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({
+      email: 'sync@x.com',
+      free: true,
+      premium: false,
+      canPremium: false,
+    })
+    expect(
+      sqlCalls.some((c) => c.sql.includes('insert into beehiiv_subscription')),
+    ).toBe(true)
+  })
+
+  test('pending Beehiiv status counts as subscribed (free: true)', async () => {
+    const token = await signAuth0Token({ email: 'pending@x.com', tier: 'free' })
+    beehiivHandler = ({ url, method }) => {
+      if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'sub_pending',
+              email: 'pending@x.com',
+              status: 'pending',
+              subscription_tier: 'free',
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 404 })
+    }
+    nextSqlResult = (sql) => {
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return [
+          {
+            email: 'pending@x.com',
+            publication_id: PUB_ID,
+            beehiiv_subscription_id: 'sub_pending',
+            status: 'pending',
+            has_premium: false,
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      }
+      return []
+    }
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), res)
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { free: boolean }).free).toBe(true)
   })
 
   test('canPremium flips on live tier lookup when JWT says free', async () => {
@@ -461,7 +571,11 @@ describe('PUT /api/me/newsletters', () => {
     expect(res.statusCode).toBe(200)
   })
 
-  test('entitled member toggling only free=true re-applies premium implicitly', async () => {
+  test('entitled member re-subscribing an inactive record reactivates via POST and re-applies premium implicitly', async () => {
+    // Beehiiv's PUT `unsubscribe:false` does NOT reactivate an inactive
+    // subscription — only the create endpoint with `reactivate_existing:true`
+    // does. Toggling free back on for a subscriber must reactivate AND carry
+    // the premium tier through the create call.
     const token = await signAuth0Token({ email: 're@x.com', tier: 'subscriber' })
     beehiivHandler = ({ method, url }) => {
       if (method === 'GET' && url.includes('/by_email/')) {
@@ -478,7 +592,7 @@ describe('PUT /api/me/newsletters', () => {
           { status: 200 },
         )
       }
-      if (method === 'PUT') {
+      if (method === 'POST') {
         return new Response(
           JSON.stringify({
             data: {
@@ -489,10 +603,25 @@ describe('PUT /api/me/newsletters', () => {
               subscription_premium_tier_names: ['Premium'],
             },
           }),
-          { status: 200 },
+          { status: 201 },
         )
       }
       return new Response('{}', { status: 500 })
+    }
+    nextSqlResult = (sql) => {
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return [
+          {
+            email: 're@x.com',
+            publication_id: 'pub_x',
+            beehiiv_subscription_id: 'sub_r',
+            status: 'active',
+            has_premium: true,
+            updated_at: '2020-01-01T00:00:00.000Z',
+          },
+        ]
+      }
+      return []
     }
     const handler = buildHandler()
     const res = makeRes()
@@ -506,17 +635,18 @@ describe('PUT /api/me/newsletters', () => {
       res,
     )
     expect(res.statusCode).toBe(200)
-    const put = fetchCalls.find(
-      (c) =>
-        c.method === 'PUT' && c.url.includes('api.beehiiv.com'),
+    expect((res.__json() as Record<string, unknown>).free).toBe(true)
+    const post = fetchCalls.find(
+      (c) => c.method === 'POST' && c.url.includes('api.beehiiv.com'),
     )
-    expect(put?.body).toMatchObject({
-      unsubscribe: false,
+    expect(post?.body).toMatchObject({
+      email: 're@x.com',
+      reactivate_existing: true,
       premium_tier_ids: ['pt_premium'],
     })
   })
 
-  test('free user toggling free=true re-subscribes WITHOUT premium tier', async () => {
+  test('free user re-subscribing an inactive record reactivates via POST WITHOUT premium tier', async () => {
     // Mirrors the subscriber version above, but the implicit premium re-apply
     // must NOT happen — free users have no entitlement, and silently
     // upgrading them on a re-subscribe would be a privilege escalation.
@@ -537,7 +667,7 @@ describe('PUT /api/me/newsletters', () => {
           { status: 200 },
         )
       }
-      if (method === 'PUT') {
+      if (method === 'POST') {
         return new Response(
           JSON.stringify({
             data: {
@@ -548,10 +678,25 @@ describe('PUT /api/me/newsletters', () => {
               subscription_premium_tier_names: [],
             },
           }),
-          { status: 200 },
+          { status: 201 },
         )
       }
       return new Response('{}', { status: 500 })
+    }
+    nextSqlResult = (sql) => {
+      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
+        return [
+          {
+            email: 'freere@x.com',
+            publication_id: 'pub_x',
+            beehiiv_subscription_id: 'sub_freere',
+            status: 'active',
+            has_premium: false,
+            updated_at: '2020-01-01T00:00:00.000Z',
+          },
+        ]
+      }
+      return []
     }
     const handler = buildHandler()
     const res = makeRes()
@@ -565,11 +710,12 @@ describe('PUT /api/me/newsletters', () => {
       res,
     )
     expect(res.statusCode).toBe(200)
-    const put = fetchCalls.find(
-      (c) => c.method === 'PUT' && c.url.includes('api.beehiiv.com'),
+    expect((res.__json() as Record<string, unknown>).free).toBe(true)
+    const post = fetchCalls.find(
+      (c) => c.method === 'POST' && c.url.includes('api.beehiiv.com'),
     )
-    expect(put?.body).toMatchObject({ unsubscribe: false })
-    expect((put?.body as Record<string, unknown>).premium_tier_ids).toBeUndefined()
+    expect(post?.body).toMatchObject({ reactivate_existing: true })
+    expect((post?.body as Record<string, unknown>).premium_tier_ids).toBeUndefined()
   })
 
   test('429 once the per-email rate bucket is empty', async () => {

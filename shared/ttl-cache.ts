@@ -6,6 +6,7 @@
 export type TTLCache<K, V> = {
   get(key: K): V | null
   set(key: K, value: V): void
+  delete(key: K): void
   clear(): void
 }
 
@@ -23,6 +24,9 @@ export function makeTTLCache<K, V>(ttlMs: number): TTLCache<K, V> {
     },
     set(key, value) {
       store.set(key, { at: Date.now(), value })
+    },
+    delete(key) {
+      store.delete(key)
     },
     clear() {
       store.clear()

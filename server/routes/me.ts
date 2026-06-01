@@ -6,7 +6,8 @@ import { fetchAuth0TierForEmail, redactEmail } from '../entitlement.js'
 import {
   applyPreferences,
   ensureFreeSubscription,
-  getLocalSubscription,
+  isReceivingEmails,
+  refreshSubscriptionFromBeehiiv,
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
@@ -165,10 +166,10 @@ export function meRoutes({ env }: Deps): Route[] {
         const deps = { env, sql }
 
         if (req.method === 'GET') {
-          const row = await getLocalSubscription(sql, email)
+          const row = await refreshSubscriptionFromBeehiiv(deps, email)
           return json(200, {
             email,
-            free: row ? row.status === 'active' : false,
+            free: row ? isReceivingEmails(row.status) : false,
             premium: row?.hasPremium ?? false,
             canPremium: isMember,
           })
@@ -207,7 +208,7 @@ export function meRoutes({ env }: Deps): Route[] {
           const updated = await applyPreferences(deps, email, prefs)
           json(200, {
             email,
-            free: updated ? updated.status === 'active' : false,
+            free: updated ? isReceivingEmails(updated.status) : false,
             premium: updated?.hasPremium ?? false,
             canPremium: isMember,
           })

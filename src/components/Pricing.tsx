@@ -60,7 +60,7 @@ export function Pricing() {
     : null;
 
   return (
-    <section id="pricing" className="relative bg-navy-900">
+    <section id="pricing" className="relative border-t border-rule bg-navy-800/40">
       <div className="mx-auto max-w-[1280px] px-6 pt-20 pb-24 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
@@ -117,7 +117,7 @@ export function Pricing() {
                 >
                   {p}
                   {p === "yearly" && savingsPct ? (
-                    <span className={`ml-2 text-[10px] ${plan === p ? "text-navy/70" : "text-cyan"}`}>
+                    <span className={`ml-2 text-[10px] ${plan === p ? "text-navy" : "text-cyan"}`}>
                       −{savingsPct}%
                     </span>
                   ) : null}
@@ -182,26 +182,6 @@ export function Pricing() {
                       </p>
                     ) : null}
                   </div>
-                </div>
-
-                {/* Includes column */}
-                <div className="p-8">
-                  <div className="eyebrow text-fg-muted">
-                    Every Ark+ member gets
-                  </div>
-                  <ul className="mt-5 space-y-3 text-[14px] text-fg">
-                    {[
-                      "Inside Call Me Back — private, ad-free feed",
-                      "Members-only newsletters",
-                      "The Ark+ community in the Circle app",
-                      "Live events and Q&As",
-                    ].map((f) => (
-                      <li key={f} className="flex items-start gap-3">
-                        <span className="mt-[7px] h-px w-4 bg-cyan" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
 
                   <button
                     type="button"
@@ -214,6 +194,26 @@ export function Pricing() {
                       →
                     </span>
                   </button>
+                </div>
+
+                {/* Includes column */}
+                <div className="p-8">
+                  <div className="eyebrow text-fg-muted">
+                    Every Ark+ member gets
+                  </div>
+                  <ul className="mt-5 space-y-3 text-[14px] text-fg">
+                    {[
+                      "Inside Call Me Back — private, ad-free feed",
+                      "Members-only newsletters",
+                      "The Ark+ community in the Community app",
+                      "Live events and Q&As",
+                    ].map((f) => (
+                      <li key={f} className="flex items-start gap-3">
+                        <span className="mt-[7px] h-px w-4 bg-cyan" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             </div>

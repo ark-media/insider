@@ -16,7 +16,7 @@ const faqs = [
   },
   {
     q: "Where does the community live?",
-    a: `The Ark+ community lives in the Circle app — iOS, Android, and the web. After you join, you'll get a single sign-on link from ${ARK_DOMAIN} straight into the community.`,
+    a: `The Ark+ community lives in the Community app — iOS, Android, and the web. After you join, you'll get a single sign-on link from ${ARK_DOMAIN} straight into the community.`,
   },
   {
     q: "What are my payment options?",
@@ -40,7 +40,7 @@ export function FAQ() {
   const [open, setOpen] = useState<number | null>(0);
 
   return (
-    <section id="faq" className="relative bg-navy-900">
+    <section id="faq" className="relative bg-navy-800/40">
       <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           <div className="lg:col-span-4">

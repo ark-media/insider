@@ -1,24 +1,18 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
-import { fetchMe, cancelSubscription } from "../../lib/auth";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { cancelSubscription } from "../../lib/auth";
+import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { Modal } from "../../components/Modal";
 
 export const Route = createFileRoute("/account/billing")({
-  beforeLoad: async () => {
-    const me = await fetchMe();
-    if (!me) throw redirect({ to: "/plus" });
-    // Free accounts have no Stripe customer to bill — bounce them to the
-    // upgrade page rather than rendering an empty/broken billing shell.
-    if (me.tier !== "subscriber") throw redirect({ to: "/plus" });
-    return { me };
-  },
   component: BillingPage,
 });
 
 function BillingPage() {
-  const { me } = Route.useRouteContext();
+  const navigate = useNavigate();
+  const { state } = useSubscriberAuth();
   const [status, setStatus] = useState<
     | { kind: "idle" }
     | { kind: "cancelling" }
@@ -26,6 +20,28 @@ function BillingPage() {
     | { kind: "error"; message: string }
   >({ kind: "idle" });
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (state.kind === "guest") {
+      void navigate({ to: "/plus" });
+      return;
+    }
+    if (state.kind === "member" && state.me.tier !== "subscriber") {
+      void navigate({ to: "/plus" });
+    }
+  }, [state, navigate]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900">
+        <p className="text-fg-muted">Loading…</p>
+      </div>
+    );
+  }
+
+  if (state.kind === "guest" || state.me.tier !== "subscriber") return null;
+
+  const me = state.me;
 
   const onCancel = async () => {
     setConfirmOpen(false);

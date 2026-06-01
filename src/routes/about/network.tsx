@@ -33,7 +33,7 @@ const properties: NetworkProperty[] = [
     title: "The community",
     kind: "Community",
     description:
-      "The Ark+ community lives in the Circle app. Episode threads, live audio rooms, member meetups, and long-form posts.",
+      "The Ark+ community lives in the Community app. Episode threads, live audio rooms, member meetups, and long-form posts.",
     to: "/community",
   },
   {
