@@ -130,7 +130,6 @@ const PLAYLIST: Track[] = [
 function IsraelVotesPage() {
   return (
     <PageShell
-      eyebrow="Israel Votes"
       title="Tracking the next Israeli election."
       lede="Polls, parties, and the politics behind the headlines"
     >
@@ -144,7 +143,7 @@ function IsraelVotesPage() {
 function WatchLatest() {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <h2 className="label text-cyan">
           Watch the latest
         </h2>
@@ -159,7 +158,7 @@ function WatchLatest() {
 function Explainers() {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <h2 className="label text-cyan">
           Explainers
         </h2>
@@ -203,7 +202,7 @@ function PlaylistSection() {
 
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <div className="flex items-end justify-between">
           <div>
             <div className="label text-cyan">

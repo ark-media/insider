@@ -11,8 +11,8 @@ export function FAQ({ faqs }: { faqs: Faq[] }) {
 
   return (
     <section id="faq" className="relative">
-      <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+      <div className="page-section">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-4">
             <h2 className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">

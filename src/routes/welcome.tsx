@@ -9,9 +9,8 @@ function WelcomePage() {
   return (
     <main className="relative">
       <section className="section-hero relative">
-        <div className="mx-auto max-w-[1280px] px-6 pt-16 pb-12 sm:px-10 sm:pt-24">
-          <p className="inside-tab text-xs">You're in</p>
-          <h1 className="mt-10 max-w-3xl text-fg-strong">
+        <div className="page-gutter pt-10 pb-10 sm:pt-16">
+          <h1 className="max-w-3xl text-fg-strong">
             <span className="display-upright block text-[clamp(2.2rem,5vw,4rem)] leading-[1.05]">
               Welcome to <span className="display text-cyan">Ark+</span>.
             </span>
@@ -25,7 +24,7 @@ function WelcomePage() {
       </section>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <WelcomeStep
               n="01"
@@ -54,7 +53,7 @@ function WelcomePage() {
       </section>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-12 sm:px-10">
+        <div className="page-gutter py-8">
           <p className="text-body-sm">
             A welcome email is on its way. Need help?{" "}
             <Link to="/contact" className="text-cyan underline-offset-4 hover:underline">

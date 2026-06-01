@@ -123,12 +123,11 @@ function NewsletterPrefsForm({ me }: { me: { email: string; tier: "ark-plus-memb
           ]}
         />
       }
-      eyebrow="Newsletter preferences"
       title="Pick what lands in your inbox."
       lede={`Signed in as ${me.email}. Adjust at any time — toggling off won't delete past issues from your archive.`}
     >
       <section>
-      <div className="mx-auto max-w-[1280px] px-6 pt-16 pb-20 sm:px-10">
+      <div className="page-gutter pt-10 pb-12">
         <div className="max-w-xl">
           <div className="border border-rule bg-navy-800/40 p-6 sm:p-8">
             {loading ? (

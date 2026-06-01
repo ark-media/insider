@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import { ClampedText } from "./ClampedText";
 
 type CommonProps = {
-  eyebrow: string;
   title: ReactNode;
   body?: ReactNode;
   cta?: string;
@@ -28,11 +27,10 @@ type StaticCardProps = CommonProps & {
 const cardClass =
   "group relative block overflow-hidden border border-rule bg-navy-800/40 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
-function CardText({ eyebrow, title, body, cta }: CommonProps) {
+function CardText({ title, body, cta }: CommonProps) {
   return (
     <>
-      <div className="eyebrow">{eyebrow}</div>
-      <div className="mt-4 line-clamp-3 font-display text-[22px] leading-[1.15] text-fg-strong">
+      <div className="line-clamp-3 font-display text-[22px] leading-[1.15] text-fg-strong">
         {title}
       </div>
       {body ? (
@@ -52,8 +50,7 @@ function CardText({ eyebrow, title, body, cta }: CommonProps) {
 
 function CardBody({ badge, media, ...text }: CommonProps) {
   if (media) {
-    // Split layout: the full (square) cover sits in the left half, inset with
-    // padding and vertically centered; text and CTA fill the right half.
+    // Split layout: cover in the left half; title, body, and CTA top-aligned on the right.
     return (
       <>
         {badge ?? null}
@@ -61,7 +58,7 @@ function CardBody({ badge, media, ...text }: CommonProps) {
           <div className="flex w-1/2 shrink-0 items-center border-r border-rule p-6">
             <div className="w-full">{media}</div>
           </div>
-          <div className="flex w-1/2 flex-col justify-center p-6">
+          <div className="flex w-1/2 flex-col justify-start p-6">
             <CardText {...text} />
           </div>
         </div>
@@ -154,7 +151,7 @@ export function NumberedRow({
   );
 
   const containerClass =
-    "group grid grid-cols-[auto_1fr] items-start gap-x-5 border-t border-rule py-8 transition first:border-t-0 first:pt-4 sm:gap-x-12";
+    "group grid grid-cols-[auto_1fr] items-start gap-x-5 border-t border-rule py-6 transition first:border-t-0 first:pt-3 sm:gap-x-8";
 
   if (to && !action) {
     return (

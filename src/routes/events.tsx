@@ -31,12 +31,11 @@ function EventsPage() {
 
   return (
     <PageShell
-      eyebrow="Events"
       title="Live conversations, in person and online."
       lede="Audio rooms, AMAs, watch parties, and the occasional gathering in New York or Tel Aviv. Most events live in the Ark+ community; some are open to all."
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <h2 className="label text-cyan">
             Upcoming
           </h2>

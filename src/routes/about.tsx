@@ -33,13 +33,12 @@ const aboutLinks: AboutLink[] = [
 function AboutPage() {
   return (
     <PageShell
-      eyebrow="About"
       title="Ark Media."
       lede="Ark Media is a podcast network focused on spirited debate and learning about Jewish life,
 Israel, the Middle East, and our larger geopolitics."
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <h2 className="label text-cyan">
             What Ark Media does
           </h2>
@@ -64,7 +63,7 @@ Israel, the Middle East, and our larger geopolitics."
       </section>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {aboutLinks.map((link) => (
               <Link

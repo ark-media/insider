@@ -36,7 +36,7 @@ type Tier = "guest" | "free" | "ark-plus-member";
 const podcastChildren: NavChild[] = [
   { label: "All", to: "/podcasts" },
   ...shows.map((show) => ({
-    label: show.shortTitle,
+    label: show.title,
     to: show.route,
     description: show.cadence,
     paid: show.paid,

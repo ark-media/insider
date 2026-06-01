@@ -41,12 +41,11 @@ function OptionCardsPage() {
 
   return (
     <PageShell
-      eyebrow="Member dashboard"
       title="Welcome back."
       lede={`Signed in as ${me.email}. Everything in your membership, in one place.`}
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <SurfaceCard
               icon={<HeadphonesIcon />}

@@ -64,12 +64,11 @@ function GiftPage() {
   return (
     <>
       <section className="section-hero relative">
-        <div className="mx-auto max-w-[1280px] px-6 pt-16 pb-24 sm:px-10">
+        <div className="page-gutter pt-10 pb-16">
           <div className="grid grid-cols-1 gap-14 lg:grid-cols-12">
             {/* Left: pitch */}
             <div className="lg:col-span-5">
-              <div className="inside-tab text-xs">Gift Ark+</div>
-              <h1 className="mt-10 text-fg-strong">
+              <h1 className="text-fg-strong">
                 <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                   Give the full
                 </span>

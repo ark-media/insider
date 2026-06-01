@@ -68,12 +68,11 @@ function BillingPage() {
           ]}
         />
       }
-      eyebrow="Billing"
       title="Your Ark+ membership."
       lede={`Signed in as ${me.email}.`}
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="border border-rule bg-navy-800/40 p-8">
               <h2 className="label text-cyan">

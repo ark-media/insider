@@ -27,10 +27,9 @@ const hosts = [
 export function Hosts() {
   return (
     <section className="relative">
-      <div className="mx-auto max-w-[1280px] px-6 py-20 sm:px-10 md:pb-48">
-        <div className="mb-16 max-w-2xl">
-          <div className="inside-tab text-xs">The bylines</div>
-          <h2 className="mt-10 text-fg-strong">
+      <div className="page-section md:pb-24">
+        <div className="mb-8 max-w-2xl">
+          <h2 className="text-fg-strong">
             <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
               Three voices.
             </span>

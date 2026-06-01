@@ -12,12 +12,11 @@ function CareersPage() {
 
   return (
     <PageShell
-      eyebrow="Careers"
       title="Build Ark Media."
       lede="We're a small team building independent journalism for an audience that wants more than a hot take. Roles below; speculative notes welcome."
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-8 sm:px-10">
+        <div className="page-gutter py-6">
           <div className="flex items-baseline gap-3">
             <h2 className="label text-cyan">Open roles</h2>
             {careers.length > 0 ? (

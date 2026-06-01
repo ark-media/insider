@@ -61,11 +61,10 @@ export function Pricing() {
 
   return (
     <section id="pricing" className="relative">
-      <div className="mx-auto max-w-[1280px] px-6 pt-20 pb-24 sm:px-10">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+      <div className="page-gutter pt-12 pb-16">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="inside-tab text-xs">Become a member</div>
-            <h2 className="mt-10 text-fg-strong">
+            <h2 className="text-fg-strong">
               <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                 Pick your
               </span>

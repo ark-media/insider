@@ -13,12 +13,11 @@ const showContributors = hosts.filter((h) => h.kind === "contributor");
 function HostsHub() {
   return (
     <PageShell
-      eyebrow="Hosts"
       title="The bylines."
       lede="The hosts and contributors behind Ark Media."
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <PeopleGrid eyebrow="Hosts" people={showHosts} startIndex={0} />
           {showContributors.length > 0 ? (
             <PeopleGrid
@@ -50,7 +49,7 @@ function PeopleGrid({
       <h2 className="label text-cyan">
         {eyebrow}
       </h2>
-      <div className="mt-10 grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
         {people.map((h, i) => {
           const index = startIndex + i;
           return (

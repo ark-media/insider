@@ -19,7 +19,7 @@ export function StatusPage({
   return (
     <main className="relative">
       <section className="section-hero relative">
-        <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-16 sm:px-10 sm:pt-16">
+        <div className="page-gutter pt-8 pb-10 sm:pt-12">
           <p className="eyebrow">{eyebrow}</p>
           <h1 className="mt-8 max-w-3xl font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-fg-strong">
             {title}

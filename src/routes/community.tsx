@@ -101,12 +101,11 @@ function SubscriberCommunity() {
 
   return (
     <PageShell
-      eyebrow="Community"
       title="Welcome back to the room."
       lede="What's live, what's happening, and what the community is talking about right now. Jump in — every conversation continues in the app."
     >
       <section>
-        <div className="mx-auto flex max-w-[1280px] flex-col gap-16 px-6 py-16 sm:px-10">
+        <div className="page-gutter flex flex-col gap-10 py-10">
           <div>
             <h2 className="label text-cyan">Live &amp; upcoming</h2>
             <div className="mt-6">
@@ -132,12 +131,11 @@ function SubscriberCommunity() {
 function OpenInAppCard() {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 pb-24 sm:px-10">
+      <div className="page-gutter pb-16">
         <div className="border border-rule bg-navy-800/40 p-8 sm:p-12">
           <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
             <div className="lg:col-span-7">
-              <div className="inside-tab text-xs">Open the app</div>
-              <h2 className="mt-8 max-w-xl">
+              <h2 className="max-w-xl">
                 <span className="display-upright block text-[clamp(1.6rem,3.2vw,2.4rem)] text-fg-strong">
                   Your community, wherever you are.
                 </span>
@@ -168,12 +166,11 @@ function OpenInAppCard() {
 function MarketingShowcase() {
   return (
     <PageShell
-      eyebrow="Community"
       title="The room behind the show — in the app."
       lede="Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web."
     >
       <section>
-        <div className="mx-auto flex max-w-[1280px] flex-col gap-24 px-6 py-20 sm:px-10 sm:py-24">
+        <div className="page-gutter flex flex-col gap-12 py-12 sm:py-16">
           <FeatureBlock
             no="01"
             title="Inside Call Me Back"
@@ -213,12 +210,11 @@ function MarketingShowcase() {
       </section>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 pb-24 sm:px-10">
+        <div className="page-gutter pb-16">
           <div className="border border-rule bg-navy-800/40 p-8 sm:p-12">
             <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
               <div className="lg:col-span-7">
-                <div className="inside-tab text-xs">Get in the room</div>
-                <h2 className="mt-8 max-w-xl">
+                <h2 className="max-w-xl">
                   <span className="display-upright block text-[clamp(1.6rem,3.2vw,2.4rem)] text-fg-strong">
                     The community is open to Ark+ members.
                   </span>
@@ -297,7 +293,7 @@ function FeatureBlock({
   badge?: string;
 }) {
   return (
-    <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-16">
+    <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-12 lg:gap-16">
       <div className={flip ? "lg:order-2 lg:col-span-6" : "lg:col-span-6"}>
         <div className="flex items-center gap-3">
           <span className="display-upright text-[20px] text-cyan sm:text-[22px]">
@@ -340,7 +336,7 @@ function FeatureBlock({
 
 function PhoneFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="relative w-[270px] shrink-0 sm:w-[300px]">
+    <div className="relative isolate w-[270px] shrink-0 sm:w-[300px]">
       <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-cyan/10 blur-2xl" />
       <div className="relative aspect-[9/19] overflow-hidden rounded-[2.6rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
         <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">

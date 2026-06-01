@@ -45,12 +45,11 @@ function SubscriberDashboard({
 }) {
   return (
     <PageShell
-      eyebrow="Member dashboard"
       title="Welcome back."
       lede={`Signed in as ${email}. The community is the main event — open the Community app to dive in.`}
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <div className="border border-cyan/40 bg-navy-800/40 p-8">
@@ -125,12 +124,11 @@ function FreeDashboard({
 }) {
   return (
     <PageShell
-      eyebrow="Your account"
       title="You're signed in."
       lede={`Signed in as ${email}. Manage what lands in your inbox, or join Ark+ for the private feed and community.`}
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <div className="border border-cyan/40 bg-navy-800/40 p-8">

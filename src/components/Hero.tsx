@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 export function Hero() {
   return (
     <section className="section-hero ark-bg grain-overlay relative overflow-hidden">
-      <div className="relative mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 pt-14 pb-20 sm:px-10 sm:pt-16 lg:grid-cols-12 lg:gap-10 lg:pt-24 lg:pb-28">
+      <div className="page-gutter relative grid grid-cols-1 gap-8 pt-10 pb-12 sm:pt-12 lg:grid-cols-12 lg:gap-8 lg:pt-16 lg:pb-16">
         {/* Left — headline */}
         <div className="relative z-10 lg:col-span-7">
           <div className="rise rise-1 flex items-center gap-3 eyebrow">

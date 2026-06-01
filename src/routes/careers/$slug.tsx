@@ -40,12 +40,11 @@ function CareerDetailPage() {
           ]}
         />
       }
-      eyebrow="Careers"
       title={career.title}
       lede={meta || undefined}
     >
       <section>
-        <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
+        <div className="page-gutter grid grid-cols-1 gap-8 py-10 sm:py-12 lg:grid-cols-12">
           <div className="lg:col-span-8">
             <div className="space-y-4 text-body-lg [&_a]:text-cyan [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-rule-strong [&_blockquote]:pl-4 [&_blockquote]:text-fg-muted [&_h2]:mt-10 [&_h2]:font-display [&_h2]:text-[22px] [&_h2]:leading-tight [&_h2]:text-fg-strong [&_h3]:mt-6 [&_h3]:font-display [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-fg-strong [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_strong]:text-fg-strong [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
               {parse(career.description)}

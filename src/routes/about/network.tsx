@@ -57,12 +57,11 @@ function NetworkPage() {
           ]}
         />
       }
-      eyebrow="Network"
       title="The Ark Media network."
       lede="Every property we run, one page. Connecting Jewish voices, near and far."
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <h2 className="label text-cyan">
             Properties
           </h2>
@@ -92,7 +91,7 @@ function NetworkPage() {
       </section>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <h2 className="label text-cyan">
             Shows by name
           </h2>

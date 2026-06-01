@@ -126,8 +126,8 @@ function PaidShowPage({ show }: { show: Show }) {
 function PaidShowJoinCta({ show }: { show: Show }) {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+      <div className="page-section">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <div className="label text-cyan">
               Ark+ members only
@@ -171,7 +171,7 @@ function ShowHero({ show }: { show: Show }) {
 
   return (
     <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
-      <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
+      <div className="page-gutter pt-8 pb-8 sm:pt-12">
         <Breadcrumbs
           className="rise rise-1 mb-6"
           items={[
@@ -180,10 +180,7 @@ function ShowHero({ show }: { show: Show }) {
             { label: show.shortTitle },
           ]}
         />
-        <p className="inside-tab rise rise-1 text-xs">
-          {show.shortTitle}
-        </p>
-        <div className="mt-10 grid grid-cols-1 gap-12 lg:grid-cols-12">
+        <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <h1 className="rise rise-2 max-w-3xl text-fg-strong">
               <span className="display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
@@ -212,7 +209,7 @@ function ShowHero({ show }: { show: Show }) {
 function ShowUpsell({ show: _show }: { show: Show }) {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-12 sm:px-10">
+      <div className="page-gutter py-8">
         <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-12">
           <div className="lg:col-span-8">
             <div className="label text-cyan">
@@ -316,7 +313,7 @@ function EpisodeBrowser({
       </div>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="episode-label">
               {featuredEpisode ? "More episodes" : "Latest episodes"}
@@ -666,7 +663,7 @@ function ShowPlayer({
 }) {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <div className="flex flex-wrap items-center gap-3">
           <div className="episode-label">
             {isLatest ? "Latest episode" : "Now playing"}
@@ -762,7 +759,7 @@ function ShowPeopleSections({ show }: { show: Show }) {
 function PeopleSection({ title, people }: { title: string; people: Host[] }) {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <div className="label text-cyan">
           {title}
         </div>
@@ -811,7 +808,7 @@ function RelatedShows({
 
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <div className="label text-cyan">
           Related shows
         </div>

@@ -13,12 +13,11 @@ function ShowsHub() {
   const descriptions = useShowDescriptions(shows.map((s) => s.slug));
   return (
     <PageShell
-      eyebrow="Podcasts"
       title="Four shows. One newsroom."
       lede="Long-form interviews, fast briefs, and ongoing conversations on the questions that matter."
     >
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {shows.map((show) => (
               <Link
@@ -33,8 +32,7 @@ function ShowsHub() {
                 ) : null}
                 <ShowCover show={show} className="border-b border-rule" />
                 <div className="p-6">
-                  <div className="eyebrow">{show.shortTitle}</div>
-                  <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
+                  <h2 className="font-display text-[22px] leading-[1.15] text-fg-strong">
                     {show.title}
                   </h2>
                   <ClampedText

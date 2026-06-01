@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
@@ -6,30 +6,27 @@ import {
   formatPostDate,
   newsletterSlugForReader,
   type Newsletter,
+  type NewsletterPost,
 } from "../../data/newsletters";
-import { fetchMe } from "../../lib/auth";
 import { getPublication, subscribeEmail } from "../../lib/beehiiv";
 import { sourceFor } from "../../lib/newsletterSources";
 import { useNewsletterSubscription } from "../../lib/useNewsletterSubscription";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
-import { getToken } from "../../lib/tokenStore";
 
 export const Route = createFileRoute("/newsletters/")({
-  loader: async () => {
-    const token = await getToken();
-    const me = token ? await fetchMe({ accessToken: token }) : null;
-    const slug = newsletterSlugForReader(me?.tier === "ark-plus-member");
-    const pub = await getPublication(slug);
-    if (!pub) throw notFound();
-    const posts = await sourceFor(slug).listPosts(slug);
-    return { pub, posts };
-  },
   component: NewslettersPage,
 });
 
+const breadcrumbs = (
+  <Breadcrumbs
+    items={[
+      { label: "Home", to: "/" },
+      { label: "Newsletters" },
+    ]}
+  />
+);
+
 function NewslettersPage() {
-  const router = useRouter();
-  const { pub, posts } = Route.useLoaderData();
   const { state } = useSubscriberAuth();
   const {
     isSubscribed,
@@ -38,12 +35,47 @@ function NewslettersPage() {
     isSubscriber,
   } = useNewsletterSubscription();
 
-  // First loader pass may run before Auth0 token is ready; reload for Ark+ slug.
+  // Navigate instantly, then fetch client-side so there's no loader stall.
+  // Which newsletter to show is derived from the auth tier, so we wait for auth
+  // to settle before fetching — members land directly on the Ark+ slug instead
+  // of fetching the free one and refetching. The data is null until it arrives,
+  // which drives the loading state below.
+  const [data, setData] = useState<
+    { pub: Newsletter; posts: NewsletterPost[] } | null
+  >(null);
+
+  const tierResolved = state.kind !== "loading";
+  const wantsMembersLetter =
+    state.kind === "member" && state.me.tier === "ark-plus-member";
+
   useEffect(() => {
-    if (state.kind !== "member" || state.me.tier !== "ark-plus-member") return;
-    if (pub.slug === "members-letter") return;
-    void router.invalidate();
-  }, [state, router, pub.slug]);
+    if (!tierResolved) return;
+    let alive = true;
+    const slug = newsletterSlugForReader(wantsMembersLetter);
+    void (async () => {
+      const pub = await getPublication(slug);
+      if (!pub || !alive) return;
+      const posts = await sourceFor(slug).listPosts(slug);
+      if (alive) setData({ pub, posts });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [tierResolved, wantsMembersLetter]);
+
+  if (!data) {
+    return (
+      <PageShell breadcrumbs={breadcrumbs} title="Newsletters">
+        <section>
+          <div className="page-gutter py-10 sm:py-12">
+            <p className="text-body-sm">Loading…</p>
+          </div>
+        </section>
+      </PageShell>
+    );
+  }
+
+  const { pub, posts } = data;
 
   // Guests see signup. Ark-daily: hide the email form when Beehiiv says you're
   // on the list. Members letter: hide the Ark+ CTA for subscribers (JWT tier).
@@ -58,23 +90,18 @@ function NewslettersPage() {
 
   return (
     <PageShell
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { label: "Home", to: "/" },
-            { label: "Newsletters" },
-          ]}
-        />
-      }
-      eyebrow={pub.tier === "ark-plus" ? "Ark+ newsletter" : "Newsletter"}
+      breadcrumbs={breadcrumbs}
       title={pub.title}
       lede={pub.description}
     >
       <section>
-        <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-12 px-6 py-16 sm:px-10 lg:grid-cols-12">
+        <div className="page-gutter grid grid-cols-1 gap-8 py-10 sm:py-12 lg:grid-cols-12">
           {showSignup ? (
             <div className="lg:col-span-5">
               <SignupCard pub={pub} />
+              {pub.slug !== "members-letter" && !isSubscriber ? (
+                <JoinPlusCard />
+              ) : null}
             </div>
           ) : null}
           <div className={showSignup ? "lg:col-span-7" : "lg:col-span-12"}>
@@ -115,6 +142,24 @@ function NewslettersPage() {
         </div>
       </section>
     </PageShell>
+  );
+}
+
+function JoinPlusCard() {
+  return (
+    <div className="mt-6 border border-cyan/40 bg-navy-800/40 p-7">
+      <div className="label text-cyan">Ark+</div>
+      <p className="mt-4 max-w-md text-body-sm text-fg">
+        Get the members-only newsletter, ad-free episodes, and the full
+        archive when you join Ark+.
+      </p>
+      <Link
+        to="/plus"
+        className="button-text mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan"
+      >
+        Join Ark+ →
+      </Link>
+    </div>
   );
 }
 

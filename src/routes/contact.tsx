@@ -46,7 +46,6 @@ function ContactPage() {
 
   return (
     <PageShell
-      eyebrow="Contact"
       title="Get in touch."
       lede="Send us a note and it'll reach the right desk. Pick a topic, tell us what's on your mind, and we'll follow up by email."
     >

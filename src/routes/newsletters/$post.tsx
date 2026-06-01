@@ -67,12 +67,11 @@ function PostPage() {
             ]}
           />
         }
-        eyebrow={pub.shortTitle}
         title="Post not found."
         lede="We couldn't find that post."
       >
         <section>
-          <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+          <div className="page-section">
             <Link
               to="/newsletters"
               className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan"

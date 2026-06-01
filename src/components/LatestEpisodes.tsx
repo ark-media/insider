@@ -130,7 +130,7 @@ export function LatestEpisodes() {
   if (episodes === null) {
     return (
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <SectionHeading />
           <p className="mt-8 text-body-sm">Loading episodes…</p>
         </div>
@@ -142,7 +142,7 @@ export function LatestEpisodes() {
 
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <SectionHeading />
 
         <div className="relative mt-10">

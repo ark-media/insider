@@ -64,6 +64,14 @@
   --text-2xl: 1.5rem; /* 24px */
   --text-3xl: 2rem; /* 32px — section headings */
 
+  /* Layout spacing — page gutters and section rhythm */
+  --spacing-gutter: 1.5rem; /* 24px — mobile horizontal inset */
+  --spacing-gutter-lg: 2rem; /* 32px — sm+ horizontal inset */
+  --spacing-section-y: 2.5rem; /* 40px — default section padding */
+  --spacing-section-y-lg: 3rem; /* 48px — hero / feature sections */
+  --spacing-stack: 1.5rem; /* 24px — block gaps */
+  --spacing-stack-lg: 2rem; /* 32px — grid gaps */
+
   /* Zebra stripe — the lifted alternate band between full-bleed sections */
   --color-stripe-alt: color-mix(in srgb, var(--color-navy-800) 40%, var(--color-navy-900));
 }
@@ -249,6 +257,28 @@
   color: var(--color-cyan);
 }
 
+/* Page layout — tokenised gutters and section padding.
+   Use .page-gutter for horizontal containment only; .page-section adds vertical rhythm. */
+.page-gutter {
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: var(--spacing-gutter);
+}
+
+.page-section {
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: var(--spacing-gutter);
+  padding-block: var(--spacing-section-y);
+}
+
+@media (width >= 40rem) {
+  .page-gutter,
+  .page-section {
+    padding-inline: var(--spacing-gutter-lg);
+  }
+}
+
 /* Skip-to-content link — visually hidden until focused */
 .skip-link {
   position: absolute;
@@ -311,22 +341,6 @@ body {
   font-weight: 900;
   letter-spacing: -0.01em;
   line-height: 0.9;
-}
-
-/* The INSIDE tab motif — echoes the podcast cover */
-.inside-tab {
-  display: inline-block;
-  background: var(--color-cyan);
-  color: var(--color-navy);
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-style: italic;
-  text-transform: uppercase;
-  padding: 0.35em 0.7em 0.25em;
-  letter-spacing: 0.02em;
-  transform: rotate(-2.5deg);
-  transform-origin: left bottom;
-  box-shadow: 0 6px 0 0 rgba(0, 0, 0, 0.15);
 }
 
 /* Page backdrop applied to the root app container.
@@ -557,13 +571,6 @@ body {
   background: #0d3e74;
   color: #fff;
 }
-/* The INSIDE tab is a brand motif echoing the bright-cyan podcast cover, so it keeps
-   the bright cyan (navy text on it reads ~8:1) rather than the deep ink-cyan. */
-[data-theme="light"] .inside-tab {
-  background: #3eb5f9;
-  box-shadow: 0 6px 0 0 rgb(11 21 60 / 0.1);
-}
-
 /* Hero-scale italic accent words ("experience", "Voices", "unusually good", "terms")
    use a punchier, more vivid cyan in light mode — the deep AA-safe token reads as
    muddy teal at display size. Only the .display class qualifies (the giant italic

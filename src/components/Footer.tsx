@@ -44,11 +44,11 @@ const sections: { title: string; links: FooterLink[] }[] = [
 export function Footer() {
   return (
     <footer className="relative border-t border-rule bg-navy-900">
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+      <div className="page-section">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <ArkLogo height={64} />
-            <p className="mt-10 max-w-lg text-fg-strong">
+            <ArkLogo height={48} />
+            <p className="mt-6 max-w-lg text-fg-strong">
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
                 Connecting Jewish{" "}
                 <span className="display text-cyan">Voices</span>,
@@ -59,14 +59,14 @@ export function Footer() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-5 gap-y-8 text-[13px] sm:gap-x-8 sm:grid-cols-4 lg:col-span-7">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-6 text-[13px] sm:gap-x-6 sm:grid-cols-4 lg:col-span-7">
             {sections.map((s) => (
               <FooterCol key={s.title} title={s.title} links={s.links} />
             ))}
           </div>
         </div>
 
-        <div className="mt-16 flex flex-col gap-6 border-t border-rule-soft pt-8 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-10 flex flex-col gap-4 border-t border-rule-soft pt-6 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
             © {new Date().getFullYear()} Ark Media LLC
           </span>
@@ -84,7 +84,7 @@ function FooterCol({ title, links }: { title: string; links: FooterLink[] }) {
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
         {title}
       </div>
-      <ul className="mt-4 space-y-2.5">
+      <ul className="mt-3 space-y-2">
         {links.map((l) => (
           <li key={l.to}>
             <Link

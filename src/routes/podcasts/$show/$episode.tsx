@@ -77,7 +77,7 @@ function EpisodePage() {
   return (
     <main className="relative">
       <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
-        <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-14 sm:px-10 sm:pt-16">
+        <div className="page-gutter pt-8 pb-10 sm:pt-12">
           <EpisodeBreadcrumbs
             className="rise rise-1"
             show={show}
@@ -114,7 +114,7 @@ function EpisodePage() {
       </section>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-14 sm:px-10 sm:py-16">
+        <div className="page-gutter py-10 sm:py-12">
           <div className="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
               <h2 className="label text-cyan">
@@ -298,7 +298,7 @@ function PaidEpisodeBlock({ episode }: { episode: Episode }) {
 function BackToShow({ show }: { show: Show }) {
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-12 sm:px-10">
+      <div className="page-gutter py-8">
         <Link
           to={show.route}
           className="group inline-flex items-center gap-3 label text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
@@ -321,7 +321,7 @@ function EpisodeSkeleton({ show }: { show: Show }) {
     <main className="relative" aria-busy="true" aria-live="polite">
       <span className="sr-only">Loading episode</span>
       <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
-        <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-14 sm:px-10 sm:pt-16">
+        <div className="page-gutter pt-8 pb-10 sm:pt-12">
           <EpisodeBreadcrumbs show={show} />
           <div className="mt-6 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
           <div className="mt-4 max-w-4xl space-y-3">
@@ -333,7 +333,7 @@ function EpisodeSkeleton({ show }: { show: Show }) {
       </section>
 
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-14 sm:px-10 sm:py-16">
+        <div className="page-gutter py-10 sm:py-12">
           <div className="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
               <div className="label text-cyan">
@@ -364,7 +364,7 @@ function EpisodeNotFound({ show }: { show: Show }) {
   return (
     <main className="relative">
       <section className="section-hero relative">
-        <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-12 sm:px-10 sm:pt-16">
+        <div className="page-gutter pt-8 pb-8 sm:pt-12">
           <EpisodeBreadcrumbs show={show} trailing="Episode not found" />
           <h1 className="mt-8 max-w-3xl font-display text-[clamp(1.8rem,4vw,3rem)] leading-[1.1] text-fg-strong">
             We couldn't find that episode.

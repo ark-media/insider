@@ -92,7 +92,7 @@ function AlsoFromArkMedia() {
 
   return (
     <section>
-      <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+      <div className="page-section">
         <div className="mb-8">
           <div className="eyebrow text-[18px] sm:text-[22px]">
             Also from Ark Media
@@ -126,7 +126,7 @@ function HomePage() {
   return (
     <main className="relative">
       <section className="section-hero relative">
-        <div className="mx-auto max-w-[1280px] px-6 pb-10 sm:px-10">
+        <div className="page-gutter pb-8">
           {/* Animated brand mark. The GIF has a baked-in navy background, so it
               sits in a fixed-navy tile (--color-navy doesn't flip with the
               theme) and stays seamless in both light and dark. */}
@@ -185,7 +185,7 @@ function HomePage() {
 
       {/* Podcast row — card grid (good for browsing) */}
       <section>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 sm:px-10">
+        <div className="page-section">
           <div className="flex items-end justify-between">
             <div>
               <div className="eyebrow text-[18px] sm:text-[22px]">Podcasts</div>
@@ -208,7 +208,6 @@ function HomePage() {
               <LinkCard
                 key={show.slug}
                 to={show.route}
-                eyebrow={show.shortTitle}
                 title={show.title}
                 body={descriptions[show.slug] || show.tagline}
                 cta="Visit show"
