@@ -15,8 +15,6 @@
     "migrate:create": "bun run scripts/migrate.ts create"
   },
   "dependencies": {
-    "@clerk/backend": "^3.2.13",
-    "@clerk/react": "^6.4.2",
     "@neondatabase/serverless": "^1.1.0",
     "@sentry/react": "^10.52.0",
     "@stripe/react-stripe-js": "^6.2.0",
