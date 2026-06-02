@@ -12,10 +12,6 @@ import {
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
-import {
-  getContentNotificationPrefs,
-  setContentNotificationPrefs,
-} from '../lib/notification-prefs.js'
 import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import {
@@ -35,13 +31,6 @@ import type { Deps, Route } from '../lib/route.js'
 // Beehiiv quota or rate-limit the upstream API. 10 saves per minute is more
 // than any human will click; sustained refill is 1/6s.
 const newsletterPrefsLimiter = createRateLimiter({
-  capacity: 10,
-  refillPerSec: 1 / 6,
-})
-
-// Same shape as the newsletter limiter — these toggles only write to our own
-// Neon table, but a flapping client shouldn't hammer the DB either.
-const notificationPrefsLimiter = createRateLimiter({
   capacity: 10,
   refillPerSec: 1 / 6,
 })
@@ -257,82 +246,6 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
             err,
           )
           json(502, { error: 'beehiiv_update_failed' })
-        }
-      },
-    },
-    {
-      // New-content notification toggles ("email me about new episodes / posts").
-      // We own these in Neon and send the emails ourselves via Resend — Supporting
-      // Cast's hosted toggles have no API. Member-only: the private feed and
-      // community are member-scoped, so these alerts are meaningless for free
-      // readers. GET returns current prefs (defaults to both on); PUT patches.
-      path: '/api/me/notifications',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET' && req.method !== 'PUT') {
-          return json(405, { error: 'Method Not Allowed' })
-        }
-        if (req.method === 'PUT' && !isSameOrigin(req, appBaseUrl)) {
-          return json(403, { error: 'bad_origin' })
-        }
-
-        const session = await getSessionProfile(req, env)
-        let email = session?.email ?? null
-        let tierHint = session?.tier
-        if (!email) {
-          const auth = req.headers.authorization
-          if (auth?.startsWith('Bearer ')) {
-            const profile = await verifyAuth0BearerProfile(auth.slice(7))
-            if (profile?.email) {
-              email = profile.email
-              tierHint = profile.tier
-            }
-          }
-        }
-        if (!email) return json(401, { error: 'unauthenticated' })
-
-        // Stale 'free' hint → re-check Auth0 server-side, same as newsletters.
-        let isMember = tierHint === 'ark-plus-member'
-        if (!isMember) {
-          const live = await fetchAuth0TierForEmail(env, email)
-          isMember = live === 'ark-plus-member'
-        }
-        if (!isMember) return json(403, { error: 'not_entitled' })
-
-        if (!env.DATABASE_URL) {
-          return json(500, { error: 'database_not_configured' })
-        }
-        const sql = getDb(env)
-
-        if (req.method === 'GET') {
-          const prefs = await getContentNotificationPrefs(sql, email)
-          return json(200, prefs)
-        }
-
-        // PUT
-        const wait = notificationPrefsLimiter.take(email.toLowerCase())
-        if (wait !== null) {
-          res.setHeader('retry-after', String(wait))
-          return json(429, { error: 'too_many_requests' })
-        }
-
-        const body = await readJson<{ episodes?: unknown; posts?: unknown }>(req)
-        const patch: { episodes?: boolean; posts?: boolean } = {}
-        if (typeof body?.episodes === 'boolean') patch.episodes = body.episodes
-        if (typeof body?.posts === 'boolean') patch.posts = body.posts
-        if (patch.episodes === undefined && patch.posts === undefined) {
-          return json(400, { error: 'no_changes' })
-        }
-
-        try {
-          const prefs = await setContentNotificationPrefs(sql, email, patch)
-          json(200, prefs)
-        } catch (err) {
-          console.error(
-            `[me] notification preferences update failed for ${redactEmail(email)}:`,
-            err,
-          )
-          json(502, { error: 'notification_update_failed' })
         }
       },
     },
