@@ -298,7 +298,16 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
 
     {
       path: '/api/auth/logout',
-      handler: async (_req, res) => {
+      handler: async (req, res) => {
+        // Logout must stay a top-level GET (it redirects through Auth0's
+        // /v2/logout), so it can't use the Origin-based CSRF check. Block the
+        // forced-logout vector instead: a cross-site navigation (e.g. an
+        // attacker's <img>/link) carries Sec-Fetch-Site: cross-site. A genuine
+        // in-app sign-out is a same-origin navigation; older browsers omit the
+        // header and are allowed through.
+        if (req.headers['sec-fetch-site'] === 'cross-site') {
+          return redirect(res, appBaseUrl)
+        }
         clearSessionCookies(res, env)
         clearCheckoutCookies(res, env)
         // End the Auth0 SSO session too, then come back to the app origin.

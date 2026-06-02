@@ -33,7 +33,15 @@ export function getOidcConfig(env: Env): Promise<client.Configuration> {
     return Promise.reject(new OidcNotConfiguredError())
   }
   if (!cached) {
-    cached = client.discovery(new URL(AUTH0_DOMAIN), clientId, clientSecret)
+    // Don't retain a rejected promise: a transient discovery failure (Auth0
+    // unreachable at first login) must not permanently wedge every later login
+    // until the process restarts. Clear the cache so the next call retries.
+    cached = client
+      .discovery(new URL(AUTH0_DOMAIN), clientId, clientSecret)
+      .catch((err) => {
+        cached = null
+        throw err
+      })
   }
   return cached
 }

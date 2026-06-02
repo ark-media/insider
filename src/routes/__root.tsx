@@ -2,6 +2,7 @@ import { Outlet, createRootRoute, useMatches } from "@tanstack/react-router";
 import { PublicMasthead } from "../components/PublicMasthead";
 import { Footer } from "../components/Footer";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
+import { AuthErrorNotice } from "../components/AuthErrorNotice";
 import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createRootRoute({
@@ -43,6 +44,7 @@ function RootContent() {
           <AnnouncementBanner />
           {/* <LiveStatus /> */}
           <PublicMasthead />
+          <AuthErrorNotice />
         </>
       )}
       <div id="main-content" className="page-stripes">

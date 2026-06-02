@@ -26,8 +26,13 @@ function route(env: Record<string, string>, path: string): Handler {
   return handler
 }
 
-function makeReq(opts: { method?: string; url?: string; cookie?: string }): IncomingMessage {
-  const headers: Record<string, string> = {}
+function makeReq(opts: {
+  method?: string
+  url?: string
+  cookie?: string
+  headers?: Record<string, string>
+}): IncomingMessage {
+  const headers: Record<string, string> = { ...opts.headers }
   if (opts.cookie) headers.cookie = opts.cookie
   return { method: opts.method ?? 'GET', url: opts.url ?? '/', headers } as unknown as IncomingMessage
 }
@@ -98,6 +103,18 @@ describe('GET /api/auth/logout', () => {
     await route({}, '/api/auth/logout')(makeReq({ url: '/api/auth/logout' }), res)
     expect(res.statusCode).toBe(302)
     expect(res.getHeader('Location')).toBe(APP)
+  })
+
+  test('ignores a cross-site forced logout without clearing cookies', async () => {
+    const res = makeRes()
+    await route(CONFIGURED, '/api/auth/logout')(
+      makeReq({ url: '/api/auth/logout', headers: { 'sec-fetch-site': 'cross-site' } }),
+      res,
+    )
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Location')).toBe(APP)
+    // No cookies cleared — the forced logout is a no-op.
+    expect(res.getHeader('Set-Cookie')).toBeUndefined()
   })
 })
 
