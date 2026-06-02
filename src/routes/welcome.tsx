@@ -29,7 +29,7 @@ function WelcomePage() {
             <WelcomeStep
               n="01"
               title="Open the Ark+ community"
-              body="Nadav, Amit and Talare in the Community app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically."
+              body="Nadav, Amit and Tal are in the Community app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically."
               cta="Install the Community app"
               href={CIRCLE_OPEN_LINKS.ios}
               external
@@ -43,8 +43,8 @@ function WelcomePage() {
             />
             <WelcomeStep
               n="03"
-              title="Confirm your newsletter preferences"
-              body="The members-only newsletters are on by default. Adjust which ones you want — or which you don't — at any time."
+              title="Confirm your notification preferences"
+              body="New post, podcast, and members-only newsletter alerts are on by default. Confirm your preferences so you never miss an update."
               cta="Newsletter preferences"
               href="/account/newsletters"
             />
