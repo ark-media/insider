@@ -182,6 +182,7 @@ export async function listCareers(sql: Sql): Promise<Career[]> {
   const rows = (await sql`
     select ${sql.unsafe(COLUMNS)} from careers
     order by display_order asc, created_at asc
+    limit 500
   `) as Row[]
   return rows.map(mapRow)
 }
@@ -192,6 +193,7 @@ export async function listEnabledCareers(sql: Sql): Promise<Career[]> {
     select ${sql.unsafe(COLUMNS)} from careers
     where enabled = true
     order by display_order asc, created_at asc
+    limit 500
   `) as Row[]
   return rows.map(mapRow)
 }

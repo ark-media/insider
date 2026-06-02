@@ -159,6 +159,7 @@ export async function listAnnouncements(sql: Sql): Promise<Announcement[]> {
            starts_at, ends_at, created_at, updated_at
     from announcements
     order by starts_at desc, created_at desc
+    limit 500
   `) as Row[]
   return rows.map(mapRow)
 }

@@ -59,6 +59,7 @@ export async function listDiscussThreads(sql: Sql): Promise<DiscussThread[]> {
            beehiiv_body_patched, created_at
     from discuss_threads
     order by created_at desc
+    limit 500
   `) as Row[]
   return rows.map(mapRow)
 }
@@ -74,6 +75,7 @@ export async function listDiscussThreadsByNewsletter(
     from discuss_threads
     where newsletter_slug = ${newsletterSlug}
     order by created_at desc
+    limit 500
   `) as Row[]
   return rows.map(mapRow)
 }

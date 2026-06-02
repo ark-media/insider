@@ -98,6 +98,7 @@ export async function listFaqs(sql: Sql): Promise<Faq[]> {
   const rows = (await sql`
     select ${sql.unsafe(COLUMNS)} from faqs
     order by display_order asc, created_at asc
+    limit 500
   `) as Row[]
   return rows.map(mapRow)
 }
@@ -108,6 +109,7 @@ export async function listEnabledFaqs(sql: Sql): Promise<Faq[]> {
     select ${sql.unsafe(COLUMNS)} from faqs
     where enabled = true
     order by display_order asc, created_at asc
+    limit 500
   `) as Row[]
   return rows.map(mapRow)
 }
