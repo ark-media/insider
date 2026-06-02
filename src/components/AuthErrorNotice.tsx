@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { contactEmails } from "../config/urls";
 
 // The BFF callback redirects to `/?auth_error=<code>` when sign-in fails
 // (server/routes/auth.ts). Surface a readable message instead of silently
@@ -7,6 +8,9 @@ const MESSAGES: Record<string, string> = {
   expired: "Your sign-in session expired. Please try signing in again.",
   exchange: "Sign-in didn't complete. Please try again.",
   profile: "We couldn't verify your account. Please try again.",
+  // `denied` is permanent (Auth0 rejected the account), so don't tell the user
+  // to "try again" — point them at support instead.
+  denied: `This account isn't authorized to sign in to Ark+. If you think this is a mistake, contact ${contactEmails.support}.`,
 };
 
 export function AuthErrorNotice() {

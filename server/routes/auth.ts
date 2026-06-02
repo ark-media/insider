@@ -261,9 +261,6 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           return redirect(res, '/?auth_error=expired')
         }
 
-        const config = await loadOidcConfig(env, res)
-        if (!config) return
-
         // Rebuild the callback URL openid-client validates against. In prod the
         // real path arrives via the `_path` rewrite param, so strip it and keep
         // only the OAuth params (code, state) on the canonical callback URL.
@@ -271,6 +268,30 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         incoming.searchParams.delete('_path')
         const currentUrl = new URL(callbackUrl)
         currentUrl.search = incoming.search
+
+        // Auth0 can reject the login itself — e.g. a post-login Action denying
+        // an account that isn't provisioned for access — and redirect back with
+        // ?error=... and no code. That's a permanent "you don't have access"
+        // condition, not a transient one, so give it its own message instead of
+        // the generic "try again" exchange error (retrying never helps). Checked
+        // before config discovery — Auth0 already told us the outcome.
+        const oauthError = currentUrl.searchParams.get('error')
+        if (oauthError) {
+          console.error(
+            '[auth/callback] authorization denied:',
+            oauthError,
+            currentUrl.searchParams.get('error_description') ?? '',
+          )
+          return redirect(
+            res,
+            oauthError === 'access_denied'
+              ? '/?auth_error=denied'
+              : '/?auth_error=exchange',
+          )
+        }
+
+        const config = await loadOidcConfig(env, res)
+        if (!config) return
 
         let tokens: client.TokenEndpointResponse
         try {

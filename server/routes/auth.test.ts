@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { authRoutes, safeReturnTo } from './auth'
 import type { Deps, Handler } from '../lib/route.js'
 import { AUTH_TXN_COOKIE_NAME, SESSION_COOKIE_NAME } from '../lib/cookies'
+import { signAuthTxnToken } from '../lib/session'
 
 const APP = 'http://localhost:5173'
 
@@ -82,6 +83,42 @@ describe('GET /api/auth/callback', () => {
     // And it clears the (here, absent) txn cookie defensively.
     const setCookie = res.getHeader('Set-Cookie') as string[]
     expect(setCookie.some((c) => c.startsWith(`${AUTH_TXN_COOKIE_NAME}=`))).toBe(true)
+  })
+
+  test('access_denied from Auth0 maps to the "denied" message, not "exchange"', async () => {
+    const env = { ...CONFIGURED, APP_BASE_URL: APP }
+    const txn = await signAuthTxnToken(
+      { verifier: 'v', state: 's', nonce: 'n', returnTo: '/' },
+      env,
+    )
+    const res = makeRes()
+    await route(env, '/api/auth/callback')(
+      makeReq({
+        url: '/api/auth/callback?error=access_denied&error_description=not+provisioned',
+        cookie: `${AUTH_TXN_COOKIE_NAME}=${txn}`,
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Location')).toBe('/?auth_error=denied')
+  })
+
+  test('a non-access_denied OAuth error still falls back to "exchange"', async () => {
+    const env = { ...CONFIGURED, APP_BASE_URL: APP }
+    const txn = await signAuthTxnToken(
+      { verifier: 'v', state: 's', nonce: 'n', returnTo: '/' },
+      env,
+    )
+    const res = makeRes()
+    await route(env, '/api/auth/callback')(
+      makeReq({
+        url: '/api/auth/callback?error=server_error',
+        cookie: `${AUTH_TXN_COOKIE_NAME}=${txn}`,
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Location')).toBe('/?auth_error=exchange')
   })
 })
 
