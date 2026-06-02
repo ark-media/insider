@@ -18,7 +18,7 @@ import { sourceFor } from "../../lib/newsletterSources";
 import { newsletterCommentUrl } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
-import { useSubscriberAuth } from "../../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { NewsletterArticle } from "../../lib/newsletter-renderer";
 
 export const Route = createFileRoute("/newsletters/$post")({
@@ -54,11 +54,10 @@ function PostPage() {
   const { pub, posts } = Route.useLoaderData();
   const { post: postSlug } = Route.useParams();
   const { state } = useSubscriberAuth();
-  const isArkPlusSubscriber =
-    state.kind === "member" && state.me.tier === "ark-plus-member";
+  const isArkPlusSubscriber = isArkPlusMember(state);
 
   useEffect(() => {
-    if (state.kind !== "member" || state.me.tier !== "ark-plus-member") return;
+    if (!isArkPlusMember(state)) return;
     if (pub.slug === "members-letter") return;
     void router.invalidate();
   }, [state, router, pub.slug]);

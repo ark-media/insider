@@ -3,7 +3,7 @@ import {
   fetchNewsletterPrefs,
   type NewsletterPrefs,
 } from "./newsletterPrefs";
-import { useSubscriberAuth } from "./subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "./subscriberAuth";
 
 export function useNewsletterSubscription() {
   const { state } = useSubscriberAuth();
@@ -43,7 +43,7 @@ export function useNewsletterSubscription() {
   }, [state.kind, email]);
 
   const isMember = state.kind === "member";
-  const isSubscriber = isMember && state.me.tier === "ark-plus-member";
+  const isSubscriber = isArkPlusMember(state);
   const prefsLoading = isMember && prefs === undefined && !prefsError;
 
   // `prefs.free` is refreshed from Beehiiv on GET /api/me/newsletters (active or

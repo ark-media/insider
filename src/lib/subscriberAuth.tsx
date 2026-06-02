@@ -16,6 +16,13 @@ export type SubscriberAuthState =
   | { kind: "guest" }
   | { kind: "member"; me: Me };
 
+// True only for a signed-in *paid* member. A free user is still `kind: "member"`
+// (Auth0 login, no Simplecast record), so paid content must always check the
+// tier — never gate on `kind` alone. Single source of truth for that predicate.
+export function isArkPlusMember(state: SubscriberAuthState): boolean {
+  return state.kind === "member" && state.me.tier === "ark-plus-member";
+}
+
 type SignInOpts = { signup?: boolean; loginHint?: string };
 
 type SubscriberAuthValue = {

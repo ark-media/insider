@@ -11,7 +11,7 @@ import { LatestEpisodes } from "../components/LatestEpisodes";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { Toast } from "../components/Toast";
-import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { useNewsletterSubscription } from "../lib/useNewsletterSubscription";
 
 export const Route = createFileRoute("/")({
@@ -449,8 +449,7 @@ function HomePage() {
   const navigate = useNavigate();
   const { state } = useSubscriberAuth();
   const descriptions = useShowDescriptions(shows.map((s) => s.slug));
-  const isSubscriber =
-    state.kind === "member" && state.me.tier === "ark-plus-member";
+  const isSubscriber = isArkPlusMember(state);
   return (
     <main className="relative">
       <section className="section-hero relative">

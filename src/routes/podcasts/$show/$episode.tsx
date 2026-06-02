@@ -17,7 +17,7 @@ import {
   simplecastEpisodeSrc,
 } from "../../../lib/simplecast";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
-import { useSubscriberAuth } from "../../../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../../../lib/subscriberAuth";
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
 import { ShowCover } from "../../../components/ShowCover";
 import { ListenLinks } from "../../../components/ListenLinks";
@@ -271,9 +271,10 @@ function PlayerBlock({ episode }: { episode: Episode }) {
 
 function PaidEpisodeBlock({ episode }: { episode: Episode }) {
   const { state } = useSubscriberAuth();
-  const isMember = state.kind === "member";
-
-  if (isMember) {
+  // Gate on the paid tier, not just a signed-in session: a free user is still
+  // `kind: "member"`, and the Simplecast embed URL carries no auth, so this
+  // check is the only app-level gate on paid audio.
+  if (isArkPlusMember(state)) {
     return <PlayerBlock episode={episode} />;
   }
 

@@ -13,7 +13,7 @@ import {
   type EventStripItem,
   type SuggestedSpace,
 } from "../lib/circle";
-import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { CommunityFeed } from "../components/community/CommunityFeed";
 import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
 
@@ -29,8 +29,7 @@ function CommunityPage() {
   // marketing showcase with a join CTA.
   if (state.kind === "loading") return null;
 
-  const isSubscriber =
-    state.kind === "member" && state.me.tier === "ark-plus-member";
+  const isSubscriber = isArkPlusMember(state);
 
   return isSubscriber ? <SubscriberCommunity /> : <MarketingShowcase />;
 }

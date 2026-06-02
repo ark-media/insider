@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { SetupFlow } from "../components/SetupFlow";
-import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createFileRoute("/setup")({
   staticData: { chromeless: true },
@@ -19,7 +19,7 @@ function SetupPage() {
     }
     // Free accounts have no Simplecast record to set up. Send them to the
     // upgrade pitch so the route can't be reached by URL-poking.
-    if (state.kind === "member" && state.me.tier !== "ark-plus-member") {
+    if (state.kind === "member" && !isArkPlusMember(state)) {
       void navigate({ to: "/plus" });
     }
   }, [state, navigate]);

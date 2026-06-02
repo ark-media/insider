@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { cancelSubscription } from "../../lib/auth";
-import { useSubscriberAuth } from "../../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
@@ -29,7 +29,7 @@ function BillingPage() {
       void navigate({ to: "/plus" });
       return;
     }
-    if (state.kind === "member" && state.me.tier !== "ark-plus-member") {
+    if (state.kind === "member" && !isArkPlusMember(state)) {
       void navigate({ to: "/plus" });
     }
   }, [state, authError, navigate]);
