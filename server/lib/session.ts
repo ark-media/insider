@@ -15,6 +15,7 @@ import {
   AUTH0_TIER_CLAIM,
 } from '../../shared/auth0-claims.js'
 import {
+  AUTH_TXN_TTL_SEC,
   CHECKOUT_COOKIE_NAME,
   CHECKOUT_TOKEN_TTL_SEC,
   SESSION_COOKIE_NAME,
@@ -239,7 +240,7 @@ export async function signAuthTxnToken(txn: AuthTxn, env: Env): Promise<string> 
   return signHs256({ ...txn }, {
     issuer: AUTH_TXN_ISSUER,
     audience: AUTH_TXN_AUDIENCE,
-    ttl: '10m',
+    ttl: `${AUTH_TXN_TTL_SEC}s`,
     secret,
   })
 }
