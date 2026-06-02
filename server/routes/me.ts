@@ -2,6 +2,7 @@
 // the SPA can render the setup page (and decide whether to surface a "send
 // SMS" button).
 
+import type { IncomingMessage } from 'node:http'
 import { fetchAuth0TierForEmail, redactEmail } from '../entitlement.js'
 import {
   applyPreferences,
@@ -29,7 +30,7 @@ import {
   type ScError,
   type ScUserFeed,
 } from '../lib/sc-client.js'
-import type { Deps, Route } from '../lib/route.js'
+import type { Deps, Env, Route } from '../lib/route.js'
 
 // Bucket the PUT route by normalized email so flapping toggles can't burn
 // Beehiiv quota or rate-limit the upstream API. 10 saves per minute is more
@@ -45,6 +46,45 @@ const notificationPrefsLimiter = createRateLimiter({
   capacity: 10,
   refillPerSec: 1 / 6,
 })
+
+// Resolves the calling member for the preference routes (/newsletters,
+// /notifications). Accepts the long-term `ark_session` cookie or an Auth0
+// bearer — the checkout cookie carries no tier, so it can't gate premium
+// toggles and isn't consulted here. Returns null when no login is present
+// (caller → 401). `isMember` trusts the token's tier hint as the fast path,
+// then falls back to a live Auth0 lookup: a member who upgraded after their
+// last login still has a stale 'free' hint and must not be denied wrongly.
+//
+// The bearer branch is what the E2E browser-test bridge exercises (Google
+// blocks Auth0's automated login, so the bridge injects a pasted access token
+// via a patched fetch). Keep both inbound paths here so the cookie-only SPA
+// and the token-based bridge stay in sync from one place.
+async function resolveMember(
+  req: IncomingMessage,
+  env: Env,
+): Promise<{ email: string; isMember: boolean } | null> {
+  const session = await getSessionProfile(req, env)
+  let email = session?.email ?? null
+  let tierHint = session?.tier
+  if (!email) {
+    const auth = req.headers.authorization
+    if (auth?.startsWith('Bearer ')) {
+      const profile = await verifyAuth0BearerProfile(auth.slice(7))
+      if (profile?.email) {
+        email = profile.email
+        tierHint = profile.tier
+      }
+    }
+  }
+  if (!email) return null
+
+  let isMember = tierHint === 'ark-plus-member'
+  if (!isMember) {
+    const live = await fetchAuth0TierForEmail(env, email)
+    isMember = live === 'ark-plus-member'
+  }
+  return { email, isMember }
+}
 
 export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
@@ -168,31 +208,11 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
 
         // Require a real login (the `ark_session` cookie, or an Auth0 bearer).
         // The checkout cookie carries no roles/tier, so premium toggles need a
-        // full session.
-        const session = await getSessionProfile(req, env)
-        let email = session?.email ?? null
-        let tierHint = session?.tier
-        if (!email) {
-          const auth = req.headers.authorization
-          if (auth?.startsWith('Bearer ')) {
-            const profile = await verifyAuth0BearerProfile(auth.slice(7))
-            if (profile?.email) {
-              email = profile.email
-              tierHint = profile.tier
-            }
-          }
-        }
-        if (!email) return json(401, { error: 'unauthenticated' })
-
-        // Tier hint is the fast path. If it isn't 'ark-plus-member' we double-
-        // check Auth0 server-side — a member who upgraded after their last
-        // login still has a stale 'free' hint and would otherwise be denied
-        // premium toggles wrongly.
-        let isMember = tierHint === 'ark-plus-member'
-        if (!isMember) {
-          const live = await fetchAuth0TierForEmail(env, email)
-          isMember = live === 'ark-plus-member'
-        }
+        // full session. Non-members are allowed through here — `isMember` gates
+        // the premium toggle below, while free toggles stay available to all.
+        const member = await resolveMember(req, env)
+        if (!member) return json(401, { error: 'unauthenticated' })
+        const { email, isMember } = member
 
         if (!env.DATABASE_URL) {
           return json(500, { error: 'database_not_configured' })
@@ -276,27 +296,9 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(403, { error: 'bad_origin' })
         }
 
-        const session = await getSessionProfile(req, env)
-        let email = session?.email ?? null
-        let tierHint = session?.tier
-        if (!email) {
-          const auth = req.headers.authorization
-          if (auth?.startsWith('Bearer ')) {
-            const profile = await verifyAuth0BearerProfile(auth.slice(7))
-            if (profile?.email) {
-              email = profile.email
-              tierHint = profile.tier
-            }
-          }
-        }
-        if (!email) return json(401, { error: 'unauthenticated' })
-
-        // Stale 'free' hint → re-check Auth0 server-side, same as newsletters.
-        let isMember = tierHint === 'ark-plus-member'
-        if (!isMember) {
-          const live = await fetchAuth0TierForEmail(env, email)
-          isMember = live === 'ark-plus-member'
-        }
+        const member = await resolveMember(req, env)
+        if (!member) return json(401, { error: 'unauthenticated' })
+        const { email, isMember } = member
         if (!isMember) return json(403, { error: 'not_entitled' })
 
         if (!env.DATABASE_URL) {
