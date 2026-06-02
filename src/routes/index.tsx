@@ -310,29 +310,31 @@ const heroFan: {
   y: number;
   r: number;
   z: number;
-  delay: string;
 }[] = [
-  { slug: "for-heavens-sake", x: -52, y: -6, r: -14, z: 10, delay: "0.5s" },
-  { slug: "whats-your-number", x: 52, y: -2, r: 13, z: 20, delay: "0.62s" },
-  { slug: "ark-news-daily", x: -24, y: 12, r: -6, z: 30, delay: "0.74s" },
-  { slug: "call-me-back", x: 22, y: 6, r: 5, z: 40, delay: "0.86s" },
+  { slug: "for-heavens-sake", x: -52, y: -6, r: -14, z: 10 },
+  { slug: "whats-your-number", x: 52, y: -2, r: 13, z: 20 },
+  { slug: "ark-news-daily", x: -24, y: 12, r: -6, z: 30 },
+  { slug: "call-me-back", x: 22, y: 6, r: 5, z: 40 },
 ];
 
 function HeroShowStack() {
   return (
+    // The whole deck rises in as a single unit (one `rise`, no per-card stagger)
+    // so all four covers always appear together — never a partial 2-of-4 while
+    // late-delayed cards are still fading in.
     <div
       aria-hidden="true"
-      className="relative isolate mx-auto aspect-square w-full max-w-[340px] sm:max-w-[400px]"
+      className="rise relative isolate mx-auto aspect-square w-full max-w-[340px] sm:max-w-[400px]"
     >
       <div className="absolute inset-[14%] -z-10 rounded-full bg-cyan/15 blur-3xl" />
-      {heroFan.map(({ slug, x, y, r, z, delay }) => {
+      {heroFan.map(({ slug, x, y, r, z }) => {
         const show = getShow(slug);
         if (!show) return null;
         return (
           <div
             key={slug}
-            className="rise absolute inset-0 flex items-center justify-center"
-            style={{ animationDelay: delay, zIndex: z }}
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ zIndex: z }}
           >
             <div
               className="w-1/2 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10"
