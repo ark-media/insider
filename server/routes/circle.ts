@@ -118,6 +118,38 @@ const CIRCLE_BROADCASTS_TARGET = 50
 const CIRCLE_BROADCASTS_MAX_PAGES = 5
 const CIRCLE_BROADCASTS_PAGE_SIZE = 50
 
+// Shared Admin v2 pagination. Walks pages of
+// `https://app.circle.so/api/admin/v2/<path>` (appending per_page/page),
+// throws on a non-2xx, and hands each page's `records` to `onPage`. Stops when:
+// the page is empty, `onPage` returns true (target hit / match found), the API
+// reports `has_next_page: false`, or a short page signals the end. Callers own
+// filtering/projection/accumulation; this owns the HTTP + loop invariants that
+// were previously copy-pasted across every fetcher below.
+async function paginateCircleAdmin<R>(
+  path: string,
+  token: string,
+  pageSize: number,
+  maxPages: number,
+  onPage: (records: R[]) => boolean | void,
+): Promise<void> {
+  for (let page = 1; page <= maxPages; page += 1) {
+    const sep = path.includes('?') ? '&' : '?'
+    const url =
+      `https://app.circle.so/api/admin/v2/${path}${sep}` +
+      `per_page=${pageSize}&page=${page}`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) throw new Error(`Circle ${res.status}: ${await res.text()}`)
+    const body = (await res.json()) as { records?: R[]; has_next_page?: boolean }
+    const records = body.records ?? []
+    if (records.length === 0) break
+    if (onPage(records) === true) break
+    if (body.has_next_page === false) break
+    if (records.length < pageSize) break
+  }
+}
+
 async function fetchCircleBroadcasts(
   newsletterSlug: NewsletterSlug,
   token: string,
@@ -134,31 +166,23 @@ async function fetchCircleBroadcasts(
   // after the first 50 records regardless of tag distribution.
   const tagLc = binding.tag.toLowerCase()
   const matches: CircleBroadcast[] = []
-  for (let page = 1; page <= CIRCLE_BROADCASTS_MAX_PAGES; page += 1) {
-    const url =
-      `https://app.circle.so/api/admin/v2/broadcasts` +
-      `?status=sent&per_page=${CIRCLE_BROADCASTS_PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) {
-      throw new Error(`Circle ${res.status}: ${await res.text()}`)
-    }
-    const body = (await res.json()) as { records?: CircleBroadcast[] }
-    const records = body.records ?? []
-    if (records.length === 0) break
-    for (const b of records) {
-      const tags = (b.tags ?? []).map((t) =>
-        (typeof t === 'string' ? t : (t.name ?? '')).toLowerCase(),
-      )
-      if (tags.includes(tagLc) && isSentBroadcast(b)) {
-        matches.push(b)
-        if (matches.length >= CIRCLE_BROADCASTS_TARGET) break
+  await paginateCircleAdmin<CircleBroadcast>(
+    'broadcasts?status=sent',
+    token,
+    CIRCLE_BROADCASTS_PAGE_SIZE,
+    CIRCLE_BROADCASTS_MAX_PAGES,
+    (records) => {
+      for (const b of records) {
+        const tags = (b.tags ?? []).map((t) =>
+          (typeof t === 'string' ? t : (t.name ?? '')).toLowerCase(),
+        )
+        if (tags.includes(tagLc) && isSentBroadcast(b)) {
+          matches.push(b)
+          if (matches.length >= CIRCLE_BROADCASTS_TARGET) return true
+        }
       }
-    }
-    if (matches.length >= CIRCLE_BROADCASTS_TARGET) break
-    if (records.length < CIRCLE_BROADCASTS_PAGE_SIZE) break
-  }
+    },
+  )
 
   const posts: NewsletterPost[] = matches
     .map((b) => projectBroadcast(b, newsletterSlug, binding.authorName))
@@ -200,25 +224,23 @@ async function resolveSpaceIdBySlug(
 ): Promise<number | null> {
   const cached = circleSpaceIdCache.get(spaceSlug)
   if (cached !== null) return cached
-  for (let page = 1; page <= CIRCLE_SPACES_MAX_PAGES; page += 1) {
-    const url =
-      `https://app.circle.so/api/admin/v2/spaces` +
-      `?per_page=${CIRCLE_SPACES_PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) {
-      throw new Error(`Circle ${res.status}: ${await res.text()}`)
-    }
-    const body = (await res.json()) as { records?: CircleSpaceRecord[] }
-    const records = body.records ?? []
-    if (records.length === 0) break
-    const match = records.find((s) => s.slug === spaceSlug)
-    if (match?.id !== undefined) {
-      circleSpaceIdCache.set(spaceSlug, match.id)
-      return match.id
-    }
-    if (records.length < CIRCLE_SPACES_PAGE_SIZE) break
+  let foundId: number | null = null
+  await paginateCircleAdmin<CircleSpaceRecord>(
+    'spaces',
+    token,
+    CIRCLE_SPACES_PAGE_SIZE,
+    CIRCLE_SPACES_MAX_PAGES,
+    (records) => {
+      const match = records.find((s) => s.slug === spaceSlug)
+      if (match?.id !== undefined) {
+        foundId = match.id
+        return true
+      }
+    },
+  )
+  if (foundId !== null) {
+    circleSpaceIdCache.set(spaceSlug, foundId)
+    return foundId
   }
   return null
 }
@@ -236,34 +258,24 @@ async function fetchCircleSpacePosts(
   if (spaceId === null) return []
 
   const matches: CirclePost[] = []
-  for (let page = 1; page <= CIRCLE_SPACE_POSTS_MAX_PAGES; page += 1) {
-    const url =
-      `https://app.circle.so/api/admin/v2/posts` +
-      `?space_id=${spaceId}` +
-      `&status=published` +
-      `&per_page=${CIRCLE_SPACE_POSTS_PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) {
-      throw new Error(`Circle ${res.status}: ${await res.text()}`)
-    }
-    const body = (await res.json()) as { records?: CirclePost[] }
-    const records = body.records ?? []
-    if (records.length === 0) break
-    for (const p of records) {
-      // Belt-and-suspenders: the `status=published` query param above filters
-      // server-side, but Circle has historically returned drafts at the tail
-      // of a page on some plans. Keep the projection guard so the local
-      // assumption (only published reaches the wire) stays explicit.
-      if (isPublishedPost(p)) {
-        matches.push(p)
-        if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
+  await paginateCircleAdmin<CirclePost>(
+    `posts?space_id=${spaceId}&status=published`,
+    token,
+    CIRCLE_SPACE_POSTS_PAGE_SIZE,
+    CIRCLE_SPACE_POSTS_MAX_PAGES,
+    (records) => {
+      for (const p of records) {
+        // Belt-and-suspenders: the `status=published` query param filters
+        // server-side, but Circle has historically returned drafts at the tail
+        // of a page on some plans. Keep the projection guard so the local
+        // assumption (only published reaches the wire) stays explicit.
+        if (isPublishedPost(p)) {
+          matches.push(p)
+          if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) return true
+        }
       }
-    }
-    if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
-    if (records.length < CIRCLE_SPACE_POSTS_PAGE_SIZE) break
-  }
+    },
+  )
 
   const posts: NewsletterPost[] = matches
     .map((p) =>
@@ -308,29 +320,18 @@ async function fetchCircleEvents(token: string): Promise<ArkEvent[]> {
   if (cached) return cached
 
   const out: ArkEvent[] = []
-  for (let page = 1; page <= CIRCLE_EVENTS_MAX_PAGES; page += 1) {
-    const url =
-      `https://app.circle.so/api/admin/v2/events` +
-      `?per_page=${CIRCLE_EVENTS_PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) {
-      throw new Error(`Circle ${res.status}: ${await res.text()}`)
-    }
-    const body = (await res.json()) as {
-      records?: CircleEvent[]
-      has_next_page?: boolean
-    }
-    const records = body.records ?? []
-    if (records.length === 0) break
-    for (const r of records) {
-      const ev = projectEvent(r)
-      if (ev) out.push(ev)
-    }
-    if (body.has_next_page === false) break
-    if (records.length < CIRCLE_EVENTS_PAGE_SIZE) break
-  }
+  await paginateCircleAdmin<CircleEvent>(
+    'events',
+    token,
+    CIRCLE_EVENTS_PAGE_SIZE,
+    CIRCLE_EVENTS_MAX_PAGES,
+    (records) => {
+      for (const r of records) {
+        const ev = projectEvent(r)
+        if (ev) out.push(ev)
+      }
+    },
+  )
 
   circleEventsCache.set('events', out)
   return out
@@ -346,30 +347,20 @@ async function fetchCircleCommunityFeed(
   if (spaceId === null) return []
 
   const matches: CircleFeedPost[] = []
-  for (let page = 1; page <= CIRCLE_SPACE_POSTS_MAX_PAGES; page += 1) {
-    const url =
-      `https://app.circle.so/api/admin/v2/posts` +
-      `?space_id=${spaceId}` +
-      `&status=published` +
-      `&per_page=${CIRCLE_SPACE_POSTS_PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) {
-      throw new Error(`Circle ${res.status}: ${await res.text()}`)
-    }
-    const body = (await res.json()) as { records?: CircleFeedPost[] }
-    const records = body.records ?? []
-    if (records.length === 0) break
-    for (const p of records) {
-      if (isPublishedFeedPost(p)) {
-        matches.push(p)
-        if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
+  await paginateCircleAdmin<CircleFeedPost>(
+    `posts?space_id=${spaceId}&status=published`,
+    token,
+    CIRCLE_SPACE_POSTS_PAGE_SIZE,
+    CIRCLE_SPACE_POSTS_MAX_PAGES,
+    (records) => {
+      for (const p of records) {
+        if (isPublishedFeedPost(p)) {
+          matches.push(p)
+          if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) return true
+        }
       }
-    }
-    if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) break
-    if (records.length < CIRCLE_SPACE_POSTS_PAGE_SIZE) break
-  }
+    },
+  )
 
   const items: CommunityFeedItem[] = matches
     .map((p) => projectFeedPost(p))
@@ -388,22 +379,15 @@ async function fetchMemberSpaces(token: string): Promise<SuggestedSpace[]> {
   if (cached) return cached
 
   const all: CircleSpace[] = []
-  for (let page = 1; page <= CIRCLE_SPACES_MAX_PAGES; page += 1) {
-    const url =
-      `https://app.circle.so/api/admin/v2/spaces` +
-      `?per_page=${CIRCLE_SPACES_PAGE_SIZE}&page=${page}`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) {
-      throw new Error(`Circle ${res.status}: ${await res.text()}`)
-    }
-    const body = (await res.json()) as { records?: CircleSpace[] }
-    const records = body.records ?? []
-    if (records.length === 0) break
-    all.push(...records)
-    if (records.length < CIRCLE_SPACES_PAGE_SIZE) break
-  }
+  await paginateCircleAdmin<CircleSpace>(
+    'spaces',
+    token,
+    CIRCLE_SPACES_PAGE_SIZE,
+    CIRCLE_SPACES_MAX_PAGES,
+    (records) => {
+      all.push(...records)
+    },
+  )
 
   const spaces = projectSpaces(all)
   circleSpacesCache.set('spaces', spaces)
