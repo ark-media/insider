@@ -43,7 +43,6 @@ import { Route as AdminCareersRouteImport } from './routes/admin/careers'
 import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
 import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
 import { Route as AccountOptionStackedRouteImport } from './routes/account/option-stacked'
-import { Route as AccountOptionCardsRouteImport } from './routes/account/option-cards'
 import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
 import { Route as AccountBillingRouteImport } from './routes/account/billing'
 import { Route as AboutNetworkRouteImport } from './routes/about/network'
@@ -221,11 +220,6 @@ const AccountOptionStackedRoute = AccountOptionStackedRouteImport.update({
   path: '/account/option-stacked',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccountOptionCardsRoute = AccountOptionCardsRouteImport.update({
-  id: '/account/option-cards',
-  path: '/account/option-cards',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AccountNewslettersRoute = AccountNewslettersRouteImport.update({
   id: '/account/newsletters',
   path: '/account/newsletters',
@@ -270,7 +264,6 @@ export interface FileRoutesByFullPath {
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
-  '/account/option-cards': typeof AccountOptionCardsRoute
   '/account/option-stacked': typeof AccountOptionStackedRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
@@ -313,7 +306,6 @@ export interface FileRoutesByTo {
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
-  '/account/option-cards': typeof AccountOptionCardsRoute
   '/account/option-stacked': typeof AccountOptionStackedRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
@@ -357,7 +349,6 @@ export interface FileRoutesById {
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
   '/account/newsletters': typeof AccountNewslettersRoute
-  '/account/option-cards': typeof AccountOptionCardsRoute
   '/account/option-stacked': typeof AccountOptionStackedRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
@@ -402,7 +393,6 @@ export interface FileRouteTypes {
     | '/about/network'
     | '/account/billing'
     | '/account/newsletters'
-    | '/account/option-cards'
     | '/account/option-stacked'
     | '/account/podcast-feed'
     | '/admin/announcements'
@@ -445,7 +435,6 @@ export interface FileRouteTypes {
     | '/about/network'
     | '/account/billing'
     | '/account/newsletters'
-    | '/account/option-cards'
     | '/account/option-stacked'
     | '/account/podcast-feed'
     | '/admin/announcements'
@@ -488,7 +477,6 @@ export interface FileRouteTypes {
     | '/about/network'
     | '/account/billing'
     | '/account/newsletters'
-    | '/account/option-cards'
     | '/account/option-stacked'
     | '/account/podcast-feed'
     | '/admin/announcements'
@@ -531,7 +519,6 @@ export interface RootRouteChildren {
   WelcomeRoute: typeof WelcomeRoute
   AccountBillingRoute: typeof AccountBillingRoute
   AccountNewslettersRoute: typeof AccountNewslettersRoute
-  AccountOptionCardsRoute: typeof AccountOptionCardsRoute
   AccountOptionStackedRoute: typeof AccountOptionStackedRoute
   AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
@@ -801,13 +788,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountOptionStackedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/account/option-cards': {
-      id: '/account/option-cards'
-      path: '/account/option-cards'
-      fullPath: '/account/option-cards'
-      preLoaderRoute: typeof AccountOptionCardsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/account/newsletters': {
       id: '/account/newsletters'
       path: '/account/newsletters'
@@ -887,7 +867,6 @@ const rootRouteChildren: RootRouteChildren = {
   WelcomeRoute: WelcomeRoute,
   AccountBillingRoute: AccountBillingRoute,
   AccountNewslettersRoute: AccountNewslettersRoute,
-  AccountOptionCardsRoute: AccountOptionCardsRoute,
   AccountOptionStackedRoute: AccountOptionStackedRoute,
   AccountPodcastFeedRoute: AccountPodcastFeedRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,

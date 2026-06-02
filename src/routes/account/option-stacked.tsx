@@ -10,9 +10,11 @@ import {
   ChatIcon,
 } from "../../components/account/SurfaceIcons";
 
-// LAYOUT OPTION B — everything on one page, one column. Each surface gets a
-// full-width section (icon + label + title + body + action) stacked top to
-// bottom, separated by rules. Reads as a single scroll rather than a grid.
+// Reference layout — the single-column alternative to the card grid that ships
+// as the default account dashboard (src/routes/account/index.tsx). Kept around
+// for comparison; nothing links here. Each surface gets a full-width section
+// (icon + label + title + body + action) stacked top to bottom, separated by
+// rules. Reads as a single scroll rather than a grid.
 export const Route = createFileRoute("/account/option-stacked")({
   component: OptionStackedPage,
 });
