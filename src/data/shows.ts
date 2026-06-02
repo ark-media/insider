@@ -118,7 +118,7 @@ export const shows: Show[] = [
     description:
       "Every morning, Ark Media gives you the latest updates on the war in Iran and how they impact the Middle East, geopolitics, and Jews around the world.",
     hosts: ["Ark Media newsroom"],
-    cadence: "Weekdays, 7:00 AM ET",
+    cadence: "Weekdays",
     coverArt: "/shows/ark-news-daily.jpg",
     paid: false,
     related: ["call-me-back", "whats-your-number", "for-heavens-sake"],
