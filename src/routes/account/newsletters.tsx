@@ -5,6 +5,11 @@ import {
   saveNewsletterPrefs,
   type NewsletterPrefs as Prefs,
 } from "../../lib/newsletterPrefs";
+import {
+  fetchNotificationPrefs,
+  saveNotificationPrefs,
+  type NotificationPrefs,
+} from "../../lib/notificationPrefs";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
@@ -183,10 +188,157 @@ function NewsletterPrefsForm({ me }: { me: { email: string; tier: "ark-plus-memb
               {error}
             </p>
           ) : null}
+
+          {isMember ? <NotificationsSection /> : null}
         </div>
       </div>
       </section>
     </PageShell>
+  );
+}
+
+// Member-only "email me about new content" toggles. Loads from
+// /api/me/notifications (our Neon-backed prefs) on mount; each toggle saves
+// optimistically and rolls back on failure. Rendered only for Ark+ members,
+// matching the server's 403-for-free-readers gate.
+function NotificationsSection() {
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState<keyof NotificationPrefs | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
+
+  const load = useCallback(() => {
+    const gen = ++generation.current;
+    setLoading(true);
+    setLoadError(null);
+    return fetchNotificationPrefs().then((result) => {
+      if (gen !== generation.current) return;
+      if (result.ok) {
+        setPrefs(result.prefs);
+        return;
+      }
+      setPrefs(null);
+      setLoadError(
+        result.reason === "unauthenticated"
+          ? "Session expired. Sign in again to manage notifications."
+          : "Could not load notifications. Please refresh the page.",
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    // load() synchronously sets loading before fetching — a deliberate reset.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load()
+      .catch(() => {
+        if (!live) return;
+        setPrefs(null);
+        setLoadError("Could not load notifications. Please refresh the page.");
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [load]);
+
+  const toggle = async (key: keyof NotificationPrefs) => {
+    if (!prefs || saving || loading || loadError) return;
+    const nextOn = !prefs[key];
+    const previous = prefs;
+    generation.current += 1;
+    setPrefs((p) => (p ? { ...p, [key]: nextOn } : p));
+    setSaving(key);
+    setError(null);
+    const result = await saveNotificationPrefs({ [key]: nextOn });
+    setSaving(null);
+    if (result.ok && result.prefs) {
+      generation.current += 1;
+      setPrefs(result.prefs);
+      return;
+    }
+    setPrefs(previous);
+    setError(result.error ?? "Could not update. Please try again.");
+  };
+
+  return (
+    <div className="mt-8 border border-rule bg-navy-800/40 p-6 sm:p-8">
+      <p className="label text-cyan">Notifications</p>
+      <h2 className="mt-5 font-display text-[1.125rem] leading-snug text-fg-strong sm:text-[1.25rem]">
+        New content alerts
+      </h2>
+
+      {loading ? (
+        <div className="mt-6 animate-pulse space-y-6 motion-reduce:animate-none">
+          <div className="h-6 w-full rounded-sm bg-rule-soft" />
+          <div className="h-6 w-full rounded-sm bg-rule-soft" />
+        </div>
+      ) : loadError ? (
+        <div className="mt-6">
+          <p className="text-body-sm text-red-400" role="alert">
+            {loadError}
+          </p>
+          <button
+            type="button"
+            onClick={() => void load().finally(() => setLoading(false))}
+            className="mt-4 button-text font-display font-bold text-cyan underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            Try again
+          </button>
+        </div>
+      ) : prefs ? (
+        <div className="mt-6 divide-y divide-rule">
+          <NotifRow
+            title="Episodes"
+            description="Send me an email when a new episode is published."
+            on={prefs.episodes}
+            onToggle={() => void toggle("episodes")}
+            busy={saving === "episodes"}
+          />
+          <NotifRow
+            title="Posts"
+            description="Send me an email when a new post is published."
+            on={prefs.posts}
+            onToggle={() => void toggle("posts")}
+            busy={saving === "posts"}
+          />
+        </div>
+      ) : null}
+
+      {error ? (
+        <p className="mt-4 text-body-sm text-red-400" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function NotifRow({
+  title,
+  description,
+  on,
+  onToggle,
+  busy = false,
+}: {
+  title: string;
+  description: string;
+  on: boolean;
+  onToggle: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0">
+      <div className="min-w-0 flex-1">
+        <h3 className="font-display text-body text-fg-strong">{title}</h3>
+        <p className="mt-1 text-body-sm">{description}</p>
+      </div>
+      <Toggle on={on} onClick={onToggle} busy={busy} />
+    </div>
   );
 }
 

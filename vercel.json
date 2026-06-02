@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/reconcile-entitlements",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/notify-new-content",
+      "schedule": "0 */6 * * *"
     }
   ]
 }
