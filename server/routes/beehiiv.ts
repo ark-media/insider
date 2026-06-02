@@ -7,7 +7,6 @@
 // BEEHIIV_PUBLICATION_ID_<SLUG_UPPER>.
 
 import crypto from 'node:crypto'
-import type { IncomingMessage } from 'node:http'
 import {
   isPublishedBeehiivPost,
   projectBeehiivPost,
@@ -26,7 +25,7 @@ import {
 import { getDb, type Sql } from '../lib/db.js'
 import { fetchAuth0TierForEmail } from '../entitlement.js'
 import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
-import { makeJsonRes, readBody, readJson } from '../lib/http.js'
+import { getClientIp, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import type { Deps, Env, Route } from '../lib/route.js'
 import { verifyAuth0BearerProfile } from '../lib/session.js'
@@ -158,20 +157,6 @@ async function enrichWithDiscussUrls(
     console.error('[beehiiv] discuss-thread join failed:', err)
     return posts
   }
-}
-
-// Extracts the leftmost IP from x-forwarded-for (Vercel sets this) and falls
-// back to the socket address for the dev server. The leftmost entry is the
-// original client; downstream proxies append themselves to the right.
-function getClientIp(req: IncomingMessage): string {
-  const xff = req.headers['x-forwarded-for']
-  if (typeof xff === 'string' && xff.length > 0) {
-    return xff.split(',')[0]!.trim()
-  }
-  if (Array.isArray(xff) && xff.length > 0) {
-    return xff[0]!
-  }
-  return req.socket?.remoteAddress ?? 'unknown'
 }
 
 // Best-effort detection of Beehiiv's "already subscribed" error so we can show

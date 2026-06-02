@@ -42,6 +42,10 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
       handler: async (req, res) => {
         const json = makeJsonRes(res)
 
+        // Identity-scoped response (email/tier/feeds) — must never be cached by
+        // a shared proxy/CDN and served to another user.
+        res.setHeader('cache-control', 'private, no-store')
+
         // Resolve the session: an Auth0 bearer (the long-term login, carries
         // a tier claim) or the short-lived checkout token (cookie or bearer,
         // issued only post-payment so always implies subscriber). We need

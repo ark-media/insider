@@ -17,6 +17,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import Stripe from 'stripe'
 import { createActivator } from './lib/activation.js'
 import type { Deps, Env, Handler, Route } from './lib/route.js'
+import { PayloadTooLargeError } from './lib/http.js'
 import { adminRoutes } from './routes/admin.js'
 import { announcementRoutes } from './routes/announcements.js'
 import { authRoutes } from './routes/auth.js'
@@ -102,6 +103,14 @@ export function devApiPlugin(env: Env): Plugin {
         return next()
       }
       handler(req, res).catch((err: unknown) => {
+        if (err instanceof PayloadTooLargeError) {
+          if (!res.headersSent) {
+            res.statusCode = 413
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify({ error: 'payload_too_large' }))
+          }
+          return
+        }
         console.error('[dev-api]', err)
         if (err && typeof err === 'object' && 'data' in err) {
           console.error(
@@ -200,6 +209,14 @@ export function createCatchAllHandler(env: Env) {
     try {
       await handler(req, res)
     } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        if (!res.headersSent) {
+          res.statusCode = 413
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify({ error: 'payload_too_large' }))
+        }
+        return
+      }
       console.error('[api]', err)
       if (err && typeof err === 'object' && 'data' in err) {
         console.error(
@@ -208,13 +225,11 @@ export function createCatchAllHandler(env: Env) {
         )
       }
       if (!res.headersSent) {
+        // Generic body only — the detail is already logged above. Echoing
+        // err.message leaks DB/driver internals and config state to callers.
         res.statusCode = 500
         res.setHeader('content-type', 'application/json')
-        res.end(
-          JSON.stringify({
-            error: err instanceof Error ? err.message : 'Internal error',
-          }),
-        )
+        res.end(JSON.stringify({ error: 'internal_error' }))
       }
     }
   }

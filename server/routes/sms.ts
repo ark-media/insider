@@ -5,7 +5,7 @@
 // return 422 for anything it can't route. Local rate limit on top of SC's
 // own — these are paid SMS, so abuse is expensive.
 
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { getSessionEmail } from '../lib/session.js'
 import {
   createScClient,
@@ -16,7 +16,7 @@ import {
 import { createRateLimiter } from '../lib/rate-limit.js'
 import type { Deps, Route } from '../lib/route.js'
 
-export function smsRoutes({ env }: Deps): Route[] {
+export function smsRoutes({ env, appBaseUrl }: Deps): Route[] {
   // SMS setup-link sender. Tight budget — SC forwards these to a carrier
   // and charges per message.
   const smsLimiter = createRateLimiter({
@@ -30,6 +30,10 @@ export function smsRoutes({ env }: Deps): Route[] {
       handler: async (req, res) => {
         const json = makeJsonRes(res)
         if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+
+        // Cookie-authenticated mutation that triggers paid SMS — apply the same
+        // same-origin CSRF guard as other state-changing routes (see http.ts).
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
 
         const smsEmail = await getSessionEmail(req, env)
         if (!smsEmail) return json(401, { error: 'unauthenticated' })

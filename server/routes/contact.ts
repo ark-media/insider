@@ -8,8 +8,7 @@
 // email, since every field is attacker-controlled. Rate-limited per IP to keep
 // the form from being used as a spam relay.
 
-import type { IncomingMessage } from 'node:http'
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { getClientIp, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { sendEmail } from '../lib/email.js'
 import type { Deps, Route } from '../lib/route.js'
@@ -28,15 +27,6 @@ function escapeHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
-}
-
-// Leftmost x-forwarded-for entry (the original client) with a socket fallback
-// for the dev server. Mirrors the helper in beehiiv.ts.
-function getClientIp(req: IncomingMessage): string {
-  const xff = req.headers['x-forwarded-for']
-  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]!.trim()
-  if (Array.isArray(xff) && xff.length > 0) return xff[0]!
-  return req.socket?.remoteAddress ?? 'unknown'
 }
 
 export function contactRoutes({ env }: Deps): Route[] {

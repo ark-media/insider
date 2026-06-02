@@ -13,10 +13,32 @@ export function makeJsonRes(res: ServerResponse): JsonRes {
   }
 }
 
-export async function readBody(req: IncomingMessage): Promise<Buffer> {
+// Thrown by readBody when a request exceeds the byte cap. The catch-all maps
+// it to a 413 instead of buffering an unbounded body into memory.
+export class PayloadTooLargeError extends Error {
+  constructor() {
+    super('Request body too large')
+    this.name = 'PayloadTooLargeError'
+  }
+}
+
+// Generous cap that bounds per-request memory without rejecting any legitimate
+// payload — our own POSTs (contact, subscribe, sms, newsletter prefs) are a few
+// KB, and Stripe webhook events stay well under this. Aborts as soon as the cap
+// is crossed, so a malicious large body can't OOM the function instance.
+const MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MiB
+
+export async function readBody(
+  req: IncomingMessage,
+  maxBytes: number = MAX_BODY_BYTES,
+): Promise<Buffer> {
   const chunks: Buffer[] = []
+  let total = 0
   for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    total += buf.length
+    if (total > maxBytes) throw new PayloadTooLargeError()
+    chunks.push(buf)
   }
   return Buffer.concat(chunks)
 }
@@ -42,4 +64,14 @@ export async function readJson<T = unknown>(req: IncomingMessage): Promise<T | n
   } catch {
     return null
   }
+}
+
+// Extracts the leftmost x-forwarded-for entry (Vercel sets this — the original
+// client; downstream proxies append themselves to the right), falling back to
+// the socket address for the dev server. Used as the per-client rate-limit key.
+export function getClientIp(req: IncomingMessage): string {
+  const xff = req.headers['x-forwarded-for']
+  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]!.trim()
+  if (Array.isArray(xff) && xff.length > 0) return xff[0]!
+  return req.socket?.remoteAddress ?? 'unknown'
 }
