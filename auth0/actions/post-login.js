@@ -93,8 +93,19 @@ exports.onExecutePostLogin = async (event, api) => {
         (u.identities || []).some((i) => i.connection === DB_CONNECTION),
     );
 
-    // No Database account → self-signup. Block and clean up the orphan.
-    if (!primary || primary.email_verified !== true) {
+    // No Database account → genuine self-signup. Block and clean up the orphan
+    // record Auth0 JIT-created on this login.
+    //
+    // We deliberately do NOT require the Database account's own email_verified
+    // flag. Members are provisioned by the webhook with email_verified:false
+    // (findOrCreateAuth0User) and set a password via the reset email rather than
+    // verifying, so a member who signs in with Google *before* doing that reset
+    // still has an unverified Database account — requiring it here would reject
+    // them as self-signups and delete their social identity. Linking is already
+    // safe without it: the check above proved the *social* email is verified,
+    // and users-by-email only returns records with that exact email, so Google
+    // has confirmed the person controls the address the Database account uses.
+    if (!primary) {
       await deleteUser(event, token, event.user.user_id).catch(() => {});
       return api.access.deny(
         'Membership is required to sign in. Please subscribe at arkmedia.org first.',

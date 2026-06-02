@@ -71,6 +71,14 @@ on every login.
 - **Email must match.** A member whose Google email differs from their
   subscription email has no matching Database account and will be rejected as a
   stranger. Inherent to using email as the join key — document it for support.
+- **The Database account's own `email_verified` is not required.** The webhook
+  provisions members with `email_verified:false` (they set a password via the
+  reset email rather than verifying), so a member who signs in with Google
+  *before* doing that reset still has an unverified Database account. The gate
+  keys only on whether a Database account *exists*; the *social* email is what
+  must be verified (proving control of the address the accounts share). An
+  earlier version also required `primary.email_verified === true`, which
+  rejected Google-first members as self-signups and deleted their identity.
 - **Roles on the first social login.** `event.authorization.roles` reflects the
   secondary (social) user mid-run, so on the linking login the action fetches
   the primary's roles via the Management API. Every login after the merge reads
