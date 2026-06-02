@@ -63,6 +63,8 @@ function FeedCard({ item }: { item: CommunityFeedItem }) {
   return (
     <a
       href={item.href}
+      target="_blank"
+      rel="noreferrer noopener"
       className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
     >
       <div className="flex items-baseline justify-between gap-4">

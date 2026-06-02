@@ -412,8 +412,10 @@ function reconcilerFetchHandler(fixtures: ReconcilerFixtures): FetchHandler {
     if (url.includes('/api/v2/users?')) {
       // Subscriber-list paging — return everything on page 0, empty on page 1+.
       // Anchor on `[?&]page=` so `per_page=100` doesn't accidentally match.
+      // The SDK requests include_totals, so respond with the `{ users }`
+      // envelope its paginated reader expects (not a bare array).
       const page = Number(url.match(/[?&]page=(\d+)/)?.[1] ?? '0')
-      return jsonRes(200, page === 0 ? fixtures.auth0Subscribers : [])
+      return jsonRes(200, { users: page === 0 ? fixtures.auth0Subscribers : [] })
     }
     if (url.includes('/api/v2/users/') && init?.method === 'PATCH') {
       return jsonRes(200, {})
@@ -706,11 +708,12 @@ describe('listAuth0Subscribers export-job fallback', () => {
         })
       }
       if (url.includes('/api/v2/users?')) {
-        // Always-full pages → forces saturation of the search path.
+        // Always-full pages → forces saturation of the search path. The SDK
+        // requests include_totals, so respond with the `{ users }` envelope.
         const auth0Subscribers = Array.from({ length: 100 }, (_, i) => ({
           email: `bulk${i}@x.com`,
         }))
-        return jsonRes(200, auth0Subscribers)
+        return jsonRes(200, { users: auth0Subscribers })
       }
       if (url.includes('/users-by-email')) {
         return jsonRes(200, [{ user_id: 'auth0|u' }])

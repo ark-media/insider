@@ -30,6 +30,8 @@ export function FeedEmptyState({
             <li key={space.id} className="py-4">
               <a
                 href={space.href}
+                target="_blank"
+                rel="noreferrer noopener"
                 className="group grid grid-cols-1 items-center gap-2 sm:grid-cols-12 sm:gap-4"
               >
                 <div className="sm:col-span-9">

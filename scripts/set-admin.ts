@@ -14,12 +14,9 @@
 // The M2M app needs scopes: read:users read:roles update:users. After running,
 // the user must log out and back in for the role to appear in their token.
 
-import { auth0MgmtBase, getAuth0ManagementToken } from '../server/auth0.js'
+import { getManagementClient } from '../server/auth0.js'
 
 const ROLE_NAME = 'admin'
-
-type Auth0User = { user_id: string }
-type Auth0Role = { id: string; name: string }
 
 async function main(): Promise<void> {
   const email = process.argv[2]?.trim().toLowerCase()
@@ -30,56 +27,53 @@ async function main(): Promise<void> {
   }
 
   const env = process.env as Record<string, string>
-  const token = await getAuth0ManagementToken(env)
-  if (!token) {
+  const mgmt = getManagementClient(env)
+  if (!mgmt) {
     console.error(
-      'Could not get an Auth0 Management token. Set AUTH0_MANAGEMENT_CLIENT_ID, ' +
+      'Could not build an Auth0 Management client. Set AUTH0_MANAGEMENT_CLIENT_ID, ' +
         'AUTH0_MANAGEMENT_CLIENT_SECRET (and AUTH0_TENANT_DOMAIN) in .env.',
     )
     process.exit(1)
   }
 
-  const base = auth0MgmtBase(env)
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-
   // 1. Resolve the user.
-  const lookup = await fetch(
-    `${base}/users-by-email?email=${encodeURIComponent(email)}`,
-    { headers },
-  )
-  if (!lookup.ok) {
-    console.error('User lookup failed:', lookup.status, await lookup.text())
+  let userId: string | undefined
+  try {
+    const users = await mgmt.users.listUsersByEmail({ email })
+    userId = users[0]?.user_id
+  } catch (err) {
+    console.error('User lookup failed:', err)
     process.exit(1)
   }
-  const users = (await lookup.json()) as Auth0User[]
-  if (users.length === 0) {
+  if (!userId) {
     console.error(`No Auth0 user found for ${email}. They must sign in at least once first.`)
     process.exit(1)
   }
-  const userId = users[0].user_id
 
   // 2. Resolve the "admin" role id by name.
-  const rolesRes = await fetch(`${base}/roles?name_filter=${ROLE_NAME}`, { headers })
-  if (!rolesRes.ok) {
-    console.error('Role lookup failed:', rolesRes.status, await rolesRes.text())
+  let roleId: string | undefined
+  try {
+    const roles = await mgmt.roles.list({ name_filter: ROLE_NAME })
+    roleId = roles.data.find((r) => r.name === ROLE_NAME)?.id
+  } catch (err) {
+    console.error('Role lookup failed:', err)
     process.exit(1)
   }
-  const roles = (await rolesRes.json()) as Auth0Role[]
-  const role = roles.find((r) => r.name === ROLE_NAME)
-  if (!role) {
+  if (!roleId) {
     console.error(`No Auth0 role named "${ROLE_NAME}". Create it in Auth0 → Roles first.`)
     process.exit(1)
   }
 
   // 3. Assign or remove the role. Both endpoints return 204 on success and
   //    are idempotent (re-assigning an existing role is a no-op).
-  const res = await fetch(`${base}/users/${encodeURIComponent(userId)}/roles`, {
-    method: remove ? 'DELETE' : 'POST',
-    headers,
-    body: JSON.stringify({ roles: [role.id] }),
-  })
-  if (!res.ok) {
-    console.error('Role update failed:', res.status, await res.text())
+  try {
+    if (remove) {
+      await mgmt.users.roles.delete(userId, { roles: [roleId] })
+    } else {
+      await mgmt.users.roles.assign(userId, { roles: [roleId] })
+    }
+  } catch (err) {
+    console.error('Role update failed:', err)
     process.exit(1)
   }
 

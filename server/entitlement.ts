@@ -34,8 +34,9 @@
 // ---------------------------------------------------------------------------
 
 import { gunzipSync } from 'node:zlib'
+import type { ManagementClient } from 'auth0'
 import type Stripe from 'stripe'
-import { auth0MgmtBase, getAuth0ManagementToken } from './auth0.js'
+import { getManagementClient } from './auth0.js'
 import { downgradeToFree as beehiivDowngradeToFree, tryPush } from './lib/beehiiv-sync.js'
 import { getDb } from './lib/db.js'
 
@@ -109,20 +110,10 @@ async function setAuth0Tier(
   if (!env.AUTH0_MANAGEMENT_CLIENT_ID || !env.AUTH0_MANAGEMENT_CLIENT_SECRET) {
     return 'skipped'
   }
-  const token = await getAuth0ManagementToken(env)
-  if (!token) throw new Error('Auth0 mgmt token unavailable')
+  const mgmt = getManagementClient(env)
+  if (!mgmt) throw new Error('Auth0 mgmt client unavailable')
 
-  const base = auth0MgmtBase(env)
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-
-  const lookup = await fetch(
-    `${base}/users-by-email?email=${encodeURIComponent(email)}`,
-    { headers },
-  )
-  if (!lookup.ok) {
-    throw new Error(`Auth0 lookup ${lookup.status}: ${await lookup.text()}`)
-  }
-  const users = (await lookup.json()) as Array<{ user_id: string }>
+  const users = await mgmt.users.listUsersByEmail({ email })
   if (users.length === 0) return 'no-user'
 
   // app_metadata PATCH is a shallow merge: keys we omit are preserved on the
@@ -136,21 +127,13 @@ async function setAuth0Tier(
 
   // Same email can exist in multiple connections (e.g. Username-Password
   // and a social provider). Patch all so any session the user starts gets
-  // the right tier.
+  // the right tier. Any one rejecting rejects the whole batch → 'error'.
   await Promise.all(
-    users.map(async (u) => {
-      const patch = await fetch(
-        `${base}/users/${encodeURIComponent(u.user_id)}`,
-        {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ app_metadata: appMetadata }),
-        },
-      )
-      if (!patch.ok) {
-        throw new Error(`Auth0 patch ${patch.status}: ${await patch.text()}`)
-      }
-    }),
+    users.map((u) =>
+      u.user_id
+        ? mgmt.users.update(u.user_id, { app_metadata: appMetadata })
+        : Promise.resolve(),
+    ),
   )
   return 'ok'
 }
@@ -163,16 +146,18 @@ export async function fetchAuth0TierForEmail(
   env: Env,
   email: string,
 ): Promise<Tier | null> {
-  if (!env.AUTH0_MANAGEMENT_CLIENT_ID || !env.AUTH0_MANAGEMENT_CLIENT_SECRET) return null
-  const token = await getAuth0ManagementToken(env)
-  if (!token) return null
-  const base = auth0MgmtBase(env)
-  const res = await fetch(
-    `${base}/users-by-email?email=${encodeURIComponent(email)}&fields=app_metadata&include_fields=true`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  )
-  if (!res.ok) return null
-  const users = (await res.json()) as Array<{ app_metadata?: { tier?: string } }>
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return null
+  let users: Array<{ app_metadata?: { tier?: string } }>
+  try {
+    users = await mgmt.users.listUsersByEmail({
+      email,
+      fields: 'app_metadata',
+      include_fields: true,
+    })
+  } catch {
+    return null
+  }
   for (const u of users) {
     if (u.app_metadata?.tier === 'ark-plus-member') return 'ark-plus-member'
   }
@@ -187,16 +172,18 @@ export async function fetchAuth0EmailVerified(
   env: Env,
   email: string,
 ): Promise<boolean | null> {
-  if (!env.AUTH0_MANAGEMENT_CLIENT_ID || !env.AUTH0_MANAGEMENT_CLIENT_SECRET) return null
-  const token = await getAuth0ManagementToken(env)
-  if (!token) return null
-  const base = auth0MgmtBase(env)
-  const res = await fetch(
-    `${base}/users-by-email?email=${encodeURIComponent(email)}&fields=email_verified&include_fields=true`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  )
-  if (!res.ok) return null
-  const users = (await res.json()) as Array<{ email_verified?: boolean }>
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return null
+  let users: Array<{ email_verified?: boolean }>
+  try {
+    users = await mgmt.users.listUsersByEmail({
+      email,
+      fields: 'email_verified',
+      include_fields: true,
+    })
+  } catch {
+    return null
+  }
   if (users.length === 0) return null
   return users.some((u) => u.email_verified === true)
 }
@@ -385,7 +372,7 @@ export async function reconcileEntitlements(
   }
 }
 
-async function collectActiveStripeEmails(
+export async function collectActiveStripeEmails(
   stripe: Stripe,
   maxPages: number,
 ): Promise<Set<string>> {
@@ -418,25 +405,25 @@ async function listAuth0Subscribers(
   env: Env,
   maxPages: number,
 ): Promise<Auth0SubscriberRow[]> {
-  if (!env.AUTH0_MANAGEMENT_CLIENT_ID || !env.AUTH0_MANAGEMENT_CLIENT_SECRET) return []
-  const token = await getAuth0ManagementToken(env)
-  if (!token) return []
-  const base = auth0MgmtBase(env)
-  const headers = { Authorization: `Bearer ${token}` }
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return []
   const out: Auth0SubscriberRow[] = []
-  const query = encodeURIComponent('app_metadata.tier:"ark-plus-member"')
+  // include_totals so the SDK's paginated response carries a `users` array
+  // (a bare-array response has no items the Page wrapper can extract). Pass `q`
+  // raw — the SDK encodes query params itself.
   let lastPageFull = false
   let pagesWalked = 0
   for (let page = 0; page < maxPages; page += 1) {
-    const url =
-      `${base}/users?per_page=100&page=${page}` +
-      `&search_engine=v3&q=${query}` +
-      `&fields=email,app_metadata&include_fields=true`
-    const res = await fetch(url, { headers })
-    if (!res.ok) {
-      throw new Error(`Auth0 list ${res.status}: ${await res.text()}`)
-    }
-    const users = (await res.json()) as Array<{
+    const result = await mgmt.users.list({
+      per_page: 100,
+      page,
+      search_engine: 'v3',
+      q: 'app_metadata.tier:"ark-plus-member"',
+      fields: 'email,app_metadata',
+      include_fields: true,
+      include_totals: true,
+    })
+    const users = result.data as Array<{
       email?: string
       app_metadata?: { gift_expires_at?: string }
     }>
@@ -461,7 +448,7 @@ async function listAuth0Subscribers(
       pagesWalked,
       'pages; falling back to export job',
     )
-    return listAuth0SubscribersViaExport(env, token)
+    return listAuth0SubscribersViaExport(mgmt)
   }
   return out
 }
@@ -475,31 +462,18 @@ const AUTH0_EXPORT_INITIAL_POLL_MS = 2_000
 const AUTH0_EXPORT_MAX_POLL_MS = 10_000
 
 async function listAuth0SubscribersViaExport(
-  env: Env,
-  mgmtToken: string,
+  mgmt: ManagementClient,
 ): Promise<Auth0SubscriberRow[]> {
-  const base = auth0MgmtBase(env)
-  const authHeaders = { Authorization: `Bearer ${mgmtToken}` }
-
-  const createRes = await fetch(`${base}/jobs/users-exports`, {
-    method: 'POST',
-    headers: { ...authHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      format: 'json',
-      fields: [
-        { name: 'email' },
-        { name: 'app_metadata.tier' },
-        { name: 'app_metadata.gift_expires_at' },
-      ],
-    }),
+  const job = await mgmt.jobs.usersExports.create({
+    format: 'json',
+    fields: [
+      { name: 'email' },
+      { name: 'app_metadata.tier' },
+      { name: 'app_metadata.gift_expires_at' },
+    ],
   })
-  if (!createRes.ok) {
-    throw new Error(
-      `Auth0 export create ${createRes.status}: ${await createRes.text()}`,
-    )
-  }
-  const job = (await createRes.json()) as { id?: string }
   if (!job.id) throw new Error('Auth0 export create returned no job id')
+  const jobId = job.id
 
   // Poll with exponential backoff up to AUTH0_EXPORT_MAX_WAIT_MS.
   const start = Date.now()
@@ -507,19 +481,7 @@ async function listAuth0SubscribersViaExport(
   let location: string | null = null
   while (Date.now() - start < AUTH0_EXPORT_MAX_WAIT_MS) {
     await new Promise((r) => setTimeout(r, waitMs))
-    const statusRes = await fetch(
-      `${base}/jobs/${encodeURIComponent(job.id)}`,
-      { headers: authHeaders },
-    )
-    if (!statusRes.ok) {
-      throw new Error(
-        `Auth0 export status ${statusRes.status}: ${await statusRes.text()}`,
-      )
-    }
-    const status = (await statusRes.json()) as {
-      status?: string
-      location?: string
-    }
+    const status = await mgmt.jobs.get(jobId)
     if (status.status === 'completed') {
       if (!status.location) {
         throw new Error('Auth0 export completed without a location URL')

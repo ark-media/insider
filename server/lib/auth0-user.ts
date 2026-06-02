@@ -1,15 +1,13 @@
-// Auth0 user creation after a successful payment. The token + tenant base
-// helpers live in ../auth0.ts; this module does the find-or-create dance and
-// gets a first-login path to the new member — either Auth0's own
-// password-reset email (default) or, for the gift flow, a password-change
-// ticket URL the caller embeds in its own welcome email.
+// Auth0 user creation after a successful payment. The clients live in
+// ../auth0.ts; this module does the find-or-create dance and gets a first-login
+// path to the new member — either Auth0's own password-reset email (default)
+// or, for the gift flow, a password-change ticket URL the caller embeds in its
+// own welcome email.
 
 import crypto from 'node:crypto'
-import { AUTH0_DOMAIN, auth0MgmtBase, getAuth0ManagementToken } from '../auth0.js'
+import { getAuthenticationClient, getManagementClient } from '../auth0.js'
 
 type Env = Record<string, string>
-
-const AUTH0_CLIENT_ID = '1T1u9VRHbSWxOwy8OX5PVYw9BdPNtAvp'
 
 // `created` distinguishes a brand-new account (we just issued the
 // password-reset email) from a pre-existing one (no email was sent because
@@ -33,22 +31,13 @@ export async function findOrCreateAuth0User(
   opts: { emailPasswordReset?: boolean } = {},
 ): Promise<Auth0UserResult | null> {
   const emailPasswordReset = opts.emailPasswordReset ?? true
-  const token = await getAuth0ManagementToken(env)
-  if (!token) return null
-
-  const base = auth0MgmtBase(env)
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return null
 
   // Return early if Auth0 user already exists.
-  const searchRes = await fetch(
-    `${base}/users-by-email?email=${encodeURIComponent(email)}`,
-    { headers },
-  )
-  if (searchRes.ok) {
-    const existing = (await searchRes.json()) as Array<{ user_id: string }>
-    if (existing.length > 0) {
-      return { userId: existing[0].user_id, created: false, passwordResetSent: false }
-    }
+  const existing = await mgmt.users.listUsersByEmail({ email })
+  if (existing.length > 0 && existing[0].user_id) {
+    return { userId: existing[0].user_id, created: false, passwordResetSent: false }
   }
 
   // Create Auth0 user with a random temporary password — the password-change
@@ -58,29 +47,31 @@ export async function findOrCreateAuth0User(
   const familyName = spaceIdx > -1 ? nameHint!.slice(spaceIdx + 1) : ''
   const tempPassword = `Tmp-${crypto.randomBytes(16).toString('hex')}`
 
-  const createRes = await fetch(`${base}/users`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
+  let userId: string | undefined
+  try {
+    const created = await mgmt.users.create({
       connection: 'Username-Password-Authentication',
       email,
       password: tempPassword,
       given_name: (givenName || email.split('@')[0]).slice(0, 40),
       ...(familyName ? { family_name: familyName.slice(0, 40) } : {}),
       email_verified: false,
-    }),
-  })
-  if (!createRes.ok) {
-    console.error('[auth0] create user failed:', createRes.status, await createRes.text())
+    })
+    userId = created.user_id
+  } catch (err) {
+    console.error('[auth0] create user failed:', err)
     return null
   }
-  const created = (await createRes.json()) as { user_id: string }
+  if (!userId) {
+    console.error('[auth0] create user returned no user_id')
+    return null
+  }
 
   // Caller opted out of the Auth0 email (it will deliver the password-change
   // link itself). The account exists with only a temp password; the caller is
   // responsible for getting a set-password link to the user.
   if (!emailPasswordReset) {
-    return { userId: created.user_id, created: true, passwordResetSent: false }
+    return { userId, created: true, passwordResetSent: false }
   }
 
   // The user record exists but has only the random temp password. Without
@@ -88,29 +79,16 @@ export async function findOrCreateAuth0User(
   // surface this so the caller can flag for manual support resend.
   let passwordResetSent = false
   try {
-    const resetRes = await fetch(`${AUTH0_DOMAIN}/dbconnections/change_password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: AUTH0_CLIENT_ID,
-        email,
-        connection: 'Username-Password-Authentication',
-      }),
+    await getAuthenticationClient(env).database.changePassword({
+      email,
+      connection: 'Username-Password-Authentication',
     })
-    if (resetRes.ok) {
-      passwordResetSent = true
-    } else {
-      console.error(
-        '[auth0] change_password email failed:',
-        resetRes.status,
-        await resetRes.text(),
-      )
-    }
+    passwordResetSent = true
   } catch (err) {
-    console.error('[auth0] change_password email threw:', err)
+    console.error('[auth0] change_password email failed:', err)
   }
 
-  return { userId: created.user_id, created: true, passwordResetSent }
+  return { userId, created: true, passwordResetSent }
 }
 
 // Mints a password-change ticket (a self-contained URL) via the Management API
@@ -124,31 +102,18 @@ export async function createAuth0PasswordChangeTicket(
   resultUrl: string,
   env: Env,
 ): Promise<string | null> {
-  const token = await getAuth0ManagementToken(env)
-  if (!token) return null
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return null
 
   try {
-    const res = await fetch(`${auth0MgmtBase(env)}/tickets/password-change`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id: userId,
-        result_url: resultUrl,
-        mark_email_as_verified: true,
-      }),
+    const ticket = await mgmt.tickets.changePassword({
+      user_id: userId,
+      result_url: resultUrl,
+      mark_email_as_verified: true,
     })
-    if (!res.ok) {
-      console.error(
-        '[auth0] password-change ticket failed:',
-        res.status,
-        await res.text(),
-      )
-      return null
-    }
-    const data = (await res.json()) as { ticket?: string }
-    return data.ticket ?? null
+    return ticket.ticket ?? null
   } catch (err) {
-    console.error('[auth0] password-change ticket threw:', err)
+    console.error('[auth0] password-change ticket failed:', err)
     return null
   }
 }
