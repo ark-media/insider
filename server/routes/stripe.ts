@@ -20,7 +20,7 @@ import { getDb } from '../lib/db.js'
 import { createScClient } from '../lib/sc-client.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import { getPlanPriceCents } from '../lib/pricing.js'
-import { makeJsonRes, readBody, readJson } from '../lib/http.js'
+import { isSameOrigin, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getSessionEmail } from '../lib/session.js'
 import type { Deps, Env, Route } from '../lib/route.js'
@@ -236,6 +236,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       handler: async (req, res) => {
         const json = makeJsonRes(res)
         if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
         const cancelEmail = await getSessionEmail(req, env)

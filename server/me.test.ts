@@ -38,8 +38,8 @@ mock.module('@neondatabase/serverless', () => ({
 
 // Static imports AFTER mock.module so the plugin picks up the fake neon.
 import { devApiPlugin } from './dev-api'
-import { signCheckoutToken } from './lib/session'
-import { CHECKOUT_COOKIE_NAME } from './lib/cookies'
+import { signCheckoutToken, signSessionToken } from './lib/session'
+import { CHECKOUT_COOKIE_NAME, SESSION_COOKIE_NAME } from './lib/cookies'
 
 const signAuth0Token = signAuth0TestToken
 
@@ -60,6 +60,7 @@ const BASE_ENV: Record<string, string> = {
   SC_NETWORK_ID: 'test-net',
   SC_API_KEY: 'test-sc-key',
   CHECKOUT_SESSION_SECRET: 'checkout-secret-for-tests',
+  SESSION_SECRET: 'session-secret-for-tests-32-chars__',
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,
   BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: PUB_ID,
@@ -400,6 +401,24 @@ describe('GET /api/me with checkout-cookie session', () => {
       tier: 'ark-plus-member',
       feeds: [],
     })
+  })
+
+  test('session cookie + SC user found → 200 subscriber', async () => {
+    scUserByEmail.set('member@x.com', { id: 21, email: 'member@x.com' })
+    scFeedsByUserId.set(21, [])
+    const token = await signSessionToken({ email: 'member@x.com', roles: [] }, BASE_ENV)
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ email: 'member@x.com', tier: 'ark-plus-member', feeds: [] })
+  })
+
+  test('session cookie + no SC record → 200 free (logged-in, not a provisioning gap)', async () => {
+    const token = await signSessionToken({ email: 'freebie@x.com', roles: [] }, BASE_ENV)
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ email: 'freebie@x.com', tier: 'free', feeds: [] })
   })
 
   test('checkout cookie + SC user missing → 401 (provisioning gap, NOT free fallback)', async () => {

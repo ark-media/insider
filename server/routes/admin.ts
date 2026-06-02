@@ -11,18 +11,19 @@
 
 import { makeJsonRes, readJson } from '../lib/http.js'
 import { requireAdmin } from '../lib/session.js'
+import { requireAdminRequest } from '../lib/guards.js'
 import { listActiveCoupons } from '../lib/stripe-promos.js'
 import { buildPromo, listAllPromotionCodes, serializeCoupon } from '../lib/admin-promos.js'
 import type { Promo } from '../../shared/promo.js'
 import type { Deps, Route } from '../lib/route.js'
 
-export function adminRoutes({ stripe }: Deps): Route[] {
+export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
   return [
     {
       path: '/api/admin/me',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
-        const admin = await requireAdmin(req)
+        const admin = await requireAdmin(req, env)
         json(200, { isAdmin: admin !== null, email: admin?.email ?? null })
       },
     },
@@ -30,8 +31,8 @@ export function adminRoutes({ stripe }: Deps): Route[] {
       path: '/api/admin/promos',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
-        const admin = await requireAdmin(req)
-        if (!admin) return json(403, { error: 'forbidden' })
+        const admin = await requireAdminRequest(req, res, env, appBaseUrl)
+        if (!admin) return
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
         if (req.method === 'GET') {

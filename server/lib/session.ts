@@ -6,7 +6,7 @@
 //      email arrives. Lives in an httpOnly cookie or a Bearer header.
 
 import type { IncomingMessage } from 'node:http'
-import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose'
+import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 import { AUTH0_DOMAIN } from '../auth0.js'
 import {
   AUTH0_AUDIENCE,
@@ -17,6 +17,8 @@ import {
 import {
   CHECKOUT_COOKIE_NAME,
   CHECKOUT_TOKEN_TTL_SEC,
+  SESSION_COOKIE_NAME,
+  SESSION_TOKEN_TTL_SEC,
   readCookie,
 } from './cookies.js'
 
@@ -24,6 +26,12 @@ type Env = Record<string, string>
 
 const CHECKOUT_TOKEN_ISSUER = 'ark-insider'
 const CHECKOUT_TOKEN_AUDIENCE = 'checkout-session'
+
+const SESSION_TOKEN_ISSUER = 'ark-insider'
+const SESSION_TOKEN_AUDIENCE = 'ark-session'
+
+const AUTH_TXN_ISSUER = 'ark-insider'
+const AUTH_TXN_AUDIENCE = 'ark-auth-txn'
 
 const jwks = createRemoteJWKSet(
   new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`),
@@ -51,11 +59,14 @@ export type Auth0Profile = {
 // Pulls the roles claim into a clean string[] regardless of how Auth0 encodes
 // it (array, or a lone string). Anything else → no roles. Pure, so it's
 // unit-tested directly.
-export function extractRoles(payload: Record<string, unknown>): string[] {
-  const raw = payload[AUTH0_ROLES_CLAIM]
+export function extractStrings(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.filter((r): r is string => typeof r === 'string')
   if (typeof raw === 'string' && raw) return [raw]
   return []
+}
+
+export function extractRoles(payload: Record<string, unknown>): string[] {
+  return extractStrings(payload[AUTH0_ROLES_CLAIM])
 }
 
 export function isAdminProfile(profile: Auth0Profile | null): boolean {
@@ -87,45 +98,179 @@ export async function verifyAuth0BearerProfile(
   }
 }
 
-export async function verifyCheckoutToken(
+// --- Shared HS256 helpers for our first-party tokens ---------------------
+// (checkout, session, and the OAuth transaction all sign/verify the same way,
+// differing only in issuer/audience/TTL/payload.)
+
+function hmacKey(secret: string): Uint8Array {
+  return new TextEncoder().encode(secret)
+}
+
+function signHs256(
+  payload: Record<string, unknown>,
+  opts: { issuer: string; audience: string; ttl: string; secret: string },
+): Promise<string> {
+  return new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setIssuer(opts.issuer)
+    .setAudience(opts.audience)
+    .setExpirationTime(opts.ttl)
+    .sign(hmacKey(opts.secret))
+}
+
+async function verifyHs256(
   token: string,
-  env: Env,
-): Promise<string | null> {
-  const secret = env.CHECKOUT_SESSION_SECRET
-  if (!secret) return null
+  opts: { issuer: string; audience: string; secret: string | undefined },
+): Promise<JWTPayload | null> {
+  if (!opts.secret) return null
   try {
-    const { payload } = await jwtVerify(
-      token,
-      new TextEncoder().encode(secret),
-      {
-        issuer: CHECKOUT_TOKEN_ISSUER,
-        audience: CHECKOUT_TOKEN_AUDIENCE,
-      },
-    )
-    return (payload.email as string | undefined) ?? null
+    const { payload } = await jwtVerify(token, hmacKey(opts.secret), {
+      issuer: opts.issuer,
+      audience: opts.audience,
+    })
+    return payload
   } catch {
     return null
   }
 }
 
+export async function verifyCheckoutToken(token: string, env: Env): Promise<string | null> {
+  const payload = await verifyHs256(token, {
+    issuer: CHECKOUT_TOKEN_ISSUER,
+    audience: CHECKOUT_TOKEN_AUDIENCE,
+    secret: env.CHECKOUT_SESSION_SECRET,
+  })
+  return (payload?.email as string | undefined) ?? null
+}
+
 export async function signCheckoutToken(email: string, env: Env): Promise<string> {
   const secret = env.CHECKOUT_SESSION_SECRET
   if (!secret) throw new Error('CHECKOUT_SESSION_SECRET not configured')
-  return new SignJWT({ email })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setIssuer(CHECKOUT_TOKEN_ISSUER)
-    .setAudience(CHECKOUT_TOKEN_AUDIENCE)
-    .setExpirationTime(`${CHECKOUT_TOKEN_TTL_SEC}s`)
-    .sign(new TextEncoder().encode(secret))
+  return signHs256(
+    { email },
+    {
+      issuer: CHECKOUT_TOKEN_ISSUER,
+      audience: CHECKOUT_TOKEN_AUDIENCE,
+      ttl: `${CHECKOUT_TOKEN_TTL_SEC}s`,
+      secret,
+    },
+  )
+}
+
+// --- ark_session: the long-term BFF login session ------------------------
+//
+// Minted by /api/auth/callback after the server-side OAuth exchange (see
+// routes/auth.ts) and carried in the httpOnly `ark_session` cookie. We store
+// only identity the backend can't cheaply re-derive per request: `roles`
+// (admin gate — no live source without a management call) and `email`/`name`.
+// `tier` is a hint only — /api/me always re-checks Simplecast, the authority.
+
+export type SessionProfile = {
+  email: string
+  roles: string[]
+  name?: string
+  tier?: 'ark-plus-member' | 'free'
+}
+
+export async function signSessionToken(profile: SessionProfile, env: Env): Promise<string> {
+  const secret = env.SESSION_SECRET
+  if (!secret) throw new Error('SESSION_SECRET not configured')
+  return signHs256(
+    {
+      email: profile.email,
+      roles: profile.roles,
+      ...(profile.name ? { name: profile.name } : {}),
+      ...(profile.tier ? { tier: profile.tier } : {}),
+    },
+    {
+      issuer: SESSION_TOKEN_ISSUER,
+      audience: SESSION_TOKEN_AUDIENCE,
+      ttl: `${SESSION_TOKEN_TTL_SEC}s`,
+      secret,
+    },
+  )
+}
+
+export async function verifySessionToken(token: string, env: Env): Promise<SessionProfile | null> {
+  const payload = await verifyHs256(token, {
+    issuer: SESSION_TOKEN_ISSUER,
+    audience: SESSION_TOKEN_AUDIENCE,
+    secret: env.SESSION_SECRET,
+  })
+  if (!payload?.email) return null
+  return {
+    email: payload.email as string,
+    roles: extractStrings(payload.roles),
+    name: (payload.name as string | undefined) ?? undefined,
+    tier:
+      payload.tier === 'ark-plus-member' || payload.tier === 'free'
+        ? payload.tier
+        : undefined,
+  }
+}
+
+// --- ark_auth_txn: the in-flight OAuth transaction -----------------------
+//
+// Bridges /api/auth/login → /api/auth/callback in an httpOnly cookie: the
+// PKCE verifier plus the state/nonce we'll check on return, and where to send
+// the user afterwards. Signed (not just opaque) so a tampered cookie is
+// rejected rather than silently trusted.
+
+export type AuthTxn = {
+  verifier: string
+  state: string
+  nonce: string
+  returnTo: string
+}
+
+export async function signAuthTxnToken(txn: AuthTxn, env: Env): Promise<string> {
+  const secret = env.SESSION_SECRET
+  if (!secret) throw new Error('SESSION_SECRET not configured')
+  return signHs256({ ...txn }, {
+    issuer: AUTH_TXN_ISSUER,
+    audience: AUTH_TXN_AUDIENCE,
+    ttl: '10m',
+    secret,
+  })
+}
+
+export async function verifyAuthTxnToken(token: string, env: Env): Promise<AuthTxn | null> {
+  const payload = await verifyHs256(token, {
+    issuer: AUTH_TXN_ISSUER,
+    audience: AUTH_TXN_AUDIENCE,
+    secret: env.SESSION_SECRET,
+  })
+  if (!payload) return null
+  const { verifier, state, nonce, returnTo } = payload as Record<string, unknown>
+  if (
+    typeof verifier !== 'string' ||
+    typeof state !== 'string' ||
+    typeof nonce !== 'string' ||
+    typeof returnTo !== 'string'
+  ) {
+    return null
+  }
+  return { verifier, state, nonce, returnTo }
+}
+
+// Reads the logged-in session profile from the `ark_session` cookie. Used by
+// routes that need roles (admin) or want the tier hint.
+export async function getSessionProfile(
+  req: IncomingMessage,
+  env: Env,
+): Promise<SessionProfile | null> {
+  const cookieToken = readCookie(req, SESSION_COOKIE_NAME)
+  if (!cookieToken) return null
+  return verifySessionToken(cookieToken, env)
 }
 
 export async function getSessionEmail(
   req: IncomingMessage,
   env: Env,
 ): Promise<string | null> {
-  // Bearer token wins (the authoritative long-term session). Cookie is the
-  // fallback for the brief auto-login window after checkout.
+  // Bearer token wins (kept for any token-bearing caller). Then the long-term
+  // `ark_session` login cookie, then the short-lived post-checkout cookie.
   const authHeader = req.headers.authorization
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
@@ -134,18 +279,35 @@ export async function getSessionEmail(
       (await verifyCheckoutToken(token, env))
     if (email) return email
   }
+  const session = await getSessionProfile(req, env)
+  if (session) return session.email
   const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
   if (cookieToken) return verifyCheckoutToken(cookieToken, env)
   return null
 }
 
-// Admin gate for the back office. Only a verified Auth0 access token with the
-// "admin" role passes — the short-lived checkout cookie is deliberately not
-// accepted (it carries no roles, and admins always log in via Auth0). Returns
+// Admin gate for the back office. Passes only for a session that carries the
+// "admin" role: the `ark_session` login cookie (set after the OAuth exchange,
+// so its roles came from a verified Auth0 token) or a raw Auth0 Bearer. The
+// short-lived checkout cookie is deliberately not accepted (no roles). Returns
 // the profile so the caller can log who acted; null means "not an admin".
-export async function requireAdmin(req: IncomingMessage): Promise<Auth0Profile | null> {
+export async function requireAdmin(
+  req: IncomingMessage,
+  env: Env,
+): Promise<Auth0Profile | null> {
+  const session = await getSessionProfile(req, env)
+  if (session && session.roles.includes('admin')) {
+    return {
+      email: session.email,
+      name: session.name,
+      tier: session.tier,
+      roles: session.roles,
+    }
+  }
   const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const profile = await verifyAuth0BearerProfile(authHeader.slice(7))
-  return isAdminProfile(profile) ? profile : null
+  if (authHeader?.startsWith('Bearer ')) {
+    const profile = await verifyAuth0BearerProfile(authHeader.slice(7))
+    if (isAdminProfile(profile)) return profile
+  }
+  return null
 }

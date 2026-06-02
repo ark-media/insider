@@ -6,12 +6,25 @@
 import { describe, test, expect } from 'bun:test'
 import type { IncomingMessage } from 'node:http'
 import {
+  extractStrings,
   getSessionEmail,
+  getSessionProfile,
+  requireAdmin,
+  signAuthTxnToken,
   signCheckoutToken,
+  signSessionToken,
+  verifyAuthTxnToken,
   verifyCheckoutToken,
+  verifySessionToken,
+  type AuthTxn,
 } from './session'
+import { SESSION_COOKIE_NAME } from './cookies'
 
 const ENV = { CHECKOUT_SESSION_SECRET: 'unit-test-secret-32-chars-long_____' }
+const SENV = {
+  CHECKOUT_SESSION_SECRET: 'unit-test-secret-32-chars-long_____',
+  SESSION_SECRET: 'session-secret-32-chars-long-aaaaaa',
+}
 
 function makeReq(opts: {
   authorization?: string
@@ -79,5 +92,100 @@ describe('getSessionEmail', () => {
       cookie: `ark_checkout=${token}`,
     })
     expect(await getSessionEmail(req, ENV)).toBe('cookie@x.com')
+  })
+
+  test('resolves the ark_session cookie', async () => {
+    const token = await signSessionToken({ email: 's@x.com', roles: [] }, SENV)
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect(await getSessionEmail(req, SENV)).toBe('s@x.com')
+  })
+})
+
+describe('session token', () => {
+  test('round-trips email, roles, name, tier', async () => {
+    const profile = {
+      email: 'a@x.com',
+      roles: ['admin'],
+      name: 'Ada',
+      tier: 'ark-plus-member' as const,
+    }
+    const token = await signSessionToken(profile, SENV)
+    expect(await verifySessionToken(token, SENV)).toEqual(profile)
+  })
+
+  test('defaults roles to [] and omits absent name/tier', async () => {
+    const token = await signSessionToken({ email: 'b@x.com', roles: [] }, SENV)
+    expect(await verifySessionToken(token, SENV)).toEqual({
+      email: 'b@x.com',
+      roles: [],
+      name: undefined,
+      tier: undefined,
+    })
+  })
+
+  test('rejects a wrong secret and a checkout token (audience mismatch)', async () => {
+    const token = await signSessionToken({ email: 'b@x.com', roles: [] }, SENV)
+    expect(await verifySessionToken(token, { SESSION_SECRET: 'other-secret-32-chars-long-bbbbbbb' })).toBeNull()
+    const checkout = await signCheckoutToken('b@x.com', SENV)
+    expect(await verifySessionToken(checkout, SENV)).toBeNull()
+  })
+
+  test('signSessionToken throws without secret', async () => {
+    await expect(signSessionToken({ email: 'b@x.com', roles: [] }, {})).rejects.toThrow(
+      'SESSION_SECRET not configured',
+    )
+  })
+
+  test('getSessionProfile reads roles/tier from the cookie', async () => {
+    const token = await signSessionToken(
+      { email: 'a@x.com', roles: ['admin'], tier: 'free' },
+      SENV,
+    )
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    const profile = await getSessionProfile(req, SENV)
+    expect(profile?.roles).toEqual(['admin'])
+    expect(profile?.tier).toBe('free')
+  })
+})
+
+describe('auth txn token', () => {
+  const txn: AuthTxn = { verifier: 'v', state: 's', nonce: 'n', returnTo: '/account' }
+
+  test('round-trips the transaction', async () => {
+    const token = await signAuthTxnToken(txn, SENV)
+    expect(await verifyAuthTxnToken(token, SENV)).toEqual(txn)
+  })
+
+  test('rejects a session token (audience mismatch)', async () => {
+    const session = await signSessionToken({ email: 'a@x.com', roles: [] }, SENV)
+    expect(await verifyAuthTxnToken(session, SENV)).toBeNull()
+  })
+})
+
+describe('requireAdmin', () => {
+  test('passes for a session cookie carrying the admin role', async () => {
+    const token = await signSessionToken({ email: 'a@x.com', roles: ['admin'] }, SENV)
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    const admin = await requireAdmin(req, SENV)
+    expect(admin?.email).toBe('a@x.com')
+  })
+
+  test('rejects a session cookie without the admin role', async () => {
+    const token = await signSessionToken({ email: 'a@x.com', roles: ['member'] }, SENV)
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect(await requireAdmin(req, SENV)).toBeNull()
+  })
+
+  test('rejects when there is no session', async () => {
+    expect(await requireAdmin(makeReq({}), SENV)).toBeNull()
+  })
+})
+
+describe('extractStrings', () => {
+  test('keeps a string array, wraps a lone string, else []', () => {
+    expect(extractStrings(['a', 1, 'b'])).toEqual(['a', 'b'])
+    expect(extractStrings('admin')).toEqual(['admin'])
+    expect(extractStrings(undefined)).toEqual([])
+    expect(extractStrings('')).toEqual([])
   })
 })

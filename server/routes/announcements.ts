@@ -7,7 +7,7 @@
 //     PATCH ?id, DELETE ?id). Gated by the Auth0 "admin" role.
 
 import { makeJsonRes, readJson } from '../lib/http.js'
-import { requireAdmin } from '../lib/session.js'
+import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
   createAnnouncement,
@@ -29,7 +29,7 @@ const ACTIVE_TTL_MS = 60_000
 const ACTIVE_KEY = 'active'
 const activeCache = makeTTLCache<string, { announcement: Announcement | null }>(ACTIVE_TTL_MS)
 
-export function announcementRoutes({ env }: Deps): Route[] {
+export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
     {
       path: '/api/announcements/active',
@@ -58,8 +58,8 @@ export function announcementRoutes({ env }: Deps): Route[] {
       path: '/api/admin/announcements',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
-        const admin = await requireAdmin(req)
-        if (!admin) return json(403, { error: 'forbidden' })
+        const admin = await requireAdminRequest(req, res, env, appBaseUrl)
+        if (!admin) return
 
         const sql = getDb(env)
         const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id')

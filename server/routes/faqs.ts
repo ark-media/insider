@@ -7,7 +7,7 @@
 //     DELETE ?id). Gated by the Auth0 "admin" role.
 
 import { makeJsonRes, readJson } from '../lib/http.js'
-import { requireAdmin } from '../lib/session.js'
+import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
   createFaq,
@@ -19,7 +19,7 @@ import {
 } from '../lib/faqs.js'
 import type { Deps, Route } from '../lib/route.js'
 
-export function faqRoutes({ env }: Deps): Route[] {
+export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
     {
       path: '/api/faqs',
@@ -45,8 +45,8 @@ export function faqRoutes({ env }: Deps): Route[] {
       path: '/api/admin/faqs',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
-        const admin = await requireAdmin(req)
-        if (!admin) return json(403, { error: 'forbidden' })
+        const admin = await requireAdminRequest(req, res, env, appBaseUrl)
+        if (!admin) return
 
         const sql = getDb(env)
         const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id')

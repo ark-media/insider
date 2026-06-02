@@ -8,7 +8,7 @@
 //     DELETE ?id). Gated by the Auth0 "admin" role. Duplicate slugs return 409.
 
 import { makeJsonRes, readJson } from '../lib/http.js'
-import { requireAdmin } from '../lib/session.js'
+import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
   createCareer,
@@ -22,7 +22,7 @@ import {
 } from '../lib/careers.js'
 import type { Deps, Route } from '../lib/route.js'
 
-export function careerRoutes({ env }: Deps): Route[] {
+export function careerRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
     {
       path: '/api/careers',
@@ -59,8 +59,8 @@ export function careerRoutes({ env }: Deps): Route[] {
       path: '/api/admin/careers',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
-        const admin = await requireAdmin(req)
-        if (!admin) return json(403, { error: 'forbidden' })
+        const admin = await requireAdminRequest(req, res, env, appBaseUrl)
+        if (!admin) return
 
         const sql = getDb(env)
         const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id')

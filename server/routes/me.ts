@@ -12,9 +12,14 @@ import {
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
-import { makeJsonRes, readJson } from '../lib/http.js'
+import {
+  getContentNotificationPrefs,
+  setContentNotificationPrefs,
+} from '../lib/notification-prefs.js'
+import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import {
+  getSessionProfile,
   verifyAuth0BearerProfile,
   verifyCheckoutToken,
 } from '../lib/session.js'
@@ -34,7 +39,14 @@ const newsletterPrefsLimiter = createRateLimiter({
   refillPerSec: 1 / 6,
 })
 
-export function meRoutes({ env }: Deps): Route[] {
+// Same shape as the newsletter limiter — these toggles only write to our own
+// Neon table, but a flapping client shouldn't hammer the DB either.
+const notificationPrefsLimiter = createRateLimiter({
+  capacity: 10,
+  refillPerSec: 1 / 6,
+})
+
+export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
     {
       path: '/api/me',
@@ -65,6 +77,17 @@ export function meRoutes({ env }: Deps): Route[] {
               source = 'checkout'
               email = e
             }
+          }
+        }
+        // The long-term login: `ark_session` cookie. Behaves like the Auth0
+        // bearer (a logged-in user; a missing SC record means "free"), and
+        // carries a tier hint we don't otherwise trust over Simplecast.
+        if (!email) {
+          const session = await getSessionProfile(req, env)
+          if (session) {
+            source = 'auth0'
+            email = session.email
+            claimTier = session.tier
           }
         }
         if (!email) {
@@ -139,22 +162,33 @@ export function meRoutes({ env }: Deps): Route[] {
         if (req.method !== 'GET' && req.method !== 'PUT') {
           return json(405, { error: 'Method Not Allowed' })
         }
-
-        // Require an Auth0 bearer (the checkout cookie carries no tier
-        // claim, so premium toggles need a real session).
-        const auth = req.headers.authorization
-        if (!auth?.startsWith('Bearer ')) {
-          return json(401, { error: 'unauthenticated' })
+        if (req.method === 'PUT' && !isSameOrigin(req, appBaseUrl)) {
+          return json(403, { error: 'bad_origin' })
         }
-        const profile = await verifyAuth0BearerProfile(auth.slice(7))
-        if (!profile?.email) return json(401, { error: 'unauthenticated' })
-        const email = profile.email
 
-        // Tier from the JWT is the fast path. If it reads 'free' we double-
+        // Require a real login (the `ark_session` cookie, or an Auth0 bearer).
+        // The checkout cookie carries no roles/tier, so premium toggles need a
+        // full session.
+        const session = await getSessionProfile(req, env)
+        let email = session?.email ?? null
+        let tierHint = session?.tier
+        if (!email) {
+          const auth = req.headers.authorization
+          if (auth?.startsWith('Bearer ')) {
+            const profile = await verifyAuth0BearerProfile(auth.slice(7))
+            if (profile?.email) {
+              email = profile.email
+              tierHint = profile.tier
+            }
+          }
+        }
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        // Tier hint is the fast path. If it isn't 'ark-plus-member' we double-
         // check Auth0 server-side — a member who upgraded after their last
-        // login still has 'free' in their cached token and would otherwise
-        // be denied premium toggles wrongly.
-        let isMember = profile.tier === 'ark-plus-member'
+        // login still has a stale 'free' hint and would otherwise be denied
+        // premium toggles wrongly.
+        let isMember = tierHint === 'ark-plus-member'
         if (!isMember) {
           const live = await fetchAuth0TierForEmail(env, email)
           isMember = live === 'ark-plus-member'
@@ -223,6 +257,82 @@ export function meRoutes({ env }: Deps): Route[] {
             err,
           )
           json(502, { error: 'beehiiv_update_failed' })
+        }
+      },
+    },
+    {
+      // New-content notification toggles ("email me about new episodes / posts").
+      // We own these in Neon and send the emails ourselves via Resend — Supporting
+      // Cast's hosted toggles have no API. Member-only: the private feed and
+      // community are member-scoped, so these alerts are meaningless for free
+      // readers. GET returns current prefs (defaults to both on); PUT patches.
+      path: '/api/me/notifications',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET' && req.method !== 'PUT') {
+          return json(405, { error: 'Method Not Allowed' })
+        }
+        if (req.method === 'PUT' && !isSameOrigin(req, appBaseUrl)) {
+          return json(403, { error: 'bad_origin' })
+        }
+
+        const session = await getSessionProfile(req, env)
+        let email = session?.email ?? null
+        let tierHint = session?.tier
+        if (!email) {
+          const auth = req.headers.authorization
+          if (auth?.startsWith('Bearer ')) {
+            const profile = await verifyAuth0BearerProfile(auth.slice(7))
+            if (profile?.email) {
+              email = profile.email
+              tierHint = profile.tier
+            }
+          }
+        }
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        // Stale 'free' hint → re-check Auth0 server-side, same as newsletters.
+        let isMember = tierHint === 'ark-plus-member'
+        if (!isMember) {
+          const live = await fetchAuth0TierForEmail(env, email)
+          isMember = live === 'ark-plus-member'
+        }
+        if (!isMember) return json(403, { error: 'not_entitled' })
+
+        if (!env.DATABASE_URL) {
+          return json(500, { error: 'database_not_configured' })
+        }
+        const sql = getDb(env)
+
+        if (req.method === 'GET') {
+          const prefs = await getContentNotificationPrefs(sql, email)
+          return json(200, prefs)
+        }
+
+        // PUT
+        const wait = notificationPrefsLimiter.take(email.toLowerCase())
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'too_many_requests' })
+        }
+
+        const body = await readJson<{ episodes?: unknown; posts?: unknown }>(req)
+        const patch: { episodes?: boolean; posts?: boolean } = {}
+        if (typeof body?.episodes === 'boolean') patch.episodes = body.episodes
+        if (typeof body?.posts === 'boolean') patch.posts = body.posts
+        if (patch.episodes === undefined && patch.posts === undefined) {
+          return json(400, { error: 'no_changes' })
+        }
+
+        try {
+          const prefs = await setContentNotificationPrefs(sql, email, patch)
+          json(200, prefs)
+        } catch (err) {
+          console.error(
+            `[me] notification preferences update failed for ${redactEmail(email)}:`,
+            err,
+          )
+          json(502, { error: 'notification_update_failed' })
         }
       },
     },

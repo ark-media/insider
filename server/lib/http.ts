@@ -21,6 +21,19 @@ export async function readBody(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks)
 }
 
+// CSRF defense for cookie-authenticated mutations. Now that the session rides
+// an httpOnly cookie (auto-attached by the browser), a cross-site page could
+// otherwise trigger state-changing requests. SameSite=Lax already blocks the
+// cookie on cross-site POST/PUT/DELETE; this is belt-and-suspenders: reject
+// when an Origin header is present and doesn't match our own. Absent Origin
+// (non-browser callers, same-origin GET) is allowed — those carry no ambient
+// cross-site cookie to abuse.
+export function isSameOrigin(req: IncomingMessage, appBaseUrl: string): boolean {
+  const origin = req.headers.origin
+  if (!origin) return true
+  return origin === appBaseUrl
+}
+
 export async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {
   const buf = await readBody(req)
   if (!buf.length) return null
