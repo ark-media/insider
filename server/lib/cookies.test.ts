@@ -130,17 +130,19 @@ describe('clearSessionCookies', () => {
 })
 
 describe('auth txn cookie', () => {
-  test('single httpOnly cookie, no present companion; Strict off localhost', () => {
+  test('single httpOnly cookie, no present companion; always Lax', () => {
     const res = makeRes()
     setAuthTxnCookie(res, 'txn-jwt', PROD)
     const cookies = res.getHeader!('Set-Cookie') as string[]
     expect(cookies).toHaveLength(1)
     expect(cookies[0]).toContain(`${AUTH_TXN_COOKIE_NAME}=txn-jwt`)
     expect(cookies[0]).toContain('HttpOnly')
-    expect(cookies[0]).toContain('SameSite=Strict')
+    // Lax, not Strict: the callback can arrive via a cross-site redirect chain
+    // (social login through Google), and Strict would withhold the cookie.
+    expect(cookies[0]).toContain('SameSite=Lax')
   })
 
-  test('Lax on localhost (cross-site to the Auth0 domain)', () => {
+  test('Lax on localhost too (cross-site to the Auth0 domain)', () => {
     const res = makeRes()
     setAuthTxnCookie(res, 'txn-jwt', LOCAL)
     const cookies = res.getHeader!('Set-Cookie') as string[]

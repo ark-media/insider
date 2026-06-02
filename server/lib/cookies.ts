@@ -134,17 +134,23 @@ export function clearSessionCookies(res: ServerResponse, env: Env): void {
 }
 
 // The in-flight OAuth transaction cookie — single httpOnly value, no
-// JS-readable companion (the SPA never needs to see it). Follows the same
-// Strict-except-local policy: prod runs under ark-plus.xyz (same-site as the
-// Auth0 domain, so the callback still carries the cookie under Strict), and
-// there are no cross-site preview deploys.
+// JS-readable companion (the SPA never needs to see it).
+//
+// Always Lax, never Strict. The callback can arrive via a *cross-site*
+// redirect chain: a social login bounces ark-plus.xyz → auth.ark-plus.xyz →
+// accounts.google.com → auth.ark-plus.xyz → /api/auth/callback. Chrome judges
+// same-site across the whole chain, so the third-party hop (Google) makes the
+// final navigation cross-site and a Strict cookie would be withheld — the
+// callback would see no txn and bounce the user to ?auth_error=expired even
+// though sign-in succeeded. Lax is sent on top-level GET navigations through a
+// cross-site redirect, which is exactly what an OAuth state/PKCE cookie needs.
 export function setAuthTxnCookie(res: ServerResponse, token: string, env: Env): void {
   appendSetCookie(res, [
     buildCookie(AUTH_TXN_COOKIE_NAME, token, {
       maxAgeSec: AUTH_TXN_TTL_SEC,
       httpOnly: true,
       secure: isSecureOrigin(env),
-      sameSite: sameSite(env),
+      sameSite: 'Lax',
     }),
   ])
 }
