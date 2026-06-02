@@ -14,7 +14,7 @@
 
 import type Stripe from 'stripe'
 import { AlreadySubscribedError } from '../lib/activation.js'
-import { emailForStripeCustomer, syncEntitlement } from '../entitlement.js'
+import { emailForStripeCustomer, redactEmail, syncEntitlement } from '../entitlement.js'
 import { downgradeToFree, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
 import { createScClient } from '../lib/sc-client.js'
@@ -281,24 +281,40 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const subId = url.searchParams.get('id')
         if (!subId) return json(400, { error: 'id required' })
 
-        // Verify the caller owns this subscription. New subscribers may not
-        // have an Auth0 session yet (they just paid), so we accept an `email`
-        // query param as a fallback — the email was just used to create the
-        // subscription moments ago.
-        const emailParam = url.searchParams.get('email')?.trim().toLowerCase()
-        const auth0Email = await getSessionEmail(req, env)
         const sub = await stripe.subscriptions.retrieve(subId, {
           expand: ['customer'],
         })
+
+        // Authorize the caller in one of two ways:
+        //  1. A logged-in session whose email owns this subscription.
+        //  2. Possession of the Checkout Session that created it. New
+        //     subscribers may not have an Auth0 session yet (they just paid),
+        //     so they pass the `session_id` from the return_url — a
+        //     high-entropy id held only by the buyer.
+        // A self-asserted `?email=` is deliberately NOT accepted: the email is
+        // guessable, so trusting it was an IDOR (anyone could read another
+        // customer's status by pairing their email with a subscription id).
+        const auth0Email = await getSessionEmail(req, env)
         const customer = sub.customer
         const customerEmail =
           typeof customer === 'object' && customer && !('deleted' in customer && customer.deleted)
             ? (customer as Stripe.Customer).email?.toLowerCase() ?? null
             : null
-        const callerEmail = auth0Email ?? emailParam
-        if (!callerEmail || callerEmail !== customerEmail) {
-          return json(403, { error: 'Forbidden' })
+
+        let authorized =
+          Boolean(auth0Email) && auth0Email === customerEmail
+        if (!authorized) {
+          const sessionId = url.searchParams.get('session_id')
+          if (sessionId) {
+            const cs = await stripe.checkout.sessions.retrieve(sessionId)
+            const csSubId =
+              typeof cs.subscription === 'string'
+                ? cs.subscription
+                : cs.subscription?.id ?? null
+            authorized = csSubId === subId
+          }
         }
+        if (!authorized) return json(403, { error: 'Forbidden' })
 
         json(200, {
           status: sub.status,
@@ -327,11 +343,31 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         try {
           event = stripe.webhooks.constructEvent(raw, sig, whSecret)
         } catch (err) {
-          return json(400, {
-            error: `Webhook signature verification failed: ${
-              err instanceof Error ? err.message : 'unknown'
-            }`,
-          })
+          console.error('[dev-api] webhook signature verification failed:', err)
+          return json(400, { error: 'invalid signature' })
+        }
+
+        // Idempotency: claim this event.id before doing any work. Stripe
+        // delivers at least once, so a replay/retry must be inert. If the row
+        // already exists we've processed it — ack 200 and skip. A ledger error
+        // is non-fatal: fall through and process (dispatch is largely
+        // metadata-idempotent on its own).
+        let claimedEventId: string | null = null
+        if (env.DATABASE_URL) {
+          try {
+            const sql = getDb(env)
+            const rows = await sql`
+              insert into stripe_webhook_events (id, type)
+              values (${event.id}, ${event.type})
+              on conflict (id) do nothing
+              returning id`
+            if (rows.length === 0) {
+              return json(200, { received: true, deduped: true })
+            }
+            claimedEventId = event.id
+          } catch (err) {
+            console.error('[dev-api] webhook idempotency ledger failed:', err)
+          }
         }
 
         try {
@@ -341,17 +377,25 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           if (err instanceof AlreadySubscribedError) {
             // The buyer already has an active SC sub — retrying the webhook
             // won't fix that, so ack 200 and rely on the auth route's 409 to
-            // surface the situation to the buyer. Manual billing follow-up.
-            console.warn('[dev-api] webhook: already subscribed:', err.email)
+            // surface the situation to the buyer. Terminal: keep the claim so a
+            // retry doesn't reprocess. Manual billing follow-up.
+            console.warn('[dev-api] webhook: already subscribed:', redactEmail(err.email))
             return json(200, { received: true, skipped: 'already_subscribed' })
+          }
+          // Retryable failure: release the claim so Stripe's retry reprocesses
+          // the event rather than getting deduped into a no-op.
+          if (claimedEventId) {
+            try {
+              await getDb(env)`delete from stripe_webhook_events where id = ${claimedEventId}`
+            } catch (delErr) {
+              console.error('[dev-api] webhook claim release failed:', delErr)
+            }
           }
           console.error('[dev-api] webhook handler error:', err)
           if (err && typeof err === 'object' && 'data' in err) {
             console.error('[dev-api] webhook error data:', JSON.stringify((err as { data: unknown }).data, null, 2))
           }
-          json(500, {
-            error: err instanceof Error ? err.message : 'Webhook handler error',
-          })
+          json(500, { error: 'webhook handler error' })
         }
       },
     },
