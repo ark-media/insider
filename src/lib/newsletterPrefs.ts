@@ -2,8 +2,6 @@
 // reads/writes the local Beehiiv subscription mirror and pushes changes
 // through Beehiiv's v2 API.
 
-import { getToken } from "./tokenStore";
-
 export type NewsletterPrefs = {
   free: boolean;
   premium: boolean;
@@ -15,16 +13,9 @@ export type FetchNewsletterPrefsResult =
   | { ok: true; prefs: NewsletterPrefs }
   | { ok: false; reason: "unauthenticated" | "unavailable" };
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const token = await getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 export async function fetchNewsletterPrefs(): Promise<FetchNewsletterPrefsResult> {
   try {
-    const headers = await authHeaders();
     const res = await fetch("/api/me/newsletters", {
-      headers,
       credentials: "include",
     });
     if (res.status === 401) {
@@ -43,11 +34,10 @@ export async function saveNewsletterPrefs(
   input: { free?: boolean; premium?: boolean },
 ): Promise<{ ok: boolean; prefs?: NewsletterPrefs; error?: string }> {
   try {
-    const headers = await authHeaders();
     const res = await fetch("/api/me/newsletters", {
       method: "PUT",
       credentials: "include",
-      headers: { "content-type": "application/json", ...headers },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     });
     const body = (await res.json().catch(() => ({}))) as

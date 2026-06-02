@@ -5,7 +5,6 @@ import {
   type NewsletterSlug,
 } from "../data/newsletters";
 import type { NewsletterSource } from "./newsletterSources";
-import { getToken } from "./tokenStore";
 
 /**
  * Beehiiv client.
@@ -36,17 +35,14 @@ export async function getPublication(
 
 type ApiResponse = { posts?: NewsletterPost[] };
 
-async function fetchPosts(
-  slug: NewsletterSlug,
-  token: string | null,
-): Promise<NewsletterPost[]> {
+async function fetchPosts(slug: NewsletterSlug): Promise<NewsletterPost[]> {
   try {
-    const headers: Record<string, string> = token
-      ? { Authorization: `Bearer ${token}` }
-      : {};
+    // credentials:'include' attaches the session cookie when present, so the
+    // server serves Ark+ members the full premium body and everyone else the
+    // above-divider preview. No client-held token is involved.
     const res = await fetch(
       `/api/beehiiv/posts?newsletter=${encodeURIComponent(slug)}`,
-      { headers, credentials: "same-origin" },
+      { credentials: "include" },
     );
     if (!res.ok) return [];
     const body = (await res.json()) as ApiResponse;
@@ -56,31 +52,17 @@ async function fetchPosts(
   }
 }
 
-async function fetchPostsFromApi(
-  slug: NewsletterSlug,
-): Promise<NewsletterPost[]> {
-  // Attach the Auth0 bearer when present so the server can read the reader's
-  // tier claim and serve the full premium body to Ark+ members. Without it,
-  // the server falls back to the above-divider preview.
-  const token = await getToken();
-  return fetchPosts(slug, token);
-}
-
 export const beehiivSource: NewsletterSource = {
-  listPosts: fetchPostsFromApi,
+  listPosts: fetchPosts,
 };
 
 /**
- * Auth-free listing for public landing-page teasers (e.g. the homepage
- * newsletter preview). Unlike `beehiivSource.listPosts`, this never awaits the
- * Auth0 token getter — which can stay pending while a guest's session is still
- * resolving — so a public page never blocks on auth to show a free preview.
- * Returns the same above-divider preview a guest would see on the reading page.
+ * Listing for public landing-page teasers (e.g. the homepage newsletter
+ * preview). Identical to `beehiivSource.listPosts` now that auth rides the
+ * cookie — a guest simply has no cookie and gets the preview.
  */
-export function listPostsPublic(
-  slug: NewsletterSlug,
-): Promise<NewsletterPost[]> {
-  return fetchPosts(slug, null);
+export function listPostsPublic(slug: NewsletterSlug): Promise<NewsletterPost[]> {
+  return fetchPosts(slug);
 }
 
 /**

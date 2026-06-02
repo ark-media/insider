@@ -1,6 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
-import { useAuth0 } from "@auth0/auth0-react";
 import { ArkLogo } from "./ArkLogo";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { shows } from "../data/shows";
@@ -113,8 +112,7 @@ function visibleNavItems(tier: Tier): NavItem[] {
 export function PublicMasthead() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { state, signOut, isAdmin } = useSubscriberAuth();
-  const { loginWithRedirect } = useAuth0();
+  const { state, signOut, signIn, isAdmin } = useSubscriberAuth();
   const tier: Tier =
     state.kind === "member" ? state.me.tier : "guest";
   const isSubscriber = tier === "ark-plus-member";
@@ -251,18 +249,14 @@ export function PublicMasthead() {
               <div className="hidden items-center gap-2 sm:flex">
                 {/* <button
                   type="button"
-                  onClick={() =>
-                    void loginWithRedirect({
-                      authorizationParams: { screen_hint: "signup" },
-                    })
-                  }
+                  onClick={() => signIn(undefined, { signup: true })}
                   className="inline-flex min-h-11 items-center border border-cyan bg-cyan px-4 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Sign up
                 </button> */}
                 <button
                   type="button"
-                  onClick={() => void loginWithRedirect()}
+                  onClick={() => signIn()}
                   className="inline-flex min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Sign in
@@ -327,9 +321,7 @@ export function PublicMasthead() {
                   type="button"
                   onClick={() => {
                     setMobileOpen(false);
-                    void loginWithRedirect({
-                      authorizationParams: { screen_hint: "signup" },
-                    });
+                    signIn(undefined, { signup: true });
                   }}
                   className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
                 >
@@ -339,7 +331,7 @@ export function PublicMasthead() {
                   type="button"
                   onClick={() => {
                     setMobileOpen(false);
-                    void loginWithRedirect();
+                    signIn();
                   }}
                   className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
                 >

@@ -1,8 +1,8 @@
-// Admin back-office API client. Every call attaches the Auth0 Bearer token;
-// the server independently re-verifies the "admin" role on each request
-// (server/lib/session.ts), so this client is only as trusted as that gate.
+// Admin back-office API client. Auth rides the httpOnly session cookie
+// (credentials:'include'); the server independently re-verifies the "admin"
+// role on each request (server/lib/session.ts), so this client is only as
+// trusted as that gate.
 
-import { getToken } from "./tokenStore";
 import type { Announcement } from "./announcements";
 import type { Career } from "./careers";
 import type { Faq } from "./faqs";
@@ -12,14 +12,10 @@ import type { NewsletterSlug } from "../data/newsletters";
 
 export type { Promo, BeehiivDraft, DiscussThread };
 
-async function authHeaders(
-  extra?: Record<string, string>,
-): Promise<Record<string, string>> {
-  const token = await getToken();
-  return {
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(extra ?? {}),
-  };
+// Kept as a thin indirection so call sites stay uniform; the session now
+// rides the cookie, so this only forwards any extra headers (e.g. content-type).
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  return { ...(extra ?? {}) };
 }
 
 async function errorMessage(res: Response): Promise<string> {

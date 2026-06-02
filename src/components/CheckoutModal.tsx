@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
   CheckoutElementsProvider,
@@ -170,8 +169,7 @@ export function CheckoutModal({
   // after an error rather than asking the buyer to retype it.
   const [lastEmail, setLastEmail] = useState("");
   const [promo, setPromo] = useState<PromoInfo | null>(null);
-  const { refresh } = useSubscriberAuth();
-  const { loginWithRedirect } = useAuth0();
+  const { refresh, signIn } = useSubscriberAuth();
   const { theme } = useTheme();
 
   const handleClose = useCallback(() => {
@@ -371,11 +369,7 @@ export function CheckoutModal({
             <p role="alert">{step.message}</p>
             <button
               type="button"
-              onClick={() =>
-                void loginWithRedirect({
-                  authorizationParams: { login_hint: step.email },
-                })
-              }
+              onClick={() => signIn(undefined, { loginHint: step.email })}
               className={ctaClass}
             >
               Sign in

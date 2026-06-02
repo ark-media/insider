@@ -11,7 +11,6 @@ import {
 } from "../data/events";
 import { circleUrls, newsletterCircleSpaces } from "../config/urls";
 import type { NewsletterSource } from "./newsletterSources";
-import { authHeaders } from "./auth";
 
 /**
  * Circle headless client.
@@ -44,13 +43,12 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 /**
- * Like `getJson` but attaches the member session: the Auth0 bearer (when
- * present) plus credentials so the post-checkout cookie rides along. Used for
- * member-gated endpoints (the curated feed). Throws on failure (see `getJson`).
+ * Like `getJson` but attaches the member session via credentials so the
+ * httpOnly session cookie rides along. Used for member-gated endpoints (the
+ * curated feed). Throws on failure (see `getJson`).
  */
 async function getJsonAuthed<T>(url: string): Promise<T> {
   const res = await fetch(url, {
-    headers: await authHeaders(),
     credentials: "include",
   });
   if (!res.ok) throw new Error(`${url} failed (${res.status})`);

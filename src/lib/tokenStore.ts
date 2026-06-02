@@ -1,32 +1,24 @@
-type TokenGetter = () => Promise<string>
+// Session presence hints. The real sessions live in httpOnly cookies the
+// server sets (`ark_session` for the Auth0 login, `ark_checkout` for the
+// post-checkout auto-login) — JS can't read those. Each has a non-httpOnly
+// companion cookie set purely as a "a session probably exists" signal, so the
+// SPA knows whether to bother calling /api/me before rendering as a guest.
 
-let _get: TokenGetter | null = null
-
-export function setTokenGetter(fn: TokenGetter) {
-  _get = fn
+function hasCookie(name: string): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie
+    .split(";")
+    .some((c) => c.trim().startsWith(`${name}=`));
 }
-
-// Returns the Auth0 access token when an Auth0 session exists, or null. The
-// brand-new-subscriber session (issued by /api/auth/checkout-session) lives
-// in an httpOnly cookie that JS cannot read — those requests rely on
-// credentials: 'include' instead of a Bearer header.
-export async function getToken(): Promise<string | null> {
-  if (!_get) return null
-  try {
-    return await _get()
-  } catch {
-    return null
-  }
-}
-
-// Non-httpOnly companion cookie set by /api/auth/checkout-session purely as a
-// presence signal — the real session token is in the sibling httpOnly cookie.
-// Used to gate "should we attempt fetchMe()" before Auth0 resolves.
-const PRESENT_COOKIE_NAME = 'ark_checkout_present'
 
 export function hasCheckoutCookie(): boolean {
-  if (typeof document === 'undefined') return false
-  return document.cookie
-    .split(';')
-    .some((c) => c.trim().startsWith(`${PRESENT_COOKIE_NAME}=`))
+  return hasCookie("ark_checkout_present");
+}
+
+export function hasSessionCookie(): boolean {
+  return hasCookie("ark_session_present");
+}
+
+export function hasAnySession(): boolean {
+  return hasSessionCookie() || hasCheckoutCookie();
 }

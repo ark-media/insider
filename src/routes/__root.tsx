@@ -1,10 +1,8 @@
 import { Outlet, createRootRoute, useMatches } from "@tanstack/react-router";
-import { useAuth0 } from "@auth0/auth0-react";
 import { PublicMasthead } from "../components/PublicMasthead";
 import { Footer } from "../components/Footer";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
-import { hasCheckoutCookie } from "../lib/tokenStore";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -21,20 +19,11 @@ function RootLayout() {
 function RootContent() {
   const matches = useMatches();
   const { state } = useSubscriberAuth();
-  const { isLoading: auth0Loading, isAuthenticated } = useAuth0();
   const chromeless = matches.some((m) => m.staticData?.chromeless);
 
-  // Block rendering only while resolving an authenticated session:
-  // - auth0Loading: SDK is processing the redirect callback
-  // - isAuthenticated && state.kind === "loading": fetchMe is in-flight after auth resolved
-  // - checkout-session: fetchMe is in-flight for a freshly-paid subscriber
-  const hasCheckout = hasCheckoutCookie();
-  const isResolvingSession =
-    (auth0Loading && !hasCheckout) ||
-    (isAuthenticated && state.kind === "loading") ||
-    (hasCheckout && state.kind === "loading");
-
-  if (isResolvingSession) {
+  // Block rendering only while /api/me is in-flight for a likely session
+  // (the provider seeds "loading" only when a session-presence cookie exists).
+  if (state.kind === "loading") {
     return (
       <div role="status" aria-label="Loading" className="flex min-h-dvh items-center justify-center bg-navy-900">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />

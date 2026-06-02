@@ -3,21 +3,20 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useState,
   type ReactNode,
 } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
-import { AUTH0_AUDIENCE } from "../../shared/auth0-claims";
 import { fetchMe, type Me } from "./auth";
 import { fetchAdminMe } from "./admin";
-import { hasCheckoutCookie, setTokenGetter } from "./tokenStore";
+import { hasAnySession } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
 
 export type SubscriberAuthState =
   | { kind: "loading" }
   | { kind: "guest" }
   | { kind: "member"; me: Me };
+
+type SignInOpts = { signup?: boolean; loginHint?: string };
 
 type SubscriberAuthValue = {
   state: SubscriberAuthState;
@@ -27,10 +26,13 @@ type SubscriberAuthValue = {
   // separate from `state` so a transient outage doesn't ripple a new variant
   // through the ~20 components that switch on `state.kind`.
   authError: boolean;
+  // Redirect to the server-side login (BFF). `returnTo` defaults to the
+  // current path; `signup` shows Auth0's signup screen.
+  signIn: (returnTo?: string, opts?: SignInOpts) => void;
   signOut: () => void;
   // Whether the signed-in user holds the "admin" role, per /api/admin/me
-  // (which re-verifies the Auth0 token server-side). `adminLoading` is true
-  // until that first check resolves for an authenticated user.
+  // (which re-verifies the session server-side). `adminLoading` is true until
+  // that first check resolves for a member session.
   isAdmin: boolean;
   adminLoading: boolean;
 };
@@ -38,118 +40,90 @@ type SubscriberAuthValue = {
 const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
 
 export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading, getAccessTokenSilently, logout, user } = useAuth0();
-  const [state, setState] = useState<SubscriberAuthState>({ kind: "loading" });
+  // Seed from the JS-readable presence hint so a guest renders immediately
+  // without a flash of "loading", and a likely-member shows the spinner while
+  // /api/me resolves.
+  const [state, setState] = useState<SubscriberAuthState>(() =>
+    hasAnySession() ? { kind: "loading" } : { kind: "guest" },
+  );
   const [authError, setAuthError] = useState(false);
   const [admin, setAdmin] = useState<{ loading: boolean; isAdmin: boolean }>({
-    loading: true,
+    loading: hasAnySession(),
     isAdmin: false,
   });
 
-  const getApiAccessToken = useCallback(
-    () =>
-      getAccessTokenSilently({
-        authorizationParams: { audience: AUTH0_AUDIENCE },
-      }),
-    [getAccessTokenSilently],
-  );
-
-  // Register before paint so route loaders and other early fetchMe callers
-  // can attach the Auth0 bearer (useEffect runs too late on first navigation).
-  useLayoutEffect(() => {
-    setTokenGetter(getApiAccessToken);
-  }, [getApiAccessToken]);
-
   const refresh = useCallback(async () => {
-    if (!isAuthenticated && !hasCheckoutCookie()) {
+    if (!hasAnySession()) {
       setState({ kind: "guest" });
       setAuthError(false);
       return;
     }
-
     try {
-      let token: string | null = null;
-      if (isAuthenticated) {
-        // Silent token renewal can fail briefly; fall back to the cookie
-        // session (no Bearer) rather than treating it as a hard error.
-        try {
-          token = await getApiAccessToken();
-        } catch {
-          token = null;
-        }
-      }
-      // Post-checkout sessions ride the httpOnly cookie (credentials), no Bearer.
-      const me = await fetchMe({ accessToken: token });
+      const me = await fetchMe();
       setState(me ? { kind: "member", me } : { kind: "guest" });
       setAuthError(false);
     } catch {
-      // Couldn't reach /api/me (network / server error). Surface error+retry on
-      // member-data pages, but don't flash an existing member back to guest —
-      // only resolve the initial "loading" so other consumers aren't stuck.
+      // Couldn't reach /api/me. Surface error+retry on member-data pages, but
+      // don't flash an existing member back to guest — only resolve the
+      // initial "loading" so other consumers aren't stuck.
       setAuthError(true);
       setState((prev) => (prev.kind === "member" ? prev : { kind: "guest" }));
     }
-  }, [isAuthenticated, getApiAccessToken]);
+  }, []);
 
-  useEffect(() => {
-    // The post-checkout session lives in an httpOnly cookie that JS can't
-    // read, so we rely on the sibling "present" cookie as a hint that
-    // /api/me will succeed even though Auth0 hasn't authenticated the user.
-    // `refresh` is async and only setStates after `await fetchMe()`, so the
-    // synchronous-setState rule is a false positive here.
-    if (hasCheckoutCookie()) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      void refresh();
-      return;
-    }
-    if (isLoading) return;
-    if (!isAuthenticated) {
-      setState({ kind: "guest" });
-      return;
-    }
-    void refresh();
-  }, [isAuthenticated, isLoading, refresh]);
+  // Resolve the session once on mount. refresh() may setState synchronously
+  // (the guest short-circuit), which is the intended one-shot resolution.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => void refresh(), [refresh]);
 
   // Resolve admin status from the server (authoritative — it re-verifies the
-  // access token's role claim). Only authenticated Auth0 sessions can be admin;
-  // the post-checkout cookie session never is, so skip the call for it.
+  // session's role). Only a member session can be admin.
   useEffect(() => {
-    if (isLoading) return;
-    if (!isAuthenticated) {
-      // Resetting to the known guest state on sign-out; not a cascading render.
+    if (state.kind === "loading") return;
+    if (state.kind === "guest") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setAdmin({ loading: false, isAdmin: false });
       return;
     }
     let cancelled = false;
+    setAdmin({ loading: true, isAdmin: false });
     void fetchAdminMe().then((r) => {
       if (!cancelled) setAdmin({ loading: false, isAdmin: r.isAdmin });
     });
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, isLoading]);
+  }, [state]);
 
-  // Tie analytics/error identity to the auth lifecycle. /api/me returns the
-  // authoritative tier (SC presence wins over a stale JWT claim).
+  // Tie analytics/error identity to the auth lifecycle.
   useEffect(() => {
     if (state.kind === "member") {
       identifyUser({
-        id: user?.sub ?? state.me.email,
+        id: state.me.email,
         email: state.me.email,
         tier: state.me.tier,
       });
     } else if (state.kind === "guest") {
       resetIdentity();
     }
-  }, [state, user]);
+  }, [state]);
+
+  const signIn = useCallback((returnTo?: string, opts?: SignInOpts) => {
+    const params = new URLSearchParams();
+    params.set(
+      "returnTo",
+      returnTo ?? window.location.pathname + window.location.search,
+    );
+    if (opts?.signup) params.set("screen_hint", "signup");
+    if (opts?.loginHint) params.set("login_hint", opts.loginHint);
+    window.location.assign(`/api/auth/login?${params.toString()}`);
+  }, []);
 
   const signOut = useCallback(() => {
-    // Clear the server-set checkout cookies before Auth0 takes over the tab.
-    // Fire-and-forget; the Auth0 redirect happens regardless.
-    void fetch("/api/signout", { method: "POST", credentials: "include" });
-    logout({ logoutParams: { returnTo: window.location.origin } });
-  }, [logout]);
+    // The server route clears both session cookies and ends the Auth0 SSO
+    // session before returning to the app origin.
+    window.location.assign("/api/auth/logout");
+  }, []);
 
   return (
     <SubscriberAuthContext.Provider
@@ -157,6 +131,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
         state,
         refresh,
         authError,
+        signIn,
         signOut,
         isAdmin: admin.isAdmin,
         adminLoading: admin.loading,

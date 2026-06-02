@@ -12,7 +12,7 @@ import {
   newsletterSlugForReader,
 } from "../../data/newsletters";
 import { fetchMe } from "../../lib/auth";
-import { getToken } from "../../lib/tokenStore";
+import { hasAnySession } from "../../lib/tokenStore";
 import { getPublication } from "../../lib/beehiiv";
 import { sourceFor } from "../../lib/newsletterSources";
 import { newsletterCommentUrl } from "../../lib/circle";
@@ -28,14 +28,14 @@ export const Route = createFileRoute("/newsletters/$post")({
     }
   },
   loader: async () => {
-    const token = await getToken();
     // Tier hint only — the page re-derives membership from useSubscriberAuth and
     // invalidates. A failed /api/me shouldn't break the post, so fall back to
-    // the free reader on error rather than letting the loader reject.
+    // the free reader on error rather than letting the loader reject. Skip the
+    // call entirely for guests (no session cookie) to avoid a guaranteed 401.
     let me = null;
-    if (token) {
+    if (hasAnySession()) {
       try {
-        me = await fetchMe({ accessToken: token });
+        me = await fetchMe();
       } catch {
         me = null;
       }
