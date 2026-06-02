@@ -11,7 +11,7 @@ import {
 import { getPublication, subscribeEmail } from "../../lib/beehiiv";
 import { sourceFor } from "../../lib/newsletterSources";
 import { useNewsletterSubscription } from "../../lib/useNewsletterSubscription";
-import { useSubscriberAuth } from "../../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 
 export const Route = createFileRoute("/newsletters/")({
   component: NewslettersPage,
@@ -38,32 +38,57 @@ function NewslettersPage() {
   // Navigate instantly, then fetch client-side so there's no loader stall.
   // Which newsletter to show is derived from the auth tier, so we wait for auth
   // to settle before fetching — members land directly on the Ark+ slug instead
-  // of fetching the free one and refetching. The data is null until it arrives,
-  // which drives the loading state below.
-  const [data, setData] = useState<
-    { pub: Newsletter; posts: NewsletterPost[] } | null
-  >(null);
+  // of fetching the free one and refetching. Stays "loading" until the fetch
+  // resolves; a missing publication or a thrown fetch lands on "error" so the
+  // page can't spin forever.
+  const [load, setLoad] = useState<
+    | { status: "loading" }
+    | { status: "ok"; pub: Newsletter; posts: NewsletterPost[] }
+    | { status: "error" }
+  >({ status: "loading" });
 
   const tierResolved = state.kind !== "loading";
-  const wantsMembersLetter =
-    state.kind === "member" && state.me.tier === "ark-plus-member";
+  const wantsMembersLetter = isArkPlusMember(state);
 
   useEffect(() => {
     if (!tierResolved) return;
     let alive = true;
     const slug = newsletterSlugForReader(wantsMembersLetter);
     void (async () => {
-      const pub = await getPublication(slug);
-      if (!pub || !alive) return;
-      const posts = await sourceFor(slug).listPosts(slug);
-      if (alive) setData({ pub, posts });
+      try {
+        const pub = await getPublication(slug);
+        if (!alive) return;
+        if (!pub) {
+          setLoad({ status: "error" });
+          return;
+        }
+        const posts = await sourceFor(slug).listPosts(slug);
+        if (alive) setLoad({ status: "ok", pub, posts });
+      } catch {
+        if (alive) setLoad({ status: "error" });
+      }
     })();
     return () => {
       alive = false;
     };
   }, [tierResolved, wantsMembersLetter]);
 
-  if (!data) {
+  if (load.status === "error") {
+    return (
+      <PageShell breadcrumbs={breadcrumbs} title="Newsletters">
+        <section>
+          <div className="page-gutter py-10 sm:py-12">
+            <p className="text-body-sm">
+              We couldn&rsquo;t load the newsletter right now. Please refresh to
+              try again.
+            </p>
+          </div>
+        </section>
+      </PageShell>
+    );
+  }
+
+  if (load.status === "loading") {
     return (
       <PageShell breadcrumbs={breadcrumbs} title="Newsletters">
         <section>
@@ -75,7 +100,7 @@ function NewslettersPage() {
     );
   }
 
-  const { pub, posts } = data;
+  const { pub, posts } = load;
 
   // Guests see signup. Ark-daily: hide the email form when Beehiiv says you're
   // on the list. Members letter: hide the Ark+ CTA for subscribers (JWT tier).
