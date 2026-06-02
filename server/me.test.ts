@@ -59,7 +59,7 @@ const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'http://localhost:5173',
   SC_NETWORK_ID: 'test-net',
   SC_API_KEY: 'test-sc-key',
-  CHECKOUT_SESSION_SECRET: 'checkout-secret-for-tests',
+  CHECKOUT_SESSION_SECRET: 'checkout-secret-for-tests-0123456789',
   SESSION_SECRET: 'session-secret-for-tests-32-chars__',
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,

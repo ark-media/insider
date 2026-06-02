@@ -102,8 +102,17 @@ export async function verifyAuth0BearerProfile(
 // (checkout, session, and the OAuth transaction all sign/verify the same way,
 // differing only in issuer/audience/TTL/payload.)
 
+// All first-party tokens (session w/ admin roles, checkout, OAuth txn) are
+// HS256-signed with this key, so a short/low-entropy secret is forgeable —
+// a forged `ark_session` with roles:['admin'] is a full back-office takeover.
+// Enforce a 32-byte floor at both sign and verify time (verify swallows the
+// throw and fails closed; signing surfaces it loudly at mint time).
 function hmacKey(secret: string): Uint8Array {
-  return new TextEncoder().encode(secret)
+  const key = new TextEncoder().encode(secret)
+  if (key.length < 32) {
+    throw new Error('HS256 secret must be at least 32 bytes')
+  }
+  return key
 }
 
 function signHs256(

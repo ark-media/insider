@@ -40,14 +40,24 @@ import {
 } from '../lib/session.js'
 import type { Deps, Route } from '../lib/route.js'
 
-// Only same-origin, absolute-path returnTo values are honored — never a
-// protocol-relative ("//evil.com") or absolute URL, which would turn the
-// login redirect into an open redirect.
-function safeReturnTo(raw: string | null | undefined): string {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) {
+// Only same-origin returnTo values are honored — never a protocol-relative
+// ("//evil.com"), backslash, encoded, or absolute URL, which would turn the
+// login redirect into an open redirect. Resolve against our own origin and
+// keep only the path/query/hash; anything that lands on another origin (or
+// won't parse) falls back to "/". This authoritative parse replaces the older
+// prefix-matching, which enumerated cases the browser could still normalize.
+export function safeReturnTo(
+  raw: string | null | undefined,
+  appBaseUrl: string,
+): string {
+  if (!raw) return '/'
+  try {
+    const u = new URL(raw, appBaseUrl)
+    if (u.origin !== new URL(appBaseUrl).origin) return '/'
+    return u.pathname + u.search + u.hash
+  } catch {
     return '/'
   }
-  return raw
 }
 
 function redirect(res: import('node:http').ServerResponse, location: string): void {
@@ -209,7 +219,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
       path: '/api/auth/login',
       handler: async (req, res) => {
         const url = new URL(req.url ?? '/', appBaseUrl)
-        const returnTo = safeReturnTo(url.searchParams.get('returnTo'))
+        const returnTo = safeReturnTo(url.searchParams.get('returnTo'), appBaseUrl)
         const screenHint = url.searchParams.get('screen_hint')
         const loginHint = url.searchParams.get('login_hint')
 
@@ -292,7 +302,9 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           tier: profile.tier,
         }
         setSessionCookies(res, await signSessionToken(session, env), env)
-        redirect(res, txn.returnTo)
+        // Re-validate defensively: the txn is signed, but this keeps the
+        // open-redirect guard at the actual redirect site too.
+        redirect(res, safeReturnTo(txn.returnTo, appBaseUrl))
       },
     },
 
@@ -301,11 +313,18 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
       handler: async (req, res) => {
         // Logout must stay a top-level GET (it redirects through Auth0's
         // /v2/logout), so it can't use the Origin-based CSRF check. Block the
-        // forced-logout vector instead: a cross-site navigation (e.g. an
-        // attacker's <img>/link) carries Sec-Fetch-Site: cross-site. A genuine
-        // in-app sign-out is a same-origin navigation; older browsers omit the
-        // header and are allowed through.
-        if (req.headers['sec-fetch-site'] === 'cross-site') {
+        // forced-logout vector instead. A genuine in-app sign-out is a
+        // same-origin, top-level navigation (Sec-Fetch-Dest: document). An
+        // attacker's <img>/<script>/fetch carries either a cross-site
+        // Sec-Fetch-Site or a non-document Sec-Fetch-Dest; rejecting both stops
+        // the response's cookie-clearing Set-Cookie from firing on a
+        // sub-resource load. Browsers that omit these headers pass through.
+        const fetchSite = req.headers['sec-fetch-site']
+        const fetchDest = req.headers['sec-fetch-dest']
+        if (
+          fetchSite === 'cross-site' ||
+          (typeof fetchDest === 'string' && fetchDest !== 'document')
+        ) {
           return redirect(res, appBaseUrl)
         }
         clearSessionCookies(res, env)

@@ -15,7 +15,7 @@ import { silenceExpectedConsole } from '../test-utils.js'
 
 // A post-checkout session secret + a request carrying a valid member cookie,
 // used to pass the community-feed subscriber gate without an Auth0 round trip.
-const MEMBER_ENV = { CIRCLE_ADMIN_API_TOKEN: 't', CHECKOUT_SESSION_SECRET: 'test-secret' }
+const MEMBER_ENV = { CIRCLE_ADMIN_API_TOKEN: 't', CHECKOUT_SESSION_SECRET: 'test-secret-0123456789abcdef0123456789' }
 async function makeMemberReq(path: string): Promise<IncomingMessage> {
   const token = await signCheckoutToken('member@example.com', MEMBER_ENV)
   const req = makeReq(path, '')

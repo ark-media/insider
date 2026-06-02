@@ -5,7 +5,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { authRoutes } from './auth'
+import { authRoutes, safeReturnTo } from './auth'
 import type { Deps, Handler } from '../lib/route.js'
 import { AUTH_TXN_COOKIE_NAME, SESSION_COOKIE_NAME } from '../lib/cookies'
 
@@ -115,6 +115,53 @@ describe('GET /api/auth/logout', () => {
     expect(res.getHeader('Location')).toBe(APP)
     // No cookies cleared — the forced logout is a no-op.
     expect(res.getHeader('Set-Cookie')).toBeUndefined()
+  })
+
+  test('ignores a sub-resource logout (non-document dest) without clearing cookies', async () => {
+    const res = makeRes()
+    await route(CONFIGURED, '/api/auth/logout')(
+      makeReq({ url: '/api/auth/logout', headers: { 'sec-fetch-dest': 'image' } }),
+      res,
+    )
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Location')).toBe(APP)
+    // An attacker's <img src=.../logout> must not trigger the cookie-clear.
+    expect(res.getHeader('Set-Cookie')).toBeUndefined()
+  })
+
+  test('allows a same-origin top-level navigation (document dest)', async () => {
+    const res = makeRes()
+    await route(CONFIGURED, '/api/auth/logout')(
+      makeReq({
+        url: '/api/auth/logout',
+        headers: { 'sec-fetch-site': 'same-origin', 'sec-fetch-dest': 'document' },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Set-Cookie')).toBeDefined()
+  })
+})
+
+describe('safeReturnTo', () => {
+  test('keeps a same-origin absolute path (with query + hash)', () => {
+    expect(safeReturnTo('/account', APP)).toBe('/account')
+    expect(safeReturnTo('/account?tab=billing#x', APP)).toBe('/account?tab=billing#x')
+    expect(safeReturnTo(`${APP}/setup`, APP)).toBe('/setup')
+  })
+
+  test('falls back to "/" for empty/missing input', () => {
+    expect(safeReturnTo(null, APP)).toBe('/')
+    expect(safeReturnTo(undefined, APP)).toBe('/')
+    expect(safeReturnTo('', APP)).toBe('/')
+  })
+
+  test('rejects cross-origin and scheme-changing redirects', () => {
+    expect(safeReturnTo('//evil.com', APP)).toBe('/')
+    expect(safeReturnTo('/\\evil.com', APP)).toBe('/')
+    expect(safeReturnTo('https://evil.com/path', APP)).toBe('/')
+    expect(safeReturnTo('http://evil.com', APP)).toBe('/')
+    expect(safeReturnTo('javascript:alert(1)', APP)).toBe('/')
   })
 })
 
