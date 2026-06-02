@@ -148,48 +148,52 @@ function NewsletterPrefsForm({ me }: { me: { email: string; tier: "ark-plus-memb
     >
       <section>
       <div className="page-gutter pt-10 pb-12">
-        <div className="max-w-xl">
-          <div className="border border-rule bg-navy-800/40 p-6 sm:p-8">
-            {loading ? (
-              <PrefSkeleton />
-            ) : loadError ? (
-              <PrefError
-                message={loadError}
-                onRetry={() => {
-                  void loadPrefs().finally(() => setLoading(false));
-                }}
-              />
-            ) : isMember ? (
-              <PrefRow
-                label="Members letter"
-                title="The Ark+ Members Letter"
-                description="A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading. Turning off keeps you on the free newsletter."
-                cadence="Weekly"
-                badge="Ark+"
-                on={on}
-                onToggle={() => void onToggle()}
-                busy={saving}
-              />
-            ) : (
-              <PrefRow
-                label="Free newsletter"
-                title="The Ark Media Newsletter"
-                description="Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead. Toggling off stops all Ark Media emails."
-                cadence="Weekly"
-                on={on}
-                onToggle={() => void onToggle()}
-                busy={saving}
-              />
-            )}
+        <div className={isMember ? "" : "max-w-xl"}>
+          <div className={isMember ? "grid items-stretch gap-6 sm:grid-cols-2" : ""}>
+            <div className="flex flex-col">
+              <div className="flex flex-1 flex-col border border-rule bg-navy-800/40 p-6 sm:p-8">
+                {loading ? (
+                  <PrefSkeleton />
+                ) : loadError ? (
+                  <PrefError
+                    message={loadError}
+                    onRetry={() => {
+                      void loadPrefs().finally(() => setLoading(false));
+                    }}
+                  />
+                ) : isMember ? (
+                  <PrefRow
+                    label="Members letter"
+                    title="The Ark+ Members Letter"
+                    description="A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading. Turning off keeps you on the free newsletter."
+                    cadence="Weekly"
+                    badge="Ark+"
+                    on={on}
+                    onToggle={() => void onToggle()}
+                    busy={saving}
+                  />
+                ) : (
+                  <PrefRow
+                    label="Free newsletter"
+                    title="The Ark Media Newsletter"
+                    description="Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead. Toggling off stops all Ark Media emails."
+                    cadence="Weekly"
+                    on={on}
+                    onToggle={() => void onToggle()}
+                    busy={saving}
+                  />
+                )}
+              </div>
+
+              {error ? (
+                <p className="mt-4 text-body-sm text-red-400" role="alert">
+                  {error}
+                </p>
+              ) : null}
+            </div>
+
+            {isMember ? <NotificationsSection /> : null}
           </div>
-
-          {error ? (
-            <p className="mt-4 text-body-sm text-red-400" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          {isMember ? <NotificationsSection /> : null}
         </div>
       </div>
       </section>
@@ -266,7 +270,7 @@ function NotificationsSection() {
   };
 
   return (
-    <div className="mt-8 border border-rule bg-navy-800/40 p-6 sm:p-8">
+    <div className="flex h-full flex-col border border-rule bg-navy-800/40 p-6 sm:p-8">
       <p className="label text-cyan">Notifications</p>
       <h2 className="mt-5 font-display text-[1.125rem] leading-snug text-fg-strong sm:text-[1.25rem]">
         New content alerts
@@ -402,31 +406,29 @@ function PrefRow({
   busy?: boolean;
 }) {
   return (
-    <div>
-      <p className="label text-cyan">
-        {label}
-      </p>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between gap-3">
+        <p className="label text-cyan">
+          {label}
+        </p>
+        {badge ? (
+          <span className="shrink-0 border border-cyan/60 px-2 py-0.5 label text-cyan">
+            {badge}
+          </span>
+        ) : null}
+      </div>
 
       <div className="mt-5 flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h2 className="font-display text-[1.125rem] leading-snug text-fg-strong sm:text-[1.25rem]">
-              {title}
-            </h2>
-            {badge ? (
-              <span className="border border-cyan/60 px-2 py-0.5 label text-cyan">
-                {badge}
-              </span>
-            ) : null}
-          </div>
-        </div>
+        <h2 className="min-w-0 flex-1 font-display text-[1.125rem] leading-snug text-fg-strong sm:text-[1.25rem]">
+          {title}
+        </h2>
         <Toggle on={on} onClick={onToggle} busy={busy} />
       </div>
 
       <p className="mt-3 text-body-sm">
         {description}
       </p>
-      <p className="mt-3 label text-fg-faint">
+      <p className="mt-auto pt-6 label text-fg-faint">
         {cadence}
       </p>
     </div>
