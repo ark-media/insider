@@ -127,6 +127,7 @@ function SubscriberCommunity() {
     <PageShell
       title="Welcome back to the room."
       lede="What's live, what's happening, and what the community is talking about right now. Jump in — every conversation continues in the app."
+      aside={<CommunityAppLinks />}
     >
       {status === "error" ? (
         <section>
@@ -160,37 +161,7 @@ function SubscriberCommunity() {
           </div>
         </section>
       )}
-
-      <OpenInAppCard />
     </PageShell>
-  );
-}
-
-/** Persistent "Open in app" card — the home of all engagement is the app. */
-function OpenInAppCard() {
-  return (
-    <section>
-      <div className="page-gutter pb-16">
-        <div className="border border-rule bg-navy-800/40 p-8 sm:p-12">
-          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
-            <div className="lg:col-span-7">
-              <h2 className="max-w-xl">
-                <span className="display-upright block text-[clamp(1.6rem,3.2vw,2.4rem)] text-fg-strong">
-                  Your community, wherever you are.
-                </span>
-              </h2>
-              <p className="mt-6 max-w-xl text-body-sm">
-                Like, reply, post, and RSVP in the Community app — iOS, Android,
-                or the web.
-              </p>
-            </div>
-            <div className="lg:col-span-5">
-              <CommunityAppLinks />
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -199,6 +170,7 @@ function MarketingShowcase() {
     <PageShell
       title="The room behind the show — in the app."
       lede="Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web."
+      aside={<CommunityAppLinks />}
     >
       <section>
         <div className="page-gutter flex flex-col gap-12 py-12 sm:py-16">

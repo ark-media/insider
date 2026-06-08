@@ -59,7 +59,6 @@ const NAV_ITEMS: NavItem[] = [
     // non-subscribers in place of the members-only Community app links.
     children: [
       { label: "Upcoming Events", to: "/events" },
-      { label: "Gift Ark+", to: "/plus/gift" },
     ],
   },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },

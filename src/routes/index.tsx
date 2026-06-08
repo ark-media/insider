@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { CommunityAppLinks } from "../components/CommunityAppLinks";
 import { useEffect, useState, type ReactNode } from "react";
 import { shows, getShow, type ShowSlug } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
@@ -428,8 +429,17 @@ function AlsoFromArkMedia() {
         title="In the room."
         body="Nadav, Amit and Tal in conversation with members — in the Community app."
         visual={<CommunityVisual />}
-        cta="Learn more"
-        to="/community"
+        action={
+          <div className="flex flex-col gap-5">
+            <CommunityAppLinks />
+            <Link
+              to="/community"
+              className="inline-flex w-fit items-center gap-2 button-text font-display font-bold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Learn more →
+            </Link>
+          </div>
+        }
         flip
       />
       <FeatureBand
@@ -482,16 +492,10 @@ function HomePage() {
                 style={{ animationDelay: "0.78s" }}
               >
                 <Link
-                  to="/podcasts"
+                  to={isSubscriber ? "/community" : "/plus"}
                   className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
-                  Explore podcasts →
-                </Link>
-                <Link
-                  to={isSubscriber ? "/community" : "/plus"}
-                  className="inline-flex min-h-12 items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  {isSubscriber ? "Explore community" : "Become an Ark+ member"}
+                  Become an Ark+ member →
                 </Link>
               </div>
             </div>

@@ -11,7 +11,7 @@ export function CommunityAppLinks({ className }: { className?: string }) {
     // Two store badges on top, then a full-width "Open in browser" bar that
     // stretches to match the badges' combined width — reads as one tidy block
     // rather than three buttons of mismatched width.
-    <div className={`inline-flex flex-col gap-3 ${className ?? ""}`}>
+    <div className={`inline-flex w-fit flex-col gap-3 ${className ?? ""}`}>
       <div className="flex flex-wrap gap-3">
         <BadgeLink
           href={CIRCLE_OPEN_LINKS.ios}

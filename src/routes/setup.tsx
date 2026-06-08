@@ -4,7 +4,6 @@ import { SetupFlow } from "../components/SetupFlow";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createFileRoute("/setup")({
-  staticData: { chromeless: true },
   component: SetupPage,
 });
 

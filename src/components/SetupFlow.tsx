@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
 import QRCode from "qrcode";
-import { ArkLogo } from "./ArkLogo";
+import { Breadcrumbs } from "./Breadcrumbs";
 import {
   ApplePodcastsIcon,
   DowncastIcon,
@@ -11,12 +10,10 @@ import {
   YouTubeIcon,
 } from "./PlatformIcons";
 import {
-  cancelSubscription,
   sendSetupSms,
   type Me,
   type UserFeed,
 } from "../lib/auth";
-import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Device = "phone" | "computer";
 
@@ -146,37 +143,12 @@ function feedAppUrl(feed: UserFeed | null, scApp: string | undefined): string {
 }
 
 export function SetupFlow({ me }: { me: Me }) {
-  const { signOut } = useSubscriberAuth();
   const feed = me.feeds[0] ?? null;
   const feedUrl = feed?.url ?? "";
 
   const [device, setDevice] = useState<Device | null>(null);
   const [appKey, setAppKey] = useState<AppKey | null>(null);
   const [copied, setCopied] = useState(false);
-
-  const [cancelState, setCancelState] = useState<
-    "idle" | "confirming" | "cancelling" | "cancelled" | "error"
-  >("idle");
-  const [accessUntil, setAccessUntil] = useState<string | null>(null);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-
-  const handleCancel = async () => {
-    if (cancelState === "cancelling") return;
-    setCancelState("cancelling");
-    try {
-      const result = await cancelSubscription();
-      if (result.ok) {
-        setCancelState("cancelled");
-        setAccessUntil(result.access_until ?? null);
-      } else {
-        setCancelState("error");
-        setCancelError(result.error ?? "Something went wrong.");
-      }
-    } catch {
-      setCancelState("error");
-      setCancelError("Could not reach the server. Please try again.");
-    }
-  };
 
   // On small screens, skip the device question (per mobile Figma)
   useEffect(() => {
@@ -274,46 +246,16 @@ export function SetupFlow({ me }: { me: Me }) {
     : "";
 
   return (
-    <div className="ark-bg grain-overlay min-h-dvh text-fg-strong">
-      {/* Dateline bar */}
-      <div className="border-b border-rule-soft bg-navy-900">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-6 py-2 label font-medium text-fg-muted sm:px-10">
-          <span className="hidden sm:inline">Vol. I · No. 214</span>
-          <span className="flex items-center gap-2">
-            <span className="live-dot inline-block size-1.5 rounded-full bg-cyan" />
-            Setup · Step {appKey ? "3" : device ? "2" : "1"} of 3
-          </span>
-          <span className="hidden text-cyan sm:inline">Subscriber Edition</span>
-        </div>
-      </div>
-
-      {/* Header */}
-      <header className="mx-auto flex max-w-[1280px] items-center justify-between px-6 pt-6 pb-4 sm:px-10 sm:pt-8">
-        <Link to="/" className="flex items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan">
-          <ArkLogo height={60} />
-          <span className="ml-2 hidden h-4 w-px bg-rule-strong sm:inline-block" />
-          <span className="ml-2 label hidden font-medium tracking-eyebrow text-cyan sm:inline">
-            The Insider
-          </span>
-        </Link>
-        <div className="flex min-w-0 items-center gap-6 text-body-sm text-fg">
-          <span className="hidden min-w-0 max-w-[260px] truncate sm:inline-block">
-            Signed in as{" "}
-            <span className="text-fg-strong" title={me.email}>
-              {me.email}
-            </span>
-          </span>
-          <button
-            type="button"
-            onClick={signOut}
-            className="shrink-0 underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-[1040px] px-6 pb-24 pt-6 sm:px-10 sm:pb-28">
+    <main className="relative text-fg-strong">
+      <div className="mx-auto max-w-[1040px] px-6 pb-24 pt-8 sm:px-10 sm:pb-28">
+        <Breadcrumbs
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Account", to: "/account" },
+            { label: "Podcast feed" },
+          ]}
+          className="mb-10"
+        />
         {/* Masthead row */}
         <div className="rise rise-1 flex flex-col items-start gap-6 sm:flex-row sm:items-end sm:gap-8">
           <div
@@ -529,86 +471,8 @@ export function SetupFlow({ me }: { me: Me }) {
             </div>
           ) : null}
         </Section>
-
-        {/* Cancel subscription */}
-        <div className="mt-20 border-t border-rule-soft pt-10">
-          {cancelState === "idle" ? (
-            <button
-              type="button"
-              onClick={() => setCancelState("confirming")}
-              className="text-body-sm underline decoration-rule-strong underline-offset-[6px] transition hover:text-danger hover:decoration-danger/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-            >
-              Cancel my subscription
-            </button>
-          ) : null}
-
-          {cancelState === "confirming" ? (
-            <div className="max-w-md space-y-4">
-              <p className="text-body-sm text-fg">
-                Are you sure you want to cancel? You'll keep access until the
-                end of your current billing period.
-              </p>
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="button-text bg-danger px-5 py-2.5 font-display font-bold tracking-cta text-navy transition hover:bg-danger-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Yes, cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCancelState("idle")}
-                  className="text-body-sm underline decoration-rule-strong underline-offset-[6px] transition hover:text-fg-strong hover:decoration-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Never mind
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {cancelState === "cancelling" ? (
-            <p className="text-body-sm">Cancelling...</p>
-          ) : null}
-
-          {cancelState === "cancelled" ? (
-            <div className="max-w-md space-y-2">
-              <p className="text-body-sm text-fg">
-                Your subscription has been cancelled.
-                {accessUntil ? (
-                  <>
-                    {" "}You'll have access until{" "}
-                    <span className="text-fg-strong">
-                      {new Date(accessUntil).toLocaleDateString(undefined, {
-                        month: "long",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </span>
-                    .
-                  </>
-                ) : null}
-              </p>
-            </div>
-          ) : null}
-
-          {cancelState === "error" ? (
-            <div className="max-w-md space-y-3">
-              <p className="text-body-sm text-danger">
-                {cancelError}
-              </p>
-              <button
-                type="button"
-                onClick={() => setCancelState("idle")}
-                className="text-body-sm underline decoration-current underline-offset-[6px] transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-              >
-                Try again
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }
 
