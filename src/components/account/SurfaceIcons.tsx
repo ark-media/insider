@@ -1,8 +1,7 @@
 // Single-color line glyphs for the three member surfaces (Podcast, Newsletter,
 // Community). Stroked in currentColor — unlike the multi-color brand marks in
 // PlatformIcons — so they inherit the cyan/fg color of whatever wraps them.
-// Used by the account dashboard's three surface cards, and by the
-// /account/option-stacked reference layout (no direct link).
+// Used by the account dashboard's three member surface rows.
 const DEFAULT_ICON_CLASS = "h-6 w-6 shrink-0";
 
 type IconProps = { className?: string };

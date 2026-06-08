@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { PageShell } from "../components/PageShell";
 import { ContentError } from "../components/ContentError";
 import {
-  CIRCLE_OPEN_LINKS,
   fetchActivityDigest,
   fetchCommunityFeed,
   fetchEventStrip,
@@ -16,6 +15,7 @@ import {
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { CommunityFeed } from "../components/community/CommunityFeed";
 import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
+import { CommunityAppLinks } from "../components/CommunityAppLinks";
 
 export const Route = createFileRoute("/community")({
   component: CommunityPage,
@@ -185,15 +185,7 @@ function OpenInAppCard() {
               </p>
             </div>
             <div className="lg:col-span-5">
-              <div className="flex flex-col gap-3">
-                <AppLink href={CIRCLE_OPEN_LINKS.ios} primary>
-                  Open on iOS
-                </AppLink>
-                <AppLink href={CIRCLE_OPEN_LINKS.android}>
-                  Open on Android
-                </AppLink>
-                <AppLink href={CIRCLE_OPEN_LINKS.web}>Open on web</AppLink>
-              </div>
+              <CommunityAppLinks />
             </div>
           </div>
         </div>
@@ -286,31 +278,6 @@ function MarketingShowcase() {
         </div>
       </section>
     </PageShell>
-  );
-}
-
-function AppLink({
-  href,
-  primary,
-  children,
-}: {
-  href: string;
-  primary?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer noopener"
-      className={
-        primary
-          ? "inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          : "inline-flex items-center justify-center border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      }
-    >
-      {children}
-    </a>
   );
 }
 

@@ -2,9 +2,9 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
-import { CIRCLE_OPEN_LINKS } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
+import { CommunityAppLinks } from "../../components/CommunityAppLinks";
 import {
   HeadphonesIcon,
   MailIcon,
@@ -72,8 +72,8 @@ function SubscriberDashboard({
     >
       <section>
         <div className="page-section">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <SurfaceCard
+          <div className="divide-y divide-rule">
+            <SurfaceRow
               icon={<HeadphonesIcon />}
               label="Podcast"
               title="Your private podcast feed"
@@ -81,7 +81,14 @@ function SubscriberDashboard({
               cta="Set up the feed"
               href="/account/podcast-feed"
             />
-            <SurfaceCard
+            <SurfaceRow
+              icon={<ChatIcon />}
+              label="Community"
+              title="The Ark+ community"
+              body="The community is the main event. Open it in the app — you're signed in here, so you'll be signed in there too."
+              slot={<CommunityAppLinks className="shrink-0" />}
+            />
+            <SurfaceRow
               icon={<MailIcon />}
               label="Newsletter"
               title="Newsletter preferences"
@@ -89,20 +96,9 @@ function SubscriberDashboard({
               cta="Manage newsletters"
               href="/account/newsletters"
             />
-            <SurfaceCard
-              icon={<ChatIcon />}
-              label="Community"
-              title="The Ark+ community"
-              body="The community is the main event. Open it in the app — you're signed in here, so you'll be signed in there too."
-              links={[
-                { label: "iOS", href: CIRCLE_OPEN_LINKS.ios },
-                { label: "Android", href: CIRCLE_OPEN_LINKS.android },
-                { label: "Web", href: CIRCLE_OPEN_LINKS.web },
-              ]}
-            />
           </div>
 
-          <div className="mt-10 flex flex-col gap-4 border-t border-rule pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-body-sm text-fg-muted">
               Signed in as <span className="text-fg">{email}</span> ·{" "}
               <Link
@@ -126,7 +122,7 @@ function SubscriberDashboard({
   );
 }
 
-function SurfaceCard({
+function SurfaceRow({
   icon,
   label,
   title,
@@ -134,7 +130,7 @@ function SurfaceCard({
   cta,
   href,
   external,
-  links,
+  slot,
 }: {
   icon: ReactNode;
   label: string;
@@ -143,41 +139,27 @@ function SurfaceCard({
   cta?: string;
   href?: string;
   external?: boolean;
-  // When provided, render one button per platform instead of a single CTA
-  // (used by the Community surface for its iOS / Android / Web open links).
-  links?: { label: string; href: string }[];
+  // When provided, render this custom action node instead of a single CTA
+  // (used by the Community surface for its App Store / Google Play / web links).
+  slot?: ReactNode;
 }) {
   const ctaCls =
-    "mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+    "inline-flex shrink-0 items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
   return (
-    <div className="flex flex-col border border-rule bg-navy-800/40 p-8">
-      <div className="flex items-center gap-3 text-cyan">
-        {icon}
-        <span className="label">{label}</span>
-      </div>
-      <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
-        {title}
-      </h2>
-      <p className="mt-4 flex-1 text-body-sm text-fg">{body}</p>
-      {links ? (
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {links.map((link, i) => (
-            <a
-              key={link.label}
-              href={link.href}
-              target="_blank"
-              rel="noreferrer noopener"
-              className={
-                i === 0
-                  ? "inline-flex min-h-12 items-center justify-center border border-cyan bg-cyan px-4 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  : "inline-flex min-h-12 items-center justify-center border border-rule-strong px-4 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-              }
-            >
-              {link.label}
-            </a>
-          ))}
+    <div className="flex flex-col gap-6 py-10 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
+      <div className="flex gap-5 sm:gap-6">
+        <div className="mt-1 text-cyan">{icon}</div>
+        <div>
+          <span className="label text-cyan">{label}</span>
+          <h2 className="mt-3 font-display text-[22px] leading-[1.15] text-fg-strong">
+            {title}
+          </h2>
+          <p className="mt-3 max-w-2xl text-body-sm text-fg">{body}</p>
         </div>
+      </div>
+      {slot ? (
+        slot
       ) : external ? (
         <a href={href} className={ctaCls} target="_blank" rel="noreferrer noopener">
           {cta} →

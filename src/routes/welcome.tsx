@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CIRCLE_OPEN_LINKS } from "../lib/circle";
+import type { ReactNode } from "react";
+import { CommunityAppLinks } from "../components/CommunityAppLinks";
 
 export const Route = createFileRoute("/welcome")({
   component: WelcomePage,
@@ -30,9 +31,7 @@ function WelcomePage() {
               n="01"
               title="Open the Ark+ community"
               body="Nadav, Amit and Tal are in the Community app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically."
-              cta="Install the Community app"
-              href={CIRCLE_OPEN_LINKS.ios}
-              external
+              slot={<CommunityAppLinks className="mt-6" />}
             />
             <WelcomeStep
               n="02"
@@ -73,13 +72,17 @@ function WelcomeStep({
   cta,
   href,
   external,
+  slot,
 }: {
   n: string;
   title: string;
   body: string;
-  cta: string;
-  href: string;
+  cta?: string;
+  href?: string;
   external?: boolean;
+  // When provided, render this custom action node instead of a single CTA
+  // (used by the community step for its App Store / Google Play / web links).
+  slot?: ReactNode;
 }) {
   const ctaCls =
     "mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
@@ -93,12 +96,14 @@ function WelcomeStep({
         {title}
       </h2>
       <p className="mt-4 text-body-sm text-fg">{body}</p>
-      {external ? (
+      {slot ? (
+        slot
+      ) : external ? (
         <a href={href} className={ctaCls} target="_blank" rel="noreferrer noopener">
           {cta} →
         </a>
       ) : (
-        <Link to={href} className={ctaCls}>
+        <Link to={href!} className={ctaCls}>
           {cta} →
         </Link>
       )}
