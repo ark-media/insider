@@ -6,6 +6,7 @@ export type HostSlug =
   | "yossi-klein-halevi"
   | "nadav-eyal"
   | "amit-segal"
+  | "tal-becker"
   | "yonatan-adiri"
   | "yael-wissner-levy"
   | "deborah-pardes";
@@ -93,6 +94,20 @@ export const hosts: Host[] = [
     shows: ["call-me-back", "inside-call-me-back"],
     initials: "AS",
     headshot: "/hosts/amit-segal.jpg",
+  },
+  {
+    // PLACEHOLDER bio (drawn from hartman.org.il/person/tal-becker) and no
+    // headshot yet — falls back to initials artwork. Both to be tweaked.
+    slug: "tal-becker",
+    name: "Tal Becker",
+    kind: "contributor",
+    role: "Call Me Back Contributor",
+    shortBio:
+      "Vice President at the Shalom Hartman Institute. Former Legal Adviser to Israel's Ministry of Foreign Affairs.",
+    longBio:
+      "Dr. Tal Becker is Vice President at the Shalom Hartman Institute, where he directs its educational initiatives on Israel and the Jewish world and is a lead faculty member of the iEngage Project. Previously, he served as Legal Adviser of the Israeli Ministry of Foreign Affairs and was a senior member of Israel's peace negotiation team, including a key role in negotiating the Abraham Accords with the UAE, Bahrain, and Morocco. He holds a doctorate from Columbia University and is the author of Terrorism and the State.",
+    shows: ["call-me-back", "inside-call-me-back"],
+    initials: "TB",
   },
   {
     slug: "yonatan-adiri",

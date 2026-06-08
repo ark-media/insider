@@ -495,7 +495,7 @@ function HomePage() {
                   to={isSubscriber ? "/community" : "/plus"}
                   className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
-                  Become an Ark+ member →
+                  {isSubscriber ? "Explore community" : "Become an Ark+ member"} →
                 </Link>
               </div>
             </div>
