@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { PageShell } from "../components/PageShell";
 import { ContentError } from "../components/ContentError";
@@ -212,43 +212,6 @@ function MarketingShowcase() {
         </div>
       </section>
 
-      <section>
-        <div className="page-gutter pb-16">
-          <div className="border border-rule bg-navy-800/40 p-8 sm:p-12">
-            <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
-              <div className="lg:col-span-7">
-                <h2 className="max-w-xl">
-                  <span className="display-upright block text-[clamp(1.6rem,3.2vw,2.4rem)] text-fg-strong">
-                    The community is open to Ark+ members.
-                  </span>
-                </h2>
-                <p className="mt-6 max-w-xl text-body-sm">
-                  One Ark+ membership is your way in — the same account opens the
-                  app on iOS, Android, and the web. No fragmented platforms, no
-                  separate password.
-                </p>
-              </div>
-              <div className="lg:col-span-5">
-                <div className="flex flex-col gap-3">
-                  <Link
-                    to="/plus"
-                    hash="pricing"
-                    className="inline-flex items-center justify-center border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  >
-                    Join Ark+
-                  </Link>
-                  <Link
-                    to="/plus/gift"
-                    className="inline-flex items-center justify-center border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  >
-                    Gift Ark+
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
     </PageShell>
   );
 }
