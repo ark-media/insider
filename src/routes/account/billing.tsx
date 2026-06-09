@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   acceptRetentionOffer,
   cancelSubscription,
@@ -62,6 +62,14 @@ function BillingPage() {
   // retry or decline without being dropped out of the flow.
   const [acceptError, setAcceptError] = useState<string | null>(null);
 
+  // Each step renders its own heading under this id; only one is mounted at a
+  // time, so a single ref tracks whichever is live.
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // The post-flow confirmation message (cancelled or saved). When the modal
+  // closes it replaces the trigger button, so the Modal's focus-restore lands
+  // on a detached node and falls to <body>; we move focus here instead.
+  const confirmationRef = useRef<HTMLParagraphElement>(null);
+
   const totalSteps = offerShown ? 3 : 2;
   const stepNumber =
     step === "offer" ? 1 : step === "reason" ? (offerShown ? 2 : 1) : offerShown ? 3 : 2;
@@ -77,6 +85,24 @@ function BillingPage() {
       void navigate({ to: "/plus" });
     }
   }, [state, authError, navigate]);
+
+  // Move focus to the heading on every step change so keyboard and screen-
+  // reader users land on (and hear) the new step instead of losing focus to
+  // <body> when the previous step's controls unmount. The heading is
+  // tabIndex={-1} so it takes programmatic focus without joining the tab order.
+  useEffect(() => {
+    if (!flowOpen) return;
+    headingRef.current?.focus();
+  }, [flowOpen, step]);
+
+  // After the flow closes on success, move focus to the confirmation message
+  // (a tabIndex={-1} target) so focus isn't stranded on <body> when the trigger
+  // button it would otherwise restore to has been unmounted.
+  useEffect(() => {
+    if (status.kind === "ok" || status.kind === "saved") {
+      confirmationRef.current?.focus();
+    }
+  }, [status.kind]);
 
   if (authError) {
     return (
@@ -217,14 +243,24 @@ function BillingPage() {
                 current billing period.
               </p>
               {status.kind === "ok" ? (
-                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
                   Cancellation confirmed.{" "}
                   {status.until
                     ? `Access continues until ${new Date(status.until).toLocaleDateString()}.`
                     : ""}
                 </p>
               ) : status.kind === "saved" ? (
-                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
                   You're all set — your membership continues with {status.headline}.
                   {status.nextChargeAt
                     ? ` Next charge on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
@@ -265,25 +301,29 @@ function BillingPage() {
         describedBy="cancel-step"
       >
         {step === "loading" ? (
-          <>
+          <div role="status" aria-live="polite">
             <p id="cancel-step" className="eyebrow">
               One moment
             </p>
             <h2
+              ref={headingRef}
+              tabIndex={-1}
               id="cancel-title"
-              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
             >
               Loading…
             </h2>
-          </>
+          </div>
         ) : step === "offer" && offer ? (
           <>
             <p id="cancel-step" className="eyebrow">
               Step {stepNumber} of {totalSteps}
             </p>
             <h2
+              ref={headingRef}
+              tabIndex={-1}
               id="cancel-title"
-              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
             >
               Wait — here's {offerHeadline(offer)}
             </h2>
@@ -301,6 +341,7 @@ function BillingPage() {
                 type="button"
                 onClick={onAccept}
                 disabled={status.kind === "applying"}
+                aria-busy={status.kind === "applying"}
                 className="inline-flex min-h-12 flex-1 items-center justify-center border border-cyan bg-cyan/10 px-4 text-sm font-semibold uppercase tracking-button text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
               >
                 {status.kind === "applying" ? "Applying…" : "Keep my discount"}
@@ -321,8 +362,10 @@ function BillingPage() {
               Step {stepNumber} of {totalSteps}
             </p>
             <h2
+              ref={headingRef}
+              tabIndex={-1}
               id="cancel-title"
-              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
             >
               We're sorry to see you go
             </h2>
@@ -388,8 +431,10 @@ function BillingPage() {
               Step {stepNumber} of {totalSteps}
             </p>
             <h2
+              ref={headingRef}
+              tabIndex={-1}
               id="cancel-title"
-              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
             >
               Cancel your Ark+ membership?
             </h2>
