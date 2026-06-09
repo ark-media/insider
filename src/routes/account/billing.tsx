@@ -58,6 +58,9 @@ function BillingPage() {
   const [offerShown, setOfferShown] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  // Inline error for a failed accept, shown on the Offer step so the member can
+  // retry or decline without being dropped out of the flow.
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const totalSteps = offerShown ? 3 : 2;
   const stepNumber =
@@ -105,6 +108,7 @@ function BillingPage() {
     setNote("");
     setOffer(null);
     setOfferShown(false);
+    setAcceptError(null);
     setStatus({ kind: "idle" });
     setStep("loading");
     setFlowOpen(true);
@@ -121,10 +125,13 @@ function BillingPage() {
   };
 
   const onAccept = async () => {
-    setFlowOpen(false);
+    // Keep the modal open on the Offer step while applying so a failure can
+    // surface inline; only close it once the discount is actually applied.
+    setAcceptError(null);
     setStatus({ kind: "applying" });
     const r = await acceptRetentionOffer();
     if (r.ok) {
+      setFlowOpen(false);
       setStatus({
         kind: "saved",
         headline: offerHeadline({
@@ -137,10 +144,11 @@ function BillingPage() {
       // Pending cancel was cleared server-side; resync the page's auth state.
       refresh();
     } else {
-      setStatus({
-        kind: "error",
-        message: r.error ?? "Could not apply your discount — please try again.",
-      });
+      // Stay on the Offer step; the member can retry or decline to Reason.
+      setStatus({ kind: "idle" });
+      setAcceptError(
+        r.error ?? "Could not apply your discount — please try again.",
+      );
     }
   };
 
@@ -283,18 +291,25 @@ function BillingPage() {
               Before you go: stay with Ark+ and we'll apply {offerHeadline(offer)}{" "}
               to your membership. Same access, lower price.
             </p>
+            {acceptError ? (
+              <p className="mt-4 text-body-sm text-danger" aria-live="polite">
+                {acceptError}
+              </p>
+            ) : null}
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
                 onClick={onAccept}
-                className="inline-flex min-h-12 flex-1 items-center justify-center border border-cyan bg-cyan/10 px-4 text-sm font-semibold uppercase tracking-button text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                disabled={status.kind === "applying"}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-cyan bg-cyan/10 px-4 text-sm font-semibold uppercase tracking-button text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
               >
-                Keep my discount
+                {status.kind === "applying" ? "Applying…" : "Keep my discount"}
               </button>
               <button
                 type="button"
                 onClick={() => setStep("reason")}
-                className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                disabled={status.kind === "applying"}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
               >
                 No thanks
               </button>

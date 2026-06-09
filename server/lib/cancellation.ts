@@ -17,9 +17,12 @@ export type CancellationSurveyInput = {
   couponId: string | null
 }
 
-// Insert one survey row. Returns the new id. Callers decide whether a failure
-// here is fatal — a cancel shouldn't be blocked by an analytics write, but an
-// accept must record its row (it's how eligibility burns).
+// Insert one survey row. Callers decide whether a failure here is fatal — a
+// cancel shouldn't be blocked by an analytics write, but an accept records the
+// row that burns eligibility. `on conflict do nothing` against the partial
+// unique index (migrations/0003) makes a duplicate 'accepted' row a no-op
+// rather than an error, so a raced double-accept can't throw; the arbiter only
+// covers accepted rows, so declined/not_offered inserts are unaffected.
 export async function insertCancellationSurvey(
   sql: Sql,
   input: CancellationSurveyInput,
@@ -32,7 +35,8 @@ export async function insertCancellationSurvey(
       ${input.note},
       ${input.offerOutcome},
       ${input.couponId}
-    )`
+    )
+    on conflict (email) where offer_outcome = 'accepted' do nothing`
 }
 
 // Has this email ever accepted a retention offer? Eligibility burns only on

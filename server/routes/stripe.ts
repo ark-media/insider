@@ -70,19 +70,26 @@ async function findOrCreateSubscriber(
 
 // Find the active subscription for an email across all its Stripe customers.
 // Checkout creates a Customer per session, so one email can map to several
-// (churn-then-resubscribe); scan them all rather than assuming one. Null when
+// (churn-then-resubscribe); scan them all rather than assuming one. The
+// per-customer lookups run concurrently (one email rarely has many customers,
+// but this keeps the cancel flow off a serial chain of round-trips). Null when
 // the email has no billing record or no active subscription.
+//
+// `status: 'active'` is deliberate: both the cancel and the retention offer
+// target a healthy live subscription. A delinquent (past_due/unpaid) or
+// trialing sub is intentionally not matched here — it's handled by Stripe's
+// own dunning/trial lifecycle, not this flow.
 async function findActiveSubscription(
   stripe: Stripe,
   email: string,
 ): Promise<Stripe.Subscription | null> {
   const customers = await stripe.customers.list({ email, limit: 100 })
-  for (const customer of customers.data) {
-    const subs = await stripe.subscriptions.list({
-      customer: customer.id,
-      status: 'active',
-      limit: 1,
-    })
+  const subLists = await Promise.all(
+    customers.data.map((customer) =>
+      stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 1 }),
+    ),
+  )
+  for (const subs of subLists) {
     if (subs.data[0]) return subs.data[0]
   }
   return null
@@ -185,6 +192,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               currency: 'usd',
               unit_amount: amountCents,
               recurring: { interval },
+              // Exclusive: the USD amount above is pre-tax and Stripe Tax adds
+              // tax on top at checkout. Required once automatic_tax is on — a
+              // price with no tax_behavior errors under automatic tax. The fixed
+              // STRIPE_PRICE_* prices carry this via their Dashboard config.
+              tax_behavior: 'exclusive',
               product_data: {
                 name: `Ark Insider — ${plan === 'monthly' ? 'Monthly' : 'Yearly'}`,
               },
@@ -230,6 +242,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // Stripe Dashboard (Settings → Adaptive Pricing) — this flag is inert
           // until that is enabled.
           adaptive_pricing: { enabled: true },
+          // Stripe Tax: compute and add tax on top of the (exclusive) price.
+          // For Checkout Sessions this also enables automatic_tax on the
+          // subscription Checkout creates — no separate subscriptions.create.
+          // Requires Stripe Tax to be active with registrations in the
+          // Dashboard, or session creation errors.
+          automatic_tax: { enabled: true },
+          // Persist the billing address the buyer enters (BillingAddressElement)
+          // back onto the pre-set Customer. Without this, Checkout rejects a new
+          // address for an attached customer — and Stripe Tax needs the address
+          // to determine the jurisdiction.
+          customer_update: { address: 'auto' },
           ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
           // Stamp the subscription so the existing webhook
           // (customer.subscription.created) activates SC + entitlement
@@ -343,7 +366,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         // Offered once per member, ever — eligibility burns on accept. A read
         // failure fails closed: better to skip the offer than hand a second one
-        // to someone who already accepted.
+        // to someone who already accepted. Skipped only when no DB is
+        // configured (preview env), where there's no place to burn eligibility.
         if (env.DATABASE_URL) {
           try {
             if (await hasAcceptedRetention(getDb(env), email)) {
@@ -390,15 +414,22 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const coupon = pickRetentionCoupon(await listActiveCoupons(stripe))
         if (!coupon) return json(409, { error: 'No retention offer available.' })
 
-        // Once-ever guard against a double-click: if a prior accepted row
-        // exists, skip the survey insert (no duplicate) but still (re)apply the
-        // discount — the discounts set is idempotent in effect.
-        let alreadyAccepted = false
+        // Once-ever guard: reject a repeat accept *before* touching Stripe.
+        // Re-applying a repeating coupon resets its discount window, so a
+        // member could otherwise renew a one-time save indefinitely by
+        // replaying this POST — the offer must burn on the first accept. A read
+        // failure fails closed (reject), matching the GET's posture; the DB
+        // unique index on accepted rows is the hard backstop against races.
+        // Skipped only when no DB is configured (preview env — no burn there).
         if (env.DATABASE_URL) {
+          let alreadyAccepted = true
           try {
             alreadyAccepted = await hasAcceptedRetention(getDb(env), email)
           } catch (err) {
             console.error('[stripe] retention accept eligibility check failed:', err)
+          }
+          if (alreadyAccepted) {
+            return json(409, { error: 'Retention offer already used.' })
           }
         }
 
@@ -407,7 +438,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           cancel_at_period_end: false,
         })
 
-        if (env.DATABASE_URL && !alreadyAccepted) {
+        if (env.DATABASE_URL) {
           try {
             await insertCancellationSurvey(getDb(env), {
               email,
@@ -417,8 +448,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               couponId: coupon.id,
             })
           } catch (err) {
-            // The discount is applied; losing the row only affects the
-            // once-ever guard + admin analytics. Log, don't fail the accept.
+            // The discount is applied; losing the row only affects admin
+            // analytics (the once-ever guard is backstopped by the DB unique
+            // index). Log, don't fail the accept.
             console.error('[stripe] retention accept survey write failed:', err)
           }
         }
