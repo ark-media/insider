@@ -107,6 +107,10 @@ export function giftRoutes({ stripe, appBaseUrl }: Deps): Route[] {
               price_data: {
                 currency: 'usd',
                 unit_amount: amountCents,
+                // Exclusive: the USD amount is pre-tax; Stripe Tax adds tax on
+                // top at checkout. Required once automatic_tax is on — an inline
+                // price with no tax_behavior errors under automatic tax.
+                tax_behavior: 'exclusive',
                 product_data: { name: `Ark Insider gift · ${termLabel}` },
               },
             },
@@ -117,6 +121,14 @@ export function giftRoutes({ stripe, appBaseUrl }: Deps): Route[] {
           // Stripe Dashboard (Settings → Adaptive Pricing) — this flag is inert
           // until that is enabled.
           adaptive_pricing: { enabled: true },
+          // Stripe Tax: compute and add tax on top of the (exclusive) price.
+          // Works for one-time payment-mode sessions too; the calculated tax
+          // appears in Tax Reports. Requires Stripe Tax active in the Dashboard.
+          automatic_tax: { enabled: true },
+          // Persist the billing address the giver enters (BillingAddressElement)
+          // back onto the pre-set Customer — required when a customer is
+          // attached, and it feeds the tax jurisdiction.
+          customer_update: { address: 'auto' },
           ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
           // Stamp the PaymentIntent so the existing webhook
           // (payment_intent.succeeded, kind:'gift') activates SC + entitlement

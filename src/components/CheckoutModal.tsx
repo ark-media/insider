@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
+  BillingAddressElement,
   CheckoutElementsProvider,
   CurrencySelectorElement,
   PaymentElement,
@@ -606,10 +607,17 @@ function CheckoutForm({
 
   const { checkout } = checkoutState;
   const intervalLabel = plan === "yearly" ? "year" : "month";
-  // Stripe-formatted, localized strings in the buyer's selected currency.
-  const total = checkout.total.total.amount; // after discount
-  const subtotal = checkout.total.subtotal.amount; // before discount
+  // Stripe-formatted, localized strings in the buyer's selected currency
+  // (Adaptive Pricing). Tax is exclusive, so `subtotal` is the pre-tax
+  // recurring list price, `taxExclusive` is the tax added on top, and `total`
+  // is the amount due today (subtotal − discount + tax). Tax is only known
+  // once the buyer enters a billing address, so the tax row appears reactively.
+  const subtotal = checkout.total.subtotal.amount; // pre-tax, pre-discount
+  const total = checkout.total.total.amount; // due today, incl. tax
   const hasDiscount = checkout.total.discount.minorUnitsAmount > 0;
+  const discount = checkout.total.discount.amount;
+  const hasTax = checkout.total.taxExclusive.minorUnitsAmount > 0;
+  const tax = checkout.total.taxExclusive.amount;
 
   const pay = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -653,12 +661,7 @@ function CheckoutForm({
   return (
     <>
       <h2 id="checkout-title" className={titleClass}>
-        {hasDiscount ? (
-          <span className="mr-2 align-middle text-[0.58em] font-sans font-normal text-fg-muted line-through">
-            {subtotal}
-          </span>
-        ) : null}
-        {total}{" "}
+        {subtotal}{" "}
         <span className="text-body-sm font-sans font-normal">
           / {intervalLabel}
         </span>
@@ -674,11 +677,30 @@ function CheckoutForm({
           </div>
         </div>
         <PaymentElement />
-        <div className="flex items-baseline justify-between border-t border-rule pt-3 text-sm">
-          <span className="text-fg-muted">Total</span>
-          <span className="font-semibold text-fg-strong">
-            {total} / {intervalLabel}
-          </span>
+        {/* Billing address powers Stripe Tax: the calculated tax updates the
+            totals below as soon as a usable address is entered. */}
+        <BillingAddressElement />
+        <div className="space-y-2 border-t border-rule pt-3 text-sm">
+          <div className="flex items-baseline justify-between">
+            <span className="text-fg-muted">Subtotal</span>
+            <span className="text-fg-strong">{subtotal}</span>
+          </div>
+          {hasDiscount ? (
+            <div className="flex items-baseline justify-between">
+              <span className="text-fg-muted">Discount</span>
+              <span className="text-fg-strong">−{discount}</span>
+            </div>
+          ) : null}
+          {hasTax ? (
+            <div className="flex items-baseline justify-between">
+              <span className="text-fg-muted">Tax</span>
+              <span className="text-fg-strong">{tax}</span>
+            </div>
+          ) : null}
+          <div className="flex items-baseline justify-between border-t border-rule pt-2">
+            <span className="text-fg-muted">Total due today</span>
+            <span className="font-semibold text-fg-strong">{total}</span>
+          </div>
         </div>
         {payError ? (
           <p role="alert" className="text-body-sm text-danger">

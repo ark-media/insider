@@ -357,6 +357,34 @@ describe('POST /api/stripe/create-checkout-session — session shape', () => {
     expect(args.customer).toBe('cus_new')
     expect(args.mode).toBe('subscription')
   })
+
+  test('enables Stripe Tax and lets Checkout persist the billing address', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
+    const args = lastSessionCreateArgs()
+    // automatic_tax on the session also turns on tax for the subscription
+    // Checkout creates — we never call subscriptions.create ourselves.
+    expect(args.automatic_tax).toEqual({ enabled: true })
+    // Required so the address entered via BillingAddressElement saves back to
+    // the pre-set Customer (and feeds the tax jurisdiction).
+    expect(args.customer_update).toEqual({ address: 'auto' })
+  })
+
+  test('dynamic (name-your-price) Price is created with exclusive tax behavior', async () => {
+    // A custom amount above the default forces prices.create (the fixed
+    // STRIPE_PRICE_* path is skipped), which must carry tax_behavior or Stripe
+    // rejects it under automatic tax.
+    const res = await post({
+      email: 'a@b.co',
+      plan: 'monthly',
+      custom_amount_cents: 1500,
+    })
+    expect(res.statusCode).toBe(200)
+    const priceCall = stripeCalls.find((c) => c.method === 'prices.create')
+    expect(priceCall).toBeTruthy()
+    const priceArgs = priceCall!.args[0] as Record<string, unknown>
+    expect(priceArgs.tax_behavior).toBe('exclusive')
+  })
 })
 
 describe('POST /api/stripe/create-checkout-session — rate limit', () => {

@@ -392,9 +392,16 @@ type SessionArgs = {
   ui_mode: string
   customer: string
   adaptive_pricing: { enabled: boolean }
+  automatic_tax: { enabled: boolean }
+  customer_update: { address: string }
   line_items: Array<{
     quantity: number
-    price_data: { currency: string; unit_amount: number; product_data: { name: string } }
+    price_data: {
+      currency: string
+      unit_amount: number
+      tax_behavior: string
+      product_data: { name: string }
+    }
   }>
   payment_intent_data: {
     receipt_email: string
@@ -454,9 +461,15 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     expect(args.ui_mode).toBe('elements')
     expect(args.customer).toBe('cus_new')
     expect(args.adaptive_pricing.enabled).toBe(true)
+    // Stripe Tax on the one-time gift session, with the address saved back to
+    // the pre-set customer (feeds the tax jurisdiction).
+    expect(args.automatic_tax).toEqual({ enabled: true })
+    expect(args.customer_update).toEqual({ address: 'auto' })
     expect(args.line_items[0].quantity).toBe(1)
     expect(args.line_items[0].price_data.currency).toBe('usd')
     expect(args.line_items[0].price_data.unit_amount).toBe(8000)
+    // Exclusive so Stripe Tax adds tax on top; required under automatic tax.
+    expect(args.line_items[0].price_data.tax_behavior).toBe('exclusive')
 
     // Gift metadata lives on the PaymentIntent (payment_intent_data) so the
     // existing payment_intent.succeeded webhook activates it unchanged.

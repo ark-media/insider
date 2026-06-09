@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
+  BillingAddressElement,
   CheckoutElementsProvider,
   CurrencySelectorElement,
   PaymentElement,
@@ -297,8 +298,17 @@ function GiftPaymentForm({
   }
 
   const { checkout } = checkoutState;
-  // Stripe-formatted, localized string in the giver's selected currency.
-  const total = checkout.total.total.amount;
+  // Stripe-formatted, localized strings in the giver's selected currency
+  // (Adaptive Pricing). Tax is exclusive: `subtotal` is the pre-tax gift price,
+  // `taxExclusive` is the tax added on top, and `total` is the amount due
+  // today. Tax is only known once a billing address is entered, so the tax row
+  // appears reactively.
+  const subtotal = checkout.total.subtotal.amount; // pre-tax, pre-discount
+  const total = checkout.total.total.amount; // due today, incl. tax
+  const hasDiscount = checkout.total.discount.minorUnitsAmount > 0;
+  const discount = checkout.total.discount.amount;
+  const hasTax = checkout.total.taxExclusive.minorUnitsAmount > 0;
+  const tax = checkout.total.taxExclusive.amount;
   const label = GIFT_LABEL[input.term];
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -334,7 +344,7 @@ function GiftPaymentForm({
   return (
     <>
       <h2 id="gift-title" className={titleClass}>
-        {total}{" "}
+        {subtotal}{" "}
         <span className="text-body-sm font-sans font-normal">
           · {label}
         </span>
@@ -347,6 +357,31 @@ function GiftPaymentForm({
           </div>
         </div>
         <PaymentElement />
+        {/* Billing address powers Stripe Tax: the calculated tax updates the
+            totals below as soon as a usable address is entered. */}
+        <BillingAddressElement />
+        <div className="space-y-2 border-t border-rule pt-3 text-sm">
+          <div className="flex items-baseline justify-between">
+            <span className="text-fg-muted">Subtotal</span>
+            <span className="text-fg-strong">{subtotal}</span>
+          </div>
+          {hasDiscount ? (
+            <div className="flex items-baseline justify-between">
+              <span className="text-fg-muted">Discount</span>
+              <span className="text-fg-strong">−{discount}</span>
+            </div>
+          ) : null}
+          {hasTax ? (
+            <div className="flex items-baseline justify-between">
+              <span className="text-fg-muted">Tax</span>
+              <span className="text-fg-strong">{tax}</span>
+            </div>
+          ) : null}
+          <div className="flex items-baseline justify-between border-t border-rule pt-2">
+            <span className="text-fg-muted">Total due today</span>
+            <span className="font-semibold text-fg-strong">{total}</span>
+          </div>
+        </div>
         <button
           type="submit"
           disabled={submitting}
