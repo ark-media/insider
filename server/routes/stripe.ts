@@ -17,6 +17,13 @@ import { AlreadySubscribedError } from '../lib/activation.js'
 import { emailForStripeCustomer, redactEmail, syncEntitlement } from '../entitlement.js'
 import { downgradeToFree, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
+import { hasAcceptedRetention, insertCancellationSurvey } from '../lib/cancellation.js'
+import { pickRetentionCoupon, toRetentionOffer } from '../lib/retention.js'
+import {
+  isCancelOfferOutcome,
+  isCancellationReason,
+  MAX_CANCELLATION_NOTE_LEN,
+} from '../../shared/cancellation.js'
 import { createScClient } from '../lib/sc-client.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import { getPlanPriceCents } from '../lib/pricing.js'
@@ -59,6 +66,26 @@ async function findOrCreateSubscriber(
     if (subs.data.length === 0) return c
   }
   return list.data[0]
+}
+
+// Find the active subscription for an email across all its Stripe customers.
+// Checkout creates a Customer per session, so one email can map to several
+// (churn-then-resubscribe); scan them all rather than assuming one. Null when
+// the email has no billing record or no active subscription.
+async function findActiveSubscription(
+  stripe: Stripe,
+  email: string,
+): Promise<Stripe.Subscription | null> {
+  const customers = await stripe.customers.list({ email, limit: 100 })
+  for (const customer of customers.data) {
+    const subs = await stripe.subscriptions.list({
+      customer: customer.id,
+      status: 'active',
+      limit: 1,
+    })
+    if (subs.data[0]) return subs.data[0]
+  }
+  return null
 }
 
 export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
@@ -242,33 +269,170 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const cancelEmail = await getSessionEmail(req, env)
         if (!cancelEmail) return json(401, { error: 'unauthenticated' })
 
-        // Checkout creates a Customer per session, so one email can map to
-        // several Stripe customers (e.g. churn-then-resubscribe). Search across
-        // all of them for the active subscription rather than assuming one.
-        const customers = await stripe.customers.list({ email: cancelEmail, limit: 100 })
-        if (customers.data.length === 0) {
-          return json(404, { error: 'No billing record found' })
+        // Cancel now carries the retention survey: a required reason slug, an
+        // optional free-text note, and which offer outcome led here. `reason`
+        // and `offer_outcome` are validated against the shared allowlist so a
+        // crafted body can't store junk (or smuggle an 'accepted' outcome,
+        // which only the accept endpoint writes).
+        const body =
+          (await readJson<{
+            reason?: unknown
+            note?: unknown
+            offer_outcome?: unknown
+          }>(req)) ?? {}
+        if (!isCancellationReason(body.reason)) {
+          return json(400, { error: 'A cancellation reason is required.' })
         }
+        const offerOutcome = isCancelOfferOutcome(body.offer_outcome)
+          ? body.offer_outcome
+          : 'not_offered'
+        const note =
+          typeof body.note === 'string' && body.note.trim()
+            ? body.note.trim().slice(0, MAX_CANCELLATION_NOTE_LEN)
+            : null
 
-        let sub: Stripe.Subscription | undefined
-        for (const customer of customers.data) {
-          const subs = await stripe.subscriptions.list({
-            customer: customer.id,
-            status: 'active',
-            limit: 1,
-          })
-          if (subs.data[0]) {
-            sub = subs.data[0]
-            break
+        const sub = await findActiveSubscription(stripe, cancelEmail)
+        if (!sub) return json(404, { error: 'No active subscription found' })
+
+        // Record the survey before cancelling — but never let an analytics
+        // write block the member's cancellation. A DB hiccup degrades to "we
+        // lost the reason," not "we couldn't cancel." Skipped entirely when no
+        // DB is configured (e.g. a Stripe-only preview env).
+        if (env.DATABASE_URL) {
+          try {
+            await insertCancellationSurvey(getDb(env), {
+              email: cancelEmail,
+              reason: body.reason,
+              note,
+              offerOutcome,
+              couponId: null,
+            })
+          } catch (err) {
+            console.error('[stripe] cancellation survey write failed:', err)
           }
         }
-        if (!sub) return json(404, { error: 'No active subscription found' })
 
         // Cancel at period end so they keep access until the billing cycle ends.
         await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true })
 
         const periodEnd = new Date(sub.items.data[0].current_period_end * 1000).toISOString()
         json(200, { ok: true, access_until: periodEnd })
+      },
+    },
+
+    {
+      // Is this member eligible for a retention discount, and what is it? Read
+      // on open of the cancel flow: eligible iff they have an active sub AND a
+      // valid retention coupon is configured AND they've never accepted before.
+      // Every ineligible branch returns the same {eligible:false, offer:null}
+      // so the client can't tell *why* — the member never learns an offer
+      // existed. Failures fail closed (no offer), never 500 the flow.
+      path: '/api/stripe/retention-offer',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const ineligible = { eligible: false, offer: null }
+
+        const sub = await findActiveSubscription(stripe, email)
+        if (!sub) return json(200, ineligible)
+
+        // Offered once per member, ever — eligibility burns on accept. A read
+        // failure fails closed: better to skip the offer than hand a second one
+        // to someone who already accepted.
+        if (env.DATABASE_URL) {
+          try {
+            if (await hasAcceptedRetention(getDb(env), email)) {
+              return json(200, ineligible)
+            }
+          } catch (err) {
+            console.error('[stripe] retention eligibility check failed:', err)
+            return json(200, ineligible)
+          }
+        }
+
+        let coupon
+        try {
+          coupon = pickRetentionCoupon(await listActiveCoupons(stripe))
+        } catch (err) {
+          console.error('[stripe] retention coupon lookup failed:', err)
+          return json(200, ineligible)
+        }
+        if (!coupon) return json(200, ineligible)
+
+        json(200, { eligible: true, offer: toRetentionOffer(coupon) })
+      },
+    },
+
+    {
+      // Accept the retention offer: attach the coupon to the live subscription
+      // and clear any pending cancel in one update, so a member who had already
+      // scheduled a cancellation is fully reinstated. The coupon is re-derived
+      // server-side (never trusted from the client) and an accepted survey row
+      // is written, which burns eligibility.
+      path: '/api/stripe/accept-retention-offer',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const sub = await findActiveSubscription(stripe, email)
+        if (!sub) return json(404, { error: 'No active subscription found' })
+
+        const coupon = pickRetentionCoupon(await listActiveCoupons(stripe))
+        if (!coupon) return json(409, { error: 'No retention offer available.' })
+
+        // Once-ever guard against a double-click: if a prior accepted row
+        // exists, skip the survey insert (no duplicate) but still (re)apply the
+        // discount — the discounts set is idempotent in effect.
+        let alreadyAccepted = false
+        if (env.DATABASE_URL) {
+          try {
+            alreadyAccepted = await hasAcceptedRetention(getDb(env), email)
+          } catch (err) {
+            console.error('[stripe] retention accept eligibility check failed:', err)
+          }
+        }
+
+        const updated = await stripe.subscriptions.update(sub.id, {
+          discounts: [{ coupon: coupon.id }],
+          cancel_at_period_end: false,
+        })
+
+        if (env.DATABASE_URL && !alreadyAccepted) {
+          try {
+            await insertCancellationSurvey(getDb(env), {
+              email,
+              reason: null,
+              note: null,
+              offerOutcome: 'accepted',
+              couponId: coupon.id,
+            })
+          } catch (err) {
+            // The discount is applied; losing the row only affects the
+            // once-ever guard + admin analytics. Log, don't fail the accept.
+            console.error('[stripe] retention accept survey write failed:', err)
+          }
+        }
+
+        const nextChargeAt = new Date(
+          updated.items.data[0].current_period_end * 1000,
+        ).toISOString()
+        json(200, {
+          ok: true,
+          percentOff: coupon.percent_off,
+          amountOff: coupon.amount_off,
+          durationMonths: coupon.duration_in_months ?? null,
+          next_charge_at: nextChargeAt,
+        })
       },
     },
 

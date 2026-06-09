@@ -14,6 +14,8 @@ import { requireAdmin } from '../lib/session.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { listActiveCoupons } from '../lib/stripe-promos.js'
 import { buildPromo, listAllPromotionCodes, serializeCoupon } from '../lib/admin-promos.js'
+import { getDb } from '../lib/db.js'
+import { getCancellationSummary } from '../lib/cancellation.js'
 import type { Promo } from '../../shared/promo.js'
 import type { Deps, Route } from '../lib/route.js'
 
@@ -90,6 +92,21 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         }
 
         return json(405, { error: 'Method Not Allowed' })
+      },
+    },
+    {
+      // Read-only view of the cancellation survey: outcome + reason aggregates
+      // and the most recent rows. Admin-gated like the other back-office routes.
+      path: '/api/admin/cancellations',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        const admin = await requireAdminRequest(req, res, env, appBaseUrl)
+        if (!admin) return
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+        if (!env.DATABASE_URL) {
+          return json(200, { byOutcome: [], byReason: [], recent: [] })
+        }
+        return json(200, await getCancellationSummary(getDb(env)))
       },
     },
   ]

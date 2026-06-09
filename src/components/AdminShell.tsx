@@ -8,7 +8,8 @@ type Tab =
   | "careers"
   | "faqs"
   | "promos"
-  | "discuss-threads";
+  | "discuss-threads"
+  | "cancellations";
 
 const TABS: { id: Tab; label: string; to: string }[] = [
   { id: "home", label: "Overview", to: "/admin" },
@@ -17,6 +18,7 @@ const TABS: { id: Tab; label: string; to: string }[] = [
   { id: "faqs", label: "FAQs", to: "/admin/faqs" },
   { id: "promos", label: "Promo codes", to: "/admin/promos" },
   { id: "discuss-threads", label: "Discuss threads", to: "/admin/discuss-threads" },
+  { id: "cancellations", label: "Cancellations", to: "/admin/cancellations" },
 ];
 
 // Consistent chrome for every back-office page: the admin gate plus a title and

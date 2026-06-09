@@ -31,6 +31,11 @@ const CARDS = [
     title: "Discuss threads",
     body: "Mint a Circle discussion thread for a Beehiiv draft, in one click. The article page picks up the link automatically.",
   },
+  {
+    to: "/admin/cancellations",
+    title: "Cancellations",
+    body: "See why members cancel — reason breakdown, retention-offer outcomes, and recent survey responses.",
+  },
 ];
 
 function AdminHome() {

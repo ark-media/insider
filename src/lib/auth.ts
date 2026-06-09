@@ -13,6 +13,8 @@ export type UserFeed = {
   apps?: FeedApp[];
 };
 
+import type { RetentionOffer } from "../../shared/retention";
+
 export type Me = {
   email: string;
   // 'ark-plus-member' = paid (has Simplecast record). 'free' = logged-in via
@@ -36,18 +38,70 @@ export async function fetchMe(): Promise<Me | null> {
   return (await res.json()) as Me;
 }
 
-export async function cancelSubscription(): Promise<{
+export async function cancelSubscription(input: {
+  // A reason slug from shared/cancellation.ts (required, validated server-side
+  // too). `note` is the optional free-text. `offerOutcome` records whether a
+  // retention offer was shown first; defaults to 'not_offered'.
+  reason: string;
+  note?: string;
+  offerOutcome?: "declined" | "not_offered";
+}): Promise<{
   ok: boolean;
   access_until?: string;
   error?: string;
 }> {
   const res = await fetch("/api/stripe/cancel-subscription", {
     method: "POST",
+    headers: { "content-type": "application/json" },
     credentials: "include",
+    body: JSON.stringify({
+      reason: input.reason,
+      note: input.note,
+      offer_outcome: input.offerOutcome ?? "not_offered",
+    }),
   });
   return (await res.json()) as {
     ok: boolean;
     access_until?: string;
+    error?: string;
+  };
+}
+
+// Is the current member eligible for a retention discount on cancel, and what
+// is it? A non-OK response degrades to "no offer" so the cancel flow always
+// proceeds (worst case: skips straight to the reason step).
+export async function getRetentionOffer(): Promise<{
+  eligible: boolean;
+  offer: RetentionOffer | null;
+}> {
+  const res = await fetch("/api/stripe/retention-offer", {
+    credentials: "include",
+  });
+  if (!res.ok) return { eligible: false, offer: null };
+  return (await res.json()) as { eligible: boolean; offer: RetentionOffer | null };
+}
+
+// Accept the offer: the server re-derives the coupon, attaches it to the live
+// subscription, and clears any pending cancel. Returns the applied discount +
+// next charge date for the confirmation.
+export async function acceptRetentionOffer(): Promise<{
+  ok: boolean;
+  percentOff?: number | null;
+  amountOff?: number | null;
+  durationMonths?: number | null;
+  next_charge_at?: string;
+  error?: string;
+}> {
+  const res = await fetch("/api/stripe/accept-retention-offer", {
+    method: "POST",
+    credentials: "include",
+  });
+  return (await res.json()) as {
+    ok: boolean;
+    percentOff?: number | null;
+    amountOff?: number | null;
+    durationMonths?: number | null;
+    next_charge_at?: string;
     error?: string;
   };
 }

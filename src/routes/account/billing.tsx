@@ -1,11 +1,35 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { cancelSubscription } from "../../lib/auth";
+import {
+  acceptRetentionOffer,
+  cancelSubscription,
+  getRetentionOffer,
+} from "../../lib/auth";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { Modal } from "../../components/Modal";
+import { CANCELLATION_REASONS } from "../../../shared/cancellation";
+import type { RetentionOffer } from "../../../shared/retention";
+
+// "25% off" / "$5 off", plus "for 3 months" when the coupon repeats.
+function offerHeadline(o: {
+  percentOff: number | null;
+  amountOff: number | null;
+  durationMonths: number | null;
+}): string {
+  const amount =
+    o.percentOff != null
+      ? `${o.percentOff}% off`
+      : o.amountOff != null
+        ? `$${(o.amountOff / 100).toFixed(2).replace(/\.00$/, "")} off`
+        : "a discount";
+  const duration = o.durationMonths
+    ? ` for ${o.durationMonths} month${o.durationMonths === 1 ? "" : "s"}`
+    : "";
+  return `${amount}${duration}`;
+}
 
 export const Route = createFileRoute("/account/billing")({
   component: BillingPage,
@@ -17,10 +41,27 @@ function BillingPage() {
   const [status, setStatus] = useState<
     | { kind: "idle" }
     | { kind: "cancelling" }
+    | { kind: "applying" }
     | { kind: "ok"; until: string }
+    | { kind: "saved"; headline: string; nextChargeAt: string }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  // The cancel flow is a stepper inside the existing Modal. Eligible members
+  // start at Offer (Offer → Reason → Confirm); everyone else skips straight to
+  // Reason → Confirm and never learns an offer existed. `offerShown` drives the
+  // step numbering and the offer_outcome we record on cancel.
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [step, setStep] = useState<"loading" | "offer" | "reason" | "confirm">(
+    "loading",
+  );
+  const [offer, setOffer] = useState<RetentionOffer | null>(null);
+  const [offerShown, setOfferShown] = useState(false);
+  const [reason, setReason] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+
+  const totalSteps = offerShown ? 3 : 2;
+  const stepNumber =
+    step === "offer" ? 1 : step === "reason" ? (offerShown ? 2 : 1) : offerShown ? 3 : 2;
 
   useEffect(() => {
     // Skip the redirect when "guest" is just an unreachable /api/me.
@@ -59,10 +100,59 @@ function BillingPage() {
 
   const me = state.me;
 
+  const openFlow = async () => {
+    setReason(null);
+    setNote("");
+    setOffer(null);
+    setOfferShown(false);
+    setStatus({ kind: "idle" });
+    setStep("loading");
+    setFlowOpen(true);
+    // Check for a retention offer; a failure degrades to "no offer" so the
+    // flow always proceeds to the reason step.
+    const { eligible, offer: o } = await getRetentionOffer();
+    if (eligible && o) {
+      setOffer(o);
+      setOfferShown(true);
+      setStep("offer");
+    } else {
+      setStep("reason");
+    }
+  };
+
+  const onAccept = async () => {
+    setFlowOpen(false);
+    setStatus({ kind: "applying" });
+    const r = await acceptRetentionOffer();
+    if (r.ok) {
+      setStatus({
+        kind: "saved",
+        headline: offerHeadline({
+          percentOff: r.percentOff ?? null,
+          amountOff: r.amountOff ?? null,
+          durationMonths: r.durationMonths ?? null,
+        }),
+        nextChargeAt: r.next_charge_at ?? "",
+      });
+      // Pending cancel was cleared server-side; resync the page's auth state.
+      refresh();
+    } else {
+      setStatus({
+        kind: "error",
+        message: r.error ?? "Could not apply your discount — please try again.",
+      });
+    }
+  };
+
   const onCancel = async () => {
-    setConfirmOpen(false);
+    if (!reason) return; // guarded by the disabled Continue button, belt-and-braces
+    setFlowOpen(false);
     setStatus({ kind: "cancelling" });
-    const r = await cancelSubscription();
+    const r = await cancelSubscription({
+      reason,
+      note: note.trim() || undefined,
+      offerOutcome: offerShown ? "declined" : "not_offered",
+    });
     if (r.ok) {
       setStatus({ kind: "ok", until: r.access_until ?? "" });
     } else {
@@ -125,16 +215,25 @@ function BillingPage() {
                     ? `Access continues until ${new Date(status.until).toLocaleDateString()}.`
                     : ""}
                 </p>
+              ) : status.kind === "saved" ? (
+                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                  You're all set — your membership continues with {status.headline}.
+                  {status.nextChargeAt
+                    ? ` Next charge on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
+                    : ""}
+                </p>
               ) : (
                 <button
                   type="button"
-                  onClick={() => setConfirmOpen(true)}
-                  disabled={status.kind === "cancelling"}
+                  onClick={openFlow}
+                  disabled={status.kind === "cancelling" || status.kind === "applying"}
                   className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   {status.kind === "cancelling"
                     ? "Cancelling…"
-                    : "Cancel my membership"}
+                    : status.kind === "applying"
+                      ? "Applying…"
+                      : "Cancel my membership"}
                 </button>
               )}
               {status.kind === "error" ? (
@@ -151,40 +250,155 @@ function BillingPage() {
       </section>
 
       <Modal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+        open={flowOpen}
+        onClose={() => setFlowOpen(false)}
         className="max-w-md"
         labelledBy="cancel-title"
-        describedBy="cancel-desc"
+        describedBy="cancel-step"
       >
-        <p id="cancel-desc" className="eyebrow">
-          Cancel membership
-        </p>
-        <h2
-          id="cancel-title"
-          className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
-        >
-          Cancel your Ark+ membership?
-        </h2>
-        <p className="mt-4 text-body-sm text-fg">
-          You'll keep access until the end of your current billing period.
-        </p>
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="inline-flex min-h-12 flex-1 items-center justify-center border border-danger px-4 text-sm font-semibold uppercase tracking-button text-danger transition hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Yes, cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirmOpen(false)}
-            className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Never mind
-          </button>
-        </div>
+        {step === "loading" ? (
+          <>
+            <p id="cancel-step" className="eyebrow">
+              One moment
+            </p>
+            <h2
+              id="cancel-title"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+            >
+              Loading…
+            </h2>
+          </>
+        ) : step === "offer" && offer ? (
+          <>
+            <p id="cancel-step" className="eyebrow">
+              Step {stepNumber} of {totalSteps}
+            </p>
+            <h2
+              id="cancel-title"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+            >
+              Wait — here's {offerHeadline(offer)}
+            </h2>
+            <p className="mt-4 text-body-sm text-fg">
+              Before you go: stay with Ark+ and we'll apply {offerHeadline(offer)}{" "}
+              to your membership. Same access, lower price.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={onAccept}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-cyan bg-cyan/10 px-4 text-sm font-semibold uppercase tracking-button text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Keep my discount
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep("reason")}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                No thanks
+              </button>
+            </div>
+          </>
+        ) : step === "reason" ? (
+          <>
+            <p id="cancel-step" className="eyebrow">
+              Step {stepNumber} of {totalSteps}
+            </p>
+            <h2
+              id="cancel-title"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+            >
+              We're sorry to see you go
+            </h2>
+            <p className="mt-4 text-body-sm text-fg">
+              Help us improve by letting us know why you're cancelling:
+            </p>
+            <fieldset className="mt-6">
+              <legend className="sr-only">Reason for cancelling</legend>
+              <div className="flex flex-col gap-3">
+                {CANCELLATION_REASONS.map((r) => (
+                  <label
+                    key={r.slug}
+                    className="flex cursor-pointer items-start gap-3 text-body-sm text-fg"
+                  >
+                    <input
+                      type="radio"
+                      name="cancel-reason"
+                      value={r.slug}
+                      checked={reason === r.slug}
+                      onChange={() => setReason(r.slug)}
+                      className="mt-1 h-4 w-4 shrink-0 accent-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    />
+                    <span>{r.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <label
+              htmlFor="cancel-note"
+              className="mt-6 block text-body-sm text-fg-muted"
+            >
+              Anything else? (optional)
+            </label>
+            <textarea
+              id="cancel-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              className="mt-2 w-full resize-y border border-rule-strong bg-navy-900 px-3 py-2 text-body-sm text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            />
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => setStep("confirm")}
+                disabled={!reason}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-50 disabled:hover:border-rule-strong disabled:hover:text-fg-strong"
+              >
+                Continue
+              </button>
+              <button
+                type="button"
+                onClick={() => setFlowOpen(false)}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Never mind
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p id="cancel-step" className="eyebrow">
+              Step {stepNumber} of {totalSteps}
+            </p>
+            <h2
+              id="cancel-title"
+              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong"
+            >
+              Cancel your Ark+ membership?
+            </h2>
+            <p className="mt-4 text-body-sm text-fg">
+              You'll keep access until the end of your current billing period.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-danger px-4 text-sm font-semibold uppercase tracking-button text-danger transition hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Cancel membership
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep("reason")}
+                className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Back
+              </button>
+            </div>
+          </>
+        )}
       </Modal>
     </PageShell>
   );

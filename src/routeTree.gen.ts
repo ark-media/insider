@@ -40,6 +40,7 @@ import { Route as AdminPromosRouteImport } from './routes/admin/promos'
 import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
 import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
 import { Route as AdminCareersRouteImport } from './routes/admin/careers'
+import { Route as AdminCancellationsRouteImport } from './routes/admin/cancellations'
 import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
 import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
 import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
@@ -204,6 +205,11 @@ const AdminCareersRoute = AdminCareersRouteImport.update({
   path: '/admin/careers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminCancellationsRoute = AdminCancellationsRouteImport.update({
+  id: '/admin/cancellations',
+  path: '/admin/cancellations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
   id: '/admin/announcements',
   path: '/admin/announcements',
@@ -260,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/cancellations': typeof AdminCancellationsRoute
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
@@ -301,6 +308,7 @@ export interface FileRoutesByTo {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/cancellations': typeof AdminCancellationsRoute
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
@@ -343,6 +351,7 @@ export interface FileRoutesById {
   '/account/newsletters': typeof AccountNewslettersRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
+  '/admin/cancellations': typeof AdminCancellationsRoute
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
@@ -386,6 +395,7 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/cancellations'
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
@@ -427,6 +437,7 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/cancellations'
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
@@ -468,6 +479,7 @@ export interface FileRouteTypes {
     | '/account/newsletters'
     | '/account/podcast-feed'
     | '/admin/announcements'
+    | '/admin/cancellations'
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
@@ -509,6 +521,7 @@ export interface RootRouteChildren {
   AccountNewslettersRoute: typeof AccountNewslettersRoute
   AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
+  AdminCancellationsRoute: typeof AdminCancellationsRoute
   AdminCareersRoute: typeof AdminCareersRoute
   AdminDiscussThreadsRoute: typeof AdminDiscussThreadsRoute
   AdminFaqsRoute: typeof AdminFaqsRoute
@@ -754,6 +767,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCareersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/cancellations': {
+      id: '/admin/cancellations'
+      path: '/admin/cancellations'
+      fullPath: '/admin/cancellations'
+      preLoaderRoute: typeof AdminCancellationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/announcements': {
       id: '/admin/announcements'
       path: '/admin/announcements'
@@ -849,6 +869,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountNewslettersRoute: AccountNewslettersRoute,
   AccountPodcastFeedRoute: AccountPodcastFeedRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
+  AdminCancellationsRoute: AdminCancellationsRoute,
   AdminCareersRoute: AdminCareersRoute,
   AdminDiscussThreadsRoute: AdminDiscussThreadsRoute,
   AdminFaqsRoute: AdminFaqsRoute,

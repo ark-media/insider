@@ -8,9 +8,11 @@ import type { Career } from "./careers";
 import type { Faq } from "./faqs";
 import type { Promo } from "../../shared/promo";
 import type { BeehiivDraft, DiscussThread } from "../../shared/discuss-thread";
+import type { CancellationSummary } from "../../shared/cancellation";
 import type { NewsletterSlug } from "../data/newsletters";
 
 export type { Promo, BeehiivDraft, DiscussThread };
+export type { CancellationSummary };
 
 // Kept as a thin indirection so call sites stay uniform; the session now
 // rides the cookie, so this only forwards any extra headers (e.g. content-type).
@@ -40,6 +42,19 @@ export async function fetchAdminMe(): Promise<AdminMe> {
   } catch {
     return { isAdmin: false, email: null };
   }
+}
+
+// --- Cancellations -------------------------------------------------------
+
+// Read-only survey aggregates for the back office. Throws on a non-OK response
+// so the page can show a retry.
+export async function fetchCancellations(): Promise<CancellationSummary> {
+  const res = await fetch("/api/admin/cancellations", {
+    headers: authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return (await res.json()) as CancellationSummary;
 }
 
 // --- Announcements -------------------------------------------------------
