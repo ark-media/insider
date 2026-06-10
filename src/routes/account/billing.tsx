@@ -291,6 +291,9 @@ function BillingPage() {
                   ? "Your membership is set to cancel and won't renew."
                   : "Cancel anytime. You'll keep access through the end of your current billing period."}
               </p>
+              {/* Lead line: the focus-managed, aria-live confirmation right
+                  after an action, otherwise the persistent "keep access until"
+                  note while a cancel stays scheduled. */}
               {status.kind === "ok" ? (
                 <p
                   ref={confirmationRef}
@@ -328,23 +331,29 @@ function BillingPage() {
                     : ""}
                 </p>
               ) : scheduledCancelAt ? (
-                <>
-                  <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
-                    You'll keep access until{" "}
-                    {new Date(scheduledCancelAt).toLocaleDateString()}.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={onReactivate}
-                    disabled={status.kind === "reactivating"}
-                    className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-                  >
-                    {status.kind === "reactivating"
-                      ? "Reactivating…"
-                      : "Reactivate membership"}
-                  </button>
-                </>
-              ) : (
+                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                  You'll keep access until{" "}
+                  {new Date(scheduledCancelAt).toLocaleDateString()}.
+                </p>
+              ) : null}
+
+              {/* Action: Reactivate whenever a cancel is scheduled — so undo is
+                  reachable the instant after cancelling, not only after a
+                  reload (the schedule outlives the transient "ok" status). The
+                  Cancel entry point shows when nothing's scheduled, and nothing
+                  during the just-saved / just-resumed confirmations. */}
+              {scheduledCancelAt ? (
+                <button
+                  type="button"
+                  onClick={onReactivate}
+                  disabled={status.kind === "reactivating"}
+                  className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                >
+                  {status.kind === "reactivating"
+                    ? "Reactivating…"
+                    : "Reactivate membership"}
+                </button>
+              ) : status.kind === "saved" || status.kind === "resumed" ? null : (
                 <button
                   type="button"
                   onClick={openFlow}

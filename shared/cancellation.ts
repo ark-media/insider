@@ -48,6 +48,31 @@ export function isCancelOfferOutcome(v: unknown): v is 'declined' | 'not_offered
   return typeof v === 'string' && CANCEL_OUTCOMES.has(v)
 }
 
+// Human labels for the stored offer_outcome values. Shared so the admin table,
+// the filter controls, and the server-rendered CSV all read the same way.
+export const OFFER_OUTCOME_LABEL: Record<OfferOutcome, string> = {
+  accepted: 'Kept (offer accepted)',
+  declined: 'Cancelled (offer declined)',
+  not_offered: 'Cancelled (no offer)',
+}
+
+// Display order for outcome filters/columns (mirrors the cancel funnel).
+export const OFFER_OUTCOMES: readonly OfferOutcome[] = [
+  'accepted',
+  'declined',
+  'not_offered',
+] as const
+
+export function isOfferOutcome(v: unknown): v is OfferOutcome {
+  return typeof v === 'string' && v in OFFER_OUTCOME_LABEL
+}
+
+// Resolve a stored outcome to its label (unknown values fall back to the raw
+// string, matching reasonLabel's behaviour for retired slugs).
+export function outcomeLabel(outcome: string): string {
+  return OFFER_OUTCOME_LABEL[outcome as OfferOutcome] ?? outcome
+}
+
 // Cap free-text note length before it reaches the DB.
 export const MAX_CANCELLATION_NOTE_LEN = 2000
 
@@ -72,8 +97,16 @@ export type CancellationRow = {
 
 export type CancellationSummary = {
   // Counts grouped by outcome (accepted | declined | not_offered) and by reason
-  // (accepted rows have no reason, so they're excluded from byReason).
+  // (accepted rows have no reason, so they're excluded from byReason). These
+  // aggregates are always global; only `recent` reflects an active filter.
   byOutcome: { outcome: string; count: number }[]
   byReason: { reason: string; count: number }[]
   recent: CancellationRow[]
+}
+
+// Optional filters for the admin cancellations view + CSV export. Both narrow
+// the row list; an unset (null/undefined) field means "any".
+export type CancellationFilter = {
+  outcome?: OfferOutcome | null
+  reason?: string | null
 }

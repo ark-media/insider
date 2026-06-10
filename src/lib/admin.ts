@@ -8,11 +8,14 @@ import type { Career } from "./careers";
 import type { Faq } from "./faqs";
 import type { Promo } from "../../shared/promo";
 import type { BeehiivDraft, DiscussThread } from "../../shared/discuss-thread";
-import type { CancellationSummary } from "../../shared/cancellation";
+import type {
+  CancellationFilter,
+  CancellationSummary,
+} from "../../shared/cancellation";
 import type { NewsletterSlug } from "../data/newsletters";
 
 export type { Promo, BeehiivDraft, DiscussThread };
-export type { CancellationSummary };
+export type { CancellationSummary, CancellationFilter };
 
 // Kept as a thin indirection so call sites stay uniform; the session now
 // rides the cookie, so this only forwards any extra headers (e.g. content-type).
@@ -46,15 +49,60 @@ export async function fetchAdminMe(): Promise<AdminMe> {
 
 // --- Cancellations -------------------------------------------------------
 
-// Read-only survey aggregates for the back office. Throws on a non-OK response
-// so the page can show a retry.
-export async function fetchCancellations(): Promise<CancellationSummary> {
-  const res = await fetch("/api/admin/cancellations", {
+// Serializes the optional outcome/reason filters into a query string (empty
+// when nothing is set). Shared by the summary fetch and the CSV export.
+function cancellationQuery(filter?: CancellationFilter): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filter?.outcome) params.set("outcome", filter.outcome);
+  if (filter?.reason) params.set("reason", filter.reason);
+  return params;
+}
+
+// Read-only survey aggregates for the back office. The filter narrows the
+// recent-rows list (the counts stay global). Throws on a non-OK response so the
+// page can show a retry.
+export async function fetchCancellations(
+  filter?: CancellationFilter,
+): Promise<CancellationSummary> {
+  const qs = cancellationQuery(filter).toString();
+  const res = await fetch(`/api/admin/cancellations${qs ? `?${qs}` : ""}`, {
     headers: authHeaders(),
     credentials: "include",
   });
   if (!res.ok) throw new Error(await errorMessage(res));
   return (await res.json()) as CancellationSummary;
+}
+
+// Downloads the filtered survey as a CSV. Fetches the blob (so the session
+// cookie is sent and a non-OK response surfaces as an error) and triggers a
+// save via a transient anchor.
+export async function downloadCancellationsCsv(
+  filter?: CancellationFilter,
+): Promise<void> {
+  const params = cancellationQuery(filter);
+  params.set("format", "csv");
+  const res = await fetch(`/api/admin/cancellations?${params.toString()}`, {
+    headers: authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = csvFilename(res);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Prefer the server's content-disposition filename; fall back to a stable name.
+function csvFilename(res: Response): string {
+  const cd = res.headers.get("content-disposition") ?? "";
+  const match = /filename="?([^"]+)"?/.exec(cd);
+  return match?.[1] ?? "cancellations.csv";
 }
 
 // --- Announcements -------------------------------------------------------

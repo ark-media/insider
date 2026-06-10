@@ -8,6 +8,7 @@ import {
   type Promo,
   type PromoDraft,
 } from "../../lib/admin";
+import { adminField, adminFieldLabel } from "../../lib/admin-styles";
 
 export const Route = createFileRoute("/admin/promos")({
   component: PromosAdmin,
@@ -144,11 +145,6 @@ function PromosAdmin() {
   // to the checkout coupons it's about.
   const checkoutPromos = items.filter((p) => !p.retentionOffer);
 
-  const field =
-    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
-  const label =
-    "block button-text font-display font-bold text-fg-strong";
-
   return (
     <AdminShell active="promos" title="Promo codes">
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
@@ -163,7 +159,7 @@ function PromosAdmin() {
           <form onSubmit={submit} className="mt-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="p-code" className={label}>
+                <label htmlFor="p-code" className={adminFieldLabel}>
                   Code
                 </label>
                 <input
@@ -172,12 +168,12 @@ function PromosAdmin() {
                   value={form.code}
                   onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
                   placeholder="SPRING60"
-                  className={`mt-2 ${field}`}
+                  className={`mt-2 ${adminField}`}
                 />
                 <p className="mt-1 text-body-sm">Optional label code.</p>
               </div>
               <div>
-                <label htmlFor="p-name" className={label}>
+                <label htmlFor="p-name" className={adminFieldLabel}>
                   Name
                 </label>
                 <input
@@ -186,14 +182,14 @@ function PromosAdmin() {
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="Spring sale"
-                  className={`mt-2 ${field}`}
+                  className={`mt-2 ${adminField}`}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="p-type" className={label}>
+                <label htmlFor="p-type" className={adminFieldLabel}>
                   Discount type
                 </label>
                 <select
@@ -205,7 +201,7 @@ function PromosAdmin() {
                       discountType: e.target.value as "percent" | "amount",
                     }))
                   }
-                  className={`mt-2 ${field}`}
+                  className={`mt-2 ${adminField}`}
                 >
                   <option value="percent">Percent off</option>
                   <option value="amount">Amount off (USD)</option>
@@ -214,7 +210,7 @@ function PromosAdmin() {
               <div>
                 {form.discountType === "percent" ? (
                   <>
-                    <label htmlFor="p-pct" className={label}>
+                    <label htmlFor="p-pct" className={adminFieldLabel}>
                       Percent off
                     </label>
                     <input
@@ -227,12 +223,12 @@ function PromosAdmin() {
                       onChange={(e) =>
                         setForm((f) => ({ ...f, percentOff: e.target.value }))
                       }
-                      className={`mt-2 ${field}`}
+                      className={`mt-2 ${adminField}`}
                     />
                   </>
                 ) : (
                   <>
-                    <label htmlFor="p-amt" className={label}>
+                    <label htmlFor="p-amt" className={adminFieldLabel}>
                       Amount off ($)
                     </label>
                     <input
@@ -246,7 +242,7 @@ function PromosAdmin() {
                         setForm((f) => ({ ...f, amountDollars: e.target.value }))
                       }
                       placeholder="10.00"
-                      className={`mt-2 ${field}`}
+                      className={`mt-2 ${adminField}`}
                     />
                   </>
                 )}
@@ -255,7 +251,7 @@ function PromosAdmin() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="p-dur" className={label}>
+                <label htmlFor="p-dur" className={adminFieldLabel}>
                   Duration
                 </label>
                 <select
@@ -267,7 +263,7 @@ function PromosAdmin() {
                       duration: e.target.value as FormState["duration"],
                     }))
                   }
-                  className={`mt-2 ${field}`}
+                  className={`mt-2 ${adminField}`}
                 >
                   <option value="once">Once</option>
                   <option value="forever">Forever</option>
@@ -276,7 +272,7 @@ function PromosAdmin() {
               </div>
               {form.duration === "repeating" ? (
                 <div>
-                  <label htmlFor="p-months" className={label}>
+                  <label htmlFor="p-months" className={adminFieldLabel}>
                     Months
                   </label>
                   <input
@@ -288,14 +284,14 @@ function PromosAdmin() {
                     onChange={(e) =>
                       setForm((f) => ({ ...f, durationInMonths: e.target.value }))
                     }
-                    className={`mt-2 ${field}`}
+                    className={`mt-2 ${adminField}`}
                   />
                 </div>
               ) : null}
             </div>
 
             <div>
-              <label htmlFor="p-plan" className={label}>
+              <label htmlFor="p-plan" className={adminFieldLabel}>
                 Applies to plan
               </label>
               <select
@@ -307,7 +303,7 @@ function PromosAdmin() {
                     plan: e.target.value as FormState["plan"],
                   }))
                 }
-                className={`mt-2 ${field}`}
+                className={`mt-2 ${adminField}`}
               >
                 <option value="">Both plans</option>
                 <option value="monthly">Monthly only</option>
@@ -317,7 +313,7 @@ function PromosAdmin() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="p-max" className={label}>
+                <label htmlFor="p-max" className={adminFieldLabel}>
                   Max redemptions
                 </label>
                 <input
@@ -329,11 +325,11 @@ function PromosAdmin() {
                     setForm((f) => ({ ...f, maxRedemptions: e.target.value }))
                   }
                   placeholder="Unlimited"
-                  className={`mt-2 ${field}`}
+                  className={`mt-2 ${adminField}`}
                 />
               </div>
               <div>
-                <label htmlFor="p-expiry" className={label}>
+                <label htmlFor="p-expiry" className={adminFieldLabel}>
                   Expires
                 </label>
                 <input
@@ -343,7 +339,7 @@ function PromosAdmin() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, redeemBy: e.target.value }))
                   }
-                  className={`mt-2 ${field}`}
+                  className={`mt-2 ${adminField}`}
                 />
               </div>
             </div>

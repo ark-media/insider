@@ -13,6 +13,15 @@ export function makeJsonRes(res: ServerResponse): JsonRes {
   }
 }
 
+// Sends a CSV download: text/csv with a content-disposition so the browser
+// saves it as `filename` rather than rendering it inline. Always status 200.
+export function sendCsv(res: ServerResponse, filename: string, body: string): void {
+  res.statusCode = 200
+  res.setHeader('content-type', 'text/csv; charset=utf-8')
+  res.setHeader('content-disposition', `attachment; filename="${filename}"`)
+  res.end(body)
+}
+
 // Thrown by readBody when a request exceeds the byte cap. The catch-all maps
 // it to a 413 instead of buffering an unbounded body into memory.
 export class PayloadTooLargeError extends Error {

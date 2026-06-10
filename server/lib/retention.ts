@@ -38,6 +38,11 @@ export function isRetentionCoupon(c: RetentionCouponLike): boolean {
 // to either. An admin sets this when they want distinct save offers per plan.
 // When the member's plan is unknown (null) we offer only untargeted coupons —
 // safer than handing a yearly-only deal to a monthly member we can't confirm.
+//
+// NOTE: null means the OPPOSITE of its sibling stripe-promos.appliesToPlan/
+// pickBestCoupon. There, plan=null means "ignore targeting, any coupon
+// qualifies" (the gift flow has no plan). Here, null is conservative: target
+// nobody we can't confirm. The two are deliberately not interchangeable.
 function appliesToPlan(c: RetentionCouponLike, plan: Plan | null): boolean {
   const target = c.metadata?.plan
   if (!target || target === 'both') return true

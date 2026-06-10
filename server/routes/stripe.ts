@@ -109,6 +109,16 @@ function planFromSubscription(sub: Stripe.Subscription): Plan | null {
   return null
 }
 
+// The subscription's current-period-end as an ISO string, or null when the sub
+// has no items / no finite timestamp. Used for the renewal/access date in the
+// cancel, reactivate, and accept-offer responses — all read it *after* a Stripe
+// write has already succeeded, so an itemless sub must degrade to null rather
+// than throw a 500 that strands an action that already happened.
+function periodEndIso(sub: Stripe.Subscription): string | null {
+  const ts = sub.items.data[0]?.current_period_end
+  return ts != null && Number.isFinite(ts) ? new Date(ts * 1000).toISOString() : null
+}
+
 export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
   // Stripe price cache — keyed by `${plan}-${amountCents}` to avoid creating
   // a fresh Price object on every pay-what-you-want checkout.
@@ -352,8 +362,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // Cancel at period end so they keep access until the billing cycle ends.
         await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true })
 
-        const periodEnd = new Date(sub.items.data[0].current_period_end * 1000).toISOString()
-        json(200, { ok: true, access_until: periodEnd })
+        json(200, { ok: true, access_until: periodEndIso(sub) })
       },
     },
 
@@ -386,14 +395,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             })
           : sub
 
-        // The reactivation has already succeeded by this point, so an itemless
-        // sub must not turn the response into a 500 — degrade to a null date.
-        const ts = updated.items.data[0]?.current_period_end
-        const nextChargeAt =
-          ts != null && Number.isFinite(ts)
-            ? new Date(ts * 1000).toISOString()
-            : null
-        json(200, { ok: true, next_charge_at: nextChargeAt })
+        json(200, { ok: true, next_charge_at: periodEndIso(updated) })
       },
     },
 
@@ -515,15 +517,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
 
-        const nextChargeAt = new Date(
-          updated.items.data[0].current_period_end * 1000,
-        ).toISOString()
         json(200, {
           ok: true,
           percentOff: coupon.percent_off,
           amountOff: coupon.amount_off,
           durationMonths: coupon.duration_in_months ?? null,
-          next_charge_at: nextChargeAt,
+          next_charge_at: periodEndIso(updated),
         })
       },
     },
@@ -602,10 +601,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // to the current period end so we always have a date to show.
         let cancelAt: string | null = null
         if (sub?.cancel_at_period_end) {
-          const ts = sub.cancel_at ?? sub.items.data[0]?.current_period_end ?? null
-          if (ts != null && Number.isFinite(ts)) {
-            cancelAt = new Date(ts * 1000).toISOString()
-          }
+          cancelAt =
+            sub.cancel_at != null && Number.isFinite(sub.cancel_at)
+              ? new Date(sub.cancel_at * 1000).toISOString()
+              : periodEndIso(sub)
         }
         json(200, {
           cancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),

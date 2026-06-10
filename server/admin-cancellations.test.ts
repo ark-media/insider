@@ -42,7 +42,7 @@ function getHandler(path: string): Middleware {
   return h
 }
 
-function makeReq(headers: Record<string, string> = {}): IncomingMessage {
+function makeReq(headers: Record<string, string> = {}, query = ''): IncomingMessage {
   const stream = Readable.from([Buffer.alloc(0)]) as unknown as Omit<
     IncomingMessage,
     'socket'
@@ -53,18 +53,23 @@ function makeReq(headers: Record<string, string> = {}): IncomingMessage {
     socket: { remoteAddress: string }
   }
   stream.method = 'GET'
-  stream.url = PATH
+  stream.url = `${PATH}${query}`
   stream.headers = headers
   stream.socket = { remoteAddress: '127.0.0.1' }
   return stream as unknown as IncomingMessage
 }
 
-type FakeRes = ServerResponse & { __json: () => unknown }
+type FakeRes = ServerResponse & {
+  __json: () => unknown
+  __body: () => string
+  __headers: Record<string, string>
+}
 
 function makeRes(): FakeRes {
   let body = ''
   let statusCode = 200
   let ended = false
+  const headers: Record<string, string> = {}
   return {
     get statusCode() {
       return statusCode
@@ -75,7 +80,9 @@ function makeRes(): FakeRes {
     get headersSent() {
       return ended
     },
-    setHeader() {},
+    setHeader(name: string, value: string) {
+      headers[name.toLowerCase()] = value
+    },
     getHeader() {
       return undefined
     },
@@ -84,6 +91,8 @@ function makeRes(): FakeRes {
       ended = true
     },
     __json: () => JSON.parse(body) as unknown,
+    __body: () => body,
+    __headers: headers,
   } as unknown as FakeRes
 }
 
@@ -105,9 +114,12 @@ function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
   })
 }
 
-async function get(headers?: Record<string, string>): Promise<FakeRes> {
+async function get(
+  headers?: Record<string, string>,
+  query = '',
+): Promise<FakeRes> {
   const res = makeRes()
-  await runHandler(getHandler(PATH), makeReq(headers), res)
+  await runHandler(getHandler(PATH), makeReq(headers, query), res)
   return res
 }
 
@@ -133,5 +145,39 @@ describe('GET /api/admin/cancellations', () => {
     const res = await get({ cookie: await cookie(['admin']) })
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({ byOutcome: [], byReason: [], recent: [] })
+  })
+
+  test('accepts valid outcome + reason filters', async () => {
+    const res = await get(
+      { cookie: await cookie(['admin']) },
+      '?outcome=declined&reason=too_expensive',
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ byOutcome: [], byReason: [], recent: [] })
+  })
+
+  test('400 on an invalid outcome filter', async () => {
+    const res = await get({ cookie: await cookie(['admin']) }, '?outcome=bogus')
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('400 on an invalid reason filter', async () => {
+    const res = await get({ cookie: await cookie(['admin']) }, '?reason=bogus')
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('format=csv returns a CSV download with a header row', async () => {
+    const res = await get({ cookie: await cookie(['admin']) }, '?format=csv')
+    expect(res.statusCode).toBe(200)
+    expect(res.__headers['content-type']).toBe('text/csv; charset=utf-8')
+    expect(res.__headers['content-disposition']).toContain('attachment')
+    expect(res.__headers['content-disposition']).toContain('.csv')
+    // BOM + the header row, no data rows (no DB configured).
+    expect(res.__body()).toBe('\uFEFF"Date","Email","Outcome","Reason","Note","Coupon"')
+  })
+
+  test('CSV export is still admin-gated', async () => {
+    const res = await get(undefined, '?format=csv')
+    expect(res.statusCode).toBe(403)
   })
 })

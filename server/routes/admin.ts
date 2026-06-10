@@ -9,15 +9,29 @@
 // All but /me require the Auth0 "admin" role (server/lib/session.ts). Promos
 // stay Stripe-native — Stripe is the source of truth; checkout auto-applies.
 
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { makeJsonRes, readJson, sendCsv } from '../lib/http.js'
 import { requireAdmin } from '../lib/session.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { listActiveCoupons } from '../lib/stripe-promos.js'
 import { buildPromo, listAllPromotionCodes, serializeCoupon } from '../lib/admin-promos.js'
 import { getDb } from '../lib/db.js'
-import { getCancellationSummary } from '../lib/cancellation.js'
+import {
+  cancellationRowsToCsv,
+  getCancellationRows,
+  getCancellationSummary,
+} from '../lib/cancellation.js'
+import {
+  isCancellationReason,
+  isOfferOutcome,
+  type CancellationFilter,
+} from '../../shared/cancellation.js'
 import type { Promo } from '../../shared/promo.js'
 import type { Deps, Route } from '../lib/route.js'
+
+// Date-stamped export filename, e.g. cancellations-2026-06-10.csv.
+function csvFilename(): string {
+  return `cancellations-${new Date().toISOString().slice(0, 10)}.csv`
+}
 
 export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
   return [
@@ -97,16 +111,38 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
     {
       // Read-only view of the cancellation survey: outcome + reason aggregates
       // and the most recent rows. Admin-gated like the other back-office routes.
+      //   ?outcome=&reason=  — optional filters (narrow the rows + the export).
+      //   ?format=csv        — download all matching rows as a CSV instead.
       path: '/api/admin/cancellations',
       handler: async (req, res) => {
         const json = makeJsonRes(res)
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+
+        const params = new URL(req.url ?? '/', 'http://x').searchParams
+        const outcome = params.get('outcome')
+        const reason = params.get('reason')
+        if (outcome !== null && !isOfferOutcome(outcome)) {
+          return json(400, { error: 'invalid outcome filter' })
+        }
+        if (reason !== null && !isCancellationReason(reason)) {
+          return json(400, { error: 'invalid reason filter' })
+        }
+        const filter: CancellationFilter = { outcome, reason }
+        const wantsCsv = params.get('format') === 'csv'
+
         if (!env.DATABASE_URL) {
+          if (wantsCsv) return sendCsv(res, csvFilename(), cancellationRowsToCsv([]))
           return json(200, { byOutcome: [], byReason: [], recent: [] })
         }
-        return json(200, await getCancellationSummary(getDb(env)))
+
+        const sql = getDb(env)
+        if (wantsCsv) {
+          const rows = await getCancellationRows(sql, filter)
+          return sendCsv(res, csvFilename(), cancellationRowsToCsv(rows))
+        }
+        return json(200, await getCancellationSummary(sql, { filter }))
       },
     },
   ]

@@ -1,31 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "../../components/AdminShell";
 import {
   createPromo,
   deletePromo,
+  downloadCancellationsCsv,
   fetchCancellations,
   listPromos,
+  type CancellationFilter,
   type CancellationSummary,
   type Promo,
   type PromoDraft,
 } from "../../lib/admin";
-import { reasonLabel } from "../../../shared/cancellation";
+import { adminField, adminFieldLabel } from "../../lib/admin-styles";
+import {
+  CANCELLATION_REASONS,
+  OFFER_OUTCOMES,
+  outcomeLabel,
+  reasonLabel,
+  type OfferOutcome,
+} from "../../../shared/cancellation";
 
 export const Route = createFileRoute("/admin/cancellations")({
   component: CancellationsAdmin,
 });
-
-// Friendly labels for the stored offer_outcome values.
-const OUTCOME_LABEL: Record<string, string> = {
-  accepted: "Kept (offer accepted)",
-  declined: "Cancelled (offer declined)",
-  not_offered: "Cancelled (no offer)",
-};
-
-function outcomeLabel(outcome: string): string {
-  return OUTCOME_LABEL[outcome] ?? outcome;
-}
 
 function CancellationsAdmin() {
   return (
@@ -85,10 +83,6 @@ function planLabel(plan: string | null): string {
   if (plan === "yearly") return "annual plan";
   return "both plans";
 }
-
-const field =
-  "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
-const fieldLabel = "block button-text font-display font-bold text-fg-strong";
 
 function RetentionOffers() {
   const [items, setItems] = useState<Promo[]>([]);
@@ -184,7 +178,7 @@ function RetentionOffers() {
       <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
         <form onSubmit={submit} className="space-y-5">
           <div>
-            <label htmlFor="o-name" className={fieldLabel}>
+            <label htmlFor="o-name" className={adminFieldLabel}>
               Name
             </label>
             <input
@@ -193,7 +187,7 @@ function RetentionOffers() {
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="Stay & save"
-              className={`mt-2 ${field}`}
+              className={`mt-2 ${adminField}`}
             />
             <p className="mt-1 text-body-sm text-fg-muted">
               Optional internal label.
@@ -201,7 +195,7 @@ function RetentionOffers() {
           </div>
 
           <div>
-            <label htmlFor="o-plan" className={fieldLabel}>
+            <label htmlFor="o-plan" className={adminFieldLabel}>
               Applies to plan
             </label>
             <select
@@ -213,7 +207,7 @@ function RetentionOffers() {
                   plan: e.target.value as OfferForm["plan"],
                 }))
               }
-              className={`mt-2 ${field}`}
+              className={`mt-2 ${adminField}`}
             >
               <option value="">Both plans</option>
               <option value="monthly">Monthly only</option>
@@ -223,7 +217,7 @@ function RetentionOffers() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="o-type" className={fieldLabel}>
+              <label htmlFor="o-type" className={adminFieldLabel}>
                 Discount type
               </label>
               <select
@@ -235,7 +229,7 @@ function RetentionOffers() {
                     discountType: e.target.value as "percent" | "amount",
                   }))
                 }
-                className={`mt-2 ${field}`}
+                className={`mt-2 ${adminField}`}
               >
                 <option value="percent">Percent off</option>
                 <option value="amount">Amount off (USD)</option>
@@ -244,7 +238,7 @@ function RetentionOffers() {
             <div>
               {form.discountType === "percent" ? (
                 <>
-                  <label htmlFor="o-pct" className={fieldLabel}>
+                  <label htmlFor="o-pct" className={adminFieldLabel}>
                     Percent off
                   </label>
                   <input
@@ -257,12 +251,12 @@ function RetentionOffers() {
                     onChange={(e) =>
                       setForm((f) => ({ ...f, percentOff: e.target.value }))
                     }
-                    className={`mt-2 ${field}`}
+                    className={`mt-2 ${adminField}`}
                   />
                 </>
               ) : (
                 <>
-                  <label htmlFor="o-amt" className={fieldLabel}>
+                  <label htmlFor="o-amt" className={adminFieldLabel}>
                     Amount off ($)
                   </label>
                   <input
@@ -276,7 +270,7 @@ function RetentionOffers() {
                       setForm((f) => ({ ...f, amountDollars: e.target.value }))
                     }
                     placeholder="5.00"
-                    className={`mt-2 ${field}`}
+                    className={`mt-2 ${adminField}`}
                   />
                 </>
               )}
@@ -285,7 +279,7 @@ function RetentionOffers() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="o-dur" className={fieldLabel}>
+              <label htmlFor="o-dur" className={adminFieldLabel}>
                 Duration
               </label>
               <select
@@ -297,7 +291,7 @@ function RetentionOffers() {
                     duration: e.target.value as OfferForm["duration"],
                   }))
                 }
-                className={`mt-2 ${field}`}
+                className={`mt-2 ${adminField}`}
               >
                 <option value="once">Once</option>
                 <option value="forever">Forever</option>
@@ -306,7 +300,7 @@ function RetentionOffers() {
             </div>
             {form.duration === "repeating" ? (
               <div>
-                <label htmlFor="o-months" className={fieldLabel}>
+                <label htmlFor="o-months" className={adminFieldLabel}>
                   Months
                 </label>
                 <input
@@ -318,7 +312,7 @@ function RetentionOffers() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, durationInMonths: e.target.value }))
                   }
-                  className={`mt-2 ${field}`}
+                  className={`mt-2 ${adminField}`}
                 />
               </div>
             ) : null}
@@ -326,7 +320,7 @@ function RetentionOffers() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="o-max" className={fieldLabel}>
+              <label htmlFor="o-max" className={adminFieldLabel}>
                 Max redemptions
               </label>
               <input
@@ -338,11 +332,11 @@ function RetentionOffers() {
                   setForm((f) => ({ ...f, maxRedemptions: e.target.value }))
                 }
                 placeholder="Unlimited"
-                className={`mt-2 ${field}`}
+                className={`mt-2 ${adminField}`}
               />
             </div>
             <div>
-              <label htmlFor="o-expiry" className={fieldLabel}>
+              <label htmlFor="o-expiry" className={adminFieldLabel}>
                 Expires
               </label>
               <input
@@ -352,7 +346,7 @@ function RetentionOffers() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, redeemBy: e.target.value }))
                 }
-                className={`mt-2 ${field}`}
+                className={`mt-2 ${adminField}`}
               />
             </div>
           </div>
@@ -454,29 +448,110 @@ function CancellationSurvey() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [outcome, setOutcome] = useState<OfferOutcome | "">("");
+  const [reason, setReason] = useState<string>("");
+
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Memoized so refresh() only re-runs when a filter actually changes.
+  const filter: CancellationFilter = useMemo(
+    () => ({ outcome: outcome || null, reason: reason || null }),
+    [outcome, reason],
+  );
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchCancellations());
+      setData(await fetchCancellations(filter));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filter]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  const exportCsv = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadCancellationsCsv(filter);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <section aria-label="Cancellation survey">
       <h2 className="label text-cyan">Survey</h2>
+
+      <div className="mt-4 flex flex-wrap items-end gap-4">
+        <div>
+          <label htmlFor="c-outcome" className={adminFieldLabel}>
+            Outcome
+          </label>
+          <select
+            id="c-outcome"
+            value={outcome}
+            onChange={(e) => setOutcome(e.target.value as OfferOutcome | "")}
+            className={`mt-2 ${adminField}`}
+          >
+            <option value="">All outcomes</option>
+            {OFFER_OUTCOMES.map((o) => (
+              <option key={o} value={o}>
+                {outcomeLabel(o)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="c-reason" className={adminFieldLabel}>
+            Reason
+          </label>
+          <select
+            id="c-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className={`mt-2 ${adminField}`}
+          >
+            <option value="">All reasons</option>
+            {CANCELLATION_REASONS.map((r) => (
+              <option key={r.slug} value={r.slug}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void exportCsv()}
+          disabled={exporting}
+          className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+        >
+          {exporting ? "Exporting…" : "Export CSV"}
+        </button>
+      </div>
+      <p className="mt-2 text-body-sm text-fg-muted">
+        Filters apply to the responses below and the CSV export. The outcome and
+        reason totals above stay across all responses.
+      </p>
+      {exportError ? (
+        <p className="mt-2 text-body-sm text-danger">{exportError}</p>
+      ) : null}
+
       {loading ? (
-        <p className="mt-4 text-fg-muted">Loading…</p>
+        <p className="mt-6 text-fg-muted">Loading…</p>
       ) : error ? (
-        <div className="mt-4">
+        <div className="mt-6">
           <p className="text-body-sm text-danger">{error}</p>
           <button
             type="button"
@@ -487,15 +562,21 @@ function CancellationSurvey() {
           </button>
         </div>
       ) : data ? (
-        <div className="mt-4 flex flex-col gap-10">
-          <CancellationsBody data={data} />
+        <div className="mt-6 flex flex-col gap-10">
+          <CancellationsBody data={data} filtered={Boolean(outcome || reason)} />
         </div>
       ) : null}
     </section>
   );
 }
 
-function CancellationsBody({ data }: { data: CancellationSummary }) {
+function CancellationsBody({
+  data,
+  filtered,
+}: {
+  data: CancellationSummary;
+  filtered: boolean;
+}) {
   const isEmpty =
     data.byOutcome.length === 0 &&
     data.byReason.length === 0 &&
@@ -554,7 +635,9 @@ function CancellationsBody({ data }: { data: CancellationSummary }) {
       <section>
         <h3 className="font-display text-lg text-fg-strong">Recent responses</h3>
         {data.recent.length === 0 ? (
-          <p className="mt-4 text-body-sm text-fg-muted">No responses yet.</p>
+          <p className="mt-4 text-body-sm text-fg-muted">
+            {filtered ? "No responses match these filters." : "No responses yet."}
+          </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full border-collapse text-body-sm">
