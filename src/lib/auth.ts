@@ -50,35 +50,51 @@ export async function cancelSubscription(input: {
   access_until?: string;
   error?: string;
 }> {
-  const res = await fetch("/api/stripe/cancel-subscription", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({
-      reason: input.reason,
-      note: input.note,
-      offer_outcome: input.offerOutcome ?? "not_offered",
-    }),
-  });
-  return (await res.json()) as {
-    ok: boolean;
-    access_until?: string;
-    error?: string;
-  };
+  // Non-2xx still carries a JSON {ok:false, error} body we can surface; only a
+  // network failure or a non-JSON error page (e.g. a proxy 502) lands in the
+  // catch. Without it the rejection escapes the click handler and strands the
+  // page on its in-flight state.
+  try {
+    const res = await fetch("/api/stripe/cancel-subscription", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        reason: input.reason,
+        note: input.note,
+        offer_outcome: input.offerOutcome ?? "not_offered",
+      }),
+    });
+    return (await res.json()) as {
+      ok: boolean;
+      access_until?: string;
+      error?: string;
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
+  }
 }
 
 // Is the current member eligible for a retention discount on cancel, and what
-// is it? A non-OK response degrades to "no offer" so the cancel flow always
-// proceeds (worst case: skips straight to the reason step).
+// is it? Any failure — non-OK response, network error, non-JSON body —
+// degrades to "no offer" so the cancel flow always proceeds (worst case: skips
+// straight to the reason step).
 export async function getRetentionOffer(): Promise<{
   eligible: boolean;
   offer: RetentionOffer | null;
 }> {
-  const res = await fetch("/api/stripe/retention-offer", {
-    credentials: "include",
-  });
-  if (!res.ok) return { eligible: false, offer: null };
-  return (await res.json()) as { eligible: boolean; offer: RetentionOffer | null };
+  try {
+    const res = await fetch("/api/stripe/retention-offer", {
+      credentials: "include",
+    });
+    if (!res.ok) return { eligible: false, offer: null };
+    return (await res.json()) as {
+      eligible: boolean;
+      offer: RetentionOffer | null;
+    };
+  } catch {
+    return { eligible: false, offer: null };
+  }
 }
 
 // Accept the offer: the server re-derives the coupon, attaches it to the live
@@ -92,18 +108,22 @@ export async function acceptRetentionOffer(): Promise<{
   next_charge_at?: string;
   error?: string;
 }> {
-  const res = await fetch("/api/stripe/accept-retention-offer", {
-    method: "POST",
-    credentials: "include",
-  });
-  return (await res.json()) as {
-    ok: boolean;
-    percentOff?: number | null;
-    amountOff?: number | null;
-    durationMonths?: number | null;
-    next_charge_at?: string;
-    error?: string;
-  };
+  try {
+    const res = await fetch("/api/stripe/accept-retention-offer", {
+      method: "POST",
+      credentials: "include",
+    });
+    return (await res.json()) as {
+      ok: boolean;
+      percentOff?: number | null;
+      amountOff?: number | null;
+      durationMonths?: number | null;
+      next_charge_at?: string;
+      error?: string;
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
+  }
 }
 
 // Undo a pending cancel: the server clears cancel_at_period_end so the
@@ -111,36 +131,45 @@ export async function acceptRetentionOffer(): Promise<{
 // confirmation message.
 export async function reactivateSubscription(): Promise<{
   ok: boolean;
-  next_charge_at?: string;
+  next_charge_at?: string | null;
   error?: string;
 }> {
-  const res = await fetch("/api/stripe/reactivate-subscription", {
-    method: "POST",
-    credentials: "include",
-  });
-  return (await res.json()) as {
-    ok: boolean;
-    next_charge_at?: string;
-    error?: string;
-  };
+  try {
+    const res = await fetch("/api/stripe/reactivate-subscription", {
+      method: "POST",
+      credentials: "include",
+    });
+    return (await res.json()) as {
+      ok: boolean;
+      next_charge_at?: string | null;
+      error?: string;
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
+  }
 }
 
-// The signed-in member's cancel schedule. Drives a persistent "set to cancel"
-// state on the billing page, so a member who already cancelled doesn't see the
-// cancel option again after a reload. A non-OK response degrades to "no pending
-// cancel" so the page still renders normally.
-export async function getSubscriptionSchedule(): Promise<{
+// The signed-in member's cancel schedule, from GET /api/stripe/my-subscription.
+// Drives a persistent "set to cancel" state on the billing page, so a member
+// who already cancelled doesn't see the cancel option again after a reload.
+// Any failure degrades to "no pending cancel" so the page still renders
+// normally.
+export async function getMySubscription(): Promise<{
   cancelAtPeriodEnd: boolean;
   cancelAt: string | null;
 }> {
-  const res = await fetch("/api/stripe/my-subscription", {
-    credentials: "include",
-  });
-  if (!res.ok) return { cancelAtPeriodEnd: false, cancelAt: null };
-  return (await res.json()) as {
-    cancelAtPeriodEnd: boolean;
-    cancelAt: string | null;
-  };
+  try {
+    const res = await fetch("/api/stripe/my-subscription", {
+      credentials: "include",
+    });
+    if (!res.ok) return { cancelAtPeriodEnd: false, cancelAt: null };
+    return (await res.json()) as {
+      cancelAtPeriodEnd: boolean;
+      cancelAt: string | null;
+    };
+  } catch {
+    return { cancelAtPeriodEnd: false, cancelAt: null };
+  }
 }
 
 export async function sendSetupSms(

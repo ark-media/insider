@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   acceptRetentionOffer,
   cancelSubscription,
+  getMySubscription,
   getRetentionOffer,
-  getSubscriptionSchedule,
   reactivateSubscription,
 } from "../../lib/auth";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
@@ -98,7 +98,7 @@ function BillingPage() {
   useEffect(() => {
     if (state.kind !== "member" || !isArkPlusMember(state)) return;
     let active = true;
-    void getSubscriptionSchedule().then((s) => {
+    void getMySubscription().then((s) => {
       if (active && s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
     });
     return () => {
@@ -152,14 +152,6 @@ function BillingPage() {
   if (state.kind === "guest" || state.me.tier !== "ark-plus-member") return null;
 
   const me = state.me;
-
-  // Show the persistent "set to cancel" copy unless a transient post-action
-  // confirmation (just-cancelled / just-saved) is already on screen.
-  const showScheduled =
-    scheduledCancelAt != null &&
-    status.kind !== "ok" &&
-    status.kind !== "saved" &&
-    status.kind !== "resumed";
 
   const openFlow = async () => {
     setReason(null);
@@ -291,8 +283,11 @@ function BillingPage() {
               <h2 className="label text-cyan">
                 Cancel
               </h2>
+              {/* Tracks the schedule, not the transient status — right after
+                  cancelling this already reads "set to cancel", consistent
+                  with the confirmation below it. */}
               <p className="mt-4 max-w-md text-body-sm text-fg">
-                {showScheduled
+                {scheduledCancelAt
                   ? "Your membership is set to cancel and won't renew."
                   : "Cancel anytime. You'll keep access through the end of your current billing period."}
               </p>

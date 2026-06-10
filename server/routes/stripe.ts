@@ -375,9 +375,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             })
           : sub
 
-        const nextChargeAt = new Date(
-          updated.items.data[0].current_period_end * 1000,
-        ).toISOString()
+        // The reactivation has already succeeded by this point, so an itemless
+        // sub must not turn the response into a 500 — degrade to a null date.
+        const ts = updated.items.data[0]?.current_period_end
+        const nextChargeAt =
+          ts != null && Number.isFinite(ts)
+            ? new Date(ts * 1000).toISOString()
+            : null
         json(200, { ok: true, next_charge_at: nextChargeAt })
       },
     },
