@@ -213,6 +213,8 @@ export type PromoDraft = {
   durationInMonths?: number;
   plan: "" | "monthly" | "yearly";
   autoApply: boolean;
+  // Flags the coupon for the cancel save flow instead of checkout auto-apply.
+  retentionOffer?: boolean;
   maxRedemptions?: number;
   redeemBy?: string;
 };

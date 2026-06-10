@@ -70,8 +70,12 @@ export function buildPromo(raw: unknown): BuildResult {
     if (name) coupon.name = name.slice(0, 200)
   }
 
-  // Metadata drives checkout behavior: auto_apply + optional plan targeting.
+  // Metadata drives behavior: auto_apply (checkout) + optional plan targeting,
+  // plus retention_offer, which flags the coupon for the cancel save flow
+  // (server/lib/retention.ts). A retention coupon is offered, never auto-applied
+  // at checkout, so the two flags are independent.
   const metadata: Record<string, string> = { auto_apply: String(r.autoApply === true) }
+  if (r.retentionOffer === true) metadata.retention_offer = 'true'
   if (r.plan === 'monthly' || r.plan === 'yearly') {
     metadata.plan = r.plan
   } else if (r.plan != null && r.plan !== '' && r.plan !== 'both') {
@@ -121,6 +125,7 @@ export function serializeCoupon(c: Stripe.Coupon, code: string | null): Promo {
     duration: c.duration,
     durationInMonths: c.duration_in_months ?? null,
     autoApply: c.metadata?.auto_apply?.toLowerCase() === 'true',
+    retentionOffer: c.metadata?.retention_offer?.toLowerCase() === 'true',
     plan: c.metadata?.plan ?? null,
     maxRedemptions: c.max_redemptions ?? null,
     timesRedeemed: c.times_redeemed ?? 0,

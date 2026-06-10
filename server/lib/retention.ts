@@ -11,6 +11,7 @@
 // be unit-tested with plain objects.
 
 import type { RetentionOffer } from '../../shared/retention.js'
+import type { Plan } from './pricing.js'
 
 // USD is the source currency for all our prices (see server/routes/stripe.ts).
 // A fixed (amount_off) coupon in any other currency can't be applied
@@ -32,6 +33,17 @@ export function isRetentionCoupon(c: RetentionCouponLike): boolean {
   return c.valid === true && c.metadata?.retention_offer?.toLowerCase() === 'true'
 }
 
+// Plan targeting, mirroring the checkout promos (server/lib/stripe-promos.ts):
+// metadata.plan = "monthly" | "yearly" targets one plan; absent/"both" applies
+// to either. An admin sets this when they want distinct save offers per plan.
+// When the member's plan is unknown (null) we offer only untargeted coupons —
+// safer than handing a yearly-only deal to a monthly member we can't confirm.
+function appliesToPlan(c: RetentionCouponLike, plan: Plan | null): boolean {
+  const target = c.metadata?.plan
+  if (!target || target === 'both') return true
+  return plan !== null && target === plan
+}
+
 // Usable as an offer: a percent discount, or a fixed discount already in the
 // currency we charge in. A foreign-currency amount_off is dropped (it would be
 // subtracted as if it were USD cents — see the stripe-promos currency note).
@@ -41,14 +53,18 @@ function isUsable(c: RetentionCouponLike): boolean {
   return false
 }
 
-// Best retention coupon to offer. Prefers the largest percent_off (the plan
-// favors a repeating percent coupon); if none are percentage-based, the largest
-// USD amount_off. Null when nothing valid/usable is flagged. Deterministic so
-// re-entering the flow offers the same coupon.
+// Best retention coupon to offer the member's plan. Prefers the largest
+// percent_off (the plan favors a repeating percent coupon); if none are
+// percentage-based, the largest USD amount_off. Null when nothing valid/usable
+// is flagged for the plan. Deterministic so re-entering the flow offers the
+// same coupon. Pass plan=null to consider only untargeted ("both") coupons.
 export function pickRetentionCoupon<T extends RetentionCouponLike>(
   coupons: T[],
+  plan: Plan | null = null,
 ): T | null {
-  const usable = coupons.filter((c) => isRetentionCoupon(c) && isUsable(c))
+  const usable = coupons.filter(
+    (c) => isRetentionCoupon(c) && isUsable(c) && appliesToPlan(c, plan),
+  )
   if (usable.length === 0) return null
   const percent = usable.filter((c) => c.percent_off != null)
   if (percent.length > 0) {

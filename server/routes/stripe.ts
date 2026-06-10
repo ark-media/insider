@@ -29,7 +29,7 @@ import {
 } from '../../shared/cancellation.js'
 import { createScClient } from '../lib/sc-client.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
-import { getPlanPriceCents } from '../lib/pricing.js'
+import { getPlanPriceCents, type Plan } from '../lib/pricing.js'
 import { isSameOrigin, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getSessionEmail } from '../lib/session.js'
@@ -95,6 +95,17 @@ async function findActiveSubscription(
   for (const subs of subLists) {
     if (subs.data[0]) return subs.data[0]
   }
+  return null
+}
+
+// The plan a subscription bills on, from its recurring interval, so the cancel
+// save flow can offer a plan-targeted retention coupon. Null when the interval
+// isn't month/year (or the sub has no items) — the picker then offers only
+// untargeted coupons rather than guessing.
+function planFromSubscription(sub: Stripe.Subscription): Plan | null {
+  const interval = sub.items.data[0]?.price?.recurring?.interval
+  if (interval === 'month') return 'monthly'
+  if (interval === 'year') return 'yearly'
   return null
 }
 
@@ -424,7 +435,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         let coupon
         try {
-          coupon = pickRetentionCoupon(await listActiveCoupons(stripe))
+          coupon = pickRetentionCoupon(
+            await listActiveCoupons(stripe),
+            planFromSubscription(sub),
+          )
         } catch (err) {
           console.error('[stripe] retention coupon lookup failed:', err)
           return json(200, ineligible)
@@ -454,7 +468,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const sub = await findActiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
 
-        const coupon = pickRetentionCoupon(await listActiveCoupons(stripe))
+        const coupon = pickRetentionCoupon(
+          await listActiveCoupons(stripe),
+          planFromSubscription(sub),
+        )
         if (!coupon) return json(409, { error: 'No retention offer available.' })
 
         // Once-ever guard: reject a repeat accept *before* touching Stripe.

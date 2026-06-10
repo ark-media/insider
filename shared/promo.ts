@@ -12,6 +12,8 @@ export type Promo = {
   duration: string
   durationInMonths: number | null
   autoApply: boolean
+  // Eligible to be offered in the cancel save flow (metadata.retention_offer).
+  retentionOffer: boolean
   plan: string | null
   maxRedemptions: number | null
   timesRedeemed: number

@@ -140,6 +140,10 @@ function PromosAdmin() {
     }
   };
 
+  // Retention save offers are managed on the Cancellations page; keep this list
+  // to the checkout coupons it's about.
+  const checkoutPromos = items.filter((p) => !p.retentionOffer);
+
   const field =
     "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
   const label =
@@ -375,11 +379,11 @@ function PromosAdmin() {
             <p className="mt-6 text-body-sm">Loading…</p>
           ) : listError ? (
             <p className="mt-6 text-body-sm text-red-400">{listError}</p>
-          ) : items.length === 0 ? (
+          ) : checkoutPromos.length === 0 ? (
             <p className="mt-6 text-body-sm">No coupons in Stripe yet.</p>
           ) : (
             <ul className="mt-4 space-y-3">
-              {items.map((p) => (
+              {checkoutPromos.map((p) => (
                 <li key={p.id} className="border border-rule p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-body-lg font-display text-fg-strong">
