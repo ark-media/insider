@@ -59,7 +59,7 @@ function BillingPage() {
   // The cancel flow is a stepper inside the existing Modal. Eligible members
   // start at Offer (Offer → Reason → Confirm); everyone else skips straight to
   // Reason → Confirm and never learns an offer existed. `offerShown` drives the
-  // step numbering and the offer_outcome we record on cancel.
+  // offer_outcome we record on cancel.
   const [flowOpen, setFlowOpen] = useState(false);
   const [step, setStep] = useState<"loading" | "offer" | "reason" | "confirm">(
     "loading",
@@ -79,10 +79,6 @@ function BillingPage() {
   // closes it replaces the trigger button, so the Modal's focus-restore lands
   // on a detached node and falls to <body>; we move focus here instead.
   const confirmationRef = useRef<HTMLParagraphElement>(null);
-
-  const totalSteps = offerShown ? 3 : 2;
-  const stepNumber =
-    step === "offer" ? 1 : step === "reason" ? (offerShown ? 2 : 1) : offerShown ? 3 : 2;
 
   useEffect(() => {
     // Skip the redirect when "guest" is just an unreachable /api/me.
@@ -385,13 +381,10 @@ function BillingPage() {
         onClose={() => setFlowOpen(false)}
         className="max-w-md"
         labelledBy="cancel-title"
-        describedBy="cancel-step"
       >
         {step === "loading" ? (
           <div role="status" aria-live="polite">
-            <p id="cancel-step" className="eyebrow">
-              One moment
-            </p>
+            <p className="eyebrow">One moment</p>
             <h2
               ref={headingRef}
               tabIndex={-1}
@@ -403,14 +396,11 @@ function BillingPage() {
           </div>
         ) : step === "offer" && offer ? (
           <>
-            <p id="cancel-step" className="eyebrow">
-              Step {stepNumber} of {totalSteps}
-            </p>
             <h2
               ref={headingRef}
               tabIndex={-1}
               id="cancel-title"
-              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
+              className="display-upright text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
             >
               Wait — here's {offerHeadline(offer)}
             </h2>
@@ -445,14 +435,11 @@ function BillingPage() {
           </>
         ) : step === "reason" ? (
           <>
-            <p id="cancel-step" className="eyebrow">
-              Step {stepNumber} of {totalSteps}
-            </p>
             <h2
               ref={headingRef}
               tabIndex={-1}
               id="cancel-title"
-              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
+              className="display-upright text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
             >
               We're sorry to see you go
             </h2>
@@ -514,14 +501,11 @@ function BillingPage() {
           </>
         ) : (
           <>
-            <p id="cancel-step" className="eyebrow">
-              Step {stepNumber} of {totalSteps}
-            </p>
             <h2
               ref={headingRef}
               tabIndex={-1}
               id="cancel-title"
-              className="display-upright mt-3 text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
+              className="display-upright text-[clamp(1.5rem,3vw,1.9rem)] leading-[1.05] text-fg-strong focus:outline-none"
             >
               Cancel your Ark+ membership?
             </h2>
