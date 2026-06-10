@@ -106,6 +106,43 @@ export async function acceptRetentionOffer(): Promise<{
   };
 }
 
+// Undo a pending cancel: the server clears cancel_at_period_end so the
+// membership renews normally again. Returns the next charge date for the
+// confirmation message.
+export async function reactivateSubscription(): Promise<{
+  ok: boolean;
+  next_charge_at?: string;
+  error?: string;
+}> {
+  const res = await fetch("/api/stripe/reactivate-subscription", {
+    method: "POST",
+    credentials: "include",
+  });
+  return (await res.json()) as {
+    ok: boolean;
+    next_charge_at?: string;
+    error?: string;
+  };
+}
+
+// The signed-in member's cancel schedule. Drives a persistent "set to cancel"
+// state on the billing page, so a member who already cancelled doesn't see the
+// cancel option again after a reload. A non-OK response degrades to "no pending
+// cancel" so the page still renders normally.
+export async function getSubscriptionSchedule(): Promise<{
+  cancelAtPeriodEnd: boolean;
+  cancelAt: string | null;
+}> {
+  const res = await fetch("/api/stripe/my-subscription", {
+    credentials: "include",
+  });
+  if (!res.ok) return { cancelAtPeriodEnd: false, cancelAt: null };
+  return (await res.json()) as {
+    cancelAtPeriodEnd: boolean;
+    cancelAt: string | null;
+  };
+}
+
 export async function sendSetupSms(
   phone: string,
   feedId?: number,

@@ -7,8 +7,11 @@
 //     Sessions API (not a bare Subscription) specifically because Adaptive
 //     Pricing is only available through Checkout Sessions.
 //   POST /api/stripe/cancel-subscription   — cancel at period end.
+//   POST /api/stripe/reactivate-subscription — undo a pending cancel.
 //   GET  /api/stripe/subscription-status   — poll for activation after
 //     PaymentIntent confirm (the client races the webhook).
+//   GET  /api/stripe/my-subscription       — the signed-in member's cancel
+//     schedule, so the account page can persist a "set to cancel" state.
 //   POST /api/stripe/webhook               — server-to-server signal from
 //     Stripe; the source of truth for SC + entitlement state.
 
@@ -344,6 +347,42 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     },
 
     {
+      // Undo a pending cancel: clear cancel_at_period_end so the subscription
+      // renews normally again. Only reachable while the cancel is still
+      // scheduled (the sub stays `active` until the period ends); once it has
+      // lapsed the member is no longer Ark+ and re-subscribes via checkout
+      // instead. Unlike accept-retention-offer this attaches no coupon and
+      // burns no eligibility — it's a plain resume. The webhook's
+      // syncScCancelSchedule mirrors the cleared schedule back to SC.
+      path: '/api/stripe/reactivate-subscription',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const sub = await findActiveSubscription(stripe, email)
+        if (!sub) return json(404, { error: 'No active subscription found' })
+
+        // Idempotent: if it isn't actually scheduled to cancel there's nothing
+        // to undo — report success with the existing renewal date.
+        const updated = sub.cancel_at_period_end
+          ? await stripe.subscriptions.update(sub.id, {
+              cancel_at_period_end: false,
+            })
+          : sub
+
+        const nextChargeAt = new Date(
+          updated.items.data[0].current_period_end * 1000,
+        ).toISOString()
+        json(200, { ok: true, next_charge_at: nextChargeAt })
+      },
+    },
+
+    {
       // Is this member eligible for a retention discount, and what is it? Read
       // on open of the cancel flow: eligible iff they have an active sub AND a
       // valid retention coupon is configured AND they've never accepted before.
@@ -515,6 +554,41 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         json(200, {
           status: sub.status,
           activated: Boolean(sub.metadata?.sc_subscription_id),
+        })
+      },
+    },
+
+    {
+      // The signed-in member's cancel schedule, for the account page to show a
+      // persistent "scheduled to cancel" state across reloads — the in-page
+      // confirmation after cancelling is transient client state and is lost on
+      // refresh. Keyed by the session email (never a self-asserted one). A
+      // scheduled cancel keeps the subscription `status: 'active'` until the
+      // period actually ends, so findActiveSubscription still matches it. Fails
+      // closed to "no pending cancel" so a Stripe hiccup degrades to showing the
+      // cancel button rather than an error.
+      path: '/api/stripe/my-subscription',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const sub = await findActiveSubscription(stripe, email)
+        // When cancel_at_period_end is set, Stripe populates cancel_at; fall back
+        // to the current period end so we always have a date to show.
+        let cancelAt: string | null = null
+        if (sub?.cancel_at_period_end) {
+          const ts = sub.cancel_at ?? sub.items.data[0]?.current_period_end ?? null
+          if (ts != null && Number.isFinite(ts)) {
+            cancelAt = new Date(ts * 1000).toISOString()
+          }
+        }
+        json(200, {
+          cancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),
+          cancelAt,
         })
       },
     },

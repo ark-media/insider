@@ -4,6 +4,8 @@ import {
   acceptRetentionOffer,
   cancelSubscription,
   getRetentionOffer,
+  getSubscriptionSchedule,
+  reactivateSubscription,
 } from "../../lib/auth";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
@@ -42,10 +44,18 @@ function BillingPage() {
     | { kind: "idle" }
     | { kind: "cancelling" }
     | { kind: "applying" }
+    | { kind: "reactivating" }
     | { kind: "ok"; until: string }
     | { kind: "saved"; headline: string; nextChargeAt: string }
+    | { kind: "resumed"; nextChargeAt: string }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
+  // The ISO date this membership is already scheduled to cancel, or null when
+  // it renews normally. Loaded from Stripe on mount so the "set to cancel"
+  // state survives a reload (the post-cancel `status` above is transient).
+  const [scheduledCancelAt, setScheduledCancelAt] = useState<string | null>(
+    null,
+  );
   // The cancel flow is a stepper inside the existing Modal. Eligible members
   // start at Offer (Offer → Reason → Confirm); everyone else skips straight to
   // Reason → Confirm and never learns an offer existed. `offerShown` drives the
@@ -86,6 +96,20 @@ function BillingPage() {
     }
   }, [state, authError, navigate]);
 
+  // Load any pending cancel schedule once we know this is a paying member, so a
+  // member who already cancelled lands on the "set to cancel" state rather than
+  // the cancel button. Degrades silently to "no pending cancel" on failure.
+  useEffect(() => {
+    if (state.kind !== "member" || !isArkPlusMember(state)) return;
+    let active = true;
+    void getSubscriptionSchedule().then((s) => {
+      if (active && s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
+    });
+    return () => {
+      active = false;
+    };
+  }, [state]);
+
   // Move focus to the heading on every step change so keyboard and screen-
   // reader users land on (and hear) the new step instead of losing focus to
   // <body> when the previous step's controls unmount. The heading is
@@ -99,7 +123,11 @@ function BillingPage() {
   // (a tabIndex={-1} target) so focus isn't stranded on <body> when the trigger
   // button it would otherwise restore to has been unmounted.
   useEffect(() => {
-    if (status.kind === "ok" || status.kind === "saved") {
+    if (
+      status.kind === "ok" ||
+      status.kind === "saved" ||
+      status.kind === "resumed"
+    ) {
       confirmationRef.current?.focus();
     }
   }, [status.kind]);
@@ -128,6 +156,14 @@ function BillingPage() {
   if (state.kind === "guest" || state.me.tier !== "ark-plus-member") return null;
 
   const me = state.me;
+
+  // Show the persistent "set to cancel" copy unless a transient post-action
+  // confirmation (just-cancelled / just-saved) is already on screen.
+  const showScheduled =
+    scheduledCancelAt != null &&
+    status.kind !== "ok" &&
+    status.kind !== "saved" &&
+    status.kind !== "resumed";
 
   const openFlow = async () => {
     setReason(null);
@@ -167,7 +203,9 @@ function BillingPage() {
         }),
         nextChargeAt: r.next_charge_at ?? "",
       });
-      // Pending cancel was cleared server-side; resync the page's auth state.
+      // Pending cancel was cleared server-side; drop the scheduled state and
+      // resync the page's auth state.
+      setScheduledCancelAt(null);
       refresh();
     } else {
       // Stay on the Offer step; the member can retry or decline to Reason.
@@ -189,10 +227,29 @@ function BillingPage() {
     });
     if (r.ok) {
       setStatus({ kind: "ok", until: r.access_until ?? "" });
+      // Persist the schedule so the "set to cancel" state holds on reload.
+      setScheduledCancelAt(r.access_until ?? null);
     } else {
       setStatus({
         kind: "error",
         message: r.error ?? "Could not cancel — please try again.",
+      });
+    }
+  };
+
+  const onReactivate = async () => {
+    setStatus({ kind: "reactivating" });
+    const r = await reactivateSubscription();
+    if (r.ok) {
+      // Cancel was undone server-side; clear the scheduled state and resync the
+      // page's auth state.
+      setScheduledCancelAt(null);
+      setStatus({ kind: "resumed", nextChargeAt: r.next_charge_at ?? "" });
+      refresh();
+    } else {
+      setStatus({
+        kind: "error",
+        message: r.error ?? "Could not reactivate — please try again.",
       });
     }
   };
@@ -239,8 +296,9 @@ function BillingPage() {
                 Cancel
               </h2>
               <p className="mt-4 max-w-md text-body-sm text-fg">
-                Cancel anytime. You'll keep access through the end of your
-                current billing period.
+                {showScheduled
+                  ? "Your membership is set to cancel and won't renew."
+                  : "Cancel anytime. You'll keep access through the end of your current billing period."}
               </p>
               {status.kind === "ok" ? (
                 <p
@@ -266,6 +324,35 @@ function BillingPage() {
                     ? ` Next charge on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
                     : ""}
                 </p>
+              ) : status.kind === "resumed" ? (
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
+                  Your membership is back on.{" "}
+                  {status.nextChargeAt
+                    ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
+                    : ""}
+                </p>
+              ) : scheduledCancelAt ? (
+                <>
+                  <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                    You'll keep access until{" "}
+                    {new Date(scheduledCancelAt).toLocaleDateString()}.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onReactivate}
+                    disabled={status.kind === "reactivating"}
+                    className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  >
+                    {status.kind === "reactivating"
+                      ? "Reactivating…"
+                      : "Reactivate membership"}
+                  </button>
+                </>
               ) : (
                 <button
                   type="button"
