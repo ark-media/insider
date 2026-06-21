@@ -76,9 +76,9 @@ function SubscriberDashboard({
             <SurfaceRow
               icon={<HeadphonesIcon />}
               label="Podcast"
-              title="Your private podcast feed"
-              body="Inside Call Me Back lives in the podcast app you already use. One-tap setup for Apple Podcasts, Overcast, Pocket Casts, Spotify, and more."
-              cta="Set up the feed"
+              title="Your private podcast feeds"
+              body="Your members-only shows live in the podcast app you already use. One-tap setup for Apple Podcasts, Overcast, Pocket Casts, Spotify, and more."
+              cta="Set up your feeds"
               href="/account/podcast-feed"
             />
             <SurfaceRow

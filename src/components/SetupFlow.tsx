@@ -49,10 +49,10 @@ const APPS: AppDef[] = [
     instructions: [
       "The Podcasts app will open on your device.",
       "A pop-up will appear with the show URL — tap Follow.",
-      "Listen to your exclusive Inside episodes each Friday. Regular Call Me Back episodes stay in your existing feed.",
+      "Your exclusive {show} episodes appear here. Your other feeds stay where they are.",
     ],
     ctaLabel: "Open in Apple Podcasts",
-    note: "Can't find the show? Don't search for it. This private feed won't appear in the Apple Podcasts search. Go to Library → Shows to find Inside Call Me Back (white cover — not the purple one).",
+    note: "Can't find the show? Don't search for it — a private feed never appears in Apple Podcasts search. Go to Library → Shows to find it there.",
   },
   {
     key: "spotify",
@@ -63,7 +63,7 @@ const APPS: AppDef[] = [
     instructions: [
       "A separate window will open — click Link Account.",
       "Sign in to your Spotify account.",
-      "Inside Call Me Back episodes will be unlocked inside your Call Me Back show on Spotify.",
+      "{show} episodes unlock inside the show on Spotify.",
     ],
     ctaLabel: "Link my Spotify account",
   },
@@ -76,10 +76,9 @@ const APPS: AppDef[] = [
     instructions: [
       "YouTube Music will open — sign in if you're not already.",
       "A pop-up will appear with the show URL — tap Add.",
-      "Your exclusive episodes will appear in your Call Me Back library each Friday.",
+      "Your exclusive {show} episodes appear in your library when new ones drop.",
     ],
     ctaLabel: "Open in YouTube Music",
-    note: "Heads up: there are no videos for Inside Call Me Back — audio only.",
   },
   {
     key: "overcast",
@@ -143,8 +142,14 @@ function feedAppUrl(feed: UserFeed | null, scApp: string | undefined): string {
 }
 
 export function SetupFlow({ me }: { me: Me }) {
-  const feed = me.feeds[0] ?? null;
+  const feeds = me.feeds;
+  const [selectedFeedId, setSelectedFeedId] = useState<number | null>(
+    feeds[0]?.id ?? null,
+  );
+  const feed =
+    feeds.find((f) => f.id === selectedFeedId) ?? feeds[0] ?? null;
   const feedUrl = feed?.url ?? "";
+  const showName = feed?.name ?? "your show";
 
   const [device, setDevice] = useState<Device | null>(null);
   const [appKey, setAppKey] = useState<AppKey | null>(null);
@@ -179,6 +184,19 @@ export function SetupFlow({ me }: { me: Me }) {
     () => APPS.find((a) => a.key === appKey) ?? null,
     [appKey],
   );
+
+  // Switching shows keeps the chosen device + app — only the feed-derived
+  // values change. But a different feed may not expose the selected app's SC
+  // integration, so drop back to Step 2 when that happens.
+  const selectFeed = (nextId: number) => {
+    setSelectedFeedId(nextId);
+    setCopied(false);
+    const next = feeds.find((f) => f.id === nextId);
+    const sel = APPS.find((a) => a.key === appKey);
+    if (sel?.scApp && !next?.apps?.some((a) => a.app === sel.scApp)) {
+      setAppKey(null);
+    }
+  };
 
   const copyFeed = async () => {
     if (!feedUrl) return;
@@ -240,9 +258,7 @@ export function SetupFlow({ me }: { me: Me }) {
   };
 
   const selfSmsHref = feedUrl
-    ? `sms:?body=${encodeURIComponent(
-        `Your Inside Call Me Back feed: ${feedUrl}`,
-      )}`
+    ? `sms:?body=${encodeURIComponent(`Your ${showName} feed: ${feedUrl}`)}`
     : "";
 
   return (
@@ -256,19 +272,51 @@ export function SetupFlow({ me }: { me: Me }) {
           ]}
           className="mb-10"
         />
+        {/* Feed switcher — only when the member has more than one private feed */}
+        {feeds.length > 1 ? (
+          <div className="rise rise-1 mb-10 flex gap-2 overflow-x-auto pb-1">
+            {feeds.map((f) => {
+              const selected = f.id === feed?.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => selectFeed(f.id)}
+                  aria-pressed={selected}
+                  className={`shrink-0 whitespace-nowrap border px-4 py-2.5 label font-display font-bold tracking-[0.06em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                    selected
+                      ? "border-cyan bg-cyan/10 text-fg-strong"
+                      : "border-rule text-fg hover:border-cyan/60 hover:text-fg-strong"
+                  }`}
+                >
+                  {f.name}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         {/* Masthead row */}
         <div className="rise rise-1 flex flex-col items-start gap-6 sm:flex-row sm:items-end sm:gap-8">
           <div
-            className="relative aspect-square w-[140px] shrink-0 overflow-hidden shadow-cover sm:w-[164px]"
+            className="relative aspect-square w-[140px] shrink-0 overflow-hidden bg-navy-900 shadow-cover sm:w-[164px]"
             style={{ transform: "rotate(-1.5deg)" }}
           >
-            <img
-              src="/inside-cmb.jpg"
-              alt="Inside Call Me Back"
-              width={760}
-              height={760}
-              className="h-full w-full object-cover"
-            />
+            {feed?.image_url ? (
+              <img
+                src={feed.image_url}
+                alt={showName}
+                width={760}
+                height={760}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div
+                aria-hidden="true"
+                className="flex h-full w-full items-center justify-center font-display text-4xl font-bold text-cyan"
+              >
+                {showName.charAt(0)}
+              </div>
+            )}
           </div>
           <div className="min-w-0">
             <div className="label flex items-center gap-3 text-cyan">
@@ -284,8 +332,8 @@ export function SetupFlow({ me }: { me: Me }) {
               </span>
             </h1>
             <p className="mt-5 max-w-md text-body-lg">
-              Get your exclusive Inside Call Me Back episodes in your podcast
-              app of choice — in just a few steps.
+              Get your exclusive {showName} episodes in your podcast app of
+              choice — in just a few steps.
             </p>
           </div>
         </div>
@@ -389,7 +437,7 @@ export function SetupFlow({ me }: { me: Me }) {
                     <span className="text-body-sm font-display font-bold text-cyan">
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <span>{step}</span>
+                    <span>{step.replace(/\{show\}/g, showName)}</span>
                   </li>
                 ))}
               </ol>
