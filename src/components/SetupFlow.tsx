@@ -9,11 +9,7 @@ import {
   SpotifyIcon,
   YouTubeIcon,
 } from "./PlatformIcons";
-import {
-  sendSetupSms,
-  type Me,
-  type UserFeed,
-} from "../lib/auth";
+import { sendSetupSms, type UserFeed } from "../lib/auth";
 
 type Device = "phone" | "computer";
 
@@ -141,13 +137,15 @@ function feedAppUrl(feed: UserFeed | null, scApp: string | undefined): string {
   return feed.url;
 }
 
-export function SetupFlow({ me }: { me: Me }) {
-  const feeds = me.feeds;
-  const [selectedFeedId, setSelectedFeedId] = useState<number | null>(
-    feeds[0]?.id ?? null,
-  );
-  const feed =
-    feeds.find((f) => f.id === selectedFeedId) ?? feeds[0] ?? null;
+export function SetupFlow({
+  feed,
+  onBack,
+}: {
+  feed: UserFeed | null;
+  // When set, the member has more than one feed; render a link back to the
+  // feed picker instead of the (too-subtle) inline switcher.
+  onBack?: () => void;
+}) {
   const feedUrl = feed?.url ?? "";
   const showName = feed?.name ?? "your show";
 
@@ -184,19 +182,6 @@ export function SetupFlow({ me }: { me: Me }) {
     () => APPS.find((a) => a.key === appKey) ?? null,
     [appKey],
   );
-
-  // Switching shows keeps the chosen device + app — only the feed-derived
-  // values change. But a different feed may not expose the selected app's SC
-  // integration, so drop back to Step 2 when that happens.
-  const selectFeed = (nextId: number) => {
-    setSelectedFeedId(nextId);
-    setCopied(false);
-    const next = feeds.find((f) => f.id === nextId);
-    const sel = APPS.find((a) => a.key === appKey);
-    if (sel?.scApp && !next?.apps?.some((a) => a.app === sel.scApp)) {
-      setAppKey(null);
-    }
-  };
 
   const copyFeed = async () => {
     if (!feedUrl) return;
@@ -272,28 +257,19 @@ export function SetupFlow({ me }: { me: Me }) {
           ]}
           className="mb-10"
         />
-        {/* Feed switcher — only when the member has more than one private feed */}
-        {feeds.length > 1 ? (
-          <div className="rise rise-1 mb-10 flex gap-2 overflow-x-auto pb-1">
-            {feeds.map((f) => {
-              const selected = f.id === feed?.id;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => selectFeed(f.id)}
-                  aria-pressed={selected}
-                  className={`shrink-0 whitespace-nowrap border px-4 py-2.5 label font-display font-bold tracking-[0.06em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
-                    selected
-                      ? "border-cyan bg-cyan/10 text-fg-strong"
-                      : "border-rule text-fg hover:border-cyan/60 hover:text-fg-strong"
-                  }`}
-                >
-                  {f.name}
-                </button>
-              );
-            })}
-          </div>
+        {/* When the member has more than one private feed, link back to the
+            feed picker rather than switching shows inline. */}
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="rise rise-1 group mb-10 inline-flex items-center gap-2 text-body-sm text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:-translate-x-1">
+              ←
+            </span>
+            All feeds
+          </button>
         ) : null}
         {/* Masthead row */}
         <div className="rise rise-1 flex flex-col items-start gap-6 sm:flex-row sm:items-end sm:gap-8">

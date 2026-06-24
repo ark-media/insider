@@ -1,14 +1,20 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { SetupFlow } from "../components/SetupFlow";
+import { PodcastFeedSetup } from "../components/PodcastFeedSetup";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createFileRoute("/setup")({
   component: SetupPage,
+  validateSearch: (search: Record<string, unknown>): { feed?: number } => {
+    const n = Number(search.feed);
+    return Number.isInteger(n) && n > 0 ? { feed: n } : {};
+  },
 });
 
 function SetupPage() {
   const navigate = useNavigate();
+  const routeNavigate = Route.useNavigate();
+  const { feed } = Route.useSearch();
   const { state } = useSubscriberAuth();
 
   useEffect(() => {
@@ -34,5 +40,12 @@ function SetupPage() {
   if (state.kind === "guest") return null;
   if (state.me.tier !== "ark-plus-member") return null;
 
-  return <SetupFlow me={state.me} />;
+  return (
+    <PodcastFeedSetup
+      me={state.me}
+      feedParam={feed}
+      onSelectFeed={(id) => void routeNavigate({ search: { feed: id } })}
+      onClearFeed={() => void routeNavigate({ search: {} })}
+    />
+  );
 }
