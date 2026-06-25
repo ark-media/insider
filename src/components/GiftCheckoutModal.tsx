@@ -16,6 +16,7 @@ import {
   GIFT_LABEL,
   type GiftInput,
 } from "../lib/gift";
+import { trackEvent } from "../lib/analytics";
 
 type Step =
   // The Checkout Session is created the moment the modal opens so the giver's
@@ -113,6 +114,11 @@ export function GiftCheckoutModal({
       const result = await createGiftCheckout(input);
       if (cancelled) return;
       if (!result.ok) {
+        trackEvent("gift_checkout_failed", {
+          term: input.term,
+          stage: "create_session",
+          reason: result.error,
+        });
         setStep({ kind: "error", message: result.error });
         return;
       }
@@ -189,6 +195,7 @@ export function GiftCheckoutModal({
             onActivating={() => setStep({ kind: "activating" })}
             onProcessing={() => setStep({ kind: "processing" })}
             onDone={() => {
+              trackEvent("gift_checkout_succeeded", { term: input.term });
               handleClose();
               void navigate({ to: "/", search: { gift: "complete" } });
             }}
@@ -316,6 +323,7 @@ function GiftPaymentForm({
     if (submittedRef.current) return;
     submittedRef.current = true;
     setSubmitting(true);
+    trackEvent("gift_payment_submitted", { term: input.term });
 
     // redirect: 'if_required' keeps card payments in the modal; methods that
     // need an off-site step (e.g. 3DS) use the session's return_url.
@@ -325,6 +333,11 @@ function GiftPaymentForm({
       // A decline is retryable — stay on the payment form.
       submittedRef.current = false;
       setSubmitting(false);
+      trackEvent("gift_checkout_failed", {
+        term: input.term,
+        stage: "payment",
+        reason: result.error.message ?? "payment_failed",
+      });
       onError(result.error.message ?? "Payment failed. Please try again.");
       return;
     }

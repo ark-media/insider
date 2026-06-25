@@ -7,6 +7,7 @@ import {
   type GiftInput,
   type GiftTerm,
 } from "../../lib/gift";
+import { trackEvent } from "../../lib/analytics";
 
 export const Route = createFileRoute("/plus/gift")({
   component: GiftPage,
@@ -51,6 +52,7 @@ function GiftPage() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    trackEvent("gift_checkout_opened", { term });
     setSubmitted({
       giverEmail: giverEmail.trim(),
       giverName: giverName.trim() || undefined,

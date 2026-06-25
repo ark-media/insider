@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { NewsletterSlug } from "../data/newsletters";
 import { subscribeEmail } from "../lib/beehiiv";
+import { trackEvent } from "../lib/analytics";
 
 /**
  * Inline email capture for a Beehiiv newsletter. Used on the newsletters hub
@@ -18,6 +19,7 @@ export function NewsletterSignupForm({ slug }: { slug: NewsletterSlug }) {
     e.preventDefault();
     setStatus("submitting");
     const r = await subscribeEmail(slug, email.trim());
+    trackEvent("newsletter_subscribed", { slug, result: r.ok ? "ok" : "error" });
     if (r.ok) {
       setStatus("ok");
       setMessage("You're on the list.");

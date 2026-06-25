@@ -60,6 +60,19 @@ interface EventMap {
   cancellation_reason_submitted: { reason: string }
   subscription_cancelled: { reason: string; offer_outcome: 'declined' | 'not_offered' }
   subscription_reactivated: void
+
+  // --- Tier 3: secondary conversions & activation ---
+  newsletter_subscribed: { slug: string; result: 'ok' | 'error' }
+  login_initiated: { intent: 'login' | 'signup' }
+  // Gift checkout mirrors the Tier 1 funnel shape (opened → payment → result).
+  gift_checkout_opened: { term: string }
+  gift_payment_submitted: { term: string }
+  gift_checkout_succeeded: { term: string }
+  gift_checkout_failed: { term: string; stage: 'create_session' | 'payment'; reason?: string }
+  // Private-feed activation: which app a member picks, and the terminal
+  // hand-off action (open deep link / copy URL / text themselves the link).
+  feed_app_selected: { app: string }
+  feed_activated: { app: string; method: 'open' | 'copy' | 'sms' }
 }
 
 // Single typed entry point. The conditional tuple makes props REQUIRED for

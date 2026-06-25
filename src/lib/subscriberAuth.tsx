@@ -10,6 +10,7 @@ import { fetchMe, type Me } from "./auth";
 import { fetchAdminMe } from "./admin";
 import { hasAnySession } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
+import { trackEvent } from "./analytics";
 
 export type SubscriberAuthState =
   | { kind: "loading" }
@@ -123,6 +124,9 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     );
     if (opts?.signup) params.set("screen_hint", "signup");
     if (opts?.loginHint) params.set("login_hint", opts.loginHint);
+    // Fired just before navigating to Auth0; PostHog flushes its queue via
+    // sendBeacon on pagehide, so the event survives the redirect.
+    trackEvent("login_initiated", { intent: opts?.signup ? "signup" : "login" });
     window.location.assign(`/api/auth/login?${params.toString()}`);
   }, []);
 

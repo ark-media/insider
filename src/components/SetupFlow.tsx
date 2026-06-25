@@ -10,6 +10,7 @@ import {
   YouTubeIcon,
 } from "./PlatformIcons";
 import { sendSetupSms, type UserFeed } from "../lib/auth";
+import { trackEvent } from "../lib/analytics";
 
 type Device = "phone" | "computer";
 
@@ -188,6 +189,7 @@ export function SetupFlow({
     try {
       await navigator.clipboard.writeText(feedUrl);
       setCopied(true);
+      trackEvent("feed_activated", { app: appKey ?? "unknown", method: "copy" });
       setTimeout(() => setCopied(false), 2200);
     } catch {
       /* no-op */
@@ -232,6 +234,7 @@ export function SetupFlow({
       const result = await sendSetupSms(smsPhone, feed?.id);
       if (result.ok) {
         setSmsState("sent");
+        trackEvent("feed_activated", { app: appKey ?? "unknown", method: "sms" });
       } else {
         setSmsState("error");
         setSmsError(result.error ?? "Could not send SMS.");
@@ -372,14 +375,20 @@ export function SetupFlow({
                   key={app.key}
                   app={app}
                   selected={appKey === app.key}
-                  onClick={() => setAppKey(app.key)}
+                  onClick={() => {
+                    trackEvent("feed_app_selected", { app: app.key });
+                    setAppKey(app.key);
+                  }}
                 />
               ))}
           </div>
           {visibleApps.some((a) => a.key === "manual") ? (
             <button
               type="button"
-              onClick={() => setAppKey("manual")}
+              onClick={() => {
+                trackEvent("feed_app_selected", { app: "manual" });
+                setAppKey("manual");
+              }}
               className={`mt-3 w-full border px-4 py-3 text-left text-body-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:text-center ${
                 appKey === "manual"
                   ? "border-cyan bg-cyan/10 text-fg-strong"
@@ -435,6 +444,12 @@ export function SetupFlow({
                     href={selectedAppUrl || feedUrl}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() =>
+                      trackEvent("feed_activated", {
+                        app: selectedApp.key,
+                        method: "open",
+                      })
+                    }
                     className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     {selectedApp.ctaLabel}
