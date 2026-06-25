@@ -8,9 +8,14 @@ import {
   type GiftTerm,
 } from "../../lib/gift";
 import { trackEvent } from "../../lib/analytics";
+import { HardLaunchOnly } from "../../lib/launchMode";
 
 export const Route = createFileRoute("/plus/gift")({
-  component: GiftPage,
+  component: () => (
+    <HardLaunchOnly>
+      <GiftPage />
+    </HardLaunchOnly>
+  ),
 });
 
 const inputClass =

@@ -3,6 +3,10 @@ import { useEffect } from "react";
 import { PodcastFeedSetup } from "../components/PodcastFeedSetup";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 
+// Not gated by launch mode: this is a member-management surface, and an Ark+
+// member needs to set up their feed even during soft launch. The component's
+// own gate already redirects guests and free users to /plus (which itself
+// redirects to the soft-launch landing).
 export const Route = createFileRoute("/setup")({
   component: SetupPage,
   validateSearch: (search: Record<string, unknown>): { feed?: number } => {

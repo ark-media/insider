@@ -12,6 +12,7 @@ import { getPublication, subscribeEmail } from "../../lib/beehiiv";
 import { sourceFor } from "../../lib/newsletterSources";
 import { useNewsletterSubscription } from "../../lib/useNewsletterSubscription";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
+import { useIsSoftLaunch } from "../../lib/launchMode";
 
 export const Route = createFileRoute("/newsletters/")({
   component: NewslettersPage,
@@ -28,6 +29,7 @@ const breadcrumbs = (
 
 function NewslettersPage() {
   const { state } = useSubscriberAuth();
+  const isSoftLaunch = useIsSoftLaunch();
   const {
     isSubscribed,
     prefsLoading,
@@ -124,7 +126,9 @@ function NewslettersPage() {
           {showSignup ? (
             <div className="lg:col-span-5">
               <SignupCard pub={pub} />
-              {pub.slug !== "members-letter" && !isSubscriber ? (
+              {/* Ark+ upgrade card — hidden during soft launch, which leads
+                  with the Inside Call Me Back page instead. */}
+              {!isSoftLaunch && pub.slug !== "members-letter" && !isSubscriber ? (
                 <JoinPlusCard />
               ) : null}
             </div>

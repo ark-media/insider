@@ -4,6 +4,7 @@ import { AdminGuard } from "./AdminGuard";
 
 type Tab =
   | "home"
+  | "launch"
   | "announcements"
   | "careers"
   | "faqs"
@@ -13,6 +14,7 @@ type Tab =
 
 const TABS: { id: Tab; label: string; to: string }[] = [
   { id: "home", label: "Overview", to: "/admin" },
+  { id: "launch", label: "Launch mode", to: "/admin/launch" },
   { id: "announcements", label: "Announcements", to: "/admin/announcements" },
   { id: "careers", label: "Careers", to: "/admin/careers" },
   { id: "faqs", label: "FAQs", to: "/admin/faqs" },

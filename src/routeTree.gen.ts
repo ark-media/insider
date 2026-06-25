@@ -13,10 +13,12 @@ import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
+import { Route as InsideCallMeBackRouteImport } from './routes/inside-call-me-back'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CommunityRouteImport } from './routes/community'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as AccountRouteRouteImport } from './routes/account/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShowsIndexRouteImport } from './routes/shows/index'
 import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
@@ -37,6 +39,7 @@ import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
+import { Route as AdminLaunchRouteImport } from './routes/admin/launch'
 import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
 import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
 import { Route as AdminCareersRouteImport } from './routes/admin/careers'
@@ -70,6 +73,11 @@ const IsraelVotesRoute = IsraelVotesRouteImport.update({
   path: '/israel-votes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InsideCallMeBackRoute = InsideCallMeBackRouteImport.update({
+  id: '/inside-call-me-back',
+  path: '/inside-call-me-back',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EventsRoute = EventsRouteImport.update({
   id: '/events',
   path: '/events',
@@ -88,6 +96,11 @@ const CommunityRoute = CommunityRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRouteRoute = AccountRouteRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -131,9 +144,9 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountIndexRoute = AccountIndexRouteImport.update({
-  id: '/account/',
-  path: '/account/',
-  getParentRoute: () => rootRouteImport,
+  id: '/',
+  path: '/',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
 const ShowsShowRoute = ShowsShowRouteImport.update({
   id: '/shows/$show',
@@ -190,6 +203,11 @@ const AdminPromosRoute = AdminPromosRouteImport.update({
   path: '/admin/promos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminLaunchRoute = AdminLaunchRouteImport.update({
+  id: '/admin/launch',
+  path: '/admin/launch',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminFaqsRoute = AdminFaqsRouteImport.update({
   id: '/admin/faqs',
   path: '/admin/faqs',
@@ -216,19 +234,19 @@ const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountPodcastFeedRoute = AccountPodcastFeedRouteImport.update({
-  id: '/account/podcast-feed',
-  path: '/account/podcast-feed',
-  getParentRoute: () => rootRouteImport,
+  id: '/podcast-feed',
+  path: '/podcast-feed',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
 const AccountNewslettersRoute = AccountNewslettersRouteImport.update({
-  id: '/account/newsletters',
-  path: '/account/newsletters',
-  getParentRoute: () => rootRouteImport,
+  id: '/newsletters',
+  path: '/newsletters',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
 const AccountBillingRoute = AccountBillingRouteImport.update({
-  id: '/account/billing',
-  path: '/account/billing',
-  getParentRoute: () => rootRouteImport,
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
 const AboutNetworkRoute = AboutNetworkRouteImport.update({
   id: '/network',
@@ -253,10 +271,12 @@ const NewslettersSlugPostRoute = NewslettersSlugPostRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRouteRouteWithChildren
   '/about': typeof AboutRouteWithChildren
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
+  '/inside-call-me-back': typeof InsideCallMeBackRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -270,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
+  '/admin/launch': typeof AdminLaunchRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -299,6 +320,7 @@ export interface FileRoutesByTo {
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
+  '/inside-call-me-back': typeof InsideCallMeBackRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -312,6 +334,7 @@ export interface FileRoutesByTo {
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
+  '/admin/launch': typeof AdminLaunchRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -338,10 +361,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRouteRouteWithChildren
   '/about': typeof AboutRouteWithChildren
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
+  '/inside-call-me-back': typeof InsideCallMeBackRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -355,6 +380,7 @@ export interface FileRoutesById {
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
+  '/admin/launch': typeof AdminLaunchRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -382,10 +408,12 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
     | '/about'
     | '/community'
     | '/contact'
     | '/events'
+    | '/inside-call-me-back'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -399,6 +427,7 @@ export interface FileRouteTypes {
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
+    | '/admin/launch'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -428,6 +457,7 @@ export interface FileRouteTypes {
     | '/community'
     | '/contact'
     | '/events'
+    | '/inside-call-me-back'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -441,6 +471,7 @@ export interface FileRouteTypes {
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
+    | '/admin/launch'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -466,10 +497,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/account'
     | '/about'
     | '/community'
     | '/contact'
     | '/events'
+    | '/inside-call-me-back'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -483,6 +516,7 @@ export interface FileRouteTypes {
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
+    | '/admin/launch'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -509,22 +543,22 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRouteRoute: typeof AccountRouteRouteWithChildren
   AboutRoute: typeof AboutRouteWithChildren
   CommunityRoute: typeof CommunityRoute
   ContactRoute: typeof ContactRoute
   EventsRoute: typeof EventsRoute
+  InsideCallMeBackRoute: typeof InsideCallMeBackRoute
   IsraelVotesRoute: typeof IsraelVotesRoute
   LogoutRoute: typeof LogoutRoute
   SetupRoute: typeof SetupRoute
   WelcomeRoute: typeof WelcomeRoute
-  AccountBillingRoute: typeof AccountBillingRoute
-  AccountNewslettersRoute: typeof AccountNewslettersRoute
-  AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
   AdminCancellationsRoute: typeof AdminCancellationsRoute
   AdminCareersRoute: typeof AdminCareersRoute
   AdminDiscussThreadsRoute: typeof AdminDiscussThreadsRoute
   AdminFaqsRoute: typeof AdminFaqsRoute
+  AdminLaunchRoute: typeof AdminLaunchRoute
   AdminPromosRoute: typeof AdminPromosRoute
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
@@ -536,7 +570,6 @@ export interface RootRouteChildren {
   PodcastsForHeavensSakeRoute: typeof PodcastsForHeavensSakeRoute
   PodcastsWhatsYourNumberRoute: typeof PodcastsWhatsYourNumberRoute
   ShowsShowRoute: typeof ShowsShowRouteWithChildren
-  AccountIndexRoute: typeof AccountIndexRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CareersIndexRoute: typeof CareersIndexRoute
   HostsIndexRoute: typeof HostsIndexRoute
@@ -578,6 +611,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IsraelVotesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inside-call-me-back': {
+      id: '/inside-call-me-back'
+      path: '/inside-call-me-back'
+      fullPath: '/inside-call-me-back'
+      preLoaderRoute: typeof InsideCallMeBackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/events': {
       id: '/events'
       path: '/events'
@@ -604,6 +644,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -664,10 +711,10 @@ declare module '@tanstack/react-router' {
     }
     '/account/': {
       id: '/account/'
-      path: '/account'
+      path: '/'
       fullPath: '/account/'
       preLoaderRoute: typeof AccountIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/shows/$show': {
       id: '/shows/$show'
@@ -746,6 +793,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPromosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/launch': {
+      id: '/admin/launch'
+      path: '/admin/launch'
+      fullPath: '/admin/launch'
+      preLoaderRoute: typeof AdminLaunchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/faqs': {
       id: '/admin/faqs'
       path: '/admin/faqs'
@@ -783,24 +837,24 @@ declare module '@tanstack/react-router' {
     }
     '/account/podcast-feed': {
       id: '/account/podcast-feed'
-      path: '/account/podcast-feed'
+      path: '/podcast-feed'
       fullPath: '/account/podcast-feed'
       preLoaderRoute: typeof AccountPodcastFeedRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/account/newsletters': {
       id: '/account/newsletters'
-      path: '/account/newsletters'
+      path: '/newsletters'
       fullPath: '/account/newsletters'
       preLoaderRoute: typeof AccountNewslettersRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/account/billing': {
       id: '/account/billing'
-      path: '/account/billing'
+      path: '/billing'
       fullPath: '/account/billing'
       preLoaderRoute: typeof AccountBillingRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/about/network': {
       id: '/about/network'
@@ -833,6 +887,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AccountRouteRouteChildren {
+  AccountBillingRoute: typeof AccountBillingRoute
+  AccountNewslettersRoute: typeof AccountNewslettersRoute
+  AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
+  AccountIndexRoute: typeof AccountIndexRoute
+}
+
+const AccountRouteRouteChildren: AccountRouteRouteChildren = {
+  AccountBillingRoute: AccountBillingRoute,
+  AccountNewslettersRoute: AccountNewslettersRoute,
+  AccountPodcastFeedRoute: AccountPodcastFeedRoute,
+  AccountIndexRoute: AccountIndexRoute,
+}
+
+const AccountRouteRouteWithChildren = AccountRouteRoute._addFileChildren(
+  AccountRouteRouteChildren,
+)
+
 interface AboutRouteChildren {
   AboutNetworkRoute: typeof AboutNetworkRoute
 }
@@ -857,22 +929,22 @@ const ShowsShowRouteWithChildren = ShowsShowRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRouteRoute: AccountRouteRouteWithChildren,
   AboutRoute: AboutRouteWithChildren,
   CommunityRoute: CommunityRoute,
   ContactRoute: ContactRoute,
   EventsRoute: EventsRoute,
+  InsideCallMeBackRoute: InsideCallMeBackRoute,
   IsraelVotesRoute: IsraelVotesRoute,
   LogoutRoute: LogoutRoute,
   SetupRoute: SetupRoute,
   WelcomeRoute: WelcomeRoute,
-  AccountBillingRoute: AccountBillingRoute,
-  AccountNewslettersRoute: AccountNewslettersRoute,
-  AccountPodcastFeedRoute: AccountPodcastFeedRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
   AdminCancellationsRoute: AdminCancellationsRoute,
   AdminCareersRoute: AdminCareersRoute,
   AdminDiscussThreadsRoute: AdminDiscussThreadsRoute,
   AdminFaqsRoute: AdminFaqsRoute,
+  AdminLaunchRoute: AdminLaunchRoute,
   AdminPromosRoute: AdminPromosRoute,
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
@@ -884,7 +956,6 @@ const rootRouteChildren: RootRouteChildren = {
   PodcastsForHeavensSakeRoute: PodcastsForHeavensSakeRoute,
   PodcastsWhatsYourNumberRoute: PodcastsWhatsYourNumberRoute,
   ShowsShowRoute: ShowsShowRouteWithChildren,
-  AccountIndexRoute: AccountIndexRoute,
   AdminIndexRoute: AdminIndexRoute,
   CareersIndexRoute: CareersIndexRoute,
   HostsIndexRoute: HostsIndexRoute,

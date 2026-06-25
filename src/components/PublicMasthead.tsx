@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { ArkLogo } from "./ArkLogo";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { useIsSoftLaunch } from "../lib/launchMode";
 import { shows } from "../data/shows";
 
 // Nav order per Figma IA spec: Podcasts | Community | Newsletters | Israel
@@ -27,6 +28,9 @@ type NavItem = {
   variant: NavVariant;
   matchPrefix?: string;
   hideWhen?: "subscriber" | "nonSubscriber";
+  // Hidden during soft launch — these point at Ark+ membership surfaces that
+  // don't exist yet in the focused Inside Call Me Back experience.
+  hardLaunchOnly?: boolean;
   children?: NavChild[];
 };
 
@@ -57,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
     matchPrefix: "/community",
     // Visible to everyone — the page itself shows a "Join Ark+" CTA to
     // non-subscribers in place of the members-only Community app links.
+    hardLaunchOnly: true,
     children: [
       { label: "Upcoming Events", to: "/events" },
     ],
@@ -69,6 +74,7 @@ const NAV_ITEMS: NavItem[] = [
     matchPrefix: "/plus",
     // Upgrade CTA — free users still need to see this, only subscribers don't.
     hideWhen: "subscriber",
+    hardLaunchOnly: true,
     children: [
       { label: "Join Ark+", to: "/plus", hash: "pricing" },
       { label: "Gift Ark+", to: "/plus/gift" },
@@ -99,9 +105,10 @@ function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "
   return false;
 }
 
-function visibleNavItems(tier: Tier): NavItem[] {
+function visibleNavItems(tier: Tier, isSoftLaunch: boolean): NavItem[] {
   const isSubscriber = tier === "ark-plus-member";
   return NAV_ITEMS.filter((item) => {
+    if (isSoftLaunch && item.hardLaunchOnly) return false;
     if (item.hideWhen === "subscriber") return !isSubscriber;
     if (item.hideWhen === "nonSubscriber") return isSubscriber;
     return true;
@@ -112,12 +119,13 @@ export function PublicMasthead() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { state, signOut, signIn, isAdmin } = useSubscriberAuth();
+  const isSoftLaunch = useIsSoftLaunch();
   const tier: Tier =
     state.kind === "member" ? state.me.tier : "guest";
   const isSubscriber = tier === "ark-plus-member";
   const navItems = isAdmin
-    ? [...visibleNavItems(tier), ADMIN_NAV_ITEM]
-    : visibleNavItems(tier);
+    ? [...visibleNavItems(tier, isSoftLaunch), ADMIN_NAV_ITEM]
+    : visibleNavItems(tier, isSoftLaunch);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const location = useLocation();
@@ -307,25 +315,57 @@ export function PublicMasthead() {
             {/* Account button is hidden in the top bar on mobile (Israel Votes
                 takes that slot); surface it as the first item here. */}
             {state.kind === "member" ? (
-              <Link
-                to="/account"
-                onClick={() => setMobileOpen(false)}
-                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
-              >
-                Account
-              </Link>
-            ) : (
-              <div className="mb-3 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileOpen(false);
-                    signIn(undefined, { signup: true });
-                  }}
-                  className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
+              // Soft launch has no account area; surface feed setup (for
+              // subscribers) and sign-out directly instead of the Account link.
+              isSoftLaunch ? (
+                <div className="mb-3 flex flex-col gap-2">
+                  {isSubscriber ? (
+                    <Link
+                      to="/setup"
+                      onClick={() => setMobileOpen(false)}
+                      className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
+                    >
+                      Set up your feed
+                    </Link>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      signOut();
+                    }}
+                    className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  to="/account"
+                  onClick={() => setMobileOpen(false)}
+                  className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
                 >
-                  Sign up
-                </button>
+                  Account
+                </Link>
+              )
+            ) : (
+              <div
+                className={`mb-3 grid gap-2 ${isSoftLaunch ? "grid-cols-1" : "grid-cols-2"}`}
+              >
+                {/* No public sign-up during soft launch — there's no Ark+ to
+                    join yet, so only existing accounts sign in. */}
+                {isSoftLaunch ? null : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      signIn(undefined, { signup: true });
+                    }}
+                    className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
+                  >
+                    Sign up
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -692,19 +732,24 @@ function MemberMenu({
   onSignOut: () => void;
   onClose: () => void;
 }) {
+  const isSoftLaunch = useIsSoftLaunch();
   return (
     <div className="space-y-3">
       <p className="eyebrow">Signed in</p>
       <p className="truncate text-[12px] text-fg" title={email}>
         {email}
       </p>
-      <Link
-        to="/account"
-        onClick={onClose}
-        className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-center text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        Account settings
-      </Link>
+      {/* The account area is removed during soft launch — members only need
+          feed setup, so the account-settings link is hidden. */}
+      {isSoftLaunch ? null : (
+        <Link
+          to="/account"
+          onClick={onClose}
+          className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-center text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          Account settings
+        </Link>
+      )}
       {isSubscriber ? (
         <Link
           to="/setup"

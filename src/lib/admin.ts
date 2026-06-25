@@ -13,6 +13,7 @@ import type {
   CancellationSummary,
 } from "../../shared/cancellation";
 import type { NewsletterSlug } from "../data/newsletters";
+import type { LaunchMode } from "./launchMode";
 
 export type { Promo, BeehiivDraft, DiscussThread };
 export type { CancellationSummary, CancellationFilter };
@@ -153,6 +154,31 @@ export async function deleteAnnouncement(id: string): Promise<void> {
     { method: "DELETE", headers: await authHeaders(), credentials: "include" },
   );
   if (!res.ok) throw new Error(await errorMessage(res));
+}
+
+// --- Launch mode ---------------------------------------------------------
+
+// The single global soft/hard launch flag. The public read lives in
+// src/lib/launchMode.ts; these two are the admin read/write behind the "admin"
+// role gate.
+export async function getLaunchMode(): Promise<LaunchMode> {
+  const res = await fetch("/api/admin/launch-mode", {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { mode: LaunchMode }).mode;
+}
+
+export async function saveLaunchMode(mode: LaunchMode): Promise<LaunchMode> {
+  const res = await fetch("/api/admin/launch-mode", {
+    method: "PUT",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { mode: LaunchMode }).mode;
 }
 
 // --- Careers -------------------------------------------------------------
