@@ -73,6 +73,10 @@ interface EventMap {
   // hand-off action (open deep link / copy URL / text themselves the link).
   feed_app_selected: { app: string }
   feed_activated: { app: string; method: 'open' | 'copy' | 'sms' }
+
+  // --- Tier 4: content engagement (high-value subset) ---
+  episode_play_clicked: { show: string; episode: string }
+  listen_link_clicked: { platform: string }
 }
 
 // Single typed entry point. The conditional tuple makes props REQUIRED for

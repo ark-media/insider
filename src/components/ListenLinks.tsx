@@ -5,6 +5,7 @@ import {
   type ListenPlatform,
 } from "../data/shows";
 import { ApplePodcastsIcon, SpotifyIcon, YouTubeIcon } from "./PlatformIcons";
+import { trackEvent } from "../lib/analytics";
 
 // Full-color brand marks for the "listen on" row. See PlatformIcons for why
 // these are inline multi-color SVGs. Platforms without a mark here render the
@@ -36,6 +37,7 @@ export function ListenLinks({
           href={l.url}
           target="_blank"
           rel="noreferrer noopener"
+          onClick={() => trackEvent("listen_link_clicked", { platform: l.platform })}
           className="inline-flex items-center gap-2 border border-rule-strong px-3 py-1.5 button-text font-semibold text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
           {PLATFORM_ICON[l.platform] ?? null}

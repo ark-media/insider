@@ -24,6 +24,7 @@ import { HostArtwork } from "./HostArtwork";
 import { ShowCover } from "./ShowCover";
 import { ListenLinks } from "./ListenLinks";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { trackEvent } from "../lib/analytics";
 
 export function ShowPage({ slug }: { slug: ShowSlug }) {
   const show = getShow(slug);
@@ -290,6 +291,8 @@ function EpisodeBrowser({
 
   function play(ep: Episode) {
     if (!ep.id) return;
+    // Single chokepoint for every Play button (grid, archive, upsell row).
+    trackEvent("episode_play_clicked", { show: show.slug, episode: ep.slug });
     setSelected({ slug: show.slug, id: ep.id });
     playerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
