@@ -10,6 +10,7 @@ import {
 import { Modal } from "./Modal";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
+import { trackEvent } from "../lib/analytics";
 
 type Plan = "monthly" | "yearly";
 
@@ -228,6 +229,10 @@ export function CheckoutModal({
   const submitEmail = useCallback(
     async (email: string) => {
       setLastEmail(email);
+      trackEvent("checkout_email_submitted", {
+        plan,
+        is_custom_amount: customAmount !== null,
+      });
       setStep({ kind: "creating" });
       try {
         const res = await fetch("/api/stripe/create-checkout-session", {
@@ -248,6 +253,11 @@ export function CheckoutModal({
           error?: string;
         };
         if (!res.ok || !data.client_secret || !data.checkout_session_id) {
+          trackEvent("checkout_failed", {
+            plan,
+            stage: "create_session",
+            reason: data.error ?? `status ${res.status}`,
+          });
           setStep({
             kind: "error",
             message: data.error ?? "Could not start checkout.",
@@ -261,6 +271,11 @@ export function CheckoutModal({
           email,
         });
       } catch {
+        trackEvent("checkout_failed", {
+          plan,
+          stage: "create_session",
+          reason: "network_error",
+        });
         setStep({
           kind: "error",
           message: "Network error. Please try again.",
@@ -272,6 +287,12 @@ export function CheckoutModal({
 
   const handleActivated = useCallback(
     async (email: string) => {
+      // Reached only after the poll confirms an active, provisioned
+      // subscription — the true bottom of the funnel.
+      trackEvent("checkout_succeeded", {
+        plan,
+        is_custom_amount: customAmount !== null,
+      });
       try {
         await refresh();
         onClose();
@@ -286,7 +307,7 @@ export function CheckoutModal({
         setStep({ kind: "processing", email });
       }
     },
-    [onClose, refresh],
+    [onClose, refresh, plan, customAmount],
   );
 
   const stripePromiseValue = getStripe();
@@ -625,6 +646,7 @@ function CheckoutForm({
     submittedRef.current = true;
     setWorking(true);
     setPayError(null);
+    trackEvent("checkout_payment_submitted", { plan });
 
     // redirect: 'if_required' keeps card payments in the modal; methods that
     // need an off-site step (e.g. 3DS) use the session's return_url. Email is
@@ -639,6 +661,11 @@ function CheckoutForm({
       // down the session.
       submittedRef.current = false;
       setWorking(false);
+      trackEvent("checkout_failed", {
+        plan,
+        stage: "payment",
+        reason: result.error.message ?? "payment_failed",
+      });
       setPayError(result.error.message ?? "Payment failed. Please try again.");
       return;
     }
@@ -654,6 +681,14 @@ function CheckoutForm({
     } else if (poll.kind === "already_subscribed") {
       onAlreadySubscribed(email, poll.message);
     } else {
+      // Paid, but activation didn't confirm in the poll window (timeout,
+      // bank still processing, or a network/server error). reason carries the
+      // poll outcome so PostHog can separate "slow bank" from real errors.
+      trackEvent("checkout_failed", {
+        plan,
+        stage: "provisioning",
+        reason: poll.kind,
+      });
       onProcessing(email);
     }
   };

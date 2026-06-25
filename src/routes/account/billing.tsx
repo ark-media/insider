@@ -12,6 +12,7 @@ import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { Modal } from "../../components/Modal";
+import { trackEvent } from "../../lib/analytics";
 import { CANCELLATION_REASONS } from "../../../shared/cancellation";
 import type { RetentionOffer } from "../../../shared/retention";
 
@@ -162,6 +163,7 @@ function BillingPage() {
     setStatus({ kind: "idle" });
     setStep("loading");
     setFlowOpen(true);
+    trackEvent("cancel_initiated");
     // Check for a retention offer; a failure degrades to "no offer" so the
     // flow always proceeds to the reason step.
     const { eligible, offer: o } = await getRetentionOffer();
@@ -169,6 +171,12 @@ function BillingPage() {
       setOffer(o);
       setOfferShown(true);
       setStep("offer");
+      trackEvent("retention_offer_shown", {
+        kind: o.percentOff != null ? "percent" : "amount",
+        percent_off: o.percentOff,
+        amount_off_cents: o.amountOff,
+        duration_months: o.durationMonths,
+      });
     } else {
       setStep("reason");
     }
@@ -181,6 +189,11 @@ function BillingPage() {
     setStatus({ kind: "applying" });
     const r = await acceptRetentionOffer();
     if (r.ok) {
+      trackEvent("retention_offer_accepted", {
+        percent_off: r.percentOff ?? null,
+        amount_off_cents: r.amountOff ?? null,
+        duration_months: r.durationMonths ?? null,
+      });
       setFlowOpen(false);
       setStatus({
         kind: "saved",
@@ -214,6 +227,10 @@ function BillingPage() {
       offerOutcome: offerShown ? "declined" : "not_offered",
     });
     if (r.ok) {
+      trackEvent("subscription_cancelled", {
+        reason,
+        offer_outcome: offerShown ? "declined" : "not_offered",
+      });
       setStatus({ kind: "ok", until: r.access_until ?? "" });
       // Persist the schedule so the "set to cancel" state holds on reload.
       setScheduledCancelAt(r.access_until ?? null);
@@ -229,6 +246,7 @@ function BillingPage() {
     setStatus({ kind: "reactivating" });
     const r = await reactivateSubscription();
     if (r.ok) {
+      trackEvent("subscription_reactivated");
       // Cancel was undone server-side; clear the scheduled state and resync the
       // page's auth state.
       setScheduledCancelAt(null);
@@ -429,7 +447,10 @@ function BillingPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setStep("reason")}
+                onClick={() => {
+                  trackEvent("retention_offer_declined");
+                  setStep("reason");
+                }}
                 disabled={status.kind === "applying"}
                 className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
               >
@@ -488,7 +509,11 @@ function BillingPage() {
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
-                onClick={() => setStep("confirm")}
+                onClick={() => {
+                  // reason is non-null here (button is disabled otherwise).
+                  if (reason) trackEvent("cancellation_reason_submitted", { reason });
+                  setStep("confirm");
+                }}
                 disabled={!reason}
                 className="inline-flex min-h-12 flex-1 items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-50 disabled:hover:border-rule-strong disabled:hover:text-fg-strong"
               >

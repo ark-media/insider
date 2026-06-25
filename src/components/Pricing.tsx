@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckoutModal } from "./CheckoutModal";
 import { ContentError } from "./ContentError";
 import { useAsyncResource } from "../lib/useAsyncResource";
+import { trackEvent } from "../lib/analytics";
 
 function fmtPrice(dollars: number): string {
   return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
@@ -13,8 +14,31 @@ export function Pricing() {
   const setPlan = (p: "monthly" | "yearly") => {
     setPlanRaw(p);
     setCustomAmount("");
+    trackEvent("plan_selected", { plan: p });
   };
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  // Top of the revenue funnel: fire once when the pricing section actually
+  // scrolls into view, not on mount — otherwise every homepage load counts as
+  // a pricing view and the funnel's first step is meaningless.
+  const sectionRef = useRef<HTMLElement>(null);
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el || viewedRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && !viewedRef.current) {
+          viewedRef.current = true;
+          trackEvent("pricing_viewed");
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.3 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Prices come from Stripe (the source of truth) via /api/pricing — never
   // hardcoded, so the displayed amount can't drift from what we actually
@@ -53,7 +77,7 @@ export function Pricing() {
     : null;
 
   return (
-    <section id="pricing" className="relative">
+    <section id="pricing" ref={sectionRef} className="relative">
       <div className="page-gutter pt-12 pb-16">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-5">
@@ -167,6 +191,17 @@ export function Pricing() {
                         min={price ?? undefined}
                         value={customAmount}
                         onChange={(e) => setCustomAmount(e.target.value)}
+                        onBlur={() => {
+                          // Fire on commit, not per keystroke, so we capture
+                          // the buyer's intended figure once instead of N noisy
+                          // partial values.
+                          if (parsedCustom === null || !Number.isFinite(parsedCustom)) return;
+                          trackEvent("custom_amount_entered", {
+                            plan,
+                            amount: parsedCustom,
+                            valid: customValid,
+                          });
+                        }}
                         placeholder={plan === "yearly" ? "120" : "12"}
                         className="w-full bg-transparent text-[22px] text-fg-strong outline-none placeholder:text-fg-placeholder"
                       />
@@ -186,7 +221,14 @@ export function Pricing() {
 
                   <button
                     type="button"
-                    onClick={() => setCheckoutOpen(true)}
+                    onClick={() => {
+                      trackEvent("checkout_opened", {
+                        plan,
+                        amount: customValid ? (parsedCustom as number) : price,
+                        is_custom_amount: customValid,
+                      });
+                      setCheckoutOpen(true);
+                    }}
                     disabled={price === null}
                     className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-cyan disabled:hover:text-navy"
                   >
