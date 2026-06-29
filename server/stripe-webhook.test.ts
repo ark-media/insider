@@ -67,7 +67,7 @@ const BASE_ENV = {
 
 const SC_BASE = 'https://api.supportingcast.fm/v2/test-net'
 
-function getHandler(path: string): Middleware {
+function getHandler(path: string, env: Record<string, string> = BASE_ENV): Middleware {
   const handlers = new Map<string, Middleware>()
   const fakeServer = {
     middlewares: {
@@ -76,7 +76,7 @@ function getHandler(path: string): Middleware {
       },
     },
   }
-  const plugin = devApiPlugin(BASE_ENV)
+  const plugin = devApiPlugin(env)
   ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
   const h = handlers.get(path)
   if (!h) throw new Error(`handler not registered for ${path}`)
@@ -202,10 +202,10 @@ function makeSub(overrides: Record<string, unknown> = {}) {
   }
 }
 
-async function dispatch(event: unknown) {
+async function dispatch(event: unknown, env: Record<string, string> = BASE_ENV) {
   webhookEvent = event
   const res = makeRes()
-  await runHandler(getHandler(WEBHOOK_PATH), makeReq({ headers: HEADERS }), res)
+  await runHandler(getHandler(WEBHOOK_PATH, env), makeReq({ headers: HEADERS }), res)
   return res
 }
 
@@ -303,5 +303,79 @@ describe('customer.subscription.deleted — SC delete (existing behavior)', () =
       (c) => c.method === 'DELETE' && c.url === `${SC_BASE}/subscriptions/3119346`,
     )
     expect(deletes).toHaveLength(1)
+  })
+})
+
+// ===========================================================================
+// Webhook resilience — failure-matrix integration coverage.
+//
+// entitlement.test.ts proves syncEntitlement isolates Auth0/Circle failures in
+// isolation. These tests prove the *integration* contract at the webhook layer:
+// an Auth0/Circle outage during a state change must NOT 500 the webhook (so
+// Stripe doesn't retry-storm), and the SC teardown of the paid product still
+// proceeds. Recovery for the drifted Auth0/Circle legs is deferred to the
+// nightly reconcile cron, not Stripe's retry.
+//
+// SYNC_ENV adds the Auth0 + Circle creds (BASE_ENV omits them, which is why the
+// existing tests above see syncEntitlement short-circuit to 'skipped'). No
+// DATABASE_URL, so the idempotency ledger and Beehiiv downgrade stay out of the
+// picture and the assertions isolate the SC + Auth0 + Circle legs.
+// ===========================================================================
+const SYNC_ENV = {
+  ...BASE_ENV,
+  AUTH0_MANAGEMENT_CLIENT_ID: 'cid',
+  AUTH0_MANAGEMENT_CLIENT_SECRET: 'csec',
+  AUTH0_TENANT_DOMAIN: 'https://tenant.us.auth0.com',
+  CIRCLE_API_TOKEN: 'circle-tok',
+  CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: 'ag-99',
+}
+
+const scDeletes = () =>
+  fetchCalls.filter(
+    (c) => c.method === 'DELETE' && c.url === `${SC_BASE}/subscriptions/3119346`,
+  )
+
+describe('webhook resilience — entitlement-leg outages must not 500', () => {
+  test('Auth0 + Circle both 5xx on teardown → webhook still 200, SC delete still issued', async () => {
+    // FAIL-AU-01 / FAIL-CR-01 (delete trigger point): the paid product (SC) is
+    // torn down; the Auth0/Circle drift is left for reconcile. A 500 here would
+    // make Stripe retry the whole event indefinitely.
+    responseOverride = (url, method) => {
+      if (url.endsWith('/oauth/token')) {
+        return new Response(
+          JSON.stringify({ access_token: 'mgmt-tok', expires_in: 3600 }),
+          { status: 200 },
+        )
+      }
+      if (url.includes('/users-by-email')) return new Response('{"error":"boom"}', { status: 500 })
+      if (url.includes('/access_groups/ag-99/community_members')) {
+        return new Response('{"error":"boom"}', { status: 500 })
+      }
+      return null // SC delete falls through to the default 200
+    }
+    const res = await dispatch(
+      { type: 'customer.subscription.deleted', data: { object: makeSub({ status: 'canceled' }) } },
+      SYNC_ENV,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(scDeletes()).toHaveLength(1)
+  })
+
+  test('SC delete itself 5xx → webhook still 200 (soft-fail; documents the over-entitlement gap)', async () => {
+    // FAIL-SC-03: the reconciler never touches Simplecast (see stripe.ts
+    // comment), so a permanently-failing SC DELETE leaves the member with paid
+    // feed access and NO automatic recovery. The webhook must still 200 (Stripe
+    // retry won't fix a 5xx-on-our-side SC call), but this drift needs
+    // monitoring + manual cleanup — it is the highest-severity sync risk.
+    responseOverride = (url, method) =>
+      method === 'DELETE' && url === `${SC_BASE}/subscriptions/3119346`
+        ? new Response('{"error":"sc down"}', { status: 500 })
+        : null
+    const res = await dispatch({
+      type: 'customer.subscription.deleted',
+      data: { object: makeSub({ status: 'canceled' }) },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(scDeletes()).toHaveLength(1)
   })
 })
