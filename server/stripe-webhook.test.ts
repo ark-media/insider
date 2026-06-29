@@ -340,7 +340,7 @@ describe('webhook resilience — entitlement-leg outages must not 500', () => {
     // FAIL-AU-01 / FAIL-CR-01 (delete trigger point): the paid product (SC) is
     // torn down; the Auth0/Circle drift is left for reconcile. A 500 here would
     // make Stripe retry the whole event indefinitely.
-    responseOverride = (url, method) => {
+    responseOverride = (url: string) => {
       if (url.endsWith('/oauth/token')) {
         return new Response(
           JSON.stringify({ access_token: 'mgmt-tok', expires_in: 3600 }),
