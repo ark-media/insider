@@ -97,11 +97,12 @@ export const circleUrls = {
    * itself rather than a fabricated per-event permalink.
    */
   eventsSpace: "https://app.arkmedia.org/c/events-71d23b",
-  /** Circle Communities app in the App Store. */
-  appStoreIos: "https://apps.apple.com/app/circle-communities/id1525026498",
-  /** Community app on Google Play. */
+  /** The Ark Media Community app in the App Store. */
+  appStoreIos:
+    "https://apps.apple.com/us/app/the-ark-media-community/id6775856136",
+  /** The Ark Media Community app on Google Play. */
   appStoreAndroid:
-    "https://play.google.com/store/apps/details?id=com.circle.circleapp",
+    "https://play.google.com/store/apps/details?id=org.arkmedia.app",
 } as const;
 
 /**
