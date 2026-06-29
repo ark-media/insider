@@ -469,6 +469,10 @@ function HomePage() {
   const descriptions = useShowDescriptions(shows.map((s) => s.slug));
   const isSubscriber = isArkPlusMember(state);
   const isSoftLaunch = useIsSoftLaunch();
+  const isLoggedIn = state.kind === "member";
+  // During soft launch a signed-in user is already an Insider, so there's
+  // nothing to convert them on — hide the "Become an Insider" CTA.
+  const hideSoftLaunchCta = isSoftLaunch && isLoggedIn;
   return (
     <main className="relative">
       <section className="section-hero relative">
@@ -500,23 +504,25 @@ function HomePage() {
                 className="rise mt-10 flex flex-wrap gap-3"
                 style={{ animationDelay: "0.78s" }}
               >
-                <Link
-                  to={
-                    isSoftLaunch
-                      ? "/inside-call-me-back"
+                {hideSoftLaunchCta ? null : (
+                  <Link
+                    to={
+                      isSoftLaunch
+                        ? "/inside-call-me-back"
+                        : isSubscriber
+                          ? "/community"
+                          : "/plus"
+                    }
+                    className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    {isSoftLaunch
+                      ? "Become an Insider"
                       : isSubscriber
-                        ? "/community"
-                        : "/plus"
-                  }
-                  className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  {isSoftLaunch
-                    ? "Become an Insider"
-                    : isSubscriber
-                      ? "Explore community"
-                      : "Become an Ark+ member"}{" "}
-                  →
-                </Link>
+                        ? "Explore community"
+                        : "Become an Ark+ member"}{" "}
+                    →
+                  </Link>
+                )}
               </div>
             </div>
             <div className="hidden lg:block">
