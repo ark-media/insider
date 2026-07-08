@@ -4,6 +4,7 @@ import { ListenLinks } from "../components/ListenLinks";
 import { ShowCover } from "../components/ShowCover";
 import { shows, getShow } from "../data/shows";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
+import { useIsSoftLaunch } from "../lib/launchMode";
 
 // The soft-launch landing. A focused "Become an Insider" page — the show
 // line-up, a single subscribe pitch, and the existing Stripe pricing block —
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/inside-call-me-back")({
 function InsideCallMeBackPage() {
   const { state } = useSubscriberAuth();
   const isMember = isArkPlusMember(state);
+  const isSoftLaunch = useIsSoftLaunch();
 
   // The public listen row points at Call Me Back — the flagship show the
   // Inside feed extends. Falls back to nothing if the show ever goes away.
@@ -86,18 +88,38 @@ function InsideCallMeBackPage() {
             </div>
 
             <div className="mt-10 flex items-start gap-4 border-t border-rule-soft pt-8">
-              {callMeBack ? (
-                <div className="w-20 shrink-0 overflow-hidden rounded-xl ring-1 ring-white/10">
-                  <ShowCover show={callMeBack} />
-                </div>
-              ) : null}
+              <div className="w-20 shrink-0 overflow-hidden rounded-xl ring-1 ring-white/10">
+                <img
+                  src="/inside-cmb.jpg"
+                  alt="Inside Call Me Back — cover art"
+                  width={800}
+                  height={800}
+                  loading="lazy"
+                  decoding="async"
+                  className="aspect-square h-full w-full object-cover"
+                />
+              </div>
               <p className="max-w-xl text-body-sm text-fg-muted">
                 {isMember ? (
                   <>
                     <span className="text-fg-strong">Inside Call Me Back</span>{" "}
                     — the discussions that typically happen after the cameras
                     stop rolling — is in your private feed. Submit your questions
-                    to Dan Senor, Nadav Eyal, and Amit Segal in the community.
+                    to Dan Senor, Nadav Eyal, and Amit Segal{" "}
+                    {isSoftLaunch ? (
+                      <>
+                        <Link
+                          to="/contact"
+                          search={{ topic: "questions" }}
+                          className="text-cyan underline-offset-4 hover:underline"
+                        >
+                          here
+                        </Link>
+                        .
+                      </>
+                    ) : (
+                      "in the community."
+                    )}
                   </>
                 ) : (
                   <>
@@ -121,7 +143,11 @@ function InsideCallMeBackPage() {
             {callMeBack ? (
               <div className="mt-8">
                 <p className="eyebrow text-fg-muted">Listen in these apps</p>
-                <ListenLinks listen={callMeBack.listen} className="mt-3" />
+                <ListenLinks
+                  listen={callMeBack.listen}
+                  className="mt-3"
+                  interactive={isMember}
+                />
               </div>
             ) : null}
           </div>
