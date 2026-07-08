@@ -254,6 +254,14 @@ export function PublicMasthead() {
               </>
             ) : (
               <div className="hidden items-center gap-2 sm:flex">
+                {isSoftLaunch ? (
+                  <Link
+                    to="/inside-call-me-back"
+                    className="inline-flex min-h-11 items-center border border-cyan bg-cyan px-4 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  >
+                    Become an Insider
+                  </Link>
+                ) : null}
                 {/* <button
                   type="button"
                   onClick={() => signIn(undefined, { signup: true })}
@@ -271,6 +279,18 @@ export function PublicMasthead() {
               </div>
             )}
           </div>
+
+          {/* Soft-launch CTA surfaced in the collapsed top bar so guests can
+              convert without opening the menu. Mirrors the desktop guest
+              branch: shown only to signed-out visitors once auth resolves. */}
+          {isSoftLaunch && state.kind !== "member" && state.kind !== "loading" ? (
+            <Link
+              to="/inside-call-me-back"
+              className="inline-flex min-h-11 items-center whitespace-nowrap border border-cyan bg-cyan px-3 font-display text-[11px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
+            >
+              Become an Insider
+            </Link>
+          ) : null}
 
           <button
             type="button"
@@ -352,8 +372,17 @@ export function PublicMasthead() {
               <div
                 className={`mb-3 grid gap-2 ${isSoftLaunch ? "grid-cols-1" : "grid-cols-2"}`}
               >
-                {/* No public sign-up during soft launch — there's no Ark+ to
-                    join yet, so only existing accounts sign in. */}
+                {/* Soft launch swaps public sign-up (no Ark+ to join yet) for
+                    the Become an Insider CTA; guests can still sign in below. */}
+                {isSoftLaunch ? (
+                  <Link
+                    to="/inside-call-me-back"
+                    onClick={() => setMobileOpen(false)}
+                    className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
+                  >
+                    Become an Insider
+                  </Link>
+                ) : null}
                 {isSoftLaunch ? null : (
                   <button
                     type="button"
