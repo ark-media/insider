@@ -18,7 +18,7 @@ function ShowsHub() {
     >
       <section>
         <div className="page-section">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {shows.map((show) => (
               <Link
                 key={show.slug}
@@ -31,15 +31,24 @@ function ShowsHub() {
                   </span>
                 ) : null}
                 <ShowCover show={show} className="border-b border-rule" />
-                <div className="p-6">
-                  <h2 className="font-display text-[22px] leading-[1.15] text-fg-strong">
+                <div className="p-4 sm:p-6">
+                  <h2 className="font-display text-[17px] leading-[1.15] text-fg-strong sm:text-[22px]">
                     {show.title}
                   </h2>
+                  {/* Two-up on phones leaves a ~130px text column — too narrow to
+                      read a description in. The art and title carry the browse
+                      grid; the copy returns once the card has width for it.
+                      `max-sm:hidden`, not `hidden sm:block` — the latter's
+                      `display: block` would override line-clamp's `-webkit-box`
+                      and unclamp the copy above the phone breakpoint. */}
                   <ClampedText
                     text={descriptions[show.slug] || show.tagline}
-                    className="mt-3 line-clamp-3 text-body-sm"
+                    className="mt-3 line-clamp-3 text-body-sm max-sm:hidden"
                   />
-                  <div className="mt-6 eyebrow text-fg-faint transition group-hover:text-cyan">
+                  {/* eyebrow's 14px + 0.22em tracking wraps the arrow onto its
+                      own line in a two-up phone column — tightened until there's
+                      room for the full treatment. */}
+                  <div className="mt-4 eyebrow text-[11px] tracking-[0.1em] text-fg-faint transition group-hover:text-cyan sm:mt-6 sm:text-xs sm:tracking-eyebrow">
                     Visit show →
                   </div>
                 </div>

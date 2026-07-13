@@ -554,7 +554,7 @@ function HomePage() {
             </Link>
           </div>
 
-          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="mt-10 grid grid-cols-2 gap-4">
             {shows.map((show) => (
               <LinkCard
                 key={show.slug}

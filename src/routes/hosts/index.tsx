@@ -49,7 +49,7 @@ function PeopleGrid({
       <h2 className="label text-cyan">
         {eyebrow}
       </h2>
-      <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-8 lg:grid-cols-3">
         {people.map((h, i) => {
           const index = startIndex + i;
           return (
@@ -66,10 +66,13 @@ function PeopleGrid({
                 name={h.name}
                 variant={index % 2 === 0 ? "primary" : "secondary"}
               />
-              <h3 className="mt-5 font-display text-[22px] leading-tight text-fg-strong transition group-hover:text-cyan">
+              <h3 className="mt-4 font-display text-[17px] leading-tight text-fg-strong transition group-hover:text-cyan sm:mt-5 sm:text-[22px]">
                 {h.name}
               </h3>
-              <p className="mt-2 max-w-sm text-body-sm">
+              {/* Two-up on phones leaves a ~160px column. The portrait already
+                  carries the role label, and the full bio is one tap away on
+                  the host page — so the short bio waits for a wider card. */}
+              <p className="mt-2 max-w-sm text-body-sm max-sm:hidden">
                 {h.shortBio}
               </p>
             </Link>

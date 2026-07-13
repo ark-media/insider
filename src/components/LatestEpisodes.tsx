@@ -39,18 +39,22 @@ function LatestEpisodeCard({
   } as never;
 
   return (
-    <article className="flex h-full flex-col overflow-hidden border border-rule bg-navy-800/40">
+    // Horizontal row on phones (square thumb left, copy right), stacking into the
+    // three-up card only once the grid does at `md`. Episode art is square, so the
+    // media box is square too — it used to be `aspect-video` with `object-contain`,
+    // which letterboxed the art and left 44% of every box as dead navy.
+    <article className="flex h-full overflow-hidden border border-rule bg-navy-800/40 md:flex-col">
       <Link
         to="/podcasts/$show/$episode"
         params={episodeParams}
-        className="group/image relative block aspect-video overflow-hidden bg-navy-900 p-2 sm:p-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        className="group/image relative block size-28 shrink-0 overflow-hidden bg-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:size-32 md:aspect-square md:h-auto md:w-full"
       >
         {image ? (
           <img
             src={image}
             alt=""
             loading="lazy"
-            className="h-full w-full object-contain transition group-hover/image:opacity-95"
+            className="h-full w-full object-cover transition group-hover/image:opacity-95"
           />
         ) : (
           <div
@@ -60,20 +64,20 @@ function LatestEpisodeCard({
         )}
       </Link>
 
-      <div className="flex flex-1 flex-col p-5 sm:p-6">
+      <div className="flex min-w-0 flex-1 flex-col p-4 md:p-6">
         <time
           dateTime={episode.publishedAt}
           className="text-body-sm"
         >
           {formatEpisodeDateLong(episode.publishedAt)}
         </time>
-        <div className="mt-2 label text-fg-strong">
+        <div className="mt-1 label text-fg-strong md:mt-2">
           {show.shortTitle}
         </div>
         <Link
           to="/podcasts/$show/$episode"
           params={episodeParams}
-          className="mt-2 line-clamp-3 font-display text-[clamp(1.05rem,2vw,1.25rem)] leading-[1.2] text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="mt-1.5 line-clamp-2 font-display text-[16px] leading-[1.2] text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan md:mt-2 md:line-clamp-3 md:text-[clamp(1.05rem,2vw,1.25rem)]"
           title={episode.title}
         >
           {episode.title}
@@ -81,7 +85,7 @@ function LatestEpisodeCard({
         <Link
           to="/podcasts/$show/$episode"
           params={episodeParams}
-          className="button-text mt-auto inline-flex items-center gap-2.5 pt-6 font-semibold text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className="button-text mt-auto inline-flex min-h-11 w-fit items-center gap-2.5 pt-3 font-semibold text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan md:pt-6"
         >
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan text-navy">
             <PlayGlyph />
