@@ -43,7 +43,7 @@ export const GRID_IMAGE_SIZES = "(min-width: 1024px) 33vw, 50vw";
 
 /**
  * The older card grids that still stack one-up on phones before going two-up at
- * `sm` and three-up at `lg` (related shows, a show's host list). The 100vw tail
+ * `sm` and three-up at `lg` (a show's host list). The 100vw tail
  * is the part that matters: it's what stops a phone from being served a
  * half-width file for a full-width card.
  */

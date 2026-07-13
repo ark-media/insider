@@ -31,15 +31,13 @@ export type Show = {
   cadence: string;
   /**
    * Square (1:1) cover art served from `/public`. When present it's used
-   * everywhere the show is represented (hero, hub grid, related carousel);
-   * shows without one fall back to generated artwork. Drop a file in
-   * `public/shows/` and add its path here to give a show real branding.
+   * everywhere the show is represented (hero, hub grid); shows without one
+   * fall back to generated artwork. Drop a file in `public/shows/` and add
+   * its path here to give a show real branding.
    */
   coverArt?: string;
   /** Paid shows are gated behind Ark+ — no audio on the public site. */
   paid: boolean;
-  /** Slugs of related shows (rendered in the carousel at the bottom of show pages). */
-  related: ShowSlug[];
   listen: ListenLink[];
 };
 
@@ -57,7 +55,6 @@ export const shows: Show[] = [
     cadence: "New episodes Sundays and Thursdays",
     coverArt: "/shows/call-me-back.jpg",
     paid: false,
-    related: ["inside-call-me-back", "ark-news-daily", "for-heavens-sake"],
     listen: showListenLinks["call-me-back"],
   },
   // {
@@ -73,7 +70,6 @@ export const shows: Show[] = [
   //   cadence: "New episodes weekly",
   //   coverArt: "/inside-cmb.jpg",
   //   paid: true,
-  //   related: ["call-me-back", "for-heavens-sake", "whats-your-number"],
   //   listen: showListenLinks["inside-call-me-back"],
   // },
   {
@@ -89,7 +85,6 @@ export const shows: Show[] = [
     cadence: "Weekly",
     coverArt: "/shows/for-heavens-sake.jpg",
     paid: false,
-    related: ["call-me-back", "whats-your-number", "ark-news-daily"],
     listen: showListenLinks["for-heavens-sake"],
   },
   {
@@ -105,7 +100,6 @@ export const shows: Show[] = [
     cadence: "Weekly",
     coverArt: "/shows/whats-your-number.jpg",
     paid: false,
-    related: ["ark-news-daily", "call-me-back", "for-heavens-sake"],
     listen: showListenLinks["whats-your-number"],
   },
   {
@@ -121,7 +115,6 @@ export const shows: Show[] = [
     cadence: "Weekdays",
     coverArt: "/shows/ark-news-daily.jpg",
     paid: false,
-    related: ["call-me-back", "whats-your-number", "for-heavens-sake"],
     listen: showListenLinks["ark-news-daily"],
   },
 ];

@@ -75,8 +75,6 @@ function PublicShowPage({ show }: { show: Show }) {
       />
 
       <ShowPeopleSections show={show} />
-
-      <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
   );
 }
@@ -116,7 +114,6 @@ function PaidShowPage({ show }: { show: Show }) {
         <PaidShowJoinCta show={show} />
       )}
       <ShowPeopleSections show={show} />
-      <RelatedShows currentSlug={show.slug} relatedSlugs={show.related} />
     </main>
   );
 }
@@ -799,60 +796,6 @@ function PeopleSection({ title, people }: { title: string; people: Host[] }) {
               <p className="mt-2 max-w-sm text-body-sm">
                 {h.shortBio}
               </p>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function RelatedShows({
-  currentSlug,
-  relatedSlugs,
-}: {
-  currentSlug: ShowSlug;
-  relatedSlugs: ShowSlug[];
-}) {
-  const related = relatedSlugs
-    .filter((s) => s !== currentSlug)
-    .map((s) => getShow(s))
-    .filter((s): s is Show => Boolean(s));
-
-  if (related.length === 0) return null;
-
-  return (
-    <section>
-      <div className="page-section">
-        <div className="label text-cyan">
-          Related shows
-        </div>
-        <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {related.map((s) => (
-            <Link
-              key={s.slug}
-              to={s.route}
-              className="group block overflow-hidden border border-rule bg-navy-800/40 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-            >
-              <ShowCover
-                show={s}
-                sizes={STACKED_GRID_IMAGE_SIZES}
-                className="border-b border-rule"
-              />
-              <div className="p-6">
-                <div className="label text-cyan">
-                  {s.shortTitle}
-                </div>
-                <div className="mt-4 text-h3">
-                  {s.title}
-                </div>
-                <p className="mt-3 text-body-sm">
-                  {s.tagline}
-                </p>
-                <div className="mt-6 label text-fg-muted transition group-hover:text-cyan">
-                  Visit show →
-                </div>
-              </div>
             </Link>
           ))}
         </div>
