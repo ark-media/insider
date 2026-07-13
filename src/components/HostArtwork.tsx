@@ -1,3 +1,5 @@
+import { GRID_IMAGE_SIZES, srcSet } from "../lib/images";
+
 type Variant = "primary" | "secondary";
 
 /**
@@ -13,6 +15,7 @@ export function HostArtwork({
   className,
   photo,
   name,
+  sizes = GRID_IMAGE_SIZES,
 }: {
   initials: string;
   role?: string;
@@ -22,6 +25,8 @@ export function HostArtwork({
   photo?: string;
   /** Used for the photo's alt text; falls back to a generic label. */
   name?: string;
+  /** Defaults to the browse grid (two-up on phones, three-up from `lg`). */
+  sizes?: string;
 }) {
   const frame = `relative aspect-[4/5] overflow-hidden bg-navy-900 ring-1 ring-rule ${className ?? ""}`;
 
@@ -30,6 +35,8 @@ export function HostArtwork({
       <div className={frame}>
         <img
           src={photo}
+          srcSet={srcSet(photo)}
+          sizes={sizes}
           alt={name ? `${name} — portrait` : "Host portrait"}
           loading="lazy"
           decoding="async"

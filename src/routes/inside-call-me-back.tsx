@@ -5,6 +5,7 @@ import { ShowCover } from "../components/ShowCover";
 import { shows, getShow } from "../data/shows";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { useIsSoftLaunch } from "../lib/launchMode";
+import { srcSet } from "../lib/images";
 
 // The soft-launch landing. A focused "Become an Insider" page — the show
 // line-up, a single subscribe pitch, and the existing Stripe pricing block —
@@ -91,9 +92,13 @@ function InsideCallMeBackPage() {
               <div className="w-20 shrink-0 overflow-hidden rounded-xl ring-1 ring-white/10">
                 <img
                   src="/inside-cmb.jpg"
+                  srcSet={srcSet("/inside-cmb.jpg")}
+                  // A fixed 80px thumb (w-20) — not a grid cell, so it states its
+                  // own size rather than taking the grid default.
+                  sizes="80px"
                   alt="Inside Call Me Back — cover art"
-                  width={800}
-                  height={800}
+                  width={1200}
+                  height={1200}
                   loading="lazy"
                   decoding="async"
                   className="aspect-square h-full w-full object-cover"

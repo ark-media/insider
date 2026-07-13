@@ -1,5 +1,6 @@
 import type { Show } from "../data/shows";
 import { ArkNewsDailyArtwork } from "./ArkNewsDailyArtwork";
+import { GRID_IMAGE_SIZES, srcSet } from "../lib/images";
 
 /**
  * Single source for a show's square (1:1) cover. Prefers the uploaded
@@ -9,15 +10,21 @@ import { ArkNewsDailyArtwork } from "./ArkNewsDailyArtwork";
  * Callers size the square with `className` on the outer box (e.g. `w-full
  * max-w-md` in a hero, nothing in a grid cell). Pass `priority` for
  * above-the-fold covers so the image isn't lazy-loaded.
+ *
+ * `sizes` defaults to the standard browse grid (two-up on phones, three-up from
+ * `lg`). Override it anywhere the cover isn't in that grid — a wrong `sizes` is
+ * worse than none, because the browser trusts it over the real layout.
  */
 export function ShowCover({
   show,
   className,
   priority = false,
+  sizes = GRID_IMAGE_SIZES,
 }: {
   show: Show;
   className?: string;
   priority?: boolean;
+  sizes?: string;
 }) {
   const box = `relative aspect-square overflow-hidden ${className ?? ""}`;
 
@@ -26,9 +33,11 @@ export function ShowCover({
       <div className={box}>
         <img
           src={show.coverArt}
+          srcSet={srcSet(show.coverArt)}
+          sizes={sizes}
           alt={`${show.title} — cover art`}
-          width={800}
-          height={800}
+          width={1200}
+          height={1200}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : "auto"}
           decoding="async"
