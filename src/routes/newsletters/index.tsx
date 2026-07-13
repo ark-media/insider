@@ -184,7 +184,7 @@ function JoinPlusCard() {
       </p>
       <Link
         to="/plus"
-        className="button-text mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan"
+        className="button-text mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan"
       >
         Join Ark+ →
       </Link>

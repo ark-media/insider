@@ -38,10 +38,12 @@ export function Breadcrumbs({
                   {item.label}
                 </span>
               ) : (
+                // The bare 14px label was a 21px target — under WCAG 2.5.8's
+                // 24x24 floor, the one place on the site that actually failed it.
                 <Link
                   to={item.to as never}
                   params={item.params as never}
-                  className="text-cyan transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  className="inline-flex min-h-11 items-center text-cyan transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   {item.label}
                 </Link>

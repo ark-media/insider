@@ -46,8 +46,12 @@ function PeopleGrid({
 }) {
   return (
     <div className={className}>
-      <h2 className="label text-cyan">
+      {/* An <h2> styled as a 14px `label` announces a group boundary to screen
+          readers that sighted users can't see. Give it a rule so both get the
+          same separation. */}
+      <h2 className="label flex items-center gap-4 text-cyan">
         {eyebrow}
+        <span aria-hidden="true" className="h-px flex-1 bg-rule" />
       </h2>
       <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-8 lg:grid-cols-3">
         {people.map((h, i) => {

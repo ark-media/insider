@@ -430,7 +430,21 @@ accordion (844px → ~300px).
 
 ## Medium
 
+> **Touch-target sweep completed 2026-07-13.** M1, M2, M3 and M5 are resolved; M7 was investigated
+> and deliberately left alone (see below). The sweep also turned up three targets the original audit
+> missed:
+>
+> - **`Breadcrumbs.tsx` links were 21px** — the one element on the site actually *below* the WCAG
+>   2.5.8 AA floor of 24×24. Now 44px.
+> - **`Pricing.tsx`'s "name your price" input was 33px** — a payment field on a phone. Now 44px.
+> - **Two CTAs under 44px**: "Join Ark+" (`newsletters/index.tsx`) and the `welcome.tsx` step CTA.
+>
+> Final state, all 13 routes at 390px: **every interactive element is ≥44px**, except those exempt
+> by WCAG 2.5.8 (links inline in a sentence) and the episode-card title links — see M7.
+
 ### M1. Footer nav links are 28px tall
+**Status: ✅ RESOLVED** — `inline-flex min-h-11 items-center`. Costs ~127px of footer height on
+mobile, which is the right trade: the footer *is* the nav once you've scrolled a long page.
 **Location:** `src/components/Footer.tsx`
 **Category:** Accessibility · **WCAG 2.5.8 Target Size (AA, 24×24) — passes; WCAG 2.5.5 (AAA, 44×44) — fails**
 
@@ -444,6 +458,7 @@ thumb-usable.
 **Suggested command:** `/adapt`
 
 ### M2. "LEARN MORE →" is a 14px-tall tap target
+**Status: ✅ RESOLVED** — `min-h-11`.
 **Location:** `src/routes/index.tsx:441-447` (Community band `Learn more` link)
 **Category:** Accessibility · **WCAG 2.5.8**
 
@@ -455,6 +470,8 @@ with no padding acting as a section CTA.
 **Suggested command:** `/adapt`
 
 ### M3. The "NEW" badge is clipped at 320px
+**Status: ✅ RESOLVED** — `-left-3 sm:-left-8`. Now sits at `left: 7px` at 320px instead of `-5px`,
+still hanging off the grid.
 **Location:** `src/components/LatestEpisodes.tsx:108`
 **Category:** Responsive
 
@@ -485,6 +502,8 @@ real `srcset`.
 **Suggested command:** `/optimize`
 
 ### M5. `/hosts` has no `h1`-to-`h2` continuity for the two groups
+**Status: ✅ RESOLVED** — the "Hosts" / "Contributors" headings now carry a trailing rule, so sighted
+users get the same group boundary the `<h2>` already announced to screen readers.
 **Location:** `src/routes/hosts/index.tsx:49`
 **Category:** Accessibility
 
@@ -510,8 +529,10 @@ the portraits small enough that 4:5 is fine.
 **Suggested command:** `/adapt`
 
 ### M7–M9 (brief)
-- **M7.** Episode title links are 300×40px — under the 44px comfort threshold.
-  (`LatestEpisodes.tsx:73-80`) → `/adapt`
+- **M7. NO FIX NEEDED (verified).** Episode title links are 38px. They clear the WCAG 2.5.8 AA floor
+  (24×24), and each episode card offers **three targets to the same URL** — a 112×112 thumbnail, the
+  38px title, and a 44px "Play episode". Forcing the title to 44px would only add odd padding inside
+  a compact row. Left as-is deliberately.
 - **M8.** The `bg-cyan/10 blur-2xl` halo appears 4× (`index.tsx:56,126,265,331`). Over-used; see
   the Anti-Patterns note. → `/quieter`
 - **M9.** `public/inside-cmb.jpg` is **4.53 MB**. Second-largest file on the site. → `/optimize`

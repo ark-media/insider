@@ -210,7 +210,8 @@ export function Pricing() {
                           });
                         }}
                         placeholder={plan === "yearly" ? "120" : "12"}
-                        className="w-full bg-transparent text-[22px] text-fg-strong outline-none placeholder:text-fg-placeholder"
+                        // 44px — it's a payment field on a phone.
+                        className="min-h-11 w-full bg-transparent text-[22px] text-fg-strong outline-none placeholder:text-fg-placeholder"
                       />
                       <span className="ml-2 shrink-0 whitespace-nowrap text-body-sm">
                         / {plan === "yearly" ? "yr" : "mo"}

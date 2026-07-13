@@ -101,12 +101,16 @@ function FooterCol({ title, links }: { title: string; links: FooterLink[] }) {
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan">
         {title}
       </div>
-      <ul className="mt-2 space-y-0.5">
+      {/* The footer is the main nav once you've scrolled a long page on a phone,
+          so its links carry a 44px target. `py-1` left them at 28px — over the
+          WCAG 2.5.8 floor but under every platform's thumb guidance. The rows
+          butt together at 44px, so no extra gap is needed. */}
+      <ul className="mt-1">
         {links.map((l) => (
           <li key={l.to}>
             <Link
               to={l.to}
-              className="inline-block py-1 text-fg transition hover:text-cyan"
+              className="inline-flex min-h-11 items-center text-fg transition hover:text-cyan"
             >
               {l.label}
             </Link>

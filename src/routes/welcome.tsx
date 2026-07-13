@@ -90,7 +90,7 @@ function WelcomeStep({
   slot?: ReactNode;
 }) {
   const ctaCls =
-    "mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+    "mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
   return (
     <div className="border border-rule bg-navy-800/40 p-8">

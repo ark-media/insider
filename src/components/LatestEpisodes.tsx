@@ -109,7 +109,10 @@ function NewRowBadge() {
   return (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute -left-6 top-0 z-10 flex h-14 w-14 -translate-y-1/2 -rotate-12 items-center justify-center rounded-full border-[3px] border-cyan bg-cyan button-text font-display font-black tracking-cta text-navy shadow-[0_4px_14px_rgb(62_181_249_/_0.35)] sm:-left-8 sm:h-16 sm:w-16 "
+      // `-left-6` exactly cancelled the 24px page gutter, so the badge sat flush
+      // at x=0 on a 390px phone and was sliced by the viewport edge at 320px.
+      // `-left-3` keeps it hanging off the grid without ever leaving the page.
+      className="pointer-events-none absolute -left-3 top-0 z-10 flex h-14 w-14 -translate-y-1/2 -rotate-12 items-center justify-center rounded-full border-[3px] border-cyan bg-cyan button-text font-display font-black tracking-cta text-navy shadow-[0_4px_14px_rgb(62_181_249_/_0.35)] sm:-left-8 sm:h-16 sm:w-16"
     >
       New
     </span>

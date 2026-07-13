@@ -440,7 +440,7 @@ function AlsoFromArkMedia() {
                 <CommunityAppLinks />
                 <Link
                   to="/community"
-                  className="inline-flex w-fit items-center gap-2 button-text font-display font-bold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  className="inline-flex min-h-11 w-fit items-center gap-2 button-text font-display font-bold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Learn more →
                 </Link>
