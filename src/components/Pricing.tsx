@@ -124,15 +124,22 @@ export function Pricing() {
               />
             ) : (
             <>
-            {/* Plan toggle */}
-            <div role="group" aria-label="Billing period" className="inline-flex border border-rule-strong p-1">
+            {/* Plan toggle — fluid on phones (each button takes half the row) and
+                intrinsic from `sm` up. An `inline-flex` here sized to its content,
+                which at 320px is wider than the gutter and forced the whole page
+                to overflow horizontally. */}
+            <div
+              role="group"
+              aria-label="Billing period"
+              className="flex w-full border border-rule-strong p-1 sm:inline-flex sm:w-auto"
+            >
               {(["monthly", "yearly"] as const).map((p) => (
                 <button
                   key={p}
                   type="button"
                   aria-pressed={plan === p}
                   onClick={() => setPlan(p)}
-                  className={`relative inline-flex min-h-11 items-center px-6 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                  className={`relative inline-flex min-h-11 flex-1 items-center justify-center px-3 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:flex-none sm:px-6 ${
                     plan === p
                       ? "bg-cyan text-navy"
                       : "text-fg-muted hover:text-fg-strong"
