@@ -49,10 +49,15 @@ function CardText({
             // In a two-up phone grid the text column is ~130px — roughly 14
             // characters a line, which is unreadable. Art + title carry the
             // browse grid on phones; the copy returns once there's room for it.
-            // `max-sm:hidden`, not `hidden sm:block` — the latter's `display:
-            // block` would override line-clamp's `display: -webkit-box` and
-            // unclamp the copy on every screen above the phone.
-            compact ? "max-sm:hidden" : ""
+            //
+            // `sr-only` rather than `hidden`: the copy is only redundant to the
+            // *eye* at this width, so hiding it visually is right but dropping
+            // it from the accessibility tree is not — a screen-reader user on a
+            // phone would just lose the description. Neither utility sets
+            // `display`, which is what keeps `line-clamp`'s `-webkit-box`
+            // intact; `hidden sm:block` would clobber it and unclamp the copy at
+            // every width above the phone.
+            compact ? "max-sm:sr-only" : ""
           }`}
         />
       ) : null}

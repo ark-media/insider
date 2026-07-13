@@ -22,6 +22,7 @@ import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
 import { ShowCover } from "./ShowCover";
+import { STACKED_GRID_IMAGE_SIZES } from "../lib/images";
 import { ListenLinks } from "./ListenLinks";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
@@ -237,6 +238,9 @@ function ShowArtwork({ show }: { show: Show }) {
     <ShowCover
       show={show}
       priority
+      // Full-bleed in the stacked phone hero; `lg:col-span-5` of 12 above that,
+      // capped by `max-w-md` (448px) once 40vw exceeds it at ~1120px.
+      sizes="(min-width: 1120px) 448px, (min-width: 1024px) 40vw, 100vw"
       className="w-full max-w-md border border-rule shadow-cover"
     />
   );
@@ -786,6 +790,7 @@ function PeopleSection({ title, people }: { title: string; people: Host[] }) {
                 role={h.role}
                 photo={h.headshot}
                 name={h.name}
+                sizes={STACKED_GRID_IMAGE_SIZES}
                 variant={i % 2 === 0 ? "primary" : "secondary"}
               />
               <h3 className="mt-5 text-h3 leading-tight transition group-hover:text-cyan">
@@ -829,7 +834,11 @@ function RelatedShows({
               to={s.route}
               className="group block overflow-hidden border border-rule bg-navy-800/40 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              <ShowCover show={s} className="border-b border-rule" />
+              <ShowCover
+                show={s}
+                sizes={STACKED_GRID_IMAGE_SIZES}
+                className="border-b border-rule"
+              />
               <div className="p-6">
                 <div className="label text-cyan">
                   {s.shortTitle}

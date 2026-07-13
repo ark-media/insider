@@ -342,7 +342,12 @@ function HeroShowStack() {
               className="w-1/2 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10"
               style={{ transform: `translate(${x}%, ${y}%) rotate(${r}deg)` }}
             >
-              <ShowCover show={show} priority />
+              {/* Half the width of a deck capped at 340px (400px from `sm`). */}
+              <ShowCover
+                show={show}
+                priority
+                sizes="(min-width: 640px) 200px, 170px"
+              />
             </div>
           </div>
         );
@@ -562,7 +567,14 @@ function HomePage() {
                 title={show.title}
                 body={descriptions[show.slug] || show.tagline}
                 cta="Visit show"
-                media={<ShowCover show={show} />}
+                media={
+                  // Two-up grid at every width; within the card the cover is
+                  // full-width until `lg`, where CardBody splits it 50/50.
+                  <ShowCover
+                    show={show}
+                    sizes="(min-width: 1024px) 25vw, 50vw"
+                  />
+                }
               />
             ))}
           </div>

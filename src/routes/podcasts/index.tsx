@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { shows } from "../../data/shows";
 import { PageShell } from "../../components/PageShell";
 import { ShowCover } from "../../components/ShowCover";
+import { GRID_IMAGE_SIZES } from "../../lib/images";
 import { ClampedText } from "../../components/ClampedText";
 import { useShowDescriptions } from "../../lib/useShowDescription";
 
@@ -30,7 +31,11 @@ function ShowsHub() {
                     Ark+
                   </span>
                 ) : null}
-                <ShowCover show={show} className="border-b border-rule" />
+                <ShowCover
+                  show={show}
+                  sizes={GRID_IMAGE_SIZES}
+                  className="border-b border-rule"
+                />
                 <div className="p-4 sm:p-6">
                   <h2 className="font-display text-[17px] leading-[1.15] text-fg-strong sm:text-[22px]">
                     {show.title}
@@ -38,12 +43,15 @@ function ShowsHub() {
                   {/* Two-up on phones leaves a ~130px text column — too narrow to
                       read a description in. The art and title carry the browse
                       grid; the copy returns once the card has width for it.
-                      `max-sm:hidden`, not `hidden sm:block` — the latter's
-                      `display: block` would override line-clamp's `-webkit-box`
-                      and unclamp the copy above the phone breakpoint. */}
+                      `sr-only`, not `hidden`: the description is redundant to
+                      the eye at this width, not to a screen reader, so it stays
+                      in the accessibility tree. Neither sets `display`, which is
+                      what preserves line-clamp's `-webkit-box` — `hidden
+                      sm:block` would clobber it and unclamp the copy above the
+                      phone breakpoint. */}
                   <ClampedText
                     text={descriptions[show.slug] || show.tagline}
-                    className="mt-3 line-clamp-3 text-body-sm max-sm:hidden"
+                    className="mt-3 line-clamp-3 text-body-sm max-sm:sr-only"
                   />
                   {/* eyebrow's 14px + 0.22em tracking wraps the arrow onto its
                       own line in a two-up phone column — tightened until there's

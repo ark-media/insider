@@ -42,6 +42,9 @@ function HostPage() {
               role={host.role}
               photo={host.headshot}
               name={host.name}
+              // Full-width on phones, `lg:col-span-5` of 12 above that. The
+              // 100vw tail is what keeps the page's lead portrait sharp.
+              sizes="(min-width: 1024px) 40vw, 100vw"
             />
           </div>
           <div className="lg:col-span-7">

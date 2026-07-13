@@ -53,6 +53,9 @@ export function Hosts() {
                 role={h.role}
                 photo={h.headshot}
                 name={h.name}
+                // One-up on phones, three-up from `md` — note `md`, not the
+                // `lg` the shared grid constants assume.
+                sizes="(min-width: 768px) 33vw, 100vw"
                 variant={i % 2 === 0 ? "primary" : "secondary"}
                 className="mb-6"
               />

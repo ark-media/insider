@@ -159,6 +159,9 @@ function EpisodeAside({ show }: { show: Show }) {
         >
           <ShowCover
             show={show}
+            // Full-width where the aside stacks under the episode body; the
+            // `lg:col-span-4` sidebar, less its padding, above that.
+            sizes="(min-width: 1024px) 30vw, 100vw"
             className="w-full border border-rule shadow-cover transition group-hover:opacity-95"
           />
         </Link>

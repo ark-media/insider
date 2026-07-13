@@ -40,7 +40,13 @@ function InsideCallMeBackPage() {
                   key={show.slug}
                   className="overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10"
                 >
-                  <ShowCover show={show} priority />
+                  {/* Two-up inside a column capped at 420px, so each cover
+                      tops out at ~202px however wide the page gets. */}
+                  <ShowCover
+                    show={show}
+                    priority
+                    sizes="(min-width: 480px) 202px, 45vw"
+                  />
                 </div>
               ))}
             </div>

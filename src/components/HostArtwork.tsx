@@ -1,4 +1,4 @@
-import { GRID_IMAGE_SIZES, srcSet } from "../lib/images";
+import { srcSet } from "../lib/images";
 
 type Variant = "primary" | "secondary";
 
@@ -15,7 +15,7 @@ export function HostArtwork({
   className,
   photo,
   name,
-  sizes = GRID_IMAGE_SIZES,
+  sizes,
 }: {
   initials: string;
   role?: string;
@@ -25,8 +25,12 @@ export function HostArtwork({
   photo?: string;
   /** Used for the photo's alt text; falls back to a generic label. */
   name?: string;
-  /** Defaults to the browse grid (two-up on phones, three-up from `lg`). */
-  sizes?: string;
+  /**
+   * The slot this portrait lands in. Required and undefaulted on purpose — the
+   * browser trusts `sizes` over the real layout, so a grid default would make
+   * every full-width caller silently fetch a half-width file and upscale it.
+   */
+  sizes: string;
 }) {
   const frame = `relative aspect-[4/5] overflow-hidden bg-navy-900 ring-1 ring-rule ${className ?? ""}`;
 

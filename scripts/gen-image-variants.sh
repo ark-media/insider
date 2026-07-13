@@ -36,7 +36,11 @@ for f in public/shows/*.jpg public/hosts/*.jpg public/inside-cmb.jpg; do
       rm -f "${base}-${w}.jpg"
       continue
     fi
-    sips -Z "$w" -s format jpeg -s formatOptions $Q "$f" --out "${base}-${w}.jpg" >/dev/null 2>&1
+    # --resampleWidth, not -Z: -Z fits the *longest* side to $w, so a portrait
+    # source would land narrower than $w while the manifest still advertised it
+    # as "${w}w" — a srcset descriptor that lies. Every source happens to be
+    # landscape or square today, which is exactly why this would go unnoticed.
+    sips --resampleWidth "$w" -s format jpeg -s formatOptions $Q "$f" --out "${base}-${w}.jpg" >/dev/null 2>&1
   done
 done
 

@@ -1,6 +1,6 @@
 import type { Show } from "../data/shows";
 import { ArkNewsDailyArtwork } from "./ArkNewsDailyArtwork";
-import { GRID_IMAGE_SIZES, srcSet } from "../lib/images";
+import { intrinsicWidth, srcSet } from "../lib/images";
 
 /**
  * Single source for a show's square (1:1) cover. Prefers the uploaded
@@ -11,20 +11,22 @@ import { GRID_IMAGE_SIZES, srcSet } from "../lib/images";
  * max-w-md` in a hero, nothing in a grid cell). Pass `priority` for
  * above-the-fold covers so the image isn't lazy-loaded.
  *
- * `sizes` defaults to the standard browse grid (two-up on phones, three-up from
- * `lg`). Override it anywhere the cover isn't in that grid — a wrong `sizes` is
- * worse than none, because the browser trusts it over the real layout.
+ * `sizes` is required and has no default on purpose: it describes the slot this
+ * particular cover lands in, and the browser believes it over the real layout.
+ * A grid default would silently under-fetch for every full-width caller. Pass
+ * `GRID_IMAGE_SIZES`/`STACKED_GRID_IMAGE_SIZES` in those grids, or a literal
+ * width where the cover is a fixed size.
  */
 export function ShowCover({
   show,
   className,
   priority = false,
-  sizes = GRID_IMAGE_SIZES,
+  sizes,
 }: {
   show: Show;
   className?: string;
   priority?: boolean;
-  sizes?: string;
+  sizes: string;
 }) {
   const box = `relative aspect-square overflow-hidden ${className ?? ""}`;
 
@@ -36,8 +38,8 @@ export function ShowCover({
           srcSet={srcSet(show.coverArt)}
           sizes={sizes}
           alt={`${show.title} — cover art`}
-          width={1200}
-          height={1200}
+          width={intrinsicWidth(show.coverArt)}
+          height={intrinsicWidth(show.coverArt)}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : "auto"}
           decoding="async"

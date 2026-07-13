@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { hosts, type Host } from "../../data/hosts";
 import { PageShell } from "../../components/PageShell";
 import { HostArtwork } from "../../components/HostArtwork";
+import { GRID_IMAGE_SIZES } from "../../lib/images";
 
 export const Route = createFileRoute("/hosts/")({
   component: HostsHub,
@@ -68,15 +69,18 @@ function PeopleGrid({
                 role={h.role}
                 photo={h.headshot}
                 name={h.name}
+                sizes={GRID_IMAGE_SIZES}
                 variant={index % 2 === 0 ? "primary" : "secondary"}
               />
               <h3 className="mt-4 font-display text-[17px] leading-tight text-fg-strong transition group-hover:text-cyan sm:mt-5 sm:text-[22px]">
                 {h.name}
               </h3>
-              {/* Two-up on phones leaves a ~160px column. The portrait already
-                  carries the role label, and the full bio is one tap away on
-                  the host page — so the short bio waits for a wider card. */}
-              <p className="mt-2 max-w-sm text-body-sm max-sm:hidden">
+              {/* Two-up on phones leaves a ~160px column, so the short bio waits
+                  for a wider card. `sr-only` rather than `hidden` — it's the
+                  narrow column that makes the bio unreadable, which is a problem
+                  for the eye and not for a screen reader, so it stays in the
+                  accessibility tree either way. */}
+              <p className="mt-2 max-w-sm text-body-sm max-sm:sr-only">
                 {h.shortBio}
               </p>
             </Link>
