@@ -36,16 +36,10 @@ export function intrinsicWidth(src: string, fallback = 1200): number {
  */
 
 /**
- * The /hosts browse grid: two-up on phones, three-up from `lg`. (/podcasts runs
- * its own four-up grid and states its own `sizes`.)
+ * Every portrait grid (the /hosts roster, a show's host list, the home hosts
+ * row) caps its portraits at the same width, so the slot no longer depends on
+ * the viewport and `sizes` is just that cap. Cells narrower than the cap only
+ * over-fetch within one srcset step. Keep this in step with the `max-w-*` the
+ * portrait grids apply.
  */
-export const GRID_IMAGE_SIZES = "(min-width: 1024px) 33vw, 50vw";
-
-/**
- * The older card grids that still stack one-up on phones before going two-up at
- * `sm` and three-up at `lg` (a show's host list). The 100vw tail
- * is the part that matters: it's what stops a phone from being served a
- * half-width file for a full-width card.
- */
-export const STACKED_GRID_IMAGE_SIZES =
-  "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
+export const PORTRAIT_SIZES = "200px";

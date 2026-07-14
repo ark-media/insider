@@ -13,9 +13,8 @@ import { intrinsicWidth, srcSet } from "../lib/images";
  *
  * `sizes` is required and has no default on purpose: it describes the slot this
  * particular cover lands in, and the browser believes it over the real layout.
- * A grid default would silently under-fetch for every full-width caller. Pass
- * `GRID_IMAGE_SIZES`/`STACKED_GRID_IMAGE_SIZES` in those grids, or a literal
- * width where the cover is a fixed size.
+ * A grid default would silently under-fetch for every full-width caller. State
+ * the grid's own breakpoints, or a literal width where the cover is capped.
  */
 export function ShowCover({
   show,

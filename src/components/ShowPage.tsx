@@ -22,7 +22,7 @@ import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
 import { ShowCover } from "./ShowCover";
-import { STACKED_GRID_IMAGE_SIZES } from "../lib/images";
+import { PORTRAIT_SIZES } from "../lib/images";
 import { ListenLinks } from "./ListenLinks";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
@@ -173,28 +173,35 @@ function ShowHero({ show }: { show: Show }) {
             { label: show.shortTitle },
           ]}
         />
-        <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <div className="lg:col-span-7">
+        {/* The album-header pattern: cover and copy are one unit, not two
+            columns of a page grid. The cover is `shrink-0` at a fixed size and
+            the copy takes what's left, so the two stay a fixed gap apart at any
+            width instead of the cover drifting in an empty column. Art first in
+            the DOM, so the phone stack needs no order overrides. */}
+        <div className="mt-10 flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
+          <div className="shrink-0">
+            <ShowArtwork show={show} />
+          </div>
+          {/* `min-w-0` so a long unbroken word in the description can't widen
+              this flex item and squeeze the cover. */}
+          <div className="min-w-0 flex-1">
             <h1 className="rise rise-2 max-w-3xl text-fg-strong">
-              <span className="display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
+              <span className="display-upright block text-[clamp(2.4rem,5vw,3.8rem)] leading-[1.02]">
                 {show.title}
               </span>
             </h1>
             {show.hosts.length > 0 ? (
-              <p className="rise rise-3 mt-6 meta text-fg-muted">
+              <p className="rise rise-3 mt-5 meta text-fg-muted">
                 with {show.hosts.join(" · ")}
               </p>
             ) : null}
-            <p className="rise rise-4 mt-6 max-w-xl text-body-lg">
+            <p className="rise rise-4 mt-6 max-w-2xl text-body-lg">
               {description}
             </p>
-            <ListenLinks listen={show.listen} className="mt-10" />
-            {/* Paid shows already give non-members a dedicated join CTA in
-                place of the episode list — don't stack a second one here. */}
+            <ListenLinks listen={show.listen} className="mt-8" />
+            {/* Paid shows already give non-members a dedicated join CTA in place
+                of the episode list — don't stack a second one here. */}
             {show.paid ? null : <ShowUpsell />}
-          </div>
-          <div className="lg:col-span-5">
-            <ShowArtwork show={show} />
           </div>
         </div>
       </div>
@@ -236,10 +243,11 @@ function ShowArtwork({ show }: { show: Show }) {
     <ShowCover
       show={show}
       priority
-      // Full-bleed in the stacked phone hero; `lg:col-span-5` of 12 above that,
-      // capped by `max-w-md` (448px) once 40vw exceeds it at ~1120px.
-      sizes="(min-width: 1120px) 448px, (min-width: 1024px) 40vw, 100vw"
-      className="w-full max-w-md border border-rule shadow-cover"
+      // A fixed square beside the title, not a fluid column — the cover is an
+      // identifier here, not the hero image. `w-[240px]` rather than a max-width
+      // at lg because the flex parent is `shrink-0`: the size is the size.
+      sizes="(min-width: 1024px) 240px, (min-width: 640px) 260px, 220px"
+      className="w-full max-w-[220px] border border-rule shadow-cover sm:max-w-[260px] lg:w-[240px] lg:max-w-none"
     />
   );
 }
@@ -775,7 +783,7 @@ function PeopleSection({ title, people }: { title: string; people: Host[] }) {
         <div className="label text-cyan">
           {title}
         </div>
-        <div className="mt-10 grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-10 grid grid-cols-2 gap-x-8 gap-y-12 sm:grid-cols-3 lg:grid-cols-4">
           {people.map((h, i) => (
             <Link
               key={h.slug}
@@ -788,7 +796,8 @@ function PeopleSection({ title, people }: { title: string; people: Host[] }) {
                 role={h.role}
                 photo={h.headshot}
                 name={h.name}
-                sizes={STACKED_GRID_IMAGE_SIZES}
+                sizes={PORTRAIT_SIZES}
+                className="max-w-[200px]"
                 variant={i % 2 === 0 ? "primary" : "secondary"}
               />
               <h3 className="mt-5 text-h3 leading-tight transition group-hover:text-cyan">

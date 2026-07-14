@@ -36,18 +36,19 @@ function HostPage() {
     >
       <section>
         <div className="page-gutter grid grid-cols-1 gap-8 py-10 sm:py-12 lg:grid-cols-12">
-          <div className="lg:col-span-5">
+          <div className="lg:col-span-4">
             <HostArtwork
               initials={host.initials}
               role={host.role}
               photo={host.headshot}
               name={host.name}
-              // Full-width on phones, `lg:col-span-5` of 12 above that. The
-              // 100vw tail is what keeps the page's lead portrait sharp.
-              sizes="(min-width: 1024px) 40vw, 100vw"
+              // Capped rather than filling its column: the name and bio lead this
+              // page, and an uncapped 4:5 portrait ran taller than the fold.
+              sizes="280px"
+              className="w-full max-w-[280px]"
             />
           </div>
-          <div className="lg:col-span-7">
+          <div className="lg:col-span-8">
             <h2 className="eyebrow">Bio</h2>
             <p className="mt-6 max-w-2xl text-body-lg">
               {host.longBio}

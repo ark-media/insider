@@ -1,4 +1,5 @@
 import { HostArtwork } from "./HostArtwork";
+import { PORTRAIT_SIZES } from "../lib/images";
 
 const hosts = [
   {
@@ -42,7 +43,7 @@ export function Hosts() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 gap-x-10 gap-y-16 md:grid-cols-3">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-12 md:grid-cols-3 md:gap-x-10">
           {hosts.map((h, i) => (
             <article
               key={h.name}
@@ -53,11 +54,9 @@ export function Hosts() {
                 role={h.role}
                 photo={h.headshot}
                 name={h.name}
-                // One-up on phones, three-up from `md` — note `md`, not the
-                // `lg` the shared grid constants assume.
-                sizes="(min-width: 768px) 33vw, 100vw"
+                sizes={PORTRAIT_SIZES}
                 variant={i % 2 === 0 ? "primary" : "secondary"}
-                className="mb-6"
+                className="mb-6 max-w-[200px]"
               />
               <h3 className="display-upright text-[22px] leading-tight text-fg-strong">
                 {h.name}

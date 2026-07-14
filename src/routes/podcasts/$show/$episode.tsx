@@ -83,33 +83,45 @@ function EpisodePage() {
             show={show}
             trailing={formatEpisodeDate(episode.publishedAt)}
           />
-          <h1 className="rise rise-2 mt-8 max-w-4xl font-display text-[clamp(2rem,4.5vw,3.4rem)] leading-[1.05] text-fg-strong">
-            {episode.title}
-          </h1>
-          {description ? (
-            <p className="rise rise-3 mt-6 max-w-2xl text-body-lg">
-              {description}
-            </p>
-          ) : null}
-          <div className="rise rise-4 mt-7 flex flex-wrap items-center gap-x-3 gap-y-2 meta">
-            <span>{formatDuration(episode.durationMinutes)}</span>
-            {episode.guests && episode.guests.length > 0 ? (
-              <>
-                <span aria-hidden="true" className="text-fg-faint">
-                  ·
-                </span>
-                <span>with {episode.guests.join(", ")}</span>
-              </>
+          {/* Same album-header unit as the show hero: art first and `shrink-0`
+              at a fixed size, copy beside it taking what's left. The episode
+              image was a 768px block floating under the copy before. */}
+          <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
+            {episode.imageUrl ? (
+              <img
+                src={episode.imageUrl}
+                alt=""
+                loading="lazy"
+                // Square, like the show cover: Simplecast episode art is 1:1, and
+                // the old 16:9 box letterboxed it with dead bars. `object-contain`
+                // rather than cover so a rare non-square image isn't cropped.
+                className="rise rise-2 aspect-square w-full max-w-[240px] shrink-0 border border-rule bg-navy-900 object-contain shadow-cover lg:w-[240px] lg:max-w-none"
+              />
             ) : null}
+            {/* `min-w-0` so a long unbroken title can't widen this flex item and
+                squeeze the art. */}
+            <div className="min-w-0 flex-1">
+              <h1 className="rise rise-2 max-w-3xl font-display text-[clamp(1.9rem,3.6vw,2.8rem)] leading-[1.05] text-fg-strong">
+                {episode.title}
+              </h1>
+              {description ? (
+                <p className="rise rise-3 mt-6 max-w-2xl text-body-lg">
+                  {description}
+                </p>
+              ) : null}
+              <div className="rise rise-4 mt-7 flex flex-wrap items-center gap-x-3 gap-y-2 meta">
+                <span>{formatDuration(episode.durationMinutes)}</span>
+                {episode.guests && episode.guests.length > 0 ? (
+                  <>
+                    <span aria-hidden="true" className="text-fg-faint">
+                      ·
+                    </span>
+                    <span>with {episode.guests.join(", ")}</span>
+                  </>
+                ) : null}
+              </div>
+            </div>
           </div>
-          {episode.imageUrl ? (
-            <img
-              src={episode.imageUrl}
-              alt=""
-              loading="lazy"
-              className="rise rise-4 mt-9 aspect-video w-full max-w-3xl border border-rule bg-navy-900 object-contain p-2 shadow-cover"
-            />
-          ) : null}
         </div>
       </section>
 
@@ -159,10 +171,10 @@ function EpisodeAside({ show }: { show: Show }) {
         >
           <ShowCover
             show={show}
-            // Full-width where the aside stacks under the episode body; the
-            // `lg:col-span-4` sidebar, less its padding, above that.
-            sizes="(min-width: 1024px) 30vw, 100vw"
-            className="w-full border border-rule shadow-cover transition group-hover:opacity-95"
+            // Capped: inside the aside card the cover is a label for the show,
+            // and filling the card made it the loudest thing on the page.
+            sizes="180px"
+            className="w-full max-w-[180px] border border-rule shadow-cover transition group-hover:opacity-95"
           />
         </Link>
         <div className="mt-5 label text-fg-muted">
@@ -327,12 +339,18 @@ function EpisodeSkeleton({ show }: { show: Show }) {
       <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
         <div className="page-gutter pt-8 pb-10 sm:pt-12">
           <EpisodeBreadcrumbs show={show} />
-          <div className="mt-6 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
-          <div className="mt-4 max-w-4xl space-y-3">
-            <div className="h-[clamp(2rem,4.5vw,3.4rem)] w-full max-w-3xl animate-pulse rounded bg-fg-strong/8" />
-            <div className="h-[clamp(2rem,4.5vw,3.4rem)] w-2/3 animate-pulse rounded bg-fg-strong/8" />
+          {/* Mirrors the loaded hero's art-then-copy shape so the page doesn't
+              reflow when the episode arrives. */}
+          <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
+            <div className="aspect-square w-full max-w-[240px] shrink-0 animate-pulse rounded bg-fg-strong/8 lg:w-[240px] lg:max-w-none" />
+            <div className="min-w-0 flex-1">
+              <div className="max-w-3xl space-y-3">
+                <div className="h-[clamp(1.9rem,3.6vw,2.8rem)] w-full animate-pulse rounded bg-fg-strong/8" />
+                <div className="h-[clamp(1.9rem,3.6vw,2.8rem)] w-2/3 animate-pulse rounded bg-fg-strong/8" />
+              </div>
+              <div className="mt-7 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
+            </div>
           </div>
-          <div className="mt-7 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
         </div>
       </section>
 

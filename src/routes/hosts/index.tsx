@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { hosts, type Host } from "../../data/hosts";
 import { PageShell } from "../../components/PageShell";
 import { HostArtwork } from "../../components/HostArtwork";
-import { GRID_IMAGE_SIZES } from "../../lib/images";
+import { PORTRAIT_SIZES } from "../../lib/images";
 
 export const Route = createFileRoute("/hosts/")({
   component: HostsHub,
@@ -54,7 +54,7 @@ function PeopleGrid({
         {eyebrow}
         <span aria-hidden="true" className="h-px flex-1 bg-rule" />
       </h2>
-      <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-8 lg:grid-cols-3">
+      <div className="mt-10 grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-3 sm:gap-x-8 lg:grid-cols-4">
         {people.map((h, i) => {
           const index = startIndex + i;
           return (
@@ -69,7 +69,8 @@ function PeopleGrid({
                 role={h.role}
                 photo={h.headshot}
                 name={h.name}
-                sizes={GRID_IMAGE_SIZES}
+                sizes={PORTRAIT_SIZES}
+                className="max-w-[200px]"
                 variant={index % 2 === 0 ? "primary" : "secondary"}
               />
               <h3 className="mt-4 font-display text-[17px] leading-tight text-fg-strong transition group-hover:text-cyan sm:mt-5 sm:text-[22px]">
