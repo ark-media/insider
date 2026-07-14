@@ -2,9 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { shows } from "../../data/shows";
 import { PageShell } from "../../components/PageShell";
 import { ShowCover } from "../../components/ShowCover";
-import { GRID_IMAGE_SIZES } from "../../lib/images";
 import { ClampedText } from "../../components/ClampedText";
 import { useShowDescriptions } from "../../lib/useShowDescription";
+import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
+
+// Two-up on phones, three-up from `md`, four-up from `lg` — where the 80rem
+// container puts each cover at ~285px rather than the ~380px a three-up row
+// gave it.
+const BROWSE_GRID_SIZES =
+  "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
 
 export const Route = createFileRoute("/podcasts/")({
   component: ShowsHub,
@@ -19,7 +25,7 @@ function ShowsHub() {
     >
       <section>
         <div className="page-section">
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
             {shows.map((show) => (
               <Link
                 key={show.slug}
@@ -33,7 +39,7 @@ function ShowsHub() {
                 ) : null}
                 <ShowCover
                   show={show}
-                  sizes={GRID_IMAGE_SIZES}
+                  sizes={BROWSE_GRID_SIZES}
                   className="border-b border-rule"
                 />
                 <div className="p-4 sm:p-6">
@@ -63,8 +69,42 @@ function ShowsHub() {
               </Link>
             ))}
           </div>
+          <ArkPlusCallout />
         </div>
       </section>
     </PageShell>
+  );
+}
+
+/**
+ * Membership pitch under the grid. Hidden from paid members (nothing to sell
+ * them) and while the session is still resolving, so a member never sees it
+ * flash in and out. A signed-in free user still gets it — `kind: "member"` is
+ * not the same as paid.
+ */
+function ArkPlusCallout() {
+  const { state } = useSubscriberAuth();
+  if (state.kind === "loading" || isArkPlusMember(state)) return null;
+
+  return (
+    <div className="mt-12 border border-rule bg-navy-800/40 p-6 sm:mt-16 sm:p-8">
+      <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-8">
+          <div className="label text-cyan">Ark+</div>
+          <p className="mt-3 max-w-2xl text-body-lg">
+            Ad-free episodes, extended interviews, members-only Q&amp;As, and
+            the members letter — across every show above.
+          </p>
+        </div>
+        <div className="lg:col-span-4 lg:text-right">
+          <Link
+            to="/plus"
+            className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            Become an Ark+ member →
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -5,6 +5,15 @@ import { contactTopics, type ContactTopic } from "../config/urls";
 import { sendContactMessage } from "../lib/contact";
 
 export const Route = createFileRoute("/contact")({
+  // Allow a topic to be pre-selected via ?topic=… (e.g. links that want the
+  // form to open on a specific desk). Unknown/missing values fall through to
+  // the form's default. Only known topic values are accepted.
+  validateSearch: (search): { topic?: ContactTopic } => {
+    const t = search.topic;
+    return typeof t === "string" && contactTopics.some((x) => x.value === t)
+      ? { topic: t as ContactTopic }
+      : {};
+  },
   component: ContactPage,
 });
 
@@ -14,9 +23,12 @@ const labelClass =
   "label text-cyan";
 
 function ContactPage() {
+  const { topic: topicParam } = Route.useSearch();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [topic, setTopic] = useState<ContactTopic>(contactTopics[0].value);
+  const [topic, setTopic] = useState<ContactTopic>(
+    topicParam ?? contactTopics[0].value,
+  );
   const [message, setMessage] = useState("");
   // Honeypot — see server/routes/contact.ts. Real users leave it blank.
   const [company, setCompany] = useState("");

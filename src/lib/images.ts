@@ -36,8 +36,8 @@ export function intrinsicWidth(src: string, fallback = 1200): number {
  */
 
 /**
- * The browse grids on /podcasts and /hosts: two-up on phones, three-up from
- * `lg`.
+ * The /hosts browse grid: two-up on phones, three-up from `lg`. (/podcasts runs
+ * its own four-up grid and states its own `sizes`.)
  */
 export const GRID_IMAGE_SIZES = "(min-width: 1024px) 33vw, 50vw";
 

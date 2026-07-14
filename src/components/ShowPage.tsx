@@ -24,7 +24,7 @@ import { HostArtwork } from "./HostArtwork";
 import { ShowCover } from "./ShowCover";
 import { STACKED_GRID_IMAGE_SIZES } from "../lib/images";
 import { ListenLinks } from "./ListenLinks";
-import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
 
 export function ShowPage({ slug }: { slug: ShowSlug }) {
@@ -64,8 +64,6 @@ function PublicShowPage({ show }: { show: Show }) {
   return (
     <main className="relative">
       <ShowHero show={show} />
-
-      {showHasPaidExtension(show.slug) ? <ShowUpsell show={show} /> : null}
 
       <EpisodeBrowser
         show={show}
@@ -191,6 +189,9 @@ function ShowHero({ show }: { show: Show }) {
               {description}
             </p>
             <ListenLinks listen={show.listen} className="mt-10" />
+            {/* Paid shows already give non-members a dedicated join CTA in
+                place of the episode list — don't stack a second one here. */}
+            {show.paid ? null : <ShowUpsell />}
           </div>
           <div className="lg:col-span-5">
             <ShowArtwork show={show} />
@@ -201,32 +202,32 @@ function ShowHero({ show }: { show: Show }) {
   );
 }
 
-function ShowUpsell({ show: _show }: { show: Show }) {
+// Ark+ pitch shown on every free show's hero. The benefits named here are the
+// membership-wide ones (see <Benefits/> on /plus) — not per-show extras, since
+// only Call Me Back has a paid feed. Members already have all of it, so they
+// never see this; the root blocks rendering while /api/me is in flight, so the
+// tier is settled by the time this runs and no upsell flashes at a member.
+function ShowUpsell() {
+  const { state } = useSubscriberAuth();
+  if (isArkPlusMember(state)) return null;
+
   return (
-    <section>
-      <div className="page-gutter py-8">
-        <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-8">
-            <div className="label text-cyan">
-              Want more?
-            </div>
-            <p className="mt-3 max-w-2xl text-body-lg">
-              <span className="font-display text-[18px]">Inside Call Me Back</span>{" "}
-              delivers extended interviews, ad-free episodes, and
-              members-only Q&amp;As — included with Ark+.
-            </p>
-          </div>
-          <div className="lg:col-span-4 lg:text-right">
-            <Link
-              to="/plus"
-              className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-            >
-              Become an Ark+ member →
-            </Link>
-          </div>
-        </div>
+    <div className="rise rise-4 mt-10 border-t border-fg-strong/10 pt-8">
+      <div className="label text-cyan">
+        Want more?
       </div>
-    </section>
+      <p className="mt-3 max-w-xl text-body-lg">
+        <span className="font-display text-[18px]">Ark+</span> members get the
+        members-only newsletter, full access to the Ark community, and the
+        ad-free Call Me Back Ark+ feed.
+      </p>
+      <Link
+        to="/plus"
+        className="mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-4 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+      >
+        Join Ark+ →
+      </Link>
+    </div>
   );
 }
 
@@ -802,8 +803,4 @@ function PeopleSection({ title, people }: { title: string; people: Host[] }) {
       </div>
     </section>
   );
-}
-
-function showHasPaidExtension(slug: ShowSlug): boolean {
-  return slug === "call-me-back";
 }
