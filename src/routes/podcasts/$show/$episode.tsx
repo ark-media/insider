@@ -1,10 +1,6 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  formatDuration,
-  formatEpisodeDate,
-  type Episode,
-} from "../../../data/episodes";
+import { formatEpisodeDate, type Episode } from "../../../data/episodes";
 import {
   getShow,
   showAtmosphere,
@@ -98,19 +94,8 @@ function EpisodePage() {
                 )}
               </div>
 
-              <div className="rise rise-3 mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 meta">
-                <span>{formatDuration(episode.durationMinutes)}</span>
-                {episode.guests && episode.guests.length > 0 ? (
-                  <>
-                    <span aria-hidden="true" className="text-fg-faint">
-                      ·
-                    </span>
-                    <span>with {episode.guests.join(", ")}</span>
-                  </>
-                ) : null}
-              </div>
               {description ? (
-                <p className="rise rise-4 mt-6 max-w-2xl text-body-lg">
+                <p className="rise rise-3 mt-6 max-w-2xl text-body-lg">
                   {description}
                 </p>
               ) : null}
@@ -323,7 +308,6 @@ function EpisodeSkeleton({ show }: { show: Show }) {
           <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
               <div className="h-[200px] w-full animate-pulse border border-rule bg-navy-800/40" />
-              <div className="mt-5 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
               <div className="mt-14 label text-cyan">
                 Show notes
               </div>
