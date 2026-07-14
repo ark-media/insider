@@ -77,39 +77,28 @@ function EpisodePage() {
   return (
     <main className="relative">
       <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
-        <div className="page-gutter pt-8 pb-10 sm:pt-12">
+        <div className="page-gutter pt-8 pb-14 sm:pt-12">
           <EpisodeBreadcrumbs
             className="rise rise-1"
             show={show}
             trailing={formatEpisodeDate(episode.publishedAt)}
           />
-          {/* Same album-header unit as the show hero: art first and `shrink-0`
-              at a fixed size, copy beside it taking what's left. The episode
-              image was a 768px block floating under the copy before. */}
-          <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
-            {episode.imageUrl ? (
-              <img
-                src={episode.imageUrl}
-                alt=""
-                loading="lazy"
-                // Square, like the show cover: Simplecast episode art is 1:1, and
-                // the old 16:9 box letterboxed it with dead bars. `object-contain`
-                // rather than cover so a rare non-square image isn't cropped.
-                className="rise rise-2 aspect-square w-full max-w-[240px] shrink-0 border border-rule bg-navy-900 object-contain shadow-cover lg:w-[240px] lg:max-w-none"
-              />
-            ) : null}
-            {/* `min-w-0` so a long unbroken title can't widen this flex item and
-                squeeze the art. */}
-            <div className="min-w-0 flex-1">
-              <h1 className="rise rise-2 max-w-3xl font-display text-[clamp(1.9rem,3.6vw,2.8rem)] leading-[1.05] text-fg-strong">
-                {episode.title}
-              </h1>
-              {description ? (
-                <p className="rise rise-3 mt-6 max-w-2xl text-body-lg">
-                  {description}
-                </p>
-              ) : null}
-              <div className="rise rise-4 mt-7 flex flex-wrap items-center gap-x-3 gap-y-2 meta">
+          <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
+            <div className="lg:col-span-8">
+              {/* The Simplecast embed is the album header: it already renders the
+                  episode art and title at full size. A visible <h1> above it just
+                  said the same thing twice, so the heading stays for screen
+                  readers and search engines only. */}
+              <h1 className="sr-only">{episode.title}</h1>
+              <div className="rise rise-2">
+                {isPaid ? (
+                  <PaidEpisodeBlock episode={episode} />
+                ) : (
+                  <PlayerBlock episode={episode} />
+                )}
+              </div>
+
+              <div className="rise rise-3 mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 meta">
                 <span>{formatDuration(episode.durationMinutes)}</span>
                 {episode.guests && episode.guests.length > 0 ? (
                   <>
@@ -120,25 +109,11 @@ function EpisodePage() {
                   </>
                 ) : null}
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div className="page-gutter py-10 sm:py-12">
-          <div className="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
-            <div className="lg:col-span-8">
-              <h2 className="label text-cyan">
-                Listen
-              </h2>
-              <div className="mt-5">
-                {isPaid ? (
-                  <PaidEpisodeBlock episode={episode} />
-                ) : (
-                  <PlayerBlock episode={episode} />
-                )}
-              </div>
+              {description ? (
+                <p className="rise rise-4 mt-6 max-w-2xl text-body-lg">
+                  {description}
+                </p>
+              ) : null}
 
               <h2 className="mt-14 label text-cyan">
                 Show notes
@@ -261,6 +236,7 @@ function PlayerBlock({ episode }: { episode: Episode }) {
         <div className="label text-cyan">
           Listen
         </div>
+        <div className="mt-3 text-h3 text-fg-strong">{episode.title}</div>
         <p className="mt-3 text-body-sm">
           This episode isn't available in our embedded player yet. Listen
           through your podcast app of choice.
@@ -298,6 +274,9 @@ function PaidEpisodeBlock({ episode }: { episode: Episode }) {
       <div className="label text-cyan">
         Ark+ members only
       </div>
+      {/* The player carries the episode title on unlocked episodes; when it's
+          swapped out for this card, the card has to name the episode itself. */}
+      <div className="mt-4 max-w-2xl text-h3 text-fg-strong">{episode.title}</div>
       <p className="mt-4 max-w-2xl text-body-sm text-fg">
         This episode is part of Inside Call Me Back. Join Ark+ to listen.
       </p>
@@ -337,31 +316,14 @@ function EpisodeSkeleton({ show }: { show: Show }) {
     <main className="relative" aria-busy="true" aria-live="polite">
       <span className="sr-only">Loading episode</span>
       <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
-        <div className="page-gutter pt-8 pb-10 sm:pt-12">
+        <div className="page-gutter pt-8 pb-14 sm:pt-12">
           <EpisodeBreadcrumbs show={show} />
-          {/* Mirrors the loaded hero's art-then-copy shape so the page doesn't
-              reflow when the episode arrives. */}
-          <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
-            <div className="aspect-square w-full max-w-[240px] shrink-0 animate-pulse rounded bg-fg-strong/8 lg:w-[240px] lg:max-w-none" />
-            <div className="min-w-0 flex-1">
-              <div className="max-w-3xl space-y-3">
-                <div className="h-[clamp(1.9rem,3.6vw,2.8rem)] w-full animate-pulse rounded bg-fg-strong/8" />
-                <div className="h-[clamp(1.9rem,3.6vw,2.8rem)] w-2/3 animate-pulse rounded bg-fg-strong/8" />
-              </div>
-              <div className="mt-7 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div className="page-gutter py-10 sm:py-12">
-          <div className="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
+          {/* Mirrors the loaded page's player-first shape so it doesn't reflow
+              when the episode arrives. */}
+          <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
-              <div className="label text-cyan">
-                Listen
-              </div>
-              <div className="mt-5 h-[200px] w-full animate-pulse border border-rule bg-navy-800/40" />
+              <div className="h-[200px] w-full animate-pulse border border-rule bg-navy-800/40" />
+              <div className="mt-5 h-3 w-40 animate-pulse rounded bg-fg-strong/8" />
               <div className="mt-14 label text-cyan">
                 Show notes
               </div>
