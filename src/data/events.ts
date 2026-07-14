@@ -104,15 +104,6 @@ export const events: ArkEvent[] = [
   },
 ];
 
-export function upcomingEvents(now: Date = new Date()): ArkEvent[] {
-  return events
-    .filter((e) => new Date(e.startsAt).getTime() >= now.getTime())
-    .sort(
-      (a, b) =>
-        new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
-    );
-}
-
 export type EventStatus = "live" | "upcoming";
 
 export type EventWithStatus = { event: ArkEvent; status: EventStatus };

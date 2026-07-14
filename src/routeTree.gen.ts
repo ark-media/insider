@@ -13,7 +13,6 @@ import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
-import { Route as EventsRouteImport } from './routes/events'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CommunityRouteImport } from './routes/community'
 import { Route as AboutRouteImport } from './routes/about'
@@ -69,11 +68,6 @@ const LogoutRoute = LogoutRouteImport.update({
 const IsraelVotesRoute = IsraelVotesRouteImport.update({
   id: '/israel-votes',
   path: '/israel-votes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EventsRoute = EventsRouteImport.update({
-  id: '/events',
-  path: '/events',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactRoute = ContactRouteImport.update({
@@ -263,7 +257,6 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRouteWithChildren
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
-  '/events': typeof EventsRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -305,7 +298,6 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRouteWithChildren
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
-  '/events': typeof EventsRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -349,7 +341,6 @@ export interface FileRoutesById {
   '/about': typeof AboutRouteWithChildren
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
-  '/events': typeof EventsRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -394,7 +385,6 @@ export interface FileRouteTypes {
     | '/about'
     | '/community'
     | '/contact'
-    | '/events'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -436,7 +426,6 @@ export interface FileRouteTypes {
     | '/about'
     | '/community'
     | '/contact'
-    | '/events'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -479,7 +468,6 @@ export interface FileRouteTypes {
     | '/about'
     | '/community'
     | '/contact'
-    | '/events'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -523,7 +511,6 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRouteWithChildren
   CommunityRoute: typeof CommunityRoute
   ContactRoute: typeof ContactRoute
-  EventsRoute: typeof EventsRoute
   IsraelVotesRoute: typeof IsraelVotesRoute
   LogoutRoute: typeof LogoutRoute
   SetupRoute: typeof SetupRoute
@@ -583,13 +570,6 @@ declare module '@tanstack/react-router' {
       path: '/israel-votes'
       fullPath: '/israel-votes'
       preLoaderRoute: typeof IsraelVotesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/events': {
-      id: '/events'
-      path: '/events'
-      fullPath: '/events'
-      preLoaderRoute: typeof EventsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -893,7 +873,6 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRouteWithChildren,
   CommunityRoute: CommunityRoute,
   ContactRoute: ContactRoute,
-  EventsRoute: EventsRoute,
   IsraelVotesRoute: IsraelVotesRoute,
   LogoutRoute: LogoutRoute,
   SetupRoute: SetupRoute,

@@ -6,8 +6,8 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { shows } from "../data/shows";
 
 // Nav order per Figma IA spec: Podcasts | Community | Newsletters | Israel
-// Votes | Ark+ | About | Account. Israel Votes renders as a pill for campaign
-// emphasis; Account is its own dropdown.
+// Votes | Subscribe | About | Account. Israel Votes renders as a pill for
+// campaign emphasis; Account is its own dropdown.
 //
 // Items render in array order — reorder here, the nav reflows. Each item's
 // variant chooses the renderer (text link / pill / menu). `hideWhen` removes
@@ -21,6 +21,8 @@ type NavChild = {
   hash?: string;
   description?: string;
   paid?: boolean;
+  /** A shortcut to a page that another nav item owns — doesn't light up this parent. */
+  crossLink?: boolean;
 };
 type NavItem = {
   label: string;
@@ -51,28 +53,24 @@ const NAV_ITEMS: NavItem[] = [
     matchPrefix: "/podcasts",
     children: podcastChildren,
   },
-  {
-    variant: "menu",
-    label: "Community",
-    to: "/community",
-    matchPrefix: "/community",
-    // Visible to everyone — the page itself shows a "Join Ark+" CTA to
-    // non-subscribers in place of the members-only Community app links.
-    children: [
-      { label: "Upcoming Events", to: "/events" },
-    ],
-  },
+  // Visible to everyone — the page itself shows a "Join Ark+" CTA to
+  // non-subscribers in place of the members-only Community app links.
+  { variant: "text", label: "Community", to: "/community", matchPrefix: "/community" },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
   {
     variant: "menu",
-    label: "Ark+",
+    label: "Subscribe",
     to: "/plus",
     matchPrefix: "/plus",
     // Upgrade CTA — free users still need to see this, only subscribers don't.
+    // Community repeats here (it's also top-level) because it's part of what a
+    // membership buys; the top-level link is what paid members use, since this
+    // whole menu is hidden from them.
     hideWhen: "subscriber",
     children: [
-      { label: "Join Ark+", to: "/plus", hash: "pricing" },
-      { label: "Gift Ark+", to: "/plus/gift" },
+      { label: "Ark+", to: "/plus", hash: "pricing" },
+      { label: "Community", to: "/community", crossLink: true },
+      { label: "Gifting", to: "/plus/gift" },
     ],
   },
   {
@@ -98,7 +96,12 @@ const FOCUSABLE =
 function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "children">) {
   if (item.matchPrefix && pathname.startsWith(item.matchPrefix)) return true;
   if (pathname === item.to) return true;
-  if (item.children?.some((c) => pathname === c.to || pathname.startsWith(`${c.to}/`))) {
+  if (
+    item.children?.some(
+      (c) =>
+        !c.crossLink && (pathname === c.to || pathname.startsWith(`${c.to}/`)),
+    )
+  ) {
     return true;
   }
   return false;

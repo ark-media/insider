@@ -5,7 +5,6 @@ import {
 import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import {
   classifyLiveUpcoming,
-  upcomingEvents,
   type ArkEvent,
   type EventWithStatus,
 } from "../data/events";
@@ -58,11 +57,6 @@ async function getJsonAuthed<T>(url: string): Promise<T> {
 export async function fetchPublicBroadcasts(): Promise<CommunityBroadcast[]> {
   await jitter();
   return communityBroadcasts;
-}
-
-export async function fetchUpcomingEvents(): Promise<ArkEvent[]> {
-  await jitter();
-  return upcomingEvents();
 }
 
 // ---------------------------------------------------------------------------
