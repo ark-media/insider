@@ -13,7 +13,6 @@ import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
-import { Route as InsideCallMeBackRouteImport } from './routes/inside-call-me-back'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CommunityRouteImport } from './routes/community'
@@ -39,7 +38,6 @@ import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
-import { Route as AdminLaunchRouteImport } from './routes/admin/launch'
 import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
 import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
 import { Route as AdminCareersRouteImport } from './routes/admin/careers'
@@ -71,11 +69,6 @@ const LogoutRoute = LogoutRouteImport.update({
 const IsraelVotesRoute = IsraelVotesRouteImport.update({
   id: '/israel-votes',
   path: '/israel-votes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InsideCallMeBackRoute = InsideCallMeBackRouteImport.update({
-  id: '/inside-call-me-back',
-  path: '/inside-call-me-back',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsRoute = EventsRouteImport.update({
@@ -203,11 +196,6 @@ const AdminPromosRoute = AdminPromosRouteImport.update({
   path: '/admin/promos',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminLaunchRoute = AdminLaunchRouteImport.update({
-  id: '/admin/launch',
-  path: '/admin/launch',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AdminFaqsRoute = AdminFaqsRouteImport.update({
   id: '/admin/faqs',
   path: '/admin/faqs',
@@ -276,7 +264,6 @@ export interface FileRoutesByFullPath {
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
-  '/inside-call-me-back': typeof InsideCallMeBackRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -290,7 +277,6 @@ export interface FileRoutesByFullPath {
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
-  '/admin/launch': typeof AdminLaunchRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -320,7 +306,6 @@ export interface FileRoutesByTo {
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
-  '/inside-call-me-back': typeof InsideCallMeBackRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -334,7 +319,6 @@ export interface FileRoutesByTo {
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
-  '/admin/launch': typeof AdminLaunchRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -366,7 +350,6 @@ export interface FileRoutesById {
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
   '/events': typeof EventsRoute
-  '/inside-call-me-back': typeof InsideCallMeBackRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/setup': typeof SetupRoute
@@ -380,7 +363,6 @@ export interface FileRoutesById {
   '/admin/careers': typeof AdminCareersRoute
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
-  '/admin/launch': typeof AdminLaunchRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -413,7 +395,6 @@ export interface FileRouteTypes {
     | '/community'
     | '/contact'
     | '/events'
-    | '/inside-call-me-back'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -427,7 +408,6 @@ export interface FileRouteTypes {
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
-    | '/admin/launch'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -457,7 +437,6 @@ export interface FileRouteTypes {
     | '/community'
     | '/contact'
     | '/events'
-    | '/inside-call-me-back'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -471,7 +450,6 @@ export interface FileRouteTypes {
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
-    | '/admin/launch'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -502,7 +480,6 @@ export interface FileRouteTypes {
     | '/community'
     | '/contact'
     | '/events'
-    | '/inside-call-me-back'
     | '/israel-votes'
     | '/logout'
     | '/setup'
@@ -516,7 +493,6 @@ export interface FileRouteTypes {
     | '/admin/careers'
     | '/admin/discuss-threads'
     | '/admin/faqs'
-    | '/admin/launch'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -548,7 +524,6 @@ export interface RootRouteChildren {
   CommunityRoute: typeof CommunityRoute
   ContactRoute: typeof ContactRoute
   EventsRoute: typeof EventsRoute
-  InsideCallMeBackRoute: typeof InsideCallMeBackRoute
   IsraelVotesRoute: typeof IsraelVotesRoute
   LogoutRoute: typeof LogoutRoute
   SetupRoute: typeof SetupRoute
@@ -558,7 +533,6 @@ export interface RootRouteChildren {
   AdminCareersRoute: typeof AdminCareersRoute
   AdminDiscussThreadsRoute: typeof AdminDiscussThreadsRoute
   AdminFaqsRoute: typeof AdminFaqsRoute
-  AdminLaunchRoute: typeof AdminLaunchRoute
   AdminPromosRoute: typeof AdminPromosRoute
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
@@ -609,13 +583,6 @@ declare module '@tanstack/react-router' {
       path: '/israel-votes'
       fullPath: '/israel-votes'
       preLoaderRoute: typeof IsraelVotesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inside-call-me-back': {
-      id: '/inside-call-me-back'
-      path: '/inside-call-me-back'
-      fullPath: '/inside-call-me-back'
-      preLoaderRoute: typeof InsideCallMeBackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events': {
@@ -793,13 +760,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPromosRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/launch': {
-      id: '/admin/launch'
-      path: '/admin/launch'
-      fullPath: '/admin/launch'
-      preLoaderRoute: typeof AdminLaunchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/admin/faqs': {
       id: '/admin/faqs'
       path: '/admin/faqs'
@@ -934,7 +894,6 @@ const rootRouteChildren: RootRouteChildren = {
   CommunityRoute: CommunityRoute,
   ContactRoute: ContactRoute,
   EventsRoute: EventsRoute,
-  InsideCallMeBackRoute: InsideCallMeBackRoute,
   IsraelVotesRoute: IsraelVotesRoute,
   LogoutRoute: LogoutRoute,
   SetupRoute: SetupRoute,
@@ -944,7 +903,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminCareersRoute: AdminCareersRoute,
   AdminDiscussThreadsRoute: AdminDiscussThreadsRoute,
   AdminFaqsRoute: AdminFaqsRoute,
-  AdminLaunchRoute: AdminLaunchRoute,
   AdminPromosRoute: AdminPromosRoute,
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,

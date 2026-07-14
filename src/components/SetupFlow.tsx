@@ -10,7 +10,6 @@ import {
   YouTubeIcon,
 } from "./PlatformIcons";
 import { sendSetupSms, type UserFeed } from "../lib/auth";
-import { useIsSoftLaunch } from "../lib/launchMode";
 import { trackEvent } from "../lib/analytics";
 
 type Device = "phone" | "computer";
@@ -150,9 +149,6 @@ export function SetupFlow({
 }) {
   const feedUrl = feed?.url ?? "";
   const showName = feed?.name ?? "your show";
-  // The account area is removed during soft launch, so the "Account" crumb
-  // would be a dead link there — drop it and breadcrumb straight from Home.
-  const isSoftLaunch = useIsSoftLaunch();
 
   const [device, setDevice] = useState<Device | null>(null);
   const [appKey, setAppKey] = useState<AppKey | null>(null);
@@ -259,7 +255,7 @@ export function SetupFlow({
         <Breadcrumbs
           items={[
             { label: "Home", to: "/" },
-            ...(isSoftLaunch ? [] : [{ label: "Account", to: "/account" }]),
+            { label: "Account", to: "/account" },
             { label: "Podcast feed" },
           ]}
           className="mb-10"

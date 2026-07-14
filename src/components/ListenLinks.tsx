@@ -17,17 +17,13 @@ const PLATFORM_ICON: Partial<Record<ListenPlatform, ReactNode>> = {
 };
 
 // The "listen on" row shared by show heroes and episode pages. Each platform
-// shows its brand mark next to the label. When `interactive` is false the
-// chips render as static labels (no link) — used on the soft-launch pitch
-// where non-members can't yet reach the private feed.
+// shows its brand mark next to the label.
 export function ListenLinks({
   listen,
   className = "",
-  interactive = true,
 }: {
   listen: ListenLink[];
   className?: string;
-  interactive?: boolean;
 }) {
   if (listen.length === 0) return null;
 
@@ -38,26 +34,19 @@ export function ListenLinks({
     <div
       className={`flex flex-wrap items-center gap-3 text-body-sm ${className}`}
     >
-      {listen.map((l) =>
-        interactive ? (
-          <a
-            key={l.platform}
-            href={l.url}
-            target="_blank"
-            rel="noreferrer noopener"
-            onClick={() => trackEvent("listen_link_clicked", { platform: l.platform })}
-            className={`${chipClass} transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan`}
-          >
-            {PLATFORM_ICON[l.platform] ?? null}
-            {LISTEN_PLATFORM_LABEL[l.platform]}
-          </a>
-        ) : (
-          <span key={l.platform} className={`${chipClass} text-fg-muted`}>
-            {PLATFORM_ICON[l.platform] ?? null}
-            {LISTEN_PLATFORM_LABEL[l.platform]}
-          </span>
-        ),
-      )}
+      {listen.map((l) => (
+        <a
+          key={l.platform}
+          href={l.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          onClick={() => trackEvent("listen_link_clicked", { platform: l.platform })}
+          className={`${chipClass} transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan`}
+        >
+          {PLATFORM_ICON[l.platform] ?? null}
+          {LISTEN_PLATFORM_LABEL[l.platform]}
+        </a>
+      ))}
     </div>
   );
 }

@@ -1,14 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
-import { HardLaunchOnly } from "../lib/launchMode";
 
 export const Route = createFileRoute("/welcome")({
-  component: () => (
-    <HardLaunchOnly>
-      <WelcomePage />
-    </HardLaunchOnly>
-  ),
+  component: WelcomePage,
 });
 
 function WelcomePage() {

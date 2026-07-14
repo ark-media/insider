@@ -7,11 +7,6 @@ export const Route = createFileRoute("/admin/")({
 
 const CARDS = [
   {
-    to: "/admin/launch",
-    title: "Launch mode",
-    body: "Flip the whole site between soft launch (the Inside Call Me Back page) and hard launch (the full Ark+ site). Takes effect live.",
-  },
-  {
     to: "/admin/announcements",
     title: "Announcements",
     body: "Create and schedule the dismissible banner at the top of the site.",

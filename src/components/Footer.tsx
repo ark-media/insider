@@ -1,14 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { ArkLogo } from "./ArkLogo";
-import { useIsSoftLaunch } from "../lib/launchMode";
 
 type FooterLink = { label: string; to: string };
-// `hardLaunchOnly` columns and links point at Ark+ membership surfaces, so they
-// drop out of the footer during soft launch.
 type FooterSection = {
   title: string;
-  hardLaunchOnly?: boolean;
-  links: (FooterLink & { hardLaunchOnly?: boolean })[];
+  links: FooterLink[];
 };
 
 const sections: FooterSection[] = [
@@ -34,7 +30,7 @@ const sections: FooterSection[] = [
   {
     title: "Connect",
     links: [
-      { label: "Community", to: "/community", hardLaunchOnly: true },
+      { label: "Community", to: "/community" },
       { label: "Events", to: "/events" },
       { label: "Contact", to: "/contact" },
       { label: "Careers", to: "/careers" },
@@ -42,7 +38,6 @@ const sections: FooterSection[] = [
   },
   {
     title: "Ark+",
-    hardLaunchOnly: true,
     links: [
       { label: "Become a member", to: "/plus" },
       { label: "Gift Ark+", to: "/plus/gift" },
@@ -51,14 +46,6 @@ const sections: FooterSection[] = [
 ];
 
 export function Footer() {
-  const isSoftLaunch = useIsSoftLaunch();
-  const visibleSections = sections
-    .filter((s) => !(isSoftLaunch && s.hardLaunchOnly))
-    .map((s) => ({
-      ...s,
-      links: s.links.filter((l) => !(isSoftLaunch && l.hardLaunchOnly)),
-    }));
-
   return (
     <footer className="relative border-t border-rule bg-navy-900">
       <div className="page-section">
@@ -77,7 +64,7 @@ export function Footer() {
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 text-[13px] sm:gap-x-6 sm:grid-cols-4 lg:col-span-7">
-            {visibleSections.map((s) => (
+            {sections.map((s) => (
               <FooterCol key={s.title} title={s.title} links={s.links} />
             ))}
           </div>

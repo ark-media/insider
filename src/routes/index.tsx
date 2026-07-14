@@ -13,7 +13,6 @@ import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { Toast } from "../components/Toast";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
-import { useIsSoftLaunch } from "../lib/launchMode";
 import { useNewsletterSubscription } from "../lib/useNewsletterSubscription";
 
 export const Route = createFileRoute("/")({
@@ -410,7 +409,6 @@ function FeatureBand({
 function AlsoFromArkMedia() {
   const { state } = useSubscriberAuth();
   const { isSubscribed, prefsLoading } = useNewsletterSubscription();
-  const isSoftLaunch = useIsSoftLaunch();
 
   const isMember = state.kind === "member";
   // Guests and signed-in readers not on the Beehiiv list get the inline signup.
@@ -431,38 +429,32 @@ function AlsoFromArkMedia() {
             ? { cta: "Read newsletters", to: "/newsletters" }
             : {})}
       />
-      {/* Community and Ark+ are membership surfaces — hidden during soft launch,
-          which leads instead with the Inside Call Me Back page. */}
-      {isSoftLaunch ? null : (
-        <>
-          <FeatureBand
-            eyebrow="Community"
-            title="In the room."
-            body="Nadav, Amit and Tal in conversation with members — in the Community app."
-            visual={<CommunityVisual />}
-            action={
-              <div className="flex flex-col gap-5">
-                <CommunityAppLinks />
-                <Link
-                  to="/community"
-                  className="inline-flex min-h-11 w-fit items-center gap-2 button-text font-display font-bold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Learn more →
-                </Link>
-              </div>
-            }
-            flip
-          />
-          <FeatureBand
-            eyebrow="Ark+"
-            title="All in."
-            body="The paid feed, members-only newsletters, and the community — all included."
-            visual={<PlusVisual />}
-            cta="Explore Ark+"
-            to="/plus"
-          />
-        </>
-      )}
+      <FeatureBand
+        eyebrow="Community"
+        title="In the room."
+        body="Nadav, Amit and Tal in conversation with members — in the Community app."
+        visual={<CommunityVisual />}
+        action={
+          <div className="flex flex-col gap-5">
+            <CommunityAppLinks />
+            <Link
+              to="/community"
+              className="inline-flex min-h-11 w-fit items-center gap-2 button-text font-display font-bold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Learn more →
+            </Link>
+          </div>
+        }
+        flip
+      />
+      <FeatureBand
+        eyebrow="Ark+"
+        title="All in."
+        body="The paid feed, members-only newsletters, and the community — all included."
+        visual={<PlusVisual />}
+        cta="Explore Ark+"
+        to="/plus"
+      />
     </>
   );
 }
@@ -473,11 +465,6 @@ function HomePage() {
   const { state } = useSubscriberAuth();
   const descriptions = useShowDescriptions(shows.map((s) => s.slug));
   const isSubscriber = isArkPlusMember(state);
-  const isSoftLaunch = useIsSoftLaunch();
-  const isLoggedIn = state.kind === "member";
-  // During soft launch a signed-in user is already an Insider, so there's
-  // nothing to convert them on — hide the "Become an Insider" CTA.
-  const hideSoftLaunchCta = isSoftLaunch && isLoggedIn;
   return (
     <main className="relative">
       <section className="section-hero relative">
@@ -509,25 +496,13 @@ function HomePage() {
                 className="rise mt-10 flex flex-wrap gap-3"
                 style={{ animationDelay: "0.78s" }}
               >
-                {hideSoftLaunchCta ? null : (
-                  <Link
-                    to={
-                      isSoftLaunch
-                        ? "/inside-call-me-back"
-                        : isSubscriber
-                          ? "/community"
-                          : "/plus"
-                    }
-                    className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  >
-                    {isSoftLaunch
-                      ? "Become an Insider"
-                      : isSubscriber
-                        ? "Explore community"
-                        : "Become an Ark+ member"}{" "}
-                    →
-                  </Link>
-                )}
+                <Link
+                  to={isSubscriber ? "/community" : "/plus"}
+                  className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  {isSubscriber ? "Explore community" : "Become an Ark+ member"}{" "}
+                  →
+                </Link>
               </div>
             </div>
             <div className="hidden lg:block">

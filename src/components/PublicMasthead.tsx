@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "@tanstack/react-router";
 import { ArkLogo } from "./ArkLogo";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
-import { useIsSoftLaunch } from "../lib/launchMode";
 import { shows } from "../data/shows";
 
 // Nav order per Figma IA spec: Podcasts | Community | Newsletters | Israel
@@ -28,9 +28,6 @@ type NavItem = {
   variant: NavVariant;
   matchPrefix?: string;
   hideWhen?: "subscriber" | "nonSubscriber";
-  // Hidden during soft launch — these point at Ark+ membership surfaces that
-  // don't exist yet in the focused Inside Call Me Back experience.
-  hardLaunchOnly?: boolean;
   children?: NavChild[];
 };
 
@@ -61,7 +58,6 @@ const NAV_ITEMS: NavItem[] = [
     matchPrefix: "/community",
     // Visible to everyone — the page itself shows a "Join Ark+" CTA to
     // non-subscribers in place of the members-only Community app links.
-    hardLaunchOnly: true,
     children: [
       { label: "Upcoming Events", to: "/events" },
     ],
@@ -74,7 +70,6 @@ const NAV_ITEMS: NavItem[] = [
     matchPrefix: "/plus",
     // Upgrade CTA — free users still need to see this, only subscribers don't.
     hideWhen: "subscriber",
-    hardLaunchOnly: true,
     children: [
       { label: "Join Ark+", to: "/plus", hash: "pricing" },
       { label: "Gift Ark+", to: "/plus/gift" },
@@ -96,6 +91,10 @@ const NAV_ITEMS: NavItem[] = [
 // Appended to the nav only for admins (see useSubscriberAuth().isAdmin).
 const ADMIN_NAV_ITEM: NavItem = { variant: "text", label: "Admin", to: "/admin" };
 
+// Focus-trap selector for the mobile drawer (mirrors Modal.tsx).
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "children">) {
   if (item.matchPrefix && pathname.startsWith(item.matchPrefix)) return true;
   if (pathname === item.to) return true;
@@ -105,10 +104,9 @@ function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "
   return false;
 }
 
-function visibleNavItems(tier: Tier, isSoftLaunch: boolean): NavItem[] {
+function visibleNavItems(tier: Tier): NavItem[] {
   const isSubscriber = tier === "ark-plus-member";
   return NAV_ITEMS.filter((item) => {
-    if (isSoftLaunch && item.hardLaunchOnly) return false;
     if (item.hideWhen === "subscriber") return !isSubscriber;
     if (item.hideWhen === "nonSubscriber") return isSubscriber;
     return true;
@@ -118,16 +116,27 @@ function visibleNavItems(tier: Tier, isSoftLaunch: boolean): NavItem[] {
 export function PublicMasthead() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Hide-on-scroll: the masthead tucks up out of view when the reader scrolls
+  // down (reclaiming its ~96px on the phone) and reappears the instant they
+  // scroll back up. The visual hide is gated to mobile — see the header's
+  // `max-sm:` transform below.
+  const [hidden, setHidden] = useState(false);
+  const lastScrollY = useRef(0);
   const { state, signOut, signIn, isAdmin } = useSubscriberAuth();
-  const isSoftLaunch = useIsSoftLaunch();
   const tier: Tier =
     state.kind === "member" ? state.me.tier : "guest";
   const isSubscriber = tier === "ark-plus-member";
+  // The subscribe / conversion CTA, surfaced identically in the top bar and the
+  // pulldown. Only meaningful for non-subscribers, and only once auth has
+  // resolved (so it never flashes).
+  const showSubscribe = !isSubscriber && state.kind !== "loading";
   const navItems = isAdmin
-    ? [...visibleNavItems(tier, isSoftLaunch), ADMIN_NAV_ITEM]
-    : visibleNavItems(tier, isSoftLaunch);
+    ? [...visibleNavItems(tier), ADMIN_NAV_ITEM]
+    : visibleNavItems(tier);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
 
   // Publish masthead height so hash links (e.g. /plus#pricing) scroll clear of
@@ -146,6 +155,37 @@ export function PublicMasthead() {
       root.style.removeProperty("--masthead-height");
     };
   }, []);
+
+  // Reveal on scroll-up, hide on scroll-down. Any open menu forces the masthead
+  // visible — hiding it would yank the open panel (which lives inside <header>)
+  // off-screen. rAF-throttled; a small threshold ignores scroll jitter.
+  useEffect(() => {
+    if (mobileOpen || accountOpen) {
+      setHidden(false);
+      return;
+    }
+    let ticking = false;
+    const threshold = 8;
+    const update = () => {
+      ticking = false;
+      const y = Math.max(0, window.scrollY);
+      const delta = y - lastScrollY.current;
+      if (Math.abs(delta) < threshold) return;
+      // Never hide near the top of the page; only when scrolling down past the
+      // masthead's own height.
+      const revealZone = headerRef.current?.offsetHeight ?? 96;
+      setHidden(y > revealZone && delta > 0);
+      lastScrollY.current = y;
+    };
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    };
+    lastScrollY.current = Math.max(0, window.scrollY);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [mobileOpen, accountOpen]);
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -168,10 +208,57 @@ export function PublicMasthead() {
     };
   }, [accountOpen]);
 
+  // Mobile drawer: lock background scroll, trap focus inside the panel, close on
+  // Escape, and restore focus to the menu button on close (mirrors Modal.tsx).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const menuButton = menuButtonRef.current;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMobileOpen(false);
+        return;
+      }
+      if (e.key === "Tab" && drawerRef.current) {
+        const focusable =
+          drawerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
+        if (focusable.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
+    // Focus the first control in the drawer once it's on screen.
+    requestAnimationFrame(() => {
+      drawerRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    });
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevBodyOverflow;
+      menuButton?.focus();
+    };
+  }, [mobileOpen]);
+
   return (
     <header
       ref={headerRef}
-      className="sticky top-[var(--ann-height,0px)] z-20 border-b border-rule-soft bg-navy-900"
+      className={`sticky top-[var(--ann-height,0px)] z-20 border-b border-rule-soft bg-navy-900 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform motion-reduce:transition-none ${
+        hidden ? "max-sm:-translate-y-full" : "translate-y-0"
+      }`}
     >
       <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 pt-6 pb-4 sm:px-10 sm:pt-8">
         <Link
@@ -254,14 +341,6 @@ export function PublicMasthead() {
               </>
             ) : (
               <div className="hidden items-center gap-2 sm:flex">
-                {isSoftLaunch ? (
-                  <Link
-                    to="/inside-call-me-back"
-                    className="inline-flex min-h-11 items-center border border-cyan bg-cyan px-4 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  >
-                    Become an Insider
-                  </Link>
-                ) : null}
                 {/* <button
                   type="button"
                   onClick={() => signIn(undefined, { signup: true })}
@@ -280,21 +359,23 @@ export function PublicMasthead() {
             )}
           </div>
 
-          {/* Soft-launch CTA surfaced in the collapsed top bar so guests can
-              convert without opening the menu. Mirrors the desktop guest
-              branch: shown only to signed-out visitors once auth resolves. */}
-          {isSoftLaunch && state.kind !== "member" && state.kind !== "loading" ? (
+          {/* Persistent subscribe CTA in the collapsed top bar so non-subscribers
+              can convert in one tap without opening the (long) pulldown. Hidden
+              for paid members and while auth resolves. */}
+          {showSubscribe ? (
             <Link
-              to="/inside-call-me-back"
+              to="/plus"
+              hash="pricing"
               className="inline-flex min-h-11 items-center whitespace-nowrap border border-cyan bg-cyan px-3 font-display text-[11px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
             >
-              Become an Insider
+              Join Ark+
             </Link>
           ) : null}
 
           <button
+            ref={menuButtonRef}
             type="button"
-            onClick={() => setMobileOpen((v) => !v)}
+            onClick={() => setMobileOpen(true)}
             aria-label="Menu"
             aria-expanded={mobileOpen}
             aria-controls="mobile-nav"
@@ -310,91 +391,101 @@ export function PublicMasthead() {
               strokeWidth="1.5"
               strokeLinecap="square"
             >
-              {mobileOpen ? (
-                <path d="M4 4l12 12M16 4L4 16" />
-              ) : (
-                <>
-                  <path d="M3 6h14" />
-                  <path d="M3 14h14" />
-                </>
-              )}
+              <path d="M3 6h14" />
+              <path d="M3 14h14" />
             </svg>
           </button>
         </nav>
       </div>
 
-      {mobileOpen ? (
-        <div
-          id="mobile-nav"
-          className="border-t border-rule bg-navy-900 sm:hidden"
-        >
+      {createPortal(
+        <div className="sm:hidden">
+          {/* Scrim — dims the page and closes the drawer on tap. */}
+          <div
+            aria-hidden="true"
+            onClick={() => setMobileOpen(false)}
+            className={`fixed inset-0 z-[55] bg-navy-900/80 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${
+              mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          />
+          {/* Right-side drawer. Portaled to <body> so the header's transform
+              can't trap its fixed positioning; `inert` when closed keeps its
+              links out of the tab order and the a11y tree. */}
+          <div
+            ref={drawerRef}
+            id="mobile-nav"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            inert={!mobileOpen}
+            className={`fixed inset-y-0 right-0 z-[60] flex w-[min(88vw,360px)] flex-col border-l border-rule bg-navy-900 shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+              mobileOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-rule px-6 py-4">
+              <span className="eyebrow text-fg-muted">Menu</span>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close menu"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="square"
+                >
+                  <path d="M4 4l12 12M16 4L4 16" />
+                </svg>
+              </button>
+            </div>
           <nav
             aria-label="Primary mobile"
-            className="mx-auto flex max-w-[1280px] flex-col px-6 py-4"
+            className="flex flex-1 flex-col overflow-y-auto px-6 py-4"
           >
+            {/* Subscribe is the primary action in the pulldown — full-width and
+                first, above account/auth, so it's unmissable once the menu is
+                open. Sign up/in below are styled as secondary so they don't
+                compete. */}
+            {showSubscribe ? (
+              <Link
+                to="/plus"
+                hash="pricing"
+                onClick={() => setMobileOpen(false)}
+                className="mb-3 inline-flex min-h-12 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[14px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Join Ark+
+              </Link>
+            ) : null}
             {/* Account button is hidden in the top bar on mobile (Israel Votes
                 takes that slot); surface it as the first item here. */}
             {state.kind === "member" ? (
-              // Soft launch has no account area; surface feed setup (for
-              // subscribers) and sign-out directly instead of the Account link.
-              isSoftLaunch ? (
-                <div className="mb-3 flex flex-col gap-2">
-                  {isSubscriber ? (
-                    <Link
-                      to="/setup"
-                      onClick={() => setMobileOpen(false)}
-                      className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
-                    >
-                      Set up your feed
-                    </Link>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileOpen(false);
-                      signOut();
-                    }}
-                    className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
-                  >
-                    Sign out
-                  </button>
-                </div>
-              ) : (
-                <Link
-                  to="/account"
-                  onClick={() => setMobileOpen(false)}
-                  className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
-                >
-                  Account
-                </Link>
-              )
-            ) : (
-              <div
-                className={`mb-3 grid gap-2 ${isSoftLaunch ? "grid-cols-1" : "grid-cols-2"}`}
+              <Link
+                to="/account"
+                onClick={() => setMobileOpen(false)}
+                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
               >
-                {/* Soft launch swaps public sign-up (no Ark+ to join yet) for
-                    the Become an Insider CTA; guests can still sign in below. */}
-                {isSoftLaunch ? (
-                  <Link
-                    to="/inside-call-me-back"
-                    onClick={() => setMobileOpen(false)}
-                    className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
-                  >
-                    Become an Insider
-                  </Link>
-                ) : null}
-                {isSoftLaunch ? null : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileOpen(false);
-                      signIn(undefined, { signup: true });
-                    }}
-                    className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[13px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan"
-                  >
-                    Sign up
-                  </button>
-                )}
+                Account
+              </Link>
+            ) : (
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                {/* Subscribe is the primary CTA above the fold of this menu, so
+                    sign up and sign in render as secondary here. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    signIn(undefined, { signup: true });
+                  }}
+                  className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+                >
+                  Sign up
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -447,8 +538,10 @@ export function PublicMasthead() {
                 );
               })}
           </nav>
-        </div>
-      ) : null}
+          </div>
+        </div>,
+        document.body,
+      )}
 
     </header>
   );
@@ -761,24 +854,19 @@ function MemberMenu({
   onSignOut: () => void;
   onClose: () => void;
 }) {
-  const isSoftLaunch = useIsSoftLaunch();
   return (
     <div className="space-y-3">
       <p className="eyebrow">Signed in</p>
       <p className="truncate text-[12px] text-fg" title={email}>
         {email}
       </p>
-      {/* The account area is removed during soft launch — members only need
-          feed setup, so the account-settings link is hidden. */}
-      {isSoftLaunch ? null : (
-        <Link
-          to="/account"
-          onClick={onClose}
-          className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-center text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          Account settings
-        </Link>
-      )}
+      <Link
+        to="/account"
+        onClick={onClose}
+        className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-center text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+      >
+        Account settings
+      </Link>
       {isSubscriber ? (
         <Link
           to="/setup"

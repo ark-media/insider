@@ -29,7 +29,6 @@ import { cronRoutes } from './routes/cron.js'
 import { discussThreadsRoutes } from './routes/discuss-threads.js'
 import { faqRoutes } from './routes/faqs.js'
 import { giftRoutes } from './routes/gift.js'
-import { launchRoutes } from './routes/launch.js'
 import { meRoutes } from './routes/me.js'
 import { pricingRoutes } from './routes/pricing.js'
 import { promoRoutes } from './routes/promo.js'
@@ -62,7 +61,6 @@ function buildApi(env: Env): Api {
     ...giftRoutes(deps),
     ...authRoutes(deps),
     ...announcementRoutes(deps),
-    ...launchRoutes(deps),
     ...careerRoutes(deps),
     ...faqRoutes(deps),
     ...adminRoutes(deps),

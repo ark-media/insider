@@ -16,14 +16,9 @@ import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { CommunityFeed } from "../components/community/CommunityFeed";
 import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
-import { HardLaunchOnly } from "../lib/launchMode";
 
 export const Route = createFileRoute("/community")({
-  component: () => (
-    <HardLaunchOnly>
-      <CommunityPage />
-    </HardLaunchOnly>
-  ),
+  component: CommunityPage,
 });
 
 function CommunityPage() {

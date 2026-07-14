@@ -4,7 +4,6 @@ import { Footer } from "../components/Footer";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import { AuthErrorNotice } from "../components/AuthErrorNotice";
 import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
-import { LaunchModeProvider, useLaunchModeLoading } from "../lib/launchMode";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -13,9 +12,7 @@ export const Route = createRootRoute({
 function RootLayout() {
   return (
     <SubscriberAuthProvider>
-      <LaunchModeProvider>
-        <RootContent />
-      </LaunchModeProvider>
+      <RootContent />
     </SubscriberAuthProvider>
   );
 }
@@ -23,14 +20,11 @@ function RootLayout() {
 function RootContent() {
   const matches = useMatches();
   const { state } = useSubscriberAuth();
-  const launchLoading = useLaunchModeLoading();
   const chromeless = matches.some((m) => m.staticData?.chromeless);
 
   // Block rendering while /api/me is in-flight for a likely session (the
-  // provider seeds "loading" only when a session-presence cookie exists), or
-  // while the launch mode is unresolved — so the Ark+ surfaces are never shown
-  // or hidden on a guess before the flag is known.
-  if (state.kind === "loading" || launchLoading) {
+  // provider seeds "loading" only when a session-presence cookie exists).
+  if (state.kind === "loading") {
     return (
       <div role="status" aria-label="Loading" className="flex min-h-dvh items-center justify-center bg-navy-900">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
