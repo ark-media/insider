@@ -29,7 +29,7 @@ import {
 } from '../../shared/cancellation.js'
 import { createScClient } from '../lib/sc-client.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
-import { getPlanPriceCents, type Plan } from '../lib/pricing.js'
+import { FOUNDING_MULTIPLE, getPlanPriceCents, type Plan } from '../lib/pricing.js'
 import { isSameOrigin, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getSessionEmail } from '../lib/session.js'
@@ -285,6 +285,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             metadata: {
               plan,
               custom_amount_cents: String(amountCents),
+              // Founding Member: anyone giving at least twice the base price.
+              // Derived here from the amount we're actually charging — the
+              // client sends no such flag, so the tier can't be claimed, only
+              // paid for. Recorded now so the badge can be provisioned in
+              // Circle later without re-deriving it from historical amounts.
+              founding_member: String(amountCents >= defaultCents * FOUNDING_MULTIPLE),
             },
           },
           // Required for ui_mode 'elements'; only used when a payment method

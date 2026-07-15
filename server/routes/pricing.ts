@@ -3,7 +3,7 @@
 // actually charge.
 
 import { makeJsonRes } from '../lib/http.js'
-import { getPlanPriceCents } from '../lib/pricing.js'
+import { FOUNDING_MULTIPLE, getPlanPriceCents } from '../lib/pricing.js'
 import type { Deps, Route } from '../lib/route.js'
 
 export function pricingRoutes({ stripe, env }: Deps): Route[] {
@@ -18,7 +18,11 @@ export function pricingRoutes({ stripe, env }: Deps): Route[] {
             getPlanPriceCents(stripe, env, 'monthly'),
             getPlanPriceCents(stripe, env, 'yearly'),
           ])
-          json(200, { monthly_cents: monthly, yearly_cents: yearly })
+          json(200, {
+            monthly_cents: monthly,
+            yearly_cents: yearly,
+            founding_multiple: FOUNDING_MULTIPLE,
+          })
         } catch (err) {
           console.error('[pricing] lookup failed:', err)
           json(502, { error: 'Could not load pricing' })

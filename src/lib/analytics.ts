@@ -46,7 +46,12 @@ interface EventMap {
   pricing_viewed: void
   plan_selected: { plan: Plan }
   custom_amount_entered: { plan: Plan; amount: number; valid: boolean }
-  checkout_opened: { plan: Plan; amount: number | null; is_custom_amount: boolean }
+  checkout_opened: {
+    plan: Plan
+    amount: number | null
+    is_custom_amount: boolean
+    is_founding: boolean
+  }
   checkout_email_submitted: { plan: Plan; is_custom_amount: boolean }
   checkout_payment_submitted: { plan: Plan }
   checkout_succeeded: { plan: Plan; is_custom_amount: boolean }
@@ -73,6 +78,9 @@ interface EventMap {
   // hand-off action (open deep link / copy URL / text themselves the link).
   feed_app_selected: { app: string }
   feed_activated: { app: string; method: 'open' | 'copy' | 'sms' }
+  // Hand-off to Circle's own paid signup — the last thing we can measure before
+  // the funnel leaves our domain.
+  circle_join_clicked: void
 
   // --- Tier 4: content engagement (high-value subset) ---
   episode_play_clicked: { show: string; episode: string }

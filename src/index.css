@@ -46,6 +46,12 @@
   --color-danger: #ff7a7a;
   --color-danger-strong: #ff5a5a;
 
+  /* Founding Member — the only warm accent on the site. Reserved for the
+     patron tier so it stays a signal rather than decoration. Deliberately
+     off the cyan/navy axis: the badge should feel like a struck medal, not
+     another UI state. */
+  --color-founding: #e0b357;
+
   /* Editorial shadow tokens — for cover artwork and floating chips */
   --shadow-cover: 0 40px 100px -30px rgb(0 0 0 / 0.7), 0 8px 30px -10px rgb(0 0 0 / 0.5);
   --shadow-float: 0 20px 50px -20px rgb(0 0 0 / 0.8);
@@ -123,6 +129,9 @@
   --color-signal: #c4151b;
   --color-danger: #c4151b;
   --color-danger-strong: #9f0e14;
+
+  /* Darkened to hold AA as text on white — the dark-theme gold is ~2:1 here. */
+  --color-founding: #8a6410;
 
   /* Editorial shadows — present enough to lift cards off the paper, soft enough
      to feel printed rather than digital. Layered for depth realism. */

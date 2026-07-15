@@ -7,6 +7,12 @@ import type { Env } from './route.js'
 
 export type Plan = 'monthly' | 'yearly'
 
+// Pay at least this multiple of the plan's base price and the membership is a
+// Founding one. Enforced at checkout (server/routes/stripe.ts stamps the
+// subscription) and served to the client via /api/pricing, so the threshold the
+// pricing page promises and the one we actually honour can't drift apart.
+export const FOUNDING_MULTIPLE = 2
+
 function priceIdForPlan(env: Env, plan: Plan): string | undefined {
   return plan === 'monthly' ? env.STRIPE_PRICE_MONTHLY : env.STRIPE_PRICE_YEARLY
 }
