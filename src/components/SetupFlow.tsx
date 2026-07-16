@@ -39,6 +39,19 @@ type AppDef = {
 
 const APPS: AppDef[] = [
   {
+    key: "spotify",
+    name: "Spotify",
+    tagline: "Link once — no copy-paste",
+    devices: ["phone", "computer"],
+    scApp: "spotify",
+    instructions: [
+      "A separate window will open — click Link Account.",
+      "Sign in to your Spotify account.",
+      "{show} episodes unlock inside the show on Spotify.",
+    ],
+    ctaLabel: "Link my Spotify account",
+  },
+  {
     key: "apple",
     name: "Apple Podcasts",
     tagline: "iPhone, iPad, Mac",
@@ -51,19 +64,6 @@ const APPS: AppDef[] = [
     ],
     ctaLabel: "Open in Apple Podcasts",
     note: "Can't find the show? Don't search for it — a private feed never appears in Apple Podcasts search. Go to Library → Shows to find it there.",
-  },
-  {
-    key: "spotify",
-    name: "Spotify",
-    tagline: "Phone or desktop",
-    devices: ["phone", "computer"],
-    scApp: "spotify",
-    instructions: [
-      "A separate window will open — click Link Account.",
-      "Sign in to your Spotify account.",
-      "{show} episodes unlock inside the show on Spotify.",
-    ],
-    ctaLabel: "Link my Spotify account",
   },
   {
     key: "youtube",
@@ -379,6 +379,7 @@ export function SetupFlow({
                   key={app.key}
                   app={app}
                   selected={appKey === app.key}
+                  featured={app.key === "spotify"}
                   onClick={() => {
                     trackEvent("feed_app_selected", { app: app.key });
                     setAppKey(app.key);
@@ -618,35 +619,49 @@ const BRAND_ICON: Partial<
 function AppCard({
   app,
   selected,
+  featured = false,
   onClick,
 }: {
   app: AppDef;
   selected: boolean;
+  featured?: boolean;
   onClick: () => void;
 }) {
   const Icon = BRAND_ICON[app.key];
+  const iconSize = featured ? "size-10" : "size-7";
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-start gap-2 border p-4 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+      className={`flex flex-col items-start gap-2 border text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+        featured ? "col-span-2 p-5" : "p-4"
+      } ${
         selected
           ? "border-cyan bg-cyan/10"
           : "border-rule hover:border-cyan/60 hover:bg-fg-strong/[0.03]"
       }`}
     >
+      {featured ? (
+        <span className="inline-flex items-center rounded-full bg-cyan/15 px-2.5 py-1 label font-display font-bold tracking-[0.08em] text-cyan">
+          Easiest setup
+        </span>
+      ) : null}
       <span className="flex items-center gap-2.5">
         {Icon ? (
-          <Icon className="size-7 shrink-0" />
+          <Icon className={`${iconSize} shrink-0`} />
         ) : (
           <span
             aria-hidden="true"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-navy-900 text-[13px] font-display font-bold text-cyan ring-1 ring-rule"
+            className={`flex ${iconSize} shrink-0 items-center justify-center rounded-md bg-navy-900 text-[13px] font-display font-bold text-cyan ring-1 ring-rule`}
           >
             {app.name.charAt(0)}
           </span>
         )}
-        <span className="label font-display font-bold tracking-[0.06em] text-fg-strong">
+        <span
+          className={`font-display font-bold tracking-[0.06em] text-fg-strong ${
+            featured ? "text-body" : "label"
+          }`}
+        >
           {app.name}
         </span>
       </span>
