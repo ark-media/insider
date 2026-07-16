@@ -322,6 +322,28 @@ export async function saveReminderConfig(
   return ((await res.json()) as { config: ReminderConfig }).config;
 }
 
+export type BackfillSummary = {
+  pages: number;
+  downloadsScanned: number;
+  pairs: number;
+  inserted: number;
+};
+
+// Seeds sc_feed_activations from SC download history so existing/migrated
+// members show as set up. sinceDays bounds the scan; omit for all history.
+export async function backfillFeedActivations(
+  sinceDays?: number,
+): Promise<BackfillSummary> {
+  const res = await fetch("/api/admin/backfill-feed-activations", {
+    method: "POST",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify(sinceDays ? { sinceDays } : {}),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return (await res.json()) as BackfillSummary;
+}
+
 // --- Discuss threads -----------------------------------------------------
 
 export async function listBeehiivDrafts(

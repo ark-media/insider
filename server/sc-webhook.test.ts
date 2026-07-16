@@ -406,4 +406,70 @@ describe('sc webhook event dispatch', () => {
     expect(sqlCalls.some((c) => c.sql.includes('insert into sc_webhook_events'))).toBe(false)
     expect(sqlCalls.some((c) => c.sql.includes('insert into sc_feed_activations'))).toBe(true)
   })
+
+  test('audio.downloaded → create-if-absent activation from top-level feed_id', async () => {
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({
+        body: {
+          event: 'audio.downloaded',
+          event_id: 555,
+          timestamp: '2026-07-16T09:00:00Z',
+          member: { email: 'Listener@X.com' },
+          feed_id: 77,
+        },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ received: true })
+    const write = sqlCalls.find((c) => c.sql.includes('insert into sc_feed_activations'))
+    expect(write).toBeDefined()
+    // create-if-absent, not the authoritative upsert.
+    expect(write!.sql).toContain('on conflict (email, feed_id) do nothing')
+    expect(write!.values).toContain('listener@x.com')
+    expect(write!.values).toContain(77)
+  })
+
+  test('audio.downloaded reads feed_id nested under audio', async () => {
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({
+        body: {
+          event: 'audio.downloaded',
+          event_id: 556,
+          member: { email: 'a@x.com' },
+          audio: { feed_id: 88 },
+        },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    const write = sqlCalls.find((c) => c.sql.includes('insert into sc_feed_activations'))
+    expect(write!.values).toContain(88)
+  })
+
+  test('integer event_id is stringified for the ledger and deduped', async () => {
+    // Claim returns no row → treated as already processed.
+    nextSqlResult = () => []
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({
+        body: {
+          event: 'feed.activated',
+          event_id: 12345,
+          member: { email: 'a@x.com' },
+          feed: { id: 5 },
+        },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ deduped: true })
+    const claim = sqlCalls.find((c) => c.sql.includes('insert into sc_webhook_events'))
+    expect(claim!.values).toContain('12345') // string, not number
+  })
 })

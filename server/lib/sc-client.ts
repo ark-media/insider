@@ -124,6 +124,54 @@ export async function loadAllMemberships(
   return all
 }
 
+// A v1 download record. A download from a member's private feed proves that
+// feed is set up and in use — the signal the activation backfill leans on.
+export type ScDownload = {
+  email?: string
+  feed_id?: number | string
+  downloaded_at?: string
+}
+
+type DownloadPage = {
+  data?: ScDownload[]
+  current_page?: number
+  last_page?: number
+}
+
+// Page through GET /v1/downloads, optionally from a start date. `onPage` is
+// called with each page's rows so the caller can fold them incrementally
+// (dedupe to (email, feed) pairs) rather than holding the whole history in
+// memory. Bounded by maxPages.
+export async function streamDownloads(
+  sc: ScV1Client,
+  opts: {
+    fromIso?: string
+    maxPages?: number
+    onPage: (rows: ScDownload[]) => void
+  },
+): Promise<{ pages: number; rows: number }> {
+  const maxPages = opts.maxPages ?? 500
+  const fromParam = opts.fromIso
+    ? `&downloaded_at_from=${encodeURIComponent(opts.fromIso)}`
+    : ''
+  let pages = 0
+  let rows = 0
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await sc.call<DownloadPage>(
+      'GET',
+      `/downloads?page=${page}&max_page_size=500${fromParam}`,
+    )
+    const data = res.data ?? []
+    pages++
+    rows += data.length
+    opts.onPage(data)
+    const last = res.last_page ?? page
+    const current = res.current_page ?? page
+    if (data.length === 0 || current >= last) break
+  }
+  return { pages, rows }
+}
+
 export async function findScUserByEmail(
   sc: ScClient,
   email: string,

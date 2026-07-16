@@ -19,6 +19,7 @@ import { createActivator } from './lib/activation.js'
 import type { Deps, Env, Handler, Route } from './lib/route.js'
 import { PayloadTooLargeError } from './lib/http.js'
 import { adminRoutes } from './routes/admin.js'
+import { adminFeedActivationRoutes } from './routes/admin-feed-activations.js'
 import { adminFeedReminderRoutes } from './routes/admin-feed-reminders.js'
 import { announcementRoutes } from './routes/announcements.js'
 import { authRoutes } from './routes/auth.js'
@@ -68,6 +69,7 @@ function buildApi(env: Env): Api {
     ...faqRoutes(deps),
     ...adminRoutes(deps),
     ...adminFeedReminderRoutes(deps),
+    ...adminFeedActivationRoutes(deps),
     ...discussThreadsRoutes(deps),
     ...contactRoutes(deps),
     ...cronRoutes(deps),

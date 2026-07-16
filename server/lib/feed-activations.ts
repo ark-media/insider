@@ -48,6 +48,61 @@ export async function recordFeedRevoked(
       updated_at = now()`
 }
 
+// Record an activation ONLY if we have no row for this (email, feed) yet.
+// Unlike recordFeedActivated this never overwrites existing state — it won't
+// resurrect a revoked feed or clobber an authoritative activated_at. Used by
+// the download-derived signals (backfill + audio.downloaded webhook), where a
+// download proves the feed was set up but is weaker than an explicit
+// activation/revocation event.
+export async function recordFeedActivatedIfAbsent(
+  sql: Sql,
+  email: string,
+  feedId: number,
+  activatedAt: string | null,
+): Promise<void> {
+  await sql`
+    insert into sc_feed_activations (email, feed_id, activated, activated_at, revoked_at, updated_at)
+    values (${normalizeEmail(email)}, ${feedId}, true, ${activatedAt}, null, now())
+    on conflict (email, feed_id) do nothing`
+}
+
+export type ActivationSeed = {
+  email: string
+  feedId: number
+  activatedAt: string | null
+}
+
+// Bulk create-if-absent for the backfill. One unnest insert per chunk so a
+// backfill of thousands of (email, feed) pairs is a handful of round-trips, not
+// one per row. Emails are normalized here (not just trusted from the caller) so
+// a mixed-case address can't slip past the (email, feed_id) primary key and
+// create a case-variant duplicate of a webhook-written row. Returns rows
+// inserted (existing rows are left untouched by `on conflict do nothing`).
+export async function backfillActivations(
+  sql: Sql,
+  seeds: ActivationSeed[],
+  chunkSize = 1000,
+): Promise<number> {
+  let inserted = 0
+  for (let i = 0; i < seeds.length; i += chunkSize) {
+    const chunk = seeds.slice(i, i + chunkSize)
+    const emails = chunk.map((s) => normalizeEmail(s.email))
+    const feedIds = chunk.map((s) => s.feedId)
+    const ats = chunk.map((s) => s.activatedAt)
+    const rows = (await sql`
+      insert into sc_feed_activations (email, feed_id, activated, activated_at)
+      select email, feed_id, true, activated_at from unnest(
+        ${emails}::text[],
+        ${feedIds}::bigint[],
+        ${ats}::timestamptz[]
+      ) as t(email, feed_id, activated_at)
+      on conflict (email, feed_id) do nothing
+      returning feed_id`) as unknown[]
+    inserted += rows.length
+  }
+  return inserted
+}
+
 export type FeedActivation = { feedId: number; activatedAt: string | null }
 
 // All currently-activated feeds for an email, as a map keyed by feed id. Only

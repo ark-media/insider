@@ -3,8 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "../../components/AdminShell";
 import { adminField, adminFieldLabel } from "../../lib/admin-styles";
 import {
+  backfillFeedActivations,
   fetchReminderConfig,
   saveReminderConfig,
+  type BackfillSummary,
   type ReminderConfig,
 } from "../../lib/admin";
 import {
@@ -203,7 +205,66 @@ function FeedRemindersAdmin() {
             </div>
           </form>
         )}
+
+        <BackfillSection />
       </div>
     </AdminShell>
+  );
+}
+
+// One-off (re-runnable) seeding of activation state from SC listening history,
+// so existing/migrated members already show as set up and don't get reminded.
+function BackfillSection() {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<BackfillSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await backfillFeedActivations());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Backfill failed.");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <section className="mt-14 border-t border-rule pt-10">
+      <h2 className="font-display text-lg text-fg-strong">Backfill existing members</h2>
+      <p className="mt-2 max-w-[560px] text-body-sm text-fg-muted">
+        Members who set up their feeds before activation tracking went live have
+        no record yet, so they'd show as “not set up” and could get reminded by
+        mistake. This scans Supporting Cast listening history and marks any feed
+        with downloads as set up. Safe to run more than once — real activation
+        events always take precedence. Run this once before turning reminders on.
+      </p>
+      <div className="mt-5 flex items-center gap-4">
+        <button
+          type="button"
+          onClick={run}
+          disabled={running}
+          className="inline-flex min-h-11 items-center border border-cyan px-6 font-display text-[12px] font-bold uppercase tracking-button text-cyan transition hover:bg-cyan hover:text-navy disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          {running ? "Backfilling…" : "Backfill from listening history"}
+        </button>
+      </div>
+      {error ? (
+        <p className="mt-4 border border-rule bg-navy-900/60 p-3 text-body-sm text-red-300">
+          {error}
+        </p>
+      ) : null}
+      {result ? (
+        <p className="mt-4 text-body-sm text-cyan">
+          Done — scanned {result.downloadsScanned.toLocaleString()} downloads across{" "}
+          {result.pages} page{result.pages === 1 ? "" : "s"}, found {result.pairs}{" "}
+          member-feed pair{result.pairs === 1 ? "" : "s"}, marked {result.inserted}{" "}
+          newly set up.
+        </p>
+      ) : null}
+    </section>
   );
 }
