@@ -12,7 +12,7 @@ import {
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
-import { getActivatedFeeds } from '../lib/feed-activations.js'
+import { getSetupStates, recordFeedsPending } from '../lib/feed-activations.js'
 import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import {
@@ -36,19 +36,20 @@ const newsletterPrefsLimiter = createRateLimiter({
   refillPerSec: 1 / 6,
 })
 
-// A feed as returned to the SPA, plus the activation state we mirror from SC's
-// `feed.activated` webhook. `activated` is authoritative once we've seen the
-// webhook; absent (undefined) when we have no record, so the setup hub falls
-// back to its local optimistic marker.
+// A feed as returned to the SPA, plus the setup state we mirror server-side.
+// `activated` is authoritative once we've seen SC's `feed.activated` webhook;
+// `pending` is our optimistic marker, set when the member takes a setup action
+// but the webhook hasn't landed yet. The setup hub treats a feed as done if
+// either is true. Both are absent (undefined) when we have no record.
 type EnrichedFeed = ScUserFeed & {
   activated?: boolean
   activated_at?: string | null
+  pending?: boolean
 }
 
-// Merge persisted activation state onto the SC feeds. Soft-fails: any DB error
+// Merge persisted setup state onto the SC feeds. Soft-fails: any DB error
 // (or no DATABASE_URL) returns the feeds untouched, so a mirror outage degrades
-// the progress count to the client's optimistic state rather than breaking
-// /api/me.
+// to "nothing set up yet" rather than breaking /api/me.
 async function enrichFeedsWithActivation(
   env: Deps['env'],
   email: string,
@@ -56,13 +57,14 @@ async function enrichFeedsWithActivation(
 ): Promise<EnrichedFeed[]> {
   if (!env.DATABASE_URL || feeds.length === 0) return feeds
   try {
-    const activated = await getActivatedFeeds(getDb(env), email)
-    if (activated.size === 0) return feeds
-    return feeds.map((f) =>
-      activated.has(f.id)
-        ? { ...f, activated: true, activated_at: activated.get(f.id) ?? null }
-        : f,
-    )
+    const states = await getSetupStates(getDb(env), email)
+    if (states.size === 0) return feeds
+    return feeds.map((f) => {
+      const s = states.get(f.id)
+      return s
+        ? { ...f, activated: s.activated, activated_at: s.activatedAt, pending: s.pending }
+        : f
+    })
   } catch (err) {
     console.error('[me] feed activation enrich failed:', err)
     return feeds
@@ -170,6 +172,71 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
           console.error('[me] sc lookup failed:', err)
           const status = (err as ScError).status ?? 502
           json(status, { error: 'membership_lookup_failed' })
+        }
+      },
+    },
+    {
+      // Optimistic "I've set up these feeds" marker. The client calls this the
+      // moment a member takes a setup action (opens a deep link, copies the
+      // feed URL, texts themselves the link, or links Spotify for the whole
+      // network), so the setup hub shows the feed as done immediately and
+      // across devices — the server-side replacement for the old localStorage
+      // marker. SC's `feed.activated` webhook remains authoritative and
+      // reconciles the row later.
+      path: '/api/me/feeds/setup',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+        // State-changing + cookie-authenticated → reject cross-origin posts.
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+
+        // Resolve the member email the same way GET /api/me does: a real login
+        // (ark_session cookie or Auth0 bearer) or the short-lived checkout
+        // token (bearer or cookie) issued post-payment. A just-paid member on
+        // the setup page may only hold the checkout cookie, so accept it too.
+        let email: string | null = null
+        const session = await getSessionProfile(req, env)
+        if (session) email = session.email
+        if (!email) {
+          const auth = req.headers.authorization
+          if (auth?.startsWith('Bearer ')) {
+            const token = auth.slice(7)
+            const profile = await verifyAuth0BearerProfile(token)
+            if (profile?.email) email = profile.email
+            else {
+              const e = await verifyCheckoutToken(token, env)
+              if (e) email = e
+            }
+          }
+        }
+        if (!email) {
+          const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
+          if (cookieToken) {
+            const e = await verifyCheckoutToken(cookieToken, env)
+            if (e) email = e
+          }
+        }
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        // No DB → nothing to persist. The client's optimistic in-memory state
+        // still stands and the webhook remains the source of truth, so ack.
+        if (!env.DATABASE_URL) return json(200, { ok: true })
+
+        const body = await readJson<{ feed_ids?: unknown }>(req)
+        const feedIds = Array.isArray(body?.feed_ids)
+          ? body.feed_ids
+              .map((n) => (typeof n === 'number' ? n : Number(n)))
+              .filter((n) => Number.isInteger(n) && n > 0)
+              .slice(0, 100)
+          : []
+        if (feedIds.length === 0) return json(400, { error: 'no_feed_ids' })
+
+        try {
+          await recordFeedsPending(getDb(env), email, feedIds)
+          json(200, { ok: true })
+        } catch (err) {
+          console.error('[me] feed pending write failed:', err)
+          json(500, { error: 'pending_write_failed' })
         }
       },
     },

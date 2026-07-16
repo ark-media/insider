@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { SpotifyIcon } from "./PlatformIcons";
-import type { UserFeed } from "../lib/auth";
-import { feedIsSetUp, markFeedsSetUp, useLocalSetUpIds } from "../lib/feedSetup";
+import { feedIsSetUp, type UserFeed } from "../lib/auth";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
 
 // The landing surface for private-feed setup. Two paths, in priority order:
@@ -18,11 +18,11 @@ export function FeedSetupHub({
   feeds: UserFeed[];
   onSelect: (feedId: number) => void;
 }) {
-  const localSetUp = useLocalSetUpIds();
+  const { markFeedsSetUp } = useSubscriberAuth();
 
   const doneCount = useMemo(
-    () => feeds.filter((f) => feedIsSetUp(f, localSetUp)).length,
-    [feeds, localSetUp],
+    () => feeds.filter((f) => feedIsSetUp(f)).length,
+    [feeds],
   );
   const total = feeds.length;
   const allDone = total > 0 && doneCount === total;
@@ -121,7 +121,7 @@ export function FeedSetupHub({
                 <ShowRow
                   key={f.id}
                   feed={f}
-                  done={feedIsSetUp(f, localSetUp)}
+                  done={feedIsSetUp(f)}
                   onSelect={() => onSelect(f.id)}
                 />
               ))}

@@ -12,11 +12,21 @@ export type UserFeed = {
   image_url?: string;
   apps?: FeedApp[];
   // Authoritative activation state, set once the server captures Supporting
-  // Cast's `feed.activated` webhook. Undefined until that endpoint ships — the
-  // setup hub falls back to the local optimistic record (see lib/feedSetup).
+  // Cast's `feed.activated` webhook.
   activated?: boolean;
   activated_at?: string | null;
+  // Optimistic server-side marker: the member took a setup action but the
+  // `feed.activated` webhook hasn't landed yet. The setup hub treats a feed as
+  // done if it is `activated` OR `pending` (see feedIsSetUp).
+  pending?: boolean;
 };
+
+// A feed counts as "set up" once it's either confirmed (the `feed.activated`
+// webhook landed → `activated`) or pending (the member took a setup action and
+// we recorded an optimistic server-side marker → `pending`).
+export function feedIsSetUp(feed: UserFeed): boolean {
+  return feed.activated === true || feed.pending === true;
+}
 
 import type { RetentionOffer } from "../../shared/retention";
 
@@ -174,6 +184,26 @@ export async function getMySubscription(): Promise<{
     };
   } catch {
     return { cancelAtPeriodEnd: false, cancelAt: null };
+  }
+}
+
+// Persist the optimistic "these feeds are set up" marker server-side (replaces
+// the old localStorage record), so it survives reloads and follows the member
+// across devices while SC's `feed.activated` webhook catches up. Fire-and-
+// forget: failures are swallowed because the in-memory optimistic state still
+// stands and the webhook remains authoritative — a persistence blip must never
+// surface an error on a setup click.
+export async function persistFeedsSetUp(feedIds: number[]): Promise<void> {
+  if (feedIds.length === 0) return;
+  try {
+    await fetch("/api/me/feeds/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ feed_ids: feedIds }),
+    });
+  } catch {
+    /* optimistic UI stands; webhook reconciles */
   }
 }
 

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { fetchMe, type Me } from "./auth";
+import { fetchMe, persistFeedsSetUp, type Me } from "./auth";
 import { fetchAdminMe } from "./admin";
 import { hasAnySession } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
@@ -29,6 +29,12 @@ type SignInOpts = { signup?: boolean; loginHint?: string };
 type SubscriberAuthValue = {
   state: SubscriberAuthState;
   refresh: () => Promise<void>;
+  // Optimistically mark private feeds as set up: patches the in-memory
+  // `me.feeds` (instant check-off in the setup hub) and persists a server-side
+  // pending marker so it survives reloads and follows the member across
+  // devices. Monotonic — only ever flips a feed to set up, never back. SC's
+  // `feed.activated` webhook remains authoritative and reconciles on refresh.
+  markFeedsSetUp: (feedIds: number[]) => void;
   // True when /api/me couldn't be reached (network / server error, not a 401).
   // Member-data pages show an error+retry on this; `refresh` is the retry. Kept
   // separate from `state` so a transient outage doesn't ripple a new variant
@@ -116,6 +122,30 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [state]);
 
+  const markFeedsSetUp = useCallback((feedIds: number[]) => {
+    if (feedIds.length === 0) return;
+    const ids = new Set(feedIds);
+    // Optimistic in-memory patch — instant check-off. Only flip feeds that
+    // aren't already set up, so this can never downgrade a confirmed feed.
+    setState((prev) =>
+      prev.kind === "member"
+        ? {
+            ...prev,
+            me: {
+              ...prev.me,
+              feeds: prev.me.feeds.map((f) =>
+                ids.has(f.id) && !f.activated && !f.pending
+                  ? { ...f, pending: true }
+                  : f,
+              ),
+            },
+          }
+        : prev,
+    );
+    // Persist server-side (fire-and-forget; swallows its own errors).
+    void persistFeedsSetUp(feedIds);
+  }, []);
+
   const signIn = useCallback((returnTo?: string, opts?: SignInOpts) => {
     const params = new URLSearchParams();
     params.set(
@@ -141,6 +171,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
       value={{
         state,
         refresh,
+        markFeedsSetUp,
         authError,
         signIn,
         signOut,

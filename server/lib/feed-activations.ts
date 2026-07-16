@@ -103,7 +103,78 @@ export async function backfillActivations(
   return inserted
 }
 
+// Optimistically mark feeds as set up: the member took a setup action (opened
+// a deep link, copied the URL, texted themselves the link, or linked Spotify
+// for the whole network) but SC's authoritative `feed.activated` webhook may
+// lag by minutes. Recording `pending_at` lets /api/me show the feed as set up
+// immediately and across devices, replacing the old client-side localStorage
+// marker. Never downgrades a confirmed activation: `activated`/`activated_at`
+// are left untouched, and `pending_at` is only stamped once (coalesce keeps
+// the first). A brand-new row is inserted as not-yet-activated. Handles the
+// single-feed and whole-network cases in one unnest insert.
+export async function recordFeedsPending(
+  sql: Sql,
+  email: string,
+  feedIds: number[],
+): Promise<void> {
+  if (feedIds.length === 0) return
+  const norm = normalizeEmail(email)
+  const emails = feedIds.map(() => norm)
+  await sql`
+    insert into sc_feed_activations (email, feed_id, activated, pending_at, updated_at)
+    select email, feed_id, false, now(), now() from unnest(
+      ${emails}::text[],
+      ${feedIds}::bigint[]
+    ) as t(email, feed_id)
+    on conflict (email, feed_id) do update set
+      pending_at = coalesce(sc_feed_activations.pending_at, now()),
+      updated_at = now()`
+}
+
 export type FeedActivation = { feedId: number; activatedAt: string | null }
+
+// Per-feed setup state for the setup hub: `activated` = confirmed by the
+// webhook; `pending` = the member took a setup action but the webhook hasn't
+// landed yet. A revoked feed reports neither.
+export type FeedSetupState = {
+  activated: boolean
+  activatedAt: string | null
+  pending: boolean
+}
+
+// Setup state for the hub, keyed by feed id: every feed that is either
+// confirmed-activated OR optimistically pending. A feed with only a stale
+// pending marker on a revoked row is treated as not set up. Distinct from
+// getActivatedFeeds (which the reminder cron uses) so an unconfirmed pending
+// feed still gets nudged.
+export async function getSetupStates(
+  sql: Sql,
+  email: string,
+): Promise<Map<number, FeedSetupState>> {
+  const rows = (await sql`
+    select feed_id, activated, activated_at, pending_at, revoked_at
+    from sc_feed_activations
+    where email = ${normalizeEmail(email)}
+      and (activated = true or pending_at is not null)`) as Array<{
+    feed_id: number | string
+    activated: boolean
+    activated_at: string | null
+    pending_at: string | null
+    revoked_at: string | null
+  }>
+  const map = new Map<number, FeedSetupState>()
+  for (const r of rows) {
+    const activated = r.activated === true
+    const pending = !activated && r.pending_at != null && r.revoked_at == null
+    if (!activated && !pending) continue
+    map.set(Number(r.feed_id), {
+      activated,
+      activatedAt: r.activated_at,
+      pending,
+    })
+  }
+  return map
+}
 
 // All currently-activated feeds for an email, as a map keyed by feed id. Only
 // rows with activated = true are returned; a revoked feed is absent.

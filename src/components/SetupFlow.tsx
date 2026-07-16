@@ -11,7 +11,7 @@ import {
 } from "./PlatformIcons";
 import { sendSetupSms, type UserFeed } from "../lib/auth";
 import { trackEvent } from "../lib/analytics";
-import { markFeedSetUp } from "../lib/feedSetup";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Device = "phone" | "computer";
 
@@ -148,6 +148,7 @@ export function SetupFlow({
   // feed picker instead of the (too-subtle) inline switcher.
   onBack?: () => void;
 }) {
+  const { markFeedsSetUp } = useSubscriberAuth();
   const feedUrl = feed?.url ?? "";
   const showName = feed?.name ?? "your show";
 
@@ -191,7 +192,7 @@ export function SetupFlow({
       await navigator.clipboard.writeText(feedUrl);
       setCopied(true);
       trackEvent("feed_activated", { app: appKey ?? "unknown", method: "copy" });
-      if (feed) markFeedSetUp(feed.id);
+      if (feed) markFeedsSetUp([feed.id]);
       setTimeout(() => setCopied(false), 2200);
     } catch {
       /* no-op */
@@ -237,7 +238,7 @@ export function SetupFlow({
       if (result.ok) {
         setSmsState("sent");
         trackEvent("feed_activated", { app: appKey ?? "unknown", method: "sms" });
-        if (feed) markFeedSetUp(feed.id);
+        if (feed) markFeedsSetUp([feed.id]);
       } else {
         setSmsState("error");
         setSmsError(result.error ?? "Could not send SMS.");
@@ -452,7 +453,7 @@ export function SetupFlow({
                         app: selectedApp.key,
                         method: "open",
                       });
-                      if (feed) markFeedSetUp(feed.id);
+                      if (feed) markFeedsSetUp([feed.id]);
                     }}
                     className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
