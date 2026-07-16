@@ -102,24 +102,27 @@ export function scWebhookRoutes({ env }: Deps): Route[] {
           return json(200, { received: true, skipped: 'incomplete' })
         }
 
-        // Idempotency: claim event_id before doing work. `event_id` is
-        // documented as an integer; coerce to text for the ledger key. Unlike
-        // Stripe the write itself is an idempotent upsert, so a missing event_id
-        // is fine — we just process without dedupe. A ledger error is non-fatal;
-        // fall through and process.
-        if (event.event_id !== undefined && event.event_id !== null) {
-          const eventId = String(event.event_id)
+        // Idempotency: skip only events we've already fully PROCESSED. We READ
+        // the ledger here and WRITE it after the upsert succeeds (below) — never
+        // before. Claiming the id up front would mean a write that throws leaves
+        // the id recorded, so SC's retry gets deduped and the event is lost
+        // (a dropped feed.access_revoked would keep a lapsed member "activated").
+        // `event_id` is documented as an integer; coerce to text for the key. A
+        // missing event_id just skips dedupe. The upsert is itself idempotent,
+        // so reprocessing a duplicate is harmless; a ledger error is non-fatal.
+        const eventId =
+          event.event_id !== undefined && event.event_id !== null
+            ? String(event.event_id)
+            : null
+        if (eventId !== null) {
           try {
-            const rows = await sql`
-              insert into sc_webhook_events (id, type)
-              values (${eventId}, ${type})
-              on conflict (id) do nothing
-              returning id`
-            if (rows.length === 0) {
+            const seen = await sql`
+              select 1 from sc_webhook_events where id = ${eventId} limit 1`
+            if (seen.length > 0) {
               return json(200, { received: true, deduped: true })
             }
           } catch (err) {
-            console.error('[sc] webhook idempotency ledger failed:', err)
+            console.error('[sc] webhook idempotency read failed:', err)
           }
         }
 
@@ -139,11 +142,26 @@ export function scWebhookRoutes({ env }: Deps): Route[] {
             // A subscribed-but-unhandled event type. Ack so SC stops retrying.
             return json(200, { received: true, skipped: 'unhandled_type' })
           }
-          json(200, { received: true })
         } catch (err) {
           console.error('[sc] webhook handler failed:', err)
-          json(500, { error: 'webhook_handler_failed' })
+          return json(500, { error: 'webhook_handler_failed' })
         }
+
+        // Processing succeeded — record the event so a retry of THIS delivery is
+        // deduped. Best-effort: if this write fails, a later duplicate is simply
+        // reprocessed (the upsert absorbs it), which is strictly safer than
+        // dropping an unprocessed event.
+        if (eventId !== null) {
+          try {
+            await sql`
+              insert into sc_webhook_events (id, type)
+              values (${eventId}, ${type})
+              on conflict (id) do nothing`
+          } catch (err) {
+            console.error('[sc] webhook idempotency ledger write failed:', err)
+          }
+        }
+        return json(200, { received: true })
       },
     },
   ]

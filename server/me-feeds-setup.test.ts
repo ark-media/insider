@@ -320,6 +320,51 @@ describe('POST /api/me/feeds/setup', () => {
     expect(res.statusCode).toBe(200)
     expect(sqlCalls.some((c) => c.sql.includes('insert into sc_feed_activations'))).toBe(false)
   })
+
+  test('500 when the pending write fails', async () => {
+    const token = await signSessionToken({ email: 'writefail@x.com', roles: [] }, BASE_ENV)
+    nextSqlResult = (sql) => {
+      if (sql.includes('insert into sc_feed_activations')) throw new Error('db down')
+      return []
+    }
+    const res = makeRes()
+    await runHandler(
+      buildHandler(PATH),
+      makeReq({
+        path: PATH,
+        method: 'POST',
+        cookie: `${SESSION_COOKIE_NAME}=${token}`,
+        body: { feed_ids: [1] },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(500)
+    expect((res.__json() as { error: string }).error).toBe('pending_write_failed')
+  })
+
+  test('rate-limits with 429 once the burst capacity is spent', async () => {
+    // Unique email so this test's bucket doesn't collide with the others
+    // (the limiter is module-scoped and persists across handler builds).
+    const token = await signSessionToken({ email: 'burst@x.com', roles: [] }, BASE_ENV)
+    const post = () =>
+      makeReq({
+        path: PATH,
+        method: 'POST',
+        cookie: `${SESSION_COOKIE_NAME}=${token}`,
+        body: { feed_ids: [1] },
+      })
+    // Capacity is 20; drain it.
+    for (let i = 0; i < 20; i++) {
+      const ok = makeRes()
+      await runHandler(buildHandler(PATH), post(), ok)
+      expect(ok.statusCode).toBe(200)
+    }
+    const limited = makeRes()
+    await runHandler(buildHandler(PATH), post(), limited)
+    expect(limited.statusCode).toBe(429)
+    expect((limited.__json() as { error: string }).error).toBe('too_many_requests')
+    expect(limited.getHeader('retry-after')).toBeDefined()
+  })
 })
 
 // ===========================================================================
@@ -371,5 +416,24 @@ describe('GET /api/me feed setup enrichment', () => {
     const feeds = (res.__json() as { feeds: Array<Record<string, unknown>> }).feeds
     // Neither activated nor pending → untouched, so the hub shows "not set up".
     expect(feeds[0]).toEqual({ id: 9, name: 'Revoked', url: 'https://x/9.xml' })
+  })
+
+  test('enrichment DB error is soft — feeds returned unenriched, still 200', async () => {
+    scUserByEmail.set('paid@x.com', { id: 42, email: 'paid@x.com' })
+    scFeedsByUserId.set(42, [{ id: 1, name: 'A', url: 'https://x/1.xml' }])
+    // The getSetupStates read throws — a mirror outage must not break /api/me.
+    nextSqlResult = (sql) => {
+      if (sql.includes('from sc_feed_activations')) throw new Error('mirror down')
+      return []
+    }
+
+    const token = await signAuth0TestToken({ email: 'paid@x.com', tier: 'ark-plus-member' })
+    const res = makeRes()
+    await runHandler(buildHandler(PATH), makeReq({ path: PATH, bearer: token }), res)
+
+    expect(res.statusCode).toBe(200)
+    const feeds = (res.__json() as { feeds: Array<Record<string, unknown>> }).feeds
+    // No activation fields added — degrades to "nothing set up yet".
+    expect(feeds[0]).toEqual({ id: 1, name: 'A', url: 'https://x/1.xml' })
   })
 })

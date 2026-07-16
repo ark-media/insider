@@ -94,7 +94,9 @@ describe('memberStatusEligible', () => {
 // ===========================================================================
 
 describe('passesCheapGate', () => {
-  const cfg = DEFAULT_REMINDER_CONFIG
+  // DEFAULT is enabled:false (opt-in); these cases test the other gates, so
+  // start from an enabled config.
+  const cfg = { ...DEFAULT_REMINDER_CONFIG, enabled: true }
 
   test('active in-window member with feeds passes', () => {
     expect(passesCheapGate(member(), cfg, NOW)).toBe(true)
@@ -118,7 +120,8 @@ describe('passesCheapGate', () => {
 // ===========================================================================
 
 describe('evaluateReminder', () => {
-  const cfg = DEFAULT_REMINDER_CONFIG // onlyIfNoneSetUp = true
+  // enabled:true (DEFAULT is opt-in off); onlyIfNoneSetUp = true.
+  const cfg = { ...DEFAULT_REMINDER_CONFIG, enabled: true }
 
   test('zero feeds set up → candidate with doneCount 0', () => {
     const c = evaluateReminder(member(), new Set(), false, cfg, NOW)

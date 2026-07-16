@@ -52,6 +52,10 @@ const BASE_ENV: Record<string, string> = {
   CRON_SECRET,
   RESEND_API_KEY: 'rk_test',
   DATABASE_URL: 'postgres://stub-feed-reminders-cron',
+  // Reminders are opt-in (DEFAULT_REMINDER_CONFIG.enabled is false); the run
+  // tests exercise the enabled path, so turn it on here. The disabled path has
+  // its own test that overrides this to 'false'.
+  FEED_REMINDER_ENABLED: 'true',
 }
 
 function envWithout(key: string): Record<string, string> {
@@ -145,15 +149,33 @@ type FetchCall = { url: string; init?: RequestInit }
 const originalFetch = globalThis.fetch
 let fetchCalls: FetchCall[] = []
 let membershipsPayload: unknown = { data: [], current_page: 1, last_page: 1 }
+// When set, /v1/memberships is served page-by-page from this map (keyed by the
+// `page` query param) so multi-page pagination can be exercised. Otherwise the
+// single `membershipsPayload` is returned for every page request.
+let membershipsByPage: Record<number, unknown> | null = null
+// Resend HTTP status — flip to a non-2xx to exercise the send-failure path.
+let resendStatus = 200
 
 globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input.toString()
   fetchCalls.push({ url, init })
   if (url.includes('/v1/memberships')) {
+    if (membershipsByPage) {
+      const page = Number(new URL(url).searchParams.get('page') ?? '1')
+      const payload = membershipsByPage[page] ?? {
+        data: [],
+        current_page: page,
+        last_page: page,
+      }
+      return new Response(JSON.stringify(payload), { status: 200 })
+    }
     return new Response(JSON.stringify(membershipsPayload), { status: 200 })
   }
   if (url.includes('api.resend.com')) {
-    return new Response('{"id":"email_1"}', { status: 200 })
+    const ok = resendStatus >= 200 && resendStatus < 300
+    return new Response(ok ? '{"id":"email_1"}' : '{"error":"boom"}', {
+      status: resendStatus,
+    })
   }
   return new Response('{}', { status: 200 })
 }) as typeof fetch
@@ -170,6 +192,8 @@ beforeEach(() => {
   fetchCalls = []
   nextSqlResult = () => []
   membershipsPayload = { data: [], current_page: 1, last_page: 1 }
+  membershipsByPage = null
+  resendStatus = 200
 })
 
 afterAll(() => {
@@ -323,5 +347,109 @@ describe('feed-setup-reminders run', () => {
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toMatchObject({ scanned: 1, eligible: 0, sent: 0 })
     expect(fetchCalls.some((c) => c.url.includes('resend'))).toBe(false)
+  })
+
+  test('disabled config → short-circuits before touching the roster', async () => {
+    const env = { ...BASE_ENV, FEED_REMINDER_ENABLED: 'false' }
+    // A member who WOULD be reminded if enabled — proves the guard, not an
+    // empty roster, is what stops the send.
+    membershipsPayload = {
+      current_page: 1,
+      last_page: 1,
+      data: [
+        {
+          id: 1,
+          user_id: 1,
+          email: 'a@x.com',
+          status: 'active',
+          joined: inWindowJoined(),
+          feeds: [{ id: 10, name: 'Show A', url: 'u' }],
+        },
+      ],
+    }
+
+    const res = makeRes()
+    await runHandler(buildHandler(env), makeReq({}), res)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ enabled: false, sent: 0 })
+    // No roster paging and no email when disabled.
+    expect(fetchCalls.some((c) => c.url.includes('/v1/memberships'))).toBe(false)
+    expect(fetchCalls.some((c) => c.url.includes('resend'))).toBe(false)
+  })
+
+  test('roster spanning two pages → a page-2 member still gets reminded', async () => {
+    membershipsByPage = {
+      1: {
+        current_page: 1,
+        last_page: 2,
+        data: [
+          {
+            // Out of window → cheap-gated out (no DB read), proves paging goes on.
+            id: 1,
+            user_id: 1,
+            email: 'old@x.com',
+            status: 'active',
+            joined: new Date(Date.now() - 60 * DAY).toISOString(),
+            feeds: [{ id: 10, name: 'Show A', url: 'u' }],
+          },
+        ],
+      },
+      2: {
+        current_page: 2,
+        last_page: 2,
+        data: [
+          {
+            id: 2,
+            user_id: 2,
+            email: 'page2@x.com',
+            first_name: 'Bo',
+            status: 'active',
+            joined: inWindowJoined(),
+            feeds: [{ id: 20, name: 'Show B', url: 'u' }],
+          },
+        ],
+      },
+    }
+    nextSqlResult = () => [] // no prior sends, no activations
+
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({}), res)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ scanned: 2, eligible: 1, sent: 1 })
+
+    const resend = fetchCalls.filter((c) => c.url.includes('resend'))
+    expect(resend).toHaveLength(1)
+    const sentBody = JSON.parse(resend[0]!.init?.body as string) as { to: string }
+    expect(sentBody.to).toBe('page2@x.com')
+    // Both roster pages were actually fetched.
+    expect(fetchCalls.filter((c) => c.url.includes('/v1/memberships'))).toHaveLength(2)
+  })
+
+  test('Resend failure → counted as failed, ledger NOT written so it retries', async () => {
+    resendStatus = 500
+    membershipsPayload = {
+      current_page: 1,
+      last_page: 1,
+      data: [
+        {
+          id: 1,
+          user_id: 1,
+          email: 'fail@x.com',
+          first_name: 'Ada',
+          status: 'active',
+          joined: inWindowJoined(),
+          feeds: [{ id: 10, name: 'Show A', url: 'u' }],
+        },
+      ],
+    }
+    nextSqlResult = () => []
+
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({}), res)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ sent: 0, failed: 1 })
+    // The whole point of the soft-fail: no ledger row, so the next run retries
+    // this member instead of silently dropping them forever.
+    expect(sqlCalls.some((c) => c.sql.includes('insert into feed_reminder_sends'))).toBe(false)
   })
 })

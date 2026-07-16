@@ -120,6 +120,14 @@ export async function loadAllMemberships(
     const last = res.last_page ?? page
     const current = res.current_page ?? page
     if (data.length === 0 || current >= last) break
+    if (page === MAX_PAGES) {
+      // Roster outgrew the runaway guard — members beyond here are silently
+      // dropped (e.g. skipped by the reminder cron). Surface it so we bump the
+      // cap rather than quietly under-scanning.
+      console.warn(
+        `[sc] loadAllMemberships hit MAX_PAGES (${MAX_PAGES}); roster may be truncated`,
+      )
+    }
   }
   return all
 }
@@ -168,6 +176,14 @@ export async function streamDownloads(
     const last = res.last_page ?? page
     const current = res.current_page ?? page
     if (data.length === 0 || current >= last) break
+    if (page === maxPages) {
+      // Cap reached before exhausting history — the backfill saw only a prefix
+      // of downloads. Log so a partial backfill is visible (bound the scan with
+      // fromIso, or raise maxPages, rather than assume full coverage).
+      console.warn(
+        `[sc] streamDownloads hit maxPages (${maxPages}); download history may be truncated`,
+      )
+    }
   }
   return { pages, rows }
 }

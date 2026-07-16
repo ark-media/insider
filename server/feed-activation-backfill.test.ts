@@ -24,7 +24,10 @@ mock.module('@neondatabase/serverless', () => ({
 
 import { foldDownloadPage, runFeedActivationBackfill } from './lib/feed-activation-backfill'
 import { backfillActivations, type ActivationSeed } from './lib/feed-activations'
-import { adminFeedActivationRoutes } from './routes/admin-feed-activations'
+import {
+  adminFeedActivationRoutes,
+  resolveBackfillSince,
+} from './routes/admin-feed-activations'
 import { getDb } from './lib/db'
 import type { ScDownload, ScV1Client } from './lib/sc-client'
 import type { Deps, Route } from './lib/route'
@@ -247,4 +250,41 @@ describe('admin backfill route gate', () => {
     expect(res.__status()).toBe(403)
     expect(res.__json()).toEqual({ error: 'forbidden' })
   })
+})
+
+// ===========================================================================
+// resolveBackfillSince — the sinceDays validation the route wraps (tested
+// directly, per the "authorized route path isn't unit-tested" convention).
+// ===========================================================================
+
+describe('resolveBackfillSince', () => {
+  const NOW = Date.parse('2026-07-16T00:00:00Z')
+
+  test('omitted sinceDays → scan all history (no lower bound)', () => {
+    const r = resolveBackfillSince(undefined, NOW)
+    expect(r).toEqual({ ok: true })
+  })
+
+  test('a positive sinceDays → lower-bound ISO that many days back', () => {
+    const r = resolveBackfillSince(30, NOW)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.fromIso).toBe(new Date(NOW - 30 * 86_400_000).toISOString())
+    }
+  })
+
+  test('numeric-string sinceDays is accepted', () => {
+    const r = resolveBackfillSince('7', NOW)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.fromIso).toBe(new Date(NOW - 7 * 86_400_000).toISOString())
+  })
+
+  test.each([0, -5, Number.NaN, Infinity, 'abc'])(
+    'rejects non-positive / non-finite sinceDays (%p) → error',
+    (bad) => {
+      const r = resolveBackfillSince(bad, NOW)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.error).toContain('positive')
+    },
+  )
 })

@@ -36,6 +36,15 @@ const newsletterPrefsLimiter = createRateLimiter({
   refillPerSec: 1 / 6,
 })
 
+// Bucket the optimistic setup marker by normalized email. A member setting up
+// the whole network plus a few individual feeds fits well under 20 writes;
+// sustained refill is 1/6s. Bounds an authenticated caller from scripting the
+// endpoint to bloat sc_feed_activations with junk pending rows.
+const feedSetupLimiter = createRateLimiter({
+  capacity: 20,
+  refillPerSec: 1 / 6,
+})
+
 // A feed as returned to the SPA, plus the setup state we mirror server-side.
 // `activated` is authoritative once we've seen SC's `feed.activated` webhook;
 // `pending` is our optimistic marker, set when the member takes a setup action
@@ -217,6 +226,12 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
           }
         }
         if (!email) return json(401, { error: 'unauthenticated' })
+
+        const wait = feedSetupLimiter.take(email.toLowerCase())
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'too_many_requests' })
+        }
 
         // No DB → nothing to persist. The client's optimistic in-memory state
         // still stands and the webhook remains the source of truth, so ack.

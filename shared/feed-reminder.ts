@@ -16,7 +16,12 @@ export type ReminderConfig = {
 }
 
 export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
-  enabled: true,
+  // Off by default: enabling requires an explicit opt-in (FEED_REMINDER_ENABLED
+  // or the admin config). This makes the safe ordering the default — the
+  // activation backfill must run first, otherwise members who set up their
+  // feeds before webhook tracking existed read as "0 set up" and get a spurious
+  // (one-time, irreversible) nudge on the cron's first run.
+  enabled: false,
   delayHours: 24,
   windowDays: 14,
   onlyIfNoneSetUp: true,

@@ -17,6 +17,22 @@ import { runFeedActivationBackfill } from '../lib/feed-activation-backfill.js'
 import { createScV1Client } from '../lib/sc-client.js'
 import type { Deps, Route } from '../lib/route.js'
 
+// Convert an optional (untrusted) `sinceDays` body value into a lower-bound ISO
+// timestamp for the download scan. `undefined` → scan all history; a
+// non-positive or non-finite value is rejected. Pure (nowMs injected) so the
+// validation branch is unit-testable without standing up the admin auth path.
+export function resolveBackfillSince(
+  sinceDays: unknown,
+  nowMs: number,
+): { ok: true; fromIso?: string } | { ok: false; error: string } {
+  if (sinceDays === undefined) return { ok: true }
+  const days = Number(sinceDays)
+  if (!Number.isFinite(days) || days <= 0) {
+    return { ok: false, error: 'sinceDays must be a positive number' }
+  }
+  return { ok: true, fromIso: new Date(nowMs - days * 86_400_000).toISOString() }
+}
+
 export function adminFeedActivationRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
     {
@@ -31,20 +47,14 @@ export function adminFeedActivationRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
 
         const body = (await readJson<{ sinceDays?: unknown }>(req)) ?? {}
-        let fromIso: string | undefined
-        if (body.sinceDays !== undefined) {
-          const days = Number(body.sinceDays)
-          if (!Number.isFinite(days) || days <= 0) {
-            return json(400, { error: 'sinceDays must be a positive number' })
-          }
-          fromIso = new Date(Date.now() - days * 86_400_000).toISOString()
-        }
+        const since = resolveBackfillSince(body.sinceDays, Date.now())
+        if (!since.ok) return json(400, { error: since.error })
 
         try {
           const summary = await runFeedActivationBackfill({
             sql: getDb(env),
             sc: createScV1Client(env),
-            fromIso,
+            fromIso: since.fromIso,
           })
           json(200, summary)
         } catch (err) {

@@ -1,18 +1,21 @@
 // Unit tests for the inbound Supporting Cast webhook at POST /api/sc/webhook.
 //
-// The webhook gates on a query-string secret (`?key=…`), claims event_id in an
-// idempotency ledger, then upserts sc_feed_activations based on the event type
-// (feed.activated / feed.access_revoked). Tests cover:
+// The webhook gates on a query-string secret (`?key=…`), dedupes against an
+// idempotency ledger it READS first and WRITES only after a successful upsert,
+// and upserts sc_feed_activations based on the event type (feed.activated /
+// feed.access_revoked / audio.downloaded). Tests cover:
 //   - 405 on non-POST
 //   - 401 on missing / wrong key
 //   - 500 when SC_WEBHOOK_SECRET unset
 //   - 400 on invalid JSON
 //   - DATABASE_URL absent → 200 received, no DB calls
-//   - feed.activated → activation upsert (activated=true)
+//   - feed.activated → activation upsert (activated=true), ledger written after
 //   - feed.access_revoked → revoke upsert (activated=false)
 //   - incomplete payload (no email / no feed id) → 200 skipped, no writes
-//   - unhandled event type → 200 skipped, ledger claimed but no activation write
-//   - duplicate event_id → 200 deduped, no activation write
+//   - unhandled event type → 200 skipped, no writes (nothing to dedupe later)
+//   - already-recorded event_id → 200 deduped, no activation write
+//   - upsert throws → 500 so SC retries (ledger NOT written); a ledger read
+//     error is non-fatal and processing still happens
 
 import {
   describe,
@@ -27,7 +30,9 @@ import { silenceExpectedConsole } from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Neon mock — captures every tagged-template query. `nextSqlResult` controls
-// what reads (the idempotency INSERT ... RETURNING) return per test.
+// what each query returns per test (keyed off the SQL text), and may throw to
+// simulate a DB error. The idempotency dedupe is a `select 1 from
+// sc_webhook_events`; the ledger write happens after a successful upsert.
 // ---------------------------------------------------------------------------
 type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
@@ -173,15 +178,12 @@ function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
 
 silenceExpectedConsole()
 
-// The idempotency claim is `insert ... on conflict do nothing returning id`.
-// Default: return a row (claim succeeds, first delivery).
-function claimSucceeds(sql: string): unknown[] {
-  return sql.includes('insert into sc_webhook_events') ? [{ id: 'x' }] : []
-}
-
+// Default: the dedupe `select 1 from sc_webhook_events` returns no row (this is
+// a first delivery), and every other query returns []. Tests that need a
+// duplicate stage the SELECT to return a row.
 beforeEach(() => {
   sqlCalls.length = 0
-  nextSqlResult = claimSucceeds
+  nextSqlResult = () => []
 })
 
 // ===========================================================================
@@ -271,6 +273,19 @@ describe('sc webhook event dispatch', () => {
     expect(write!.values).toContain('reader@x.com')
     expect(write!.values).toContain(42)
     expect(write!.values).toContain('2026-07-16T10:00:00Z')
+    // Re-activation clears revoked_at — the "resurrect a lapsed feed" clause.
+    expect(write!.sql).toContain('revoked_at')
+
+    // The ledger is written AFTER the upsert, and after it (ordering matters:
+    // a pre-claim would drop the event on a write failure).
+    const activationIdx = sqlCalls.findIndex((c) =>
+      c.sql.includes('insert into sc_feed_activations'),
+    )
+    const ledgerIdx = sqlCalls.findIndex((c) =>
+      c.sql.includes('insert into sc_webhook_events'),
+    )
+    expect(ledgerIdx).toBeGreaterThan(activationIdx)
+    expect(sqlCalls[ledgerIdx]!.values).toContain('evt_act_1')
   })
 
   test('feed.access_revoked upserts a revoke row (activated=false)', async () => {
@@ -347,7 +362,7 @@ describe('sc webhook event dispatch', () => {
     expect(sqlCalls.some((c) => c.sql.includes('insert into sc_feed_activations'))).toBe(false)
   })
 
-  test('unhandled event type → 200 skipped, ledger claimed but no activation write', async () => {
+  test('unhandled event type → 200 skipped, no writes', async () => {
     const res = makeRes()
     await runHandler(
       buildHandler(),
@@ -363,13 +378,15 @@ describe('sc webhook event dispatch', () => {
     )
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toMatchObject({ skipped: 'unhandled_type' })
-    expect(sqlCalls.some((c) => c.sql.includes('insert into sc_webhook_events'))).toBe(true)
+    // Nothing to reprocess, so no ledger row is written; no activation either.
+    expect(sqlCalls.some((c) => c.sql.includes('insert into sc_webhook_events'))).toBe(false)
     expect(sqlCalls.some((c) => c.sql.includes('insert into sc_feed_activations'))).toBe(false)
   })
 
-  test('duplicate event_id → 200 deduped, no activation write', async () => {
-    // Claim INSERT returns no row → already processed.
-    nextSqlResult = () => []
+  test('already-recorded event_id → 200 deduped, no activation write', async () => {
+    // The dedupe SELECT finds an existing row → already processed.
+    nextSqlResult = (sql) =>
+      sql.includes('select 1 from sc_webhook_events') ? [{ one: 1 }] : []
     const res = makeRes()
     await runHandler(
       buildHandler(),
@@ -451,9 +468,10 @@ describe('sc webhook event dispatch', () => {
     expect(write!.values).toContain(88)
   })
 
-  test('integer event_id is stringified for the ledger and deduped', async () => {
-    // Claim returns no row → treated as already processed.
-    nextSqlResult = () => []
+  test('integer event_id is stringified for the ledger lookup and deduped', async () => {
+    // The dedupe SELECT finds the (stringified) id → already processed.
+    nextSqlResult = (sql) =>
+      sql.includes('select 1 from sc_webhook_events') ? [{ one: 1 }] : []
     const res = makeRes()
     await runHandler(
       buildHandler(),
@@ -469,7 +487,62 @@ describe('sc webhook event dispatch', () => {
     )
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toMatchObject({ deduped: true })
-    const claim = sqlCalls.find((c) => c.sql.includes('insert into sc_webhook_events'))
-    expect(claim!.values).toContain('12345') // string, not number
+    const lookup = sqlCalls.find((c) =>
+      c.sql.includes('select 1 from sc_webhook_events'),
+    )
+    expect(lookup!.values).toContain('12345') // string, not number
+  })
+
+  test('upsert throws → 500 so SC retries, and the ledger is NOT written', async () => {
+    // The activation upsert fails; the dedupe SELECT still returns no row.
+    nextSqlResult = (sql) => {
+      if (sql.includes('insert into sc_feed_activations')) {
+        throw new Error('db unavailable')
+      }
+      return []
+    }
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({
+        body: {
+          event: 'feed.activated',
+          event_id: 'evt_boom',
+          member: { email: 'a@x.com' },
+          feed: { id: 5 },
+        },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(500)
+    expect(res.__json()).toMatchObject({ error: 'webhook_handler_failed' })
+    // Critically: no ledger row, so SC's retry reprocesses rather than dedupes.
+    expect(sqlCalls.some((c) => c.sql.includes('insert into sc_webhook_events'))).toBe(false)
+  })
+
+  test('ledger read error is non-fatal — the event still processes', async () => {
+    // The dedupe SELECT throws; the upsert must still run and return 200.
+    nextSqlResult = (sql) => {
+      if (sql.includes('select 1 from sc_webhook_events')) {
+        throw new Error('read timeout')
+      }
+      return []
+    }
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({
+        body: {
+          event: 'feed.activated',
+          event_id: 'evt_readfail',
+          member: { email: 'a@x.com' },
+          feed: { id: 5 },
+        },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ received: true })
+    expect(sqlCalls.some((c) => c.sql.includes('insert into sc_feed_activations'))).toBe(true)
   })
 })
