@@ -36,6 +36,11 @@ const CARDS = [
     title: "Cancellations",
     body: "See why members cancel — reason breakdown, retention-offer outcomes, and recent survey responses.",
   },
+  {
+    to: "/admin/feed-reminders",
+    title: "Feed reminders",
+    body: "Tune the reminder that nudges members to finish setting up their private feeds — timing, window, and who qualifies.",
+  },
 ];
 
 function AdminHome() {

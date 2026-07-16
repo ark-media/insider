@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/reconcile-entitlements",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/feed-setup-reminders",
+      "schedule": "0 15 * * *"
     }
   ]
 }

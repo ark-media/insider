@@ -12,6 +12,7 @@ import {
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
+import { getActivatedFeeds } from '../lib/feed-activations.js'
 import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import {
@@ -34,6 +35,39 @@ const newsletterPrefsLimiter = createRateLimiter({
   capacity: 10,
   refillPerSec: 1 / 6,
 })
+
+// A feed as returned to the SPA, plus the activation state we mirror from SC's
+// `feed.activated` webhook. `activated` is authoritative once we've seen the
+// webhook; absent (undefined) when we have no record, so the setup hub falls
+// back to its local optimistic marker.
+type EnrichedFeed = ScUserFeed & {
+  activated?: boolean
+  activated_at?: string | null
+}
+
+// Merge persisted activation state onto the SC feeds. Soft-fails: any DB error
+// (or no DATABASE_URL) returns the feeds untouched, so a mirror outage degrades
+// the progress count to the client's optimistic state rather than breaking
+// /api/me.
+async function enrichFeedsWithActivation(
+  env: Deps['env'],
+  email: string,
+  feeds: ScUserFeed[],
+): Promise<EnrichedFeed[]> {
+  if (!env.DATABASE_URL || feeds.length === 0) return feeds
+  try {
+    const activated = await getActivatedFeeds(getDb(env), email)
+    if (activated.size === 0) return feeds
+    return feeds.map((f) =>
+      activated.has(f.id)
+        ? { ...f, activated: true, activated_at: activated.get(f.id) ?? null }
+        : f,
+    )
+  } catch (err) {
+    console.error('[me] feed activation enrich failed:', err)
+    return feeds
+  }
+}
 
 export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
@@ -113,7 +147,8 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
               if ((feedErr as ScError).status !== 404) throw feedErr
               // 404 means no feeds set up yet — treat as empty.
             }
-            return json(200, { email, tier: 'ark-plus-member', feeds })
+            const enriched = await enrichFeedsWithActivation(env, email, feeds)
+            return json(200, { email, tier: 'ark-plus-member', feeds: enriched })
           }
 
           // No SC record. For Auth0 sessions whose JWT isn't claiming

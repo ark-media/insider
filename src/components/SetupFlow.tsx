@@ -11,6 +11,7 @@ import {
 } from "./PlatformIcons";
 import { sendSetupSms, type UserFeed } from "../lib/auth";
 import { trackEvent } from "../lib/analytics";
+import { markFeedSetUp } from "../lib/feedSetup";
 
 type Device = "phone" | "computer";
 
@@ -190,6 +191,7 @@ export function SetupFlow({
       await navigator.clipboard.writeText(feedUrl);
       setCopied(true);
       trackEvent("feed_activated", { app: appKey ?? "unknown", method: "copy" });
+      if (feed) markFeedSetUp(feed.id);
       setTimeout(() => setCopied(false), 2200);
     } catch {
       /* no-op */
@@ -235,6 +237,7 @@ export function SetupFlow({
       if (result.ok) {
         setSmsState("sent");
         trackEvent("feed_activated", { app: appKey ?? "unknown", method: "sms" });
+        if (feed) markFeedSetUp(feed.id);
       } else {
         setSmsState("error");
         setSmsError(result.error ?? "Could not send SMS.");
@@ -444,12 +447,13 @@ export function SetupFlow({
                     href={selectedAppUrl || feedUrl}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={() =>
+                    onClick={() => {
                       trackEvent("feed_activated", {
                         app: selectedApp.key,
                         method: "open",
-                      })
-                    }
+                      });
+                      if (feed) markFeedSetUp(feed.id);
+                    }}
                     className="group inline-flex items-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   >
                     {selectedApp.ctaLabel}

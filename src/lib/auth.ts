@@ -11,6 +11,11 @@ export type UserFeed = {
   description?: string;
   image_url?: string;
   apps?: FeedApp[];
+  // Authoritative activation state, set once the server captures Supporting
+  // Cast's `feed.activated` webhook. Undefined until that endpoint ships — the
+  // setup hub falls back to the local optimistic record (see lib/feedSetup).
+  activated?: boolean;
+  activated_at?: string | null;
 };
 
 import type { RetentionOffer } from "../../shared/retention";

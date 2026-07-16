@@ -78,6 +78,9 @@ interface EventMap {
   // hand-off action (open deep link / copy URL / text themselves the link).
   feed_app_selected: { app: string }
   feed_activated: { app: string; method: 'open' | 'copy' | 'sms' }
+  // The one-click path: linking Spotify once follows every private feed in the
+  // network. `feed_count` is how many feeds that link covers.
+  feed_spotify_linked: { feed_count: number }
   // Hand-off to Circle's own paid signup — the last thing we can measure before
   // the funnel leaves our domain.
   circle_join_clicked: void

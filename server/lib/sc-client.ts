@@ -22,19 +22,16 @@ export type ScUserFeed = {
   apps?: Array<{ app: string; name: string; url: string }>
 }
 
-export function createScClient(env: Env) {
-  const networkId = env.SC_NETWORK_ID
-  const apiKey = env.SC_API_KEY
-  if (!networkId || !apiKey) {
-    throw new Error('SC_NETWORK_ID and SC_API_KEY must be set in .env')
-  }
-  const base = `https://api.supportingcast.fm/v2/${networkId}`
+// Shared request builder for both API versions. `base` differs (v2 embeds the
+// network id in the path; v1 scopes by API key), but the auth, JSON handling,
+// and error shape are identical.
+function buildScCall(base: string, apiKey: string) {
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
     Accept: 'application/json',
   }
-  const call = async <T = unknown>(
+  return async <T = unknown>(
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
@@ -63,10 +60,69 @@ export function createScClient(env: Env) {
     }
     return data as T
   }
-  return { call }
+}
+
+export function createScClient(env: Env) {
+  const networkId = env.SC_NETWORK_ID
+  const apiKey = env.SC_API_KEY
+  if (!networkId || !apiKey) {
+    throw new Error('SC_NETWORK_ID and SC_API_KEY must be set in .env')
+  }
+  return { call: buildScCall(`https://api.supportingcast.fm/v2/${networkId}`, apiKey) }
 }
 
 export type ScClient = ReturnType<typeof createScClient>
+
+// The v1 API (memberships, downloads) is scoped by the API key alone — no
+// network id in the path. Used by the reminder cron to page through the whole
+// membership roster (both checkout-provisioned and bulk-migrated members).
+export function createScV1Client(env: Env) {
+  const apiKey = env.SC_API_KEY
+  if (!apiKey) throw new Error('SC_API_KEY must be set in .env')
+  return { call: buildScCall('https://api.supportingcast.fm/v1', apiKey) }
+}
+
+export type ScV1Client = ReturnType<typeof createScV1Client>
+
+// A v1 membership. `joined` is the signup timestamp (the reminder clock);
+// `feeds` is populated only when the list is fetched with include_feeds=true.
+export type ScMembership = {
+  id: number
+  user_id: number
+  email: string
+  first_name?: string
+  last_name?: string
+  status?: string
+  joined?: string
+  feeds?: ScUserFeed[]
+}
+
+type MembershipPage = {
+  data?: ScMembership[]
+  current_page?: number
+  last_page?: number
+}
+
+// Page through GET /v1/memberships with feeds embedded, returning every
+// membership. Bounded by MAX_PAGES as a runaway guard; 500/page is SC's max.
+export async function loadAllMemberships(
+  sc: ScV1Client,
+): Promise<ScMembership[]> {
+  const all: ScMembership[] = []
+  const MAX_PAGES = 200
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await sc.call<MembershipPage>(
+      'GET',
+      `/memberships?include_feeds=true&page=${page}&max_page_size=500`,
+    )
+    const data = res.data ?? []
+    all.push(...data)
+    const last = res.last_page ?? page
+    const current = res.current_page ?? page
+    if (data.length === 0 || current >= last) break
+  }
+  return all
+}
 
 export async function findScUserByEmail(
   sc: ScClient,

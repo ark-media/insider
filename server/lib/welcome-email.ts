@@ -21,6 +21,9 @@ const GIFT_LABEL: Record<GiftTerm, string> = {
 const NAVY_900 = '#070b22'
 const NAVY_800 = '#101736'
 const CYAN = '#3eb5f9'
+// Exported for other emails (e.g. the feed-setup reminder) that reuse the
+// shell and need the brand cyan for inline links.
+export const BRAND_CYAN = CYAN
 const RULE = 'rgba(255,255,255,0.12)'
 const FG = 'rgba(255,255,255,0.85)'
 const FG_MUTED = 'rgba(255,255,255,0.62)'
@@ -51,7 +54,7 @@ type ShellParams = {
   footerHtml: string
 }
 
-function renderShell(p: ShellParams): string {
+export function renderShell(p: ShellParams): string {
   const messageBlock = p.messageBlockHtml ?? ''
   return `<!doctype html>
 <html>

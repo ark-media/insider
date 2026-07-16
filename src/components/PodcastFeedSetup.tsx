@@ -1,11 +1,11 @@
-import { FeedPicker } from "./FeedPicker";
+import { FeedSetupHub } from "./FeedSetupHub";
 import { SetupFlow } from "./SetupFlow";
 import type { Me } from "../lib/auth";
 
-// Decides what the podcast-feed surface shows. With a single feed (or none) we
-// go straight into the setup flow. With several, we show the cover-art picker
-// first; picking one carries its id in the `feed` search param so the setup
-// flow can render that show, with a link back to the picker.
+// Decides what the podcast-feed surface shows. The landing view is always the
+// setup hub — the Spotify one-click path plus every show listed with its setup
+// status. Picking a show carries its id in the `feed` search param and drops
+// into that feed's per-app SetupFlow, with a link back to the hub.
 export function PodcastFeedSetup({
   me,
   feedParam,
@@ -22,12 +22,9 @@ export function PodcastFeedSetup({
     ? feeds.find((f) => f.id === feedParam)
     : undefined;
 
-  if (feeds.length > 1 && !selected) {
-    return <FeedPicker feeds={feeds} onSelect={onSelectFeed} />;
+  if (!selected) {
+    return <FeedSetupHub feeds={feeds} onSelect={onSelectFeed} />;
   }
 
-  const feed = selected ?? feeds[0] ?? null;
-  return (
-    <SetupFlow feed={feed} onBack={feeds.length > 1 ? onClearFeed : undefined} />
-  );
+  return <SetupFlow feed={selected} onBack={onClearFeed} />;
 }

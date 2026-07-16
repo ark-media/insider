@@ -13,9 +13,11 @@ import type {
   CancellationSummary,
 } from "../../shared/cancellation";
 import type { NewsletterSlug } from "../data/newsletters";
+import type { ReminderConfig } from "../../shared/feed-reminder";
 
 export type { Promo, BeehiivDraft, DiscussThread };
 export type { CancellationSummary, CancellationFilter };
+export type { ReminderConfig };
 
 // Kept as a thin indirection so call sites stay uniform; the session now
 // rides the cookie, so this only forwards any extra headers (e.g. content-type).
@@ -294,6 +296,30 @@ export async function deletePromo(id: string): Promise<void> {
     credentials: "include",
   });
   if (!res.ok) throw new Error(await errorMessage(res));
+}
+
+// --- Feed-setup reminders ------------------------------------------------
+
+export async function fetchReminderConfig(): Promise<ReminderConfig> {
+  const res = await fetch("/api/admin/feed-reminders", {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { config: ReminderConfig }).config;
+}
+
+export async function saveReminderConfig(
+  config: ReminderConfig,
+): Promise<ReminderConfig> {
+  const res = await fetch("/api/admin/feed-reminders", {
+    method: "PUT",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { config: ReminderConfig }).config;
 }
 
 // --- Discuss threads -----------------------------------------------------

@@ -163,10 +163,10 @@ export function PublicMasthead() {
   // visible — hiding it would yank the open panel (which lives inside <header>)
   // off-screen. rAF-throttled; a small threshold ignores scroll jitter.
   useEffect(() => {
-    if (mobileOpen || accountOpen) {
-      setHidden(false);
-      return;
-    }
+    // While a menu is open the masthead is force-shown at render (see
+    // `effectiveHidden`), so there's nothing to track — skip the scroll
+    // listener entirely.
+    if (mobileOpen || accountOpen) return;
     let ticking = false;
     const threshold = 8;
     const update = () => {
@@ -256,11 +256,16 @@ export function PublicMasthead() {
     };
   }, [mobileOpen]);
 
+  // An open menu lives inside <header>, so the masthead must stay visible while
+  // one is open — otherwise hiding it would yank the panel off-screen. Derive
+  // that here rather than forcing state from an effect.
+  const effectiveHidden = hidden && !mobileOpen && !accountOpen;
+
   return (
     <header
       ref={headerRef}
       className={`sticky top-[var(--ann-height,0px)] z-20 border-b border-rule-soft bg-navy-900 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform motion-reduce:transition-none ${
-        hidden ? "max-sm:-translate-y-full" : "translate-y-0"
+        effectiveHidden ? "max-sm:-translate-y-full" : "translate-y-0"
       }`}
     >
       <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 pt-6 pb-4 sm:px-10 sm:pt-8">

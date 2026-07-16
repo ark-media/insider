@@ -19,6 +19,7 @@ import { createActivator } from './lib/activation.js'
 import type { Deps, Env, Handler, Route } from './lib/route.js'
 import { PayloadTooLargeError } from './lib/http.js'
 import { adminRoutes } from './routes/admin.js'
+import { adminFeedReminderRoutes } from './routes/admin-feed-reminders.js'
 import { announcementRoutes } from './routes/announcements.js'
 import { authRoutes } from './routes/auth.js'
 import { beehiivRoutes } from './routes/beehiiv.js'
@@ -32,6 +33,7 @@ import { giftRoutes } from './routes/gift.js'
 import { meRoutes } from './routes/me.js'
 import { pricingRoutes } from './routes/pricing.js'
 import { promoRoutes } from './routes/promo.js'
+import { scWebhookRoutes } from './routes/sc-webhook.js'
 import { simplecastRoutes } from './routes/simplecast.js'
 import { smsRoutes } from './routes/sms.js'
 import { stripeRoutes } from './routes/stripe.js'
@@ -57,6 +59,7 @@ function buildApi(env: Env): Api {
     ...pricingRoutes(deps),
     ...promoRoutes(deps),
     ...smsRoutes(deps),
+    ...scWebhookRoutes(deps),
     ...stripeRoutes(deps),
     ...giftRoutes(deps),
     ...authRoutes(deps),
@@ -64,6 +67,7 @@ function buildApi(env: Env): Api {
     ...careerRoutes(deps),
     ...faqRoutes(deps),
     ...adminRoutes(deps),
+    ...adminFeedReminderRoutes(deps),
     ...discussThreadsRoutes(deps),
     ...contactRoutes(deps),
     ...cronRoutes(deps),
