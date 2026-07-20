@@ -282,6 +282,143 @@ async function setCircleAccessGroup(
   return 'ok'
 }
 
+// Grant the Circle axis directly (used by the activation grant path). Kept as a
+// thin re-export of the axis writer so callers outside this module don't reach
+// into the private helper. `false` revokes.
+export function syncCircleAccess(
+  env: Env,
+  email: string,
+  wantCircle: boolean,
+): Promise<'ok' | 'no-member' | 'skipped'> {
+  return setCircleAccessGroup(env, email, wantCircle)
+}
+
+// The custom profile-field key on the Circle member that we stamp with the
+// Auth0 `sub` at provisioning time. The reconciler (task 15) projects the
+// access-group roster's community_member_id → auth0_sub through this field
+// (sso_provider_user_id is still NULL pre-SSO), so the two must name the same
+// field. Overridable via env for whatever the field is actually keyed as in the
+// Circle admin. See tasks/entitlement-tiers.md §3 + §7 #9 (verify once wired).
+export function circleAuth0SubField(env: Env): string {
+  return env.CIRCLE_AUTH0_SUB_FIELD_KEY || 'auth0_sub'
+}
+
+export type CircleProvisionStatus = 'ok' | 'skipped' | 'error'
+
+// Create (or find) the Circle community member for this buyer at pay time —
+// BEFORE their first Circle SSO — so adding them to the access group can't 404
+// (§3, task 4) and app login works immediately. Then stamp the Auth0 `sub` into
+// the reconciler's join field and add them to the subscriber access group.
+//
+// Idempotent and soft per step: a duplicate create, an already-in-group add, or
+// a field-stamp hiccup must not fail provisioning of the paid product. Returns
+// 'skipped' when Circle isn't configured, 'error' when the member couldn't be
+// ensured (so the caller can flag it), 'ok' otherwise.
+//
+// The exact Circle Admin v2 create + custom-field shapes are pending empirical
+// verification (§7 #9) — both writes are wrapped so an unexpected shape logs and
+// degrades rather than throwing through provisioning.
+export async function provisionCircleMember(
+  env: Env,
+  email: string,
+  name: string | undefined,
+  auth0Sub: string | null,
+): Promise<CircleProvisionStatus> {
+  const apiToken = env.CIRCLE_API_TOKEN
+  const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
+  if (!apiToken || !accessGroupId) return 'skipped'
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    'Content-Type': 'application/json',
+  }
+
+  let memberId: number | null
+  try {
+    memberId = await ensureCircleMember(headers, email, name)
+  } catch (err) {
+    console.error(`[circle] ensure member failed for ${redactEmail(email)}:`, err)
+    return 'error'
+  }
+
+  if (auth0Sub && memberId != null) {
+    try {
+      await stampCircleAuth0Sub(headers, memberId, circleAuth0SubField(env), auth0Sub)
+    } catch (err) {
+      console.error('[circle] auth0_sub field stamp failed:', err)
+    }
+  }
+
+  try {
+    await setCircleAccessGroup(env, email, true)
+  } catch (err) {
+    console.error(`[circle] access-group add failed for ${redactEmail(email)}:`, err)
+    return 'error'
+  }
+  return 'ok'
+}
+
+// POST /community_members to create the member; a duplicate (Circle answers 409
+// or 422 for an existing email) is treated as success. Returns the member id
+// when Circle hands one back — on create or by a follow-up email lookup — so the
+// caller can stamp the custom field; null when it can't be resolved (the add-to-
+// group step still works off email, and the reconciler can re-stamp later).
+async function ensureCircleMember(
+  headers: Record<string, string>,
+  email: string,
+  name: string | undefined,
+): Promise<number | null> {
+  const res = await fetch(`${CIRCLE_API}/community_members`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(name ? { email, name } : { email }),
+  })
+  if (res.ok) {
+    const body = (await res.json().catch(() => null)) as
+      | { id?: number; community_member_id?: number }
+      | null
+    return body?.community_member_id ?? body?.id ?? null
+  }
+  // 409 / 422 → already a member. Resolve the id by email so we can still stamp.
+  if (res.status === 409 || res.status === 422) {
+    return findCircleMemberIdByEmail(headers, email)
+  }
+  throw new Error(`Circle member create ${res.status}: ${await res.text()}`)
+}
+
+async function findCircleMemberIdByEmail(
+  headers: Record<string, string>,
+  email: string,
+): Promise<number | null> {
+  const res = await fetch(
+    `${CIRCLE_API}/community_members/search?email=${encodeURIComponent(email)}`,
+    { headers },
+  )
+  if (!res.ok) return null
+  const body = (await res.json().catch(() => null)) as
+    | { records?: Array<{ id?: number }>; id?: number }
+    | null
+  return body?.records?.[0]?.id ?? body?.id ?? null
+}
+
+// Write the Auth0 `sub` onto the member's custom profile field. Isolated so the
+// (unverified) endpoint shape lives in one place. Throws on a non-2xx so the
+// caller's try/catch can log-and-continue.
+async function stampCircleAuth0Sub(
+  headers: Record<string, string>,
+  memberId: number,
+  fieldKey: string,
+  auth0Sub: string,
+): Promise<void> {
+  const res = await fetch(`${CIRCLE_API}/community_members/${memberId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ profile_fields: { [fieldKey]: auth0Sub } }),
+  })
+  if (!res.ok) {
+    throw new Error(`Circle profile-field PUT ${res.status}: ${await res.text()}`)
+  }
+}
+
 // --- Stripe customer → email ------------------------------------------------
 
 export async function emailForStripeCustomer(

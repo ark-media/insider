@@ -212,3 +212,41 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
   })
   return { subject: 'Welcome to Ark+', html }
 }
+
+// ---------------------------------------------------------------------------
+// Circle-only member (community access, no private feed)
+// ---------------------------------------------------------------------------
+
+export type CircleWelcomeEmailParams = {
+  name?: string
+  welcomeUrl: string
+  // Present only for brand-new accounts: an Auth0 password-change ticket URL.
+  passwordSetupUrl?: string
+}
+
+// A Circle-only membership grants the community, not the private podcast feed —
+// so this copy is community-first and drops the feed-setup language. The CTA
+// still routes brand-new accounts through set-password before the community.
+export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
+  subject: string
+  html: string
+} {
+  const first = firstName(p.name)
+  const isNewAccount = Boolean(p.passwordSetupUrl)
+  const html = renderShell({
+    preheader: 'Your Ark community membership is active.',
+    eyebrow: "You're in",
+    headlineHtml: 'Welcome to the Ark community.',
+    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    bodyHtml:
+      'Your community membership is active — join the conversation, member Q&amp;As, and events in the Ark community on Circle.',
+    footerHtml:
+      'Manage your membership anytime from your account. Need help? Just reply to this email.',
+    ctaHref: isNewAccount ? p.passwordSetupUrl! : p.welcomeUrl,
+    ctaLabel: isNewAccount ? 'Set your password' : 'Enter the community',
+    ctaFollowupHtml: isNewAccount
+      ? `Once you've set a password, you'll enter the community from <a href="${p.welcomeUrl}" style="color:${BRAND_CYAN};">your welcome page</a>.`
+      : `You already have an Ark login — sign in to enter the community from <a href="${p.welcomeUrl}" style="color:${BRAND_CYAN};">your welcome page</a>.`,
+  })
+  return { subject: 'Welcome to the Ark community', html }
+}
