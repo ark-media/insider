@@ -56,14 +56,28 @@ class FakeStripe {
     retrieve: async () => ({}),
   }
   prices = {
-    // getPlanPriceCents resolves the base amount by lookup_key (ark_plus_*).
-    // 599¢ monthly, 5999¢ yearly — only the magnitude matters here, the route
-    // reads unit_amount to compare against any custom_amount_cents.
+    // resolveCatalogPrice resolves the price by lookup_key, reading unit_amount
+    // (the USD floor) plus currency_options for the other supported currencies
+    // and the product id (for PWYC inline price_data). 800¢ monthly, 8000¢
+    // yearly — same-numeral floors across currencies, matching the catalog.
     list: async (args: { lookup_keys?: string[] }) => {
       stripeCalls.push({ method: 'prices.list', args: [args] })
       const key = args.lookup_keys?.[0] ?? ''
+      const base = key.includes('monthly') ? 800 : 8000
       return {
-        data: [{ id: `price_${key}`, unit_amount: key.includes('monthly') ? 599 : 5999, currency: 'usd' }],
+        data: [
+          {
+            id: `price_${key}`,
+            product: `prod_${key.replace(/_(monthly|yearly)$/, '')}`,
+            unit_amount: base,
+            currency: 'usd',
+            currency_options: {
+              gbp: { unit_amount: base },
+              eur: { unit_amount: base },
+              cad: { unit_amount: base },
+            },
+          },
+        ],
       }
     },
     create: async (args: unknown) => {
@@ -114,15 +128,13 @@ type Middleware = (
   next: (err?: unknown) => void,
 ) => void
 
-// Fixed price ids so we don't trigger prices.create on the default-amount
-// path (the route reuses STRIPE_PRICE_MONTHLY/YEARLY when amount matches
-// default).
+// The catalog price is resolved by lookup_key (no STRIPE_PRICE_* env vars — task
+// 8 removed them); the exact-floor path uses that price, a PWYC uplift uses
+// inline price_data.
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
-  STRIPE_PRICE_MONTHLY: 'price_monthly',
-  STRIPE_PRICE_YEARLY: 'price_yearly',
 }
 
 function getHandler(path: string): Middleware {
@@ -371,20 +383,114 @@ describe('POST /api/stripe/create-checkout-session — session shape', () => {
     expect(args.customer_update).toEqual({ address: 'auto' })
   })
 
-  test('dynamic (name-your-price) Price is created with exclusive tax behavior', async () => {
-    // A custom amount above the default forces prices.create (the fixed
-    // STRIPE_PRICE_* path is skipped), which must carry tax_behavior or Stripe
-    // rejects it under automatic tax.
+  test('exact-floor amount uses the catalog price (no inline price_data)', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
+    const args = lastSessionCreateArgs()
+    const lineItems = args.line_items as Array<Record<string, unknown>>
+    expect(lineItems[0].price).toBe('price_ark_plus_monthly')
+    expect(lineItems[0].price_data).toBeUndefined()
+  })
+
+  test('PWYC uplift uses inline price_data on the catalog product, exclusive tax', async () => {
+    // A custom amount above the floor uses inline price_data (not product_data,
+    // which would mint a new Product) on the persistent catalog product. It must
+    // carry tax_behavior or Stripe rejects it under automatic tax.
     const res = await post({
       email: 'a@b.co',
       plan: 'monthly',
       custom_amount_cents: 1500,
     })
     expect(res.statusCode).toBe(200)
-    const priceCall = stripeCalls.find((c) => c.method === 'prices.create')
-    expect(priceCall).toBeTruthy()
-    const priceArgs = priceCall!.args[0] as Record<string, unknown>
-    expect(priceArgs.tax_behavior).toBe('exclusive')
+    // No standalone Price object is created — the amount rides inline.
+    expect(stripeCalls.find((c) => c.method === 'prices.create')).toBeUndefined()
+    const args = lastSessionCreateArgs()
+    const lineItems = args.line_items as Array<Record<string, unknown>>
+    const priceData = lineItems[0].price_data as Record<string, unknown>
+    expect(priceData.unit_amount).toBe(1500)
+    expect(priceData.product).toBe('prod_ark_plus')
+    expect(priceData.currency).toBe('usd')
+    expect(priceData.tax_behavior).toBe('exclusive')
+  })
+
+  test('does not enable Adaptive Pricing (currency_options is incompatible)', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().adaptive_pricing).toBeUndefined()
+  })
+
+  test('custom amount below the floor is rejected', async () => {
+    const res = await post({
+      email: 'a@b.co',
+      plan: 'monthly',
+      custom_amount_cents: 500, // floor is 800
+    })
+    expect(res.statusCode).toBe(400)
+  })
+})
+
+describe('POST /api/stripe/create-checkout-session — tier + currency', () => {
+  test('tier defaults to ark-plus and resolves its lookup_key', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'yearly' })
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as Record<string, unknown>).tier).toBe('ark-plus')
+    const lineItems = lastSessionCreateArgs().line_items as Array<Record<string, unknown>>
+    expect(lineItems[0].price).toBe('price_ark_plus_yearly')
+  })
+
+  test('tier=bundle resolves the bundle price', async () => {
+    const res = await post({ email: 'bundle@b.co', plan: 'yearly', tier: 'bundle' })
+    expect(res.statusCode).toBe(200)
+    const lineItems = lastSessionCreateArgs().line_items as Array<Record<string, unknown>>
+    expect(lineItems[0].price).toBe('price_bundle_yearly')
+  })
+
+  test('an unknown tier falls back to ark-plus', async () => {
+    const res = await post({ email: 'x@b.co', plan: 'yearly', tier: 'platinum' })
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as Record<string, unknown>).tier).toBe('ark-plus')
+  })
+
+  test('supported currency is passed to the session; PWYC validates its floor', async () => {
+    const res = await post({
+      email: 'gb@b.co',
+      plan: 'monthly',
+      currency: 'gbp',
+      custom_amount_cents: 900,
+    })
+    expect(res.statusCode).toBe(200)
+    const args = lastSessionCreateArgs()
+    expect(args.currency).toBe('gbp')
+    const priceData = (args.line_items as Array<Record<string, unknown>>)[0]
+      .price_data as Record<string, unknown>
+    expect(priceData.currency).toBe('gbp')
+    expect(priceData.unit_amount).toBe(900)
+  })
+
+  test('unsupported currency falls back to USD', async () => {
+    const res = await post({ email: 'jp@b.co', plan: 'monthly', currency: 'jpy' })
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().currency).toBe('usd')
+    expect((res.__json() as Record<string, unknown>).currency).toBe('usd')
+  })
+})
+
+describe('POST /api/stripe/create-checkout-session — single-active-subscription guard', () => {
+  test('409 when the email already holds a live subscription', async () => {
+    existingCustomers = [{ id: 'cus_live', email: 'member@b.co' }]
+    subsByCustomer = { cus_live: [{ id: 'sub_live', status: 'active' }] }
+    const res = await post({ email: 'member@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(409)
+    expect((res.__json() as Record<string, unknown>).code).toBe('already_subscribed')
+    // Never reached session creation.
+    expect(stripeCalls.find((c) => c.method === 'checkout.sessions.create')).toBeUndefined()
+  })
+
+  test('a canceled/incomplete sub does not block a new checkout', async () => {
+    existingCustomers = [{ id: 'cus_old', email: 'churned@b.co' }]
+    subsByCustomer = { cus_old: [{ id: 'sub_old', status: 'canceled' }] }
+    const res = await post({ email: 'churned@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
   })
 })
 

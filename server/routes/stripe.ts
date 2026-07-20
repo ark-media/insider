@@ -1,11 +1,11 @@
 // Stripe checkout + webhook routes.
 //
 //   POST /api/stripe/create-checkout-session — create a subscription-mode
-//     Checkout Session (ui_mode: 'elements') with Adaptive Pricing enabled,
-//     so the SPA can render Stripe's Payment + Currency Selector Elements and
-//     charge the buyer in their detected local currency. We use the Checkout
-//     Sessions API (not a bare Subscription) specifically because Adaptive
-//     Pricing is only available through Checkout Sessions.
+//     Checkout Session (ui_mode: 'elements') for one of the three tiers
+//     (Ark+ / Circle / Bundle) at a per-currency floor or a PWYC uplift. Charges
+//     an explicit currency from the catalog price's `currency_options` (which
+//     replaced Adaptive Pricing — the two are mutually exclusive). A single-
+//     active-subscription guard blocks a second, row-clobbering sub.
 //   POST /api/stripe/cancel-subscription   — cancel at period end.
 //   POST /api/stripe/reactivate-subscription — undo a pending cancel.
 //   GET  /api/stripe/subscription-status   — poll for activation after
@@ -29,7 +29,12 @@ import {
 } from '../../shared/cancellation.js'
 import { createScClient } from '../lib/sc-client.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
-import { FOUNDING_MULTIPLE, getPlanPriceCents, type Plan } from '../lib/pricing.js'
+import {
+  isSupportedCurrency,
+  resolveCatalogPrice,
+  type Plan,
+  type PricedTier,
+} from '../lib/pricing.js'
 import { isSameOrigin, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getSessionEmail } from '../lib/session.js'
@@ -98,6 +103,56 @@ async function findActiveSubscription(
   return null
 }
 
+// Statuses that count as a live membership for the single-active-subscription
+// guard (§8 risk 1). `incomplete`/`incomplete_expired` are excluded: those are a
+// buyer's own not-yet-paid attempt, which must not block them from retrying.
+const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+])
+
+// Does this email already hold a live subscription (any tier)? A second one
+// would mint a second sub whose webhook overwrites the one-row membership and
+// runs scDelete on the still-paid feed. Scans every customer for the email.
+async function findLiveSubscription(
+  stripe: Stripe,
+  email: string,
+): Promise<Stripe.Subscription | null> {
+  const customers = await stripe.customers.list({ email, limit: 100 })
+  const subLists = await Promise.all(
+    customers.data.map((customer) =>
+      stripe.subscriptions.list({ customer: customer.id, status: 'all', limit: 100 }),
+    ),
+  )
+  for (const subs of subLists) {
+    for (const sub of subs.data) {
+      if (LIVE_SUB_STATUSES.has(sub.status)) return sub
+    }
+  }
+  return null
+}
+
+// A PricedTier from untrusted input, defaulting to Ark+ (the only tier the
+// pre-task-13 client offers). `free` is not sellable.
+function coerceTier(raw: unknown): PricedTier {
+  return raw === 'circle' || raw === 'bundle' || raw === 'ark-plus' ? raw : 'ark-plus'
+}
+
+// Minor units → a human currency string for the floor error message
+// (800, 'usd' → "$8.00"). Falls back to a bare number if Intl rejects the code.
+function formatMinor(cents: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+    }).format(cents / 100)
+  } catch {
+    return `${cents / 100} ${currency.toUpperCase()}`
+  }
+}
+
 // The plan a subscription bills on, from its recurring interval, so the cancel
 // save flow can offer a plan-targeted retention coupon. Null when the interval
 // isn't month/year (or the sub has no items) — the picker then offers only
@@ -120,10 +175,6 @@ function periodEndIso(sub: Stripe.Subscription): string | null {
 }
 
 export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
-  // Stripe price cache — keyed by `${plan}-${amountCents}` to avoid creating
-  // a fresh Price object on every pay-what-you-want checkout.
-  const priceCache = new Map<string, string>()
-
   // Per-email cap on Checkout Session creation. Mirrors the gift flow: a
   // scripted caller can't produce thousands of zombie Sessions / Customer
   // rows. Small enough to catch abuse and large enough that a real buyer
@@ -146,6 +197,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             email?: string
             name?: string
             plan?: 'monthly' | 'yearly'
+            tier?: string
+            currency?: string
             custom_amount_cents?: number
           }>(req)) ?? {}
 
@@ -175,22 +228,46 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             error: 'Too many checkout attempts. Please wait a moment and try again.',
           })
         }
+
         const plan = body.plan
         const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
-        // Checkout still sells only Ark+ here; task 8 makes it per-tier.
-        const defaultCents = await getPlanPriceCents(stripe, 'ark-plus', plan)
+        const tier = coerceTier(body.tier)
 
-        // The "name your price" amount is entered in USD — the source currency
-        // Adaptive Pricing converts from. The buyer sees and pays the localized
-        // equivalent at checkout.
-        let amountCents = defaultCents
+        // Explicit charge currency (per-currency floors replaced Adaptive
+        // Pricing, which currency_options disables). The client selects/detects
+        // the currency and sends the PWYC amount in it; anything unsupported
+        // (and the not-yet-currency-aware client) falls back to USD. Server-side
+        // geo-detection of the *default* belongs to the currency-aware client
+        // (task 13), which enters the amount in the displayed currency.
+        const requestedCurrency = (body.currency ?? '').toLowerCase()
+        const currency = isSupportedCurrency(requestedCurrency) ? requestedCurrency : 'usd'
+
+        // Single-active-subscription guard (§8 risk 1). Until the in-place
+        // tier-switch flow (task 14), a member with a live sub is sent to
+        // account management rather than allowed to mint a second, row-clobbering
+        // subscription.
+        const existing = await findLiveSubscription(stripe, email)
+        if (existing) {
+          return json(409, {
+            error:
+              'You already have an active membership. Manage or change your plan from your account.',
+            code: 'already_subscribed',
+          })
+        }
+
+        // Per-currency floor for this tier+plan from the catalog price's
+        // currency_options. PWYC lets the buyer pay more, never less.
+        const catalog = await resolveCatalogPrice(stripe, tier, plan)
+        const floor = catalog.floors[currency]
+
+        let amountCents = floor
         if (
           typeof body.custom_amount_cents === 'number' &&
           Number.isFinite(body.custom_amount_cents)
         ) {
-          if (body.custom_amount_cents < defaultCents) {
+          if (body.custom_amount_cents < floor) {
             return json(400, {
-              error: `Custom amount must be at least $${defaultCents / 100}.`,
+              error: `Amount must be at least ${formatMinor(floor, currency)}.`,
             })
           }
           if (body.custom_amount_cents > 1_000_000) {
@@ -199,46 +276,39 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           amountCents = Math.round(body.custom_amount_cents)
         }
 
-        // Resolve price. Prefer the configured fixed price, else reuse a
-        // cached dynamic one, else create + cache a new one. Always USD — the
-        // source currency Adaptive Pricing converts from per buyer.
-        const fixedPriceId =
-          plan === 'monthly' ? env.STRIPE_PRICE_MONTHLY : env.STRIPE_PRICE_YEARLY
-        let priceId: string
-        if (amountCents === defaultCents && fixedPriceId) {
-          priceId = fixedPriceId
-        } else {
-          const cacheKey = `${plan}-${amountCents}`
-          const cached = priceCache.get(cacheKey)
-          if (cached) {
-            priceId = cached
-          } else {
-            const price = await stripe.prices.create({
-              currency: 'usd',
-              unit_amount: amountCents,
-              recurring: { interval },
-              // Exclusive: the USD amount above is pre-tax and Stripe Tax adds
-              // tax on top at checkout. Required once automatic_tax is on — a
-              // price with no tax_behavior errors under automatic tax. The fixed
-              // STRIPE_PRICE_* prices carry this via their Dashboard config.
-              tax_behavior: 'exclusive',
-              product_data: {
-                name: `Ark Insider — ${plan === 'monthly' ? 'Monthly' : 'Yearly'}`,
-              },
-            })
-            priceId = price.id
-            priceCache.set(cacheKey, priceId)
-          }
-        }
+        // Line item: the catalog price for the exact floor (it carries the
+        // currency_options the session's `currency` selects), else inline
+        // price_data on the catalog PRODUCT for a PWYC uplift. price_data (not
+        // product_data) reuses the persistent product — product_data mints a new
+        // Product every call, the cause of the sandbox sprawl (§4).
+        const lineItem: Stripe.Checkout.SessionCreateParams.LineItem =
+          amountCents === floor
+            ? { price: catalog.priceId, quantity: 1 }
+            : {
+                price_data: {
+                  currency,
+                  product: catalog.productId,
+                  unit_amount: amountCents,
+                  recurring: { interval },
+                  // Exclusive: the amount is pre-tax; Stripe Tax adds tax on top.
+                  // Required once automatic_tax is on.
+                  tax_behavior: 'exclusive',
+                },
+                quantity: 1,
+              }
 
-        // Auto-apply the best active promo for this plan. Discovered fresh from
-        // Stripe (the source of truth) — the client never influences the
-        // discount. Ranked against the USD source amount; Adaptive Pricing then
-        // converts the discounted total. The discount is optional, so a lookup
-        // failure must never block checkout: log and charge full price.
+        // Auto-apply the best active promo for this plan, ranked in the charge
+        // currency (a foreign-currency amount_off coupon can't apply). Discovered
+        // fresh from Stripe — the client never influences the discount. Optional,
+        // so a lookup failure must never block checkout: log and charge full.
         let discountCoupon: string | null = null
         try {
-          const best = pickBestCoupon(await listActiveCoupons(stripe), plan, amountCents)
+          const best = pickBestCoupon(
+            await listActiveCoupons(stripe),
+            plan,
+            amountCents,
+            currency,
+          )
           if (best) discountCoupon = best.id
         } catch (err) {
           console.error('[stripe] promo lookup failed; charging full price:', err)
@@ -246,11 +316,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         // Find-or-reuse a customer so we never mint duplicates for the same
         // email (and so the resulting subscription's customer always has an
-        // email — see the comment above). Checkout has historically created
-        // a Customer per Session, so one email can map to several customers
-        // (churn-then-resubscribe). Prefer one without an active subscription
-        // so the new sub doesn't end up doubled up on a customer that
-        // already has one.
+        // email). Checkout has historically created a Customer per Session, so
+        // one email can map to several (churn-then-resubscribe).
         const customer = await findOrCreateSubscriber(stripe, {
           email,
           name: body.name,
@@ -260,38 +327,29 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           mode: 'subscription',
           ui_mode: 'elements',
           customer: customer.id,
-          line_items: [{ price: priceId, quantity: 1 }],
-          // Adaptive Pricing: Stripe detects the buyer's country from their IP
-          // and presents/charges in their local currency, with the USD price
-          // above as the source. Requires the account-level setting in the
-          // Stripe Dashboard (Settings → Adaptive Pricing) — this flag is inert
-          // until that is enabled.
-          adaptive_pricing: { enabled: true },
+          // Selects which currency_options amount the catalog price charges (and
+          // must match the inline price_data currency on the PWYC path).
+          currency,
+          line_items: [lineItem],
           // Stripe Tax: compute and add tax on top of the (exclusive) price.
           // For Checkout Sessions this also enables automatic_tax on the
-          // subscription Checkout creates — no separate subscriptions.create.
-          // Requires Stripe Tax to be active with registrations in the
-          // Dashboard, or session creation errors.
+          // subscription Checkout creates. Requires Stripe Tax active with
+          // registrations in the Dashboard, or session creation errors.
           automatic_tax: { enabled: true },
           // Persist the billing address the buyer enters (BillingAddressElement)
-          // back onto the pre-set Customer. Without this, Checkout rejects a new
-          // address for an attached customer — and Stripe Tax needs the address
-          // to determine the jurisdiction.
+          // back onto the pre-set Customer. Stripe Tax needs it for jurisdiction.
           customer_update: { address: 'auto' },
           ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
-          // Stamp the subscription so the existing webhook
-          // (customer.subscription.created) activates SC + entitlement
-          // unchanged — the session is just the funnel that creates it.
+          // Stamp the subscription so the webhook (task 9) derives the tier and
+          // records the amount/plan/currency for the membership row. The webhook
+          // is authoritative for the tier via the price product's entitlements;
+          // this metadata is a cross-check + the source of amount_cents/plan.
           subscription_data: {
             metadata: {
+              tier,
               plan,
-              custom_amount_cents: String(amountCents),
-              // Founding Member: anyone giving at least twice the base price.
-              // Derived here from the amount we're actually charging — the
-              // client sends no such flag, so the tier can't be claimed, only
-              // paid for. Recorded now so the badge can be provisioned in
-              // Circle later without re-deriving it from historical amounts.
-              founding_member: String(amountCents >= defaultCents * FOUNDING_MULTIPLE),
+              amount_cents: String(amountCents),
+              currency,
             },
           },
           // Required for ui_mode 'elements'; only used when a payment method
@@ -308,6 +366,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           checkout_session_id: session.id,
           client_secret: session.client_secret,
           plan,
+          tier,
+          currency,
         })
       },
     },

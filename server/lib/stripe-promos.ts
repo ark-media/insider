@@ -13,11 +13,12 @@
 import type Stripe from 'stripe'
 import type { Plan } from './pricing.js'
 
-// USD is the source currency for all our prices (see server/routes/stripe.ts);
-// Adaptive Pricing converts the discounted total into the buyer's currency at
-// checkout. A coupon is ranked/applied against that USD source, so a fixed
-// (amount_off) coupon must itself be in USD — one in any other currency can't
-// be applied meaningfully.
+// The default charge currency. Checkout now passes an explicit currency (§7 #4
+// per-currency floors replaced Adaptive Pricing), so callers on a non-USD path
+// pass that currency through; USD-only callers (gift, retention) keep the
+// default. A fixed (amount_off) coupon only applies when its currency matches
+// the charge currency — Stripe rejects a mismatched-currency coupon on the
+// subscription otherwise.
 const CHARGE_CURRENCY = 'usd'
 
 // Minimal structural subset of Stripe.Coupon the logic needs, so the pure
@@ -45,9 +46,13 @@ export function appliesToPlan(c: CouponLike, plan: Plan): boolean {
 // clamped to the base (never negative) and ignored unless they're in the
 // currency we charge in — a foreign-currency amount_off would otherwise be
 // subtracted as if it were USD cents.
-export function discountCents(c: CouponLike, baseCents: number): number {
+export function discountCents(
+  c: CouponLike,
+  baseCents: number,
+  chargeCurrency: string = CHARGE_CURRENCY,
+): number {
   if (c.percent_off != null) return Math.round((baseCents * c.percent_off) / 100)
-  if (c.amount_off != null && c.currency === CHARGE_CURRENCY) {
+  if (c.amount_off != null && c.currency === chargeCurrency) {
     return Math.min(baseCents, c.amount_off)
   }
   return 0
@@ -61,12 +66,13 @@ export function pickBestCoupon<T extends CouponLike>(
   coupons: T[],
   plan: Plan | null,
   baseCents: number,
+  chargeCurrency: string = CHARGE_CURRENCY,
 ): T | null {
   let best: T | null = null
   let bestDiscount = 0
   for (const c of coupons) {
     if (!isAutoApply(c) || (plan !== null && !appliesToPlan(c, plan))) continue
-    const d = discountCents(c, baseCents)
+    const d = discountCents(c, baseCents, chargeCurrency)
     if (d > bestDiscount) {
       best = c
       bestDiscount = d

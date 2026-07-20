@@ -28,25 +28,50 @@ export function priceLookupKey(tier: PricedTier, plan: Plan): string {
   return `${LOOKUP_PREFIX[tier]}_${plan}`
 }
 
-const PRICE_TTL_MS = 5 * 60_000
-const cache = new Map<string, { at: number; cents: number }>()
+// The currencies the catalog carries (USD base + `currency_options` for the
+// rest). Checkout presents one of these; anything else falls back to USD. Keep
+// in sync with scripts/stripe-catalog.ts CURRENCIES.
+export const SUPPORTED_CURRENCIES = ['usd', 'gbp', 'eur', 'cad'] as const
+export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 
-// The base (USD) list price in cents for a tier+plan, read from the catalog
-// price with the matching lookup_key. Throws if no active price carries that
-// lookup_key or it has no fixed unit_amount. Per-currency floors live in the
-// price's `currency_options`; this returns the USD base used for PWYC / promo
-// math on the USD path.
-export async function getPlanPriceCents(
+export function isSupportedCurrency(c: string): c is SupportedCurrency {
+  return (SUPPORTED_CURRENCIES as readonly string[]).includes(c)
+}
+
+// A resolved catalog price: the ids checkout needs (the price for the exact
+// floor amount, the product for PWYC inline `price_data`) plus the per-currency
+// floor in minor units. `floors.usd` is always the price's `unit_amount`; the
+// rest come from `currency_options`.
+export type CatalogPrice = {
+  priceId: string
+  productId: string
+  floors: Record<SupportedCurrency, number>
+}
+
+const PRICE_TTL_MS = 5 * 60_000
+const cache = new Map<string, { at: number; price: CatalogPrice }>()
+
+// Resolve the catalog price for a tier+plan by `lookup_key`, with its product id
+// and per-currency floors. Throws if no active price carries the lookup_key, it
+// has no `unit_amount`, or a supported currency is missing from
+// `currency_options` (so a mis-provisioned catalog fails loudly rather than
+// silently pricing a currency at the USD number).
+export async function resolveCatalogPrice(
   stripe: Stripe,
   tier: PricedTier,
   plan: Plan,
-): Promise<number> {
+): Promise<CatalogPrice> {
   const key = priceLookupKey(tier, plan)
   const now = Date.now()
   const hit = cache.get(key)
-  if (hit && now - hit.at < PRICE_TTL_MS) return hit.cents
+  if (hit && now - hit.at < PRICE_TTL_MS) return hit.price
 
-  const list = await stripe.prices.list({ lookup_keys: [key], active: true, limit: 1 })
+  const list = await stripe.prices.list({
+    lookup_keys: [key],
+    active: true,
+    limit: 1,
+    expand: ['data.currency_options'],
+  })
   const price = list.data[0]
   if (!price) {
     throw new Error(
@@ -56,8 +81,34 @@ export async function getPlanPriceCents(
   if (price.unit_amount == null) {
     throw new Error(`Stripe price ${price.id} (${key}) has no unit_amount`)
   }
-  cache.set(key, { at: now, cents: price.unit_amount })
-  return price.unit_amount
+  const productId = typeof price.product === 'string' ? price.product : price.product.id
+  const opts = price.currency_options ?? {}
+  const floors = { usd: price.unit_amount } as Record<SupportedCurrency, number>
+  for (const cur of SUPPORTED_CURRENCIES) {
+    if (cur === 'usd') continue
+    const amount = opts[cur]?.unit_amount
+    if (amount == null) {
+      throw new Error(
+        `Stripe price ${price.id} (${key}) is missing currency_options for "${cur}" ` +
+          `(run scripts/stripe-catalog.ts --apply)`,
+      )
+    }
+    floors[cur] = amount
+  }
+  const resolved: CatalogPrice = { priceId: price.id, productId, floors }
+  cache.set(key, { at: now, price: resolved })
+  return resolved
+}
+
+// The base (USD) list price in cents for a tier+plan. Kept for the pricing route
+// and promo math on the USD path; per-currency floors come from
+// resolveCatalogPrice.
+export async function getPlanPriceCents(
+  stripe: Stripe,
+  tier: PricedTier,
+  plan: Plan,
+): Promise<number> {
+  return (await resolveCatalogPrice(stripe, tier, plan)).floors.usd
 }
 
 export type TierPricing = { monthly_cents: number; yearly_cents: number }
