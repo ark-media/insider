@@ -42,7 +42,33 @@ import { getDb } from './lib/db.js'
 
 type Env = Record<string, string>
 
-export type Tier = 'ark-plus-member' | 'free'
+// The SKU sold (billing/copy). Entitlements are what it GRANTS — kept apart so
+// every gate checks an entitlement, never a tier. See tasks/entitlement-tiers.md
+// §2.
+export type Tier = 'ark-plus' | 'circle' | 'bundle' | 'free'
+
+export type Entitlements = { arkPlus: boolean; circle: boolean }
+
+const GRANTS: Record<Tier, Entitlements> = {
+  'ark-plus': { arkPlus: true, circle: false },
+  circle: { arkPlus: false, circle: true },
+  bundle: { arkPlus: true, circle: true },
+  free: { arkPlus: false, circle: false },
+}
+
+// The one place tier → entitlements. Entitlements are always derived, never
+// stored (no drift). The two axes map 1:1 onto the two external access systems:
+// arkPlus → Supporting Cast (the private feed), circle → the Circle access group.
+export function deriveEntitlements(tier: Tier): Entitlements {
+  return GRANTS[tier]
+}
+
+// Transitional legacy Auth0 paid-signal. Auth0 is being removed from the
+// entitlement picture entirely (task 5) — until tasks 10/11 re-point the readers
+// (circle.ts / me.ts / beehiiv.ts, which compare === 'ark-plus-member') at Neon,
+// we keep mirroring the arkPlus axis into app_metadata.tier with the legacy
+// string so those readers stay correct. Deleted with setAuth0Tier in task 5.
+type LegacyAuth0Tier = 'ark-plus-member' | 'free'
 
 export type Auth0Status = 'ok' | 'no-user' | 'skipped' | 'error'
 export type CircleStatus = 'ok' | 'no-member' | 'skipped' | 'error'
@@ -50,15 +76,16 @@ export type CircleStatus = 'ok' | 'no-member' | 'skipped' | 'error'
 export type EntitlementResult = {
   email: string
   tier: Tier
+  entitlements: Entitlements
   auth0: Auth0Status
   circle: CircleStatus
 }
 
 export type SyncOptions = {
-  // ISO date string. When set with tier='ark-plus-member', stored in Auth0
+  // ISO date string. When set on a tier that grants arkPlus, stored in Auth0
   // app_metadata.gift_expires_at so the reconciler keeps the user as a
   // subscriber through the gift period even when no Stripe sub exists.
-  // Ignored for tier='free' (which clears the field).
+  // Ignored when the tier grants no arkPlus (which clears the field).
   giftExpiresAt?: string
 }
 
@@ -68,9 +95,12 @@ export async function syncEntitlement(
   tier: Tier,
   opts: SyncOptions = {},
 ): Promise<EntitlementResult> {
+  const entitlements = deriveEntitlements(tier)
+  // Two independent axes that fail independently: an Auth0 outage still lets
+  // Circle update, and vice versa.
   const [auth0Res, circleRes] = await Promise.allSettled([
-    setAuth0Tier(env, email, tier, opts),
-    setCircleAccessGroup(env, email, tier),
+    setAuth0Tier(env, email, entitlements.arkPlus, opts),
+    setCircleAccessGroup(env, email, entitlements.circle),
   ])
 
   const auth0: Auth0Status =
@@ -81,7 +111,7 @@ export async function syncEntitlement(
     circleRes.status === 'fulfilled'
       ? circleRes.value
       : logAndReturnError('circle', email, circleRes.reason)
-  return { email, tier, auth0, circle }
+  return { email, tier, entitlements, auth0, circle }
 }
 
 function logAndReturnError(
@@ -104,7 +134,7 @@ export function redactEmail(email: string): string {
 async function setAuth0Tier(
   env: Env,
   email: string,
-  tier: Tier,
+  arkPlus: boolean,
   opts: SyncOptions,
 ): Promise<'ok' | 'no-user' | 'skipped'> {
   if (!env.AUTH0_MANAGEMENT_CLIENT_ID || !env.AUTH0_MANAGEMENT_CLIENT_SECRET) {
@@ -116,12 +146,15 @@ async function setAuth0Tier(
   const users = await mgmt.users.listUsersByEmail({ email })
   if (users.length === 0) return 'no-user'
 
+  // Transitional legacy paid-signal: mirror the arkPlus axis to the string the
+  // readers still compare against (removed in task 5, once they read Neon).
+  const tier: LegacyAuth0Tier = arkPlus ? 'ark-plus-member' : 'free'
   // app_metadata PATCH is a shallow merge: keys we omit are preserved on the
   // user, so we explicitly null gift_expires_at on downgrade to clear it.
   const appMetadata: Record<string, unknown> = { tier }
-  if (tier === 'ark-plus-member' && opts.giftExpiresAt) {
+  if (arkPlus && opts.giftExpiresAt) {
     appMetadata.gift_expires_at = opts.giftExpiresAt
-  } else if (tier === 'free') {
+  } else if (!arkPlus) {
     appMetadata.gift_expires_at = null
   }
 
@@ -145,7 +178,7 @@ async function setAuth0Tier(
 export async function fetchAuth0TierForEmail(
   env: Env,
   email: string,
-): Promise<Tier | null> {
+): Promise<LegacyAuth0Tier | null> {
   const mgmt = getManagementClient(env)
   if (!mgmt) return null
   let users: Array<{ app_metadata?: { tier?: string } }>
@@ -204,7 +237,7 @@ const CIRCLE_API = 'https://app.circle.so/api/admin/v2'
 async function setCircleAccessGroup(
   env: Env,
   email: string,
-  tier: Tier,
+  wantCircle: boolean,
 ): Promise<'ok' | 'no-member' | 'skipped'> {
   const apiToken = env.CIRCLE_API_TOKEN
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
@@ -216,7 +249,7 @@ async function setCircleAccessGroup(
   }
   const base = `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members`
 
-  if (tier === 'ark-plus-member') {
+  if (wantCircle) {
     const res = await fetch(base, {
       method: 'POST',
       headers,
@@ -236,7 +269,7 @@ async function setCircleAccessGroup(
     return 'ok'
   }
 
-  // tier === 'free' → remove
+  // wantCircle false → remove
   const res = await fetch(
     `${base}?email=${encodeURIComponent(email)}`,
     { method: 'DELETE', headers },
@@ -293,6 +326,13 @@ type ReconcileSummary = {
   results: EntitlementResult[]
 }
 
+// WARNING — pending the task-15 rewrite. This reconciler predates the tier
+// split: it treats every active Stripe sub as a single paid tier and can't tell
+// Ark+ from Circle from Bundle. Under the new GRANTS it therefore (a) maps every
+// active sub to 'ark-plus', whose circle=false makes pass 1 REMOVE those members
+// from the Circle group, and (b) can never grant Circle/Bundle. Do NOT run this
+// cron against multi-tier data until task 15 makes it carry each sub's tier and
+// reconcile per axis on opaque ids. Left compiling-only for now.
 const CIRCLE_DRIFT_MAX_REMOVE = 100
 
 export async function reconcileEntitlements(
@@ -309,7 +349,7 @@ export async function reconcileEntitlements(
   const upgradeResults = await batched(
     [...activeEmails],
     batchSize,
-    (email) => syncEntitlement(env, email, 'ark-plus-member'),
+    (email) => syncEntitlement(env, email, 'ark-plus'),
   )
 
   const auth0Subs = await listAuth0Subscribers(env, maxAuth0Pages)

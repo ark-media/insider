@@ -367,7 +367,9 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     // gift_expires_at is stamped on Auth0 app_metadata so the reconciler's
     // downgrade pass honors the gift even though there is no recurring
     // Stripe sub.
-    await syncEntitlement(env, recipientEmail, 'ark-plus-member', { giftExpiresAt: endsAt })
+    // A gift grants the private feed (arkPlus). Task 9 moves gift entitlement
+    // onto a Neon membership row keyed on the recipient's sub at redemption.
+    await syncEntitlement(env, recipientEmail, 'ark-plus', { giftExpiresAt: endsAt })
 
     if (env.DATABASE_URL) {
       await tryPush('ensure premium (gift)', () =>

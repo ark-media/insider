@@ -177,7 +177,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         }
         const plan = body.plan
         const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
-        const defaultCents = await getPlanPriceCents(stripe, env, plan)
+        // Checkout still sells only Ark+ here; task 8 makes it per-tier.
+        const defaultCents = await getPlanPriceCents(stripe, 'ark-plus', plan)
 
         // The "name your price" amount is entered in USD — the source currency
         // Adaptive Pricing converts from. The buyer sees and pays the localized
@@ -733,7 +734,7 @@ async function dispatchWebhookEvent(
       // block podcast feed access (the paid product).
       const email = await emailForStripeCustomer(sub.customer, stripe)
       if (email) {
-        await syncEntitlement(env, email, isActive ? 'ark-plus-member' : 'free')
+        await syncEntitlement(env, email, isActive ? 'ark-plus' : 'free')
       }
       break
     }

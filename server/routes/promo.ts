@@ -26,7 +26,7 @@ async function getCachedCoupons(stripe: Stripe): Promise<Stripe.Coupon[]> {
   return coupons
 }
 
-export function promoRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
+export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
   return [
     {
       path: '/api/promo/active',
@@ -43,7 +43,7 @@ export function promoRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         try {
           const [coupons, baseCents] = await Promise.all([
             getCachedCoupons(stripe),
-            getPlanPriceCents(stripe, env, plan),
+            getPlanPriceCents(stripe, 'ark-plus', plan),
           ])
           const best = pickBestCoupon(coupons, plan, baseCents)
           if (!best) return json(200, { active: false })

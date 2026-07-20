@@ -56,13 +56,14 @@ class FakeStripe {
     retrieve: async () => ({}),
   }
   prices = {
-    retrieve: async (priceId: string) => {
-      stripeCalls.push({ method: 'prices.retrieve', args: [priceId] })
-      // 599¢ monthly, 5999¢ yearly — only the magnitude matters here, the
-      // route reads unit_amount to compare against any custom_amount_cents.
+    // getPlanPriceCents resolves the base amount by lookup_key (ark_plus_*).
+    // 599¢ monthly, 5999¢ yearly — only the magnitude matters here, the route
+    // reads unit_amount to compare against any custom_amount_cents.
+    list: async (args: { lookup_keys?: string[] }) => {
+      stripeCalls.push({ method: 'prices.list', args: [args] })
+      const key = args.lookup_keys?.[0] ?? ''
       return {
-        id: priceId,
-        unit_amount: priceId.includes('monthly') ? 599 : 5999,
+        data: [{ id: `price_${key}`, unit_amount: key.includes('monthly') ? 599 : 5999, currency: 'usd' }],
       }
     },
     create: async (args: unknown) => {
