@@ -102,24 +102,24 @@ describe('getSessionEmail', () => {
 })
 
 describe('session token', () => {
-  test('round-trips email, roles, name, tier', async () => {
+  test('round-trips email, roles, name, sub', async () => {
     const profile = {
       email: 'a@x.com',
       roles: ['admin'],
       name: 'Ada',
-      tier: 'ark-plus-member' as const,
+      sub: 'auth0|abc',
     }
     const token = await signSessionToken(profile, SENV)
     expect(await verifySessionToken(token, SENV)).toEqual(profile)
   })
 
-  test('defaults roles to [] and omits absent name/tier', async () => {
+  test('defaults roles to [] and omits absent name/sub', async () => {
     const token = await signSessionToken({ email: 'b@x.com', roles: [] }, SENV)
     expect(await verifySessionToken(token, SENV)).toEqual({
       email: 'b@x.com',
       roles: [],
       name: undefined,
-      tier: undefined,
+      sub: undefined,
     })
   })
 
@@ -136,15 +136,15 @@ describe('session token', () => {
     )
   })
 
-  test('getSessionProfile reads roles/tier from the cookie', async () => {
+  test('getSessionProfile reads roles/sub from the cookie', async () => {
     const token = await signSessionToken(
-      { email: 'a@x.com', roles: ['admin'], tier: 'free' },
+      { email: 'a@x.com', roles: ['admin'], sub: 'auth0|abc' },
       SENV,
     )
     const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
     const profile = await getSessionProfile(req, SENV)
     expect(profile?.roles).toEqual(['admin'])
-    expect(profile?.tier).toBe('free')
+    expect(profile?.sub).toBe('auth0|abc')
   })
 })
 

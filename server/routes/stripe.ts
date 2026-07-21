@@ -530,13 +530,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!sub) return json(404, { error: 'No active subscription found' })
 
         // Resume the current plan: drop any pending period-end change (schedule)
-        // and clear a pending cancel. Releasing the schedule undoes a pending
-        // downgrade; clearing cancel_at_period_end undoes a pending cancel. Both
-        // are idempotent, so this also covers a plain "undo cancel".
+        // and clear a pending cancel. Update Stripe only when there's actually
+        // something to undo — a pending downgrade (schedule) or a pending cancel
+        // — so a plain reactivate on an already-renewing sub stays a no-op.
+        const hadSchedule = Boolean(scheduleIdOf(sub))
         await releaseScheduleIfAny(stripe, sub, env)
-        const updated = await stripe.subscriptions.update(sub.id, {
-          cancel_at_period_end: false,
-        })
+        const updated =
+          sub.cancel_at_period_end || hadSchedule
+            ? await stripe.subscriptions.update(sub.id, {
+                cancel_at_period_end: false,
+              })
+            : sub
 
         json(200, { ok: true, next_charge_at: periodEndIso(updated) })
       },

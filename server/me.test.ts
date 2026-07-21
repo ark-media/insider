@@ -278,7 +278,7 @@ describe('GET /api/me auth', () => {
 
 describe('GET /api/me with Auth0 bearer', () => {
   test('tier=free claim AND no SC record → 200 free shape', async () => {
-    const token = await signAuth0Token({ email: 'free@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'free@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -286,6 +286,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'free@x.com',
       tier: 'free',
+      entitlements: { arkPlus: false, circle: false },
       feeds: [],
     })
   })
@@ -295,14 +296,15 @@ describe('GET /api/me with Auth0 bearer', () => {
     scFeedsByUserId.set(42, [
       { id: 1, name: 'Private feed', url: 'https://example.com/feed.xml' },
     ])
-    const token = await signAuth0Token({ email: 'paid@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0Token({ email: 'paid@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'paid@x.com',
-      tier: 'ark-plus-member',
+      tier: 'ark-plus',
+      entitlements: { arkPlus: true, circle: false },
       feeds: [
         { id: 1, name: 'Private feed', url: 'https://example.com/feed.xml' },
       ],
@@ -315,28 +317,34 @@ describe('GET /api/me with Auth0 bearer', () => {
     // private-feed access until their next token refresh.
     scUserByEmail.set('upgraded@x.com', { id: 7, email: 'upgraded@x.com' })
     scFeedsByUserId.set(7, [])
-    const token = await signAuth0Token({ email: 'upgraded@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'upgraded@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'upgraded@x.com',
-      tier: 'ark-plus-member',
+      tier: 'ark-plus',
+      entitlements: { arkPlus: true, circle: false },
       feeds: [],
     })
   })
 
-  test('tier=subscriber claim but SC user missing → 401 (legacy contract)', async () => {
-    // A 'ark-plus-member' claim with no SC record is a real inconsistency, not a
-    // free user. Keep the explicit 401 so the client surfaces an error
-    // instead of silently downgrading the dashboard.
-    const token = await signAuth0Token({ email: 'gone@x.com', tier: 'ark-plus-member' })
+  test('Auth0 bearer with no membership row and no SC user → 200 free', async () => {
+    // Neon is authoritative: no row + no SC feed on a durable login is a
+    // logged-in free user. The legacy 401 now applies only to the checkout
+    // cookie (post-payment), not to an Auth0 session.
+    const token = await signAuth0Token({ email: 'gone@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
-    expect(res.statusCode).toBe(401)
-    expect((res.__json() as { error: string }).error).toBe('membership_not_found')
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({
+      email: 'gone@x.com',
+      tier: 'free',
+      entitlements: { arkPlus: false, circle: false },
+      feeds: [],
+    })
   })
 
   test('no tier claim AND no SC user → 200 free (safety net for missing Action)', async () => {
@@ -348,6 +356,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'unknown-tier@x.com',
       tier: 'free',
+      entitlements: { arkPlus: false, circle: false },
       feeds: [],
     })
   })
@@ -355,27 +364,35 @@ describe('GET /api/me with Auth0 bearer', () => {
   test('SC feeds 404 is tolerated; returns subscriber with empty feeds', async () => {
     scUserByEmail.set('newpaid@x.com', { id: 100, email: 'newpaid@x.com' })
     // scFeedsByUserId intentionally not set → mock returns 404.
-    const token = await signAuth0Token({ email: 'newpaid@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0Token({ email: 'newpaid@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'newpaid@x.com',
-      tier: 'ark-plus-member',
+      tier: 'ark-plus',
+      entitlements: { arkPlus: true, circle: false },
       feeds: [],
     })
   })
 
-  test('SC upstream error surfaces as 5xx, not silent free fallback', async () => {
+  test('SC upstream error is tolerated → 200 free (Neon is authoritative)', async () => {
+    // The SC-by-email lookup is now only a best-effort transitional fallback;
+    // entitlement comes from Neon, so an SC outage degrades to "no arkPlus"
+    // rather than 500ing /api/me.
     scThrowOnSearch = true
-    const token = await signAuth0Token({ email: 'oops@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'oops@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
-    // 500 from SC propagates as the surfaced status.
-    expect(res.statusCode).toBe(500)
-    expect((res.__json() as { error: string }).error).toBe('membership_lookup_failed')
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({
+      email: 'oops@x.com',
+      tier: 'free',
+      entitlements: { arkPlus: false, circle: false },
+      feeds: [],
+    })
   })
 })
 
@@ -398,7 +415,8 @@ describe('GET /api/me with checkout-cookie session', () => {
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'fresh@x.com',
-      tier: 'ark-plus-member',
+      tier: 'ark-plus',
+      entitlements: { arkPlus: true, circle: false },
       feeds: [],
     })
   })
@@ -410,7 +428,12 @@ describe('GET /api/me with checkout-cookie session', () => {
     const res = makeRes()
     await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ email: 'member@x.com', tier: 'ark-plus-member', feeds: [] })
+    expect(res.__json()).toEqual({
+      email: 'member@x.com',
+      tier: 'ark-plus',
+      entitlements: { arkPlus: true, circle: false },
+      feeds: [],
+    })
   })
 
   test('session cookie + no SC record → 200 free (logged-in, not a provisioning gap)', async () => {
@@ -418,7 +441,12 @@ describe('GET /api/me with checkout-cookie session', () => {
     const res = makeRes()
     await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ email: 'freebie@x.com', tier: 'free', feeds: [] })
+    expect(res.__json()).toEqual({
+      email: 'freebie@x.com',
+      tier: 'free',
+      entitlements: { arkPlus: false, circle: false },
+      feeds: [],
+    })
   })
 
   test('checkout cookie + SC user missing → 401 (provisioning gap, NOT free fallback)', async () => {
@@ -445,7 +473,7 @@ describe('GET /api/me with checkout-cookie session', () => {
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
     expect(res.statusCode).toBe(200)
-    expect((res.__json() as { tier: string }).tier).toBe('ark-plus-member')
+    expect((res.__json() as { tier: string }).tier).toBe('ark-plus')
   })
 })
 
@@ -509,7 +537,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
       return new Response('{}', { status: 500 })
     }
 
-    const token = await signAuth0Token({ email: 'newfree@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'newfree@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -518,6 +546,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
     expect(res.__json()).toEqual({
       email: 'newfree@x.com',
       tier: 'free',
+      entitlements: { arkPlus: false, circle: false },
       feeds: [],
     })
 
@@ -539,7 +568,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
 
   test('repeat login (local row exists) → no Beehiiv call, no upsert', async () => {
     stageHasLocalRow('returning@x.com')
-    const token = await signAuth0Token({ email: 'returning@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'returning@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -559,7 +588,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
     beehiivHandler = () =>
       new Response('{"error":"down"}', { status: 503 })
 
-    const token = await signAuth0Token({ email: 'unlucky@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'unlucky@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -568,6 +597,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
     expect(res.__json()).toEqual({
       email: 'unlucky@x.com',
       tier: 'free',
+      entitlements: { arkPlus: false, circle: false },
       feeds: [],
     })
   })
@@ -577,7 +607,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
     // request. Login still succeeds.
     const env = { ...BASE_ENV }
     delete env.DATABASE_URL
-    const token = await signAuth0Token({ email: 'nodb@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'nodb@x.com' })
     const handler = buildHandler(env)
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -590,12 +620,12 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
   test('subscriber path does NOT trigger free auto-subscribe', async () => {
     scUserByEmail.set('paid@x.com', { id: 99, email: 'paid@x.com' })
     scFeedsByUserId.set(99, [])
-    const token = await signAuth0Token({ email: 'paid@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0Token({ email: 'paid@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
 
-    expect((res.__json() as { tier: string }).tier).toBe('ark-plus-member')
+    expect((res.__json() as { tier: string }).tier).toBe('ark-plus')
     expect(beehiivCalls.length).toBe(0)
     expect(
       sqlCalls.some(

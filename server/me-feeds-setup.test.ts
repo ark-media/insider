@@ -389,7 +389,7 @@ describe('GET /api/me feed setup enrichment', () => {
           ]
         : []
 
-    const token = await signAuth0TestToken({ email: 'paid@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0TestToken({ email: 'paid@x.com' })
     const res = makeRes()
     await runHandler(buildHandler(PATH), makeReq({ path: PATH, bearer: token }), res)
 
@@ -409,7 +409,7 @@ describe('GET /api/me feed setup enrichment', () => {
         ? [{ feed_id: 9, activated: false, activated_at: null, pending_at: '2026-01-03T00:00:00Z', revoked_at: '2026-01-04T00:00:00Z' }]
         : []
 
-    const token = await signAuth0TestToken({ email: 'paid@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0TestToken({ email: 'paid@x.com' })
     const res = makeRes()
     await runHandler(buildHandler(PATH), makeReq({ path: PATH, bearer: token }), res)
 
@@ -427,7 +427,7 @@ describe('GET /api/me feed setup enrichment', () => {
       return []
     }
 
-    const token = await signAuth0TestToken({ email: 'paid@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0TestToken({ email: 'paid@x.com' })
     const res = makeRes()
     await runHandler(buildHandler(PATH), makeReq({ path: PATH, bearer: token }), res)
 

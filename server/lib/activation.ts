@@ -266,7 +266,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     }
 
     // Auth0 login for every paid tier. Reuse an already-stamped login.
-    let auth0Sub = fresh.metadata?.auth0_user_id ?? null
+    let auth0Sub: string | null = fresh.metadata?.auth0_user_id ?? null
     let passwordSetupUrl: string | undefined
     if (!auth0Sub) {
       const login = await ensureAuth0Login(email, name, baseUrl)

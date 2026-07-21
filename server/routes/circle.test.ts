@@ -6,18 +6,58 @@
 // upstream error mapping, and the space-id → posts walk. The projection
 // itself is covered by circle-space-posts.test.ts.
 
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { __resetCircleCachesForTests, circleRoutes } from './circle.js'
 import type { Deps } from '../lib/route.js'
 import { signCheckoutToken } from '../lib/session.js'
 import { silenceExpectedConsole } from '../test-utils.js'
 
-// A post-checkout session secret + a request carrying a valid member cookie,
-// used to pass the community-feed subscriber gate without an Auth0 round trip.
-const MEMBER_ENV = { CIRCLE_ADMIN_API_TOKEN: 't', CHECKOUT_SESSION_SECRET: 'test-secret-0123456789abcdef0123456789' }
+// The community-feed gate now resolves entitlements from Neon (the `circle`
+// axis). Stub @neondatabase/serverless so a staged membership row decides the
+// gate; `membershipRow` is set per test and reset in beforeEach.
+let membershipRow: Record<string, unknown> | null = null
+mock.module('@neondatabase/serverless', () => ({
+  neon:
+    (_url: string) =>
+    (strings: TemplateStringsArray, ..._values: unknown[]) => {
+      const merged = strings.join('?')
+      if (merged.includes('from membership where auth0_sub')) {
+        return Promise.resolve(membershipRow ? [membershipRow] : [])
+      }
+      return Promise.resolve([])
+    },
+  __esModule: true,
+}))
+
+// A live Circle membership row keyed on the member's Auth0 sub (grants circle).
+const CIRCLE_MEMBER_SUB = 'auth0|member'
+function circleMembershipRow(): Record<string, unknown> {
+  return {
+    auth0_sub: CIRCLE_MEMBER_SUB,
+    stripe_customer_id: null,
+    stripe_subscription_id: null,
+    sc_user_id: null,
+    tier: 'circle',
+    status: 'active',
+    plan: 'monthly',
+    amount_cents: 800,
+    current_period_end: null,
+    cancel_at: null,
+    gift_expires_at: null,
+  }
+}
+
+// A post-checkout session secret + a request carrying a valid member cookie
+// (with the member's sub), used to pass the community-feed subscriber gate. The
+// gate reads the staged Neon row keyed on that sub.
+const MEMBER_ENV = {
+  CIRCLE_ADMIN_API_TOKEN: 't',
+  CHECKOUT_SESSION_SECRET: 'test-secret-0123456789abcdef0123456789',
+  DATABASE_URL: 'postgres://stub-circle-test',
+}
 async function makeMemberReq(path: string): Promise<IncomingMessage> {
-  const token = await signCheckoutToken('member@example.com', MEMBER_ENV)
+  const token = await signCheckoutToken('member@example.com', MEMBER_ENV, CIRCLE_MEMBER_SUB)
   const req = makeReq(path, '')
   ;(req.headers as Record<string, string>).cookie = `ark_checkout=${token}`
   return req
@@ -113,6 +153,7 @@ afterAll(() => {
 beforeEach(() => {
   fetchCalls.length = 0
   fetchImpl = async () => new Response('{}', { status: 200 })
+  membershipRow = null
   __resetCircleCachesForTests()
 })
 
@@ -491,6 +532,7 @@ describe('GET /api/circle/community-feed', () => {
       }
       throw new Error(`unexpected fetch: ${url}`)
     }
+    membershipRow = circleMembershipRow()
     const handler = findHandler(buildDeps(MEMBER_ENV), FEED_PATH)
     const res = makeRes()
     await handler(await makeMemberReq(FEED_PATH), res)

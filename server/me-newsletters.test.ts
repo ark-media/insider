@@ -35,11 +35,42 @@ type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 
+// Premium eligibility now derives from a Neon membership row (the arkPlus axis),
+// not the Auth0 tier claim. `markMember(email)` stages a live arkPlus row keyed
+// on the token's sub (auth0|<email>); the mock returns it for the membership
+// query and delegates every other query to `nextSqlResult`.
+const arkPlusSubs = new Set<string>()
+function markMember(email: string): void {
+  arkPlusSubs.add(`auth0|${email}`)
+}
+
 mock.module('@neondatabase/serverless', () => ({
   neon: (_url: string) =>
     ((strings: TemplateStringsArray, ...values: unknown[]) => {
       const merged = strings.join('?')
       sqlCalls.push({ sql: merged, values })
+      if (merged.includes('from membership where auth0_sub')) {
+        const sub = values[0] as string
+        return Promise.resolve(
+          arkPlusSubs.has(sub)
+            ? [
+                {
+                  auth0_sub: sub,
+                  stripe_customer_id: null,
+                  stripe_subscription_id: null,
+                  sc_user_id: null,
+                  tier: 'ark-plus',
+                  status: 'active',
+                  plan: 'monthly',
+                  amount_cents: 800,
+                  current_period_end: null,
+                  cancel_at: null,
+                  gift_expires_at: null,
+                },
+              ]
+            : [],
+        )
+      }
       return Promise.resolve(nextSqlResult(merged))
     }) as unknown,
   __esModule: true,
@@ -244,6 +275,7 @@ beforeEach(() => {
   sqlCalls.length = 0
   fetchCalls.length = 0
   liveTierByEmail = new Map()
+  arkPlusSubs.clear()
   nextSqlResult = () => []
   beehiivHandler = () => new Response('{}', { status: 404 })
   clearNewsletterRefreshCache()
@@ -273,7 +305,7 @@ describe('newsletters auth', () => {
   })
 
   test('405 on POST', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0Token({ email: 'a@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(
@@ -291,7 +323,8 @@ describe('newsletters auth', () => {
 
 describe('GET /api/me/newsletters', () => {
   test('returns Beehiiv state after refresh (overrides stale local row)', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com', tier: 'ark-plus-member' })
+    markMember('a@x.com')
+    const token = await signAuth0Token({ email: 'a@x.com' })
     beehiivHandler = ({ url, method }) => {
       if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
         return new Response(
@@ -337,7 +370,7 @@ describe('GET /api/me/newsletters', () => {
   })
 
   test('returns all-false when Beehiiv has no subscription', async () => {
-    const token = await signAuth0Token({ email: 'b@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'b@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -351,7 +384,7 @@ describe('GET /api/me/newsletters', () => {
   })
 
   test('syncs active free subscription from Beehiiv when mirror is empty', async () => {
-    const token = await signAuth0Token({ email: 'sync@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'sync@x.com' })
     beehiivHandler = ({ url, method }) => {
       if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
         return new Response(
@@ -402,7 +435,7 @@ describe('GET /api/me/newsletters', () => {
   })
 
   test('pending Beehiiv status counts as subscribed (free: true)', async () => {
-    const token = await signAuth0Token({ email: 'pending@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'pending@x.com' })
     beehiivHandler = ({ url, method }) => {
       if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
         return new Response(
@@ -442,8 +475,8 @@ describe('GET /api/me/newsletters', () => {
   })
 
   test('canPremium flips on live tier lookup when JWT says free', async () => {
-    const token = await signAuth0Token({ email: 'stale@x.com', tier: 'free' })
-    liveTierByEmail.set('stale@x.com', 'ark-plus-member')
+    const token = await signAuth0Token({ email: 'stale@x.com' })
+    markMember('stale@x.com')
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ bearer: token }), res)
@@ -457,7 +490,7 @@ describe('GET /api/me/newsletters', () => {
 
 describe('PUT /api/me/newsletters', () => {
   test('400 when no fields supplied', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0Token({ email: 'a@x.com' })
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(
@@ -469,7 +502,7 @@ describe('PUT /api/me/newsletters', () => {
   })
 
   test('403 when non-member tries to enable premium', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'a@x.com' })
     liveTierByEmail.set('a@x.com', 'free')
     const handler = buildHandler()
     const res = makeRes()
@@ -482,7 +515,8 @@ describe('PUT /api/me/newsletters', () => {
   })
 
   test('member can enable premium via combined PUT', async () => {
-    const token = await signAuth0Token({ email: 'm@x.com', tier: 'ark-plus-member' })
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
     beehiivHandler = ({ url, method }) => {
       if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
         return new Response(
@@ -537,7 +571,8 @@ describe('PUT /api/me/newsletters', () => {
   })
 
   test('503 premium_unavailable when no premium tier is configured', async () => {
-    const token = await signAuth0Token({ email: 'm@x.com', tier: 'ark-plus-member' })
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
     // No Beehiiv call should be attempted — the guard fires first.
     beehiivHandler = () => new Response('{}', { status: 500 })
     const { BEEHIIV_PREMIUM_TIER_ID: _omit, ...envNoTier } = BASE_ENV
@@ -557,8 +592,8 @@ describe('PUT /api/me/newsletters', () => {
   })
 
   test('stale JWT but live-tier subscriber → premium toggle allowed', async () => {
-    const token = await signAuth0Token({ email: 'upgraded@x.com', tier: 'free' })
-    liveTierByEmail.set('upgraded@x.com', 'ark-plus-member')
+    const token = await signAuth0Token({ email: 'upgraded@x.com' })
+    markMember('upgraded@x.com')
     beehiivHandler = ({ method }) => {
       if (method === 'GET') return new Response('{}', { status: 404 })
       if (method === 'POST') {
@@ -596,7 +631,8 @@ describe('PUT /api/me/newsletters', () => {
     // subscription — only the create endpoint with `reactivate_existing:true`
     // does. Toggling free back on for a subscriber must reactivate AND carry
     // the premium tier through the create call.
-    const token = await signAuth0Token({ email: 're@x.com', tier: 'ark-plus-member' })
+    markMember('re@x.com')
+    const token = await signAuth0Token({ email: 're@x.com' })
     beehiivHandler = ({ method, url }) => {
       if (method === 'GET' && url.includes('/by_email/')) {
         return new Response(
@@ -670,7 +706,7 @@ describe('PUT /api/me/newsletters', () => {
     // Mirrors the subscriber version above, but the implicit premium re-apply
     // must NOT happen — free users have no entitlement, and silently
     // upgrading them on a re-subscribe would be a privilege escalation.
-    const token = await signAuth0Token({ email: 'freere@x.com', tier: 'free' })
+    const token = await signAuth0Token({ email: 'freere@x.com' })
     liveTierByEmail.set('freere@x.com', 'free')
     beehiivHandler = ({ method, url }) => {
       if (method === 'GET' && url.includes('/by_email/')) {
@@ -739,7 +775,7 @@ describe('PUT /api/me/newsletters', () => {
   })
 
   test('429 once the per-email rate bucket is empty', async () => {
-    const token = await signAuth0Token({ email: 'spammy@x.com', tier: 'ark-plus-member' })
+    const token = await signAuth0Token({ email: 'spammy@x.com' })
     beehiivHandler = ({ method }) => {
       if (method === 'GET') return new Response('{}', { status: 404 })
       if (method === 'POST') {
