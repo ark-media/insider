@@ -35,11 +35,11 @@ import {
   isSupportedCurrency,
   resolveCatalogPrice,
 } from '../../lib/pricing.js'
-import { isSameOrigin, makeJsonRes, readBody, readJson } from '../../lib/http.js'
+import { isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
 import { getSessionEmail } from '../../lib/session.js'
 import { isValidEmail, redactEmail } from '../../../shared/validation.js'
-import type { Deps, Route } from '../../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../../lib/route.js'
 import {
   changeIsImmediate,
   coerceTier,
@@ -67,11 +67,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   })
 
   return [
-    {
+    defineRoute({
       path: '/api/stripe/create-checkout-session',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
         const body =
@@ -247,13 +246,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           currency,
         })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       path: '/api/stripe/cancel-subscription',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
@@ -313,9 +311,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         json(200, { ok: true, access_until: periodEndIso(sub) })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       // Undo a pending cancel: clear cancel_at_period_end so the subscription
       // renews normally again. Only reachable while the cancel is still
       // scheduled (the sub stays `active` until the period ends); once it has
@@ -324,9 +322,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // burns no eligibility — it's a plain resume. The webhook's
       // syncScCancelSchedule mirrors the cleared schedule back to SC.
       path: '/api/stripe/reactivate-subscription',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
@@ -351,9 +348,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         json(200, { ok: true, next_charge_at: periodEndIso(updated) })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       // Is this member eligible for a retention discount, and what is it? Read
       // on open of the cancel flow: eligible iff they have an active sub AND a
       // valid retention coupon is configured AND they've never accepted before.
@@ -361,9 +358,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // so the client can't tell *why* — the member never learns an offer
       // existed. Failures fail closed (no offer), never 500 the flow.
       path: '/api/stripe/retention-offer',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+      method: 'GET',
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
         const email = await getSessionEmail(req, env)
@@ -403,18 +399,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         json(200, { eligible: true, offer: toRetentionOffer(coupon) })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       // Accept the retention offer: attach the coupon to the live subscription
       // and clear any pending cancel in one update, so a member who had already
       // scheduled a cancellation is fully reinstated. The coupon is re-derived
       // server-side (never trusted from the client) and an accepted survey row
       // is written, which burns eligibility.
       path: '/api/stripe/accept-retention-offer',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
@@ -482,12 +477,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           next_charge_at: periodEndIso(updated),
         })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       path: '/api/stripe/subscription-status',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
         const url = new URL(req.url ?? '/', appBaseUrl)
         const subId = url.searchParams.get('id')
@@ -540,9 +534,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             sub.metadata?.circle_provisioned === 'true',
         })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       // The signed-in member's cancel schedule, for the account page to show a
       // persistent "scheduled to cancel" state across reloads — the in-page
       // confirmation after cancelling is transient client state and is lost on
@@ -552,9 +546,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // closed to "no pending cancel" so a Stripe hiccup degrades to showing the
       // cancel button rather than an error.
       path: '/api/stripe/my-subscription',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+      method: 'GET',
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
         const email = await getSessionEmail(req, env)
@@ -575,9 +568,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           pendingChange: Boolean(sub && scheduleIdOf(sub)),
         })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       // Switch tier / plan / PWYC amount on the member's existing subscription
       // — the in-app flow the single-active-subscription guard routes a second
       // purchase into (§1a, §6). Direction decides timing: gaining an
@@ -589,9 +582,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // proration behavior are written against the documented API and must be
       // confirmed against a live test-mode sub before this is exposed.
       path: '/api/stripe/change-tier',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
@@ -740,16 +732,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           return json(502, { error: 'Could not change your plan. Please try again.' })
         }
       },
-    },
+    }),
 
-    {
+    defineRoute({
       // Reads the raw body via readBody() before any JSON parsing. Stripe's
       // signature is over the exact bytes Stripe sent, so any upstream body
       // parser would invalidate constructEvent().
       path: '/api/stripe/webhook',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
         const whSecret = env.STRIPE_WEBHOOK_SECRET
         if (!whSecret) return json(500, { error: 'STRIPE_WEBHOOK_SECRET missing' })
@@ -817,6 +808,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           json(500, { error: 'webhook handler error' })
         }
       },
-    },
+    }),
   ]
 }
