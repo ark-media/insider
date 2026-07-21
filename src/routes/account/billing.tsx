@@ -7,7 +7,7 @@ import {
   getRetentionOffer,
   reactivateSubscription,
 } from "../../lib/auth";
-import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
+import { isPaidMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
@@ -88,7 +88,7 @@ function BillingPage() {
       void navigate({ to: "/plus" });
       return;
     }
-    if (state.kind === "member" && !isArkPlusMember(state)) {
+    if (state.kind === "member" && !isPaidMember(state)) {
       void navigate({ to: "/plus" });
     }
   }, [state, authError, navigate]);
@@ -97,7 +97,7 @@ function BillingPage() {
   // member who already cancelled lands on the "set to cancel" state rather than
   // the cancel button. Degrades silently to "no pending cancel" on failure.
   useEffect(() => {
-    if (state.kind !== "member" || !isArkPlusMember(state)) return;
+    if (!isPaidMember(state)) return;
     let active = true;
     void getMySubscription().then((s) => {
       if (active && s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
@@ -150,7 +150,7 @@ function BillingPage() {
     );
   }
 
-  if (state.kind === "guest" || state.me.tier !== "ark-plus-member") return null;
+  if (state.kind === "guest" || state.me.tier === "free") return null;
 
   const me = state.me;
 
@@ -271,7 +271,7 @@ function BillingPage() {
           ]}
         />
       }
-      title="Your Ark+ membership."
+      title="Your membership."
       lede={`Signed in as ${me.email}.`}
     >
       <section>

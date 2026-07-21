@@ -67,7 +67,9 @@ async function hashEmail(email: string): Promise<string> {
 export function identifyUser(opts: {
   id: string
   email?: string
-  tier?: 'ark-plus-member' | 'free'
+  // The member's SKU tier, widened to the three-tier vocabulary so funnels can
+  // segment Ark+ vs Circle vs Bundle vs free.
+  tier?: 'ark-plus' | 'circle' | 'bundle' | 'free'
 }) {
   Sentry.setUser({ id: opts.id, email: opts.email })
   if (!posthogReady) return

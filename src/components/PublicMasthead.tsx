@@ -33,8 +33,6 @@ type NavItem = {
   children?: NavChild[];
 };
 
-type Tier = "guest" | "free" | "ark-plus-member";
-
 const podcastChildren: NavChild[] = [
   { label: "All", to: "/podcasts" },
   ...shows.map((show) => ({
@@ -107,8 +105,9 @@ function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "
   return false;
 }
 
-function visibleNavItems(tier: Tier): NavItem[] {
-  const isSubscriber = tier === "ark-plus-member";
+// "Subscriber" for the nav means any paid member (Ark+, Circle, or Bundle) —
+// they've already bought something, so the upgrade "Subscribe" menu is hidden.
+function visibleNavItems(isSubscriber: boolean): NavItem[] {
   return NAV_ITEMS.filter((item) => {
     if (item.hideWhen === "subscriber") return !isSubscriber;
     if (item.hideWhen === "nonSubscriber") return isSubscriber;
@@ -126,16 +125,15 @@ export function PublicMasthead() {
   const [hidden, setHidden] = useState(false);
   const lastScrollY = useRef(0);
   const { state, signOut, signIn, isAdmin } = useSubscriberAuth();
-  const tier: Tier =
-    state.kind === "member" ? state.me.tier : "guest";
-  const isSubscriber = tier === "ark-plus-member";
+  // Any paid tier counts as a subscriber for the nav (hides the upgrade menu).
+  const isSubscriber = state.kind === "member" && state.me.tier !== "free";
   // The subscribe / conversion CTA, surfaced identically in the top bar and the
   // pulldown. Only meaningful for non-subscribers, and only once auth has
   // resolved (so it never flashes).
   const showSubscribe = !isSubscriber && state.kind !== "loading";
   const navItems = isAdmin
-    ? [...visibleNavItems(tier), ADMIN_NAV_ITEM]
-    : visibleNavItems(tier);
+    ? [...visibleNavItems(isSubscriber), ADMIN_NAV_ITEM]
+    : visibleNavItems(isSubscriber);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);

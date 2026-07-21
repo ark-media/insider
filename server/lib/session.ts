@@ -46,6 +46,11 @@ export async function verifyAuth0Bearer(token: string): Promise<string | null> {
 export type Auth0Profile = {
   email: string
   name?: string
+  // The Auth0 `sub` (user_id) — the standard JWT subject. After the post-login
+  // account-linking Action runs setPrimaryUser, this is the post-merge *primary*
+  // user_id, which is exactly the key the Neon membership row is stored under
+  // (tasks/entitlement-tiers.md §3). Absent only for a malformed token.
+  sub?: string
   // `tier` and `emailVerified` come from custom claims; the Auth0 Action must
   // be configured for them to be present. Callers should treat missing values
   // as unknown (not as a safe default).
@@ -88,6 +93,7 @@ export async function verifyAuth0BearerProfile(
     const verifiedClaim = payload[`${AUTH0_EMAIL_CLAIM}_verified`]
     return {
       email,
+      sub: typeof payload.sub === 'string' ? payload.sub : undefined,
       name: (payload['name'] as string | undefined) ?? undefined,
       tier: tier === 'ark-plus-member' || tier === 'free' ? tier : undefined,
       emailVerified:
@@ -146,19 +152,39 @@ async function verifyHs256(
 }
 
 export async function verifyCheckoutToken(token: string, env: Env): Promise<string | null> {
+  return (await verifyCheckoutProfile(token, env))?.email ?? null
+}
+
+// The checkout token's payload: the buyer's email plus, when it was resolved at
+// provisioning time, their Auth0 `sub`. The `sub` lets a just-paid member (who
+// has no `ark_session` yet) resolve their Neon membership row directly, instead
+// of relying only on the SC-by-email arkPlus fallback (§3). Absent when Auth0
+// provisioning soft-failed — the SC fallback still covers the arkPlus feed.
+export type CheckoutProfile = { email: string; sub: string | null }
+
+export async function verifyCheckoutProfile(
+  token: string,
+  env: Env,
+): Promise<CheckoutProfile | null> {
   const payload = await verifyHs256(token, {
     issuer: CHECKOUT_TOKEN_ISSUER,
     audience: CHECKOUT_TOKEN_AUDIENCE,
     secret: env.CHECKOUT_SESSION_SECRET,
   })
-  return (payload?.email as string | undefined) ?? null
+  const email = payload?.email as string | undefined
+  if (!email) return null
+  return { email, sub: (payload?.sub as string | undefined) ?? null }
 }
 
-export async function signCheckoutToken(email: string, env: Env): Promise<string> {
+export async function signCheckoutToken(
+  email: string,
+  env: Env,
+  sub?: string | null,
+): Promise<string> {
   const secret = env.CHECKOUT_SESSION_SECRET
   if (!secret) throw new Error('CHECKOUT_SESSION_SECRET not configured')
   return signHs256(
-    { email },
+    { email, ...(sub ? { sub } : {}) },
     {
       issuer: CHECKOUT_TOKEN_ISSUER,
       audience: CHECKOUT_TOKEN_AUDIENCE,
@@ -180,6 +206,11 @@ export type SessionProfile = {
   email: string
   roles: string[]
   name?: string
+  // The Auth0 `sub` (post-merge primary user_id) carried from the verified
+  // access token at callback time — the key every Neon entitlement read uses
+  // (§3). Stored in the cookie so a gate never needs a Management API round-trip
+  // to map the session back to its membership row.
+  sub?: string
   tier?: 'ark-plus-member' | 'free'
 }
 
@@ -191,6 +222,7 @@ export async function signSessionToken(profile: SessionProfile, env: Env): Promi
       email: profile.email,
       roles: profile.roles,
       ...(profile.name ? { name: profile.name } : {}),
+      ...(profile.sub ? { sub: profile.sub } : {}),
       ...(profile.tier ? { tier: profile.tier } : {}),
     },
     {
@@ -213,6 +245,7 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     email: payload.email as string,
     roles: extractStrings(payload.roles),
     name: (payload.name as string | undefined) ?? undefined,
+    sub: (payload.sub as string | undefined) ?? undefined,
     tier:
       payload.tier === 'ark-plus-member' || payload.tier === 'free'
         ? payload.tier
@@ -309,6 +342,7 @@ export async function requireAdmin(
   if (session && session.roles.includes('admin')) {
     return {
       email: session.email,
+      sub: session.sub,
       name: session.name,
       tier: session.tier,
       roles: session.roles,

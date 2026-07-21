@@ -172,9 +172,11 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         // row. Failures here mean the caller paid but provisioning is
         // incomplete; the webhook retries async, but we shouldn't hand out a
         // session token yet.
+        let resolvedSub: string | null = null
         try {
           const tier = await tierFromSubscription(sub, stripe)
-          await activator.activateMembershipForStripeSub(sub, tier)
+          const result = await activator.activateMembershipForStripeSub(sub, tier)
+          resolvedSub = result.auth0Sub
         } catch (err) {
           if (err instanceof AlreadySubscribedError) {
             // The new Stripe sub paid through, but SC already has an active sub
@@ -193,7 +195,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           })
         }
 
-        const accessToken = await signCheckoutToken(customerEmail, env)
+        const accessToken = await signCheckoutToken(customerEmail, env, resolvedSub)
         setCheckoutCookies(res, accessToken, env)
         json(200, {
           ready: true,
@@ -325,6 +327,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           email: profile.email,
           roles: profile.roles,
           name: profile.name,
+          sub: profile.sub,
           tier: profile.tier,
         }
         setSessionCookies(res, await signSessionToken(session, env), env)

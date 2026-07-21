@@ -39,7 +39,7 @@ function SetupPage() {
   }
 
   if (state.kind === "guest") return null;
-  if (state.me.tier !== "ark-plus-member") return null;
+  if (!state.me.entitlements.arkPlus) return null;
 
   return (
     <PodcastFeedSetup

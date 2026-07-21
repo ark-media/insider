@@ -6,6 +6,7 @@ import {
   type NewsletterPrefs as Prefs,
 } from "../../lib/newsletterPrefs";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
+import type { Me } from "../../lib/auth";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
@@ -51,8 +52,9 @@ function NewsletterPrefs() {
   return <NewsletterPrefsForm me={state.me} />;
 }
 
-function NewsletterPrefsForm({ me }: { me: { email: string; tier: "ark-plus-member" | "free" } }) {
-  const isMember = me.tier === "ark-plus-member";
+function NewsletterPrefsForm({ me }: { me: Pick<Me, "email" | "entitlements"> }) {
+  // The premium members-letter toggle rides the arkPlus axis.
+  const isMember = me.entitlements.arkPlus;
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);

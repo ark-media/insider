@@ -40,7 +40,7 @@ export const Route = createFileRoute("/newsletters/$post")({
         me = null;
       }
     }
-    const slug = newsletterSlugForReader(me?.tier === "ark-plus-member");
+    const slug = newsletterSlugForReader(me?.entitlements.arkPlus ?? false);
     const pub = await getPublication(slug);
     if (!pub) throw notFound();
     const posts = await sourceFor(slug).listPosts(slug);

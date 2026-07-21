@@ -23,12 +23,12 @@ import {
   type BeehiivSubscription,
 } from '../lib/beehiiv-sync.js'
 import { getDb, type Sql } from '../lib/db.js'
-import { fetchAuth0TierForEmail } from '../entitlement.js'
+import { fetchAuth0EmailVerified } from '../entitlement.js'
+import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
 import { getClientIp, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import type { Deps, Env, Route } from '../lib/route.js'
-import { verifyAuth0BearerProfile } from '../lib/session.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug } from './newsletter-slugs.js'
 
@@ -232,17 +232,11 @@ export function beehiivRoutes({ env }: Deps): Route[] {
           return json(400, { error: 'invalid `newsletter`' })
         }
 
-        // Identify Ark+ membership from the bearer token's tier claim.
-        // Anonymous (no token, or a token without `tier: 'ark-plus-member'`) gets
-        // the above-divider preview; members get the full premium body. The
-        // checkout-cookie session is deliberately not consulted — it carries
-        // no tier claim and pre-dates entitlement sync.
-        const authHeader = req.headers.authorization
-        let isMember = false
-        if (authHeader?.startsWith('Bearer ')) {
-          const profile = await verifyAuth0BearerProfile(authHeader.slice(7))
-          isMember = profile?.tier === 'ark-plus-member'
-        }
+        // The premium newsletter body rides the arkPlus axis; resolve it from
+        // Neon (the authority). Anonymous readers resolve to non-member and keep
+        // the shared-cacheable above-divider preview.
+        const resolved = await resolveMembership(req, env)
+        const isMember = resolved?.entitlements.arkPlus ?? false
 
         // Member responses include the gated body, so they must NOT be
         // cached on a shared edge — `private, no-store` keeps that content
@@ -397,10 +391,11 @@ async function isKnownReader(
 ): Promise<boolean> {
   const local = await getLocalSubscription(sql, email)
   if (local) return true
-  const tier = await fetchAuth0TierForEmail(env, email)
-  // fetchAuth0TierForEmail returns null on lookup failure or no user — we
-  // require a non-null result (a real Auth0 user).
-  return tier !== null
+  // Not in the mirror yet — accept if Auth0 has a user for this email. This is
+  // an existence check (email-verification lookup), not an entitlement read, so
+  // it survives the Auth0-entitlement removal (task 5). Returns null on lookup
+  // failure or no user; a non-null result means a real Auth0 user exists.
+  return (await fetchAuth0EmailVerified(env, email)) !== null
 }
 
 async function handleBeehiivWebhook(

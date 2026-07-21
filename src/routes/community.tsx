@@ -12,7 +12,7 @@ import {
   type EventStripItem,
   type SuggestedSpace,
 } from "../lib/circle";
-import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
+import { isCircleMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { CommunityFeed } from "../components/community/CommunityFeed";
 import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
@@ -24,14 +24,14 @@ export const Route = createFileRoute("/community")({
 function CommunityPage() {
   const { state } = useSubscriberAuth();
 
-  // The community lives in the Community app, open to Ark+ members. Signed-in
-  // subscribers get a personalized read-only feed; everyone else sees the
-  // marketing showcase with a join CTA.
+  // The community lives on the `circle` axis (Circle or Bundle) — NOT arkPlus.
+  // Members with Circle access get the personalized read-only feed; everyone
+  // else (including Ark+-only members) sees the marketing showcase + join CTA.
   if (state.kind === "loading") return null;
 
-  const isSubscriber = isArkPlusMember(state);
+  const hasCommunity = isCircleMember(state);
 
-  return isSubscriber ? <SubscriberCommunity /> : <MarketingShowcase />;
+  return hasCommunity ? <SubscriberCommunity /> : <MarketingShowcase />;
 }
 
 /** Poll interval for live community data while the tab is visible. */

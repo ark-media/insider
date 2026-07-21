@@ -17,11 +17,29 @@ export type SubscriberAuthState =
   | { kind: "guest" }
   | { kind: "member"; me: Me };
 
-// True only for a signed-in *paid* member. A free user is still `kind: "member"`
-// (Auth0 login, no Simplecast record), so paid content must always check the
-// tier — never gate on `kind` alone. Single source of truth for that predicate.
+// True only for a signed-in member who holds the arkPlus axis (the private
+// feed) — Ark+ or Bundle. A free user is still `kind: "member"` (Auth0 login,
+// no membership), so feed content must always check the entitlement, never gate
+// on `kind` alone.
 export function isArkPlusMember(state: SubscriberAuthState): boolean {
-  return state.kind === "member" && state.me.tier === "ark-plus-member";
+  return state.kind === "member" && state.me.entitlements.arkPlus;
+}
+
+// True for a signed-in member who holds the circle axis (the community) — Circle
+// or Bundle. Community surfaces gate on THIS, not arkPlus: the two are
+// independent SKUs (§3 risk 5).
+export function isCircleMember(state: SubscriberAuthState): boolean {
+  return state.kind === "member" && state.me.entitlements.circle;
+}
+
+// True for any paying member — holds at least one axis (Ark+, Circle, or
+// Bundle). Billing/account-management surfaces gate on this, since a Circle-only
+// member has a Stripe subscription to manage just like an Ark+ one.
+export function isPaidMember(state: SubscriberAuthState): boolean {
+  return (
+    state.kind === "member" &&
+    (state.me.entitlements.arkPlus || state.me.entitlements.circle)
+  );
 }
 
 type SignInOpts = { signup?: boolean; loginHint?: string };

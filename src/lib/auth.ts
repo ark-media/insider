@@ -30,11 +30,20 @@ export function feedIsSetUp(feed: UserFeed): boolean {
 
 import type { RetentionOffer } from "../../shared/retention";
 
+// The two independent access axes: arkPlus → the private feed, circle → the
+// community. Derived server-side from the tier; every gate checks an entitlement,
+// never the tier (tasks/entitlement-tiers.md §2).
+export type Entitlements = { arkPlus: boolean; circle: boolean };
+
+// The SKU the member holds (billing/copy). 'free' = logged-in via Auth0 with no
+// membership. Kept apart from `entitlements` — a bundle and an ark-plus member
+// both have arkPlus, but they're different SKUs.
+export type Tier = "ark-plus" | "circle" | "bundle" | "free";
+
 export type Me = {
   email: string;
-  // 'ark-plus-member' = paid (has Simplecast record). 'free' = logged-in via
-  // Auth0 with no SC record. Always present on the server response.
-  tier: "ark-plus-member" | "free";
+  tier: Tier;
+  entitlements: Entitlements;
   feeds: UserFeed[];
 };
 

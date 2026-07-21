@@ -35,7 +35,7 @@ function PodcastFeedPage() {
     );
   }
 
-  if (state.kind === "guest" || state.me.tier !== "ark-plus-member") return null;
+  if (state.kind === "guest" || !state.me.entitlements.arkPlus) return null;
 
   return (
     <PodcastFeedSetup

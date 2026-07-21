@@ -2,7 +2,7 @@
 // the SPA can render the setup page (and decide whether to surface a "send
 // SMS" button).
 
-import { fetchAuth0TierForEmail, redactEmail } from '../entitlement.js'
+import { redactEmail } from '../entitlement.js'
 import {
   applyPreferences,
   ensureFreeSubscription,
@@ -12,6 +12,7 @@ import {
 } from '../lib/beehiiv-sync.js'
 import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
+import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { getSetupStates, recordFeedsPending } from '../lib/feed-activations.js'
 import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
@@ -20,12 +21,7 @@ import {
   verifyAuth0BearerProfile,
   verifyCheckoutToken,
 } from '../lib/session.js'
-import {
-  createScClient,
-  findScUserByEmail,
-  type ScError,
-  type ScUserFeed,
-} from '../lib/sc-client.js'
+import { createScClient, type ScError, type ScUserFeed } from '../lib/sc-client.js'
 import type { Deps, Route } from '../lib/route.js'
 
 // Bucket the PUT route by normalized email so flapping toggles can't burn
@@ -87,101 +83,54 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
       handler: async (req, res) => {
         const json = makeJsonRes(res)
 
-        // Identity-scoped response (email/tier/feeds) — must never be cached by
-        // a shared proxy/CDN and served to another user.
+        // Identity-scoped response (email/tier/entitlements/feeds) — must never
+        // be cached by a shared proxy/CDN and served to another user.
         res.setHeader('cache-control', 'private, no-store')
 
-        // Resolve the session: an Auth0 bearer (the long-term login, carries
-        // a tier claim) or the short-lived checkout token (cookie or bearer,
-        // issued only post-payment so always implies subscriber). We need
-        // both the email and which source authenticated, because a missing
-        // SC record means different things for each: for Auth0 it means
-        // "logged-in free user"; for checkout it means "provisioning gap".
-        let email: string | null = null
-        let claimTier: 'ark-plus-member' | 'free' | undefined
-        let source: 'auth0' | 'checkout' | null = null
+        // Neon is the single entitlement authority (§3). The transitional
+        // SC-by-email fallback (task 10) still grants arkPlus to a just-paid
+        // member whose webhook row hasn't landed — dropped once the backfill is
+        // verified complete.
+        const resolved = await resolveMembership(req, env, { scFallback: true })
+        if (!resolved) return json(401, { error: 'unauthenticated' })
+        const { identity, tier, entitlements, scUserId } = resolved
+        const email = identity.email
 
-        const authHeader = req.headers.authorization
-        if (authHeader?.startsWith('Bearer ')) {
-          const token = authHeader.slice(7)
-          const profile = await verifyAuth0BearerProfile(token)
-          if (profile?.email) {
-            source = 'auth0'
-            email = profile.email
-            claimTier = profile.tier
-          } else {
-            const e = await verifyCheckoutToken(token, env)
-            if (e) {
-              source = 'checkout'
-              email = e
-            }
-          }
-        }
-        // The long-term login: `ark_session` cookie. Behaves like the Auth0
-        // bearer (a logged-in user; a missing SC record means "free"), and
-        // carries a tier hint we don't otherwise trust over Simplecast.
-        if (!email) {
-          const session = await getSessionProfile(req, env)
-          if (session) {
-            source = 'auth0'
-            email = session.email
-            claimTier = session.tier
-          }
-        }
-        if (!email) {
-          const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
-          if (cookieToken) {
-            const e = await verifyCheckoutToken(cookieToken, env)
-            if (e) {
-              source = 'checkout'
-              email = e
-            }
-          }
-        }
-        if (!email || !source) return json(401, { error: 'unauthenticated' })
-
-        // Always look up SC: presence there is authoritative for paid tier,
-        // so a stale 'free' JWT for a recently-upgraded user still surfaces
-        // subscriber state without waiting for the next token refresh.
-        try {
-          const sc = createScClient(env)
-          const user = await findScUserByEmail(sc, email)
-          if (user) {
-            let feeds: ScUserFeed[] = []
-            try {
-              const feedsRes = await sc.call<{ feeds: ScUserFeed[] }>(
-                'GET',
-                `/users/${user.id}/feeds`,
-              )
-              feeds = feedsRes.feeds ?? []
-            } catch (feedErr) {
-              if ((feedErr as ScError).status !== 404) throw feedErr
-              // 404 means no feeds set up yet — treat as empty.
-            }
-            const enriched = await enrichFeedsWithActivation(env, email, feeds)
-            return json(200, { email, tier: 'ark-plus-member', feeds: enriched })
-          }
-
-          // No SC record. For Auth0 sessions whose JWT isn't claiming
-          // 'ark-plus-member', treat as a logged-in free user. For the
-          // checkout-cookie path (issued only after payment) a missing SC
-          // user is a provisioning gap, so keep the 401 contract.
-          if (source === 'auth0' && claimTier !== 'ark-plus-member') {
-            // First-login auto-subscribe to the free newsletter.
-            // Soft-fails internally so a Beehiiv outage can't block login;
-            // skipped entirely when DATABASE_URL isn't configured (no
-            // mirror to anchor idempotency).
-            if (env.DATABASE_URL) {
-              await ensureFreeSubscription({ env, sql: getDb(env) }, email)
-            }
-            return json(200, { email, tier: 'free', feeds: [] })
-          }
+        // A checkout-token holder (just paid) with no resolved entitlement is a
+        // provisioning gap, not a free user — keep the 401 so the client keeps
+        // polling until the webhook finishes provisioning.
+        if (tier === 'free' && identity.source === 'checkout') {
           return json(401, { error: 'membership_not_found' })
-        } catch (err) {
-          console.error('[me] sc lookup failed:', err)
-          const status = (err as ScError).status ?? 502
-          json(status, { error: 'membership_lookup_failed' })
         }
+
+        // Render the SC private feed for the arkPlus axis, keyed on the resolved
+        // sc_user_id (no findScUserByEmail lookup). Soft-fail: a feed 404 or SC
+        // outage degrades to an empty feed list — entitlement came from Neon, so
+        // the membership decision never depends on SC being reachable.
+        let feeds: ScUserFeed[] = []
+        if (entitlements.arkPlus && scUserId != null) {
+          try {
+            const feedsRes = await createScClient(env).call<{ feeds: ScUserFeed[] }>(
+              'GET',
+              `/users/${scUserId}/feeds`,
+            )
+            feeds = feedsRes.feeds ?? []
+          } catch (feedErr) {
+            if ((feedErr as ScError).status !== 404) {
+              console.error('[me] feed fetch failed:', feedErr)
+            }
+          }
+        }
+        const enriched = await enrichFeedsWithActivation(env, email, feeds)
+
+        // First-login auto-subscribe to the free newsletter for a logged-in free
+        // reader. Soft-fails internally so a Beehiiv outage can't block login;
+        // skipped without DATABASE_URL (no mirror to anchor idempotency).
+        if (tier === 'free' && env.DATABASE_URL) {
+          await ensureFreeSubscription({ env, sql: getDb(env) }, email)
+        }
+
+        return json(200, { email, tier, entitlements, feeds: enriched })
       },
     },
     {
@@ -276,33 +225,14 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(403, { error: 'bad_origin' })
         }
 
-        // Require a real login (the `ark_session` cookie, or an Auth0 bearer).
-        // The checkout cookie carries no roles/tier, so premium toggles need a
-        // full session.
-        const session = await getSessionProfile(req, env)
-        let email = session?.email ?? null
-        let tierHint = session?.tier
-        if (!email) {
-          const auth = req.headers.authorization
-          if (auth?.startsWith('Bearer ')) {
-            const profile = await verifyAuth0BearerProfile(auth.slice(7))
-            if (profile?.email) {
-              email = profile.email
-              tierHint = profile.tier
-            }
-          }
-        }
-        if (!email) return json(401, { error: 'unauthenticated' })
-
-        // Tier hint is the fast path. If it isn't 'ark-plus-member' we double-
-        // check Auth0 server-side — a member who upgraded after their last
-        // login still has a stale 'free' hint and would otherwise be denied
-        // premium toggles wrongly.
-        let isMember = tierHint === 'ark-plus-member'
-        if (!isMember) {
-          const live = await fetchAuth0TierForEmail(env, email)
-          isMember = live === 'ark-plus-member'
-        }
+        // Neon decides premium eligibility (task 11): the premium newsletter
+        // rides the arkPlus axis. A member who upgraded after their last login
+        // is never stale here — the row is read live, keyed on their sub, with
+        // the transitional SC-by-email fallback covering a not-yet-written row.
+        const resolved = await resolveMembership(req, env, { scFallback: true })
+        if (!resolved) return json(401, { error: 'unauthenticated' })
+        const email = resolved.identity.email
+        const isMember = resolved.entitlements.arkPlus
 
         if (!env.DATABASE_URL) {
           return json(500, { error: 'database_not_configured' })

@@ -34,43 +34,25 @@ import type {
 } from '../../src/data/newsletters.js'
 import type { ArkEvent } from '../../src/data/events.js'
 import type { CommunityFeedItem, SuggestedSpace } from '../../shared/community.js'
-import { fetchAuth0TierForEmail } from '../entitlement.js'
-import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { makeJsonRes } from '../lib/http.js'
-import {
-  verifyAuth0BearerProfile,
-  verifyCheckoutToken,
-} from '../lib/session.js'
+import { resolveMembership } from '../lib/entitlement-resolver.js'
 import type { Deps, Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug } from './newsletter-slugs.js'
 import type { IncomingMessage } from 'node:http'
 
 /**
- * Is the caller an authenticated Ark+ member? A verified Auth0 bearer (tier
- * claim, with a Management API fallback when the claim is absent) or the
- * post-checkout session cookie (always paid). Guests resolve to false. Used to
- * gate member-only content.
+ * Does the caller hold Circle access? The community lives on the `circle`
+ * entitlement axis (Circle/Bundle), NOT arkPlus — gating it on arkPlus would
+ * leak community to Ark+-only members and false-lock the Circle-only members who
+ * paid for it (§3 risk 5). Resolved from Neon (the authority); guests → false.
  */
-async function callerIsArkPlusMember(
+async function callerHasCircleAccess(
   req: IncomingMessage,
   env: Deps['env'],
 ): Promise<boolean> {
-  const authHeader = req.headers.authorization
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7)
-    const profile = await verifyAuth0BearerProfile(token)
-    if (profile) {
-      if (profile.tier) return profile.tier === 'ark-plus-member'
-      // Tier claim absent (Action not deployed yet) — authoritative lookup.
-      return (await fetchAuth0TierForEmail(env, profile.email)) === 'ark-plus-member'
-    }
-    // Older clients may pass the checkout-session token as a bearer.
-    if (await verifyCheckoutToken(token, env)) return true
-  }
-  const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
-  if (cookieToken) return Boolean(await verifyCheckoutToken(cookieToken, env))
-  return false
+  const resolved = await resolveMembership(req, env)
+  return resolved?.entitlements.circle ?? false
 }
 
 const CIRCLE_CACHE_TTL_MS = 5 * 60 * 1000
@@ -460,17 +442,16 @@ export function circleRoutes({ env }: Deps): Route[] {
         const json = makeJsonRes(res)
         if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
 
-        // Member-only content (the Ark+ "Exclusive" space). Gate on a verified
-        // subscriber and never let a shared cache hold it — the response is
-        // identity-scoped, not public.
+        // Community content (the "Exclusive" space) — gated on the circle axis.
+        // Never let a shared cache hold it; the response is identity-scoped.
         res.setHeader('cache-control', 'private, no-store')
 
         const token = env.CIRCLE_ADMIN_API_TOKEN
         if (!token) return json(200, { items: [] })
 
-        // Withhold the content from non-subscribers (returns empty rather than
-        // 403 so the client renders the real empty state, not a mock fallback).
-        if (!(await callerIsArkPlusMember(req, env))) {
+        // Withhold from non-Circle members (returns empty rather than 403 so the
+        // client renders the real empty state, not a mock fallback).
+        if (!(await callerHasCircleAccess(req, env))) {
           return json(200, { items: [] })
         }
 
