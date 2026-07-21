@@ -4,6 +4,7 @@ import {
   createAuth0PasswordChangeTicket,
   findOrCreateAuth0User,
 } from '../../lib/auth0-user.js'
+import { AlreadySubscribedError } from '../../lib/activation.js'
 import { sendEmail } from '../../lib/email.js'
 import { renderGiftRedemptionEmail } from '../../lib/welcome-email.js'
 import {
@@ -238,10 +239,29 @@ async function handleSubscriptionUpsert(
     // Grant the (possibly new) tier — Auth0 login + the axes it grants. Provision
     // runs before the entitlement signals so an Auth0/Circle outage can't block
     // feed access; the ids come back for the row.
-    const result = await activator.activateMembershipForStripeSub(sub, tier)
-    if (result.auth0Sub) auth0Sub = result.auth0Sub
-    if (result.scUserId != null) scUserId = result.scUserId
-    plan = result.plan
+    try {
+      const result = await activator.activateMembershipForStripeSub(sub, tier)
+      if (result.auth0Sub) auth0Sub = result.auth0Sub
+      if (result.scUserId != null) scUserId = result.scUserId
+      plan = result.plan
+    } catch (err) {
+      if (!(err instanceof AlreadySubscribedError)) throw err
+      // The SC subscription create lost a race to the /api/auth/checkout-session
+      // poll — the client runs it right after checkout and it provisions the SAME
+      // Stripe sub concurrently, so one path's POST /subscriptions 409s. This is
+      // NOT the terminal "buyer already has a prior membership" conflict routes.ts
+      // guards against: re-read the sub to adopt the ids the sibling stamped and
+      // fall through to write the membership row (the authority) rather than
+      // acking 200 with no row. If the sibling hasn't stamped auth0_user_id yet,
+      // auth0Sub stays unresolved and the row-write below throws a plain Error →
+      // Stripe retries → the redelivery finds it stamped.
+      console.warn(
+        `[stripe] subscription.created raced checkout-poll for ${customerId}; adopting stamped ids`,
+      )
+      const fresh = await stripe.subscriptions.retrieve(sub.id)
+      if (fresh.metadata?.auth0_user_id) auth0Sub = fresh.metadata.auth0_user_id
+      if (fresh.metadata?.sc_user_id) scUserId = Number(fresh.metadata.sc_user_id)
+    }
 
     // Revoke axes the prior tier granted that the new one drops (a downgrade in
     // place, no cancellation).

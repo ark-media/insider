@@ -210,10 +210,24 @@ export async function findOrCreateScUser(
   const existing = await findScUserByEmail(sc, email)
   if (existing) return existing
   const first = (nameHint || email.split('@')[0] || 'Member').slice(0, 40)
-  const created = await sc.call<{ user: ScUser }>('POST', '/users', {
-    email,
-    first_name: first,
-    last_name: '',
-  })
-  return created.user
+  try {
+    const created = await sc.call<{ user: ScUser }>('POST', '/users', {
+      email,
+      first_name: first,
+      last_name: '',
+    })
+    return created.user
+  } catch (err) {
+    // Lost a create-race: two provisioners (the checkout-session poll + the
+    // Stripe webhook) fire concurrently for one checkout, both miss on the
+    // search above, and both POST /users. The loser gets 409 `duplicate_user`.
+    // The email is now taken, so re-fetch and return the existing user rather
+    // than throwing — mirrors the idempotent create-then-recover pattern used
+    // for the SC subscription and Circle member.
+    if ((err as { status?: number }).status === 409) {
+      const now = await findScUserByEmail(sc, email)
+      if (now) return now
+    }
+    throw err
+  }
 }

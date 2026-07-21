@@ -82,21 +82,28 @@ import { devApiPlugin } from './dev-api'
 // the webhook reads auth0_user_id for the row. Product id drives the tier.
 let subProductId = 'prod_arkplus'
 let subMeta: Record<string, string> = {}
+// Drop the SC/Circle provisioning markers (keeping auth0_user_id) so the
+// activator actually attempts the SC-subscription create instead of
+// fast-pathing — used to exercise the checkout-poll race path.
+let omitScSubMarkers = false
 
 function makeSub(): unknown {
+  const metadata: Record<string, string> = omitScSubMarkers
+    ? { plan: 'monthly', auth0_user_id: 'auth0|abc', ...subMeta }
+    : {
+        plan: 'monthly',
+        auth0_user_id: 'auth0|abc',
+        sc_user_id: '555',
+        sc_subscription_id: '777',
+        circle_provisioned: 'true',
+        ...subMeta,
+      }
   return {
     id: 'sub_1',
     customer: 'cus_1',
     status: 'active',
     cancel_at: null,
-    metadata: {
-      plan: 'monthly',
-      auth0_user_id: 'auth0|abc',
-      sc_user_id: '555',
-      sc_subscription_id: '777',
-      circle_provisioned: 'true',
-      ...subMeta,
-    },
+    metadata,
     items: {
       data: [
         {
@@ -122,6 +129,8 @@ const ENV = {
   STRIPE_SECRET_KEY: 'sk_test_fake',
   STRIPE_WEBHOOK_SECRET: 'wh',
   DATABASE_URL: 'postgres://stub-membership-test',
+  SC_SUBSCRIPTION_PRICE_ID_MONTHLY: '999',
+  SC_SUBSCRIPTION_PRICE_ID_YEARLY: '998',
 }
 
 function getHandler(): Middleware {
@@ -153,6 +162,7 @@ beforeEach(() => {
   priorRow = null
   subProductId = 'prod_arkplus'
   subMeta = {}
+  omitScSubMarkers = false
   productEntitlements = { prod_arkplus: 'ark_plus', prod_circle: 'circle', prod_bundle: 'ark_plus,circle' }
   webhookEvent = null
   globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -180,6 +190,45 @@ describe('webhook DB path — membership row', () => {
     expect(up!.values[4]).toBe('ark-plus')
     expect(up!.values[5]).toBe('active')
     expect(up!.values[3]).toBe(555) // sc_user_id captured
+  })
+
+  test('subscription.created that loses the SC-subscription race still writes the row', async () => {
+    // The checkout-poll sibling provisioned the same Stripe sub first, so the
+    // webhook's SC `POST /subscriptions` 409s → the activator throws
+    // AlreadySubscribedError. The webhook must adopt the ids stamped on the sub
+    // and STILL write the membership row rather than acking 200 with no row.
+    omitScSubMarkers = true // force the activator to attempt the SC-sub create
+    webhookEvent = { type: 'customer.subscription.created', data: { object: makeSub() } }
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      fetchCalls.push({ url, method })
+      // SC user lookup resolves an existing user (the sibling created it).
+      if (method === 'POST' && url.endsWith('/users/search')) {
+        return new Response(
+          JSON.stringify({ users: [{ id: 555, email: 'buyer@example.com' }] }),
+          { status: 200 },
+        )
+      }
+      // SC subscription create loses the race → 409.
+      if (method === 'POST' && url.endsWith('/subscriptions')) {
+        return new Response(JSON.stringify({ message: 'already subscribed' }), { status: 409 })
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+
+    const res = await runWebhook()
+
+    expect(res.statusCode).toBe(200)
+    // The 409 was hit (the race actually occurred)...
+    expect(
+      fetchCalls.some((c) => c.method === 'POST' && c.url.endsWith('/subscriptions')),
+    ).toBe(true)
+    // ...and the row was still written from the auth0_sub stamped on the sub.
+    const up = upsertStmt()
+    expect(up).toBeDefined()
+    expect(up!.values[0]).toBe('auth0|abc')
+    expect(up!.values[4]).toBe('ark-plus')
   })
 
   test('Circle-only sub resolves tier=circle and never POSTs an SC subscription', async () => {
