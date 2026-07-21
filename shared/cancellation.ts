@@ -84,6 +84,35 @@ export function reasonLabel(slug: string | null): string | null {
   return CANCELLATION_REASONS.find((r) => r.slug === slug)?.label ?? slug
 }
 
+// What the member was left with after a cancel/debundle, recorded on the
+// cancellation row for win-back targeting (joined to beehiiv_subscription by
+// email). Independent of whether the membership row is later deleted.
+//   full-exit     → cancelled everything (Flows A / B / E full cancel)
+//   kept-circle   → debundled, kept Community, dropped Ark+ (Flow C)
+//   kept-ark-plus → debundled, kept Ark+, dropped Community (Flow D / Flow E keep-one)
+export type RetainedProduct = 'full-exit' | 'kept-circle' | 'kept-ark-plus'
+
+const RETAINED_PRODUCTS: ReadonlySet<string> = new Set([
+  'full-exit',
+  'kept-circle',
+  'kept-ark-plus',
+])
+
+export function isRetainedProduct(v: unknown): v is RetainedProduct {
+  return typeof v === 'string' && RETAINED_PRODUCTS.has(v)
+}
+
+export const RETAINED_PRODUCT_LABEL: Record<RetainedProduct, string> = {
+  'full-exit': 'Full cancel',
+  'kept-circle': 'Debundled — kept Community',
+  'kept-ark-plus': 'Debundled — kept Ark+',
+}
+
+export function retainedProductLabel(v: string | null): string | null {
+  if (!v) return null
+  return RETAINED_PRODUCT_LABEL[v as RetainedProduct] ?? v
+}
+
 // --- Admin cancellations view (GET /api/admin/cancellations) -------------
 
 export type CancellationRow = {
@@ -92,6 +121,10 @@ export type CancellationRow = {
   note: string | null
   offerOutcome: string
   couponId: string | null
+  // The tier that was cancelled/debundled from, and what the member kept. Null
+  // on older rows written before 0012 and on accept rows (a stay, not a cancel).
+  canceledTier: string | null
+  retainedProduct: string | null
   createdAt: string
 }
 

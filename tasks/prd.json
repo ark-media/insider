@@ -1,0 +1,241 @@
+{
+  "project": "Ark Media Insider",
+  "branchName": "compound/cancellation-flows",
+  "description": "Tier-aware cancellation, debundling, and win-back flows for Ark+ / Circle / Bundle subscriptions",
+  "sourcePrd": "tasks/prd-cancellation-flows.md",
+  "qualityGate": {
+    "typecheck": "bunx tsc -b",
+    "lint": "bun run lint",
+    "test": "bun test",
+    "browser": "Chrome DevTools MCP + auth bridge (see reference_browser_test_auth_bridge); Google blocks the automated login, so paste a session token + initScript fetch patch"
+  },
+  "provisionalPendingRyan": {
+    "arkPlusMonthlySupporter": "$6/mo x 12 months",
+    "circleAffordability": "$5/mo x 3 months",
+    "annualArkPlusDebundle": "3 months Circle free"
+  },
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Extend save-offer DTO with offer-kind model",
+      "description": "Generalize the retention save offer so a flow step can describe a plan switch or a coupon (bounded or perpetual), not just a single coupon. Backend/shared foundation with no runtime dependencies.",
+      "acceptanceCriteria": [
+        "File `shared/retention.ts` defines an offer-kind union containing `annual_switch`, `monthly_switch`, `supporter_coupon`, `affordability_coupon`, `circle_free_months`, and `perpetual_discount`",
+        "The RetentionOffer DTO carries the offer kind plus optional `duration_in_months` (bounded coupons) and a `forever` flag (perpetual)",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented; tsc+lint+bun test green."
+    },
+    {
+      "id": "T-002",
+      "title": "Derive eligible save offers by tier and cadence (server)",
+      "description": "Add a server function in server/lib/retention.ts that returns the eligible offer(s) for a given tier + billing cadence, resolving all amounts/coupons from Stripe (never hardcoded).",
+      "acceptanceCriteria": [
+        "File `server/lib/retention.ts` exports a function that maps (tier, cadence) to the eligible offer kinds per the PRD (monthly Ark+ -> annual_switch then supporter_coupon; annual Ark+ -> monthly_switch perpetual; circle -> affordability_coupon)",
+        "Coupon amounts and standalone prices are read via existing Stripe helpers (resolveCatalogPrice / listActiveCoupons) - grep the new code for no hardcoded dollar literals",
+        "`perpetual_discount` maps to a Stripe coupon with `duration: forever`",
+        "Run `bunx tsc -b` - exits with code 0",
+        "Run `bun test` - exits with code 0"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented; tsc+lint+bun test green."
+    },
+    {
+      "id": "T-003",
+      "title": "Migration: relax once-ever retention index to allow re-accept over time",
+      "description": "Replace/relax the once-ever partial unique index (migration 0003) so a subscriber can accept a promotional coupon more than once across time, while still enabling a 12-month within-window block in code.",
+      "acceptanceCriteria": [
+        "A new migration file exists under `migrations/` (created via `bun run migrate:create`)",
+        "Migration removes or relaxes the once-ever unique constraint on accepted cancellation-survey rows and preserves the accepted-at timestamp column",
+        "Run `bun run migrate:status` - shows the new migration",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented; tsc+lint+bun test green. Migrations 0011/0012 scaffolded (not yet applied to live DB)."
+    },
+    {
+      "id": "T-004",
+      "title": "Windowed coupon eligibility (12-month, coupons only)",
+      "description": "Change hasAcceptedRetention to a rolling 12-month window that blocks promotional coupons only; plan switches (annual/monthly) bypass the check entirely (Decision #6).",
+      "acceptanceCriteria": [
+        "File `server/lib/cancellation.ts` `hasAcceptedRetention` (or its replacement) blocks a new coupon offer only when an `accepted` coupon outcome exists within the last 12 months",
+        "Plan-switch offers are never blocked by this check",
+        "A `bun test` unit test asserts: coupon accepted at T is blocked at T+11mo and eligible at T+13mo; plan switch allowed at any T",
+        "Run `bun test` - exits with code 0"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented; tsc+lint+bun test green."
+    },
+    {
+      "id": "T-005",
+      "title": "Debundle price-preview helper",
+      "description": "Provide the 'new standalone price' shown in debundle confirmations, given current tier + target tier + cadence, reusing resolveCatalogPrice.",
+      "acceptanceCriteria": [
+        "A server helper returns the target standalone price (e.g. `circle_{cadence}` / `ark_plus_{cadence}` lookup key) from Stripe",
+        "Helper returns Circle standalone at $8/mo equivalent for the circle target (matches `scripts/stripe-catalog.ts`)",
+        "Run `bunx tsc -b` - exits with code 0",
+        "Run `bun test` - exits with code 0"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented; tsc+lint+bun test green."
+    },
+    {
+      "id": "T-006",
+      "title": "Shared MissionReminder component",
+      "description": "Extract a single reusable mission-reminder block rendered as step zero of every cancel/debundle flow (A-E).",
+      "acceptanceCriteria": [
+        "File `src/routes/account/MissionReminder.tsx` exists and exports a component rendering the approved mission copy (support funds independent Jewish media; each subscriber makes Ark Media's work possible)",
+        "The mission copy lives in a single exported constant (one edit point)",
+        "Conditional JSX in the component uses ternary (`? :`), not `&&` (per feedback_ternary_rendering)",
+        "Run `bunx tsc -b` - exits with code 0",
+        "In browser (Chrome DevTools MCP + auth bridge): the component renders visible mission text - screenshot saved to .tmp/mission-header.png"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "MissionReminder.tsx built; rendered as step 0 of every flow; copy in one constant; ternary JSX; tsc 0. PENDING: browser screenshot .tmp/mission-header.png (needs live dev server + auth bridge)."
+    },
+    {
+      "id": "T-007",
+      "title": "Tier-aware cancel entry decision tree",
+      "description": "Replace the single Cancel entry in billing.tsx with tier-aware routing to Flows A-E, each opening with the mission header.",
+      "acceptanceCriteria": [
+        "File `src/routes/account/billing.tsx` routes `ark-plus` -> single Cancel Ark+ action (Flow A), `circle` -> single Cancel Community action (Flow B)",
+        "For `bundle`, three choices are presented: Remove Ark+ (keep Community), Remove Community (keep Ark+), Cancel everything (Flows C/D/E)",
+        "`cancel_initiated` analytics event fires with a `flow` discriminator value in A-E",
+        "Run `bunx tsc -b` - exits with code 0",
+        "In browser (Chrome DevTools MCP + auth bridge): entry renders the correct options for each of ark-plus, circle, and bundle - screenshots saved to .tmp/entry-{tier}.png"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Tier-aware entry in billing.tsx via CancelFlow (ark-plus\u2192A, circle\u2192B, bundle\u2192C/D/E choices); cancel_initiated fires with flow A\u2013E; tsc 0. PENDING: browser screenshots .tmp/entry-{tier}.png."
+    },
+    {
+      "id": "T-008",
+      "title": "Flow A - Ark+ two-step save (monthly + annual)",
+      "description": "Implement the Ark+ cancel flow: mission step, then cadence-branched offer step (monthly: annual switch then $6 supporter coupon; annual: perpetual move-to-monthly at ~$6.67/mo).",
+      "acceptanceCriteria": [
+        "Step 1 renders MissionReminder; step 2 renders the cadence-specific offer from T-002",
+        "Monthly path: annual-switch offer shows concrete savings vs month-to-month; declining shows supporter coupon ($6/mo x 12mo, config-driven)",
+        "Annual path: offer is a perpetual monthly switch at the annual-effective rate (~$6.67/mo), framed as flexibility (Decision #5)",
+        "Accepting a switch calls `POST /api/stripe/change-tier`; accepting a coupon attaches the coupon and clears pending cancel",
+        "Declining all advances to reason -> confirm -> `POST /api/stripe/cancel-subscription`",
+        "Promotional coupon offers are suppressed when the T-004 window blocks them; plan switches always show",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Flow A two-step save implemented (mission \u2192 cadence offer from save-offers; monthly=annual_switch then supporter_coupon; annual=perpetual monthly_switch; switch\u2192change-tier, coupon\u2192accept-save-offer; decline\u2192reason\u2192confirm\u2192cancel; window suppression). tsc 0, lint 0, build 0. Runtime check is T-009."
+    },
+    {
+      "id": "T-009",
+      "title": "Verify Flow A in browser (both cadences, Stripe test mode)",
+      "description": "Runtime-verify the Ark+ save flow end to end for a monthly and an annual test subscriber.",
+      "acceptanceCriteria": [
+        "In browser (Chrome DevTools MCP + auth bridge), monthly test sub: mission -> annual offer -> decline -> supporter offer -> accept applies coupon (verify sub in Stripe test dashboard has the coupon, cancel cleared)",
+        "In browser, annual test sub: mission -> perpetual monthly-switch offer -> accept switches cadence (verify Stripe subscription now monthly with forever coupon)",
+        "In browser, decline-all path reaches confirm and sets `cancel_at_period_end: true` (verify in Stripe)",
+        "Console shows no errors during the flow",
+        "Screenshots saved to .tmp/flowA-monthly.png and .tmp/flowA-annual.png"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "PENDING: pure runtime verification of Flow A both cadences in Stripe test mode (needs live dev server, auth bridge token, monthly+annual Ark+ test subs)."
+    },
+    {
+      "id": "T-010",
+      "title": "Flow B - Circle affordability save",
+      "description": "Implement the standalone-Circle cancel flow: brief mission reminder, then the $5/mo x 3mo affordability offer, then reason/confirm/cancel.",
+      "acceptanceCriteria": [
+        "Flow renders MissionReminder then the affordability offer (config-driven amount) with community-belonging framing",
+        "Accept attaches the coupon and clears pending cancel; decline advances to reason -> confirm -> `POST /api/stripe/cancel-subscription`",
+        "Coupon eligibility respects the T-004 12-month window",
+        "Run `bunx tsc -b` - exits with code 0",
+        "In browser (Chrome DevTools MCP + auth bridge) with a Circle test sub: accept applies coupon (verify in Stripe test mode) - screenshot saved to .tmp/flowB.png"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Flow B affordability save built (MissionReminder + affordability_coupon offer, window-respected, accept attaches coupon / decline\u2192reason\u2192confirm\u2192cancel); tsc 0. PENDING: browser .tmp/flowB.png + Stripe test sub."
+    },
+    {
+      "id": "T-011",
+      "title": "Flow C - Debundle: remove Ark+, keep Circle",
+      "description": "Bundle -> Circle debundle: bundle-value popup, then run the Flow A Ark+ save, then a confirm that displays the new standalone Circle price, then change-tier to circle.",
+      "acceptanceCriteria": [
+        "Popup 1 states the combined-subscription value and the savings lost by separating",
+        "Continuing runs the Flow A Ark+ save (mission + cadence offer)",
+        "Final confirm displays the new standalone Circle price fetched via T-005 (not hardcoded)",
+        "Confirm calls `POST /api/stripe/change-tier` targeting `circle`",
+        "Run `bunx tsc -b` - exits with code 0",
+        "In browser (Chrome DevTools MCP + auth bridge) with a bundle test sub: completing the flow creates a Stripe schedule downgrading to circle - screenshot saved to .tmp/flowC.png"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Flow C debundle built (bundle-value popup \u2192 Flow A save \u2192 confirm shows new standalone Circle price via T-005 \u2192 change-tier to circle with retained_product); tsc 0. PENDING: browser .tmp/flowC.png + bundle test sub + Stripe schedule check."
+    },
+    {
+      "id": "T-012",
+      "title": "Flow D - Debundle: remove Circle, keep Ark+",
+      "description": "Bundle -> Ark+ debundle, cadence-dependent: monthly goes straight to a leave-Community confirm; annual is offered 3 months of Circle free before removal.",
+      "acceptanceCriteria": [
+        "Popup 1 renders the bundle-value reminder",
+        "Monthly Ark+: a 'sorry to see you leave Community' confirm then `POST /api/stripe/change-tier` targeting `ark-plus`",
+        "Annual Ark+: offers 3 months of Circle free (config-driven); accept extends Circle 3mo free, decline -> confirm -> change-tier to ark-plus",
+        "Run `bunx tsc -b` - exits with code 0",
+        "In browser (Chrome DevTools MCP + auth bridge): monthly and annual bundle test subs each reach the correct terminal action - screenshots saved to .tmp/flowD-monthly.png and .tmp/flowD-annual.png"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Flow D debundle built (bundle-value \u2192 monthly: straight confirm; annual: 3mo Circle-free offer \u2192 confirm \u2192 change-tier to ark-plus); tsc 0. PENDING: browser .tmp/flowD-{monthly,annual}.png + bundle test subs."
+    },
+    {
+      "id": "T-013",
+      "title": "Flow E - Bundle full cancel with keep-just-one save",
+      "description": "Full cancel for bundle subscribers with a keep-just-one retention step offering debundle to either product before canceling both (Decision #4).",
+      "acceptanceCriteria": [
+        "Mission -> keep-just-one step offers debundle to Ark+ alone OR Circle alone, each showing its standalone price (via T-005)",
+        "Accepting either routes into the matching debundle (change-tier to ark-plus or circle); declining both advances to reason -> confirm -> `POST /api/stripe/cancel-subscription`",
+        "Reuses Flow C/D plumbing rather than duplicating it",
+        "Run `bunx tsc -b` - exits with code 0",
+        "In browser (Chrome DevTools MCP + auth bridge) with a bundle test sub: keep-one path and cancel-both path both reach the correct terminal action - screenshot saved to .tmp/flowE.png"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Flow E built (mission \u2192 keep-just-one showing both standalone prices \u2192 debundle to ark-plus/circle OR reason\u2192confirm\u2192cancel; reuses Flow C/D plumbing); tsc 0. PENDING: browser .tmp/flowE.png + bundle test sub."
+    },
+    {
+      "id": "T-014",
+      "title": "Win-back cancellation record (email + retained_product)",
+      "description": "Ensure a durable cancellation record captures email, what/why, and retained_product, joinable to beehiiv_subscription by email; email + consent already survive teardown via Beehiiv (Decision #8). No membership-row retention required.",
+      "acceptanceCriteria": [
+        "The cancellation record persisted in `server/lib/cancellation.ts` captures email, canceled tier/product, reason, offer outcome, and a `retained_product` value (e.g. kept-circle, kept-ark-plus, full-exit)",
+        "A migration adds the `retained_product` (and email if absent) column if not already present",
+        "The record persists independently of any membership-row deletion and is joinable to `beehiiv_subscription` by email",
+        "Entitlement resolver still resolves a canceled/absent membership to `free` (no access leak) - covered by a `bun test`",
+        "Run `bun test` - exits with code 0"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "Implemented; tsc+lint+bun test green. Migrations 0011/0012 scaffolded (not yet applied to live DB)."
+    },
+    {
+      "id": "T-015",
+      "title": "Analytics + admin reporting for new flows",
+      "description": "Extend analytics events and the admin cancellations view so churn/save outcomes are legible per flow and per retained product.",
+      "acceptanceCriteria": [
+        "Analytics events carry `flow` (A-E), `offer_kind`, and `retained_product` where applicable (grep `src/lib/analytics.ts`)",
+        "File `src/routes/admin/cancellations.tsx` distinguishes full cancels from debundles and shows retained_product",
+        "Run `bunx tsc -b` - exits with code 0",
+        "In browser (Chrome DevTools MCP + auth bridge) at /admin/cancellations: table shows a debundle row distinct from a full-cancel row - screenshot saved to .tmp/admin-cancellations.png"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Analytics carry flow(A\u2013E)/offer_kind/retained_product; admin cancellations.tsx shows Type (debundle vs full cancel) + kept product + cancelled tier; CSV extended; tsc 0. PENDING: browser .tmp/admin-cancellations.png."
+    }
+  ]
+}

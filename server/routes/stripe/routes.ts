@@ -24,10 +24,17 @@ import {
   setMembershipPending,
 } from '../../lib/membership.js'
 import { hasAcceptedRetention, insertCancellationSurvey } from '../../lib/cancellation.js'
-import { pickRetentionCoupon, toRetentionOffer } from '../../lib/retention.js'
+import {
+  debundlePricePreview,
+  deriveSaveOffers,
+  pickRetentionCoupon,
+  toRetentionOffer,
+} from '../../lib/retention.js'
+import { isPlanSwitchKind, isSaveIntent } from '../../../shared/retention.js'
 import {
   isCancelOfferOutcome,
   isCancellationReason,
+  isRetainedProduct,
   MAX_CANCELLATION_NOTE_LEN,
 } from '../../../shared/cancellation.js'
 import { listActiveCoupons, pickBestCoupon } from '../../lib/stripe-promos.js'
@@ -286,8 +293,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // Record the survey before cancelling — but never let an analytics
         // write block the member's cancellation. A DB hiccup degrades to "we
         // lost the reason," not "we couldn't cancel." Skipped entirely when no
-        // DB is configured (e.g. a Stripe-only preview env).
+        // DB is configured (e.g. a Stripe-only preview env). The record captures
+        // the tier being left and retained_product='full-exit' (this endpoint is
+        // the full cancel; debundles keep a product via change-tier), so win-back
+        // can target it by email even after the membership row is torn down.
         if (env.DATABASE_URL) {
+          let canceledTier: string | null = null
+          try {
+            canceledTier = await tierFromSubscription(sub, stripe)
+          } catch (err) {
+            console.error('[stripe] cancel: tier derivation failed:', err)
+          }
           try {
             await insertCancellationSurvey(getDb(env), {
               email: cancelEmail,
@@ -295,6 +311,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               note,
               offerOutcome,
               couponId: null,
+              canceledTier,
+              retainedProduct: 'full-exit',
             })
           } catch (err) {
             console.error('[stripe] cancellation survey write failed:', err)
@@ -370,10 +388,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(200, ineligible)
 
-        // Offered once per member, ever — eligibility burns on accept. A read
-        // failure fails closed: better to skip the offer than hand a second one
-        // to someone who already accepted. Skipped only when no DB is
-        // configured (preview env), where there's no place to burn eligibility.
+        // Promotional coupon offered at most once per rolling 12 months — a
+        // recent accept suppresses it (Decision #6). A read failure fails
+        // closed: better to skip the offer than hand a second one to someone
+        // still inside their window. Skipped only when no DB is configured
+        // (preview env), where there's no window to check.
         if (env.DATABASE_URL) {
           try {
             if (await hasAcceptedRetention(getDb(env), email)) {
@@ -425,13 +444,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         )
         if (!coupon) return json(409, { error: 'No retention offer available.' })
 
-        // Once-ever guard: reject a repeat accept *before* touching Stripe.
-        // Re-applying a repeating coupon resets its discount window, so a
-        // member could otherwise renew a one-time save indefinitely by
-        // replaying this POST — the offer must burn on the first accept. A read
-        // failure fails closed (reject), matching the GET's posture; the DB
-        // unique index on accepted rows is the hard backstop against races.
-        // Skipped only when no DB is configured (preview env — no burn there).
+        // Windowed guard: reject a repeat coupon accept *before* touching
+        // Stripe. Re-applying a repeating coupon resets its discount window, so
+        // a member could otherwise renew a save by replaying this POST — the
+        // window (last 12 months) blocks that. A read failure fails closed
+        // (reject), matching the GET's posture. A rare raced double-accept can
+        // still write a duplicate row, but the window blocks the next attempt.
+        // Skipped only when no DB is configured (preview env — no window there).
         if (env.DATABASE_URL) {
           let alreadyAccepted = true
           try {
@@ -463,8 +482,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             })
           } catch (err) {
             // The discount is applied; losing the row only affects admin
-            // analytics (the once-ever guard is backstopped by the DB unique
-            // index). Log, don't fail the accept.
+            // analytics and the next window check. Log, don't fail the accept.
             console.error('[stripe] retention accept survey write failed:', err)
           }
         }
@@ -474,6 +492,156 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           percentOff: coupon.percent_off,
           amountOff: coupon.amount_off,
           durationMonths: coupon.duration_in_months ?? null,
+          next_charge_at: periodEndIso(updated),
+        })
+      },
+    }),
+
+    defineRoute({
+      // The ordered save offers for a tier-aware cancel/debundle flow (Flows
+      // A–E). The server resolves the member's billing cadence from the live
+      // sub and derives amounts/coupons from Stripe (never hardcoded). Coupon
+      // offers are suppressed when the member accepted a promotional coupon
+      // within the rolling 12 months (Decision #6); plan switches always show.
+      // Fails closed to no offers so a Stripe/DB hiccup never blocks the flow.
+      path: '/api/stripe/save-offers',
+      method: 'GET',
+      handler: async (req, _res, json) => {
+        if (!stripe) return json(500, { error: 'not_configured' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const url = new URL(req.url ?? '', 'http://localhost')
+        const intent = url.searchParams.get('intent')
+        if (!isSaveIntent(intent)) return json(400, { error: 'bad_intent' })
+
+        const empty = { offers: [], standalone: null }
+        const sub = await findLiveSubscription(stripe, email)
+        if (!sub) return json(200, empty)
+        const plan = planFromSubscription(sub)
+        if (!plan) return json(200, empty)
+
+        let offers
+        // For a debundle, the standalone price the *kept* product continues at,
+        // shown on the confirm screen (Flows C/D/E). Null for a full cancel.
+        let standalone = null
+        try {
+          offers = await deriveSaveOffers(stripe, intent, plan)
+          if (intent === 'debundle-remove-ark-plus') {
+            standalone = await debundlePricePreview(stripe, 'circle', plan)
+          } else if (intent === 'debundle-remove-circle') {
+            standalone = await debundlePricePreview(stripe, 'ark-plus', plan)
+          }
+        } catch (err) {
+          console.error('[stripe] save-offers derivation failed:', err)
+          return json(200, empty)
+        }
+
+        // Window-suppress promotional coupons (keep plan switches). A read
+        // failure fails closed: drop coupon offers rather than risk a repeat.
+        if (env.DATABASE_URL) {
+          let blocked = true
+          try {
+            blocked = await hasAcceptedRetention(getDb(env), email)
+          } catch (err) {
+            console.error('[stripe] save-offers eligibility check failed:', err)
+          }
+          if (blocked) offers = offers.filter((o) => isPlanSwitchKind(o.kind))
+        }
+
+        json(200, { offers, standalone })
+      },
+    }),
+
+    defineRoute({
+      // Accept a coupon-backed save offer (supporter / affordability /
+      // circle-free-months / perpetual). The coupon is re-derived server-side
+      // for (intent, cadence) — never trusted from the client — attached to the
+      // live sub, and any pending cancel is cleared in one update. An accepted
+      // survey row is written, which burns the 12-month window. Plan switches
+      // (annual/monthly) go through change-tier instead, not this route.
+      path: '/api/stripe/accept-save-offer',
+      method: 'POST',
+      handler: async (req, _res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'not_configured' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const body = (await readJson<{ intent?: unknown; kind?: unknown }>(req)) ?? {}
+        if (!isSaveIntent(body.intent)) return json(400, { error: 'bad_intent' })
+        const wantKind = body.kind
+        if (typeof wantKind !== 'string') return json(400, { error: 'bad_kind' })
+
+        const sub = await findLiveSubscription(stripe, email)
+        if (!sub) return json(404, { error: 'No active subscription found' })
+        const plan = planFromSubscription(sub)
+        if (!plan) return json(409, { error: 'No billing cadence on subscription.' })
+
+        const offers = await deriveSaveOffers(stripe, body.intent, plan)
+        const offer = offers.find((o) => o.kind === wantKind && o.couponId)
+        // A pure plan switch (annual_switch, no coupon) is applied via
+        // change-tier, not here — nothing to attach.
+        if (!offer || !offer.couponId) {
+          return json(409, { error: 'No such save offer available.' })
+        }
+
+        // The perpetual monthly_switch coupon is the counterpart of a plan
+        // switch (Decision #5) — a plan switch is never rate-limited (Decision
+        // #6), so it neither burns nor is blocked by the 12-month window, and it
+        // must not touch cancel_at_period_end (the switch itself is scheduled by
+        // change-tier). Promotional coupons do all three.
+        const isSwitchCoupon = isPlanSwitchKind(offer.kind)
+
+        if (!isSwitchCoupon && env.DATABASE_URL) {
+          let blocked = true
+          try {
+            blocked = await hasAcceptedRetention(getDb(env), email)
+          } catch (err) {
+            console.error('[stripe] accept-save-offer eligibility check failed:', err)
+          }
+          if (blocked) return json(409, { error: 'Save offer already used recently.' })
+        }
+
+        let updated
+        if (isSwitchCoupon) {
+          // Attach the perpetual coupon alongside the change-tier-scheduled
+          // switch; don't release the schedule or clear cancel here.
+          updated = await stripe.subscriptions.update(sub.id, {
+            discounts: [{ coupon: offer.couponId }],
+          })
+        } else {
+          // Release any pending schedule so the coupon attaches cleanly, then
+          // attach it and clear any pending cancel in one update.
+          await releaseScheduleIfAny(stripe, sub, env)
+          updated = await stripe.subscriptions.update(sub.id, {
+            discounts: [{ coupon: offer.couponId }],
+            cancel_at_period_end: false,
+          })
+          if (env.DATABASE_URL) {
+            try {
+              await insertCancellationSurvey(getDb(env), {
+                email,
+                reason: null,
+                note: null,
+                offerOutcome: 'accepted',
+                couponId: offer.couponId,
+              })
+            } catch (err) {
+              console.error('[stripe] accept-save-offer survey write failed:', err)
+            }
+          }
+        }
+
+        json(200, {
+          ok: true,
+          kind: offer.kind,
+          percentOff: offer.percentOff,
+          amountOff: offer.amountOff,
+          durationMonths: offer.durationMonths,
+          forever: offer.forever,
           next_charge_at: periodEndIso(updated),
         })
       },
@@ -566,6 +734,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // A schedule-managed sub has a pending period-end tier/PWYC change
           // (task 14). The account page can surface "a plan change is scheduled".
           pendingChange: Boolean(sub && scheduleIdOf(sub)),
+          // Billing cadence, so the cancel flows can branch copy by monthly vs
+          // annual (Flow A / Flow D). Null when there's no live sub.
+          plan: sub ? planFromSubscription(sub) : null,
         })
       },
     }),
@@ -595,10 +766,16 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             tier?: string
             plan?: 'monthly' | 'yearly'
             custom_amount_cents?: number
+            retained_product?: unknown
           }>(req)) ?? {}
         if (body.plan !== 'monthly' && body.plan !== 'yearly') {
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
         }
+        // A debundle (bundle → single product) passes retained_product so the
+        // win-back record captures what was kept; a plain upgrade/PWYC omits it.
+        const retainedProduct = isRetainedProduct(body.retained_product)
+          ? body.retained_product
+          : null
         const plan = body.plan
         const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
         const newTier = coerceTier(body.tier)
@@ -720,6 +897,25 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               pending_amount_cents: amountCents,
               pending_plan: plan,
             })
+            // Win-back record for a debundle (retained_product set): the member
+            // is leaving one product but keeping another. Records the tier left
+            // and what was kept, joinable to Beehiiv by email. Non-blocking — a
+            // failed analytics write must not fail the debundle.
+            if (retainedProduct) {
+              try {
+                await insertCancellationSurvey(getDb(env), {
+                  email,
+                  reason: null,
+                  note: null,
+                  offerOutcome: 'not_offered',
+                  couponId: null,
+                  canceledTier: currentTier,
+                  retainedProduct,
+                })
+              } catch (err) {
+                console.error('[stripe] debundle survey write failed:', err)
+              }
+            }
           }
           return json(200, {
             ok: true,

@@ -20,8 +20,14 @@
 // ---------------------------------------------------------------------------
 
 import { track } from './observability'
+import type { OfferKind } from '../../shared/retention'
+import type { RetainedProduct } from '../../shared/cancellation'
 
 type Plan = 'monthly' | 'yearly'
+
+// The tier-aware cancel/debundle flow (A–E) an event belongs to, so churn and
+// save outcomes are legible per flow in PostHog.
+type Flow = 'A' | 'B' | 'C' | 'D' | 'E'
 
 // The SKU dimension on the revenue funnel, so PostHog can break checkout down by
 // Ark+ vs Circle vs Bundle. Optional on each event — a call site that predates
@@ -34,16 +40,6 @@ type CheckoutFailureStage =
   | 'create_session' // server couldn't create the Stripe Checkout Session
   | 'payment' // Stripe rejected/declined the payment on confirm
   | 'provisioning' // paid, but activation didn't confirm in the poll window
-
-// A retention coupon's value, normalized for analytics. Exactly one of
-// percent_off / amount_off_cents is non-null; duration_months is set when the
-// coupon repeats. Shared by the "shown" and "accepted" events so a funnel can
-// compare offered vs. accepted discount on the same fields.
-interface DiscountProps {
-  percent_off: number | null
-  amount_off_cents: number | null
-  duration_months: number | null
-}
 
 // The contract. Key = event name, value = its required props (`void` = none).
 interface EventMap {
@@ -72,13 +68,30 @@ interface EventMap {
     reason?: string
   }
 
-  // --- Tier 2: churn / retention ---
-  cancel_initiated: void
-  retention_offer_shown: DiscountProps & { kind: 'percent' | 'amount' }
-  retention_offer_accepted: DiscountProps
-  retention_offer_declined: void
-  cancellation_reason_submitted: { reason: string }
-  subscription_cancelled: { reason: string; offer_outcome: 'declined' | 'not_offered' }
+  // --- Tier 2: churn / retention (tier-aware flows A–E) ---
+  // Fired at the entry of every cancel/debundle flow, tagged with which flow
+  // and the member's current tier.
+  cancel_initiated: { flow: Flow; tier: Tier }
+  // Save-offer funnel per flow + offer kind (annual_switch, supporter_coupon,
+  // affordability_coupon, circle_free_months, monthly_switch, perpetual_discount).
+  save_offer_shown: { flow: Flow; tier: Tier; offer_kind: OfferKind }
+  save_offer_accepted: { flow: Flow; tier: Tier; offer_kind: OfferKind }
+  save_offer_declined: { flow: Flow; tier: Tier; offer_kind: OfferKind }
+  cancellation_reason_submitted: { reason: string; flow: Flow }
+  // Terminal full cancel (Flows A / B / E full cancel). retained_product is
+  // always 'full-exit' here — carried for a uniform churn breakdown with debundles.
+  subscription_cancelled: {
+    reason: string
+    offer_outcome: 'declined' | 'not_offered'
+    flow: Flow
+    retained_product: RetainedProduct
+  }
+  // Terminal debundle (Flows C / D, and Flow E keep-just-one): kept one product,
+  // dropped the other. Never a full exit.
+  subscription_debundled: {
+    flow: Flow
+    retained_product: Exclude<RetainedProduct, 'full-exit'>
+  }
   subscription_reactivated: void
 
   // --- Tier 3: secondary conversions & activation ---

@@ -263,11 +263,13 @@ describe('GET /api/stripe/retention-offer', () => {
     expect(res.__json()).toEqual({
       eligible: true,
       offer: {
+        kind: 'supporter_coupon',
         couponId: 'save20',
         label: 'Stay 20',
         percentOff: 20,
         amountOff: null,
         durationMonths: 3,
+        forever: false,
       },
     })
   })

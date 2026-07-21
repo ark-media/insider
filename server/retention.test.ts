@@ -2,7 +2,9 @@
 
 import { describe, test, expect } from 'bun:test'
 import {
+  couponOfferKind,
   isRetentionCoupon,
+  pickOfferCoupon,
   pickRetentionCoupon,
   toRetentionOffer,
   type RetentionCouponLike,
@@ -105,6 +107,55 @@ describe('pickRetentionCoupon plan targeting', () => {
   })
 })
 
+describe('couponOfferKind', () => {
+  test('reads a valid offer_kind from metadata', () => {
+    expect(
+      couponOfferKind(retention({ metadata: { retention_offer: 'true', offer_kind: 'supporter_coupon' } })),
+    ).toBe('supporter_coupon')
+  })
+  test('null for an unknown or absent offer_kind', () => {
+    expect(couponOfferKind(retention({ metadata: { retention_offer: 'true', offer_kind: 'nope' } }))).toBeNull()
+    expect(couponOfferKind(retention({}))).toBeNull()
+  })
+})
+
+describe('pickOfferCoupon', () => {
+  const supporter = retention({
+    id: 'sup',
+    amount_off: 200,
+    metadata: { retention_offer: 'true', offer_kind: 'supporter_coupon', plan: 'monthly' },
+  })
+  const affordability = retention({
+    id: 'aff',
+    amount_off: 300,
+    metadata: { retention_offer: 'true', offer_kind: 'affordability_coupon' },
+  })
+  const perpetualForever = retention({
+    id: 'perp',
+    duration: 'forever',
+    amount_off: 133,
+    metadata: { retention_offer: 'true', offer_kind: 'perpetual_discount', plan: 'monthly' },
+  })
+  const perpetualBounded = retention({
+    id: 'perp-bad',
+    duration: 'repeating',
+    amount_off: 999,
+    metadata: { retention_offer: 'true', offer_kind: 'perpetual_discount' },
+  })
+
+  test('matches by offer_kind + plan', () => {
+    expect(pickOfferCoupon([supporter, affordability], 'supporter_coupon', 'monthly')?.id).toBe('sup')
+    expect(pickOfferCoupon([supporter, affordability], 'affordability_coupon', null)?.id).toBe('aff')
+  })
+  test('supporter coupon targeted to monthly is not offered to a yearly member', () => {
+    expect(pickOfferCoupon([supporter], 'supporter_coupon', 'yearly')).toBeNull()
+  })
+  test('perpetual_discount requires a duration: forever coupon', () => {
+    expect(pickOfferCoupon([perpetualForever], 'perpetual_discount', 'monthly')?.id).toBe('perp')
+    expect(pickOfferCoupon([perpetualBounded], 'perpetual_discount', 'monthly')).toBeNull()
+  })
+})
+
 describe('toRetentionOffer', () => {
   test('flattens the coupon into the client DTO', () => {
     const c = retention({
@@ -114,11 +165,13 @@ describe('toRetentionOffer', () => {
       duration_in_months: 3,
     })
     expect(toRetentionOffer(c)).toEqual({
+      kind: 'supporter_coupon',
       couponId: 'save20',
       label: 'Stay 20',
       percentOff: 20,
       amountOff: null,
       durationMonths: 3,
+      forever: false,
     })
   })
 })

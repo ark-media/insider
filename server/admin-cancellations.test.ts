@@ -159,7 +159,9 @@ describe('GET /api/admin/cancellations', () => {
     expect(res.__headers['content-disposition']).toContain('attachment')
     expect(res.__headers['content-disposition']).toContain('.csv')
     // BOM + the header row, no data rows (no DB configured).
-    expect(res.__body()).toBe('\uFEFF"Date","Email","Outcome","Reason","Note","Coupon"')
+    expect(res.__body()).toBe(
+      '\uFEFF"Date","Email","Outcome","Reason","Note","Coupon","Cancelled tier","Kept"',
+    )
   })
 
   test('CSV export is still admin-gated', async () => {

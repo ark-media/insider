@@ -7,12 +7,42 @@ import type { Sql } from './db.js'
 import {
   outcomeLabel,
   reasonLabel,
+  retainedProductLabel,
   type CancellationFilter,
   type CancellationRow,
   type CancellationSummary,
   type OfferOutcome,
 } from '../../shared/cancellation.js'
+import type { OfferKind } from '../../shared/retention.js'
 import { toCsv } from './csv.js'
+
+// Promotional coupons are redeemable at most once per rolling window; older
+// acceptances no longer block a new offer (Decision #6). Plan switches are never
+// rate-limited — see offerBlockedByWindow.
+export const RETENTION_WINDOW_MONTHS = 12
+
+// Is a prior coupon-accept still inside the rolling eligibility window? A null
+// timestamp (never accepted) is always outside. Pure so the window rule is unit
+// testable without a database.
+export function withinRetentionWindow(acceptedAt: Date | null, now: Date): boolean {
+  if (!acceptedAt) return false
+  const cutoff = new Date(now)
+  cutoff.setMonth(cutoff.getMonth() - RETENTION_WINDOW_MONTHS)
+  return acceptedAt.getTime() > cutoff.getTime()
+}
+
+// Plan switches (annual↔monthly) are never rate-limited; only promotional
+// coupons are (Decision #6). Given an offer kind and the member's most recent
+// coupon-accept time, decide whether this specific offer is blocked right now.
+const PLAN_SWITCH_KINDS = new Set<OfferKind>(['annual_switch', 'monthly_switch'])
+export function offerBlockedByWindow(
+  kind: OfferKind,
+  lastCouponAcceptAt: Date | null,
+  now: Date,
+): boolean {
+  if (PLAN_SWITCH_KINDS.has(kind)) return false
+  return withinRetentionWindow(lastCouponAcceptAt, now)
+}
 
 export type CancellationSurveyInput = {
   email: string
@@ -20,38 +50,48 @@ export type CancellationSurveyInput = {
   note: string | null
   offerOutcome: OfferOutcome
   couponId: string | null
+  // Win-back record (0012): the tier left and what was kept. Optional so the
+  // accept path (a stay) and older callers omit them; default to null.
+  canceledTier?: string | null
+  retainedProduct?: string | null
 }
 
 // Insert one survey row. Callers decide whether a failure here is fatal — a
 // cancel shouldn't be blocked by an analytics write, but an accept records the
-// row that burns eligibility. `on conflict do nothing` against the partial
-// unique index (migrations/0003) makes a duplicate 'accepted' row a no-op
-// rather than an error, so a raced double-accept can't throw; the arbiter only
-// covers accepted rows, so declined/not_offered inserts are unaffected.
+// row the window check reads. The once-ever unique index (migrations/0003) was
+// relaxed in 0011 so a member can re-accept across time, so there is no ON
+// CONFLICT arbiter here; the accept endpoint's read-then-write window guard
+// prevents a within-window repeat, and a rare raced double-accept only writes a
+// duplicate analytics row (harmless — the window still blocks the next attempt).
 export async function insertCancellationSurvey(
   sql: Sql,
   input: CancellationSurveyInput,
 ): Promise<void> {
   await sql`
-    insert into cancellation_survey (email, reason, note, offer_outcome, coupon_id)
+    insert into cancellation_survey
+      (email, reason, note, offer_outcome, coupon_id, canceled_tier, retained_product)
     values (
       ${input.email},
       ${input.reason},
       ${input.note},
       ${input.offerOutcome},
-      ${input.couponId}
-    )
-    on conflict (email) where offer_outcome = 'accepted' do nothing`
+      ${input.couponId},
+      ${input.canceledTier ?? null},
+      ${input.retainedProduct ?? null}
+    )`
 }
 
-// Has this email ever accepted a retention offer? Eligibility burns only on
-// accept (decliners stay "unused"), so a single accepted row makes the member
-// ineligible forever — and guards the accept endpoint against writing a
-// duplicate row on a double-click.
+// Has this email accepted a promotional coupon within the rolling eligibility
+// window? Only coupon accepts (coupon_id present) count — plan switches never
+// write a coupon-accept row and are never rate-limited (Decision #6). An
+// acceptance older than the window no longer blocks a fresh offer.
 export async function hasAcceptedRetention(sql: Sql, email: string): Promise<boolean> {
   const rows = await sql`
     select 1 from cancellation_survey
-    where email = ${email} and offer_outcome = 'accepted'
+    where email = ${email}
+      and offer_outcome = 'accepted'
+      and coupon_id is not null
+      and created_at >= now() - make_interval(months => ${RETENTION_WINDOW_MONTHS})
     limit 1`
   return rows.length > 0
 }
@@ -78,7 +118,8 @@ function buildRowQuery(
     params.push(filter.reason)
     where.push(`reason = $${params.length}`)
   }
-  let text = `select email, reason, note, offer_outcome, coupon_id, created_at
+  let text = `select email, reason, note, offer_outcome, coupon_id,
+      canceled_tier, retained_product, created_at
     from cancellation_survey`
   if (where.length) text += ` where ${where.join(' and ')}`
   text += ` order by created_at desc`
@@ -96,6 +137,8 @@ function mapRow(r: Record<string, unknown>): CancellationRow {
     note: (r.note as string | null) ?? null,
     offerOutcome: r.offer_outcome as string,
     couponId: (r.coupon_id as string | null) ?? null,
+    canceledTier: (r.canceled_tier as string | null) ?? null,
+    retainedProduct: (r.retained_product as string | null) ?? null,
     createdAt: new Date(r.created_at as string).toISOString(),
   }
 }
@@ -141,7 +184,9 @@ export async function getCancellationSummary(
 // Renders survey rows as a CSV using the same human labels as the admin table,
 // so an exported file reads identically to what an admin sees on screen.
 export function cancellationRowsToCsv(rows: CancellationRow[]): string {
-  const headers = ['Date', 'Email', 'Outcome', 'Reason', 'Note', 'Coupon']
+  const headers = [
+    'Date', 'Email', 'Outcome', 'Reason', 'Note', 'Coupon', 'Cancelled tier', 'Kept',
+  ]
   const body = rows.map((r) => [
     r.createdAt,
     r.email,
@@ -149,6 +194,8 @@ export function cancellationRowsToCsv(rows: CancellationRow[]): string {
     reasonLabel(r.reason) ?? '',
     r.note ?? '',
     r.couponId ?? '',
+    r.canceledTier ?? '',
+    retainedProductLabel(r.retainedProduct) ?? '',
   ])
   return toCsv(headers, body)
 }
