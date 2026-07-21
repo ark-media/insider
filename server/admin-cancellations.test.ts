@@ -6,17 +6,15 @@
 import { describe, test, expect } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  silenceExpectedConsole,
+  type Middleware,
+} from './test-utils'
 
 import { devApiPlugin } from './dev-api'
 import { signSessionToken } from './lib/session'
 import { SESSION_COOKIE_NAME } from './lib/cookies'
-
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
 
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
@@ -27,19 +25,7 @@ const BASE_ENV = {
 const PATH = '/api/admin/cancellations'
 
 function getHandler(path: string): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(p: string, handler: Middleware) {
-        handlers.set(p, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(BASE_ENV)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
 }
 
 function makeReq(headers: Record<string, string> = {}, query = ''): IncomingMessage {

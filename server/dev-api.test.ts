@@ -16,17 +16,16 @@ import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SignJWT } from 'jose'
 import { devApiPlugin } from './dev-api'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  runMiddleware as runHandler,
+  silenceExpectedConsole,
+  type Middleware,
+} from './test-utils'
 
 const CHECKOUT_SECRET = 'test-checkout-secret-0123456789abcdef0123456789abcdef'
 const CHECKOUT_COOKIE = 'ark_checkout'
 const SMS_PATH = '/api/sc/send-setup-sms'
-
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
 
 // --- Token helpers ---------------------------------------------------------
 async function signCheckoutJwt(
@@ -54,25 +53,14 @@ async function sessionCookie(scUserId = 42): Promise<string> {
 
 // --- Plugin harness --------------------------------------------------------
 function buildSmsHandler(): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(path: string, handler: Middleware) {
-        handlers.set(path, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin({
-    CHECKOUT_SESSION_SECRET: CHECKOUT_SECRET,
-    SC_NETWORK_ID: 'test-net',
-    SC_API_KEY: 'test-key',
-    APP_BASE_URL: 'http://localhost:5173',
-  })
-  const configure = plugin.configureServer as unknown as (s: unknown) => void
-  configure(fakeServer)
-  const handler = handlers.get(SMS_PATH)
-  if (!handler) throw new Error(`handler not registered for ${SMS_PATH}`)
-  return handler
+  return createDevApiHarness(
+    devApiPlugin({
+      CHECKOUT_SESSION_SECRET: CHECKOUT_SECRET,
+      SC_NETWORK_ID: 'test-net',
+      SC_API_KEY: 'test-key',
+      APP_BASE_URL: 'http://localhost:5173',
+    }),
+  ).getHandler(SMS_PATH)
 }
 
 // --- Fake req/res ----------------------------------------------------------
@@ -134,24 +122,6 @@ function makeRes(): FakeRes {
     __header: (name: string) => headers[name.toLowerCase()],
   } as unknown as FakeRes
   return res
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
 }
 
 // --- Fetch mock ------------------------------------------------------------

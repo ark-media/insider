@@ -7,9 +7,15 @@
 // calls go through the global fetch mock and are asserted via `fetchCalls`.
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  makeFakeReq,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
+  silenceExpectedConsole,
+  type Middleware,
+  type MakeReqOpts,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -48,12 +54,6 @@ import { devApiPlugin } from './dev-api'
 // ---------------------------------------------------------------------------
 // Plugin harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 // No AUTH0_* / CIRCLE_* keys → syncEntitlement short-circuits to 'skipped' and
 // makes no fetch calls, so the only SC traffic in these tests is the cancel-
 // schedule PATCH / delete DELETE we're asserting on.
@@ -68,82 +68,12 @@ const BASE_ENV = {
 const SC_BASE = 'https://api.supportingcast.fm/v2/test-net'
 
 function getHandler(path: string, env: Record<string, string> = BASE_ENV): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(p: string, handler: Middleware) {
-        handlers.set(p, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(env)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(devApiPlugin(env)).getHandler(path)
 }
 
-// ---------------------------------------------------------------------------
-// Fake req/res
-// ---------------------------------------------------------------------------
-function makeReq(opts: { headers?: Record<string, string> }): IncomingMessage {
-  const raw = Buffer.from('{}', 'utf8')
-  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
-    method?: string
-    url?: string
-    headers: Record<string, string>
-    socket: { remoteAddress: string }
-  }
-  stream.method = 'POST'
-  stream.url = '/api/stripe/webhook'
-  stream.headers = opts.headers ?? {}
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
-}
-
-type FakeRes = ServerResponse & { __json: () => unknown }
-
-function makeRes(): FakeRes {
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  return {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader() {},
-    getHeader() {},
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __json: () => JSON.parse(body) as unknown,
-  } as unknown as FakeRes
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
-}
+// Fake req: same defaults the local helper used (POST '{}' to the webhook path).
+const makeReq = (o: MakeReqOpts = {}) =>
+  makeFakeReq({ method: 'POST', url: '/api/stripe/webhook', body: '{}', ...o })
 
 // ---------------------------------------------------------------------------
 // fetch mock (captures SC traffic). Tests can install a per-URL/method

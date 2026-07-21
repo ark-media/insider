@@ -18,9 +18,14 @@
 // only thing under test.
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  makeFakeReq,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
+  silenceExpectedConsole,
+  type Middleware,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // neon mock — each test stages a ledger outcome via `ledgerMode`.
@@ -80,12 +85,6 @@ import { devApiPlugin } from './dev-api'
 // ---------------------------------------------------------------------------
 // Harness (mirrors stripe-webhook.test.ts)
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const WEBHOOK_PATH = '/api/stripe/webhook'
 const HEADERS = { 'stripe-signature': 'sig' }
 
@@ -102,76 +101,11 @@ const ENV = {
 }
 
 function getHandler(): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(p: string, handler: Middleware) {
-        handlers.set(p, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(ENV)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const h = handlers.get(WEBHOOK_PATH)
-  if (!h) throw new Error(`handler not registered for ${WEBHOOK_PATH}`)
-  return h
+  return createDevApiHarness(devApiPlugin(ENV)).getHandler(WEBHOOK_PATH)
 }
 
-function makeReq(): IncomingMessage {
-  const stream = Readable.from([Buffer.from('{}', 'utf8')]) as unknown as Omit<
-    IncomingMessage,
-    'socket'
-  > & { method?: string; url?: string; headers: Record<string, string>; socket: { remoteAddress: string } }
-  stream.method = 'POST'
-  stream.url = WEBHOOK_PATH
-  stream.headers = HEADERS
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
-}
-
-type FakeRes = ServerResponse & { __json: () => unknown }
-
-function makeRes(): FakeRes {
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  return {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader() {},
-    getHeader() {},
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __json: () => JSON.parse(body) as unknown,
-  } as unknown as FakeRes
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
-}
+const makeReq = () =>
+  makeFakeReq({ method: 'POST', url: WEBHOOK_PATH, body: '{}', headers: HEADERS })
 
 async function dispatch(event: unknown) {
   webhookEvent = event

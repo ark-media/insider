@@ -10,14 +10,9 @@
 
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
 import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import { createCatchAllHandler } from './dev-api'
-
-type FakeRes = ServerResponse & {
-  __body: () => string
-  __json: () => unknown
-  __header: (name: string) => string | undefined
-}
+import { makeFakeRes as makeRes } from './test-utils'
 
 function makeReq(opts: { method?: string; url: string }): IncomingMessage {
   const stream = Readable.from([Buffer.alloc(0)]) as unknown as Omit<
@@ -34,37 +29,6 @@ function makeReq(opts: { method?: string; url: string }): IncomingMessage {
   stream.headers = {}
   stream.socket = { remoteAddress: '127.0.0.1' }
   return stream as unknown as IncomingMessage
-}
-
-function makeRes(): FakeRes {
-  const headers: Record<string, string> = {}
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  return {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader(name: string, value: string | number) {
-      headers[name.toLowerCase()] = String(value)
-    },
-    getHeader(name: string) {
-      return headers[name.toLowerCase()]
-    },
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __body: () => body,
-    __json: () => JSON.parse(body) as unknown,
-    __header: (name: string) => headers[name.toLowerCase()],
-  } as unknown as FakeRes
 }
 
 function buildHandler() {

@@ -19,13 +19,17 @@ import {
   afterAll,
   mock,
 } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   AUTH0_TEST_JWKS_URL,
+  createDevApiHarness,
   getAuth0TestKeys,
+  makeFakeReq,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
   signAuth0TestToken,
   silenceExpectedConsole,
+  type MakeReqOpts,
+  type Middleware,
 } from './test-utils'
 
 // ---------------------------------------------------------------------------
@@ -85,12 +89,6 @@ const signAuth0Token = signAuth0TestToken
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const PATH = '/api/me/newsletters'
 const PUB_ID = 'pub_test-abc'
 const AUTH0_TENANT = 'https://ark-media-test.us.auth0.com'
@@ -114,100 +112,13 @@ const BASE_ENV: Record<string, string> = {
 }
 
 function buildHandler(env: Record<string, string> = BASE_ENV): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(path: string, handler: Middleware) {
-        handlers.set(path, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(env)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const handler = handlers.get(PATH)
-  if (!handler) throw new Error(`handler not registered for ${PATH}`)
-  return handler
+  return createDevApiHarness(devApiPlugin(env)).getHandler(PATH)
 }
 
 // ---------------------------------------------------------------------------
 // Fake req/res (same as beehiiv-webhook.test.ts)
 // ---------------------------------------------------------------------------
-function makeReq(opts: {
-  method?: string
-  body?: unknown
-  bearer?: string
-}): IncomingMessage {
-  const raw =
-    opts.body === undefined
-      ? Buffer.alloc(0)
-      : Buffer.from(JSON.stringify(opts.body), 'utf8')
-  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
-    method?: string
-    url?: string
-    headers: Record<string, string>
-    socket: { remoteAddress: string }
-  }
-  stream.method = opts.method ?? 'GET'
-  stream.url = PATH
-  stream.headers = { 'content-type': 'application/json' }
-  if (opts.bearer) stream.headers['authorization'] = `Bearer ${opts.bearer}`
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
-}
-
-type FakeRes = ServerResponse & {
-  __body: () => string
-  __json: () => unknown
-}
-
-function makeRes(): FakeRes {
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  const headers: Record<string, string> = {}
-  const res = {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader(name: string, value: string | number) {
-      headers[name.toLowerCase()] = String(value)
-    },
-    getHeader(name: string) {
-      return headers[name.toLowerCase()]
-    },
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __body: () => body,
-    __json: () => JSON.parse(body) as unknown,
-  } as unknown as FakeRes
-  return res
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
-}
+const makeReq = (o: MakeReqOpts = {}) => makeFakeReq({ url: PATH, ...o })
 
 // ---------------------------------------------------------------------------
 // fetch mock — serves JWKS, Auth0 mgmt token, Auth0 users-by-email, and

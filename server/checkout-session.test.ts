@@ -17,10 +17,15 @@ import {
   afterAll,
   mock,
 } from 'bun:test'
-import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { jwtVerify } from 'jose'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  makeFakeReq,
+  silenceExpectedConsole,
+  type MakeReqOpts,
+  type Middleware,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -95,12 +100,6 @@ import { devApiPlugin } from './dev-api'
 // ---------------------------------------------------------------------------
 // Plugin harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const CHECKOUT_SECRET = 'test-checkout-secret-0123456789abcdef0123456789abcdef'
 
 const BASE_ENV = {
@@ -113,26 +112,10 @@ const BASE_ENV = {
   CHECKOUT_SESSION_SECRET: CHECKOUT_SECRET,
 }
 
-function buildHandlers(envOverrides: Record<string, string> = {}): Map<string, Middleware> {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(path: string, handler: Middleware) {
-        handlers.set(path, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin({ ...BASE_ENV, ...envOverrides })
-  const configure = plugin.configureServer as unknown as (s: unknown) => void
-  configure(fakeServer)
-  return handlers
-}
-
 function getHandler(path: string, envOverrides?: Record<string, string>): Middleware {
-  const handlers = buildHandlers(envOverrides)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(
+    devApiPlugin({ ...BASE_ENV, ...envOverrides }),
+  ).getHandler(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -144,28 +127,8 @@ type FakeRes = ServerResponse & {
   __header: (name: string) => string | string[] | undefined
 }
 
-function makeReq(opts: {
-  method?: string
-  url?: string
-  body?: unknown
-  headers?: Record<string, string>
-}): IncomingMessage {
-  const raw =
-    opts.body === undefined
-      ? Buffer.alloc(0)
-      : Buffer.from(JSON.stringify(opts.body), 'utf8')
-  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
-    method?: string
-    url?: string
-    headers: Record<string, string>
-    socket: { remoteAddress: string }
-  }
-  stream.method = opts.method ?? 'POST'
-  stream.url = opts.url ?? PATH
-  stream.headers = opts.headers ?? {}
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
-}
+const makeReq = (o: MakeReqOpts = {}) =>
+  makeFakeReq({ method: 'POST', url: PATH, ...o })
 
 function makeRes(): FakeRes {
   const headers: Record<string, string | string[]> = {}

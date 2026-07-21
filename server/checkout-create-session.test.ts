@@ -14,9 +14,14 @@ import {
   afterAll,
   mock,
 } from 'bun:test'
-import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  makeFakeReq,
+  silenceExpectedConsole,
+  type MakeReqOpts,
+  type Middleware,
+} from './test-utils'
 import { SUPPORTED_CURRENCIES } from './lib/pricing'
 
 // ---------------------------------------------------------------------------
@@ -126,12 +131,6 @@ import { devApiPlugin } from './dev-api'
 // ---------------------------------------------------------------------------
 // Plugin harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 // The catalog price is resolved by lookup_key (no STRIPE_PRICE_* env vars — task
 // 8 removed them); the exact-floor path uses that price, a PWYC uplift uses
 // inline price_data.
@@ -142,46 +141,14 @@ const BASE_ENV = {
 }
 
 function getHandler(path: string): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(p: string, handler: Middleware) {
-        handlers.set(p, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(BASE_ENV)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
 }
 
 // ---------------------------------------------------------------------------
 // Fake req/res
 // ---------------------------------------------------------------------------
-function makeReq(opts: {
-  method?: string
-  url?: string
-  body?: unknown
-  headers?: Record<string, string>
-}): IncomingMessage {
-  const raw =
-    opts.body === undefined
-      ? Buffer.alloc(0)
-      : Buffer.from(JSON.stringify(opts.body), 'utf8')
-  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
-    method?: string
-    url?: string
-    headers: Record<string, string>
-    socket: { remoteAddress: string }
-  }
-  stream.method = opts.method ?? 'POST'
-  stream.url = opts.url ?? '/api/stripe/create-checkout-session'
-  stream.headers = opts.headers ?? { 'content-type': 'application/json' }
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
-}
+const makeReq = (o: MakeReqOpts = {}) =>
+  makeFakeReq({ method: 'POST', url: PATH, ...o })
 
 type FakeRes = ServerResponse & {
   __body: () => string

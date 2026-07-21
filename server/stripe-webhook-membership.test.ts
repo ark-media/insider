@@ -10,9 +10,15 @@
 // metadata for the row.
 
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  makeFakeReq,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
+  silenceExpectedConsole,
+  type Middleware,
+  type FakeRes,
+} from './test-utils'
 
 // --- neon mock: record statements + values, stage a prior membership row ------
 type Stmt = { text: string; values: unknown[] }
@@ -107,7 +113,6 @@ function makeSub(): unknown {
 }
 
 // --- harness -----------------------------------------------------------------
-type Middleware = (req: IncomingMessage, res: ServerResponse, next: (e?: unknown) => void) => void
 const WEBHOOK_PATH = '/api/stripe/webhook'
 
 const ENV = {
@@ -120,67 +125,21 @@ const ENV = {
 }
 
 function getHandler(): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const plugin = devApiPlugin(ENV)
-  ;(plugin.configureServer as unknown as (s: { middlewares: { use: (p: string, h: Middleware) => void } }) => void)(
-    { middlewares: { use: (p, h) => handlers.set(p, h) } },
-  )
-  const h = handlers.get(WEBHOOK_PATH)
-  if (!h) throw new Error('no webhook handler')
-  return h
-}
-
-type FakeRes = ServerResponse & { statusCode: number; __json: () => unknown }
-function makeRes(): FakeRes {
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  return {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader() {},
-    getHeader() {},
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __json: () => JSON.parse(body || '{}'),
-  } as unknown as FakeRes
+  return createDevApiHarness(devApiPlugin(ENV)).getHandler(WEBHOOK_PATH)
 }
 
 async function runWebhook(): Promise<FakeRes> {
-  const h = getHandler()
-  const raw = Buffer.from('{}')
-  const stream = Readable.from([raw]) as unknown as IncomingMessage & {
-    method: string
-    url: string
-    headers: Record<string, string>
-  }
-  stream.method = 'POST'
-  stream.url = WEBHOOK_PATH
-  stream.headers = { 'stripe-signature': 'sig' }
-  ;(stream as { socket: unknown }).socket = { remoteAddress: '127.0.0.1' }
   const res = makeRes()
-  await new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((c?: string | Buffer) => {
-      origEnd(c as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      h(stream, res as ServerResponse, (e) => e && reject(e instanceof Error ? e : new Error(String(e))))
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error(String(e)))
-    }
-  })
+  await runHandler(
+    getHandler(),
+    makeFakeReq({
+      method: 'POST',
+      url: WEBHOOK_PATH,
+      body: '{}',
+      headers: { 'stripe-signature': 'sig' },
+    }),
+    res,
+  )
   return res
 }
 

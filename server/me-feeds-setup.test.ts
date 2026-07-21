@@ -5,12 +5,16 @@
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import {
   AUTH0_TEST_JWKS_URL,
+  createDevApiHarness,
   getAuth0TestKeys,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
   signAuth0TestToken,
   silenceExpectedConsole,
+  type Middleware,
 } from './test-utils'
 
 // ---------------------------------------------------------------------------
@@ -51,26 +55,8 @@ const BASE_ENV: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 function buildHandler(path: string, env: Record<string, string> = BASE_ENV): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(p: string, handler: Middleware) {
-        handlers.set(p, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(env)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const handler = handlers.get(path)
-  if (!handler) throw new Error(`handler not registered for ${path}`)
-  return handler
+  return createDevApiHarness(devApiPlugin(env)).getHandler(path)
 }
 
 function makeReq(opts: {
@@ -99,56 +85,6 @@ function makeReq(opts: {
   if (opts.origin) stream.headers['origin'] = opts.origin
   stream.socket = { remoteAddress: '127.0.0.1' }
   return stream as unknown as IncomingMessage
-}
-
-type FakeRes = ServerResponse & { __json: () => unknown }
-
-function makeRes(): FakeRes {
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  const headers: Record<string, string> = {}
-  const res = {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader(name: string, value: string | number) {
-      headers[name.toLowerCase()] = String(value)
-    },
-    getHeader(name: string) {
-      return headers[name.toLowerCase()]
-    },
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __json: () => JSON.parse(body) as unknown,
-  } as unknown as FakeRes
-  return res
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
 }
 
 // ---------------------------------------------------------------------------

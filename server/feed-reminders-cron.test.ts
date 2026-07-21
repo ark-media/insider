@@ -14,9 +14,14 @@ import {
   afterAll,
   mock,
 } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  makeFakeReq,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
+  silenceExpectedConsole,
+  type Middleware,
+} from './test-utils'
 
 // --- Neon mock -------------------------------------------------------------
 type SqlCall = { sql: string; values: unknown[] }
@@ -36,12 +41,6 @@ mock.module('@neondatabase/serverless', () => ({
 import { devApiPlugin } from './dev-api'
 
 // --- Plugin harness --------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const CRON_PATH = '/api/cron/feed-setup-reminders'
 const CRON_SECRET = 'cron-secret-abcdef0123456789'
 
@@ -65,82 +64,16 @@ function envWithout(key: string): Record<string, string> {
 }
 
 function buildHandler(env: Record<string, string> = BASE_ENV): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(path: string, handler: Middleware) {
-        handlers.set(path, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(env)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const handler = handlers.get(CRON_PATH)
-  if (!handler) throw new Error(`handler not registered for ${CRON_PATH}`)
-  return handler
+  return createDevApiHarness(devApiPlugin(env)).getHandler(CRON_PATH)
 }
 
-// --- Fake req/res ----------------------------------------------------------
-function makeReq(opts: { method?: string; auth?: string } = {}): IncomingMessage {
-  const stream = Readable.from([Buffer.alloc(0)]) as unknown as Omit<
-    IncomingMessage,
-    'socket'
-  > & { method?: string; url?: string; headers: Record<string, string>; socket: { remoteAddress: string } }
-  stream.method = opts.method ?? 'POST'
-  stream.url = CRON_PATH
-  stream.headers = {}
-  if (opts.auth !== undefined) stream.headers.authorization = opts.auth
-  else stream.headers.authorization = `Bearer ${CRON_SECRET}`
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
-}
-
-type FakeRes = ServerResponse & { __json: () => unknown }
-function makeRes(): FakeRes {
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  const headers: Record<string, string> = {}
-  const res = {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader(name: string, value: string | number) {
-      headers[name.toLowerCase()] = String(value)
-    },
-    getHeader(name: string) {
-      return headers[name.toLowerCase()]
-    },
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __json: () => JSON.parse(body) as unknown,
-  } as unknown as FakeRes
-  return res
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
+// --- Fake req --------------------------------------------------------------
+// `auth` is the full Authorization header value (default: the cron secret).
+function makeReq(opts: { method?: string; auth?: string } = {}) {
+  return makeFakeReq({
+    method: opts.method ?? 'POST',
+    url: CRON_PATH,
+    headers: { authorization: opts.auth ?? `Bearer ${CRON_SECRET}` },
   })
 }
 

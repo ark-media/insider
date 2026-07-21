@@ -16,9 +16,16 @@ import {
   afterAll,
   mock,
 } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  makeFakeReq,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
+  silenceExpectedConsole,
+  type Middleware,
+  type FakeRes,
+  type MakeReqOpts,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -84,12 +91,6 @@ import { SESSION_COOKIE_NAME } from './lib/cookies'
 // ---------------------------------------------------------------------------
 // Plugin harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
@@ -97,96 +98,14 @@ const BASE_ENV = {
 }
 
 function getHandler(path: string): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(p: string, handler: Middleware) {
-        handlers.set(p, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(BASE_ENV)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
 }
 
 // ---------------------------------------------------------------------------
-// Fake req/res
+// Fake req: same defaults the local helper used (POST to the cancel path).
 // ---------------------------------------------------------------------------
-function makeReq(opts: {
-  method?: string
-  body?: unknown
-  headers?: Record<string, string>
-}): IncomingMessage {
-  const raw =
-    opts.body === undefined
-      ? Buffer.alloc(0)
-      : Buffer.from(JSON.stringify(opts.body), 'utf8')
-  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
-    method?: string
-    url?: string
-    headers: Record<string, string>
-    socket: { remoteAddress: string }
-  }
-  stream.method = opts.method ?? 'POST'
-  stream.url = '/api/stripe/cancel-subscription'
-  stream.headers = { 'content-type': 'application/json', ...(opts.headers ?? {}) }
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
-}
-
-type FakeRes = ServerResponse & {
-  __json: () => unknown
-}
-
-function makeRes(): FakeRes {
-  const headers: Record<string, string> = {}
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  return {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader(name: string, value: string | number) {
-      headers[name.toLowerCase()] = String(value)
-    },
-    getHeader(name: string) {
-      return headers[name.toLowerCase()]
-    },
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __json: () => JSON.parse(body) as unknown,
-  } as unknown as FakeRes
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
-}
+const makeReq = (o: MakeReqOpts = {}) =>
+  makeFakeReq({ method: 'POST', url: '/api/stripe/cancel-subscription', ...o })
 
 silenceExpectedConsole()
 beforeEach(() => {

@@ -1,4 +1,6 @@
 import { afterAll, beforeEach } from 'bun:test'
+import { Readable } from 'node:stream'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   exportJWK,
   generateKeyPair,
@@ -11,6 +13,161 @@ import {
   AUTH0_EMAIL_CLAIM,
   AUTH0_ROLES_CLAIM,
 } from '../shared/auth0-claims'
+
+// ---------------------------------------------------------------------------
+// devApiPlugin test harness
+//
+// Every route suite drives handlers through the same three primitives — a fake
+// Node req stream, a capturing res, and a promise that resolves on res.end —
+// plus a fake Vite server that captures the plugin's registered middlewares.
+// These were hand-copied (near-verbatim) into ~30 files; the shared versions
+// below are a superset of every local variant so a file can delete its copy.
+// ---------------------------------------------------------------------------
+
+export type Middleware = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: (err?: unknown) => void,
+) => void
+
+// A capturing ServerResponse: `__json()`/`__body()` read what the handler wrote,
+// `__headers()` the (lowercased) response headers.
+export type FakeRes = ServerResponse & {
+  __body: () => string
+  __json: () => unknown
+  __headers: () => Record<string, string>
+}
+
+export type MakeReqOpts = {
+  method?: string
+  url?: string
+  // Object → JSON-stringified; string/Buffer → passed through verbatim (webhook
+  // signature suites need the exact raw bytes). Absent → empty body.
+  body?: unknown
+  bearer?: string
+  cookie?: string
+  headers?: Record<string, string>
+  remoteAddress?: string
+}
+
+export function makeFakeReq(opts: MakeReqOpts = {}): IncomingMessage {
+  const { body } = opts
+  const raw =
+    body === undefined
+      ? Buffer.alloc(0)
+      : typeof body === 'string'
+        ? Buffer.from(body, 'utf8')
+        : Buffer.isBuffer(body)
+          ? body
+          : Buffer.from(JSON.stringify(body), 'utf8')
+  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
+    method?: string
+    url?: string
+    headers: Record<string, string>
+    socket: { remoteAddress: string }
+  }
+  stream.method = opts.method ?? 'GET'
+  stream.url = opts.url ?? '/'
+  stream.headers = { 'content-type': 'application/json', ...(opts.headers ?? {}) }
+  if (opts.bearer) stream.headers['authorization'] = `Bearer ${opts.bearer}`
+  if (opts.cookie) stream.headers['cookie'] = opts.cookie
+  stream.socket = { remoteAddress: opts.remoteAddress ?? '127.0.0.1' }
+  return stream as unknown as IncomingMessage
+}
+
+export function makeFakeRes(): FakeRes {
+  const headers: Record<string, string> = {}
+  let body = ''
+  let statusCode = 200
+  let ended = false
+  return {
+    get statusCode() {
+      return statusCode
+    },
+    set statusCode(v: number) {
+      statusCode = v
+    },
+    get headersSent() {
+      return ended
+    },
+    setHeader(name: string, value: string | number) {
+      headers[name.toLowerCase()] = String(value)
+    },
+    getHeader(name: string) {
+      return headers[name.toLowerCase()]
+    },
+    end(chunk?: string | Buffer) {
+      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
+      ended = true
+    },
+    __body: () => body,
+    __json: () => JSON.parse(body) as unknown,
+    __headers: () => headers,
+  } as unknown as FakeRes
+}
+
+// Runs a middleware and resolves once it writes a response (res.end), or rejects
+// if it calls next(err)/throws. Wraps res.end so the promise settles exactly
+// when the handler finishes. Accepts any ServerResponse (it only touches
+// `end`), so files keeping a bespoke capturing res can still use it.
+export function runMiddleware(
+  handler: Middleware,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const origEnd = res.end.bind(res)
+    ;(res as unknown as { end: typeof origEnd }).end = ((
+      chunk?: string | Buffer,
+    ) => {
+      origEnd(chunk as string | Buffer)
+      resolve()
+      return res
+    }) as typeof origEnd
+    try {
+      handler(req, res as ServerResponse, (err) => {
+        if (err) reject(err instanceof Error ? err : new Error(String(err)))
+      })
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)))
+    }
+  })
+}
+
+// Registers a devApiPlugin's middlewares against a fake Vite server (once) and
+// exposes handler lookup + a one-call `call(path, opts)` that builds the req/res
+// and runs it. Pass `devApiPlugin(env)` — constructed in the test file *after*
+// its mock.module so mocks stay in effect. A file needing a different env just
+// makes a 2nd harness with a 2nd `devApiPlugin(otherEnv)`.
+export function createDevApiHarness(plugin: { configureServer?: unknown }): {
+  handlers: Map<string, Middleware>
+  getHandler: (path: string) => Middleware
+  call: (path: string, opts?: MakeReqOpts) => Promise<FakeRes>
+} {
+  const handlers = new Map<string, Middleware>()
+  const fakeServer = {
+    middlewares: {
+      use(path: string, handler: Middleware) {
+        handlers.set(path, handler)
+      },
+    },
+  }
+  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
+
+  function getHandler(path: string): Middleware {
+    const h = handlers.get(path)
+    if (!h) throw new Error(`handler not registered for ${path}`)
+    return h
+  }
+
+  async function call(path: string, opts: MakeReqOpts = {}): Promise<FakeRes> {
+    const res = makeFakeRes()
+    await runMiddleware(getHandler(path), makeFakeReq({ url: path, ...opts }), res)
+    return res
+  }
+
+  return { handlers, getHandler, call }
+}
 
 /**
  * Silences console.error/warn for the calling test file. Several suites

@@ -12,9 +12,8 @@ import {
   beforeEach,
   mock,
 } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import type { ServerResponse } from 'node:http'
+import { makeFakeReq, silenceExpectedConsole } from './test-utils'
 import { DEFAULT_REMINDER_CONFIG } from '../shared/feed-reminder'
 
 // --- Neon mock (harmless if it leaks: tests never hit a real DB) -----------
@@ -58,22 +57,8 @@ function findHandler(deps: Deps, path: string): Route['handler'] {
   return route.handler
 }
 
-function makeReq(opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): IncomingMessage {
-  const raw =
-    opts.body === undefined
-      ? Buffer.alloc(0)
-      : Buffer.from(JSON.stringify(opts.body), 'utf8')
-  const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
-    method?: string
-    url?: string
-    headers: Record<string, string>
-    socket: { remoteAddress: string }
-  }
-  stream.method = opts.method ?? 'GET'
-  stream.url = ROUTE
-  stream.headers = { 'content-type': 'application/json', ...(opts.headers ?? {}) }
-  stream.socket = { remoteAddress: '127.0.0.1' }
-  return stream as unknown as IncomingMessage
+function makeReq(opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) {
+  return makeFakeReq({ url: ROUTE, ...opts })
 }
 
 type FakeRes = ServerResponse & { __json: () => unknown; __status: () => number }

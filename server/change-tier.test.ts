@@ -15,6 +15,7 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createDevApiHarness, type Middleware } from './test-utils'
 
 type StripeCall = { method: string; args: unknown[] }
 const stripeCalls: StripeCall[] = []
@@ -120,12 +121,6 @@ import { signSessionToken } from './lib/session'
 import { SESSION_COOKIE_NAME } from './lib/cookies'
 import { SUPPORTED_CURRENCIES } from './lib/pricing'
 
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
@@ -135,14 +130,7 @@ const BASE_ENV = {
 const PATH = '/api/stripe/change-tier'
 
 function getHandler(): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const plugin = devApiPlugin(BASE_ENV)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)({
-    middlewares: { use: (p: string, h: Middleware) => handlers.set(p, h) },
-  })
-  const h = handlers.get(PATH)
-  if (!h) throw new Error('change-tier handler not registered')
-  return h
+  return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(PATH)
 }
 
 async function sessionCookie(email: string): Promise<string> {

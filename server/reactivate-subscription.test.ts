@@ -15,7 +15,14 @@ import {
   mock,
 } from 'bun:test'
 import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingMessage } from 'node:http'
+import {
+  createDevApiHarness,
+  makeFakeRes as makeRes,
+  runMiddleware as runHandler,
+  type Middleware,
+  type FakeRes,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -91,12 +98,6 @@ import { SESSION_COOKIE_NAME } from './lib/cookies'
 // ---------------------------------------------------------------------------
 // Plugin harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
@@ -106,24 +107,11 @@ const BASE_ENV = {
 const PATH = '/api/stripe/reactivate-subscription'
 
 function getHandler(path: string): Middleware {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(p: string, handler: Middleware) {
-        handlers.set(p, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin(BASE_ENV)
-  ;(plugin.configureServer as unknown as (s: unknown) => void)(fakeServer)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
 }
 
-// ---------------------------------------------------------------------------
-// Fake req/res
-// ---------------------------------------------------------------------------
+// Fake req/res — makeReq kept local: this route rejects an
+// application/json content-type on an empty body, which makeFakeReq forces.
 function makeReq(opts: {
   method?: string
   headers?: Record<string, string>
@@ -142,57 +130,6 @@ function makeReq(opts: {
   stream.headers = { ...(opts.headers ?? {}) }
   stream.socket = { remoteAddress: '127.0.0.1' }
   return stream as unknown as IncomingMessage
-}
-
-type FakeRes = ServerResponse & {
-  __json: () => unknown
-}
-
-function makeRes(): FakeRes {
-  const headers: Record<string, string> = {}
-  let body = ''
-  let statusCode = 200
-  let ended = false
-  return {
-    get statusCode() {
-      return statusCode
-    },
-    set statusCode(v: number) {
-      statusCode = v
-    },
-    get headersSent() {
-      return ended
-    },
-    setHeader(name: string, value: string | number) {
-      headers[name.toLowerCase()] = String(value)
-    },
-    getHeader(name: string) {
-      return headers[name.toLowerCase()]
-    },
-    end(chunk?: string | Buffer) {
-      if (chunk) body += typeof chunk === 'string' ? chunk : chunk.toString()
-      ended = true
-    },
-    __json: () => JSON.parse(body) as unknown,
-  } as unknown as FakeRes
-}
-
-function runHandler(handler: Middleware, req: IncomingMessage, res: FakeRes) {
-  return new Promise<void>((resolve, reject) => {
-    const origEnd = res.end.bind(res)
-    ;(res as unknown as { end: typeof origEnd }).end = ((chunk?: string | Buffer) => {
-      origEnd(chunk as string | Buffer)
-      resolve()
-      return res
-    }) as typeof origEnd
-    try {
-      handler(req, res as ServerResponse, (err) => {
-        if (err) reject(err instanceof Error ? err : new Error(String(err)))
-      })
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
-    }
-  })
 }
 
 beforeEach(() => {

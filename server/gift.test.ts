@@ -14,7 +14,11 @@ import {
 } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  createDevApiHarness,
+  silenceExpectedConsole,
+  type Middleware,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -137,12 +141,6 @@ import { giftTokenForPaymentIntent } from './routes/stripe'
 // ---------------------------------------------------------------------------
 // Plugin harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   SC_NETWORK_ID: 'test-net',
@@ -154,26 +152,10 @@ const BASE_ENV = {
   SC_SUBSCRIPTION_PRICE_ID_GIFT_1YR: '222',
 }
 
-function buildHandlers(envOverrides: Record<string, string> = {}): Map<string, Middleware> {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(path: string, handler: Middleware) {
-        handlers.set(path, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin({ ...BASE_ENV, ...envOverrides })
-  const configure = plugin.configureServer as unknown as (s: unknown) => void
-  configure(fakeServer)
-  return handlers
-}
-
 function getHandler(path: string, envOverrides?: Record<string, string>): Middleware {
-  const handlers = buildHandlers(envOverrides)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(
+    devApiPlugin({ ...BASE_ENV, ...envOverrides }),
+  ).getHandler(path)
 }
 
 // ---------------------------------------------------------------------------

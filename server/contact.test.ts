@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
-import { Readable } from 'node:stream'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { ServerResponse } from 'node:http'
+import { makeFakeReq } from './test-utils'
 import { contactRoutes } from './routes/contact'
 import { contactTopics } from '../src/config/urls'
 import type { Deps } from './lib/route'
@@ -11,25 +11,14 @@ function makeReq(opts: {
   headers?: Record<string, string>
   body?: unknown
   ip?: string
-}): IncomingMessage {
-  const payload =
-    opts.body === undefined
-      ? Buffer.alloc(0)
-      : Buffer.from(JSON.stringify(opts.body))
-  const stream = Readable.from([payload]) as unknown as Omit<
-    IncomingMessage,
-    'socket'
-  > & {
-    method?: string
-    url?: string
-    headers: Record<string, string>
-    socket: { remoteAddress: string }
-  }
-  stream.method = opts.method ?? 'POST'
-  stream.url = opts.url ?? '/api/contact'
-  stream.headers = opts.headers ?? {}
-  stream.socket = { remoteAddress: opts.ip ?? '127.0.0.1' }
-  return stream as unknown as IncomingMessage
+}) {
+  return makeFakeReq({
+    method: opts.method ?? 'POST',
+    url: opts.url ?? '/api/contact',
+    headers: opts.headers,
+    body: opts.body,
+    remoteAddress: opts.ip,
+  })
 }
 
 function makeRes(): ServerResponse & {
