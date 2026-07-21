@@ -73,7 +73,7 @@ async function enrichFeedsWithActivation(
   }
 }
 
-export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
+export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
   return [
     defineRoute({
       path: '/api/me',
@@ -86,7 +86,7 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
         // SC-by-email fallback (task 10) still grants arkPlus to a just-paid
         // member whose webhook row hasn't landed — dropped once the backfill is
         // verified complete.
-        const resolved = await resolveMembership(req, env, { scFallback: true })
+        const resolved = await resolveMembership(req, env, { scFallback: true, stripe })
         if (!resolved) return json(401, { error: 'unauthenticated' })
         const { identity, tier, entitlements, scUserId } = resolved
         const email = identity.email
@@ -200,7 +200,7 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
         // rides the arkPlus axis. A member who upgraded after their last login
         // is never stale here — the row is read live, keyed on their sub, with
         // the transitional SC-by-email fallback covering a not-yet-written row.
-        const resolved = await resolveMembership(req, env, { scFallback: true })
+        const resolved = await resolveMembership(req, env, { scFallback: true, stripe })
         if (!resolved) return json(401, { error: 'unauthenticated' })
         const email = resolved.identity.email
         const isMember = resolved.entitlements.arkPlus

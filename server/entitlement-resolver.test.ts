@@ -3,7 +3,7 @@
 // (subscription.deleted) while the cancellation record + Beehiiv consent persist
 // by email; the resolver must never grant a paid tier from a stale/absent row.
 
-import { describe, test, expect, beforeEach, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 
 // Neon mock: the `from membership` select returns whatever the test stages.
 let membershipRows: unknown[] = []
@@ -21,6 +21,31 @@ mock.module('@neondatabase/serverless', () => ({
 // Import AFTER mock.module so getDb picks up the fake neon driver.
 import { resolveMembershipForIdentity } from './lib/entitlement-resolver'
 import type { RequestIdentity } from './lib/session'
+
+// The SC-by-email net (2b) issues a real fetch via createScClient. Stub fetch at
+// the global level (not the module — mock.module leaks across the shared test
+// process) so tests that fall through to it stay off the network and find no SC
+// user → the fall-through resolves to `free`. Restored after this file's tests.
+const realFetch = globalThis.fetch
+globalThis.fetch = (() =>
+  Promise.resolve(new Response(JSON.stringify({ users: [] }), { status: 200 }))) as typeof fetch
+afterAll(() => {
+  globalThis.fetch = realFetch
+})
+
+// A minimal Stripe stand-in: customers.list returns one customer whose id the
+// by-customer membership lookup then resolves against the staged rows.
+const fakeStripe = {
+  customers: { list: () => Promise.resolve({ data: [{ id: 'cus_1' }] }) },
+} as never
+// Stripe that knows no customer for this email (drops to the SC net).
+const emptyStripe = {
+  customers: { list: () => Promise.resolve({ data: [] }) },
+} as never
+
+// A sub-less session (checkout token minted before Auth0 provisioning stamped a
+// sub) — the case the true-tier by-email fallback exists for.
+const SUBLESS: RequestIdentity = { sub: null, email: 'buyer@example.com' } as RequestIdentity
 
 const ENV = { DATABASE_URL: 'postgres://stub-resolver-test' } as Record<string, string>
 const IDENTITY: RequestIdentity = { sub: 'auth0|123', email: 'gone@example.com' } as RequestIdentity
@@ -43,6 +68,7 @@ const row = (over: Record<string, unknown>) => ({
 
 beforeEach(() => {
   membershipRows = []
+  scUser = null
 })
 
 describe('resolveMembershipForIdentity — no access leak', () => {
@@ -75,5 +101,65 @@ describe('resolveMembershipForIdentity — no access leak', () => {
     expect(res.tier).toBe('bundle')
     expect(res.entitlements).toEqual({ arkPlus: true, circle: true })
     expect(res.origin).toBe('neon')
+  })
+})
+
+// The reported bug: a bundle member on a sub-less checkout session was resolved
+// as ark-plus, because the resolver only looked up membership by sub and the
+// email net hardcoded arkPlus. The by-email → Stripe customer → Neon row lookup
+// restores the true tier without leaking access.
+describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
+  test('sub-less session resolves the real tier (bundle) via Stripe customer, not ark-plus', async () => {
+    membershipRows = [row({ tier: 'bundle' })]
+    const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
+      scFallback: true,
+      stripe: fakeStripe,
+    })
+    expect(res.tier).toBe('bundle')
+    expect(res.entitlements).toEqual({ arkPlus: true, circle: true })
+    expect(res.origin).toBe('neon')
+    expect(res.scUserId).toBe(42)
+  })
+
+  test('a circle member is likewise not flattened to ark-plus', async () => {
+    membershipRows = [row({ tier: 'circle' })]
+    const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
+      scFallback: true,
+      stripe: fakeStripe,
+    })
+    expect(res.tier).toBe('circle')
+    expect(res.entitlements).toEqual({ arkPlus: false, circle: true })
+  })
+
+  test('no leak: a not-live row found by customer is ignored, falling to the SC net', async () => {
+    // Row is present by customer but cancelled/expired → must not grant its tier.
+    membershipRows = [row({ tier: 'bundle', gift_expires_at: '2000-01-01T00:00:00.000Z' })]
+    scUser = { id: 99 } // the SC net still grants arkPlus (feed exists)
+    const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
+      scFallback: true,
+      stripe: fakeStripe,
+    })
+    expect(res.tier).toBe('ark-plus')
+    expect(res.origin).toBe('sc-fallback')
+    expect(res.scUserId).toBe(99)
+  })
+
+  test('no Stripe customer for the email → falls through to the SC net', async () => {
+    membershipRows = [row({ tier: 'bundle' })] // present, but no customer resolves it
+    scUser = { id: 7 }
+    const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
+      scFallback: true,
+      stripe: emptyStripe,
+    })
+    expect(res.tier).toBe('ark-plus')
+    expect(res.origin).toBe('sc-fallback')
+  })
+
+  test('true-tier lookup is opt-in: no stripe passed → unchanged SC-net behavior', async () => {
+    membershipRows = [row({ tier: 'bundle' })]
+    scUser = { id: 5 }
+    const res = await resolveMembershipForIdentity(SUBLESS, ENV, { scFallback: true })
+    expect(res.tier).toBe('ark-plus')
+    expect(res.origin).toBe('sc-fallback')
   })
 })
