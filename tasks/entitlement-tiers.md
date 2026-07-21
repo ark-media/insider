@@ -448,7 +448,10 @@ Resolved 2026-07-20 unless marked **OPEN**.
 
 ## 9. Sequence (supersedes the old 9-step plan)
 
-**Status (2026-07-21):** Tasks 1–15 landed. Tasks 5, 10, 11, 12 shipped as the
+**Status (2026-07-21):** All tasks (1–18) landed except the operational cutover
+(task 16) and secret rotation (task 18), which are runbook items in
+`tasks/entitlement-cutover-runbook.md`. The suite is green (690 pass, 0 fail).
+Earlier detail: Tasks 5, 10, 11, 12 shipped as the
 Neon-authoritative reader migration (a shared `resolveMembership` resolver keyed
 on the session `sub`, threaded through the ark_session cookie + post-activation
 checkout token); task 5 removed the Auth0 tier claim entirely; task 15 rewrote the
@@ -458,10 +461,10 @@ tier-aware, moved Circle onto first-party checkout, rewrote the false
 Founding). Task 14 made Cancel/Reactivate/retention schedule-safe (risk 7) and
 added `POST /api/stripe/change-tier`. Task 16 (Circle-admin cutover) + the
 empirical verify-pending items are captured in `tasks/entitlement-cutover-runbook.md`.
-**Remaining: task 17** — the test suite still needs updating from the old
-(Auth0-tier / SC-authoritative) model to the Neon model, and the analytics SKU
-dimension is partially wired (checkout funnel carries `tier`). Run
-`scripts/backfill-membership.ts --apply` before deploying the tasks-10/11 readers.
+Task 17 reworked the whole suite onto the Neon model (690 pass); the analytics
+SKU `tier` dimension rides the checkout-funnel entry events + the PostHog person
+property. Run `scripts/backfill-membership.ts --apply` before deploying the
+tasks-10/11 readers.
 
 Dependencies in brackets; ↺ reversible, ⚠ one-way. Tasks 1, 3, 6, 18 have no deps
 and can start immediately.
