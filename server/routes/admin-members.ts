@@ -45,17 +45,31 @@ function stripeCustomerUrl(customerId: string, secretKey: string | undefined): s
 
 type StripeCustomerInfo = { email: string | null; name: string | null }
 
+// Customer email/name are near-static, but the directory re-fetches this page's
+// customers on every open/page/refresh — 25 Stripe reads a view. A short TTL cache
+// keyed by customer id collapses that repeat load (shared across admins) so member
+// count never drives Stripe API pressure. Only resolved lookups are cached; a
+// thrown (transient) error is not, so a blip isn't remembered.
+const CUSTOMER_TTL_MS = 10 * 60_000
+const customerCache = new Map<string, { at: number; info: StripeCustomerInfo }>()
+
 // Retrieve a customer's email/name. A deleted or missing customer resolves to
 // nulls rather than throwing, so one bad id can't fail the whole page.
 async function retrieveCustomer(
   stripe: Stripe,
   customerId: string,
 ): Promise<StripeCustomerInfo> {
+  const now = Date.now()
+  const hit = customerCache.get(customerId)
+  if (hit && now - hit.at < CUSTOMER_TTL_MS) return hit.info
   try {
     const c = await stripe.customers.retrieve(customerId)
-    if ('deleted' in c && c.deleted) return { email: null, name: null }
-    const cust = c as Stripe.Customer
-    return { email: cust.email ?? null, name: cust.name ?? null }
+    const info: StripeCustomerInfo =
+      'deleted' in c && c.deleted
+        ? { email: null, name: null }
+        : { email: (c as Stripe.Customer).email ?? null, name: (c as Stripe.Customer).name ?? null }
+    customerCache.set(customerId, { at: now, info })
+    return info
   } catch {
     return { email: null, name: null }
   }
