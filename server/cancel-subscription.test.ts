@@ -1,7 +1,13 @@
-// Unit tests for POST /api/stripe/cancel-subscription. The reasons survey is now
-// collected *after* the cancel commits (survey-after-cancel), so this endpoint
-// no longer requires a reason — it only allowlists offer_outcome and schedules
-// cancel_at_period_end. The reasons attach separately via /cancellation-survey.
+// Unit tests for the two halves of the survey-after-cancel flow:
+//
+//   POST /api/stripe/cancel-subscription — the reasons survey is now collected
+//   *after* the cancel commits, so this endpoint no longer requires a reason; it
+//   only allowlists offer_outcome and schedules cancel_at_period_end.
+//
+//   POST /api/stripe/cancellation-survey — attaches the member's checked reasons
+//   to the row the cancel created. Stripe-free (DB-only), so with no DATABASE_URL
+//   the write is skipped and we prove its guards: origin, auth, and the
+//   survey_id / reasons validation that runs before the DB block.
 //
 // Harness mirrors checkout-create-session.test.ts: mock.module('stripe', …)
 // swaps the SDK, and we drive the registered middleware with fake req/res. No
@@ -172,6 +178,103 @@ describe('POST /api/stripe/cancel-subscription — cancel behavior', () => {
     const res = await post({ body: { offer_outcome: 'not_offered' }, cookie })
     expect(res.statusCode).toBe(404)
     expect(stripeCalls.find((c) => c.method === 'subscriptions.update')).toBeUndefined()
+  })
+})
+
+// ===========================================================================
+// POST /api/stripe/cancellation-survey — the reasons attach afterward. This
+// endpoint never touches Stripe; with no DATABASE_URL the write is skipped, so
+// these prove the guards that run before the DB block.
+// ===========================================================================
+const SURVEY_PATH = '/api/stripe/cancellation-survey'
+
+async function postSurvey(opts: {
+  body?: unknown
+  cookie?: string
+  origin?: string
+}): Promise<FakeRes> {
+  const res = makeRes()
+  const headers: Record<string, string> = {}
+  if (opts.cookie) headers.cookie = opts.cookie
+  if (opts.origin) headers.origin = opts.origin
+  await runHandler(
+    getHandler(SURVEY_PATH),
+    makeFakeReq({ method: 'POST', url: SURVEY_PATH, body: opts.body, headers }),
+    res,
+  )
+  return res
+}
+
+describe('POST /api/stripe/cancellation-survey — guards', () => {
+  test('403 when the Origin does not match APP_BASE_URL', async () => {
+    // Origin is checked before auth, so no cookie is needed to trip it.
+    const res = await postSurvey({
+      origin: 'http://evil.example',
+      body: { survey_id: 1, reasons: ['too_expensive'] },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.__json()).toEqual({ error: 'bad_origin' })
+  })
+
+  test('401 when unauthenticated', async () => {
+    const res = await postSurvey({ body: { survey_id: 1, reasons: ['too_expensive'] } })
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('400 when survey_id is missing', async () => {
+    const cookie = await sessionCookie('member@example.com')
+    const res = await postSurvey({ body: { reasons: ['too_expensive'] }, cookie })
+    expect(res.statusCode).toBe(400)
+    expect(res.__json()).toEqual({ error: 'survey_id is required.' })
+  })
+
+  test('400 when reasons contains an unknown slug', async () => {
+    const cookie = await sessionCookie('member@example.com')
+    const res = await postSurvey({
+      body: { survey_id: 1, reasons: ['too_expensive', 'just_because'] },
+      cookie,
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.__json()).toEqual({ error: 'Invalid cancellation reasons.' })
+  })
+
+  test('400 when reasons is not an array', async () => {
+    const cookie = await sessionCookie('member@example.com')
+    const res = await postSurvey({
+      body: { survey_id: 1, reasons: 'too_expensive' },
+      cookie,
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.__json()).toEqual({ error: 'Invalid cancellation reasons.' })
+  })
+})
+
+describe('POST /api/stripe/cancellation-survey — accepted bodies', () => {
+  test('200 with valid reasons + note (write skipped without a DB)', async () => {
+    const cookie = await sessionCookie('member@example.com')
+    const res = await postSurvey({
+      body: { survey_id: '42', reasons: ['too_expensive', 'other'], note: 'meh' },
+      cookie,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ ok: true })
+  })
+
+  test('200 with an empty reasons array (the survey is optional)', async () => {
+    const cookie = await sessionCookie('member@example.com')
+    const res = await postSurvey({ body: { survey_id: 1, reasons: [] }, cookie })
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ ok: true })
+  })
+
+  test('200 when survey_id arrives as a numeric string (bigint over the wire)', async () => {
+    const cookie = await sessionCookie('member@example.com')
+    const res = await postSurvey({
+      body: { survey_id: '9007199254740993', reasons: ['not_listening'] },
+      cookie,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ ok: true })
   })
 })
 

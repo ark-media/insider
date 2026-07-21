@@ -91,9 +91,13 @@ export async function insertCancellationSurvey(
 }
 
 // Attach the member's checked reasons + free-text note to an existing survey row
-// after a cancel has already committed (survey-after-cancel). Scoped by email so
-// a member can only annotate their own row. Idempotent-ish: re-submitting just
-// overwrites. `email` is the authz check, not an update target.
+// after a cancel has already committed (survey-after-cancel). Idempotent-ish:
+// re-submitting just overwrites. Two guards, both authz (not update targets):
+//   - email so a member can only annotate their own row;
+//   - offer_outcome in ('declined','not_offered') so a crafted survey_id can't
+//     point at an 'accepted' row, whose empty reasons the retention-window read
+//     (hasAcceptedRetention) depends on. Cancel and debundle rows share these two
+//     outcomes; both are the member's own, so annotating either is harmless.
 export async function updateCancellationSurveyReasons(
   sql: Sql,
   input: { id: SurveyId; email: string; reasons: string[]; note: string | null },
@@ -101,7 +105,9 @@ export async function updateCancellationSurveyReasons(
   await sql`
     update cancellation_survey
       set reasons = ${input.reasons}, note = ${input.note}
-    where id = ${input.id} and email = ${input.email}`
+    where id = ${input.id}
+      and email = ${input.email}
+      and offer_outcome in ('declined', 'not_offered')`
 }
 
 // Has this email accepted a promotional coupon within the rolling eligibility

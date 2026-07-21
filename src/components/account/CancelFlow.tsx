@@ -150,8 +150,9 @@ export type CancelFlowProps = {
   tier: Tier;
   plan: Plan | null;
   onClose: () => void;
-  // Offer accepted → membership continues (coupon or plan switch).
-  onSaved: (headline: string, nextChargeAt: string) => void;
+  // Offer accepted → membership continues (coupon or plan switch). The flow shows
+  // its own success screen; this just tells the page to close + resync.
+  onSaved: () => void;
   // Full cancel scheduled at period end.
   onCancelled: (accessUntil: string) => void;
   // Debundled → kept one product; the account state should refresh.
@@ -192,10 +193,8 @@ export function CancelFlow({
   const [surveyId, setSurveyId] = useState<string | number | null>(null);
   const [accessUntil, setAccessUntil] = useState("");
   // Set once an offer is accepted, to render the "Thanks for sticking around"
-  // screen. `detail` is the new recurring price (e.g. "$59.99/year"); `headline`
-  // is handed back to onSaved when the member dismisses.
+  // screen. `detail` is the new recurring price (e.g. "$59.99/year").
   const [saved, setSaved] = useState<{
-    headline: string;
     detail: string;
     nextChargeAt: string;
   } | null>(null);
@@ -317,11 +316,7 @@ export function CancelFlow({
         offer.targetPriceCents != null
           ? `${usd(offer.targetPriceCents)}/${cadence}`
           : "";
-      setSaved({
-        headline: offerCopy(offer).heading,
-        detail,
-        nextChargeAt: r.effective_at ?? "",
-      });
+      setSaved({ detail, nextChargeAt: r.effective_at ?? "" });
       setScreen("saved");
       return;
     }
@@ -341,11 +336,7 @@ export function CancelFlow({
       });
       // For a coupon we don't hold the resolved amount, so the discount headline
       // (e.g. "$6/mo for 6 months") stands in for the new details.
-      setSaved({
-        headline: couponHeadline(offer),
-        detail: couponHeadline(offer),
-        nextChargeAt: r.next_charge_at ?? "",
-      });
+      setSaved({ detail: couponHeadline(offer), nextChargeAt: r.next_charge_at ?? "" });
       setScreen("saved");
     } else {
       setError(r.error ?? "Could not apply your offer — please try again.");
@@ -447,7 +438,7 @@ export function CancelFlow({
   // refresh. On `saved` → onSaved; on `survey` → onCancelled (a skip); otherwise
   // a plain close.
   const handleModalClose = () => {
-    if (screen === "saved" && saved) onSaved(saved.headline, saved.nextChargeAt);
+    if (screen === "saved") onSaved();
     else if (screen === "survey") onCancelled(accessUntil);
     else onClose();
   };
@@ -693,7 +684,6 @@ export function CancelFlow({
                 >
                   <input
                     type="checkbox"
-                    name="cancel-reason"
                     value={r.slug}
                     checked={reasons.has(r.slug)}
                     onChange={() => toggleReason(r.slug)}
@@ -766,11 +756,7 @@ export function CancelFlow({
             ) : null}
           </dl>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <button
-              type="button"
-              className={primaryBtn}
-              onClick={() => onSaved(saved.headline, saved.nextChargeAt)}
-            >
+            <button type="button" className={primaryBtn} onClick={onSaved}>
               Done
             </button>
           </div>

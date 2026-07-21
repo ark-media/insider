@@ -22,7 +22,6 @@ function BillingPage() {
     | { kind: "idle" }
     | { kind: "reactivating" }
     | { kind: "ok"; until: string }
-    | { kind: "saved"; headline: string; nextChargeAt: string }
     | { kind: "debundled"; kept: "ark-plus" | "circle" }
     | { kind: "resumed"; nextChargeAt: string }
     | { kind: "reverted"; nextChargeAt: string }
@@ -91,7 +90,6 @@ function BillingPage() {
   useEffect(() => {
     if (
       status.kind === "ok" ||
-      status.kind === "saved" ||
       status.kind === "debundled" ||
       status.kind === "resumed" ||
       status.kind === "reverted"
@@ -262,18 +260,6 @@ function BillingPage() {
                     ? `Access continues until ${new Date(status.until).toLocaleDateString()}.`
                     : ""}
                 </p>
-              ) : status.kind === "saved" ? (
-                <p
-                  ref={confirmationRef}
-                  tabIndex={-1}
-                  className="mt-6 text-body-sm text-cyan focus:outline-none"
-                  aria-live="polite"
-                >
-                  You're all set — your membership continues with {status.headline}.
-                  {status.nextChargeAt
-                    ? ` Next charge on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
-                    : ""}
-                </p>
               ) : status.kind === "debundled" ? (
                 <p
                   ref={confirmationRef}
@@ -393,14 +379,15 @@ function BillingPage() {
           tier={flowTier}
           plan={plan}
           onClose={() => setFlowOpen(false)}
-          onSaved={(headline, nextChargeAt) => {
+          onSaved={() => {
+            // The flow's own "Thanks for sticking around" screen shows the
+            // confirmation, so we just close + resync here (no status banner).
             setFlowOpen(false);
             setScheduledCancelAt(null);
             // Accepting a save offer releases any pending schedule, so the
             // pending-change banner no longer applies.
             setPendingChange(false);
             setScheduledTier(null);
-            setStatus({ kind: "saved", headline, nextChargeAt });
             refresh();
           }}
           onCancelled={(accessUntil) => {
