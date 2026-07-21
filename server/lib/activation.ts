@@ -95,6 +95,17 @@ export type Activator = {
   // tier-aware method above.
   activateScSubscriptionForStripeSub: (sub: Stripe.Subscription) => Promise<void>
   activateScGiftForPaymentIntent: (pi: Stripe.PaymentIntent) => Promise<void>
+  // Grant a redeemed gift to the signed-in recipient (routes/gift.ts). SC only
+  // for arkPlus tiers, Circle only for circle; the entitlement runs for the gift
+  // term from redemption. Returns the SC ids + the computed expiry for the
+  // membership row.
+  activateGiftForRecipient: (opts: {
+    email: string
+    name?: string
+    tier: Tier
+    term: GiftTerm
+    auth0Sub: string | null
+  }) => Promise<{ scUserId: number | null; scSubscriptionId: number | null; endsAt: string }>
 }
 
 // SC rejects a second active subscription per user with HTTP 409. We translate
@@ -522,9 +533,45 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     }
   }
 
+  const activateGiftForRecipient = async (opts: {
+    email: string
+    name?: string
+    tier: Tier
+    term: GiftTerm
+    auth0Sub: string | null
+  }): Promise<{ scUserId: number | null; scSubscriptionId: number | null; endsAt: string }> => {
+    const entitlements = deriveEntitlements(opts.tier)
+    const endsAt = new Date(
+      Date.now() + GIFT_TERM_DAYS[opts.term] * 24 * 60 * 60 * 1000,
+    ).toISOString()
+
+    let scUserId: number | null = null
+    let scSubscriptionId: number | null = null
+    if (entitlements.arkPlus) {
+      const sc = createScClient(env)
+      const user = await findOrCreateScUser(sc, opts.email, opts.name)
+      const scPriceId = resolveScGiftPriceId(opts.term)
+      // Idempotency key ties the SC gift sub to (recipient, term) so a redeem
+      // retry returns the existing record rather than stacking a second.
+      const created = await sc.call<{ subscription: { id: number } }>(
+        'POST',
+        '/subscriptions',
+        { user_id: user.id, subscription_price_id: Number(scPriceId), ends_at: endsAt },
+        { idempotencyKey: `gift_redeem_${opts.auth0Sub ?? opts.email}_${opts.term}` },
+      )
+      scUserId = user.id
+      scSubscriptionId = created.subscription.id
+    }
+    if (entitlements.circle) {
+      await provisionCircleMember(env, opts.email, opts.name, opts.auth0Sub)
+    }
+    return { scUserId, scSubscriptionId, endsAt }
+  }
+
   return {
     activateMembershipForStripeSub,
     activateScSubscriptionForStripeSub,
     activateScGiftForPaymentIntent,
+    activateGiftForRecipient,
   }
 }

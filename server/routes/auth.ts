@@ -14,6 +14,7 @@
 import type Stripe from 'stripe'
 import * as client from 'openid-client'
 import { AlreadySubscribedError } from '../lib/activation.js'
+import { tierFromSubscription } from './stripe.js'
 import { AUTH0_DOMAIN } from '../auth0.js'
 import { AUTH0_AUDIENCE } from '../../shared/auth0-claims.js'
 import {
@@ -164,12 +165,16 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           return json(202, { ready: false, status: sub.status })
         }
 
-        // Provision SC user + SC subscription + Auth0 user. Idempotent — if
-        // the webhook already ran, this is a no-op. Failures here mean the
-        // caller paid but provisioning is incomplete; the webhook will retry
-        // async, but we shouldn't hand out a session token yet.
+        // Provision the tier the buyer actually purchased (Auth0 login always,
+        // SC only for arkPlus, Circle only for circle) so a Circle-only buyer
+        // isn't wrongly given a feed. Idempotent — if the webhook already ran,
+        // this is a no-op. The webhook (not this route) writes the membership
+        // row. Failures here mean the caller paid but provisioning is
+        // incomplete; the webhook retries async, but we shouldn't hand out a
+        // session token yet.
         try {
-          await activator.activateScSubscriptionForStripeSub(sub)
+          const tier = await tierFromSubscription(sub, stripe)
+          await activator.activateMembershipForStripeSub(sub, tier)
         } catch (err) {
           if (err instanceof AlreadySubscribedError) {
             // The new Stripe sub paid through, but SC already has an active sub

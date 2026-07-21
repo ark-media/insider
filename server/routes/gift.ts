@@ -13,12 +13,32 @@
 //     pattern as /api/stripe/subscription-status).
 
 import { GIFT_PRICES_CENTS, type GiftTerm } from '../lib/activation.js'
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { deriveEntitlements, syncEntitlement } from '../entitlement.js'
+import { findOrCreateAuth0User } from '../lib/auth0-user.js'
+import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
+import { getDb } from '../lib/db.js'
+import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
+import {
+  getGiftByToken,
+  getMembershipByAuth0Sub,
+  markGiftRedeemed,
+  upsertMembership,
+  type GiftRow,
+  type MembershipRow,
+} from '../lib/membership.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import type { Deps, Route } from '../lib/route.js'
+import { getSessionProfile } from '../lib/session.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
+import type Stripe from 'stripe'
 
-export function giftRoutes({ stripe, appBaseUrl }: Deps): Route[] {
+// Membership statuses that count as an active paid membership for the gift
+// stacking branch (§7 #8): an already-active recipient gets account credit, an
+// inactive one gets a gift term. Mirrors the checkout guard's live set; gift
+// rows themselves carry status 'active'.
+const LIVE_MEMBERSHIP_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid'])
+
+export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
   // Each create-checkout call provisions a Stripe Checkout Session (and its
   // PaymentIntent) and may also create a Stripe customer. Cap per giver email
   // so a scripted caller can't produce thousands of zombie sessions or trigger
@@ -191,9 +211,129 @@ export function giftRoutes({ stripe, appBaseUrl }: Deps): Route[] {
           typeof session.payment_intent === 'object' ? session.payment_intent : null
         json(200, {
           status: pi?.status ?? session.status ?? 'unknown',
-          activated: Boolean(pi?.metadata?.sc_subscription_id),
+          // The webhook now writes a pending gift row and stamps the redemption
+          // token on the PI (rather than granting immediately) — so "processed"
+          // means the recipient's claim link is out, not that access is live.
+          activated: Boolean(pi?.metadata?.gift_token),
         })
       },
     },
+
+    {
+      // Redeem a gift the recipient received by email. Requires a signed-in
+      // session (the claim writes a membership row keyed on the recipient's Auth0
+      // sub). Branches on whether they already hold an active paid membership
+      // (§3 "Gifts"): none → activate a gift term; already active → apply the
+      // gift amount as Stripe account credit. Either way the gift flips to
+      // redeemed. No redeem-by — a gift is claimable anytime.
+      path: '/api/gift/redeem',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!env.DATABASE_URL) return json(500, { error: 'database_not_configured' })
+
+        const session = await getSessionProfile(req, env)
+        if (!session) return json(401, { error: 'unauthenticated' })
+
+        const body = await readJson<{ token?: string }>(req)
+        const token = typeof body?.token === 'string' ? body.token.trim() : ''
+        if (!token) return json(400, { error: 'token required' })
+
+        const sql = getDb(env)
+        const gift = await getGiftByToken(sql, token)
+        if (!gift) return json(404, { error: 'invalid_gift' })
+        if (gift.status !== 'pending') return json(409, { error: 'already_redeemed' })
+
+        // Resolve the recipient's primary Auth0 sub. They're signed in, so this
+        // finds the existing account (never creates one here); the membership row
+        // keys on it.
+        const auth0 = await findOrCreateAuth0User(session.email, session.name, env, {
+          emailPasswordReset: false,
+        })
+        const auth0Sub = auth0?.userId ?? null
+        if (!auth0Sub) return json(502, { error: 'could_not_resolve_account' })
+
+        const existing = await getMembershipByAuth0Sub(sql, auth0Sub)
+        const alreadyActive =
+          existing != null &&
+          existing.tier !== 'free' &&
+          LIVE_MEMBERSHIP_STATUSES.has(existing.status)
+
+        if (alreadyActive) {
+          // Claim first — account credit is not idempotent, so the atomic flip
+          // guards against a double-credit race.
+          const claimed = await markGiftRedeemed(sql, token, auth0Sub)
+          if (!claimed) return json(409, { error: 'already_redeemed' })
+          try {
+            await applyGiftAsCredit(stripe, existing, gift)
+          } catch (err) {
+            console.error('[gift] credit apply failed:', err)
+          }
+          return json(200, { redeemed: true, applied: 'credit' })
+        }
+
+        // No active membership → activate a gift term from now.
+        const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
+        const grant = await activator.activateGiftForRecipient({
+          email: session.email,
+          name: session.name,
+          tier: gift.tier,
+          term,
+          auth0Sub,
+        })
+        await upsertMembership(sql, {
+          auth0_sub: auth0Sub,
+          stripe_customer_id: null,
+          stripe_subscription_id: null,
+          sc_user_id: grant.scUserId,
+          tier: gift.tier,
+          status: 'active',
+          plan: gift.plan,
+          amount_cents: gift.amount_cents,
+          current_period_end: null,
+          cancel_at: null,
+          gift_expires_at: grant.endsAt,
+        })
+        // Mirror the entitlement signals (Auth0 shim + Circle group) and the
+        // Beehiiv premium letter (arkPlus axis only).
+        await syncEntitlement(env, session.email, gift.tier)
+        if (deriveEntitlements(gift.tier).arkPlus) {
+          await tryPush('ensure premium (gift redeem)', () =>
+            ensureSubscribedWithPremium({ env, sql }, session.email),
+          )
+        }
+        // Flip last: the grant is idempotent, so a concurrent redeem is harmless.
+        await markGiftRedeemed(sql, token, auth0Sub)
+        return json(200, { redeemed: true, applied: 'membership', expires_at: grant.endsAt })
+      },
+    },
   ]
+}
+
+// Apply an unwasted gift as Stripe customer-balance credit on the recipient's
+// existing customer — auto-drawn against future invoices like a voucher (§7 #8).
+// Credited in the active subscription's currency; gift amounts are USD today, so
+// a non-USD sub is an FX approximation (full conversion deferred).
+async function applyGiftAsCredit(
+  stripe: Stripe,
+  membership: MembershipRow,
+  gift: GiftRow,
+): Promise<void> {
+  if (!membership.stripe_customer_id || gift.amount_cents == null) return
+  let currency = 'usd'
+  if (membership.stripe_subscription_id) {
+    try {
+      const sub = await stripe.subscriptions.retrieve(membership.stripe_subscription_id)
+      currency = sub.currency ?? 'usd'
+    } catch {
+      // Fall back to USD — a credit still lands, just possibly mis-denominated.
+    }
+  }
+  await stripe.customers.createBalanceTransaction(membership.stripe_customer_id, {
+    amount: -gift.amount_cents, // negative = credit toward future invoices
+    currency,
+    description: `Ark+ gift credit (${gift.plan ?? 'gift'})`,
+  })
 }

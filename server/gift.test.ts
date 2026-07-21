@@ -132,6 +132,7 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 
 // Static import AFTER mock.module so the plugin picks up the fake Stripe.
 import { devApiPlugin } from './dev-api'
+import { giftTokenForPaymentIntent } from './routes/stripe'
 
 // ---------------------------------------------------------------------------
 // Plugin harness
@@ -706,7 +707,7 @@ describe('GET /api/gift/status', () => {
     expect(res.statusCode).toBe(403)
   })
 
-  test('200 activated=false when sc_subscription_id not set', async () => {
+  test('200 activated=false when gift_token not set', async () => {
     retrievedSession = buildStatusSession({ giver_email: 'g@x.com', kind: 'gift' })
     const h = getHandler(STATUS_PATH)
     const req = makeReq({
@@ -719,11 +720,11 @@ describe('GET /api/gift/status', () => {
     expect(res.__json()).toEqual({ status: 'succeeded', activated: false })
   })
 
-  test('200 activated=true when sc_subscription_id is set on the PaymentIntent', async () => {
+  test('200 activated=true when gift_token is stamped on the PaymentIntent', async () => {
     retrievedSession = buildStatusSession({
       giver_email: 'g@x.com',
       kind: 'gift',
-      sc_subscription_id: '999',
+      gift_token: 'tok_abc',
     })
     const h = getHandler(STATUS_PATH)
     const req = makeReq({
@@ -772,101 +773,17 @@ async function runWebhook(envOverrides?: Record<string, string>): Promise<FakeRe
   return res
 }
 
-describe('Webhook — gift activation', () => {
-  test('new recipient: creates SC user with custom_1/custom_2, creates 1yr subscription, stamps PI metadata (no SC welcome email)', async () => {
-    const pi = buildGiftPI({ term: '1yr' })
-    webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
-    // Activator re-reads the PI before POSTing /subscriptions (cross-instance
-    // race guard). Surface the same object so metadata stays empty pre-write.
-    retrievedPI = pi
+describe('Webhook — gift purchase (redemption model)', () => {
+  // A gift now grants nothing at purchase (§3): the webhook writes a pending
+  // gift row (skipped here — no DB) and emails the recipient a claim link, never
+  // touching Supporting Cast. Redemption (POST /api/gift/redeem) writes the row.
 
-    // SC: recipient does not exist on /users/search, /users POST returns new id
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(JSON.stringify({ users: [] }), { status: 200 })
-      }
-      if (url.endsWith('/users') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ user: { id: 555 } }), { status: 200 })
-      }
-      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-        return new Response(
-          JSON.stringify({ subscription: { id: 777 } }),
-          { status: 200 },
-        )
-      }
-      return new Response('{}', { status: 200 })
-    }
-
-    const res = await runWebhook()
-    expect(res.statusCode).toBe(200)
-
-    // Verify POST /users with gift metadata
-    const createUser = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/users'),
-    )
-    expect(createUser).toBeDefined()
-    const createBody = createUser!.body as {
-      email: string
-      first_name: string
-      custom_1: string
-      custom_2: string
-    }
-    expect(createBody.email).toBe('recip@x.com')
-    expect(createBody.first_name).toBe('Alice')
-    expect(createBody.custom_1).toBe('gift')
-    const gift = JSON.parse(createBody.custom_2) as Record<string, unknown>
-    expect(gift.giverEmail).toBe('giver@x.com')
-    expect(gift.giverName).toBe('Bob')
-    expect(gift.term).toBe('1yr')
-    expect(gift.orderId).toBe('pi_gift_1')
-    expect(gift.message).toBe('Enjoy')
-    expect(typeof gift.purchasedAt).toBe('string')
-
-    // Verify POST /subscriptions with GIFT_1YR price + ends_at ~365 days out
-    const subCall = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/subscriptions'),
-    )
-    expect(subCall).toBeDefined()
-    const subBody = subCall!.body as {
-      user_id: number
-      subscription_price_id: number
-      ends_at: string
-    }
-    expect(subBody.user_id).toBe(555)
-    expect(subBody.subscription_price_id).toBe(222) // GIFT_1YR
-    const endsAt = new Date(subBody.ends_at).getTime()
-    const expected = Date.now() + 365 * 24 * 60 * 60 * 1000
-    expect(Math.abs(endsAt - expected)).toBeLessThan(60_000) // within 1 minute
-
-    // SC welcome email is no longer used — feed setup lives on /welcome and the
-    // recipient gets a single branded Resend email instead.
-    expect(
-      fetchCalls.some((c) => c.url.endsWith('/send_welcome_email')),
-    ).toBe(false)
-
-    // Verify Stripe PI metadata stamped with sc_user_id + sc_subscription_id
-    const update = stripeCalls.find((c) => c.method === 'paymentIntents.update')
-    expect(update).toBeDefined()
-    const md = (update!.args[1] as { metadata: Record<string, string> }).metadata
-    expect(md.sc_user_id).toBe('555')
-    expect(md.sc_subscription_id).toBe('777')
-    expect(md.kind).toBe('gift') // existing metadata preserved
-  })
-
-  test('sends one branded Resend email to the recipient with gift details', async () => {
+  test('stamps the gift_token on the PI and emails a redemption link — no SC calls', async () => {
     const pi = buildGiftPI({ term: '1yr', giver_name: 'Bob', message: 'Enjoy' })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
     retrievedPI = pi
 
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search'))
-        return new Response(JSON.stringify({ users: [] }), { status: 200 })
-      if (url.endsWith('/users') && init?.method === 'POST')
-        return new Response(JSON.stringify({ user: { id: 555 } }), { status: 200 })
-      if (url.endsWith('/subscriptions') && init?.method === 'POST')
-        return new Response(JSON.stringify({ subscription: { id: 777 } }), {
-          status: 200,
-        })
+    fetchImpl = async (url) => {
       if (url.startsWith('https://api.resend.com'))
         return new Response(JSON.stringify({ id: 'email_1' }), { status: 200 })
       return new Response('{}', { status: 200 })
@@ -875,6 +792,21 @@ describe('Webhook — gift activation', () => {
     const res = await runWebhook({ RESEND_API_KEY: 'rk_test' })
     expect(res.statusCode).toBe(200)
 
+    // No Supporting Cast provisioning at purchase time.
+    expect(fetchCalls.some((c) => c.url.includes('/users'))).toBe(false)
+    expect(fetchCalls.some((c) => c.url.endsWith('/subscriptions'))).toBe(false)
+
+    // gift_token stamped on the PI (idempotency + link source), kind preserved.
+    const token = giftTokenForPaymentIntent('pi_gift_1', {
+      SESSION_SECRET: BASE_ENV.SESSION_SECRET,
+    })
+    const update = stripeCalls.find((c) => c.method === 'paymentIntents.update')
+    expect(update).toBeDefined()
+    const md = (update!.args[1] as { metadata: Record<string, string> }).metadata
+    expect(md.gift_token).toBe(token)
+    expect(md.kind).toBe('gift')
+
+    // Redemption email to the recipient carrying the claim link with the token.
     const emailCall = fetchCalls.find(
       (c) => c.method === 'POST' && c.url.startsWith('https://api.resend.com'),
     )
@@ -883,94 +815,25 @@ describe('Webhook — gift activation', () => {
     expect(body.to).toBe('recip@x.com')
     expect(body.subject).toContain('Bob')
     expect(body.html).toContain('1 year')
-    expect(body.html).toContain('Enjoy')
-    // And the old SC welcome email is gone.
-    expect(fetchCalls.some((c) => c.url.endsWith('/send_welcome_email'))).toBe(false)
+    expect(body.html).toContain('Claim your gift')
+    expect(body.html).toContain(`token=${token}`)
   })
 
-  test('6mo: uses GIFT_6MO price id and ~182-day ends_at', async () => {
-    const pi = buildGiftPI({ term: '6mo' })
+  test('idempotent: a PI already carrying the derived gift_token does not resend', async () => {
+    const token = giftTokenForPaymentIntent('pi_gift_1', {
+      SESSION_SECRET: BASE_ENV.SESSION_SECRET,
+    })
+    const pi = buildGiftPI({ term: '1yr', gift_token: token })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
     retrievedPI = pi
 
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search'))
-        return new Response(JSON.stringify({ users: [] }), { status: 200 })
-      if (url.endsWith('/users') && init?.method === 'POST')
-        return new Response(JSON.stringify({ user: { id: 1 } }), { status: 200 })
-      if (url.endsWith('/subscriptions') && init?.method === 'POST')
-        return new Response(JSON.stringify({ subscription: { id: 2 } }), {
-          status: 200,
-        })
-      return new Response('{}', { status: 200 })
-    }
-
-    const res = await runWebhook()
+    const res = await runWebhook({ RESEND_API_KEY: 'rk_test' })
     expect(res.statusCode).toBe(200)
-
-    const subBody = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/subscriptions'),
-    )!.body as { subscription_price_id: number; ends_at: string }
-    expect(subBody.subscription_price_id).toBe(111) // GIFT_6MO
-    const endsAt = new Date(subBody.ends_at).getTime()
-    const expected = Date.now() + 182 * 24 * 60 * 60 * 1000
-    expect(Math.abs(endsAt - expected)).toBeLessThan(60_000)
-  })
-
-  test('existing recipient: PATCHes custom_1/custom_2 (does not POST /users)', async () => {
-    const pi = buildGiftPI()
-    webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
-    retrievedPI = pi
-
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(
-          JSON.stringify({ users: [{ id: 999, email: 'recip@x.com' }] }),
-          { status: 200 },
-        )
-      }
-      if (url.match(/\/users\/999$/) && init?.method === 'PATCH') {
-        return new Response(JSON.stringify({ user: { id: 999 } }), { status: 200 })
-      }
-      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ subscription: { id: 2 } }), {
-          status: 200,
-        })
-      }
-      return new Response('{}', { status: 200 })
-    }
-
-    const res = await runWebhook()
-    expect(res.statusCode).toBe(200)
-
-    // No POST /users
-    expect(
-      fetchCalls.some((c) => c.method === 'POST' && c.url.endsWith('/users')),
-    ).toBe(false)
-    // PATCH /users/999 with gift metadata
-    const patchCall = fetchCalls.find(
-      (c) => c.method === 'PATCH' && c.url.endsWith('/users/999'),
-    )
-    expect(patchCall).toBeDefined()
-    const patchBody = patchCall!.body as { custom_1: string; custom_2: string }
-    expect(patchBody.custom_1).toBe('gift')
-    expect(JSON.parse(patchBody.custom_2).term).toBe('1yr')
-  })
-
-  test('idempotent: PI already has sc_subscription_id — no SC calls', async () => {
-    const pi = buildGiftPI()
-    pi.metadata.sc_subscription_id = '777'
-    webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
-
-    const res = await runWebhook()
-    expect(res.statusCode).toBe(200)
-    // No SC fetch calls at all
-    expect(fetchCalls.length).toBe(0)
-    // No Stripe update either
     expect(stripeCalls.some((c) => c.method === 'paymentIntents.update')).toBe(false)
+    expect(fetchCalls.some((c) => c.url.startsWith('https://api.resend.com'))).toBe(false)
   })
 
-  test('non-gift PI (no kind=gift metadata) — no SC calls', async () => {
+  test('non-gift PI (no kind=gift metadata) — no work', async () => {
     const pi: FakePI = {
       id: 'pi_other',
       client_secret: 's',
@@ -985,27 +848,23 @@ describe('Webhook — gift activation', () => {
     expect(stripeCalls.some((c) => c.method === 'paymentIntents.update')).toBe(false)
   })
 
-  test('falls back to email prefix when recipient_name is missing', async () => {
-    const pi = buildGiftPI()
-    pi.metadata.recipient_name = ''
+  test('malformed gift PI (bad term) → 500 so Stripe retries', async () => {
+    const pi = buildGiftPI({ term: 'lifetime' })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+    retrievedPI = pi
 
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search'))
-        return new Response(JSON.stringify({ users: [] }), { status: 200 })
-      if (url.endsWith('/users') && init?.method === 'POST')
-        return new Response(JSON.stringify({ user: { id: 1 } }), { status: 200 })
-      if (url.endsWith('/subscriptions') && init?.method === 'POST')
-        return new Response(JSON.stringify({ subscription: { id: 2 } }), {
-          status: 200,
-        })
-      return new Response('{}', { status: 200 })
-    }
+    const res = await runWebhook()
+    expect(res.statusCode).toBe(500)
+  })
+})
 
-    await runWebhook()
-    const createUser = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/users'),
-    )!
-    expect((createUser.body as { first_name: string }).first_name).toBe('recip')
+describe('giftTokenForPaymentIntent', () => {
+  test('is deterministic and high-entropy for a given PI + secret', () => {
+    const env = { SESSION_SECRET: BASE_ENV.SESSION_SECRET }
+    const a = giftTokenForPaymentIntent('pi_abc', env)
+    const b = giftTokenForPaymentIntent('pi_abc', env)
+    expect(a).toBe(b) // deterministic → idempotent retries
+    expect(a).not.toBe(giftTokenForPaymentIntent('pi_xyz', env)) // per-PI
+    expect(a.length).toBeGreaterThan(20) // not guessable from the PI id
   })
 })

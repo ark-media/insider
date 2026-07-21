@@ -63,6 +63,25 @@ export function deriveEntitlements(tier: Tier): Entitlements {
   return GRANTS[tier]
 }
 
+// Map a catalog product's `entitlements` metadata (comma-separated `ark_plus` /
+// `circle`) to the Tier it sells. The webhook derives tier this way — from the
+// price product, the authority — rather than trusting client-stamped metadata.
+// Unrecognised / empty → 'free'.
+export function tierFromEntitlementString(raw: string | null | undefined): Tier {
+  const set = new Set(
+    (raw ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  )
+  const arkPlus = set.has('ark_plus')
+  const circle = set.has('circle')
+  if (arkPlus && circle) return 'bundle'
+  if (arkPlus) return 'ark-plus'
+  if (circle) return 'circle'
+  return 'free'
+}
+
 // Transitional legacy Auth0 paid-signal. Auth0 is being removed from the
 // entitlement picture entirely (task 5) — until tasks 10/11 re-point the readers
 // (circle.ts / me.ts / beehiiv.ts, which compare === 'ark-plus-member') at Neon,

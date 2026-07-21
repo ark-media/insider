@@ -214,6 +214,67 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
 }
 
 // ---------------------------------------------------------------------------
+// Gift recipient — redemption link (grants nothing until claimed)
+// ---------------------------------------------------------------------------
+
+export type GiftRedemptionEmailParams = {
+  recipientName?: string
+  giverName?: string
+  term: GiftTerm
+  message?: string
+  // Where the recipient claims the gift (sign in, then it activates).
+  redeemUrl: string
+}
+
+// A gift now grants nothing until the recipient redeems it (§3): this email
+// carries the claim link rather than announcing an already-active membership.
+// The term clock starts at redemption, so the copy avoids promising a start date.
+export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
+  subject: string
+  html: string
+} {
+  const termLabel = GIFT_LABEL[p.term]
+  const giver = p.giverName?.trim()
+  const first = firstName(p.recipientName)
+
+  const subject = giver ? `${giver} sent you Ark+` : `You've been gifted Ark+`
+  const headlineHtml = giver
+    ? `${esc(giver)} gifted you ${termLabel} of Ark+.`
+    : `You've been gifted ${termLabel} of Ark+.`
+
+  const messageBlockHtml = p.message?.trim()
+    ? `
+            <tr>
+              <td style="padding:0 0 28px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${CYAN};background:${NAVY_900};border-radius:6px;">
+                  <tr>
+                    <td style="padding:16px 20px;">
+                      <p style="margin:0 0 6px;font:600 11px ${FONT};letter-spacing:0.16em;text-transform:uppercase;color:${CYAN};">A note from ${giver ? esc(giver) : 'the sender'}</p>
+                      <p style="margin:0;font:italic 15px/1.6 ${FONT};color:${FG};">${esc(p.message.trim())}</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>`
+    : undefined
+
+  const html = renderShell({
+    preheader: esc(headlineHtml),
+    eyebrow: 'A gift for you',
+    headlineHtml,
+    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    bodyHtml: `Claim your gift to start your membership. It includes ${WHATS_INCLUDED}.`,
+    messageBlockHtml,
+    footerHtml: `Gifts are one-time — once claimed, your access runs for ${termLabel} and won't auto-renew. Redeem whenever you like; there's no deadline. Need help? Just reply to this email.`,
+    ctaHref: p.redeemUrl,
+    ctaLabel: 'Claim your gift',
+    ctaFollowupHtml: `You'll sign in (or create a password) and your membership activates right away.`,
+  })
+
+  return { subject, html }
+}
+
+// ---------------------------------------------------------------------------
 // Circle-only member (community access, no private feed)
 // ---------------------------------------------------------------------------
 
