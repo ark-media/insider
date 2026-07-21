@@ -38,7 +38,7 @@ import { promoRoutes } from './routes/promo.js'
 import { scWebhookRoutes } from './routes/sc-webhook.js'
 import { simplecastRoutes } from './routes/simplecast.js'
 import { smsRoutes } from './routes/sms.js'
-import { stripeRoutes } from './routes/stripe.js'
+import { stripeRoutes } from './routes/stripe/routes.js'
 
 interface Api {
   appBaseUrl: string

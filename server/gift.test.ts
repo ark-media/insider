@@ -136,7 +136,7 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 
 // Static import AFTER mock.module so the plugin picks up the fake Stripe.
 import { devApiPlugin } from './dev-api'
-import { giftTokenForPaymentIntent } from './routes/stripe'
+import { giftTokenForPaymentIntent } from './routes/stripe/webhook'
 
 // ---------------------------------------------------------------------------
 // Plugin harness

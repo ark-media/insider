@@ -14,7 +14,7 @@
 import type Stripe from 'stripe'
 import * as client from 'openid-client'
 import { AlreadySubscribedError } from '../lib/activation.js'
-import { tierFromSubscription } from './stripe.js'
+import { tierFromSubscription } from './stripe/webhook.js'
 import { AUTH0_DOMAIN } from '../auth0.js'
 import { AUTH0_AUDIENCE } from '../../shared/auth0-claims.js'
 import {
