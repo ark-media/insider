@@ -10,9 +10,8 @@ import { reconcileEntitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
 import { getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
-import { makeJsonRes } from '../lib/http.js'
 import { createScV1Client } from '../lib/sc-client.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import type { IncomingMessage } from 'node:http'
 
 // Cron requests from Vercel carry `Authorization: Bearer <CRON_SECRET>`.
@@ -25,13 +24,10 @@ function cronAuthorized(req: IncomingMessage, cronSecret: string): boolean {
 
 export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/cron/reconcile-entitlements',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST' && req.method !== 'GET') {
-          return json(405, { error: 'Method Not Allowed' })
-        }
+      method: ['POST', 'GET'],
+      handler: async (req, res, json) => {
         const cronSecret = env.CRON_SECRET
         if (!cronSecret) return json(500, { error: 'CRON_SECRET missing' })
         if (!cronAuthorized(req, cronSecret)) {
@@ -47,17 +43,14 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
           errors: summary.errors,
         })
       },
-    },
-    {
+    }),
+    defineRoute({
       // Nudge members who joined but haven't finished setting up their private
       // feeds. Scans the SC roster, sends a one-time Resend reminder to the
       // incomplete ones, and records each send so nobody is nagged twice.
       path: '/api/cron/feed-setup-reminders',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST' && req.method !== 'GET') {
-          return json(405, { error: 'Method Not Allowed' })
-        }
+      method: ['POST', 'GET'],
+      handler: async (req, res, json) => {
         const cronSecret = env.CRON_SECRET
         if (!cronSecret) return json(500, { error: 'CRON_SECRET missing' })
         if (!cronAuthorized(req, cronSecret)) {
@@ -84,6 +77,6 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
           json(500, { error: 'reminder_run_failed' })
         }
       },
-    },
+    }),
   ]
 }

@@ -39,7 +39,7 @@ import {
   verifyAuthTxnToken,
   type SessionProfile,
 } from '../lib/session.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // Only same-origin returnTo values are honored — never a protocol-relative
 // ("//evil.com"), backslash, encoded, or absolute URL, which would turn the
@@ -102,11 +102,10 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
   })
 
   return [
-    {
+    defineRoute({
       path: '/api/auth/checkout-session',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
         if (!env.CHECKOUT_SESSION_SECRET) {
           return json(500, { error: 'CHECKOUT_SESSION_SECRET missing' })
@@ -203,18 +202,17 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           expires_in: CHECKOUT_TOKEN_TTL_SEC,
         })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       path: '/api/signout',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         clearCheckoutCookies(res, env)
         clearSessionCookies(res, env)
         json(200, { ok: true })
       },
-    },
+    }),
 
     // --- Server-side OAuth login (BFF) -----------------------------------
     //

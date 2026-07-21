@@ -16,10 +16,10 @@ import {
   resolveRequestIdentity,
 } from '../lib/entitlement-resolver.js'
 import { getSetupStates, recordFeedsPending } from '../lib/feed-activations.js'
-import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
+import { isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { createScClient, type ScError, type ScUserFeed } from '../lib/sc-client.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // Bucket the PUT route by normalized email so flapping toggles can't burn
 // Beehiiv quota or rate-limit the upstream API. 10 saves per minute is more
@@ -75,11 +75,9 @@ async function enrichFeedsWithActivation(
 
 export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/me',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-
+      handler: async (req, res, json) => {
         // Identity-scoped response (email/tier/entitlements/feeds) — must never
         // be cached by a shared proxy/CDN and served to another user.
         res.setHeader('cache-control', 'private, no-store')
@@ -129,8 +127,8 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
 
         return json(200, { email, tier, entitlements, feeds: enriched })
       },
-    },
-    {
+    }),
+    defineRoute({
       // Optimistic "I've set up these feeds" marker. The client calls this the
       // moment a member takes a setup action (opens a deep link, copies the
       // feed URL, texts themselves the link, or links Spotify for the whole
@@ -139,9 +137,8 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
       // marker. SC's `feed.activated` webhook remains authoritative and
       // reconciles the row later.
       path: '/api/me/feeds/setup',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         // State-changing + cookie-authenticated → reject cross-origin posts.
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
 
@@ -180,8 +177,8 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
           json(500, { error: 'pending_write_failed' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       // Newsletter preferences for the signed-in reader. GET returns current
       // mirror state from Neon (kept fresh by activation/cancel pushes and
       // the inbound Beehiiv webhook). PUT applies the requested change to
@@ -193,11 +190,8 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
       //   premium=true  → require subscriber entitlement, then upgrade tier
       //   premium=false → downgrade tier to free
       path: '/api/me/newsletters',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET' && req.method !== 'PUT') {
-          return json(405, { error: 'Method Not Allowed' })
-        }
+      method: ['GET', 'PUT'],
+      handler: async (req, res, json) => {
         if (req.method === 'PUT' && !isSameOrigin(req, appBaseUrl)) {
           return json(403, { error: 'bad_origin' })
         }
@@ -276,6 +270,6 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
           json(502, { error: 'beehiiv_update_failed' })
         }
       },
-    },
+    }),
   ]
 }

@@ -34,9 +34,8 @@ import type {
 } from '../../src/data/newsletters.js'
 import type { ArkEvent } from '../../src/data/events.js'
 import type { CommunityFeedItem, SuggestedSpace } from '../../shared/community.js'
-import { makeJsonRes } from '../lib/http.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug } from './newsletter-slugs.js'
 import type { IncomingMessage } from 'node:http'
@@ -378,12 +377,10 @@ async function fetchMemberSpaces(token: string): Promise<SuggestedSpace[]> {
 
 export function circleRoutes({ env }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/circle/broadcasts',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const slug = url.searchParams.get('newsletter')
         if (!slug) return json(400, { error: 'missing `newsletter`' })
@@ -409,13 +406,11 @@ export function circleRoutes({ env }: Deps): Route[] {
           json(502, { error: 'circle_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/circle/community-events',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         // Events shift on editorial cadence; SWR absorbs traffic between cold
         // starts. The client re-derives live/upcoming from `starts_at` on each
         // 45s poll, so a short cache here doesn't delay the "live" flip.
@@ -435,13 +430,11 @@ export function circleRoutes({ env }: Deps): Route[] {
           json(502, { error: 'circle_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/circle/community-feed',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         // Community content (the "Exclusive" space) — gated on the circle axis.
         // Never let a shared cache hold it; the response is identity-scoped.
         res.setHeader('cache-control', 'private, no-store')
@@ -463,13 +456,11 @@ export function circleRoutes({ env }: Deps): Route[] {
           json(502, { error: 'circle_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/circle/spaces',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         res.setHeader(
           'cache-control',
           'public, s-maxage=300, stale-while-revalidate=3600',
@@ -486,13 +477,11 @@ export function circleRoutes({ env }: Deps): Route[] {
           json(502, { error: 'circle_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/circle/space-posts',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const slug = url.searchParams.get('newsletter')
         if (!slug) return json(400, { error: 'missing `newsletter`' })
@@ -529,6 +518,6 @@ export function circleRoutes({ env }: Deps): Route[] {
           json(502, { error: 'circle_unavailable' })
         }
       },
-    },
+    }),
   ]
 }

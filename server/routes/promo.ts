@@ -5,10 +5,9 @@
 // (server/routes/stripe.ts); this endpoint is display-only.
 
 import type Stripe from 'stripe'
-import { makeJsonRes } from '../lib/http.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import { getPlanPriceCents } from '../lib/pricing.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // Short-lived cache of the coupon list. This endpoint is public and
 // unauthenticated, so the cache keeps abusive traffic from hammering Stripe.
@@ -28,10 +27,9 @@ async function getCachedCoupons(stripe: Stripe): Promise<Stripe.Coupon[]> {
 
 export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/promo/active',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '/', appBaseUrl)
         const plan = url.searchParams.get('plan')
 
@@ -60,6 +58,6 @@ export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
           return json(200, { active: false })
         }
       },
-    },
+    }),
   ]
 }

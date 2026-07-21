@@ -13,7 +13,7 @@
 //                                       pick one to attach a thread to.
 
 import { circleUrls } from '../../src/config/urls.js'
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
@@ -23,6 +23,7 @@ import {
   listDiscussThreads,
   validateCreateThreadInput,
 } from '../lib/discuss-threads.js'
+import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 import {
   beehiivPublicationEnvKey,
@@ -39,10 +40,9 @@ const UUID_RE =
 
 export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/admin/discuss-threads',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (!env.DATABASE_URL) return json(500, { error: 'DATABASE_URL not configured' })
@@ -94,11 +94,10 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
 
         return json(405, { error: 'Method Not Allowed' })
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/admin/beehiiv-drafts',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
@@ -121,6 +120,6 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
           json(502, { error: 'beehiiv_unavailable' })
         }
       },
-    },
+    }),
   ]
 }

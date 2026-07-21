@@ -20,8 +20,7 @@ import {
   type ScEpisode,
 } from '../show-notes.js'
 import type { ScPodcast } from '../show-notes.js'
-import { makeJsonRes } from '../lib/http.js'
-import type { Deps, Env, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 
 const SIMPLECAST_CACHE_TTL_MS = 5 * 60 * 1000
 const simplecastCache = new Map<
@@ -135,12 +134,10 @@ async function fetchSimplecastPodcastDescription(
 
 export function simplecastRoutes({ env }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/simplecast/episodes',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const show = url.searchParams.get('show')
         if (!show) return json(400, { error: 'missing `show`' })
@@ -161,13 +158,11 @@ export function simplecastRoutes({ env }: Deps): Route[] {
           json(502, { error: 'simplecast_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/simplecast/episode',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const id = url.searchParams.get('id')
         if (!id) return json(400, { error: 'missing `id`' })
@@ -187,13 +182,11 @@ export function simplecastRoutes({ env }: Deps): Route[] {
           json(502, { error: 'simplecast_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/simplecast/podcast',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const show = url.searchParams.get('show')
         if (!show) return json(400, { error: 'missing `show`' })
@@ -215,6 +208,6 @@ export function simplecastRoutes({ env }: Deps): Route[] {
           json(502, { error: 'simplecast_unavailable' })
         }
       },
-    },
+    }),
   ]
 }

@@ -8,10 +8,10 @@
 // email, since every field is attacker-controlled. Rate-limited per IP to keep
 // the form from being used as a spam relay.
 
-import { getClientIp, makeJsonRes, readJson } from '../lib/http.js'
+import { getClientIp, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { sendEmail } from '../lib/email.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { contactTopics } from '../../src/config/urls.js'
 import { escapeHtml, isValidEmail } from '../../shared/validation.js'
 
@@ -26,14 +26,10 @@ export function contactRoutes({ env }: Deps): Route[] {
   const limiter = createRateLimiter({ capacity: 5, refillPerSec: 0.1 })
 
   return [
-    {
+    defineRoute({
       path: '/api/contact',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') {
-          return json(405, { error: 'Method Not Allowed' })
-        }
-
+      method: 'POST',
+      handler: async (req, res, json) => {
         const wait = limiter.take(getClientIp(req))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
@@ -93,6 +89,6 @@ export function contactRoutes({ env }: Deps): Route[] {
 
         return json(200, { ok: true })
       },
-    },
+    }),
   ]
 }

@@ -9,7 +9,7 @@
 // All but /me require the Auth0 "admin" role (server/lib/session.ts). Promos
 // stay Stripe-native — Stripe is the source of truth; checkout auto-applies.
 
-import { makeJsonRes, readJson, sendCsv } from '../lib/http.js'
+import { readJson, sendCsv } from '../lib/http.js'
 import { requireAdmin } from '../lib/session.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { listActiveCoupons } from '../lib/stripe-promos.js'
@@ -26,6 +26,7 @@ import {
   type CancellationFilter,
 } from '../../shared/cancellation.js'
 import type { Promo } from '../../shared/promo.js'
+import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 
 // Date-stamped export filename, e.g. cancellations-2026-06-10.csv.
@@ -35,18 +36,16 @@ function csvFilename(): string {
 
 export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/admin/me',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdmin(req, env)
         json(200, { isAdmin: admin !== null, email: admin?.email ?? null })
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/admin/promos',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
@@ -107,15 +106,14 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
 
         return json(405, { error: 'Method Not Allowed' })
       },
-    },
-    {
+    }),
+    defineRoute({
       // Read-only view of the cancellation survey: outcome + reason aggregates
       // and the most recent rows. Admin-gated like the other back-office routes.
       //   ?outcome=&reason=  — optional filters (narrow the rows + the export).
       //   ?format=csv        — download all matching rows as a CSV instead.
       path: '/api/admin/cancellations',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
@@ -144,6 +142,6 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         }
         return json(200, await getCancellationSummary(sql, { filter }))
       },
-    },
+    }),
   ]
 }

@@ -27,9 +27,9 @@ import { getDb, type Sql } from '../lib/db.js'
 import { fetchAuth0EmailVerified } from '../entitlement.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
-import { getClientIp, makeJsonRes, readBody, readJson } from '../lib/http.js'
+import { getClientIp, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
-import type { Deps, Env, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug, resolveBeehiivPublicationId } from './newsletter-slugs.js'
 
@@ -208,12 +208,10 @@ export function beehiivRoutes({ env }: Deps): Route[] {
   })
 
   return [
-    {
+    defineRoute({
       path: '/api/beehiiv/posts',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'GET',
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const slug = url.searchParams.get('newsletter')
         if (!slug) return json(400, { error: 'missing `newsletter`' })
@@ -252,13 +250,11 @@ export function beehiivRoutes({ env }: Deps): Route[] {
           json(502, { error: 'beehiiv_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/beehiiv/subscribe',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'POST',
+      handler: async (req, res, json) => {
         const wait = subscribeLimiter.take(getClientIp(req))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
@@ -295,8 +291,8 @@ export function beehiivRoutes({ env }: Deps): Route[] {
           json(502, { error: 'beehiiv_unavailable' })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       // Inbound webhook from Beehiiv.
       //
       // Auth: Beehiiv doesn't publish a documented HMAC signature scheme,
@@ -315,10 +311,8 @@ export function beehiivRoutes({ env }: Deps): Route[] {
       // attacker replay events, but only for our real readers — not inject
       // ghost subscribers.
       path: '/api/beehiiv/webhook',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'POST',
+      handler: async (req, res, json) => {
         const secret = env.BEEHIIV_WEBHOOK_SECRET
         if (!secret) return json(500, { error: 'BEEHIIV_WEBHOOK_SECRET missing' })
         const url = new URL(req.url ?? '', 'http://x')
@@ -351,7 +345,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
           json(500, { error: 'webhook_handler_failed' })
         }
       },
-    },
+    }),
   ]
 }
 

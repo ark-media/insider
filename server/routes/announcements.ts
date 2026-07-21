@@ -6,7 +6,7 @@
 //   /api/admin/announcements — admin-only CRUD (GET list, POST create,
 //     PATCH ?id, DELETE ?id). Gated by the Auth0 "admin" role.
 
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
@@ -19,6 +19,7 @@ import {
   type Announcement,
 } from '../lib/announcements.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 
 // The public banner is fetched on every page load by every visitor. This
@@ -31,11 +32,10 @@ const activeCache = makeTTLCache<string, { announcement: Announcement | null }>(
 
 export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/announcements/active',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+      method: 'GET',
+      handler: async (req, res, json) => {
         // Short edge cache on top of the in-memory one; SWR keeps it snappy.
         res.setHeader('cache-control', 'public, s-maxage=30, stale-while-revalidate=60')
         if (!env.DATABASE_URL) return json(200, { announcement: null })
@@ -53,11 +53,10 @@ export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
           json(200, { announcement: null })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/admin/announcements',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
 
@@ -93,6 +92,6 @@ export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
         return json(405, { error: 'Method Not Allowed' })
       },
-    },
+    }),
   ]
 }

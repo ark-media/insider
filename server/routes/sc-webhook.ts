@@ -20,8 +20,8 @@ import {
   recordFeedActivatedIfAbsent,
   recordFeedRevoked,
 } from '../lib/feed-activations.js'
-import { makeJsonRes, readBody } from '../lib/http.js'
-import type { Deps, Route } from '../lib/route.js'
+import { readBody } from '../lib/http.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // SC webhook envelope (WebhookEvent + event-specific data). Field access is
 // defensive: `event`/`event_type` are used interchangeably across SC's docs;
@@ -63,12 +63,10 @@ function extractFeedId(e: ScWebhookEvent): number | null {
 
 export function scWebhookRoutes({ env }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/sc/webhook',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'POST',
+      handler: async (req, res, json) => {
         const secret = env.SC_WEBHOOK_SECRET
         if (!secret) return json(500, { error: 'SC_WEBHOOK_SECRET missing' })
         const url = new URL(req.url ?? '', 'http://x')
@@ -161,6 +159,6 @@ export function scWebhookRoutes({ env }: Deps): Route[] {
         }
         return json(200, { received: true })
       },
-    },
+    }),
   ]
 }

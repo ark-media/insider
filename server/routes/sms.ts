@@ -5,7 +5,7 @@
 // return 422 for anything it can't route. Local rate limit on top of SC's
 // own — these are paid SMS, so abuse is expensive.
 
-import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
+import { isSameOrigin, readJson } from '../lib/http.js'
 import { getSessionEmail } from '../lib/session.js'
 import {
   createScClient,
@@ -14,7 +14,7 @@ import {
   type ScUserFeed,
 } from '../lib/sc-client.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 export function smsRoutes({ env, appBaseUrl }: Deps): Route[] {
   // SMS setup-link sender. Tight budget — SC forwards these to a carrier
@@ -25,12 +25,10 @@ export function smsRoutes({ env, appBaseUrl }: Deps): Route[] {
   })
 
   return [
-    {
+    defineRoute({
       path: '/api/sc/send-setup-sms',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
-
+      method: 'POST',
+      handler: async (req, res, json) => {
         // Cookie-authenticated mutation that triggers paid SMS — apply the same
         // same-origin CSRF guard as other state-changing routes (see http.ts).
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
@@ -124,6 +122,6 @@ export function smsRoutes({ env, appBaseUrl }: Deps): Route[] {
           json(e.status ?? 502, { error: 'Could not send SMS. Please try again.' })
         }
       },
-    },
+    }),
   ]
 }

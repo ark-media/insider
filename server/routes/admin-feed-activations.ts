@@ -10,11 +10,12 @@
 // Safe to re-run: the write is create-if-absent, so real webhook-recorded
 // activations/revocations always win. Admin-gated + same-origin.
 
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import { runFeedActivationBackfill } from '../lib/feed-activation-backfill.js'
 import { createScV1Client } from '../lib/sc-client.js'
+import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 
 // Convert an optional (untrusted) `sinceDays` body value into a lower-bound ISO
@@ -35,10 +36,9 @@ export function resolveBackfillSince(
 
 export function adminFeedActivationRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/admin/backfill-feed-activations',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
@@ -62,6 +62,6 @@ export function adminFeedActivationRoutes({ env, appBaseUrl }: Deps): Route[] {
           json(502, { error: 'backfill_failed' })
         }
       },
-    },
+    }),
   ]
 }

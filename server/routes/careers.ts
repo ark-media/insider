@@ -7,7 +7,7 @@
 //   /api/admin/careers — admin-only CRUD (GET list, POST create, PUT ?id,
 //     DELETE ?id). Gated by the Auth0 "admin" role. Duplicate slugs return 409.
 
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
@@ -20,15 +20,15 @@ import {
   updateCareer,
   validateCareerInput,
 } from '../lib/careers.js'
+import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 
 export function careerRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/careers',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+      method: 'GET',
+      handler: async (req, res, json) => {
         // Job postings change rarely; a short edge cache with SWR keeps the
         // list snappy without going stale for long.
         res.setHeader('cache-control', 'public, s-maxage=60, stale-while-revalidate=300')
@@ -54,11 +54,10 @@ export function careerRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(200, { careers: [] })
         }
       },
-    },
-    {
+    }),
+    defineRoute({
       path: '/api/admin/careers',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
 
@@ -105,6 +104,6 @@ export function careerRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
         return json(405, { error: 'Method Not Allowed' })
       },
-    },
+    }),
   ]
 }

@@ -15,7 +15,6 @@
 // Admin-gated like the rest of the back office. Stripe is required (email source).
 
 import type Stripe from 'stripe'
-import { makeJsonRes } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
@@ -25,6 +24,7 @@ import {
 } from '../lib/membership.js'
 import { getActivatedEmails, normalizeEmail } from '../lib/feed-activations.js'
 import type { Tier } from '../entitlement.js'
+import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 import type {
   MemberDirectoryEntry,
@@ -86,10 +86,9 @@ function toEntry(
 
 export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/admin/members',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
@@ -191,6 +190,6 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
           nextOffset: hasMore ? offset + PAGE_SIZE : null,
         } satisfies MemberDirectoryPage)
       },
-    },
+    }),
   ]
 }

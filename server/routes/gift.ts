@@ -17,7 +17,7 @@ import { deriveEntitlements, syncEntitlement } from '../entitlement.js'
 import { findOrCreateAuth0User } from '../lib/auth0-user.js'
 import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
-import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
+import { isSameOrigin, readJson } from '../lib/http.js'
 import {
   getGiftByToken,
   getMembershipByAuth0Sub,
@@ -27,7 +27,7 @@ import {
   type MembershipRow,
 } from '../lib/membership.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { getSessionProfile } from '../lib/session.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import type Stripe from 'stripe'
@@ -49,11 +49,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
   })
 
   return [
-    {
+    defineRoute({
       path: '/api/gift/create-checkout',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
 
         const body =
@@ -185,12 +184,11 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           term,
         })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       path: '/api/gift/status',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
         const url = new URL(req.url ?? '/', appBaseUrl)
         const sessionId = url.searchParams.get('id')
@@ -217,9 +215,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           activated: Boolean(pi?.metadata?.gift_token),
         })
       },
-    },
+    }),
 
-    {
+    defineRoute({
       // Redeem a gift the recipient received by email. Requires a signed-in
       // session (the claim writes a membership row keyed on the recipient's Auth0
       // sub). Branches on whether they already hold an active paid membership
@@ -227,9 +225,8 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
       // gift amount as Stripe account credit. Either way the gift flips to
       // redeemed. No redeem-by — a gift is claimable anytime.
       path: '/api/gift/redeem',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
-        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+      method: 'POST',
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
         if (!env.DATABASE_URL) return json(500, { error: 'database_not_configured' })
@@ -321,7 +318,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         await markGiftRedeemed(sql, token, auth0Sub)
         return json(200, { redeemed: true, applied: 'membership', expires_at: grant.endsAt })
       },
-    },
+    }),
   ]
 }
 

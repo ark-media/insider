@@ -8,19 +8,19 @@
 // Admin-gated (Auth0 "admin" role) + same-origin on the mutation, like the
 // other back-office routes.
 
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import { getReminderConfig, setReminderConfig } from '../lib/app-settings.js'
 import { validateReminderConfig } from '../../shared/feed-reminder.js'
+import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 
 export function adminFeedReminderRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/admin/feed-reminders',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (!env.DATABASE_URL) {
@@ -39,6 +39,6 @@ export function adminFeedReminderRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
         return json(405, { error: 'Method Not Allowed' })
       },
-    },
+    }),
   ]
 }

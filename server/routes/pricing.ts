@@ -6,21 +6,19 @@
 // `?locale_hint=XX` is a soft browser-locale fallback used only when no geo
 // header is present).
 
-import { makeJsonRes } from '../lib/http.js'
 import {
   getAllTierPricingByCurrency,
   minorUnitFactors,
   SUPPORTED_CURRENCIES,
 } from '../lib/pricing.js'
 import { countryFromRequest, currencyForCountry } from '../lib/geo-currency.js'
-import type { Deps, Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 export function pricingRoutes({ stripe }: Deps): Route[] {
   return [
-    {
+    defineRoute({
       path: '/api/pricing',
-      handler: async (req, res) => {
-        const json = makeJsonRes(res)
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'Stripe not configured' })
         try {
           const url = new URL(req.url ?? '/', 'http://x')
@@ -59,6 +57,6 @@ export function pricingRoutes({ stripe }: Deps): Route[] {
           json(502, { error: 'Could not load pricing' })
         }
       },
-    },
+    }),
   ]
 }
