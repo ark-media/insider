@@ -29,7 +29,7 @@ const stripeCalls: StripeCall[] = []
 //   subsByCustomer      → what subscriptions.list({ customer }) returns
 //   nextSessionId       → id stamped onto the returned Session
 let existingCustomers: Array<{ id: string; email: string }> = []
-let subsByCustomer: Record<string, Array<{ id: string }>> = {}
+let subsByCustomer: Record<string, Array<{ id: string; status?: string }>> = {}
 let nextSessionId = 'cs_test_1'
 
 class FakeStripe {

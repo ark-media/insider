@@ -351,7 +351,14 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // price_data on the catalog PRODUCT for a PWYC uplift. price_data (not
         // product_data) reuses the persistent product — product_data mints a new
         // Product every call, the cause of the sandbox sprawl (§4).
-        const lineItem: Stripe.Checkout.SessionCreateParams.LineItem =
+        // Derive the line-item type by indexing into the create params rather
+        // than the `Checkout.SessionCreateParams.LineItem` namespace: this SDK
+        // version re-exports SessionCreateParams as a plain type alias at the
+        // Checkout level, so the `.LineItem` sub-namespace isn't reachable there.
+        type CheckoutLineItem = NonNullable<
+          Stripe.Checkout.SessionCreateParams['line_items']
+        >[number]
+        const lineItem: CheckoutLineItem =
           amountCents === floor
             ? { price: catalog.priceId, quantity: 1 }
             : {

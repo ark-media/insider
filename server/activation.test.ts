@@ -51,7 +51,7 @@ let fetchUrls: Array<{ method: string; url: string }> = []
 const realFetch = globalThis.fetch
 
 function installFetch() {
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input)
     const method = (init?.method ?? 'GET').toUpperCase()
     fetchUrls.push({ method, url })

@@ -48,7 +48,7 @@ class FakeStripe {
     },
   }
   subscriptions = {
-    retrieve: async (id: string) => makeSub(),
+    retrieve: async (_id: string) => makeSub(),
     update: async (id: string, args: { metadata: Record<string, string> }) => {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
       return makeSub()
@@ -162,12 +162,11 @@ async function runWebhook(): Promise<FakeRes> {
     method: string
     url: string
     headers: Record<string, string>
-    socket: { remoteAddress: string }
   }
   stream.method = 'POST'
   stream.url = WEBHOOK_PATH
   stream.headers = { 'stripe-signature': 'sig' }
-  stream.socket = { remoteAddress: '127.0.0.1' }
+  ;(stream as { socket: unknown }).socket = { remoteAddress: '127.0.0.1' }
   const res = makeRes()
   await new Promise<void>((resolve, reject) => {
     const origEnd = res.end.bind(res)
@@ -197,7 +196,7 @@ beforeEach(() => {
   subMeta = {}
   productEntitlements = { prod_arkplus: 'ark_plus', prod_circle: 'circle', prod_bundle: 'ark_plus,circle' }
   webhookEvent = null
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     fetchCalls.push({ url: String(input), method: (init?.method ?? 'GET').toUpperCase() })
     return new Response('{}', { status: 200 })
   }) as typeof fetch
