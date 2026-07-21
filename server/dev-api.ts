@@ -182,18 +182,12 @@ export function createCatchAllHandler(env: Env) {
     res: ServerResponse,
   ): Promise<void> {
     if (initError || !routesByPath) {
+      // Log the detail server-side; never echo message/stack to the caller —
+      // init failures expose file paths, config state, and driver internals.
+      console.error('[api] init failed', initError)
       res.statusCode = 500
       res.setHeader('content-type', 'application/json')
-      res.end(
-        JSON.stringify({
-          error: 'API failed to initialize',
-          message:
-            initError instanceof Error
-              ? initError.message
-              : String(initError ?? 'unknown'),
-          stack: initError instanceof Error ? initError.stack : undefined,
-        }),
-      )
+      res.end(JSON.stringify({ error: 'init_failed' }))
       return
     }
 

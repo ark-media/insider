@@ -62,12 +62,8 @@ import {
 import { isSameOrigin, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getSessionEmail } from '../lib/session.js'
+import { isValidEmail } from '../../shared/validation.js'
 import type { Deps, Env, Route } from '../lib/route.js'
-
-// Loose RFC-shaped check — sufficient to reject obvious junk before it
-// reaches stripe.customers.list/create. Stripe will validate canonical form
-// downstream; this just keeps us from minting Customer rows for "   foo".
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // Stripe's hard limit is 256; we cap a touch lower to leave room.
 const MAX_NAME_LEN = 250
@@ -289,7 +285,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // customer.email is null and the webhook's activation 500s forever.
         const email = body.email?.trim().toLowerCase()
         if (!email) return json(400, { error: 'Email is required.' })
-        if (!EMAIL_RE.test(email)) {
+        if (!isValidEmail(email)) {
           return json(400, { error: 'Please enter a valid email.' })
         }
         if (body.name && body.name.length > MAX_NAME_LEN) {

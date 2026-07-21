@@ -1,0 +1,129 @@
+# LOC-Reduction, DRY & Bug-Surface Plan
+
+Goal: make the codebase terser, remove duplication, and shrink the places where
+bugs and security risks can live. Synthesized from five parallel research passes
+(frontend components, frontend routes/lib, server non-test, server tests,
+security). Total addressable: **~5,100 LOC (~10% of ~50k)** plus the security
+consolidations.
+
+Runner is `bun test`. Test-runner is `bun test`; no dead-code tooling installed.
+
+---
+
+## Confirmed bugs & security gaps (fix regardless of LOC)
+
+1. **Coupon amounts hardcode `$` in a multi-currency checkout.** Flagged by two
+   independent agents. `src/components/CheckoutModal.tsx:583`,
+   `src/routes/admin/promos.tsx:51`, `src/routes/admin/cancellations.tsx:71`,
+   `src/routes/account/billing.tsx:29` all do `` `$${cents/100}` `` while the rest
+   of the app localizes via `Intl` / `src/lib/currency.ts`. A JPY/ILS buyer sees
+   the wrong currency. **Fix:** one `formatCouponDiscount(promo, currency)` in
+   `src/lib/currency.ts`; call from all sites.
+2. **`/api/circle/space-posts` has no server-side entitlement gate** (High).
+   `server/routes/circle.ts:490-517` returns rendered Ark+ `bodyHtml` to anyone,
+   unlike gated sibling `community-feed` (`:440-465`). Not wired into the reader
+   UI today, but live and reachable; the documented one-line `sourceBySlug` switch
+   would leak paid content. **Fix:** `gateContentForRequest(req, env, tier)` helper;
+   route both `space-posts` and `community-feed` through it.
+3. ~~**Circle client reads two different token env vars.**~~ **FALSE POSITIVE —
+   verified via .env.example comments.** `CIRCLE_API_TOKEN` is the Circle Admin
+   **v1** token (member CRUD + reconciliation) and `CIRCLE_ADMIN_API_TOKEN` is the
+   Admin **v2** token (broadcasts/feed reads). Two genuinely distinct tokens for
+   two Circle API versions; the split is correct. A `circle-client.ts` can still
+   share fetch/header/error plumbing in Phase 4 but MUST keep both tokens (v1 +
+   v2 clients). No bug.
+4. **Request-identity resolution triplicated with divergent precedence.** Flagged
+   by server + security agents. `server/lib/session.ts:302-321` and
+   `server/lib/entitlement-resolver.ts:47-71` check Bearer→session→cookie;
+   `server/routes/me.ts:155-176` checks session→Bearer→cookie. **Fix:** make
+   `resolveRequestIdentity` the single source; `getSessionEmail` delegates; delete
+   the me.ts inline block.
+5. **Init-failure handler leaks stack + message to client.**
+   `server/dev-api.ts:184-198` returns `initError.message`/`.stack`; the
+   per-request handler below (`:233-239`) correctly returns generic. **Fix:** log
+   server-side, return `{ error: 'init_failed' }`.
+
+Lower severity (consolidation): constant-time `secretEquals` duplicated x3
+(`cron.ts:22`, `sc-webhook.ts:74`, `beehiiv.ts:335`); `EMAIL_RE`/`escapeHtml`
+duplicated across boundaries → move to `shared/`.
+
+**Confirmed done right** (no action): Stripe webhook raw-body signature verify +
+idempotency ledger + per-customer serialization; server-side admin gate via
+`requireAdminRequest` on every `/api/admin/*`; uniformly parameterized SQL; PKCE
+BFF login; closed open-redirect (`safeReturnTo`); 32-byte HS256 key floor.
+
+---
+
+## Phase 0 — Tooling
+
+Add `knip` (dev dep + `knip` script). `tsc` catches unused locals only, not unused
+exports/files. Known dead code to delete once green: `src/lib/useAsyncResource.ts`
+(+test), `server/entitlement.ts:212-218` `syncCircleAccess`,
+`server/lib/activation.ts:80,380-387` back-compat shim, duplicate `redactEmail`,
+`server/routes/stripe.ts:116-121` pass-through, commented ThemeToggle
+(`PublicMasthead.tsx:805-849`, ~55 lines).
+
+## Phase 1 — Bugs + security consolidations ✅ DONE
+
+All landed; full suite green (727 pass, 0 fail); tsc + eslint clean.
+- **Coupon display** → `formatCouponDiscount` in `src/lib/currency.ts`; 4 sites
+  (CheckoutModal, promos, cancellations, billing) now use `Intl` (was hardcoded `$`).
+- **space-posts gate**: `/api/circle/space-posts` now gates ark-plus bodies on the
+  circle axis (withholds body/bodyHtml from non-members) and serves gated content
+  `private, no-store` (was `public, s-maxage=300` — a CDN-cache leak). +3 tests.
+- **init-error leak** (`dev-api.ts`): returns generic `{error:'init_failed'}`.
+- **identity drift**: `me.ts` feeds/setup now calls `resolveRequestIdentity`
+  (was a 4th, differently-ordered inline ladder); −20 LOC, unused imports removed.
+- **secretEquals** → `server/lib/timing-safe.ts`; cron + sc-webhook + beehiiv.
+- **isValidEmail / escapeHtml** → `shared/validation.ts`; 5 sites.
+
+Deferred to Phase 4: merging `getSessionEmail` into `resolveRequestIdentity`
+(agrees on precedence already; a straight merge risks a session↔resolver import
+cycle — do it by moving the resolver down into `session.ts`).
+
+## Phase 2 — Test suite (~3,200 LOC, low risk, best ratio)
+
+Into existing `server/test-utils.ts`:
+- `createDevApiHarness` — fake `makeReq`/`makeRes`/`runHandler`/`buildHandler`
+  (29/29/16/9 copies) → **~1,800 LOC**.
+- Shared `Middleware`/`FakeRes` types (~160).
+- `baseTestEnv(overrides)` with unique DATABASE_URL invariant (~140).
+- `test-mocks/neon.ts` `createNeonMock()` (~150).
+- `test-mocks/stripe.ts` `createStripeMock()` + `buildSubscription/Session` (~450).
+- `installFetchMock({jwks,sc,beehiiv})` (~150).
+- `test.each` for sibling cases + guard-test helper (~350).
+- Prune framework-behavior/dup 400 tests LAST, per-test review (~100, Med-High risk).
+Coverage held equal throughout.
+
+## Phase 3 — Frontend DRY (~1,400 LOC)
+
+- `useCrudResource<T,Draft>` + `<AdminList>` + `StatusPill`/`EditDeleteRow` across
+  careers/faqs/announcements/promos/discuss-threads/cancellations → **~900 LOC**.
+- `adminField`/`adminFieldLabel` import stragglers; `adminPrimaryButton`/
+  `adminSecondaryButton`; `errMessage(err, fallback)` helper.
+- `usePricing()` hook (3 copies), `<BillingPeriodToggle>`, `<CtaButton>`/`<CtaLink>`,
+  shared `<Spinner>`/`<PriceSkeleton>`/`<PlayGlyph>`/`<CheckIcon>` (fixes stroke
+  inconsistency), `useFocusTrap`, `useCopyToClipboard`, `<EpisodeMeta>`.
+- Consolidate `pollForCheckoutSession`/`pollUntilActivated` → one `lib/pollCheckout`.
+- Delete dead `useAsyncResource` + commented code.
+
+## Phase 4 — Server DRY (~440 LOC)
+
+- `defineRoute({method,handler})` wrapper: builds `json`, enforces method, 405
+  (~120). `circleReadRoute(path,key,fn)` factory (~60). `withMember` Stripe guard
+  (~30). Unified Beehiiv client + `resolveBeehiivPublicationId` (~35).
+  `membershipIsLive` single copy + `MEMBERSHIP_COLS` (~15). `envKeyForSlug` +
+  unify TTL caches on `makeTTLCache` (~25). `customerIdOf`/`tsToIso` helpers (~15).
+- Split `server/routes/stripe.ts` (1,442) → `stripe/{helpers,routes,webhook}.ts`;
+  extract `validatePwycAmount` (dup at `:344` and `:838`).
+- One `errorResponse(res, err)` contract; stop returning config-presence strings.
+
+---
+
+## Sequencing notes
+
+- Phase 0 before deletions. Phase 1 first (bug-surface payoff). Phase 2 next
+  (biggest LOC, lowest risk, builds test infra the later phases lean on).
+- Run `bun test` after every step; each phase is independently shippable.
+- Do NOT merge the two tier sources (Simplecast authoritative vs app_metadata
+  mirror) — only dedup their resolution *code*.

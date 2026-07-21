@@ -5,7 +5,7 @@
 // Auth: cron requests from Vercel include `Authorization: Bearer
 // <CRON_SECRET>` matching the secret set in the project's environment.
 
-import crypto from 'node:crypto'
+import { secretEquals } from '../lib/timing-safe.js'
 import { reconcileEntitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
 import { getReminderConfig } from '../lib/app-settings.js'
@@ -20,12 +20,7 @@ import type { IncomingMessage } from 'node:http'
 // response-timing differences. Returns false when the secret is unset (the
 // caller maps that to a 500 separately).
 function cronAuthorized(req: IncomingMessage, cronSecret: string): boolean {
-  const auth = req.headers.authorization ?? ''
-  const got = Buffer.from(auth)
-  const want = Buffer.from(`Bearer ${cronSecret}`)
-  // Buffer lengths must match for timingSafeEqual; the length check is
-  // short-circuit safe.
-  return got.length === want.length && crypto.timingSafeEqual(got, want)
+  return secretEquals(req.headers.authorization ?? '', `Bearer ${cronSecret}`)
 }
 
 export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {

@@ -10,17 +10,14 @@ import {
   PremiumNotConfiguredError,
   refreshSubscriptionFromBeehiiv,
 } from '../lib/beehiiv-sync.js'
-import { CHECKOUT_COOKIE_NAME, readCookie } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
-import { resolveMembership } from '../lib/entitlement-resolver.js'
+import {
+  resolveMembership,
+  resolveRequestIdentity,
+} from '../lib/entitlement-resolver.js'
 import { getSetupStates, recordFeedsPending } from '../lib/feed-activations.js'
 import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
-import {
-  getSessionProfile,
-  verifyAuth0BearerProfile,
-  verifyCheckoutToken,
-} from '../lib/session.js'
 import { createScClient, type ScError, type ScUserFeed } from '../lib/sc-client.js'
 import type { Deps, Route } from '../lib/route.js'
 
@@ -148,32 +145,12 @@ export function meRoutes({ env, appBaseUrl }: Deps): Route[] {
         // State-changing + cookie-authenticated → reject cross-origin posts.
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
 
-        // Resolve the member email the same way GET /api/me does: a real login
-        // (ark_session cookie or Auth0 bearer) or the short-lived checkout
-        // token (bearer or cookie) issued post-payment. A just-paid member on
-        // the setup page may only hold the checkout cookie, so accept it too.
-        let email: string | null = null
-        const session = await getSessionProfile(req, env)
-        if (session) email = session.email
-        if (!email) {
-          const auth = req.headers.authorization
-          if (auth?.startsWith('Bearer ')) {
-            const token = auth.slice(7)
-            const profile = await verifyAuth0BearerProfile(token)
-            if (profile?.email) email = profile.email
-            else {
-              const e = await verifyCheckoutToken(token, env)
-              if (e) email = e
-            }
-          }
-        }
-        if (!email) {
-          const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
-          if (cookieToken) {
-            const e = await verifyCheckoutToken(cookieToken, env)
-            if (e) email = e
-          }
-        }
+        // Resolve the member email the same way every other gate does — one
+        // shared resolver over all accepted credentials (Auth0 bearer, checkout
+        // token by bearer or cookie, ark_session login cookie). A just-paid
+        // member on the setup page may only hold the checkout cookie; the
+        // resolver accepts it.
+        const email = (await resolveRequestIdentity(req, env))?.email ?? null
         if (!email) return json(401, { error: 'unauthenticated' })
 
         const wait = feedSetupLimiter.take(email.toLowerCase())

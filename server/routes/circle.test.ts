@@ -210,7 +210,10 @@ describe('GET /api/circle/space-posts — token / binding shortcuts', () => {
     expect(fetchCalls.length).toBe(0)
   })
 
-  test('sets SWR cache-control on success path', async () => {
+  // members-letter is bound at the ark-plus tier, so its posts are gated: the
+  // response must never be publicly cached (it is identity-scoped) and bodies
+  // must be withheld from non-members.
+  test('sets private cache-control for a gated (ark-plus) space', async () => {
     fetchImpl = async (url) => {
       if (url.includes('/spaces')) {
         return new Response(
@@ -224,9 +227,89 @@ describe('GET /api/circle/space-posts — token / binding shortcuts', () => {
     const req = makeReq(SPACE_POSTS_PATH, 'newsletter=members-letter')
     const res = makeRes()
     await handler(req, res)
-    expect(res.__header('cache-control')).toBe(
-      'public, s-maxage=300, stale-while-revalidate=3600',
+    expect(res.__header('cache-control')).toBe('private, no-store')
+  })
+
+  test('withholds post bodies from non-members of a gated space', async () => {
+    membershipRow = null // no membership → not a circle member
+    fetchImpl = async (url) => {
+      if (url.includes('/spaces')) {
+        return new Response(
+          JSON.stringify({ records: [{ id: 9, slug: 'ark-code-of-conduct' }] }),
+          { status: 200 },
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          records: [
+            {
+              id: 1,
+              name: 'Members only',
+              slug: 'secret',
+              body: '<p>Paid body.</p>',
+              published_at: '2026-02-01T00:00:00Z',
+              status: 'published',
+            },
+          ],
+        }),
+        { status: 200 },
+      )
+    }
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SPACE_POSTS_PATH)
+    const req = makeReq(SPACE_POSTS_PATH, 'newsletter=members-letter')
+    const res = makeRes()
+    await handler(req, res)
+    expect(res.__status()).toBe(200)
+    const body = res.__json() as {
+      posts: Array<{ slug: string; title: string; body: string; bodyHtml: string }>
+    }
+    expect(body.posts.length).toBe(1)
+    // Metadata still ships (so the client can render a locked teaser + CTA)…
+    expect(body.posts[0]!.title).toBe('Members only')
+    // …but the paid body must not.
+    expect(body.posts[0]!.body).toBe('')
+    expect(body.posts[0]!.bodyHtml).toBe('')
+  })
+
+  test('returns full post bodies to circle members', async () => {
+    membershipRow = circleMembershipRow() // staged live circle membership
+    fetchImpl = async (url) => {
+      if (url.includes('/spaces')) {
+        return new Response(
+          JSON.stringify({ records: [{ id: 9, slug: 'ark-code-of-conduct' }] }),
+          { status: 200 },
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          records: [
+            {
+              id: 1,
+              name: 'Members only',
+              slug: 'secret',
+              body: '<p>Paid body.</p>',
+              published_at: '2026-02-01T00:00:00Z',
+              status: 'published',
+            },
+          ],
+        }),
+        { status: 200 },
+      )
+    }
+    const token = await signCheckoutToken(
+      'member@example.com',
+      MEMBER_ENV,
+      CIRCLE_MEMBER_SUB,
     )
+    const req = makeReq(SPACE_POSTS_PATH, 'newsletter=members-letter')
+    ;(req.headers as Record<string, string>).cookie = `ark_checkout=${token}`
+    const handler = findHandler(buildDeps(MEMBER_ENV), SPACE_POSTS_PATH)
+    const res = makeRes()
+    await handler(req, res)
+    expect(res.__status()).toBe(200)
+    const body = res.__json() as { posts: Array<{ bodyHtml: string }> }
+    expect(body.posts.length).toBe(1)
+    expect(body.posts[0]!.bodyHtml).toContain('Paid body.')
   })
 })
 

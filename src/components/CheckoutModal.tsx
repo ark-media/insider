@@ -16,6 +16,7 @@ import {
   browserCountry,
   currencySymbol,
   decimalsForCurrency,
+  formatCouponDiscount,
   formatMajor,
   toMajor,
   toMinor,
@@ -578,9 +579,7 @@ function PromoBanner({ promo }: { promo: PromoInfo }) {
       className="mt-3 border border-cyan/50 bg-cyan/10 px-3 py-2 text-body-sm text-fg-strong"
     >
       <span className="font-semibold">
-        {promo.kind === "percent"
-          ? `${promo.percentOff}% off`
-          : `$${((promo.amountOffCents ?? 0) / 100).toFixed(2)} off`}
+        {formatCouponDiscount(promo.percentOff, promo.amountOffCents)}
       </span>{" "}
       applied automatically{promo.name ? ` — ${promo.name}` : ""}.
     </p>

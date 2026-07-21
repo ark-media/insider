@@ -13,21 +13,12 @@ import { createRateLimiter } from '../lib/rate-limit.js'
 import { sendEmail } from '../lib/email.js'
 import type { Deps, Route } from '../lib/route.js'
 import { contactTopics } from '../../src/config/urls.js'
+import { escapeHtml, isValidEmail } from '../../shared/validation.js'
 
 const NAME_MAX = 200
 const MESSAGE_MAX = 5000
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const topicsByValue = new Map(contactTopics.map((t) => [t.value, t]))
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 export function contactRoutes({ env }: Deps): Route[] {
   // A contact form is low-frequency per person: 5-message burst, then ~1 every
@@ -72,7 +63,7 @@ export function contactRoutes({ env }: Deps): Route[] {
         if (!name || name.length > NAME_MAX) {
           return json(400, { error: 'invalid_name' })
         }
-        if (!EMAIL_RE.test(email)) {
+        if (!isValidEmail(email)) {
           return json(400, { error: 'invalid_email' })
         }
         const topic = topicsByValue.get(topicValue as never)

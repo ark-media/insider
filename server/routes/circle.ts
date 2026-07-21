@@ -500,17 +500,30 @@ export function circleRoutes({ env }: Deps): Route[] {
           return json(400, { error: 'invalid `newsletter`' })
         }
 
-        res.setHeader(
-          'cache-control',
-          'public, s-maxage=300, stale-while-revalidate=3600',
-        )
-
         const token = env.CIRCLE_ADMIN_API_TOKEN
         if (!token) return json(200, { posts: [] })
 
+        // A gated (ark-plus) space must not ship post bodies to non-members:
+        // projectSpacePost stamps the full sanitized bodyHtml regardless of who
+        // asks. Gate on the circle axis like community-feed — withhold body/
+        // bodyHtml for non-members (metadata still ships so the client renders a
+        // locked teaser + CTA) and mark the response private so no shared cache
+        // holds identity-scoped premium HTML. Free spaces stay publicly cached.
+        const gated = CIRCLE_SPACE_BINDINGS[slug]?.tier === 'ark-plus'
+        const hasAccess = gated ? await callerHasCircleAccess(req, env) : true
+        res.setHeader(
+          'cache-control',
+          gated
+            ? 'private, no-store'
+            : 'public, s-maxage=300, stale-while-revalidate=3600',
+        )
+
         try {
           const posts = await fetchCircleSpacePosts(slug, token)
-          json(200, { posts })
+          const safe = hasAccess
+            ? posts
+            : posts.map((p) => ({ ...p, body: '', bodyHtml: '' }))
+          json(200, { posts: safe })
         } catch (err) {
           console.error('[circle] space posts fetch failed:', err)
           json(502, { error: 'circle_unavailable' })

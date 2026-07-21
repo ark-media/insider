@@ -6,7 +6,8 @@
 // Each newsletter slug maps to a publication id resolved from env via
 // BEEHIIV_PUBLICATION_ID_<SLUG_UPPER>.
 
-import crypto from 'node:crypto'
+import { secretEquals } from '../lib/timing-safe.js'
+import { isValidEmail } from '../../shared/validation.js'
 import {
   isPublishedBeehiivPost,
   projectBeehiivPost,
@@ -282,7 +283,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         if (!slug || !isNewsletterSlug(slug)) {
           return json(400, { error: 'invalid `newsletter`' })
         }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (!isValidEmail(email)) {
           return json(400, { error: 'invalid_email' })
         }
 
@@ -333,9 +334,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         const secret = env.BEEHIIV_WEBHOOK_SECRET
         if (!secret) return json(500, { error: 'BEEHIIV_WEBHOOK_SECRET missing' })
         const url = new URL(req.url ?? '', 'http://x')
-        const got = Buffer.from(url.searchParams.get('key') ?? '')
-        const want = Buffer.from(secret)
-        if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) {
+        if (!secretEquals(url.searchParams.get('key') ?? '', secret)) {
           return json(401, { error: 'unauthorized' })
         }
 

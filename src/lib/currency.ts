@@ -72,6 +72,23 @@ export function formatMajor(major: number, currency: string): string {
   return fmt(currency, major);
 }
 
+// The discount portion of a Stripe coupon as a localized string, e.g. "20% off"
+// or "$5 off". amount_off coupons carry their own fixed currency (the server
+// mints them in USD — see server/lib/admin-promos.ts), so format the amount in
+// THAT currency via Intl rather than hardcoding "$". amount_off is in the
+// currency's minor unit; our coupon currencies are all 2-decimal, so /100 →
+// major. percent coupons are currency-agnostic.
+export function formatCouponDiscount(
+  percentOff: number | null | undefined,
+  amountOffCents: number | null | undefined,
+  currency?: string | null,
+): string {
+  if (percentOff != null) return `${percentOff}% off`;
+  if (amountOffCents != null)
+    return `${formatMajor(amountOffCents / 100, currency ?? "usd")} off`;
+  return "a discount";
+}
+
 // The currency symbol alone (for the edit-mode prefix), e.g. "£", "¥", "R$".
 // Falls back to the ISO code if the runtime can't resolve a narrow symbol.
 export function currencySymbol(currency: string): string {

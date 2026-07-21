@@ -12,6 +12,7 @@ import type { Sql } from './db.js'
 import type { DiscussThread, BeehiivDraft } from '../../shared/discuss-thread.js'
 import type { NewsletterSlug } from '../../src/data/newsletters.js'
 import { isNewsletterSlug } from '../routes/newsletter-slugs.js'
+import { escapeHtml } from '../../shared/validation.js'
 
 // newsletter slug → Circle space slug the companion thread lives in. The
 // read-side bindings in `server/routes/circle.ts` only cover `members-letter`
@@ -339,15 +340,6 @@ export async function listBeehiivDrafts(opts: {
 }
 
 const DISCUSS_LINK_MARKER = '<!-- ark:discuss-link -->'
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 function buildDiscussLinkHtml(threadUrl: string): string {
   // Single-paragraph CTA appended to the Beehiiv draft body. The marker comment

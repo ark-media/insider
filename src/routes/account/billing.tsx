@@ -13,6 +13,7 @@ import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { Modal } from "../../components/Modal";
 import { trackEvent } from "../../lib/analytics";
+import { formatCouponDiscount } from "../../lib/currency";
 import { CANCELLATION_REASONS } from "../../../shared/cancellation";
 import type { RetentionOffer } from "../../../shared/retention";
 
@@ -22,12 +23,7 @@ function offerHeadline(o: {
   amountOff: number | null;
   durationMonths: number | null;
 }): string {
-  const amount =
-    o.percentOff != null
-      ? `${o.percentOff}% off`
-      : o.amountOff != null
-        ? `$${(o.amountOff / 100).toFixed(2).replace(/\.00$/, "")} off`
-        : "a discount";
+  const amount = formatCouponDiscount(o.percentOff, o.amountOff);
   const duration = o.durationMonths
     ? ` for ${o.durationMonths} month${o.durationMonths === 1 ? "" : "s"}`
     : "";

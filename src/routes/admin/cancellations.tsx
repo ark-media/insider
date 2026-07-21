@@ -13,6 +13,7 @@ import {
   type PromoDraft,
 } from "../../lib/admin";
 import { adminField, adminFieldLabel } from "../../lib/admin-styles";
+import { formatCouponDiscount } from "../../lib/currency";
 import {
   CANCELLATION_REASONS,
   OFFER_OUTCOMES,
@@ -65,10 +66,7 @@ function emptyOffer(): OfferForm {
 }
 
 function describeDiscount(p: Promo): string {
-  const amount =
-    p.kind === "percent"
-      ? `${p.percentOff}% off`
-      : `$${((p.amountOffCents ?? 0) / 100).toFixed(2)} off`;
+  const amount = formatCouponDiscount(p.percentOff, p.amountOffCents, p.currency);
   const dur =
     p.duration === "repeating"
       ? `for ${p.durationInMonths} mo`

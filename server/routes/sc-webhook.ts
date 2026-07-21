@@ -13,7 +13,7 @@
 // an attacker could only flip a member's UI checkmark and suppress/allow a
 // reminder email, never grant entitlement (Simplecast remains the paid signal).
 
-import crypto from 'node:crypto'
+import { secretEquals } from '../lib/timing-safe.js'
 import { getDb } from '../lib/db.js'
 import {
   recordFeedActivated,
@@ -72,9 +72,7 @@ export function scWebhookRoutes({ env }: Deps): Route[] {
         const secret = env.SC_WEBHOOK_SECRET
         if (!secret) return json(500, { error: 'SC_WEBHOOK_SECRET missing' })
         const url = new URL(req.url ?? '', 'http://x')
-        const got = Buffer.from(url.searchParams.get('key') ?? '')
-        const want = Buffer.from(secret)
-        if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) {
+        if (!secretEquals(url.searchParams.get('key') ?? '', secret)) {
           return json(401, { error: 'unauthorized' })
         }
 
