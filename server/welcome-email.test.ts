@@ -95,6 +95,7 @@ describe('renderSubscriberWelcomeEmail', () => {
       name: 'Casey Jones',
       welcomeUrl: 'https://app.test/welcome',
       passwordSetupUrl: 'https://auth.test/u/reset?ticket=xyz',
+      tier: 'ark-plus',
     })
     expect(subject).toBe('Welcome to Ark+')
     expect(html).toContain('Welcome to Ark+.')
@@ -107,10 +108,34 @@ describe('renderSubscriberWelcomeEmail', () => {
   test('existing account: log-in CTA, no ticket', () => {
     const { html } = renderSubscriberWelcomeEmail({
       welcomeUrl: 'https://app.test/welcome',
+      tier: 'ark-plus',
     })
     expect(html).toContain('Start listening')
     expect(html).toContain('already have an Ark+ login')
     expect(html).not.toContain('Set your password')
     expect(html).toContain('Hi there,')
+  })
+
+  test('ark-plus (feed-only): does not promise the community', () => {
+    const { subject, html } = renderSubscriberWelcomeEmail({
+      welcomeUrl: 'https://app.test/welcome',
+      tier: 'ark-plus',
+    })
+    expect(subject).toBe('Welcome to Ark+')
+    expect(html).toContain('Welcome to Ark+.')
+    expect(html).toContain('private feed')
+    // A feed-only membership must not advertise community access it lacks.
+    expect(html).not.toContain('community')
+  })
+
+  test('bundle: adds the community on top of the feed', () => {
+    const { subject, html } = renderSubscriberWelcomeEmail({
+      welcomeUrl: 'https://app.test/welcome',
+      tier: 'bundle',
+    })
+    expect(subject).toBe('Welcome to Ark+ Bundle')
+    expect(html).toContain('Welcome to Ark+ Bundle.')
+    expect(html).toContain('private feed')
+    expect(html).toContain('community')
   })
 })

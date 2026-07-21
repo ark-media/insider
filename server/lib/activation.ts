@@ -282,14 +282,16 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     if (wasUnprovisioned) {
       // One branded welcome email — replaces both the SC welcome email (feed
       // setup lives on /welcome) and Auth0's reset email (link embedded above).
-      // arkPlus tiers get the feed-first copy (it also covers the bundle's
-      // community); Circle-only gets community-first copy. Soft-fail: the
-      // membership is already provisioned.
+      // One per tier: bundle (feed + community) and ark-plus (feed only) share
+      // the subscriber template but branch on tier for accurate copy;
+      // Circle-only gets the community-first copy. Soft-fail: the membership is
+      // already provisioned.
       const { subject, html } = entitlements.arkPlus
         ? renderSubscriberWelcomeEmail({
             name,
             welcomeUrl: `${baseUrl}/welcome`,
             passwordSetupUrl,
+            tier: entitlements.circle ? 'bundle' : 'ark-plus',
           })
         : renderCircleWelcomeEmail({
             name,

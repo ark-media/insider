@@ -106,8 +106,11 @@ export function renderShell(p: ShellParams): string {
 </html>`
 }
 
-const WHATS_INCLUDED =
-  'extended interviews, ad-free episodes, members-only Q&amp;As, and the full archive — delivered as a private feed in the podcast app you already use, plus the Ark+ community'
+// The private-feed benefits every Ark+ (feed) tier gets. Bundle/gift append the
+// community on top; a feed-only Ark+ membership stops here.
+const FEED_INCLUDED =
+  'extended interviews, ad-free episodes, members-only Q&amp;As, and the full archive — delivered as a private feed in the podcast app you already use'
+const WHATS_INCLUDED = `${FEED_INCLUDED}, plus the Ark+ community`
 
 function firstName(name?: string): string | undefined {
   return name?.trim().split(' ')[0] || undefined
@@ -116,14 +119,26 @@ function firstName(name?: string): string | undefined {
 // Both emails share the same CTA logic: a brand-new account gets a
 // set-password link (the Auth0 ticket); an existing account is pointed at
 // sign-in. welcomeUrl is always referenced as the follow-up step.
-function ctaFor(welcomeUrl: string, passwordSetupUrl?: string) {
+// includesCommunity adds "join the community" to the setup step — true for
+// bundle/gift (which carry community), false for a feed-only Ark+ membership.
+function ctaFor(
+  welcomeUrl: string,
+  passwordSetupUrl?: string,
+  includesCommunity = true,
+) {
   const isNewAccount = Boolean(passwordSetupUrl)
+  const newSetup = includesCommunity
+    ? 'set up your private podcast feed and join the community'
+    : 'set up your private podcast feed'
+  const returningSetup = includesCommunity
+    ? 'set up your feed and enter the community'
+    : 'set up your feed and start listening'
   return {
     ctaHref: isNewAccount ? passwordSetupUrl! : welcomeUrl,
     ctaLabel: isNewAccount ? 'Set your password' : 'Start listening',
     ctaFollowupHtml: isNewAccount
-      ? `Once you've set a password, you'll set up your private podcast feed and join the community at <a href="${welcomeUrl}" style="color:${CYAN};">your welcome page</a>.`
-      : `You already have an Ark+ login — sign in to set up your feed and start listening at <a href="${welcomeUrl}" style="color:${CYAN};">your welcome page</a>.`,
+      ? `Once you've set a password, you'll ${newSetup} at <a href="${welcomeUrl}" style="color:${CYAN};">your welcome page</a>.`
+      : `You already have an Ark+ login — sign in to ${returningSetup} at <a href="${welcomeUrl}" style="color:${CYAN};">your welcome page</a>.`,
   }
 }
 
@@ -193,6 +208,9 @@ export type SubscriberWelcomeEmailParams = {
   welcomeUrl: string
   // Present only for brand-new accounts: an Auth0 password-change ticket URL.
   passwordSetupUrl?: string
+  // Which feed tier this is. 'bundle' also carries the Circle community, so its
+  // copy adds the community on top of the feed; 'ark-plus' is feed-only.
+  tier: 'ark-plus' | 'bundle'
 }
 
 export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
@@ -200,17 +218,25 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
   html: string
 } {
   const first = firstName(p.name)
+  const includesCommunity = p.tier === 'bundle'
   const html = renderShell({
-    preheader: 'Your Ark+ membership is active.',
+    preheader: includesCommunity
+      ? 'Your Ark+ bundle membership is active.'
+      : 'Your Ark+ membership is active.',
     eyebrow: "You're in",
-    headlineHtml: 'Welcome to Ark+.',
+    headlineHtml: includesCommunity ? 'Welcome to Ark+ Bundle.' : 'Welcome to Ark+.',
     greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
-    bodyHtml: `Your membership is active. It includes ${WHATS_INCLUDED}.`,
+    bodyHtml: `Your membership is active. It includes ${
+      includesCommunity ? WHATS_INCLUDED : FEED_INCLUDED
+    }.`,
     footerHtml:
       'Manage your membership anytime from your account. Need help? Just reply to this email.',
-    ...ctaFor(p.welcomeUrl, p.passwordSetupUrl),
+    ...ctaFor(p.welcomeUrl, p.passwordSetupUrl, includesCommunity),
   })
-  return { subject: 'Welcome to Ark+', html }
+  return {
+    subject: includesCommunity ? 'Welcome to Ark+ Bundle' : 'Welcome to Ark+',
+    html,
+  }
 }
 
 // ---------------------------------------------------------------------------
