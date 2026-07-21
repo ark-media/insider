@@ -299,25 +299,54 @@ export async function getSessionProfile(
   return verifySessionToken(cookieToken, env)
 }
 
+// The identity behind a request, however it authenticated.
+//
+//   'auth0'    — a durable login (ark_session cookie or Auth0 bearer). A missing
+//                membership row means "free": a logged-in reader with nothing.
+//   'checkout' — the short-lived post-payment token. A missing row AND missing
+//                SC feed is a provisioning gap, not free — the caller paid.
+export type RequestIdentity = {
+  email: string
+  sub: string | null
+  source: 'auth0' | 'checkout'
+}
+
+// Resolve who is making this request, checking every accepted credential in one
+// precedence order: an Auth0 bearer, then the checkout bearer, then the
+// ark_session cookie, then the checkout cookie. Null when unauthenticated. The
+// single source of request identity — the entitlement resolver and every gate
+// resolve through this, and `getSessionEmail` is just its `.email`.
+export async function resolveRequestIdentity(
+  req: IncomingMessage,
+  env: Env,
+): Promise<RequestIdentity | null> {
+  const authHeader = req.headers.authorization
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7)
+    const profile = await verifyAuth0BearerProfile(token)
+    if (profile?.email) {
+      return { email: profile.email, sub: profile.sub ?? null, source: 'auth0' }
+    }
+    const checkout = await verifyCheckoutProfile(token, env)
+    if (checkout) return { email: checkout.email, sub: checkout.sub, source: 'checkout' }
+  }
+  const session = await getSessionProfile(req, env)
+  if (session) {
+    return { email: session.email, sub: session.sub ?? null, source: 'auth0' }
+  }
+  const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
+  if (cookieToken) {
+    const checkout = await verifyCheckoutProfile(cookieToken, env)
+    if (checkout) return { email: checkout.email, sub: checkout.sub, source: 'checkout' }
+  }
+  return null
+}
+
 export async function getSessionEmail(
   req: IncomingMessage,
   env: Env,
 ): Promise<string | null> {
-  // Bearer token wins (kept for any token-bearing caller). Then the long-term
-  // `ark_session` login cookie, then the short-lived post-checkout cookie.
-  const authHeader = req.headers.authorization
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7)
-    const email =
-      (await verifyAuth0Bearer(token)) ??
-      (await verifyCheckoutToken(token, env))
-    if (email) return email
-  }
-  const session = await getSessionProfile(req, env)
-  if (session) return session.email
-  const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
-  if (cookieToken) return verifyCheckoutToken(cookieToken, env)
-  return null
+  return (await resolveRequestIdentity(req, env))?.email ?? null
 }
 
 // Admin gate for the back office. Passes only for a session that carries the

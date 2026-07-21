@@ -384,7 +384,13 @@ export type ReconcileSummary = {
 }
 
 // A live membership row grants its tier — unless it's a gift term that elapsed.
-function membershipIsLive(row: { tier: Tier; gift_expires_at: string | null }): boolean {
+// Subscription rows in dunning (past_due / unpaid) still grant: Stripe retries
+// within the grace window before a later .deleted revokes. The single predicate
+// behind both the resolver's per-request gate and the reconciler's keep-set.
+export function membershipIsLive(row: {
+  tier: Tier
+  gift_expires_at: string | null
+}): boolean {
   if (row.tier === 'free') return false
   if (row.gift_expires_at) return Date.parse(row.gift_expires_at) > Date.now()
   return true

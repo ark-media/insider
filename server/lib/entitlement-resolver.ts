@@ -13,62 +13,25 @@
 import type { IncomingMessage } from 'node:http'
 import {
   deriveEntitlements,
+  membershipIsLive,
   type Entitlements,
   type Tier,
 } from '../entitlement.js'
-import { CHECKOUT_COOKIE_NAME, readCookie } from './cookies.js'
 import { getDb } from './db.js'
 import { getMembershipByAuth0Sub, type MembershipRow } from './membership.js'
 import { createScClient, findScUserByEmail, type ScUser } from './sc-client.js'
 import {
-  getSessionProfile,
-  verifyAuth0BearerProfile,
-  verifyCheckoutProfile,
+  resolveRequestIdentity,
+  type RequestIdentity,
 } from './session.js'
 
 type Env = Record<string, string>
 
-// The identity behind a request, however it authenticated.
-//
-//   'auth0'    — a durable login (ark_session cookie or Auth0 bearer). A missing
-//                membership row means "free": a logged-in reader with nothing.
-//   'checkout' — the short-lived post-payment token. A missing row AND missing
-//                SC feed is a provisioning gap, not free — the caller paid.
-export type RequestIdentity = {
-  email: string
-  sub: string | null
-  source: 'auth0' | 'checkout'
-}
-
-// Resolve who is making this request, checking every accepted credential in the
-// same precedence order the routes used before this module centralized it: an
-// Auth0 bearer, then the checkout bearer, then the ark_session cookie, then the
-// checkout cookie. Null when unauthenticated.
-export async function resolveRequestIdentity(
-  req: IncomingMessage,
-  env: Env,
-): Promise<RequestIdentity | null> {
-  const authHeader = req.headers.authorization
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7)
-    const profile = await verifyAuth0BearerProfile(token)
-    if (profile?.email) {
-      return { email: profile.email, sub: profile.sub ?? null, source: 'auth0' }
-    }
-    const checkout = await verifyCheckoutProfile(token, env)
-    if (checkout) return { email: checkout.email, sub: checkout.sub, source: 'checkout' }
-  }
-  const session = await getSessionProfile(req, env)
-  if (session) {
-    return { email: session.email, sub: session.sub ?? null, source: 'auth0' }
-  }
-  const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
-  if (cookieToken) {
-    const checkout = await verifyCheckoutProfile(cookieToken, env)
-    if (checkout) return { email: checkout.email, sub: checkout.sub, source: 'checkout' }
-  }
-  return null
-}
+// `resolveRequestIdentity` (and its `RequestIdentity` type) live in session.ts
+// now — the single source of request identity. Re-exported here so the many
+// gates that already import identity + entitlement together from this module
+// keep one import site.
+export { resolveRequestIdentity, type RequestIdentity }
 
 export type ResolvedMembership = {
   identity: RequestIdentity
@@ -81,16 +44,6 @@ export type ResolvedMembership = {
   // 'neon' = a live membership row decided it; 'sc-fallback' = the transitional
   // SC-by-email arkPlus grant (no row yet); 'none' = no entitlement resolved.
   origin: 'neon' | 'sc-fallback' | 'none'
-}
-
-// A row grants its tier's entitlements unless it's a gift term that has already
-// elapsed (the reconciler removes expired gift rows, but a read must not trust a
-// stale one). Subscription rows in dunning (past_due / unpaid) still grant —
-// Stripe retries within the grace window before a later .deleted revokes.
-function rowGrantsEntitlement(row: MembershipRow): boolean {
-  if (row.tier === 'free') return false
-  if (row.gift_expires_at) return Date.parse(row.gift_expires_at) > Date.now()
-  return true
 }
 
 // Look up the caller's SC user by email (the transitional fallback). Soft-fails
@@ -117,7 +70,7 @@ export async function resolveMembershipForIdentity(
   // 1. Neon is the authority: a live row keyed on the caller's sub decides tier.
   if (identity.sub && env.DATABASE_URL) {
     const row = await getMembershipByAuth0Sub(getDb(env), identity.sub)
-    if (row && rowGrantsEntitlement(row)) {
+    if (row && membershipIsLive(row)) {
       return {
         identity,
         tier: row.tier,
