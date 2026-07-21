@@ -368,24 +368,24 @@ export function CancelFlow({
   };
 
   // Finish a cancel: attach the survey reasons (when we have a row to update),
-  // then hand control back to the billing page. `skip` submits nothing.
+  // then hand control back to the billing page. `skip` submits nothing. The
+  // reason analytics fire only when we actually persist, so every
+  // cancellation_reason_submitted event has a backing survey row — no phantom
+  // events in a DB-less preview env (surveyId === null) or on an empty submit.
   const finishSurvey = async (skip: boolean) => {
-    if (flowId) {
-      const chosen = skip ? [] : [...reasons];
-      if (!skip) {
-        for (const slug of chosen) {
-          trackEvent("cancellation_reason_submitted", { reason: slug, flow: flowId });
-        }
+    const chosen = skip ? [] : [...reasons];
+    const hasInput = chosen.length > 0 || note.trim().length > 0;
+    if (flowId && surveyId !== null && !skip && hasInput) {
+      for (const slug of chosen) {
+        trackEvent("cancellation_reason_submitted", { reason: slug, flow: flowId });
       }
-      if (surveyId !== null && !skip && (chosen.length > 0 || note.trim())) {
-        setBusy(true);
-        await submitCancellationSurvey({
-          surveyId,
-          reasons: chosen,
-          note: note.trim() || undefined,
-        });
-        setBusy(false);
-      }
+      setBusy(true);
+      await submitCancellationSurvey({
+        surveyId,
+        reasons: chosen,
+        note: note.trim() || undefined,
+      });
+      setBusy(false);
     }
     onCancelled(accessUntil);
   };
@@ -716,7 +716,9 @@ export function CancelFlow({
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
-              disabled={busy}
+              // Nothing checked ⇒ Submit would be indistinguishable from Skip, so
+              // disable it and let the member Skip explicitly instead.
+              disabled={busy || reasons.size === 0}
               className={primaryBtn}
               onClick={() => void finishSurvey(false)}
             >
