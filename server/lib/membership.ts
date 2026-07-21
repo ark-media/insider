@@ -141,6 +141,25 @@ export async function listMemberships(
   return rows as MemberDirectoryRow[]
 }
 
+// Membership rows for a set of Stripe customers, keyed by customer id. One row
+// per customer (the most recently updated, matching getMembershipByStripeCustomer)
+// so the admin email search resolves its customers in a single query instead of
+// N. Customers with no membership row are simply absent from the map.
+export async function getMembershipsByStripeCustomers(
+  sql: Sql,
+  customerIds: string[],
+): Promise<Map<string, MemberDirectoryRow>> {
+  if (customerIds.length === 0) return new Map()
+  const rows = (await sql`
+    select distinct on (stripe_customer_id)
+           auth0_sub, stripe_customer_id, tier, status,
+           current_period_end, cancel_at, gift_expires_at
+    from membership
+    where stripe_customer_id = any(${customerIds}::text[])
+    order by stripe_customer_id, updated_at desc`) as MemberDirectoryRow[]
+  return new Map(rows.map((r) => [r.stripe_customer_id as string, r]))
+}
+
 // Dunning / status-only update, matched on the Stripe customer (the event may
 // carry no membership context beyond it). No-op when no row matches.
 export async function setMembershipStatusByCustomer(

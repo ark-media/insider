@@ -19,7 +19,7 @@ import { makeJsonRes } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { getDb } from '../lib/db.js'
 import {
-  getMembershipByStripeCustomer,
+  getMembershipsByStripeCustomers,
   listMemberships,
   type MemberDirectoryRow,
 } from '../lib/membership.js'
@@ -124,16 +124,16 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         // --- Search path: email → Stripe customers → membership -------------
         if (emailParam) {
           const found = await stripe.customers.list({ email: emailParam, limit: 100 })
-          const [rows, activatedEmails] = await Promise.all([
-            Promise.all(found.data.map((c) => getMembershipByStripeCustomer(sql, c.id))),
+          const [rowsByCustomer, activatedEmails] = await Promise.all([
+            getMembershipsByStripeCustomers(sql, found.data.map((c) => c.id)),
             getActivatedEmails(
               sql,
               found.data.map((c) => c.email).filter((e): e is string => Boolean(e)),
             ),
           ])
-          const entries = found.data.map((c, i): MemberDirectoryEntry => {
+          const entries = found.data.map((c): MemberDirectoryEntry => {
             const info: StripeCustomerInfo = { email: c.email ?? null, name: c.name ?? null }
-            const row = rows[i]
+            const row = rowsByCustomer.get(c.id)
             if (row) return toEntry(row, info, activatedEmails, secretKey)
             // Stripe customer with no membership row = not a paying member.
             return {
