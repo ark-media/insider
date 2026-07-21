@@ -28,7 +28,7 @@ import type { RequestIdentity } from './lib/session'
 // user → the fall-through resolves to `free`. Restored after this file's tests.
 const realFetch = globalThis.fetch
 globalThis.fetch = (() =>
-  Promise.resolve(new Response(JSON.stringify({ users: [] }), { status: 200 }))) as typeof fetch
+  Promise.resolve(new Response(JSON.stringify({ users: [] }), { status: 200 }))) as unknown as typeof fetch
 afterAll(() => {
   globalThis.fetch = realFetch
 })
