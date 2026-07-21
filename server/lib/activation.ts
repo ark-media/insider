@@ -74,10 +74,6 @@ export type Activator = {
     sub: Stripe.Subscription,
     tier: Tier,
   ) => Promise<MembershipProvisionResult>
-  // Back-compat shim for callers not yet tier-aware (the post-checkout auth
-  // route): provisions the Ark+ tier. Task 9 moves the webhook onto the
-  // tier-aware method above.
-  activateScSubscriptionForStripeSub: (sub: Stripe.Subscription) => Promise<void>
   // Grant a redeemed gift to the signed-in recipient (routes/gift.ts). SC only
   // for arkPlus tiers, Circle only for circle; the entitlement runs for the gift
   // term from redemption. Returns the SC ids + the computed expiry for the
@@ -377,15 +373,6 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     return promise
   }
 
-  const activateScSubscriptionForStripeSub = async (
-    sub: Stripe.Subscription,
-  ): Promise<void> => {
-    // Back-compat: the only tier sold through the pre-task-8 checkout is Ark+.
-    // Task 9 makes the webhook (and the post-checkout auth route) derive the
-    // tier from the price product's entitlements metadata.
-    await activateMembershipForStripeSub(sub, 'ark-plus')
-  }
-
   const activateGiftForRecipient = async (opts: {
     email: string
     name?: string
@@ -425,7 +412,6 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
 
   return {
     activateMembershipForStripeSub,
-    activateScSubscriptionForStripeSub,
     activateGiftForRecipient,
   }
 }

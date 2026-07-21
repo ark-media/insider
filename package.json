@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "bun test",
+    "knip": "knip",
     "migrate": "bun run scripts/migrate.ts",
     "migrate:status": "bun run scripts/migrate.ts status",
     "migrate:create": "bun run scripts/migrate.ts create"
@@ -54,6 +55,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "knip": "^6.27.0",
     "playwright": "1.52.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",

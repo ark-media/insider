@@ -24,6 +24,7 @@
 // patch / Stripe webhook ack should never 500 because Beehiiv burped.
 
 import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { redactEmail } from '../../shared/validation.js'
 import type { Sql } from './db.js'
 
 // Beehiiv statuses where the reader is still on the list (not fully unsubscribed).
@@ -31,12 +32,6 @@ const RECEIVING_EMAIL_STATUSES = new Set(['active', 'pending'])
 
 export function isReceivingEmails(status: string): boolean {
   return RECEIVING_EMAIL_STATUSES.has(status)
-}
-
-function redactEmail(email: string): string {
-  const at = email.indexOf('@')
-  if (at < 2) return '***'
-  return `${email[0]}***${email.slice(at)}`
 }
 
 // Dedupe concurrent GET /api/me/newsletters refreshes on one instance.

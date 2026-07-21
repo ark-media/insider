@@ -2,7 +2,7 @@
 // the SPA can render the setup page (and decide whether to surface a "send
 // SMS" button).
 
-import { redactEmail } from '../entitlement.js'
+import { redactEmail } from '../../shared/validation.js'
 import {
   applyPreferences,
   ensureFreeSubscription,

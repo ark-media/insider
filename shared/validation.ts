@@ -10,6 +10,15 @@ export function isValidEmail(email: string): boolean {
   return EMAIL_RE.test(email)
 }
 
+// Redact an email for logs: keep the first character and the domain, mask the
+// rest ("hannah@ark.com" → "h***@ark.com"). Fully masks addresses too short to
+// partially reveal without exposing the local part.
+export function redactEmail(email: string): string {
+  const at = email.indexOf('@')
+  if (at < 2) return '***'
+  return `${email[0]}***${email.slice(at)}`
+}
+
 // Escape the five HTML-significant characters for safe interpolation into
 // markup (attribute- and text-context safe).
 export function escapeHtml(s: string): string {

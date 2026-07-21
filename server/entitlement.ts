@@ -18,6 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import type Stripe from 'stripe'
+import { redactEmail } from '../shared/validation.js'
 import { getManagementClient } from './auth0.js'
 import { downgradeToFree as beehiivDowngradeToFree, tryPush } from './lib/beehiiv-sync.js'
 import { getDb } from './lib/db.js'
@@ -113,12 +114,6 @@ export async function syncEntitlement(
   return { email, tier, entitlements, circle }
 }
 
-export function redactEmail(email: string): string {
-  const at = email.indexOf('@')
-  if (at < 2) return '***'
-  return `${email[0]}***${email.slice(at)}`
-}
-
 // --- Auth0 (authentication only) -------------------------------------------
 
 // Used by the Circle SSO route to gate access on email verification. Returns
@@ -204,17 +199,6 @@ async function setCircleAccessGroup(
     throw new Error(`Circle access-group DELETE ${res.status}: ${await res.text()}`)
   }
   return 'ok'
-}
-
-// Grant the Circle axis directly (used by the activation grant path). Kept as a
-// thin re-export of the axis writer so callers outside this module don't reach
-// into the private helper. `false` revokes.
-export function syncCircleAccess(
-  env: Env,
-  email: string,
-  wantCircle: boolean,
-): Promise<'ok' | 'no-member' | 'skipped'> {
-  return setCircleAccessGroup(env, email, wantCircle)
 }
 
 // The custom profile-field key on the Circle member that we stamp with the

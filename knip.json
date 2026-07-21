@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "api/handler.ts",
+    "server/dev-api.ts",
+    "scripts/*.ts",
+    "scripts/*.sh",
+    "**/*.test.ts"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "server/**/*.ts", "shared/**/*.ts", "api/**/*.ts"],
+  "ignore": ["src/routeTree.gen.ts"],
+  "ignoreDependencies": ["playwright", "tailwindcss"]
+}

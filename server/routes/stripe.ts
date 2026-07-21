@@ -27,7 +27,6 @@ import { renderGiftRedemptionEmail } from '../lib/welcome-email.js'
 import {
   deriveEntitlements,
   emailForStripeCustomer,
-  redactEmail,
   syncEntitlement,
   tierFromEntitlementString,
   type Tier,
@@ -62,7 +61,7 @@ import {
 import { isSameOrigin, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getSessionEmail } from '../lib/session.js'
-import { isValidEmail } from '../../shared/validation.js'
+import { isValidEmail, redactEmail } from '../../shared/validation.js'
 import type { Deps, Env, Route } from '../lib/route.js'
 
 // Stripe's hard limit is 256; we cap a touch lower to leave room.
@@ -96,26 +95,6 @@ async function findOrCreateSubscriber(
   return list.data[0]
 }
 
-// Find the active subscription for an email across all its Stripe customers.
-// Checkout creates a Customer per session, so one email can map to several
-// (churn-then-resubscribe); scan them all rather than assuming one. The
-// per-customer lookups run concurrently (one email rarely has many customers,
-// but this keeps the cancel flow off a serial chain of round-trips). Null when
-// the email has no billing record or no live subscription.
-//
-// Matches any LIVE status (active/trialing/past_due/unpaid), not just 'active'
-// (task 14): a delinquent member in dunning is still entitled and must be able
-// to cancel, reactivate, or switch plans from the account UI — filtering to
-// 'active' locked them out of self-service (they could neither manage nor,
-// because the single-sub guard sees them as live, re-checkout). Excludes
-// incomplete / canceled the same way findLiveSubscription does.
-async function findActiveSubscription(
-  stripe: Stripe,
-  email: string,
-): Promise<Stripe.Subscription | null> {
-  return findLiveSubscription(stripe, email)
-}
-
 // Statuses that count as a live membership for the single-active-subscription
 // guard (§8 risk 1). `incomplete`/`incomplete_expired` are excluded: those are a
 // buyer's own not-yet-paid attempt, which must not block them from retrying.
@@ -126,9 +105,15 @@ const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
   'unpaid',
 ])
 
-// Does this email already hold a live subscription (any tier)? A second one
-// would mint a second sub whose webhook overwrites the one-row membership and
-// runs scDelete on the still-paid feed. Scans every customer for the email.
+// Find this email's live subscription across all its Stripe customers, or null.
+// Checkout mints a Customer per session, so one email can map to several
+// (churn-then-resubscribe); scan them all concurrently rather than assuming one.
+// Matches any LIVE status (active/trialing/past_due/unpaid), not just 'active'
+// (task 14): a delinquent member in dunning is still entitled and must be able
+// to cancel, reactivate, or switch plans from the account UI. The single-active-
+// subscription guard treats the same set as live, so a second checkout can't
+// mint a second sub whose webhook overwrites the one-row membership and runs
+// scDelete on the still-paid feed.
 async function findLiveSubscription(
   stripe: Stripe,
   email: string,
@@ -488,7 +473,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             ? body.note.trim().slice(0, MAX_CANCELLATION_NOTE_LEN)
             : null
 
-        const sub = await findActiveSubscription(stripe, cancelEmail)
+        const sub = await findLiveSubscription(stripe, cancelEmail)
         if (!sub) return json(404, { error: 'No active subscription found' })
 
         // Record the survey before cancelling — but never let an analytics
@@ -539,7 +524,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const sub = await findActiveSubscription(stripe, email)
+        const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
 
         // Resume the current plan: drop any pending period-end change (schedule)
@@ -577,7 +562,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         const ineligible = { eligible: false, offer: null }
 
-        const sub = await findActiveSubscription(stripe, email)
+        const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(200, ineligible)
 
         // Offered once per member, ever — eligibility burns on accept. A read
@@ -627,7 +612,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const sub = await findActiveSubscription(stripe, email)
+        const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
 
         const coupon = pickRetentionCoupon(
@@ -754,7 +739,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // confirmation after cancelling is transient client state and is lost on
       // refresh. Keyed by the session email (never a self-asserted one). A
       // scheduled cancel keeps the subscription `status: 'active'` until the
-      // period actually ends, so findActiveSubscription still matches it. Fails
+      // period actually ends, so findLiveSubscription still matches it. Fails
       // closed to "no pending cancel" so a Stripe hiccup degrades to showing the
       // cancel button rather than an error.
       path: '/api/stripe/my-subscription',
@@ -766,7 +751,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const sub = await findActiveSubscription(stripe, email)
+        const sub = await findLiveSubscription(stripe, email)
         // When cancel_at_period_end is set, Stripe populates cancel_at; fall back
         // to the current period end so we always have a date to show.
         let cancelAt: string | null = null
@@ -820,7 +805,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
         const newTier = coerceTier(body.tier)
 
-        const sub = await findActiveSubscription(stripe, email)
+        const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
         const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
 
