@@ -33,6 +33,20 @@ type Retained = "kept-ark-plus" | "kept-circle";
 // amounts are USD minor units (2-decimal).
 const usd = (cents: number) => formatMinor(cents, "usd", 100);
 
+// A readable next-payment date for the success screen; "" for a missing/invalid
+// ISO string so the caller can omit the line.
+function formatDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+}
+
 // A human headline for a coupon-backed offer, e.g. "$6/mo for 12 months".
 function couponHeadline(o: RetentionOffer): string {
   const amount = formatCouponDiscount(o.percentOff, o.amountOff);
@@ -122,7 +136,10 @@ type Screen =
   | "confirm"
   // Post-cancel reasons survey (survey-after-cancel): the cancel has already
   // committed when this shows, so it's non-blocking — the member can submit or skip.
-  | "survey";
+  | "survey"
+  // "Thanks for sticking around" — shown after an offer is accepted, with the
+  // member's new subscription details. The change has already committed.
+  | "saved";
 
 // The terminal action a flow ends in.
 type Terminal =
@@ -174,6 +191,14 @@ export function CancelFlow({
   // Set once the cancel commits, so the survey step can finish the flow.
   const [surveyId, setSurveyId] = useState<string | number | null>(null);
   const [accessUntil, setAccessUntil] = useState("");
+  // Set once an offer is accepted, to render the "Thanks for sticking around"
+  // screen. `detail` is the new recurring price (e.g. "$59.99/year"); `headline`
+  // is handed back to onSaved when the member dismisses.
+  const [saved, setSaved] = useState<{
+    headline: string;
+    detail: string;
+    nextChargeAt: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -285,7 +310,19 @@ export function CancelFlow({
         tier,
         offer_kind: offer.kind,
       });
-      onSaved(offerCopy(offer).heading, r.effective_at ?? "");
+      // New recurring price = the figure the accepted offer quoted, so the
+      // success screen matches what they just agreed to.
+      const cadence = targetPlan === "yearly" ? "year" : "month";
+      const detail =
+        offer.targetPriceCents != null
+          ? `${usd(offer.targetPriceCents)}/${cadence}`
+          : "";
+      setSaved({
+        headline: offerCopy(offer).heading,
+        detail,
+        nextChargeAt: r.effective_at ?? "",
+      });
+      setScreen("saved");
       return;
     }
 
@@ -302,7 +339,14 @@ export function CancelFlow({
         tier,
         offer_kind: offer.kind,
       });
-      onSaved(couponHeadline(offer), r.next_charge_at ?? "");
+      // For a coupon we don't hold the resolved amount, so the discount headline
+      // (e.g. "$6/mo for 6 months") stands in for the new details.
+      setSaved({
+        headline: couponHeadline(offer),
+        detail: couponHeadline(offer),
+        nextChargeAt: r.next_charge_at ?? "",
+      });
+      setScreen("saved");
     } else {
       setError(r.error ?? "Could not apply your offer — please try again.");
     }
@@ -398,6 +442,16 @@ export function CancelFlow({
     setScreen("keep-one");
   };
 
+  // Dismissing the modal from a terminal screen must finalize, not just hide it:
+  // the change already committed server-side, so the billing page needs to
+  // refresh. On `saved` → onSaved; on `survey` → onCancelled (a skip); otherwise
+  // a plain close.
+  const handleModalClose = () => {
+    if (screen === "saved" && saved) onSaved(saved.headline, saved.nextChargeAt);
+    else if (screen === "survey") onCancelled(accessUntil);
+    else onClose();
+  };
+
   const heading = (text: string) => (
     <h2
       ref={headingRef}
@@ -423,7 +477,7 @@ export function CancelFlow({
     "inline-flex min-h-12 flex-1 items-center justify-center border border-danger px-4 text-sm font-semibold uppercase tracking-button text-danger transition hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60";
 
   return (
-    <Modal open onClose={onClose} className="max-w-md" labelledBy="cancel-title">
+    <Modal open onClose={handleModalClose} className="max-w-md" labelledBy="cancel-title">
       {screen === "loading" ? (
         <div role="status" aria-live="polite">
           <p className="eyebrow">One moment</p>
@@ -685,6 +739,39 @@ export function CancelFlow({
               onClick={() => void finishSurvey(true)}
             >
               Skip
+            </button>
+          </div>
+        </>
+      ) : screen === "saved" && saved ? (
+        // "Thanks for sticking around" — the offer is already applied.
+        <>
+          {heading("Thanks for sticking around.")}
+          <p className="mt-4 text-body-sm text-fg">
+            Your subscription helps make Ark Media's work possible.
+          </p>
+          <dl className="mt-6 border border-rule p-4 text-body-sm">
+            {saved.detail ? (
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-fg-muted">New subscription details</dt>
+                <dd className="font-display text-fg-strong">{saved.detail}</dd>
+              </div>
+            ) : null}
+            {formatDate(saved.nextChargeAt) ? (
+              <div className="mt-3 flex items-baseline justify-between gap-4">
+                <dt className="text-fg-muted">Next payment date</dt>
+                <dd className="text-fg-strong">
+                  {formatDate(saved.nextChargeAt)}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              className={primaryBtn}
+              onClick={() => onSaved(saved.headline, saved.nextChargeAt)}
+            >
+              Done
             </button>
           </div>
         </>
