@@ -7,7 +7,8 @@
 export const AUTH0_CLAIM_NAMESPACE = 'https://ark-plus.xyz'
 export const AUTH0_AUDIENCE = `${AUTH0_CLAIM_NAMESPACE}/api`
 export const AUTH0_EMAIL_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/email`
-export const AUTH0_TIER_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/tier`
+// No tier claim: Auth0 carries no entitlement (tasks/entitlement-tiers.md §2).
+// Access is a live Neon read keyed on the sub, never a token claim.
 // Array-of-strings claim carrying the user's role names (e.g. ["admin"]).
 // Emitted by the Auth0 Login Action from the user's assigned RBAC roles
 // (event.authorization.roles). Absent for non-admins. Gates the back office.

@@ -9,7 +9,7 @@ import {
 import {
   AUTH0_AUDIENCE,
   AUTH0_EMAIL_CLAIM,
-  AUTH0_TIER_CLAIM,
+  AUTH0_ROLES_CLAIM,
 } from '../shared/auth0-claims'
 
 /**
@@ -61,19 +61,24 @@ export async function getAuth0TestKeys(): Promise<{
   return cached
 }
 
+// Auth0 no longer carries a tier claim (task 5); entitlement is a Neon read
+// keyed on the token `sub`. Tests set `sub` to control which membership row the
+// resolver reads. `roles` drives the admin gate.
 export async function signAuth0TestToken(claims: {
   email: string
-  tier?: 'ark-plus-member' | 'free'
+  sub?: string
+  roles?: string[]
 }): Promise<string> {
   const { privateKey } = await getAuth0TestKeys()
   const payload: Record<string, unknown> = {
     [AUTH0_EMAIL_CLAIM]: claims.email,
   }
-  if (claims.tier) payload[AUTH0_TIER_CLAIM] = claims.tier
+  if (claims.roles) payload[AUTH0_ROLES_CLAIM] = claims.roles
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'RS256', kid: AUTH0_TEST_KID })
     .setIssuer(`${AUTH0_TEST_DOMAIN}/`)
     .setAudience(AUTH0_AUDIENCE)
+    .setSubject(claims.sub ?? `auth0|${claims.email}`)
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(privateKey)

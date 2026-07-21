@@ -518,13 +518,10 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       console.error('[email] gift welcome email did not send:', recipientEmail)
     }
 
-    // Grant subscriber entitlement for the duration of the gift.
-    // gift_expires_at is stamped on Auth0 app_metadata so the reconciler's
-    // downgrade pass honors the gift even though there is no recurring
-    // Stripe sub.
-    // A gift grants the private feed (arkPlus). Task 9 moves gift entitlement
-    // onto a Neon membership row keyed on the recipient's sub at redemption.
-    await syncEntitlement(env, recipientEmail, 'ark-plus', { giftExpiresAt: endsAt })
+    // Mirror the Circle axis (an ark-plus gift grants none, so this is a no-op
+    // here). The gift's SC sub already carries ends_at; gift expiry now lives on
+    // the Neon membership row written at redemption (task 9), not Auth0.
+    await syncEntitlement(env, recipientEmail, 'ark-plus')
 
     if (env.DATABASE_URL) {
       await tryPush('ensure premium (gift)', () =>

@@ -95,6 +95,23 @@ export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<v
       updated_at             = now()`
 }
 
+// The whole membership roster, projected to just what the reconciler needs to
+// compute per-axis keep-sets (§15). Neon is the authority; the reconciler diffs
+// these against the SC roster and the Circle access group.
+export type MembershipReconcileRow = {
+  auth0_sub: string
+  sc_user_id: number | null
+  tier: Tier
+  status: string
+  gift_expires_at: string | null
+}
+
+export async function loadAllMemberships(sql: Sql): Promise<MembershipReconcileRow[]> {
+  const rows = await sql`
+    select auth0_sub, sc_user_id, tier, status, gift_expires_at from membership`
+  return rows as MembershipReconcileRow[]
+}
+
 // Dunning / status-only update, matched on the Stripe customer (the event may
 // carry no membership context beyond it). No-op when no row matches.
 export async function setMembershipStatusByCustomer(

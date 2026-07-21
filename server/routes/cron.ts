@@ -47,8 +47,8 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         const summary = await reconcileEntitlements(env, stripe)
         json(200, {
           scanned: summary.scanned,
-          upgraded: summary.upgraded,
-          downgraded: summary.downgraded,
+          scRemoved: summary.scRemoved,
+          circleRemoved: summary.circleRemoved,
           errors: summary.errors,
         })
       },

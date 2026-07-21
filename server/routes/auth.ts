@@ -328,7 +328,6 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           roles: profile.roles,
           name: profile.name,
           sub: profile.sub,
-          tier: profile.tier,
         }
         setSessionCookies(res, await signSessionToken(session, env), env)
         // Re-validate defensively: the txn is signed, but this keeps the

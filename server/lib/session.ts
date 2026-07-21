@@ -12,7 +12,6 @@ import {
   AUTH0_AUDIENCE,
   AUTH0_EMAIL_CLAIM,
   AUTH0_ROLES_CLAIM,
-  AUTH0_TIER_CLAIM,
 } from '../../shared/auth0-claims.js'
 import {
   AUTH_TXN_TTL_SEC,
@@ -51,10 +50,9 @@ export type Auth0Profile = {
   // user_id, which is exactly the key the Neon membership row is stored under
   // (tasks/entitlement-tiers.md §3). Absent only for a malformed token.
   sub?: string
-  // `tier` and `emailVerified` come from custom claims; the Auth0 Action must
-  // be configured for them to be present. Callers should treat missing values
-  // as unknown (not as a safe default).
-  tier?: 'ark-plus-member' | 'free'
+  // `emailVerified` comes from a custom claim; the Auth0 Action must be
+  // configured for it to be present. Auth0 no longer carries any entitlement
+  // (task 5) — access is a Neon read, never a token claim.
   emailVerified?: boolean
   // Role names from the AUTH0_ROLES_CLAIM (the user's assigned Auth0 RBAC roles,
   // emitted by the Login Action). Empty when the claim is absent — never assume
@@ -89,13 +87,11 @@ export async function verifyAuth0BearerProfile(
     })
     const email = payload[AUTH0_EMAIL_CLAIM] as string | undefined
     if (!email) return null
-    const tier = payload[AUTH0_TIER_CLAIM]
     const verifiedClaim = payload[`${AUTH0_EMAIL_CLAIM}_verified`]
     return {
       email,
       sub: typeof payload.sub === 'string' ? payload.sub : undefined,
       name: (payload['name'] as string | undefined) ?? undefined,
-      tier: tier === 'ark-plus-member' || tier === 'free' ? tier : undefined,
       emailVerified:
         verifiedClaim === true || verifiedClaim === false ? verifiedClaim : undefined,
       roles: extractRoles(payload as Record<string, unknown>),
@@ -199,8 +195,9 @@ export async function signCheckoutToken(
 // Minted by /api/auth/callback after the server-side OAuth exchange (see
 // routes/auth.ts) and carried in the httpOnly `ark_session` cookie. We store
 // only identity the backend can't cheaply re-derive per request: `roles`
-// (admin gate — no live source without a management call) and `email`/`name`.
-// `tier` is a hint only — /api/me always re-checks Simplecast, the authority.
+// (admin gate — no live source without a management call), `email`/`name`, and
+// the `sub` (the Neon entitlement key). Access is never stored — it's a live
+// Neon read on the sub (§2).
 
 export type SessionProfile = {
   email: string
@@ -211,7 +208,6 @@ export type SessionProfile = {
   // (§3). Stored in the cookie so a gate never needs a Management API round-trip
   // to map the session back to its membership row.
   sub?: string
-  tier?: 'ark-plus-member' | 'free'
 }
 
 export async function signSessionToken(profile: SessionProfile, env: Env): Promise<string> {
@@ -223,7 +219,6 @@ export async function signSessionToken(profile: SessionProfile, env: Env): Promi
       roles: profile.roles,
       ...(profile.name ? { name: profile.name } : {}),
       ...(profile.sub ? { sub: profile.sub } : {}),
-      ...(profile.tier ? { tier: profile.tier } : {}),
     },
     {
       issuer: SESSION_TOKEN_ISSUER,
@@ -246,10 +241,6 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     roles: extractStrings(payload.roles),
     name: (payload.name as string | undefined) ?? undefined,
     sub: (payload.sub as string | undefined) ?? undefined,
-    tier:
-      payload.tier === 'ark-plus-member' || payload.tier === 'free'
-        ? payload.tier
-        : undefined,
   }
 }
 
@@ -344,7 +335,6 @@ export async function requireAdmin(
       email: session.email,
       sub: session.sub,
       name: session.name,
-      tier: session.tier,
       roles: session.roles,
     }
   }

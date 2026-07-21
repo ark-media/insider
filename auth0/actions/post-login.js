@@ -9,7 +9,7 @@
  *      primary for the session. Members are always provisioned on the Database
  *      connection by the activation webhook (server/lib/auth0-user.ts) before
  *      they ever log in, so the Database record is the source of truth for
- *      app_metadata.tier and roles.
+ *      roles (Auth0 holds no entitlement — that lives in Neon, task 5).
  *
  *   2. Signup gate. Self-signup on the Database connection is disabled in the
  *      dashboard, but social connections JIT-provision a new user on first
@@ -17,14 +17,13 @@
  *      Database account is a self-signup: reject it and delete the orphan
  *      record Auth0 created before this action ran.
  *
- *   3. Claims. Set the email / roles / tier custom claims the app reads. These
- *      MUST be resolved from the primary (Database) user: after
+ *   3. Claims. Set the email / roles custom claims the app reads. These MUST be
+ *      resolved from the primary (Database) user: after
  *      api.authentication.setPrimaryUser(), event.user / event.authorization
  *      still reference the secondary social user for the rest of this run, so
- *      reading roles/tier off `event` would be wrong on the linking login.
- *      Consolidating all claim-setting here is deliberate — a separate claims
- *      action running afterwards could read the secondary user and clobber the
- *      tier with 'free'.
+ *      reading roles off `event` would be wrong on the linking login.
+ *      Auth0 carries NO entitlement (task 5): there is no tier claim — access is
+ *      a live Neon read on the sub, so nothing here reflects membership.
  *
  * Why the Management API calls are unavoidable: `event` is a snapshot of the
  * one authenticating user; it cannot see whether a *different* record exists
@@ -135,16 +134,15 @@ exports.onExecutePostLogin = async (event, api) => {
   }
 
   // --- Claims (set on every login, from the resolved user) ------------------
+  // Auth0 carries NO entitlement: no tier claim. Access is a live Neon read on
+  // the sub (tasks/entitlement-tiers.md §2/task 5). Only identity + the admin
+  // roles claim ride the token.
   api.accessToken.setCustomClaim(`${NS}/email`, resolved.email);
 
   if (roles.length > 0) {
     api.accessToken.setCustomClaim(`${NS}/roles`, roles);
     api.idToken.setCustomClaim(`${NS}/roles`, roles);
   }
-
-  const tier = resolved.app_metadata?.tier ?? 'free';
-  api.accessToken.setCustomClaim(`${NS}/tier`, tier);
-  api.idToken.setCustomClaim(`${NS}/tier`, tier);
 };
 
 // --- Management API helpers -------------------------------------------------
