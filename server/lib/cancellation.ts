@@ -46,7 +46,9 @@ export function offerBlockedByWindow(
 
 export type CancellationSurveyInput = {
   email: string
-  reason: string | null
+  // Multi-select reason slugs (empty for an accept row, or a cancel whose survey
+  // is collected afterward via updateCancellationSurveyReasons).
+  reasons: string[]
   note: string | null
   offerOutcome: OfferOutcome
   couponId: string | null
@@ -56,29 +58,50 @@ export type CancellationSurveyInput = {
   retainedProduct?: string | null
 }
 
-// Insert one survey row. Callers decide whether a failure here is fatal — a
-// cancel shouldn't be blocked by an analytics write, but an accept records the
-// row the window check reads. The once-ever unique index (migrations/0003) was
-// relaxed in 0011 so a member can re-accept across time, so there is no ON
-// CONFLICT arbiter here; the accept endpoint's read-then-write window guard
-// prevents a within-window repeat, and a rare raced double-accept only writes a
-// duplicate analytics row (harmless — the window still blocks the next attempt).
+// The generated identity of an inserted survey row. Returned so the cancel flow
+// can attach the member's reasons afterward (survey-after-cancel).
+export type SurveyId = string | number
+
+// Insert one survey row, returning its id. Callers decide whether a failure here
+// is fatal — a cancel shouldn't be blocked by an analytics write, but an accept
+// records the row the window check reads. The once-ever unique index
+// (migrations/0003) was relaxed in 0011 so a member can re-accept across time, so
+// there is no ON CONFLICT arbiter here; the accept endpoint's read-then-write
+// window guard prevents a within-window repeat, and a rare raced double-accept
+// only writes a duplicate analytics row (harmless — the window still blocks the
+// next attempt).
 export async function insertCancellationSurvey(
   sql: Sql,
   input: CancellationSurveyInput,
-): Promise<void> {
-  await sql`
+): Promise<SurveyId> {
+  const rows = await sql`
     insert into cancellation_survey
-      (email, reason, note, offer_outcome, coupon_id, canceled_tier, retained_product)
+      (email, reasons, note, offer_outcome, coupon_id, canceled_tier, retained_product)
     values (
       ${input.email},
-      ${input.reason},
+      ${input.reasons},
       ${input.note},
       ${input.offerOutcome},
       ${input.couponId},
       ${input.canceledTier ?? null},
       ${input.retainedProduct ?? null}
-    )`
+    )
+    returning id`
+  return (rows[0] as { id: SurveyId }).id
+}
+
+// Attach the member's checked reasons + free-text note to an existing survey row
+// after a cancel has already committed (survey-after-cancel). Scoped by email so
+// a member can only annotate their own row. Idempotent-ish: re-submitting just
+// overwrites. `email` is the authz check, not an update target.
+export async function updateCancellationSurveyReasons(
+  sql: Sql,
+  input: { id: SurveyId; email: string; reasons: string[]; note: string | null },
+): Promise<void> {
+  await sql`
+    update cancellation_survey
+      set reasons = ${input.reasons}, note = ${input.note}
+    where id = ${input.id} and email = ${input.email}`
 }
 
 // Has this email accepted a promotional coupon within the rolling eligibility
@@ -116,9 +139,11 @@ function buildRowQuery(
   }
   if (filter?.reason) {
     params.push(filter.reason)
-    where.push(`reason = $${params.length}`)
+    // A response matches the reason filter when it named that reason among its
+    // (possibly several) checked reasons.
+    where.push(`$${params.length} = any(reasons)`)
   }
-  let text = `select email, reason, note, offer_outcome, coupon_id,
+  let text = `select email, reasons, note, offer_outcome, coupon_id,
       canceled_tier, retained_product, created_at
     from cancellation_survey`
   if (where.length) text += ` where ${where.join(' and ')}`
@@ -133,7 +158,7 @@ function buildRowQuery(
 function mapRow(r: Record<string, unknown>): CancellationRow {
   return {
     email: r.email as string,
-    reason: (r.reason as string | null) ?? null,
+    reasons: (r.reasons as string[] | null) ?? [],
     note: (r.note as string | null) ?? null,
     offerOutcome: r.offer_outcome as string,
     couponId: (r.coupon_id as string | null) ?? null,
@@ -167,9 +192,9 @@ export async function getCancellationSummary(
         from cancellation_survey
         group by offer_outcome
         order by count desc`,
+    // Multi-select: unnest so a response counts toward each reason it named.
     sql`select reason, count(*)::int as count
-        from cancellation_survey
-        where reason is not null
+        from cancellation_survey, unnest(reasons) as reason
         group by reason
         order by count desc`,
     getCancellationRows(sql, opts.filter, opts.limit ?? 50),
@@ -191,7 +216,7 @@ export function cancellationRowsToCsv(rows: CancellationRow[]): string {
     r.createdAt,
     r.email,
     outcomeLabel(r.offerOutcome),
-    reasonLabel(r.reason) ?? '',
+    r.reasons.map((slug) => reasonLabel(slug) ?? slug).join('; '),
     r.note ?? '',
     r.couponId ?? '',
     r.canceledTier ?? '',

@@ -3,12 +3,16 @@ import { Modal } from "../Modal";
 import { MissionReminder } from "./MissionReminder";
 import { trackEvent } from "../../lib/analytics";
 import { formatCouponDiscount, formatMinor } from "../../lib/currency";
-import { CANCELLATION_REASONS } from "../../../shared/cancellation";
+import {
+  CANCELLATION_REASONS,
+  OTHER_REASON_SLUG,
+} from "../../../shared/cancellation";
 import {
   acceptSaveOffer,
   cancelSubscription,
   changeTier,
   getSaveOffers,
+  submitCancellationSurvey,
   type StandalonePrice,
 } from "../../lib/auth";
 import type {
@@ -90,6 +94,24 @@ function isSwitch(kind: OfferKind): boolean {
   return kind === "annual_switch" || kind === "monthly_switch";
 }
 
+// The accept-button label for an offer card. Mirrors the product design's CTAs
+// ("Switch to annual", "Redeem discount"); offers are shown stacked, so each
+// card names its own action rather than a generic "keep me".
+function offerCta(kind: OfferKind): string {
+  switch (kind) {
+    case "annual_switch":
+      return "Switch to annual";
+    case "monthly_switch":
+      return "Switch to monthly";
+    case "circle_free_months":
+      return "Add free months";
+    case "supporter_coupon":
+    case "affordability_coupon":
+    case "perpetual_discount":
+      return "Redeem this offer";
+  }
+}
+
 type Screen =
   | "loading"
   | "entry"
@@ -97,8 +119,10 @@ type Screen =
   | "bundle-value"
   | "keep-one"
   | "offer"
-  | "reason"
-  | "confirm";
+  | "confirm"
+  // Post-cancel reasons survey (survey-after-cancel): the cancel has already
+  // committed when this shows, so it's non-blocking — the member can submit or skip.
+  | "survey";
 
 // The terminal action a flow ends in.
 type Terminal =
@@ -133,8 +157,9 @@ export function CancelFlow({
   const [screen, setScreen] = useState<Screen>(() =>
     tier === "bundle" ? "entry" : "mission",
   );
+  // All eligible offers, shown stacked on one "Are you sure?" screen (the
+  // product design presents them together, not one at a time).
   const [offers, setOffers] = useState<RetentionOffer[]>([]);
-  const [offerIndex, setOfferIndex] = useState(0);
   const [offerShownAny, setOfferShownAny] = useState(false);
   const [standalone, setStandalone] = useState<StandalonePrice | null>(null);
   // Flow E keep-just-one standalone prices for each single product.
@@ -143,8 +168,12 @@ export function CancelFlow({
     circle: StandalonePrice | null;
   }>({ arkPlus: null, circle: null });
   const [terminal, setTerminal] = useState<Terminal>({ kind: "cancel" });
-  const [reason, setReason] = useState<string | null>(null);
+  // Multi-select survey (checkboxes). Collected after the cancel commits.
+  const [reasons, setReasons] = useState<Set<string>>(() => new Set());
   const [note, setNote] = useState("");
+  // Set once the cancel commits, so the survey step can finish the flow.
+  const [surveyId, setSurveyId] = useState<string | number | null>(null);
+  const [accessUntil, setAccessUntil] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,11 +188,9 @@ export function CancelFlow({
 
   // Move focus to the live heading on each screen change (a11y): one heading is
   // mounted at a time, tabIndex={-1} so it takes focus without joining tab order.
-  // offerIndex is a dep too: cycling to the next offer swaps the heading text
-  // without changing `screen`, so re-focus it to announce the new offer.
   useEffect(() => {
     headingRef.current?.focus();
-  }, [screen, offerIndex]);
+  }, [screen]);
 
   const flow = (id: FlowId) => {
     setFlowId(id);
@@ -186,8 +213,9 @@ export function CancelFlow({
     }
   };
 
-  // Load the ordered save offers for a flow and enter the offer step (or skip to
-  // the terminal step when there are none).
+  // Load the save offers for a flow and enter the stacked offer step. Cancel
+  // flows always land on the offer screen (it doubles as the "Are you sure?"
+  // step, even with zero cards); debundle flows with no offer skip to `onEmpty`.
   const loadOffers = async (id: FlowId, onEmpty: Screen) => {
     const intent = intentFor(id);
     if (!intent) return;
@@ -197,46 +225,30 @@ export function CancelFlow({
     setBusy(false);
     setOffers(got);
     setStandalone(std);
-    setOfferIndex(0);
+    if (got.length === 0 && onEmpty !== "offer") {
+      setScreen(onEmpty);
+      return;
+    }
     if (got.length > 0) {
       setOfferShownAny(true);
-      setScreen("offer");
-      trackEvent("save_offer_shown", {
-        flow: id,
-        tier,
-        offer_kind: got[0].kind,
-      });
-    } else {
-      setScreen(onEmpty);
+      for (const o of got) {
+        trackEvent("save_offer_shown", { flow: id, tier, offer_kind: o.kind });
+      }
     }
+    setScreen("offer");
   };
 
-  // Advance past the current offer: show the next one, or fall through to the
-  // flow's terminal step (reason for a cancel, confirm for a debundle).
-  const declineOffer = () => {
-    const current = offers[offerIndex];
-    if (current) {
-      trackEvent("save_offer_declined", {
-        flow: flowId!,
-        tier,
-        offer_kind: current.kind,
-      });
+  // Decline every shown offer and proceed to the flow's terminal step — the
+  // cancel itself for a cancel flow, the confirm screen for a debundle.
+  const declineOffers = () => {
+    for (const o of offers) {
+      trackEvent("save_offer_declined", { flow: flowId!, tier, offer_kind: o.kind });
     }
-    const next = offerIndex + 1;
-    if (next < offers.length) {
-      setOfferIndex(next);
-      trackEvent("save_offer_shown", {
-        flow: flowId!,
-        tier,
-        offer_kind: offers[next].kind,
-      });
-    } else {
-      setScreen(terminal.kind === "cancel" ? "reason" : "confirm");
-    }
+    if (terminal.kind === "cancel") void doCancel();
+    else setScreen("confirm");
   };
 
-  const acceptOffer = async () => {
-    const offer = offers[offerIndex];
+  const acceptOffer = async (offer: RetentionOffer) => {
     if (!offer || !flowId) return;
     const intent = intentFor(flowId);
     setBusy(true);
@@ -296,27 +308,60 @@ export function CancelFlow({
     }
   };
 
+  // Commit the cancel, then show the reasons survey (survey-after-cancel). The
+  // member sees "your subscription has been cancelled" before we ask why; the
+  // survey is optional and can't fail the cancel.
   const doCancel = async () => {
-    if (!reason || !flowId) return;
+    if (!flowId) return;
     setBusy(true);
     setError(null);
-    const r = await cancelSubscription({
-      reason,
-      note: note.trim() || undefined,
-      offerOutcome: offerShownAny ? "declined" : "not_offered",
-    });
+    const outcome = offerShownAny ? "declined" : "not_offered";
+    const r = await cancelSubscription({ offerOutcome: outcome });
     setBusy(false);
     if (r.ok) {
       trackEvent("subscription_cancelled", {
-        reason,
-        offer_outcome: offerShownAny ? "declined" : "not_offered",
+        offer_outcome: outcome,
         flow: flowId,
         retained_product: "full-exit",
       });
-      onCancelled(r.access_until ?? "");
+      setAccessUntil(r.access_until ?? "");
+      setSurveyId(r.survey_id ?? null);
+      setScreen("survey");
     } else {
       setError(r.error ?? "Could not cancel — please try again.");
     }
+  };
+
+  // Finish a cancel: attach the survey reasons (when we have a row to update),
+  // then hand control back to the billing page. `skip` submits nothing.
+  const finishSurvey = async (skip: boolean) => {
+    if (flowId) {
+      const chosen = skip ? [] : [...reasons];
+      if (!skip) {
+        for (const slug of chosen) {
+          trackEvent("cancellation_reason_submitted", { reason: slug, flow: flowId });
+        }
+      }
+      if (surveyId !== null && !skip && (chosen.length > 0 || note.trim())) {
+        setBusy(true);
+        await submitCancellationSurvey({
+          surveyId,
+          reasons: chosen,
+          note: note.trim() || undefined,
+        });
+        setBusy(false);
+      }
+    }
+    onCancelled(accessUntil);
+  };
+
+  const toggleReason = (slug: string) => {
+    setReasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
   };
 
   const doDebundle = async (to: "ark-plus" | "circle", retained: Retained) => {
@@ -430,26 +475,30 @@ export function CancelFlow({
         </>
       ) : screen === "mission" ? (
         <>
-          <MissionReminder headingRef={headingRef} headingId="cancel-title" />
+          <MissionReminder
+            variant={tier === "circle" ? "circle" : "ark-plus"}
+            headingRef={headingRef}
+            headingId="cancel-title"
+          />
           {errorLine}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button type="button" className={primaryBtn} onClick={onClose}>
+              Keep my subscription
+            </button>
             <button
               type="button"
               disabled={busy}
               className={secondaryBtn}
               onClick={() => {
-                // A/B → their save offers; C/D → the bundle-value popup first;
-                // E → the keep-just-one step.
-                if (flowId === "A") void loadOffers("A", "reason");
-                else if (flowId === "B") void loadOffers("B", "reason");
+                // A/B → their save offers (the offer screen doubles as "Are you
+                // sure?"); C/D → the bundle-value popup first; E → keep-just-one.
+                if (flowId === "A") void loadOffers("A", "offer");
+                else if (flowId === "B") void loadOffers("B", "offer");
                 else if (flowId === "C" || flowId === "D") setScreen("bundle-value");
                 else if (flowId === "E") void enterKeepOne();
               }}
             >
-              {busy ? "…" : "Continue"}
-            </button>
-            <button type="button" className={secondaryBtn} onClick={onClose}>
-              Never mind
+              {busy ? "…" : "Continue to cancel"}
             </button>
           </div>
         </>
@@ -513,52 +562,75 @@ export function CancelFlow({
               type="button"
               disabled={busy}
               className={dangerBtn}
-              onClick={() => setScreen("reason")}
+              onClick={() => void doCancel()}
             >
               No — cancel everything
             </button>
           </div>
           {errorLine}
         </>
-      ) : screen === "offer" && offers[offerIndex] ? (
-        (() => {
-          const offer = offers[offerIndex];
-          const copy = offerCopy(offer);
-          return (
-            <>
-              {heading(copy.heading)}
-              <p className="mt-4 text-body-sm text-fg">{copy.body}</p>
-              {errorLine}
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={busy}
-                  aria-busy={busy}
-                  className={primaryBtn}
-                  onClick={() => void acceptOffer()}
-                >
-                  {busy ? "Applying…" : "Yes, keep me"}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  className={secondaryBtn}
-                  onClick={declineOffer}
-                >
-                  No thanks
-                </button>
-              </div>
-            </>
-          );
-        })()
-      ) : screen === "reason" ? (
+      ) : screen === "offer" ? (
+        // All eligible offers, stacked on one "Are you sure?" screen. Each card
+        // names its own action; a single terminal action declines them all.
         <>
-          {heading("We're sorry to see you go.")}
+          {heading(
+            terminal.kind === "cancel"
+              ? "Are you sure you want to cancel?"
+              : "Before you go — a couple of options.",
+          )}
           <p className="mt-4 text-body-sm text-fg">
-            Help us improve by letting us know why you're leaving:
+            Your subscription helps make Ark Media's work possible.
+          </p>
+          {offers.length > 0 ? (
+            <div className="mt-6 flex flex-col gap-4">
+              {offers.map((offer) => {
+                const copy = offerCopy(offer);
+                return (
+                  <div key={offer.kind} className="border border-rule p-4">
+                    <p className="font-display text-fg-strong">{copy.heading}</p>
+                    <p className="mt-2 text-body-sm text-fg">{copy.body}</p>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-busy={busy}
+                      className={`mt-4 ${primaryBtn}`}
+                      onClick={() => void acceptOffer(offer)}
+                    >
+                      {busy ? "Applying…" : offerCta(offer.kind)}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          {errorLine}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              disabled={busy}
+              className={terminal.kind === "cancel" ? dangerBtn : secondaryBtn}
+              onClick={declineOffers}
+            >
+              {terminal.kind === "cancel"
+                ? busy
+                  ? "Cancelling…"
+                  : "No thanks, just cancel"
+                : "Continue"}
+            </button>
+            <button type="button" className={secondaryBtn} onClick={onClose}>
+              {tier === "bundle" ? "Keep my bundle" : "Keep my subscription"}
+            </button>
+          </div>
+        </>
+      ) : screen === "survey" ? (
+        // Post-cancel: the subscription is already cancelled; ask why (optional).
+        <>
+          {heading("Your subscription has been cancelled.")}
+          <p className="mt-4 text-body-sm text-fg">
+            Help us improve by letting us know why you're cancelling:
           </p>
           <fieldset className="mt-6">
-            <legend className="sr-only">Reason for cancelling</legend>
+            <legend className="sr-only">Reasons for cancelling</legend>
             <div className="flex flex-col gap-3">
               {CANCELLATION_REASONS.map((r) => (
                 <label
@@ -566,11 +638,11 @@ export function CancelFlow({
                   className="flex cursor-pointer items-start gap-3 text-body-sm text-fg"
                 >
                   <input
-                    type="radio"
+                    type="checkbox"
                     name="cancel-reason"
                     value={r.slug}
-                    checked={reason === r.slug}
-                    onChange={() => setReason(r.slug)}
+                    checked={reasons.has(r.slug)}
+                    onChange={() => toggleReason(r.slug)}
                     className="mt-1 h-4 w-4 shrink-0 accent-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                   />
                   <span>{r.label}</span>
@@ -578,93 +650,75 @@ export function CancelFlow({
               ))}
             </div>
           </fieldset>
-          <label htmlFor="cancel-note" className="mt-6 block text-body-sm text-fg-muted">
-            Anything else? (optional)
-          </label>
-          <textarea
-            id="cancel-note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            maxLength={2000}
-            className="mt-2 w-full resize-y border border-rule-strong bg-navy-900 px-3 py-2 text-body-sm text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          />
+          {reasons.has(OTHER_REASON_SLUG) ? (
+            <>
+              <label
+                htmlFor="cancel-note"
+                className="mt-6 block text-body-sm text-fg-muted"
+              >
+                Tell us more
+              </label>
+              <textarea
+                id="cancel-note"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
+                maxLength={2000}
+                className="mt-2 w-full resize-y border border-rule-strong bg-navy-900 px-3 py-2 text-body-sm text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              />
+            </>
+          ) : null}
+          {errorLine}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
-              disabled={!reason}
-              className={secondaryBtn}
-              onClick={() => {
-                if (reason && flowId) {
-                  trackEvent("cancellation_reason_submitted", { reason, flow: flowId });
-                }
-                setScreen("confirm");
-              }}
+              disabled={busy}
+              className={primaryBtn}
+              onClick={() => void finishSurvey(false)}
             >
-              Continue
+              {busy ? "Submitting…" : "Submit"}
             </button>
-            <button type="button" className={secondaryBtn} onClick={onClose}>
-              Never mind
+            <button
+              type="button"
+              disabled={busy}
+              className={secondaryBtn}
+              onClick={() => void finishSurvey(true)}
+            >
+              Skip
             </button>
           </div>
         </>
       ) : (
-        // confirm — terminal cancel or debundle.
-        <>
-          {terminal.kind === "cancel" ? (
-            <>
-              {heading("Cancel your membership?")}
-              <p className="mt-4 text-body-sm text-fg">
-                You'll keep access until the end of your current billing period.
-              </p>
-              {errorLine}
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={busy}
-                  className={dangerBtn}
-                  onClick={() => void doCancel()}
-                >
-                  {busy ? "Cancelling…" : "Cancel membership"}
-                </button>
-                <button
-                  type="button"
-                  className={secondaryBtn}
-                  onClick={() => setScreen("reason")}
-                >
-                  Back
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              {heading(
-                terminal.to === "circle"
-                  ? "Remove Ark+ and keep the Community?"
-                  : "Remove the Community and keep Ark+?",
-              )}
-              <p className="mt-4 text-body-sm text-fg">
-                {standalone
-                  ? `Your ${terminal.to === "circle" ? "Community" : "Ark+"} membership will continue on its own at ${usd(standalone.priceCents)}/${plan === "yearly" ? "yr" : "mo"}, starting at the end of your current billing period.`
-                  : "The remaining membership continues on its own at its standalone price, starting at the end of your current billing period."}
-              </p>
-              {errorLine}
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  disabled={busy}
-                  className={dangerBtn}
-                  onClick={() => void doDebundle(terminal.to, terminal.retained)}
-                >
-                  {busy ? "Updating…" : "Confirm"}
-                </button>
-                <button type="button" className={primaryBtn} onClick={onClose}>
-                  Keep my bundle
-                </button>
-              </div>
-            </>
-          )}
-        </>
+        // confirm — terminal debundle only (cancels commit from the offer/
+        // keep-one screens straight into the post-cancel survey).
+        terminal.kind === "debundle" ? (
+          <>
+            {heading(
+              terminal.to === "circle"
+                ? "Remove Ark+ and keep the Community?"
+                : "Remove the Community and keep Ark+?",
+            )}
+            <p className="mt-4 text-body-sm text-fg">
+              {standalone
+                ? `Your ${terminal.to === "circle" ? "Community" : "Ark+"} membership will continue on its own at ${usd(standalone.priceCents)}/${plan === "yearly" ? "yr" : "mo"}, starting at the end of your current billing period.`
+                : "The remaining membership continues on its own at its standalone price, starting at the end of your current billing period."}
+            </p>
+            {errorLine}
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                disabled={busy}
+                className={dangerBtn}
+                onClick={() => void doDebundle(terminal.to, terminal.retained)}
+              >
+                {busy ? "Updating…" : "Confirm"}
+              </button>
+              <button type="button" className={primaryBtn} onClick={onClose}>
+                Keep my bundle
+              </button>
+            </div>
+          </>
+        ) : null
       )}
     </Modal>
   );

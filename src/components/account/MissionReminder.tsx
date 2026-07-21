@@ -4,11 +4,25 @@ import type { Ref } from "react";
 // (Flows A–E). One reusable block, one copy source — the reminder that a
 // membership is support for independent Jewish media, not just content access.
 
-// The approved mission copy lives here, in one exported constant, so there is a
-// single edit point across all five flows.
-export const MISSION_REMINDER_COPY = {
-  heading: "Before you go — a reminder of what your membership makes possible.",
-  body: "Your subscription is more than access to content. It directly funds independent Jewish media — the reporting, storytelling, and community Ark Media exists to sustain. Every subscriber makes that work possible.",
+// The approved mission copy (from the product cancellation-flows design). The
+// heading is shared; the body is tier-aware — an Ark+ member is thanked as an
+// "Ark+ subscriber", a Community (Circle) member as a "subscriber". Bundle
+// members hold Ark+, so they get the Ark+ wording. One edit point across all
+// five flows.
+type MissionVariant = "ark-plus" | "circle";
+
+const MISSION_REMINDER_COPY: Record<
+  MissionVariant,
+  { heading: string; body: string }
+> = {
+  "ark-plus": {
+    heading: "Thanks for being a subscriber!",
+    body: "Ark Media is funded in large part by our Ark+ subscribers. They allow us to cover Israel and the Jewish world honestly, without compromise. As an Ark+ subscriber, you make that possible.",
+  },
+  circle: {
+    heading: "Thanks for being a subscriber!",
+    body: "Ark Media is funded in large part by our subscribers. They allow us to cover Israel and the Jewish world honestly, without compromise. As a subscriber, you make that possible.",
+  },
 } as const;
 
 // Rendered first in each flow. The heading doubles as the flow's labelled
@@ -16,14 +30,17 @@ export const MISSION_REMINDER_COPY = {
 // management and aria-labelledby land on it). `intro` optionally frames the
 // specific action under the shared mission copy.
 export function MissionReminder({
+  variant = "ark-plus",
   headingRef,
   headingId,
   intro,
 }: {
+  variant?: MissionVariant;
   headingRef?: Ref<HTMLHeadingElement>;
   headingId?: string;
   intro?: string;
 }) {
+  const copy = MISSION_REMINDER_COPY[variant];
   return (
     <div className="text-body-sm text-fg">
       <h2
@@ -32,9 +49,9 @@ export function MissionReminder({
         tabIndex={-1}
         className="display-upright text-[clamp(1.25rem,2.6vw,1.6rem)] leading-[1.1] text-fg-strong focus:outline-none"
       >
-        {MISSION_REMINDER_COPY.heading}
+        {copy.heading}
       </h2>
-      <p className="mt-4">{MISSION_REMINDER_COPY.body}</p>
+      <p className="mt-4">{copy.body}</p>
       {intro ? <p className="mt-4 text-fg-muted">{intro}</p> : null}
     </div>
   );

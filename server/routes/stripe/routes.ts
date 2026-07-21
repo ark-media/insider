@@ -24,12 +24,16 @@ import {
   getScheduledTierByCustomer,
   setMembershipPending,
 } from '../../lib/membership.js'
-import { hasAcceptedRetention, insertCancellationSurvey } from '../../lib/cancellation.js'
+import {
+  hasAcceptedRetention,
+  insertCancellationSurvey,
+  updateCancellationSurveyReasons,
+} from '../../lib/cancellation.js'
 import { debundlePricePreview, deriveSaveOffers } from '../../lib/retention.js'
 import { isPlanSwitchKind, isSaveIntent } from '../../../shared/retention.js'
 import {
   isCancelOfferOutcome,
-  isCancellationReason,
+  isCancellationReasons,
   isRetainedProduct,
   MAX_CANCELLATION_NOTE_LEN,
 } from '../../../shared/cancellation.js'
@@ -261,38 +265,31 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const cancelEmail = await getSessionEmail(req, env)
         if (!cancelEmail) return json(401, { error: 'unauthenticated' })
 
-        // Cancel now carries the retention survey: a required reason slug, an
-        // optional free-text note, and which offer outcome led here. `reason`
-        // and `offer_outcome` are validated against the shared allowlist so a
-        // crafted body can't store junk (or smuggle an 'accepted' outcome,
-        // which only the accept endpoint writes).
+        // The survey is now collected *after* the cancel commits (the member
+        // sees "your subscription has been cancelled" first, then the reasons —
+        // survey-after-cancel). So this endpoint only needs which offer outcome
+        // led here; the reasons/note arrive later at /cancellation-survey and
+        // update the row this write creates. `offer_outcome` is allowlisted so a
+        // crafted body can't smuggle an 'accepted' outcome (only the accept
+        // endpoint writes that).
         const body =
-          (await readJson<{
-            reason?: unknown
-            note?: unknown
-            offer_outcome?: unknown
-          }>(req)) ?? {}
-        if (!isCancellationReason(body.reason)) {
-          return json(400, { error: 'A cancellation reason is required.' })
-        }
+          (await readJson<{ offer_outcome?: unknown }>(req)) ?? {}
         const offerOutcome = isCancelOfferOutcome(body.offer_outcome)
           ? body.offer_outcome
           : 'not_offered'
-        const note =
-          typeof body.note === 'string' && body.note.trim()
-            ? body.note.trim().slice(0, MAX_CANCELLATION_NOTE_LEN)
-            : null
 
         const sub = await findLiveSubscription(stripe, cancelEmail)
         if (!sub) return json(404, { error: 'No active subscription found' })
 
-        // Record the survey before cancelling — but never let an analytics
-        // write block the member's cancellation. A DB hiccup degrades to "we
-        // lost the reason," not "we couldn't cancel." Skipped entirely when no
-        // DB is configured (e.g. a Stripe-only preview env). The record captures
-        // the tier being left and retained_product='full-exit' (this endpoint is
-        // the full cancel; debundles keep a product via change-tier), so win-back
-        // can target it by email even after the membership row is torn down.
+        // Record the row before cancelling — but never let an analytics write
+        // block the member's cancellation. A DB hiccup degrades to "we lost the
+        // reasons," not "we couldn't cancel." Skipped when no DB is configured
+        // (e.g. a Stripe-only preview env). The record captures the tier being
+        // left and retained_product='full-exit' (this endpoint is the full
+        // cancel; debundles keep a product via change-tier), so win-back can
+        // target it by email even after the membership row is torn down. The
+        // returned id lets the client attach the member's reasons afterward.
+        let surveyId: string | number | null = null
         if (env.DATABASE_URL) {
           let canceledTier: string | null = null
           try {
@@ -301,10 +298,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             console.error('[stripe] cancel: tier derivation failed:', err)
           }
           try {
-            await insertCancellationSurvey(getDb(env), {
+            surveyId = await insertCancellationSurvey(getDb(env), {
               email: cancelEmail,
-              reason: body.reason,
-              note,
+              reasons: [],
+              note: null,
               offerOutcome,
               couponId: null,
               canceledTier,
@@ -323,7 +320,61 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // Cancel at period end so they keep access until the billing cycle ends.
         await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true })
 
-        json(200, { ok: true, access_until: periodEndIso(sub) })
+        json(200, { ok: true, access_until: periodEndIso(sub), survey_id: surveyId })
+      },
+    }),
+
+    defineRoute({
+      // Survey-after-cancel: the member cancelled (row already written by
+      // /cancel-subscription), then optionally told us why. Attaches their
+      // checked reasons + free-text note to that row, keyed by the survey_id the
+      // cancel returned and scoped to their session email so they can only
+      // annotate their own row. Best-effort from the member's view — the cancel
+      // already committed; a failure here just loses the reasons.
+      path: '/api/stripe/cancellation-survey',
+      method: 'POST',
+      handler: async (req, _res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const body =
+          (await readJson<{
+            survey_id?: unknown
+            reasons?: unknown
+            note?: unknown
+          }>(req)) ?? {}
+
+        // survey_id is the insert's generated identity — accept the number or its
+        // string form (the HTTP driver returns bigint as a string).
+        const surveyId =
+          typeof body.survey_id === 'number' || typeof body.survey_id === 'string'
+            ? body.survey_id
+            : null
+        if (surveyId === null) return json(400, { error: 'survey_id is required.' })
+        if (!isCancellationReasons(body.reasons)) {
+          return json(400, { error: 'Invalid cancellation reasons.' })
+        }
+        const note =
+          typeof body.note === 'string' && body.note.trim()
+            ? body.note.trim().slice(0, MAX_CANCELLATION_NOTE_LEN)
+            : null
+
+        if (env.DATABASE_URL) {
+          try {
+            await updateCancellationSurveyReasons(getDb(env), {
+              id: surveyId,
+              email,
+              reasons: body.reasons,
+              note,
+            })
+          } catch (err) {
+            console.error('[stripe] cancellation survey update failed:', err)
+          }
+        }
+
+        json(200, { ok: true })
       },
     }),
 
@@ -491,7 +542,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             try {
               await insertCancellationSurvey(getDb(env), {
                 email,
-                reason: null,
+                reasons: [],
                 note: null,
                 offerOutcome: 'accepted',
                 couponId: offer.couponId,
@@ -735,7 +786,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           try {
             await insertCancellationSurvey(getDb(env), {
               email,
-              reason: null,
+              reasons: [],
               note: null,
               offerOutcome: debundleOutcome,
               couponId: null,

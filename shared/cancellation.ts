@@ -7,31 +7,50 @@ export type CancellationReason = {
   label: string
 }
 
-// Final list (from the reference screenshot). Order is the display order.
+// Final list (from the product cancellation-flows design). Order is the display
+// order. The survey is multi-select (checkboxes), so a member can pick several;
+// `other` pairs with the free-text note ("please tell us more").
 export const CANCELLATION_REASONS: readonly CancellationReason[] = [
-  { slug: 'too_expensive', label: 'Too expensive' },
-  { slug: 'dont_listen_enough', label: "I don't listen enough" },
+  {
+    slug: 'finished_series',
+    label: 'I subscribed for specific episodes or a series and finished them.',
+  },
+  { slug: 'not_listening', label: "I'm not listening regularly." },
+  { slug: 'too_expensive', label: "It's too expensive for me right now." },
+  { slug: 'cutting_back', label: "I'm cutting back on subscriptions." },
+  {
+    slug: 'content_mismatch',
+    label: "The content or topics weren't what I expected.",
+  },
+  {
+    slug: 'support_only',
+    label:
+      "I subscribed mainly to support Ark Media and don't need an ongoing subscription.",
+  },
   {
     slug: 'technical_issues',
-    label: 'I could not access the content or had technical issues',
+    label: 'I had trouble accessing the content or using my podcast app.',
   },
-  { slug: 'unhappy_with_content', label: 'I am not happy with the content' },
-  {
-    slug: 'benefits_too_limited',
-    label: 'The subscriber benefits are too limited',
-  },
-  {
-    slug: 'listened_to_target_episodes',
-    label: 'I listened to the specific episodes I signed up for',
-  },
+  { slug: 'other', label: 'Other (please tell us more).' },
 ] as const
 
 const REASON_SLUGS: ReadonlySet<string> = new Set(
   CANCELLATION_REASONS.map((r) => r.slug),
 )
 
+// The slug whose selection means "see my free-text note for the real reason".
+export const OTHER_REASON_SLUG = 'other'
+
 export function isCancellationReason(slug: unknown): slug is string {
   return typeof slug === 'string' && REASON_SLUGS.has(slug)
+}
+
+// The survey is multi-select: a member submits zero or more reason slugs. Valid
+// when it's an array of known slugs (empty is allowed — the survey is optional
+// and shown after the cancel already committed). Rejects any unknown slug so a
+// crafted body can't store junk.
+export function isCancellationReasons(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every(isCancellationReason)
 }
 
 // Terminal outcomes of the cancel flow, persisted in cancellation_survey.
@@ -117,7 +136,9 @@ export function retainedProductLabel(v: string | null): string | null {
 
 export type CancellationRow = {
   email: string
-  reason: string | null
+  // Multi-select: the reason slugs the member checked (empty for an accept row,
+  // or when a cancel's survey was skipped).
+  reasons: string[]
   note: string | null
   offerOutcome: string
   couponId: string | null

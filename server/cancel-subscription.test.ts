@@ -1,7 +1,7 @@
-// Unit tests for POST /api/stripe/cancel-subscription — focused on the
-// retention-survey additions: the reason is required and validated server-side
-// (not just client-side), the offer_outcome is allowlisted, and a valid cancel
-// still schedules cancel_at_period_end exactly as before.
+// Unit tests for POST /api/stripe/cancel-subscription. The reasons survey is now
+// collected *after* the cancel commits (survey-after-cancel), so this endpoint
+// no longer requires a reason — it only allowlists offer_outcome and schedules
+// cancel_at_period_end. The reasons attach separately via /cancellation-survey.
 //
 // Harness mirrors checkout-create-session.test.ts: mock.module('stripe', …)
 // swaps the SDK, and we drive the registered middleware with fake req/res. No
@@ -134,46 +134,30 @@ async function post(opts: {
 }
 
 // ===========================================================================
-describe('POST /api/stripe/cancel-subscription — auth + reason validation', () => {
+describe('POST /api/stripe/cancel-subscription — auth', () => {
   test('401 when unauthenticated', async () => {
-    const res = await post({ body: { reason: 'too_expensive' } })
+    const res = await post({ body: { offer_outcome: 'not_offered' } })
     expect(res.statusCode).toBe(401)
-    expect(stripeCalls.length).toBe(0)
-  })
-
-  test('400 when reason is missing', async () => {
-    const cookie = await sessionCookie('member@example.com')
-    const res = await post({ body: {}, cookie })
-    expect(res.statusCode).toBe(400)
-    expect(res.__json()).toEqual({ error: 'A cancellation reason is required.' })
-    // Reason is rejected before Stripe is ever touched.
-    expect(stripeCalls.length).toBe(0)
-  })
-
-  test('400 when reason is not in the allowed list', async () => {
-    const cookie = await sessionCookie('member@example.com')
-    const res = await post({ body: { reason: 'just_because' }, cookie })
-    expect(res.statusCode).toBe(400)
     expect(stripeCalls.length).toBe(0)
   })
 })
 
 describe('POST /api/stripe/cancel-subscription — cancel behavior', () => {
-  test('valid reason → schedules cancel_at_period_end and returns access_until', async () => {
+  test('no reason needed → schedules cancel_at_period_end and returns access_until', async () => {
     existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
     const periodEnd = 1893456000 // 2030-01-01, fixed so the assertion is stable
     subsByCustomer = { cus_1: [{ id: 'sub_1', current_period_end: periodEnd }] }
     const cookie = await sessionCookie('member@example.com')
 
-    const res = await post({
-      body: { reason: 'dont_listen_enough', note: '  too busy  ', offer_outcome: 'not_offered' },
-      cookie,
-    })
+    // Body carries only offer_outcome now — reasons come later via the survey.
+    const res = await post({ body: { offer_outcome: 'not_offered' }, cookie })
 
     expect(res.statusCode).toBe(200)
     const json = res.__json() as Record<string, unknown>
     expect(json.ok).toBe(true)
     expect(json.access_until).toBe(new Date(periodEnd * 1000).toISOString())
+    // No DB in this harness, so no survey row / id is returned.
+    expect(json.survey_id).toBeNull()
 
     const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
     expect(update).toBeTruthy()
@@ -185,7 +169,7 @@ describe('POST /api/stripe/cancel-subscription — cancel behavior', () => {
     existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
     subsByCustomer = {} // no active sub
     const cookie = await sessionCookie('member@example.com')
-    const res = await post({ body: { reason: 'too_expensive' }, cookie })
+    const res = await post({ body: { offer_outcome: 'not_offered' }, cookie })
     expect(res.statusCode).toBe(404)
     expect(stripeCalls.find((c) => c.method === 'subscriptions.update')).toBeUndefined()
   })

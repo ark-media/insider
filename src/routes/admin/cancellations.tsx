@@ -627,7 +627,11 @@ function CancellationsBody({
                       )}
                     </td>
                     <td className="py-2 pr-4 text-fg">
-                      {reasonLabel(row.reason) ?? "—"}
+                      {row.reasons.length > 0
+                        ? row.reasons
+                            .map((slug) => reasonLabel(slug) ?? slug)
+                            .join("; ")
+                        : "—"}
                     </td>
                     <td className="py-2 text-fg-muted">{row.note ?? "—"}</td>
                   </tr>

@@ -63,15 +63,17 @@ export async function fetchMe(): Promise<Me | null> {
 }
 
 export async function cancelSubscription(input: {
-  // A reason slug from shared/cancellation.ts (required, validated server-side
-  // too). `note` is the optional free-text. `offerOutcome` records whether a
-  // retention offer was shown first; defaults to 'not_offered'.
-  reason: string;
-  note?: string;
+  // `offerOutcome` records whether a retention offer was shown first; defaults
+  // to 'not_offered'. The reasons/note are collected *after* this commits (the
+  // member sees "cancelled" first) via submitCancellationSurvey, keyed by the
+  // survey_id this returns.
   offerOutcome?: "declined" | "not_offered";
 }): Promise<{
   ok: boolean;
   access_until?: string;
+  // The survey row's id, so the reasons can be attached afterward. Null when no
+  // DB is configured (preview envs) — the survey step then just no-ops.
+  survey_id?: string | number | null;
   error?: string;
 }> {
   // Non-2xx still carries a JSON {ok:false, error} body we can surface; only a
@@ -84,18 +86,44 @@ export async function cancelSubscription(input: {
       headers: { "content-type": "application/json" },
       credentials: "include",
       body: JSON.stringify({
-        reason: input.reason,
-        note: input.note,
         offer_outcome: input.offerOutcome ?? "not_offered",
       }),
     });
     return (await res.json()) as {
       ok: boolean;
       access_until?: string;
+      survey_id?: string | number | null;
       error?: string;
     };
   } catch {
     return { ok: false, error: "Something went wrong — please try again." };
+  }
+}
+
+// Attach the member's cancellation reasons (multi-select) + optional free-text
+// note to the survey row a cancel created. Best-effort: the cancel already
+// committed, so a failure here just loses the reasons — the caller shouldn't
+// block the member on it.
+export async function submitCancellationSurvey(input: {
+  surveyId: string | number;
+  reasons: string[];
+  note?: string;
+}): Promise<{ ok: boolean }> {
+  try {
+    const res = await fetch("/api/stripe/cancellation-survey", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        survey_id: input.surveyId,
+        reasons: input.reasons,
+        note: input.note,
+      }),
+    });
+    const json = (await res.json()) as { ok?: boolean };
+    return { ok: Boolean(json.ok) };
+  } catch {
+    return { ok: false };
   }
 }
 

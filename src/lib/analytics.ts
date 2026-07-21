@@ -77,11 +77,14 @@ interface EventMap {
   save_offer_shown: { flow: Flow; tier: Tier; offer_kind: OfferKind }
   save_offer_accepted: { flow: Flow; tier: Tier; offer_kind: OfferKind }
   save_offer_declined: { flow: Flow; tier: Tier; offer_kind: OfferKind }
+  // Fired once per checked reason when the post-cancel survey is submitted
+  // (the survey is multi-select and collected after the cancel commits).
   cancellation_reason_submitted: { reason: string; flow: Flow }
   // Terminal full cancel (Flows A / B / E full cancel). retained_product is
-  // always 'full-exit' here — carried for a uniform churn breakdown with debundles.
+  // always 'full-exit' here — carried for a uniform churn breakdown with
+  // debundles. No `reason`: the survey-after-cancel design collects reasons
+  // separately (cancellation_reason_submitted), after this fires.
   subscription_cancelled: {
-    reason: string
     offer_outcome: 'declined' | 'not_offered'
     flow: Flow
     retained_product: RetainedProduct
