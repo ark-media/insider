@@ -28,10 +28,22 @@ export function toMinor(major: number, factor: number): number {
   return Math.round(major * factor);
 }
 
-// Whole currency units per major unit: 0 decimals for zero-decimal currencies
-// (factor 1), else 2. Drives snap steps and input rounding.
-export function decimalsForFactor(factor: number): number {
-  return factor === 1 ? 0 : 2;
+// Currencies Stripe requires charge amounts to be an exact multiple of 100, even
+// though ISO/CLDR treats them as 2-decimal. They charge in hundredths (factor
+// 100) but have no circulating subunit, so a fractional major amount produces a
+// non-×100 minor amount that Stripe rejects — the input must round to whole
+// units. (Intl can't surface this: it reports HUF/TWD as 2-decimal.)
+const HUNDRED_DIVISIBLE_CURRENCIES = new Set(["huf", "twd", "ugx"]);
+
+// Fraction digits the amount field should allow for a currency: 0 for
+// zero-decimal currencies (factor 1) and for the hundred-divisible quirk
+// currencies above, else 2. Drives the input's step + rounding. Deliberately
+// distinct from the minor-unit factor — HUF charges in hundredths yet must round
+// to whole major units.
+export function decimalsForCurrency(currency: string, factor: number): number {
+  if (factor === 1) return 0;
+  if (HUNDRED_DIVISIBLE_CURRENCIES.has(currency.toLowerCase())) return 0;
+  return 2;
 }
 
 // Localized currency formatter. Uses the narrow symbol ("$", not "US$" — the
@@ -71,13 +83,22 @@ export function currencySymbol(currency: string): string {
   return parts.find((p) => p.type === "currency")?.value ?? currency.toUpperCase();
 }
 
-// Human label for the selector, e.g. "GBP — British Pound".
-export function currencyLabel(currency: string): string {
-  const code = currency.toUpperCase();
+// Best-effort ISO 3166 country from the browser locale, e.g. "he-IL" → "IL",
+// and even bare "he" → "IL" via maximize(). Sent to /api/pricing as a soft
+// hint so the default presentment currency is localized when the platform geo
+// header is missing (local dev, or an edge/proxy that strips it). The real geo
+// IP still wins server-side; this is only a fallback. undefined when the runtime
+// can't resolve a region.
+export function browserCountry(): string | undefined {
   try {
-    const name = new Intl.DisplayNames(undefined, { type: "currency" }).of(code);
-    return name && name.toUpperCase() !== code ? `${code} — ${name}` : code;
+    const lang =
+      (typeof navigator !== "undefined" &&
+        (navigator.languages?.[0] ?? navigator.language)) ||
+      undefined;
+    if (!lang) return undefined;
+    const region = new Intl.Locale(lang).maximize().region;
+    return region ?? undefined;
   } catch {
-    return code;
+    return undefined;
   }
 }

@@ -7,17 +7,25 @@ import {
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
 import { Modal } from "./Modal";
+import { CurrencySelect } from "./CurrencySelect";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
 import {
   type PricingResponse,
+  browserCountry,
   currencySymbol,
-  decimalsForFactor,
+  decimalsForCurrency,
   formatMajor,
   toMajor,
   toMinor,
 } from "../lib/currency";
+import {
+  SLIDER_STEPS,
+  amountFromPos,
+  posFromAmount,
+  snapStep,
+} from "../lib/pwycSlider";
 
 type Plan = "monthly" | "yearly";
 type Tier = "ark-plus" | "circle" | "bundle";
@@ -26,58 +34,10 @@ type Tier = "ark-plus" | "circle" | "bundle";
 // of the plan's floor so they hold in any currency (a fixed "$3,600" is
 // meaningless in ¥ or ₪). SLIDER_MAX = the top of the *drag range* (not a hard
 // cap — the field accepts up to INPUT_MAX beyond it). ~27× the floor mirrors the
-// old $130 → $3,600 USD range; ~400× mirrors the old $50k typed ceiling.
+// old $130 → $3,600 USD range; ~400× mirrors the old $50k typed ceiling. The
+// curve/snap math lives in ../lib/pwycSlider.
 const SLIDER_MAX_MULTIPLE = 27;
 const INPUT_MAX_MULTIPLE = 400;
-
-// Almost every gift lands near the floor, so a linear track would waste ~90% of
-// its travel. We map the thumb's 0–1 position through a power curve: the low end
-// gets most of the track (fine control where it matters) while the top stays
-// reachable. Snapping keeps the chosen figure clean.
-const SLIDER_STEPS = 1000;
-const SLIDER_CURVE = 2.4;
-
-// A "nice" increment (1/2/5 × 10ⁿ) near `x`, so snap steps read cleanly across
-// magnitudes: ~$5 for a $130 floor, ~¥1,000 for a ¥21k floor, ~₪20 for ₪486.
-function niceNumber(x: number): number {
-  if (x <= 0) return 1;
-  const mag = Math.pow(10, Math.floor(Math.log10(x)));
-  const norm = x / mag;
-  const nice = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
-  return nice * mag;
-}
-
-// The snap step for a given floor + currency: ~1/26 of the floor rounded to a
-// nice increment (so $130 → $5), never below one whole currency unit.
-function snapStep(floorMajor: number, factor: number): number {
-  const minStep = decimalsForFactor(factor) === 0 ? 1 : 1;
-  return Math.max(minStep, niceNumber(floorMajor / 26));
-}
-
-// Thumb position (0–SLIDER_STEPS) → major-unit amount, along the eased curve,
-// snapped to a clean step. Endpoints stay exact (floor at 0, max at 1).
-function amountFromPos(
-  pos: number,
-  floor: number,
-  max: number,
-  step: number,
-): number {
-  const t = pos / SLIDER_STEPS;
-  if (t <= 0) return floor;
-  if (t >= 1) return max;
-  const raw = floor + (max - floor) * Math.pow(t, SLIDER_CURVE);
-  const snapped = Math.round(raw / step) * step;
-  return Math.min(max, Math.max(floor, snapped));
-}
-
-// Major-unit amount → thumb position (inverse of the curve), for rendering the
-// thumb + fill from the current amount.
-function posFromAmount(amount: number, floor: number, max: number): number {
-  if (max <= floor) return 0;
-  const clamped = Math.min(max, Math.max(floor, amount));
-  const t = Math.pow((clamped - floor) / (max - floor), 1 / SLIDER_CURVE);
-  return Math.round(t * SLIDER_STEPS);
-}
 
 // The SKU label shown in the modal chrome. Checkout derives entitlements from
 // the tier's catalog product server-side; this is copy only.
@@ -329,7 +289,14 @@ export function CheckoutModal({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/pricing");
+        // Pass the browser-locale country as a soft hint so the default
+        // currency is still localized when the platform geo header is absent
+        // (local dev, or a proxy that strips it). In production the real geo IP
+        // wins over this hint server-side — see server/routes/pricing.ts.
+        const hint = browserCountry();
+        const res = await fetch(
+          `/api/pricing${hint ? `?locale_hint=${encodeURIComponent(hint)}` : ""}`,
+        );
         if (!res.ok) return;
         const data = (await res.json().catch(() => null)) as PricingResponse | null;
         if (cancelled || !data?.tiers) return;
@@ -691,10 +658,13 @@ function EmailForm({
   // hold in any currency. The effective amount is clamped into [floor, inputMax],
   // so a sub-floor entry snaps up and anything above sliderMax pegs the thumb.
   const floorMajor = floorMinor !== null ? toMajor(floorMinor, factor) : null;
-  const decimals = decimalsForFactor(factor);
+  // Display/input decimals follow the currency (0 for JPY/HUF/TWD), NOT the
+  // charge factor — HUF/TWD charge in hundredths but show whole units, so the
+  // field must round to whole to keep the minor amount divisible by 100.
+  const decimals = decimalsForCurrency(currency, factor);
   const sliderMaxMajor = floorMajor !== null ? floorMajor * SLIDER_MAX_MULTIPLE : 0;
   const inputMaxMajor = floorMajor !== null ? floorMajor * INPUT_MAX_MULTIPLE : 0;
-  const step = floorMajor !== null ? snapStep(floorMajor, factor) : 1;
+  const step = floorMajor !== null ? snapStep(floorMajor) : 1;
 
   const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
   const effectiveAmount =
@@ -782,21 +752,12 @@ function EmailForm({
         <div className="flex items-center justify-between gap-3">
           <span className="eyebrow text-fg-muted">Choose your amount</span>
           {currencies && currencies.length > 1 ? (
-            <label className="shrink-0">
-              <span className="sr-only">Currency</span>
-              <select
-                value={currency}
-                disabled={floorMajor === null}
-                onChange={(e) => onCurrencyChange(e.target.value)}
-                className="border border-rule-strong bg-transparent px-2 py-1 text-body-sm text-fg-strong outline-none transition focus:border-cyan disabled:opacity-50"
-              >
-                {currencies.map((c) => (
-                  <option key={c} value={c} className="text-navy">
-                    {c.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <CurrencySelect
+              value={currency}
+              options={currencies}
+              disabled={floorMajor === null}
+              onChange={onCurrencyChange}
+            />
           ) : null}
         </div>
 

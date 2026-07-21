@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decimalsForFactor, toMajor, toMinor } from './currency'
+import { decimalsForCurrency, toMajor, toMinor } from './currency'
 
 describe('minor-unit conversion', () => {
   test('two-decimal currencies use a factor of 100', () => {
@@ -22,8 +22,15 @@ describe('minor-unit conversion', () => {
     expect(toMinor(10.004, 100)).toBe(1000)
   })
 
-  test('decimalsForFactor reflects the currency shape', () => {
-    expect(decimalsForFactor(100)).toBe(2)
-    expect(decimalsForFactor(1)).toBe(0)
+  test('decimalsForCurrency follows the currency, not just the charge factor', () => {
+    expect(decimalsForCurrency('usd', 100)).toBe(2)
+    expect(decimalsForCurrency('ils', 100)).toBe(2)
+    // Zero-decimal currencies (factor 1) → no decimals.
+    expect(decimalsForCurrency('jpy', 1)).toBe(0)
+    // The fix this guards: HUF/TWD charge in hundredths (factor 100) but must be
+    // divisible by 100, so the input rounds to whole major units — otherwise a
+    // typed "2000.50" HUF sends 200050, which Stripe rejects.
+    expect(decimalsForCurrency('huf', 100)).toBe(0)
+    expect(decimalsForCurrency('twd', 100)).toBe(0)
   })
 })

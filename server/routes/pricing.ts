@@ -2,7 +2,9 @@
 // Price amounts so the UI never hardcodes a number that could drift from what we
 // actually charge. Currency-aware: returns the per-currency floors, the minor-
 // unit factors, and a geo-detected default currency (manual override via the
-// client selector; `?country=XX` overrides the geo header for local testing).
+// client selector; `?country=XX` overrides the geo header for local testing;
+// `?locale_hint=XX` is a soft browser-locale fallback used only when no geo
+// header is present).
 
 import { makeJsonRes } from '../lib/http.js'
 import {
@@ -22,8 +24,12 @@ export function pricingRoutes({ stripe }: Deps): Route[] {
         if (!stripe) return json(500, { error: 'Stripe not configured' })
         try {
           const url = new URL(req.url ?? '/', 'http://x')
+          // Precedence: explicit `?country=` test override → real platform geo
+          // header → `?locale_hint=` (the client's browser-locale country, a
+          // soft fallback for when no geo header is present, e.g. local dev).
           const countryOverride = url.searchParams.get('country') ?? undefined
-          const country = countryOverride ?? countryFromRequest(req)
+          const localeHint = url.searchParams.get('locale_hint') ?? undefined
+          const country = countryOverride ?? countryFromRequest(req) ?? localeHint
           const defaultCurrency = currencyForCountry(country)
 
           const byCurrency = await getAllTierPricingByCurrency(stripe)
