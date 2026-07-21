@@ -5,22 +5,18 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { silenceExpectedConsole } from './test-utils'
+import {
+  neonMockModule,
+  type SqlCall,
+ silenceExpectedConsole } from './test-utils'
 
 // --- Neon mock -------------------------------------------------------------
-type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string, values: unknown[]) => unknown[] = () => []
 
-mock.module('@neondatabase/serverless', () => ({
-  neon: (_url: string) =>
-    ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const merged = strings.join('?')
-      sqlCalls.push({ sql: merged, values })
-      return Promise.resolve(nextSqlResult(merged, values))
-    }) as unknown,
-  __esModule: true,
-}))
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged, values) => nextSqlResult(merged, values)),
+)
 
 import { foldDownloadPage, runFeedActivationBackfill } from './lib/feed-activation-backfill'
 import { backfillActivations, type ActivationSeed } from './lib/feed-activations'

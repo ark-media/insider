@@ -21,6 +21,8 @@ import {
   mock,
 } from 'bun:test'
 import {
+  neonMockModule,
+  type SqlCall,
   createDevApiHarness,
   makeFakeReq,
   makeFakeRes as makeRes,
@@ -34,19 +36,12 @@ import {
 // what would have been written without a live DB. Configure
 // `nextSqlResult` per test to control what reads return.
 // ---------------------------------------------------------------------------
-type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 
-mock.module('@neondatabase/serverless', () => ({
-  neon: (_url: string) =>
-    ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const merged = strings.join('?')
-      sqlCalls.push({ sql: merged, values })
-      return Promise.resolve(nextSqlResult(merged))
-    }) as unknown,
-  __esModule: true,
-}))
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
+)
 
 // Static import AFTER mock.module so the plugin picks up the fake neon.
 import { devApiPlugin } from './dev-api'

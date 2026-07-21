@@ -15,6 +15,37 @@ import {
 } from '../shared/auth0-claims'
 
 // ---------------------------------------------------------------------------
+// Neon mock scaffolding
+//
+// The resolver-style suites all install the same tagged-template fake: record
+// every query into a `calls` array, then resolve rows via a mutable
+// `nextSqlResult(sql)` the test reassigns per-case. Only that scaffolding is
+// shared — each file keeps its own `calls`/`nextSqlResult` bindings and its
+// per-query result logic. Usage:
+//   mock.module('@neondatabase/serverless', () =>
+//     neonMockModule(sqlCalls, (sql) => nextSqlResult(sql)))
+// The `next` closure is invoked per call, so reassigning `nextSqlResult` between
+// cases takes effect without rebuilding the mock.
+// ---------------------------------------------------------------------------
+
+export type SqlCall = { sql: string; values: unknown[] }
+
+export function neonMockModule(
+  calls: SqlCall[],
+  next: (sql: string, values: unknown[]) => unknown,
+): { neon: unknown; __esModule: true } {
+  return {
+    neon: (_url: string) =>
+      ((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const merged = strings.join('?')
+        calls.push({ sql: merged, values })
+        return Promise.resolve(next(merged, values))
+      }) as unknown,
+    __esModule: true,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // devApiPlugin test harness
 //
 // Every route suite drives handlers through the same three primitives — a fake

@@ -15,6 +15,8 @@ import {
   mock,
 } from 'bun:test'
 import {
+  neonMockModule,
+  type SqlCall,
   createDevApiHarness,
   makeFakeReq,
   makeFakeRes as makeRes,
@@ -24,19 +26,12 @@ import {
 } from './test-utils'
 
 // --- Neon mock -------------------------------------------------------------
-type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 
-mock.module('@neondatabase/serverless', () => ({
-  neon: (_url: string) =>
-    ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const merged = strings.join('?')
-      sqlCalls.push({ sql: merged, values })
-      return Promise.resolve(nextSqlResult(merged))
-    }) as unknown,
-  __esModule: true,
-}))
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
+)
 
 import { devApiPlugin } from './dev-api'
 

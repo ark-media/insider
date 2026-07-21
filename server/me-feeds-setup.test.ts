@@ -7,6 +7,8 @@ import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage } from 'node:http'
 import {
+  neonMockModule,
+  type SqlCall,
   AUTH0_TEST_JWKS_URL,
   createDevApiHarness,
   getAuth0TestKeys,
@@ -20,19 +22,12 @@ import {
 // ---------------------------------------------------------------------------
 // Neon mock — captures sql calls and lets each test stage a result.
 // ---------------------------------------------------------------------------
-type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 
-mock.module('@neondatabase/serverless', () => ({
-  neon: (_url: string) =>
-    ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const merged = strings.join('?')
-      sqlCalls.push({ sql: merged, values })
-      return Promise.resolve(nextSqlResult(merged))
-    }) as unknown,
-  __esModule: true,
-}))
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
+)
 
 // Static imports AFTER mock.module so the plugin picks up the fake neon.
 import { devApiPlugin } from './dev-api'

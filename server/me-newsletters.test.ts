@@ -20,6 +20,8 @@ import {
   mock,
 } from 'bun:test'
 import {
+  neonMockModule,
+  type SqlCall,
   AUTH0_TEST_JWKS_URL,
   createDevApiHarness,
   getAuth0TestKeys,
@@ -35,7 +37,6 @@ import {
 // ---------------------------------------------------------------------------
 // Neon mock (same shape as beehiiv-webhook.test.ts)
 // ---------------------------------------------------------------------------
-type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 
@@ -48,37 +49,31 @@ function markMember(email: string): void {
   arkPlusSubs.add(`auth0|${email}`)
 }
 
-mock.module('@neondatabase/serverless', () => ({
-  neon: (_url: string) =>
-    ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const merged = strings.join('?')
-      sqlCalls.push({ sql: merged, values })
-      if (merged.includes('from membership where auth0_sub')) {
-        const sub = values[0] as string
-        return Promise.resolve(
-          arkPlusSubs.has(sub)
-            ? [
-                {
-                  auth0_sub: sub,
-                  stripe_customer_id: null,
-                  stripe_subscription_id: null,
-                  sc_user_id: null,
-                  tier: 'ark-plus',
-                  status: 'active',
-                  plan: 'monthly',
-                  amount_cents: 800,
-                  current_period_end: null,
-                  cancel_at: null,
-                  gift_expires_at: null,
-                },
-              ]
-            : [],
-        )
-      }
-      return Promise.resolve(nextSqlResult(merged))
-    }) as unknown,
-  __esModule: true,
-}))
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged, values) => {
+    if (merged.includes('from membership where auth0_sub')) {
+      const sub = values[0] as string
+      return arkPlusSubs.has(sub)
+        ? [
+            {
+              auth0_sub: sub,
+              stripe_customer_id: null,
+              stripe_subscription_id: null,
+              sc_user_id: null,
+              tier: 'ark-plus',
+              status: 'active',
+              plan: 'monthly',
+              amount_cents: 800,
+              current_period_end: null,
+              cancel_at: null,
+              gift_expires_at: null,
+            },
+          ]
+        : []
+    }
+    return nextSqlResult(merged)
+  }),
+)
 
 // Static import AFTER mock.module so the plugin picks up the fake neon.
 import { clearNewsletterRefreshCache } from './lib/beehiiv-sync.js'

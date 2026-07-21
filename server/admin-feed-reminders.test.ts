@@ -13,23 +13,19 @@ import {
   mock,
 } from 'bun:test'
 import type { ServerResponse } from 'node:http'
-import { makeFakeReq, silenceExpectedConsole } from './test-utils'
+import {
+  neonMockModule,
+  type SqlCall,
+ makeFakeReq, silenceExpectedConsole } from './test-utils'
 import { DEFAULT_REMINDER_CONFIG } from '../shared/feed-reminder'
 
 // --- Neon mock (harmless if it leaks: tests never hit a real DB) -----------
-type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 
-mock.module('@neondatabase/serverless', () => ({
-  neon: (_url: string) =>
-    ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const merged = strings.join('?')
-      sqlCalls.push({ sql: merged, values })
-      return Promise.resolve(nextSqlResult(merged))
-    }) as unknown,
-  __esModule: true,
-}))
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
+)
 
 import { adminFeedReminderRoutes } from './routes/admin-feed-reminders'
 import { getReminderConfig, setReminderConfig } from './lib/app-settings'

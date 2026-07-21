@@ -25,6 +25,8 @@ import {
   mock,
 } from 'bun:test'
 import {
+  neonMockModule,
+  type SqlCall,
   createDevApiHarness,
   makeFakeReq,
   makeFakeRes as makeRes,
@@ -39,19 +41,12 @@ import {
 // simulate a DB error. The idempotency dedupe is a `select 1 from
 // sc_webhook_events`; the ledger write happens after a successful upsert.
 // ---------------------------------------------------------------------------
-type SqlCall = { sql: string; values: unknown[] }
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 
-mock.module('@neondatabase/serverless', () => ({
-  neon: (_url: string) =>
-    ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const merged = strings.join('?')
-      sqlCalls.push({ sql: merged, values })
-      return Promise.resolve(nextSqlResult(merged))
-    }) as unknown,
-  __esModule: true,
-}))
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
+)
 
 // Static import AFTER mock.module so the plugin picks up the fake neon.
 import { devApiPlugin } from './dev-api'
