@@ -26,6 +26,7 @@ import {
   OFFER_OUTCOMES,
   outcomeLabel,
   reasonLabel,
+  retainedProductLabel,
   type OfferOutcome,
 } from "../../../shared/cancellation";
 
@@ -593,6 +594,7 @@ function CancellationsBody({
                   <th className="py-2 pr-4 font-normal">Date</th>
                   <th className="py-2 pr-4 font-normal">Email</th>
                   <th className="py-2 pr-4 font-normal">Outcome</th>
+                  <th className="py-2 pr-4 font-normal">Type</th>
                   <th className="py-2 pr-4 font-normal">Reason</th>
                   <th className="py-2 font-normal">Note</th>
                 </tr>
@@ -606,6 +608,23 @@ function CancellationsBody({
                     <td className="py-2 pr-4 text-fg">{row.email}</td>
                     <td className="py-2 pr-4 text-fg">
                       {outcomeLabel(row.offerOutcome)}
+                    </td>
+                    {/* Distinguishes a debundle (kept one product) from a full
+                        cancel or an accept, with the tier the member left. */}
+                    <td className="py-2 pr-4 text-fg">
+                      {row.retainedProduct ? (
+                        <span>
+                          {retainedProductLabel(row.retainedProduct)}
+                          {row.canceledTier ? (
+                            <span className="text-fg-muted">
+                              {" "}
+                              (from {row.canceledTier})
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="py-2 pr-4 text-fg">
                       {reasonLabel(row.reason) ?? "—"}

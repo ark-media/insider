@@ -28,7 +28,7 @@ export function feedIsSetUp(feed: UserFeed): boolean {
   return feed.activated === true || feed.pending === true;
 }
 
-import type { RetentionOffer } from "../../shared/retention";
+import type { OfferKind, RetentionOffer, SaveIntent } from "../../shared/retention";
 
 // The two independent access axes: arkPlus → the private feed, circle → the
 // community. Derived server-side from the tier; every gate checks an entitlement,
@@ -99,57 +99,6 @@ export async function cancelSubscription(input: {
   }
 }
 
-// Is the current member eligible for a retention discount on cancel, and what
-// is it? Any failure — non-OK response, network error, non-JSON body —
-// degrades to "no offer" so the cancel flow always proceeds (worst case: skips
-// straight to the reason step).
-export async function getRetentionOffer(): Promise<{
-  eligible: boolean;
-  offer: RetentionOffer | null;
-}> {
-  try {
-    const res = await fetch("/api/stripe/retention-offer", {
-      credentials: "include",
-    });
-    if (!res.ok) return { eligible: false, offer: null };
-    return (await res.json()) as {
-      eligible: boolean;
-      offer: RetentionOffer | null;
-    };
-  } catch {
-    return { eligible: false, offer: null };
-  }
-}
-
-// Accept the offer: the server re-derives the coupon, attaches it to the live
-// subscription, and clears any pending cancel. Returns the applied discount +
-// next charge date for the confirmation.
-export async function acceptRetentionOffer(): Promise<{
-  ok: boolean;
-  percentOff?: number | null;
-  amountOff?: number | null;
-  durationMonths?: number | null;
-  next_charge_at?: string;
-  error?: string;
-}> {
-  try {
-    const res = await fetch("/api/stripe/accept-retention-offer", {
-      method: "POST",
-      credentials: "include",
-    });
-    return (await res.json()) as {
-      ok: boolean;
-      percentOff?: number | null;
-      amountOff?: number | null;
-      durationMonths?: number | null;
-      next_charge_at?: string;
-      error?: string;
-    };
-  } catch {
-    return { ok: false, error: "Something went wrong — please try again." };
-  }
-}
-
 // Undo a pending cancel: the server clears cancel_at_period_end so the
 // membership renews normally again. Returns the next charge date for the
 // confirmation message.
@@ -182,6 +131,7 @@ export async function getMySubscription(): Promise<{
   cancelAtPeriodEnd: boolean;
   cancelAt: string | null;
   pendingChange?: boolean;
+  plan?: "monthly" | "yearly" | null;
 }> {
   try {
     const res = await fetch("/api/stripe/my-subscription", {
@@ -192,9 +142,76 @@ export async function getMySubscription(): Promise<{
       cancelAtPeriodEnd: boolean;
       cancelAt: string | null;
       pendingChange?: boolean;
+      plan?: "monthly" | "yearly" | null;
     };
   } catch {
     return { cancelAtPeriodEnd: false, cancelAt: null };
+  }
+}
+
+// The ordered save offers for a tier-aware cancel/debundle flow. The server
+// resolves cadence + amounts from Stripe and window-suppresses coupons. Any
+// failure degrades to no offers so the flow proceeds to reason/confirm.
+export type StandalonePrice = {
+  tier: "ark-plus" | "circle" | "bundle";
+  plan: "monthly" | "yearly";
+  priceCents: number;
+};
+
+export async function getSaveOffers(
+  intent: SaveIntent,
+): Promise<{ offers: RetentionOffer[]; standalone: StandalonePrice | null }> {
+  try {
+    const res = await fetch(
+      `/api/stripe/save-offers?intent=${encodeURIComponent(intent)}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return { offers: [], standalone: null };
+    return (await res.json()) as {
+      offers: RetentionOffer[];
+      standalone: StandalonePrice | null;
+    };
+  } catch {
+    return { offers: [], standalone: null };
+  }
+}
+
+// Accept a coupon-backed save offer (supporter / affordability /
+// circle-free-months / perpetual). The server re-derives the coupon for
+// (intent, cadence), attaches it, and clears any pending cancel. Plan switches
+// go through changeTier instead.
+export async function acceptSaveOffer(
+  intent: SaveIntent,
+  kind: OfferKind,
+): Promise<{
+  ok: boolean;
+  kind?: OfferKind;
+  percentOff?: number | null;
+  amountOff?: number | null;
+  durationMonths?: number | null;
+  forever?: boolean;
+  next_charge_at?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch("/api/stripe/accept-save-offer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ intent, kind }),
+    });
+    return (await res.json()) as {
+      ok: boolean;
+      kind?: OfferKind;
+      percentOff?: number | null;
+      amountOff?: number | null;
+      durationMonths?: number | null;
+      forever?: boolean;
+      next_charge_at?: string;
+      error?: string;
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
   }
 }
 
@@ -205,6 +222,12 @@ export async function changeTier(input: {
   tier: "ark-plus" | "circle" | "bundle";
   plan: "monthly" | "yearly";
   customAmountCents?: number;
+  // Set on a debundle so the server records the win-back cancellation record
+  // (what was kept). Omitted for a plain upgrade/PWYC change.
+  retainedProduct?: "kept-circle" | "kept-ark-plus";
+  // On a debundle, whether a save offer was shown-and-declined first, so the
+  // win-back record reads 'declined' vs 'not_offered' like the full-cancel path.
+  offerOutcome?: "declined" | "not_offered";
 }): Promise<{
   ok: boolean;
   changed?: boolean;
@@ -221,6 +244,8 @@ export async function changeTier(input: {
         tier: input.tier,
         plan: input.plan,
         custom_amount_cents: input.customAmountCents,
+        retained_product: input.retainedProduct,
+        offer_outcome: input.offerOutcome,
       }),
     });
     return (await res.json()) as {
