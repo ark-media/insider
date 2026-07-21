@@ -9,6 +9,8 @@ import {
 } from "@stripe/react-stripe-js/checkout";
 import { useNavigate } from "@tanstack/react-router";
 import { Modal } from "./Modal";
+import { LoadingRow } from "./Spinner";
+import { modalPrimaryCta, modalSecondaryCta } from "../lib/modalCta";
 import { useTheme } from "../lib/theme";
 import {
   createGiftCheckout,
@@ -41,8 +43,7 @@ function getStripe() {
 const titleClass =
   "display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong";
 
-const closeButtonClass =
-  "mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+const closeButtonClass = `mt-4 ${modalSecondaryCta}`;
 
 const MAX_POLL_ATTEMPTS = 15;
 
@@ -252,19 +253,6 @@ export function GiftCheckoutModal({
   );
 }
 
-function LoadingRow({ label }: { label: string }) {
-  return (
-    <div
-      className="mt-6 flex items-center gap-3 text-sm text-fg"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
-      <span>{label}</span>
-    </div>
-  );
-}
-
 // Lives inside CheckoutElementsProvider, so useCheckout() gives us the giver's
 // localized total (Adaptive Pricing) from the first screen. The giver's email
 // is already known (set as the Session customer server-side), so there's no
@@ -399,7 +387,7 @@ function GiftPaymentForm({
           type="submit"
           disabled={submitting}
           aria-busy={submitting}
-          className="inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+          className={modalPrimaryCta}
         >
           {submitting ? "Processing…" : `Pay ${total} & send gift`}
         </button>

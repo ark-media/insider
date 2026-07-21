@@ -3,6 +3,7 @@ import { PublicMasthead } from "../components/PublicMasthead";
 import { Footer } from "../components/Footer";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import { AuthErrorNotice } from "../components/AuthErrorNotice";
+import { Spinner } from "../components/Spinner";
 import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createRootRoute({
@@ -27,7 +28,7 @@ function RootContent() {
   if (state.kind === "loading") {
     return (
       <div role="status" aria-label="Loading" className="flex min-h-dvh items-center justify-center bg-navy-900">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
+        <Spinner className="h-6 w-6" />
       </div>
     );
   }

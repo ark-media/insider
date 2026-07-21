@@ -11,6 +11,7 @@ import {
 } from "./PlatformIcons";
 import { sendSetupSms, type UserFeed } from "../lib/auth";
 import { trackEvent } from "../lib/analytics";
+import { useCopyToClipboard } from "../lib/useCopyToClipboard";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Device = "phone" | "computer";
@@ -154,7 +155,7 @@ export function SetupFlow({
 
   const [device, setDevice] = useState<Device | null>(null);
   const [appKey, setAppKey] = useState<AppKey | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   // On small screens, skip the device question (per mobile Figma)
   useEffect(() => {
@@ -186,17 +187,12 @@ export function SetupFlow({
     [appKey],
   );
 
-  const copyFeed = async () => {
+  const copyFeed = () => {
     if (!feedUrl) return;
-    try {
-      await navigator.clipboard.writeText(feedUrl);
-      setCopied(true);
+    void copy(feedUrl, () => {
       trackEvent("feed_activated", { app: appKey ?? "unknown", method: "copy" });
       if (feed) markFeedsSetUp([feed.id]);
-      setTimeout(() => setCopied(false), 2200);
-    } catch {
-      /* no-op */
-    }
+    });
   };
 
   const selectedAppUrl = feedAppUrl(feed, selectedApp?.scApp);
@@ -673,16 +669,7 @@ function AppCard({
 }
 
 function CopyableUrl({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2200);
-    } catch {
-      /* no-op */
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <div className="flex items-stretch border border-rule bg-navy-900/60">
       <span
@@ -693,7 +680,7 @@ function CopyableUrl({ url }: { url: string }) {
       </span>
       <button
         type="button"
-        onClick={copy}
+        onClick={() => void copy(url)}
         aria-label={
           copied ? "Feed URL copied to clipboard" : "Copy feed URL to clipboard"
         }

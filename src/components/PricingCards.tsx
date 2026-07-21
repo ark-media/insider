@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { BillingPeriodToggle } from "./BillingPeriodToggle";
 import { CheckoutModal } from "./CheckoutModal";
 import { ContentError } from "./ContentError";
+import { PriceSkeleton } from "./PriceSkeleton";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 import { TIERS, type Tier, type TierMeta } from "../data/pricingTiers";
@@ -80,7 +82,7 @@ function PriceCard({
             {priceMinor !== null ? (
               formatMinor(priceMinor, currency, factor)
             ) : (
-              <span className="inline-block h-[0.7em] w-20 animate-pulse rounded bg-rule-strong/40 align-middle" />
+              <PriceSkeleton className="h-[0.7em] w-20" />
             )}
           </span>
           <span className="text-body-sm">
@@ -150,28 +152,10 @@ export function PricingCards({
 }) {
   const [plan, setPlanRaw] = useState<Plan>("yearly");
   const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
-  const periodRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const setPlan = (p: Plan) => {
     setPlanRaw(p);
     trackEvent("plan_selected", { plan: p });
-  };
-
-  // Roving-tabindex keyboard model for the billing-period radiogroup: arrow keys
-  // move to and select the adjacent option, Home/End jump to the ends.
-  const PERIODS = ["monthly", "yearly"] as const;
-  const onPeriodKeyDown = (e: React.KeyboardEvent, index: number) => {
-    let next = index;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown")
-      next = (index + 1) % PERIODS.length;
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
-      next = (index - 1 + PERIODS.length) % PERIODS.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = PERIODS.length - 1;
-    else return;
-    e.preventDefault();
-    setPlan(PERIODS[next]);
-    periodRefs.current[next]?.focus();
   };
 
   const pricing = useAsyncResource(async () => {
@@ -226,40 +210,11 @@ export function PricingCards({
   return (
     <div id={id}>
       <div className="flex justify-center">
-        <div
-          role="radiogroup"
-          aria-label="Billing period"
-          className="inline-flex border border-rule-strong p-1"
-        >
-          {PERIODS.map((p, i) => (
-            <button
-              key={p}
-              ref={(el) => {
-                periodRefs.current[i] = el;
-              }}
-              type="button"
-              role="radio"
-              aria-checked={plan === p}
-              tabIndex={plan === p ? 0 : -1}
-              onKeyDown={(e) => onPeriodKeyDown(e, i)}
-              onClick={() => setPlan(p)}
-              className={`relative inline-flex min-h-11 items-center justify-center px-6 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
-                plan === p
-                  ? "bg-cyan text-navy"
-                  : "text-fg-muted hover:text-fg-strong"
-              }`}
-            >
-              {p === "yearly" ? "Annual" : "Monthly"}
-              {p === "yearly" && toggleSavings && toggleSavings > 0 ? (
-                <span
-                  className={`ml-2 text-xs ${plan === p ? "opacity-80" : "text-cyan"}`}
-                >
-                  −{toggleSavings}%
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
+        <BillingPeriodToggle
+          plan={plan}
+          onChange={setPlan}
+          savingsPct={toggleSavings}
+        />
       </div>
 
       <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start lg:gap-5">

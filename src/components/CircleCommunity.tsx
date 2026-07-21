@@ -5,6 +5,7 @@ import { ContentError } from "./ContentError";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 import { formatMinor } from "../lib/currency";
+import { PriceSkeleton } from "./PriceSkeleton";
 
 const pillars = [
   {
@@ -87,7 +88,7 @@ export function CircleCommunity() {
                     {monthly !== null ? (
                       formatMinor(monthly.monthlyMinor, monthly.currency, monthly.factor)
                     ) : (
-                      <span className="inline-block h-[0.7em] w-16 animate-pulse rounded bg-rule-strong/40 align-middle" />
+                      <PriceSkeleton className="h-[0.7em] w-16" />
                     )}
                   </span>
                   <span className="text-body-sm">/ month</span>

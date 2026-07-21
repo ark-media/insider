@@ -6,18 +6,15 @@ import {
   type Show,
   type ShowSlug,
 } from "../data/shows";
-import {
-  episodeImage,
-  formatDuration,
-  formatEpisodeDate,
-  type Episode,
-} from "../data/episodes";
+import { episodeImage, type Episode } from "../data/episodes";
 import { contributorsForShow, hostsForShow } from "../data/hosts";
 import type { Host } from "../data/hosts";
 import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { ContentError } from "./ContentError";
 import { useShowDescription } from "../lib/useShowDescription";
+import { EpisodeMeta } from "./EpisodeMeta";
+import { PlayGlyph } from "./PlayGlyph";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
@@ -582,8 +579,7 @@ function EpisodeRow({
         ) : null}
       </Link>
       <span className="meta shrink-0">
-        {formatEpisodeDate(episode.publishedAt)} ·{" "}
-        {formatDuration(episode.durationMinutes)}
+        <EpisodeMeta episode={episode} />
       </span>
     </li>
   );
@@ -625,8 +621,7 @@ function EpisodeCard({
       ) : null}
       <div className="flex items-center justify-between gap-3">
         <div className="episode-meta text-cyan">
-          {formatEpisodeDate(episode.publishedAt)} ·{" "}
-          {formatDuration(episode.durationMinutes)}
+          <EpisodeMeta episode={episode} />
         </div>
         {isActive ? (
           <span className="inline-flex shrink-0 items-center gap-1.5 label tracking-[0.14em] text-cyan">
@@ -701,8 +696,7 @@ function ShowPlayer({
           {episode.title}
         </h2>
         <div className="episode-meta mt-3">
-          {formatEpisodeDate(episode.publishedAt)} ·{" "}
-          {formatDuration(episode.durationMinutes)}
+          <EpisodeMeta episode={episode} />
         </div>
         <Link
           to="/podcasts/$show/$episode"
@@ -726,20 +720,6 @@ function ShowPlayer({
         </div>
       </div>
     </section>
-  );
-}
-
-function PlayGlyph() {
-  return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M2 1.2v7.6a.4.4 0 0 0 .61.34l6.1-3.8a.4.4 0 0 0 0-.68L2.61.86A.4.4 0 0 0 2 1.2Z" />
-    </svg>
   );
 }
 

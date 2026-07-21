@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "@tanstack/react-router";
 import { ArkLogo } from "./ArkLogo";
+import { Spinner } from "./Spinner";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { shows } from "../data/shows";
 
@@ -317,7 +318,7 @@ export function PublicMasthead() {
                 aria-label="Loading account state"
                 className="hidden min-h-11 items-center border border-rule-strong px-4 opacity-60 sm:inline-flex"
               >
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
+                <Spinner className="inline-block h-3 w-3" />
               </button>
             ) : state.kind === "member" ? (
               <>

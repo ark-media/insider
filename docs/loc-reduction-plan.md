@@ -141,10 +141,50 @@ and were **not** executed (would force bad abstractions or delete live code):
   check only) type the same `/api/pricing` response with **different `TierAmounts`
   shapes**. Only the ~8-line fetch+currency/factor core is truly shared — a
   `fetchPricingSnapshot()` helper is defensible but ~net-zero LOC.
-- Not yet assessed (need per-file duplication verification before touching):
-  `<BillingPeriodToggle>`, `<CtaButton>`/`<CtaLink>`, shared
-  `<Spinner>`/`<PriceSkeleton>`/`<PlayGlyph>`/`<CheckIcon>`, `useFocusTrap`,
-  `useCopyToClipboard`, `<EpisodeMeta>`.
+### Shared presentational primitives ✅ DONE
+
+Verified duplication per-file (three parallel research passes), then extracted the
+clean, low-risk cluster. tsc + eslint clean; suite green (741 pass, 0 fail).
+
+- `<Spinner>` + `<LoadingRow>` (`src/components/Spinner.tsx`) — one spinner disc
+  (size via `className`, ARIA left to caller); adopted by __root, AdminGuard,
+  PublicMasthead, and both checkout modals. `LoadingRow` was a byte-identical
+  11-line fn duplicated in CheckoutModal + GiftCheckoutModal.
+- `<PlayGlyph>` (`src/components/PlayGlyph.tsx`) — byte-identical 10-line icon that
+  lived in both LatestEpisodes and ShowPage.
+- `<PriceSkeleton>` (`src/components/PriceSkeleton.tsx`) — the pulsing price
+  placeholder; PricingCards, PricingComparison, CircleCommunity.
+- `<BillingPeriodToggle>` (`src/components/BillingPeriodToggle.tsx`) — the
+  roving-tabindex monthly/annual radiogroup + keyboard model, shared by PricingCards
+  (with savings badge) and PricingComparison.
+- `<EpisodeMeta>` (`src/components/EpisodeMeta.tsx`) — the "date · duration" line,
+  3× in ShowPage (LatestEpisodes diverges — uses `<time>` + long date, left alone).
+- `useCopyToClipboard` (`src/lib/useCopyToClipboard.ts`) — clipboard write + 2200ms
+  `copied` flag; SetupFlow's `copyFeed` (keeps its analytics/markFeedsSetUp side
+  effects via the `onSuccess` cb) + `CopyableUrl`. discuss-threads uses a flash
+  system → left separate.
+- `modalPrimaryCta`/`modalSecondaryCta` (`src/lib/modalCta.ts`) — the two payment
+  modals' CTA strings, previously byte-identical copies at risk of drift.
+
+Also fixed an unrelated a11y bug found during the audit: four newsletter CTAs
+(`newsletters/index.tsx`, `newsletters/$post.tsx`) were missing
+`focus-visible:outline-*` — no visible keyboard-focus ring — now added.
+
+### Deferred — need visual/keyboard review, not mechanical
+
+- **`<CheckIcon>`** — three divergent path families (viewBox 20/24/16). Family A
+  (pricing) is an identical pair worth merging; **Family B has a real stroke
+  inconsistency (SetupFlow `strokeWidth 2` vs FeedSetupHub `2.4`)** — unifying is a
+  deliberate visual change. Not folded together mechanically.
+- **`useFocusTrap`** — only ONE genuine reimplementation (PublicMasthead's mobile
+  drawer duplicates `Modal.tsx`'s trap verbatim; the other 8 grep hits are different
+  a11y patterns — listbox, radiogroup — or already reuse `<Modal>`). Extractable for
+  correctness but MED-HIGH a11y risk (Modal restores focus to `document.activeElement`,
+  the drawer to its menu button; needs keyboard testing on both).
+- **Global `<CtaButton>`** — rejected. ~35 CTA sites split into three genuinely
+  different button styles (invert-on-hover vs marketing-white-on-hover + animated
+  arrow vs two outline variants); a unified `variant` prop would re-encode every
+  difference. Only the narrow modal-CTA const extraction (done above) was safe.
 
 ## Phase 4 — Server DRY (~440 LOC)
 

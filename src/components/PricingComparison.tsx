@@ -1,5 +1,7 @@
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useState } from "react";
+import { BillingPeriodToggle } from "./BillingPeriodToggle";
 import { CheckoutModal } from "./CheckoutModal";
+import { PriceSkeleton } from "./PriceSkeleton";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 import type { Tier } from "../data/pricingTiers";
@@ -101,7 +103,6 @@ function Mark({ on }: { on: boolean }) {
 export function PricingComparison() {
   const [plan, setPlan] = useState<Plan>("yearly");
   const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
-  const periodRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // "From $X" floor per column, sourced live from Stripe (never hardcoded) — the
   // same values the cards on /plus show. Price is secondary here: if it fails to
@@ -137,24 +138,9 @@ export function PricingComparison() {
   const colClass = (featured?: boolean) =>
     featured ? "bg-navy-800/50" : "";
 
-  const PERIODS = ["monthly", "yearly"] as const;
   const selectPeriod = (p: Plan) => {
     setPlan(p);
     trackEvent("plan_selected", { plan: p });
-  };
-  // Roving-tabindex keyboard model for the billing-period radiogroup.
-  const onPeriodKeyDown = (e: React.KeyboardEvent, index: number) => {
-    let next = index;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown")
-      next = (index + 1) % PERIODS.length;
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
-      next = (index - 1 + PERIODS.length) % PERIODS.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = PERIODS.length - 1;
-    else return;
-    e.preventDefault();
-    selectPeriod(PERIODS[next]);
-    periodRefs.current[next]?.focus();
   };
 
   const openCheckout = (tier: Tier) => {
@@ -176,33 +162,7 @@ export function PricingComparison() {
         </div>
 
         <div className="mt-8 flex justify-center">
-          <div
-            role="radiogroup"
-            aria-label="Billing period"
-            className="inline-flex border border-rule-strong p-1"
-          >
-            {PERIODS.map((p, i) => (
-              <button
-                key={p}
-                ref={(el) => {
-                  periodRefs.current[i] = el;
-                }}
-                type="button"
-                role="radio"
-                aria-checked={plan === p}
-                tabIndex={plan === p ? 0 : -1}
-                onKeyDown={(e) => onPeriodKeyDown(e, i)}
-                onClick={() => selectPeriod(p)}
-                className={`relative inline-flex min-h-11 items-center justify-center px-6 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
-                  plan === p
-                    ? "bg-cyan text-navy"
-                    : "text-fg-muted hover:text-fg-strong"
-                }`}
-              >
-                {p === "yearly" ? "Annual" : "Monthly"}
-              </button>
-            ))}
-          </div>
+          <BillingPeriodToggle plan={plan} onChange={selectPeriod} />
         </div>
 
         <div className="mt-10 overflow-x-auto">
@@ -242,7 +202,7 @@ export function PricingComparison() {
                           </span>
                         </>
                       ) : pricing.status === "error" ? null : (
-                        <span className="inline-block h-[1em] w-16 animate-pulse rounded bg-rule-strong/40 align-middle" />
+                        <PriceSkeleton className="h-[1em] w-16" />
                       )}
                     </div>
                   </th>

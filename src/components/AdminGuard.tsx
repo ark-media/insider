@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { Spinner } from "./Spinner";
 import { StatusPage, HomeButton } from "./StatusPage";
 
 // Client-side gate for the back office. This is UX only — every admin API
@@ -11,11 +12,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
   if (state.kind === "loading" || adminLoading) {
     return (
       <div className="mx-auto flex min-h-[60vh] max-w-[1100px] flex-col items-center justify-center px-6 py-16">
-        <div
-          role="status"
-          aria-label="Loading"
-          className="h-6 w-6 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none"
-        />
+        <Spinner role="status" aria-label="Loading" className="h-6 w-6" />
       </div>
     );
   }

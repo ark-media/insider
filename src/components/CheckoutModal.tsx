@@ -8,6 +8,8 @@ import {
 } from "@stripe/react-stripe-js/checkout";
 import { Modal } from "./Modal";
 import { CurrencySelect } from "./CurrencySelect";
+import { LoadingRow } from "./Spinner";
+import { modalPrimaryCta, modalSecondaryCta } from "../lib/modalCta";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
@@ -87,8 +89,7 @@ function getStripe() {
 const inputClass =
   "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-placeholder outline-none transition focus:border-cyan disabled:opacity-50";
 
-const ctaClass =
-  "inline-flex min-h-12 w-full items-center justify-center border border-cyan bg-cyan px-4 text-sm font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60";
+const ctaClass = modalPrimaryCta;
 
 const titleClass =
   "display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong";
@@ -501,7 +502,7 @@ export function CheckoutModal({
             <button
               type="button"
               onClick={handleClose}
-              className="inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className={modalSecondaryCta}
             >
               Close
             </button>
@@ -528,7 +529,7 @@ export function CheckoutModal({
             <button
               type="button"
               onClick={handleClose}
-              className="mt-4 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-4 text-sm font-semibold uppercase tracking-button transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              className={`mt-4 ${modalSecondaryCta}`}
             >
               Close
             </button>
@@ -556,19 +557,6 @@ export function CheckoutModal({
         </>
       ) : null}
     </Modal>
-  );
-}
-
-function LoadingRow({ label }: { label: string }) {
-  return (
-    <div
-      className="mt-6 flex items-center gap-3 text-sm text-fg"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-rule-strong border-t-cyan motion-reduce:animate-none" />
-      <span>{label}</span>
-    </div>
   );
 }
 
