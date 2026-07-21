@@ -67,6 +67,7 @@ const NAV_ITEMS: NavItem[] = [
     hideWhen: "subscriber",
     children: [
       { label: "Ark+", to: "/plus", hash: "pricing" },
+      { label: "Compare plans", to: "/pricing" },
       { label: "Community", to: "/community", crossLink: true },
       { label: "Gifting", to: "/plus/gift" },
     ],
