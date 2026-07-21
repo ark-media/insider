@@ -37,7 +37,7 @@ export const TIERS: TierMeta[] = [
       "Inside Call Me Back — private, ad-free feed",
       "The full network, ad-free",
       "Members-only newsletters",
-      "The Ark Media community in Circle",
+      "The Ark Media community",
       "Live member events & Q&As",
     ],
   },
@@ -47,7 +47,7 @@ export const TIERS: TierMeta[] = [
     blurb:
       "The Ark Media community app — conversations, member events, and Dan's book club.",
     includes: [
-      "The Ark Media community in Circle",
+      "The Ark Media community",
       "Live member events & Q&As",
       "Dan's book club",
     ],

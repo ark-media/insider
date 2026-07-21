@@ -42,7 +42,7 @@ const GROUPS: Group[] = [
     heading: "Community",
     rows: [
       {
-        label: "The Ark Media community in Circle",
+        label: "The Ark Media community",
         tiers: { "ark-plus": false, bundle: true, circle: true },
       },
       {

@@ -908,8 +908,8 @@ function EmailForm({
           {working ? "Loading…" : "Continue to payment"}
         </button>
         <p className="text-body-sm">
-          Payment is securely processed by Stripe. You'll receive a sign-in
-          link by email once your membership is active.
+          You'll receive a sign-in link by email once your membership is
+          active.
         </p>
       </form>
     </>

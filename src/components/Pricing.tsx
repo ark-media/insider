@@ -51,7 +51,7 @@ export function Pricing() {
           {[
             "Cancel anytime",
             "Gift Ark+ available",
-            "Secure checkout via Stripe",
+            "Secure checkout",
             "Pay in your local currency",
           ].map((f) => (
             <li key={f} className="flex items-center gap-2">

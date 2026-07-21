@@ -31,9 +31,8 @@ export function Benefits() {
               </span>
             </h2>
             <p className="mt-8 max-w-md text-body-sm">
-              No fragmented platforms, no separate logins, no FAQ explaining
-              why Discord is locked to Substack. The Ark+ &amp; Community bundle
-              covers all three below.
+              The private feed, the newsletters, and the community — all in one
+              place. The Ark+ &amp; Community bundle covers all three below.
             </p>
           </div>
 

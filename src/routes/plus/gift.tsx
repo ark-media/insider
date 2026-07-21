@@ -239,8 +239,8 @@ function GiftPage() {
                   </span>
                 </button>
                 <p className="mt-3 text-body-sm">
-                  Payment is securely processed by Stripe. The recipient
-                  receives a redemption email as soon as it clears.
+                  The recipient receives a redemption email as soon as your
+                  payment clears.
                 </p>
               </form>
             </div>

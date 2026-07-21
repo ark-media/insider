@@ -55,7 +55,7 @@ export function CircleCommunity() {
       <div className="page-gutter pt-12 pb-16">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <div className="eyebrow text-cyan">Circle · Community</div>
+            <div className="eyebrow text-cyan">Community</div>
             <h2 className="mt-5 text-fg-strong">
               <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
                 Somewhere to
