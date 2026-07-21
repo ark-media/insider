@@ -11,7 +11,7 @@ import {
   type SqlCall,
   AUTH0_TEST_JWKS_URL,
   createDevApiHarness,
-  getAuth0TestKeys,
+  jwksResponse,
   makeFakeRes as makeRes,
   runMiddleware as runHandler,
   signAuth0TestToken,
@@ -91,13 +91,7 @@ let scFeedsByUserId: Map<number, { id: number; name: string; url: string }[]> = 
 const originalFetch = globalThis.fetch
 globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input.toString()
-  if (url === AUTH0_TEST_JWKS_URL) {
-    const { publicJwk } = await getAuth0TestKeys()
-    return new Response(JSON.stringify({ keys: [publicJwk] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })
-  }
+  if (url === AUTH0_TEST_JWKS_URL) return jwksResponse()
   if (url.endsWith('/users/search') && init?.method === 'POST') {
     const body = init.body ? (JSON.parse(init.body as string) as { email: string }) : { email: '' }
     const user = scUserByEmail.get(body.email)

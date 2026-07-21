@@ -15,9 +15,10 @@ import {
   type SqlCall,
   AUTH0_TEST_JWKS_URL,
   createDevApiHarness,
-  getAuth0TestKeys,
+  jwksResponse,
   makeFakeReq as makeReq,
   makeFakeRes as makeRes,
+  parseJsonInitBody,
   runMiddleware as runHandler,
   signAuth0TestToken,
   silenceExpectedConsole,
@@ -89,13 +90,7 @@ globalThis.fetch = (async (
   const url = typeof input === 'string' ? input : input.toString()
 
   // JWKS endpoint (jose.createRemoteJWKSet).
-  if (url === AUTH0_TEST_JWKS_URL) {
-    const { publicJwk } = await getAuth0TestKeys()
-    return new Response(JSON.stringify({ keys: [publicJwk] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })
-  }
+  if (url === AUTH0_TEST_JWKS_URL) return jwksResponse()
 
   // Simplecast user search.
   if (url.endsWith('/users/search') && init?.method === 'POST') {
@@ -123,11 +118,11 @@ globalThis.fetch = (async (
   // Beehiiv — defer to per-test handler so tests can stage create/lookup
   // outcomes and assert which endpoints were hit.
   if (url.includes('api.beehiiv.com')) {
-    let parsed: unknown
-    if (init?.body && typeof init.body === 'string') {
-      try { parsed = JSON.parse(init.body) } catch { parsed = init.body }
+    const call: BeehiivCall = {
+      url,
+      method: init?.method ?? 'GET',
+      body: parseJsonInitBody(init),
     }
-    const call: BeehiivCall = { url, method: init?.method ?? 'GET', body: parsed }
     beehiivCalls.push(call)
     return beehiivHandler(call)
   }

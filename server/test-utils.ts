@@ -271,3 +271,28 @@ export async function signAuth0TestToken(claims: {
     .setExpirationTime('5m')
     .sign(privateKey)
 }
+
+// The JWKS response jose's createRemoteJWKSet expects at AUTH0_TEST_JWKS_URL.
+// Fetch mocks that verify Auth0 bearers all serve this same body:
+//   if (url === AUTH0_TEST_JWKS_URL) return jwksResponse()
+export async function jwksResponse(): Promise<Response> {
+  const { publicJwk } = await getAuth0TestKeys()
+  return new Response(JSON.stringify({ keys: [publicJwk] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+// Parse a fetch mock's captured request body: JSON when it's a JSON string,
+// the raw string when it isn't, undefined when there's no string body. Mirrors
+// the try/JSON.parse snippet every capturing fetch mock hand-rolled.
+export function parseJsonInitBody(init?: RequestInit): unknown {
+  if (init?.body && typeof init.body === 'string') {
+    try {
+      return JSON.parse(init.body)
+    } catch {
+      return init.body
+    }
+  }
+  return undefined
+}

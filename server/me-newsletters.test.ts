@@ -24,7 +24,8 @@ import {
   type SqlCall,
   AUTH0_TEST_JWKS_URL,
   createDevApiHarness,
-  getAuth0TestKeys,
+  jwksResponse,
+  parseJsonInitBody,
   makeFakeReq,
   makeFakeRes as makeRes,
   runMiddleware as runHandler,
@@ -133,25 +134,15 @@ globalThis.fetch = (async (
   init?: RequestInit,
 ) => {
   const url = typeof input === 'string' ? input : input.toString()
-  let parsed: unknown = undefined
-  if (init?.body && typeof init.body === 'string') {
-    try {
-      parsed = JSON.parse(init.body)
-    } catch {
-      parsed = init.body
-    }
+  const call: FetchCall = {
+    url,
+    method: init?.method ?? 'GET',
+    body: parseJsonInitBody(init),
   }
-  const call: FetchCall = { url, method: init?.method ?? 'GET', body: parsed }
   fetchCalls.push(call)
 
   // JWKS endpoint — served by jose's createRemoteJWKSet.
-  if (url === AUTH0_TEST_JWKS_URL) {
-    const { publicJwk } = await getAuth0TestKeys()
-    return new Response(JSON.stringify({ keys: [publicJwk] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })
-  }
+  if (url === AUTH0_TEST_JWKS_URL) return jwksResponse()
   // Auth0 management — oauth/token + users-by-email.
   if (url.endsWith('/oauth/token')) {
     return new Response(
