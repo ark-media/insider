@@ -9,7 +9,10 @@
 //
 // Idempotency:
 //   - Products are addressed by a stable `metadata.catalog_key` (ark_plus /
-//     circle / bundle), found via Product Search — never re-created.
+//     circle / bundle), resolved via `products.list` (strongly consistent) —
+//     never re-created. Product Search is deliberately avoided: it lags
+//     creation by up to a minute, so a re-run inside that window would not
+//     find a just-created product and would mint a duplicate. See scanProducts.
 //   - Prices are addressed by `lookup_key`. Prices are immutable in Stripe, so
 //     an amount change can't edit in place: we create a NEW price carrying the
 //     same lookup_key with `transfer_lookup_key: true` (Stripe moves the key
