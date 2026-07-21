@@ -3,13 +3,9 @@ import { CheckoutModal } from "./CheckoutModal";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 import type { Tier } from "../data/pricingTiers";
+import { type TierAmounts, formatMinor } from "../lib/currency";
 
 type Plan = "monthly" | "yearly";
-type TierPricing = { monthly_cents: number; yearly_cents: number };
-
-function fmtPrice(dollars: number): string {
-  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
-}
 
 // Column order mirrors the card grid: Ark+, the Bundle (featured), Community.
 const COLUMNS: { key: Tier; label: string; featured?: boolean }[] = [
@@ -115,18 +111,27 @@ export function PricingComparison() {
     const res = await fetch("/api/pricing");
     if (!res.ok) throw new Error("pricing request failed");
     const data = (await res.json().catch(() => ({}))) as {
-      tiers?: Record<string, TierPricing>;
+      tiers?: Record<string, TierAmounts>;
+      default_currency?: string;
+      minor_factors?: Record<string, number>;
     };
     if (!data.tiers) throw new Error("pricing response malformed");
-    return data.tiers;
+    const currency = data.default_currency ?? "usd";
+    const factor = data.minor_factors?.[currency] ?? 100;
+    return { tiers: data.tiers, currency, factor };
   }, []);
-  const tiers = pricing.status === "ready" ? pricing.data : null;
+  const data = pricing.status === "ready" ? pricing.data : null;
+  const tiers = data?.tiers ?? null;
+  const currency = data?.currency ?? "usd";
+  const factor = data?.factor ?? 100;
 
-  const floorFor = (key: Tier): number | null => {
+  // "From <price>" floor per column, formatted in the buyer's currency, or null
+  // if pricing hasn't loaded.
+  const floorFor = (key: Tier): string | null => {
     const t = tiers?.[key];
     if (!t) return null;
-    const cents = plan === "yearly" ? t.yearly_cents : t.monthly_cents;
-    return typeof cents === "number" ? cents / 100 : null;
+    const minor = (plan === "yearly" ? t.yearly : t.monthly)[currency];
+    return typeof minor === "number" ? formatMinor(minor, currency, factor) : null;
   };
 
   const colClass = (featured?: boolean) =>
@@ -229,7 +234,7 @@ export function PricingComparison() {
                         <>
                           From{" "}
                           <span className="text-fg-strong">
-                            ${fmtPrice(floorFor(c.key) as number)}
+                            {floorFor(c.key)}
                           </span>
                           <span className="whitespace-nowrap">
                             {" "}

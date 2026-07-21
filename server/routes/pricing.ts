@@ -1,24 +1,53 @@
-// Public plan pricing for the marketing page. Reads the live Stripe Price
-// amounts so the UI never hardcodes a number that could drift from what we
-// actually charge.
+// Public plan pricing for the marketing page + checkout. Reads the live Stripe
+// Price amounts so the UI never hardcodes a number that could drift from what we
+// actually charge. Currency-aware: returns the per-currency floors, the minor-
+// unit factors, and a geo-detected default currency (manual override via the
+// client selector; `?country=XX` overrides the geo header for local testing).
 
 import { makeJsonRes } from '../lib/http.js'
-import { getAllTierPricing } from '../lib/pricing.js'
+import {
+  getAllTierPricingByCurrency,
+  minorUnitFactors,
+  SUPPORTED_CURRENCIES,
+} from '../lib/pricing.js'
+import { countryFromRequest, currencyForCountry } from '../lib/geo-currency.js'
 import type { Deps, Route } from '../lib/route.js'
 
 export function pricingRoutes({ stripe }: Deps): Route[] {
   return [
     {
       path: '/api/pricing',
-      handler: async (_req, res) => {
+      handler: async (req, res) => {
         const json = makeJsonRes(res)
         if (!stripe) return json(500, { error: 'Stripe not configured' })
         try {
-          // Per-tier prices ({ 'ark-plus' | circle | bundle }: { monthly_cents,
-          // yearly_cents }). The client renders all three from this. Founding is
-          // cut for launch (§5), so no founding_multiple is served.
-          const tiers = await getAllTierPricing(stripe)
-          json(200, { tiers })
+          const url = new URL(req.url ?? '/', 'http://x')
+          const countryOverride = url.searchParams.get('country') ?? undefined
+          const country = countryOverride ?? countryFromRequest(req)
+          const defaultCurrency = currencyForCountry(country)
+
+          const byCurrency = await getAllTierPricingByCurrency(stripe)
+          // Per tier: the back-compat USD summary (`monthly_cents`/`yearly_cents`)
+          // plus the full per-currency floor maps (`monthly`/`yearly`, minor
+          // units). Founding is cut for launch (§5), so no founding_multiple.
+          const tiers = Object.fromEntries(
+            Object.entries(byCurrency).map(([tier, p]) => [
+              tier,
+              {
+                monthly_cents: p.monthly.usd,
+                yearly_cents: p.yearly.usd,
+                monthly: p.monthly,
+                yearly: p.yearly,
+              },
+            ]),
+          )
+
+          json(200, {
+            default_currency: defaultCurrency,
+            currencies: SUPPORTED_CURRENCIES,
+            minor_factors: minorUnitFactors(),
+            tiers,
+          })
         } catch (err) {
           console.error('[pricing] lookup failed:', err)
           json(502, { error: 'Could not load pricing' })

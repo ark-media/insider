@@ -50,7 +50,12 @@ interface EventMap {
   // --- Tier 1: revenue funnel ---
   pricing_viewed: void
   plan_selected: { plan: Plan }
-  custom_amount_entered: { plan: Plan; amount: number; valid: boolean }
+  custom_amount_entered: {
+    plan: Plan
+    amount: number
+    currency: string
+    valid: boolean
+  }
   checkout_opened: {
     plan: Plan
     tier?: Tier

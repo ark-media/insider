@@ -673,3 +673,132 @@ body {
   .draw-rule { transform: scaleX(1); }
   .draw-check { stroke-dashoffset: 0; }
 }
+
+/* ── Pay-what-you-choose amount slider ─────────────────────────────────────
+   The native <input type="range"> restyled to a refined, premium control: a
+   rounded cyan-fill track and a clean circular handle ringed in the surface
+   colour so it lifts off the track. --pct (0–100%, set inline from the
+   component) paints the filled portion up to the thumb. Fully themed via tokens,
+   so it inverts correctly in light mode. */
+.pwyc-slider {
+  --track-h: 0.375rem; /* 6px */
+  --thumb-d: 1.25rem;  /* 20px */
+  --thumb-ring: color-mix(in srgb, var(--color-cyan) 20%, transparent);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: var(--thumb-d);
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+/* Track — WebKit / Blink. The fill is a cyan segment sized by --pct over a
+   faint rule-coloured groove. */
+.pwyc-slider::-webkit-slider-runnable-track {
+  height: var(--track-h);
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--color-cyan), var(--color-cyan)) left center /
+      var(--pct, 0%) 100% no-repeat,
+    var(--color-rule-strong);
+  transition: background-size 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Track — Firefox (progress is a separate element there) */
+.pwyc-slider::-moz-range-track {
+  height: var(--track-h);
+  border-radius: 999px;
+  background: var(--color-rule-strong);
+}
+.pwyc-slider::-moz-range-progress {
+  height: var(--track-h);
+  border-radius: 999px;
+  background: var(--color-cyan);
+}
+
+/* Thumb — a solid cyan disc ringed in the surface colour, with a soft shadow so
+   it reads as a physical handle floating above the track. Shared look
+   duplicated for each engine (vendor pseudo-elements can't be grouped). */
+.pwyc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--thumb-d);
+  height: var(--thumb-d);
+  margin-top: calc((var(--track-h) - var(--thumb-d)) / 2);
+  border-radius: 999px;
+  border: 3px solid var(--color-navy-800);
+  background: var(--color-cyan);
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.4);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pwyc-slider::-moz-range-thumb {
+  width: var(--thumb-d);
+  height: var(--thumb-d);
+  border-radius: 999px;
+  border: 3px solid var(--color-navy-800);
+  background: var(--color-cyan);
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.4);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Tap-to-type amount field auto-sizes to its content via a field-sizing hint
+   where supported, so the big hero number never leaves a long empty caret run. */
+.pwyc-amount-input {
+  field-sizing: content;
+  min-width: 2ch;
+  max-width: 100%;
+}
+/* Trim the native number spinners — the slider is the coarse control. */
+.pwyc-amount-input::-webkit-outer-spin-button,
+.pwyc-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pwyc-amount-input {
+  -moz-appearance: textfield;
+}
+
+/* Hover — a soft cyan halo blooms around the cap */
+.pwyc-slider:hover::-webkit-slider-thumb {
+  box-shadow: 0 2px 8px -1px rgb(0 0 0 / 0.5), 0 0 0 6px var(--thumb-ring);
+}
+.pwyc-slider:hover::-moz-range-thumb {
+  box-shadow: 0 2px 8px -1px rgb(0 0 0 / 0.5), 0 0 0 6px var(--thumb-ring);
+}
+
+/* Active — cap presses in and grabs */
+.pwyc-slider:active { cursor: grabbing; }
+.pwyc-slider:active::-webkit-slider-thumb {
+  transform: scale(1.08);
+  box-shadow: 0 3px 10px -1px rgb(0 0 0 / 0.55), 0 0 0 8px var(--thumb-ring);
+}
+.pwyc-slider:active::-moz-range-thumb {
+  transform: scale(1.08);
+  box-shadow: 0 3px 10px -1px rgb(0 0 0 / 0.55), 0 0 0 8px var(--thumb-ring);
+}
+
+/* Keyboard focus — a crisp cyan ring (native outline is suppressed above) */
+.pwyc-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.45),
+    0 0 0 3px color-mix(in srgb, var(--color-cyan) 55%, transparent);
+}
+.pwyc-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.45),
+    0 0 0 3px color-mix(in srgb, var(--color-cyan) 55%, transparent);
+}
+
+.pwyc-slider:disabled { cursor: not-allowed; opacity: 0.45; }
+.pwyc-slider:disabled::-webkit-slider-thumb { box-shadow: none; }
+.pwyc-slider:disabled::-moz-range-thumb { box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pwyc-slider::-webkit-slider-runnable-track,
+  .pwyc-slider::-webkit-slider-thumb,
+  .pwyc-slider::-moz-range-thumb {
+    transition: none;
+  }
+}

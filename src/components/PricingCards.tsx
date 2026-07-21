@@ -5,12 +5,8 @@ import { ContentError } from "./ContentError";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 import { TIERS, type Tier, type TierMeta } from "../data/pricingTiers";
+import { type TierAmounts, formatMinor, toMajor } from "../lib/currency";
 
-function fmtPrice(dollars: number): string {
-  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
-}
-
-type TierPricing = { monthly_cents: number; yearly_cents: number };
 type Plan = "monthly" | "yearly";
 
 function CheckIcon() {
@@ -34,20 +30,27 @@ function PriceCard({
   meta,
   plan,
   pricing,
+  currency,
+  factor,
   onSubscribe,
 }: {
   meta: TierMeta;
   plan: Plan;
-  pricing: TierPricing | null;
+  pricing: TierAmounts | null;
+  currency: string;
+  factor: number;
   onSubscribe: (tier: Tier) => void;
 }) {
   const featured = Boolean(meta.featured);
 
-  // The floor price. It's a floor, not a fixed price: members choose their
-  // amount (this or more) at checkout, so the card leads with "From $X".
-  const price = pricing
-    ? (plan === "yearly" ? pricing.yearly_cents : pricing.monthly_cents) / 100
+  // The floor price in the buyer's currency (minor units). It's a floor, not a
+  // fixed price: members choose their amount (this or more) at checkout, so the
+  // card leads with "From <price>".
+  const priceMinor = pricing
+    ? ((plan === "yearly" ? pricing.yearly : pricing.monthly)[currency] ?? null)
     : null;
+  // The annual-savings ratio is currency-invariant, so compute it off the USD
+  // amounts (always present).
   const savingsPct = pricing
     ? Math.round((1 - pricing.yearly_cents / (pricing.monthly_cents * 12)) * 100)
     : null;
@@ -74,8 +77,8 @@ function PriceCard({
         <div className="flex items-baseline gap-2 text-fg-strong">
           <span className="text-body-sm">From</span>
           <span className="display-upright text-[clamp(2.4rem,5vw,3rem)] leading-none">
-            {price !== null ? (
-              `$${fmtPrice(price)}`
+            {priceMinor !== null ? (
+              formatMinor(priceMinor, currency, factor)
             ) : (
               <span className="inline-block h-[0.7em] w-20 animate-pulse rounded bg-rule-strong/40 align-middle" />
             )}
@@ -113,12 +116,12 @@ function PriceCard({
           trackEvent("checkout_opened", {
             plan,
             tier: meta.key,
-            amount: price,
+            amount: priceMinor !== null ? toMajor(priceMinor, factor) : null,
             is_custom_amount: false,
           });
           onSubscribe(meta.key);
         }}
-        disabled={price === null}
+        disabled={priceMinor === null}
         className={`group mt-7 inline-flex min-h-12 w-full items-center justify-between px-5 button-text font-display font-bold tracking-cta transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 ${
           featured
             ? "bg-cyan text-navy hover:bg-fg-strong hover:text-navy-900 disabled:hover:bg-cyan disabled:hover:text-navy"
@@ -175,7 +178,9 @@ export function PricingCards({
     const res = await fetch("/api/pricing");
     if (!res.ok) throw new Error("pricing request failed");
     const data = (await res.json().catch(() => ({}))) as {
-      tiers?: Record<string, TierPricing>;
+      tiers?: Record<string, TierAmounts>;
+      default_currency?: string;
+      minor_factors?: Record<string, number>;
     };
     const tiers = data.tiers;
     if (
@@ -188,9 +193,16 @@ export function PricingCards({
     ) {
       throw new Error("pricing response malformed");
     }
-    return tiers;
+    // Geo-detected default currency for the cards (no selector here — the
+    // checkout modal owns currency choice); USD fallback.
+    const currency = data.default_currency ?? "usd";
+    const factor = data.minor_factors?.[currency] ?? 100;
+    return { tiers, currency, factor };
   }, []);
-  const tiers = pricing.status === "ready" ? pricing.data : null;
+  const data = pricing.status === "ready" ? pricing.data : null;
+  const tiers = data?.tiers ?? null;
+  const currency = data?.currency ?? "usd";
+  const factor = data?.factor ?? 100;
 
   // Representative savings for the toggle badge — the Bundle's annual discount.
   const toggleSavings = tiers
@@ -257,6 +269,8 @@ export function PricingCards({
             meta={meta}
             plan={plan}
             pricing={tiers ? tiers[meta.key] : null}
+            currency={currency}
+            factor={factor}
             onSubscribe={(tier) => setCheckout({ tier })}
           />
         ))}

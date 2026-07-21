@@ -136,7 +136,8 @@ export async function getPlanPriceCents(
 
 export type TierPricing = { monthly_cents: number; yearly_cents: number }
 
-// All sellable tiers, each with both plan amounts. Used by /api/pricing.
+// All sellable tiers, each with both plan amounts (USD cents). Used by
+// /api/pricing for the back-compat USD summary.
 export async function getAllTierPricing(
   stripe: Stripe,
 ): Promise<Record<PricedTier, TierPricing>> {
@@ -151,4 +152,37 @@ export async function getAllTierPricing(
     }),
   )
   return Object.fromEntries(entries) as Record<PricedTier, TierPricing>
+}
+
+// Per-currency floors (minor units) for every tier+plan — the data the
+// currency-aware client renders and sends. `floors` already carries the whole
+// supported-currency set from currency_options, so this is a straight fan-out.
+export type TierPricingByCurrency = {
+  monthly: Record<SupportedCurrency, number>
+  yearly: Record<SupportedCurrency, number>
+}
+
+export async function getAllTierPricingByCurrency(
+  stripe: Stripe,
+): Promise<Record<PricedTier, TierPricingByCurrency>> {
+  const tiers = Object.keys(LOOKUP_PREFIX) as PricedTier[]
+  const entries = await Promise.all(
+    tiers.map(async (tier) => {
+      const [monthly, yearly] = await Promise.all([
+        resolveCatalogPrice(stripe, tier, 'monthly'),
+        resolveCatalogPrice(stripe, tier, 'yearly'),
+      ])
+      return [tier, { monthly: monthly.floors, yearly: yearly.floors }] as const
+    }),
+  )
+  return Object.fromEntries(entries) as Record<PricedTier, TierPricingByCurrency>
+}
+
+// The minor-unit factor per supported currency (100 for two-decimal, 1 for
+// zero-decimal). Sent to the client so it converts entered amounts → minor
+// units without duplicating Stripe's zero-decimal list.
+export function minorUnitFactors(): Record<SupportedCurrency, number> {
+  return Object.fromEntries(
+    SUPPORTED_CURRENCIES.map((c) => [c, minorUnitDivisor(c)]),
+  ) as Record<SupportedCurrency, number>
 }

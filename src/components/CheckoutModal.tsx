@@ -3,7 +3,6 @@ import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
   BillingAddressElement,
   CheckoutElementsProvider,
-  CurrencySelectorElement,
   PaymentElement,
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
@@ -11,18 +10,74 @@ import { Modal } from "./Modal";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
+import {
+  type PricingResponse,
+  currencySymbol,
+  decimalsForFactor,
+  formatMajor,
+  toMajor,
+  toMinor,
+} from "../lib/currency";
 
 type Plan = "monthly" | "yearly";
 type Tier = "ark-plus" | "circle" | "bundle";
 
-function fmtPrice(dollars: number): string {
-  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+// The slider's drag ceiling and the typed safety cap are expressed as multiples
+// of the plan's floor so they hold in any currency (a fixed "$3,600" is
+// meaningless in ¥ or ₪). SLIDER_MAX = the top of the *drag range* (not a hard
+// cap — the field accepts up to INPUT_MAX beyond it). ~27× the floor mirrors the
+// old $130 → $3,600 USD range; ~400× mirrors the old $50k typed ceiling.
+const SLIDER_MAX_MULTIPLE = 27;
+const INPUT_MAX_MULTIPLE = 400;
+
+// Almost every gift lands near the floor, so a linear track would waste ~90% of
+// its travel. We map the thumb's 0–1 position through a power curve: the low end
+// gets most of the track (fine control where it matters) while the top stays
+// reachable. Snapping keeps the chosen figure clean.
+const SLIDER_STEPS = 1000;
+const SLIDER_CURVE = 2.4;
+
+// A "nice" increment (1/2/5 × 10ⁿ) near `x`, so snap steps read cleanly across
+// magnitudes: ~$5 for a $130 floor, ~¥1,000 for a ¥21k floor, ~₪20 for ₪486.
+function niceNumber(x: number): number {
+  if (x <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(x)));
+  const norm = x / mag;
+  const nice = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return nice * mag;
 }
 
-// Pay-what-you-choose ceiling for the slider, as a multiple of the plan's floor
-// price. The typed field still accepts more (the server caps well above this) —
-// this only bounds the drag range.
-const SLIDER_MAX_MULTIPLE = 4;
+// The snap step for a given floor + currency: ~1/26 of the floor rounded to a
+// nice increment (so $130 → $5), never below one whole currency unit.
+function snapStep(floorMajor: number, factor: number): number {
+  const minStep = decimalsForFactor(factor) === 0 ? 1 : 1;
+  return Math.max(minStep, niceNumber(floorMajor / 26));
+}
+
+// Thumb position (0–SLIDER_STEPS) → major-unit amount, along the eased curve,
+// snapped to a clean step. Endpoints stay exact (floor at 0, max at 1).
+function amountFromPos(
+  pos: number,
+  floor: number,
+  max: number,
+  step: number,
+): number {
+  const t = pos / SLIDER_STEPS;
+  if (t <= 0) return floor;
+  if (t >= 1) return max;
+  const raw = floor + (max - floor) * Math.pow(t, SLIDER_CURVE);
+  const snapped = Math.round(raw / step) * step;
+  return Math.min(max, Math.max(floor, snapped));
+}
+
+// Major-unit amount → thumb position (inverse of the curve), for rendering the
+// thumb + fill from the current amount.
+function posFromAmount(amount: number, floor: number, max: number): number {
+  if (max <= floor) return 0;
+  const clamped = Math.min(max, Math.max(floor, amount));
+  const t = Math.pow((clamped - floor) / (max - floor), 1 / SLIDER_CURVE);
+  return Math.round(t * SLIDER_STEPS);
+}
 
 // The SKU label shown in the modal chrome. Checkout derives entitlements from
 // the tier's catalog product server-side; this is copy only.
@@ -189,16 +244,24 @@ export function CheckoutModal({
   // after an error rather than asking the buyer to retype it.
   const [lastEmail, setLastEmail] = useState("");
   const [promo, setPromo] = useState<PromoInfo | null>(null);
-  // The tier+plan floor (USD cents), fetched on open — the slider's minimum and
-  // the amount checkout charges if the buyer doesn't raise it. Pay-what-you-
-  // choose now lives on this screen (moved off the pricing cards), so the modal
-  // owns the price it needs rather than receiving a pre-chosen amount.
-  const [floorCents, setFloorCents] = useState<number | null>(null);
+  // Per-currency pricing, fetched on open — the slider's floor and the amount
+  // checkout charges. Pay-what-you-choose lives on this screen, so the modal
+  // owns the price it needs. `currency` is the presentment/charge currency:
+  // seeded from the geo-detected default, changeable via the selector.
+  const [pricing, setPricing] = useState<PricingResponse | null>(null);
+  const [currency, setCurrency] = useState<string>("usd");
   // Whether the buyer raised the amount above the floor — read at the bottom of
   // the funnel (after the session is gone) for the checkout_succeeded event.
   const customAmountRef = useRef<number | null>(null);
   const { refresh, signIn } = useSubscriberAuth();
   const { theme } = useTheme();
+
+  // The tier+plan floor in the selected currency (minor units) and that
+  // currency's minor-unit factor — everything the slider/hero needs.
+  const tierAmounts = pricing?.tiers[tier];
+  const floorMinor =
+    tierAmounts?.[plan === "yearly" ? "yearly" : "monthly"]?.[currency] ?? null;
+  const factor = pricing?.minor_factors[currency] ?? 100;
 
   const handleClose = useCallback(() => {
     setStep(
@@ -212,7 +275,8 @@ export function CheckoutModal({
     );
     setLastEmail("");
     setPromo(null);
-    setFloorCents(null);
+    setPricing(null);
+    setCurrency("usd");
     customAmountRef.current = null;
     onClose();
   }, [onClose]);
@@ -254,10 +318,12 @@ export function CheckoutModal({
     };
   }, [open, plan]);
 
-  // Fetch the floor for this tier+plan so the pay-what-you-choose slider knows
-  // its minimum. Prices come from /api/pricing (Stripe, the source of truth) —
-  // never hardcoded. While it loads the slider stays disabled; a failure leaves
-  // it disabled and the buyer simply checks out at the floor.
+  // Fetch per-currency pricing on open so the slider knows its floor and the
+  // buyer sees their local currency. Prices come from /api/pricing (Stripe, the
+  // source of truth) — never hardcoded. The response carries a geo-detected
+  // default currency; we seed the selector with it. While it loads the slider
+  // stays disabled; a failure leaves it disabled and the buyer checks out at
+  // the floor in USD.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -265,15 +331,12 @@ export function CheckoutModal({
       try {
         const res = await fetch("/api/pricing");
         if (!res.ok) return;
-        const data = (await res.json().catch(() => ({}))) as {
-          tiers?: Record<
-            string,
-            { monthly_cents?: number; yearly_cents?: number }
-          >;
-        };
-        const t = data.tiers?.[tier];
-        const cents = plan === "yearly" ? t?.yearly_cents : t?.monthly_cents;
-        if (!cancelled && typeof cents === "number") setFloorCents(cents);
+        const data = (await res.json().catch(() => null)) as PricingResponse | null;
+        if (cancelled || !data?.tiers) return;
+        setPricing(data);
+        if (typeof data.default_currency === "string") {
+          setCurrency(data.default_currency);
+        }
       } catch {
         /* non-fatal: buyer checks out at the floor */
       }
@@ -281,16 +344,23 @@ export function CheckoutModal({
     return () => {
       cancelled = true;
     };
-  }, [open, tier, plan]);
+  }, [open]);
 
   const submitEmail = useCallback(
-    async (email: string, customAmount: number | null) => {
+    // customAmountMinor is already in the selected currency's minor units (the
+    // slider/field converts via the currency factor), or null to charge the
+    // floor. currency is the presentment/charge currency.
+    async (
+      email: string,
+      customAmountMinor: number | null,
+      selectedCurrency: string,
+    ) => {
       setLastEmail(email);
-      customAmountRef.current = customAmount;
+      customAmountRef.current = customAmountMinor;
       trackEvent("checkout_email_submitted", {
         plan,
         tier,
-        is_custom_amount: customAmount !== null,
+        is_custom_amount: customAmountMinor !== null,
       });
       setStep({ kind: "creating" });
       try {
@@ -301,10 +371,8 @@ export function CheckoutModal({
             email,
             plan,
             tier,
-            custom_amount_cents:
-              customAmount !== null
-                ? Math.round(customAmount * 100)
-                : undefined,
+            currency: selectedCurrency,
+            custom_amount_cents: customAmountMinor ?? undefined,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as {
@@ -390,7 +458,11 @@ export function CheckoutModal({
           plan={plan}
           initialEmail={lastEmail}
           promo={promo}
-          floorCents={floorCents}
+          floorMinor={floorMinor}
+          currency={currency}
+          factor={factor}
+          currencies={pricing?.currencies ?? null}
+          onCurrencyChange={setCurrency}
           onSubmit={submitEmail}
         />
       ) : null}
@@ -415,9 +487,9 @@ export function CheckoutModal({
                 labels: "floating",
               },
             },
-            // Mark this integration as ready for Adaptive Pricing; Stripe then
-            // localizes the currency and powers the Currency Selector Element.
-            adaptivePricing: { allowed: true },
+            // Currency is fixed on the Session server-side (from currency_options,
+            // per §7 #4) — no Adaptive Pricing / CurrencySelectorElement here; the
+            // buyer chose their currency before the Session was created.
           }}
         >
           <CheckoutForm
@@ -571,45 +643,101 @@ function EmailForm({
   plan,
   initialEmail,
   promo,
-  floorCents,
+  floorMinor,
+  currency,
+  factor,
+  currencies,
+  onCurrencyChange,
   onSubmit,
 }: {
   plan: Plan;
   initialEmail: string;
   promo: PromoInfo | null;
-  floorCents: number | null;
-  onSubmit: (email: string, customAmount: number | null) => void | Promise<void>;
+  floorMinor: number | null;
+  currency: string;
+  factor: number;
+  currencies: string[] | null;
+  onCurrencyChange: (currency: string) => void;
+  onSubmit: (
+    email: string,
+    customAmountMinor: number | null,
+    currency: string,
+  ) => void | Promise<void>;
 }) {
   const [email, setEmail] = useState(initialEmail);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  // The chosen amount lives here as a string in MAJOR units of the selected
+  // currency ("" = give the floor / catalog price). Slider + tap-to-type write it.
   const [customAmount, setCustomAmount] = useState("");
+  // Tap-to-type: while editing, the hero amount becomes an input backed by this
+  // draft so the slider doesn't twitch on every keystroke — it commits on blur.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
   const intervalLabel = plan === "yearly" ? "year" : "month";
   const shortInterval = plan === "yearly" ? "yr" : "mo";
 
-  // The floor is what we charge if the buyer doesn't raise it. Pay-what-you-
-  // choose lets them give more, never less; the leftmost slider stop maps back
-  // to the exact floor so the standard price stays reachable.
-  const price = floorCents !== null ? floorCents / 100 : null;
-  const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
-  const customValid =
-    parsedCustom !== null &&
-    Number.isFinite(parsedCustom) &&
-    price !== null &&
-    parsedCustom >= price;
-  const amount = customValid ? (parsedCustom as number) : price;
-  const belowMin =
-    parsedCustom !== null &&
-    Number.isFinite(parsedCustom) &&
-    price !== null &&
-    parsedCustom < price;
+  // Switching currency resets the chosen amount to the new floor — a raw number
+  // carried across currencies is meaningless (300 USD ≠ 300 JPY).
+  useEffect(() => {
+    setCustomAmount("");
+    setEditing(false);
+  }, [currency]);
 
-  const sliderMin = price !== null ? Math.ceil(price) : 0;
-  const sliderMax = price !== null ? Math.round(price * SLIDER_MAX_MULTIPLE) : 0;
-  const sliderValue =
-    amount !== null
-      ? Math.min(Math.max(Math.round(amount), sliderMin), sliderMax)
-      : sliderMin;
+  // Everything below works in MAJOR units of the selected currency. The floor is
+  // what we charge if the buyer doesn't raise it; the slider drags up to
+  // sliderMax (the common range) and the field accepts up to inputMax (an
+  // effectively-unlimited safety ceiling) — both scaled off the floor so they
+  // hold in any currency. The effective amount is clamped into [floor, inputMax],
+  // so a sub-floor entry snaps up and anything above sliderMax pegs the thumb.
+  const floorMajor = floorMinor !== null ? toMajor(floorMinor, factor) : null;
+  const decimals = decimalsForFactor(factor);
+  const sliderMaxMajor = floorMajor !== null ? floorMajor * SLIDER_MAX_MULTIPLE : 0;
+  const inputMaxMajor = floorMajor !== null ? floorMajor * INPUT_MAX_MULTIPLE : 0;
+  const step = floorMajor !== null ? snapStep(floorMajor, factor) : 1;
+
+  const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
+  const effectiveAmount =
+    floorMajor === null
+      ? null
+      : parsedCustom !== null && Number.isFinite(parsedCustom)
+        ? Math.min(inputMaxMajor, Math.max(floorMajor, parsedCustom))
+        : floorMajor;
+  // Custom = strictly above the floor. At/below the floor we hand checkout the
+  // fixed catalog price (null) rather than an equal custom amount.
+  const isCustom =
+    effectiveAmount !== null && floorMajor !== null && effectiveAmount > floorMajor;
+
+  // Thumb position + fill %, derived from the amount via the eased curve. Above
+  // sliderMax the thumb pegs at the far right (posFromAmount clamps).
+  const sliderPos =
+    floorMajor !== null && effectiveAmount !== null
+      ? posFromAmount(effectiveAmount, floorMajor, sliderMaxMajor)
+      : 0;
+  const sliderPct = (sliderPos / SLIDER_STEPS) * 100;
+
+  const roundMajor = (v: number) =>
+    decimals === 0 ? Math.round(v) : Math.round(v * 100) / 100;
+
+  const commitDraft = () => {
+    setEditing(false);
+    const n = Number(draft);
+    if (draft.trim() === "" || !Number.isFinite(n) || floorMajor === null) return;
+    const clean = roundMajor(Math.min(inputMaxMajor, Math.max(floorMajor, n)));
+    setCustomAmount(clean <= floorMajor ? "" : String(clean));
+    trackEvent("custom_amount_entered", {
+      plan,
+      amount: clean,
+      currency,
+      valid: clean > floorMajor,
+    });
+  };
+
+  const startEdit = () => {
+    if (floorMajor === null) return;
+    setDraft(effectiveAmount !== null ? String(effectiveAmount) : "");
+    setEditing(true);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -620,13 +748,16 @@ function EmailForm({
       setError("Please enter a valid email.");
       return;
     }
-    if (belowMin) return;
     setError(null);
     setWorking(true);
     try {
-      // A valid raised amount checks out at that figure; otherwise the floor
-      // (null hands checkout the fixed catalog price).
-      await onSubmit(trimmed, customValid ? (parsedCustom as number) : null);
+      // A raised amount checks out at that figure (converted to minor units);
+      // the floor hands checkout the fixed catalog price (null).
+      await onSubmit(
+        trimmed,
+        isCustom && effectiveAmount !== null ? toMinor(effectiveAmount, factor) : null,
+        currency,
+      );
     } finally {
       setWorking(false);
     }
@@ -643,81 +774,150 @@ function EmailForm({
       {promo ? <PromoBanner promo={promo} /> : null}
 
       {/* Pay what you choose — the floor is the minimum; give more to sustain
-          independent Jewish media. Drag for the shape, type for the exact
-          figure. Disabled until the floor loads. */}
+          independent Jewish media. The chosen figure is the hero; tap it to
+          type an exact amount, or drag the slider. A currency selector (seeded
+          from the buyer's locale) sits alongside. Disabled until the floor
+          loads. */}
       <div className="mt-6 border-t border-rule pt-5">
-        <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-center justify-between gap-3">
           <span className="eyebrow text-fg-muted">Choose your amount</span>
-          <span className="text-body-sm text-fg-strong">
-            {amount !== null ? `$${fmtPrice(amount)}` : ""}
-            <span className="text-fg-muted">/{shortInterval}</span>
-          </span>
+          {currencies && currencies.length > 1 ? (
+            <label className="shrink-0">
+              <span className="sr-only">Currency</span>
+              <select
+                value={currency}
+                disabled={floorMajor === null}
+                onChange={(e) => onCurrencyChange(e.target.value)}
+                className="border border-rule-strong bg-transparent px-2 py-1 text-body-sm text-fg-strong outline-none transition focus:border-cyan disabled:opacity-50"
+              >
+                {currencies.map((c) => (
+                  <option key={c} value={c} className="text-navy">
+                    {c.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
-        <div className="mt-3 flex items-center gap-3">
-          <input
-            type="range"
-            aria-label={`Amount per ${intervalLabel}`}
-            min={sliderMin}
-            max={sliderMax}
-            step={1}
-            value={sliderValue}
-            disabled={price === null}
-            onChange={(e) => {
-              // The leftmost stop is the floor itself; clearing to "" hands
-              // checkout the fixed catalog price. Every other stop is its own
-              // whole-dollar custom amount.
-              const v = Number(e.target.value);
-              setCustomAmount(v <= sliderMin ? "" : String(v));
-            }}
-            onBlur={() => {
-              if (amount === null) return;
-              trackEvent("custom_amount_entered", {
-                plan,
-                amount,
-                valid: customValid,
-              });
-            }}
-            className="h-9 min-w-0 flex-1 cursor-pointer bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ accentColor: "var(--color-cyan)" }}
-          />
-          <div className="flex w-28 shrink-0 items-center border-b border-rule-strong pb-1.5 focus-within:border-cyan">
-            <span className="mr-1 text-lg text-fg-muted">$</span>
-            <input
-              type="number"
-              aria-label="Custom amount"
-              min={price ?? undefined}
-              step="any"
-              value={customAmount}
-              disabled={price === null}
-              onChange={(e) => setCustomAmount(e.target.value)}
-              onBlur={() => {
-                if (parsedCustom === null || !Number.isFinite(parsedCustom))
-                  return;
-                trackEvent("custom_amount_entered", {
-                  plan,
-                  amount: parsedCustom,
-                  valid: customValid,
-                });
-              }}
-              placeholder={price !== null ? fmtPrice(price) : ""}
-              className="min-w-0 flex-1 bg-transparent text-lg text-fg-strong outline-none placeholder:text-fg-placeholder disabled:opacity-50"
-            />
-            <span className="ml-1 shrink-0 whitespace-nowrap text-body-sm">
-              /{shortInterval}
-            </span>
+
+        {/* Hero amount — the focal point. Tap to type an exact figure. */}
+        <div className="mt-3 flex items-baseline gap-2">
+          {editing ? (
+            <>
+              <span className="display-upright text-[clamp(2.25rem,8vw,3rem)] leading-none text-fg-strong">
+                {currencySymbol(currency)}
+              </span>
+              <input
+                type="number"
+                inputMode="decimal"
+                aria-label={`Amount per ${intervalLabel}`}
+                autoFocus
+                min={floorMajor ?? undefined}
+                max={inputMaxMajor}
+                step={decimals === 0 ? 1 : "any"}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                onBlur={commitDraft}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitDraft();
+                  } else if (e.key === "Escape") {
+                    setEditing(false);
+                  }
+                }}
+                className="pwyc-amount-input display-upright min-w-0 bg-transparent text-[clamp(2.25rem,8vw,3rem)] leading-none text-fg-strong outline-none"
+              />
+              <span className="text-lg text-fg-muted">/{shortInterval}</span>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={startEdit}
+              disabled={floorMajor === null}
+              className="group inline-flex items-baseline gap-2 rounded-sm text-left outline-none transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
+              aria-label={
+                effectiveAmount !== null
+                  ? `Amount: ${formatMajor(effectiveAmount, currency)} per ${intervalLabel}. Tap to type an exact figure.`
+                  : "Amount, tap to type"
+              }
+            >
+              <span className="display-upright text-[clamp(2.25rem,8vw,3rem)] leading-none text-fg-strong tabular-nums">
+                {effectiveAmount !== null
+                  ? formatMajor(effectiveAmount, currency)
+                  : "—"}
+              </span>
+              <span className="text-lg text-fg-muted">/{shortInterval}</span>
+              {/* Pencil affordance — signals the amount is editable. */}
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4 shrink-0 self-center text-fg-faint transition group-hover:text-cyan"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <input
+          type="range"
+          aria-label={`Amount per ${intervalLabel}`}
+          aria-valuetext={
+            effectiveAmount !== null
+              ? `${formatMajor(effectiveAmount, currency)} per ${intervalLabel}`
+              : undefined
+          }
+          min={0}
+          max={SLIDER_STEPS}
+          step={1}
+          value={sliderPos}
+          disabled={floorMajor === null}
+          onChange={(e) => {
+            if (floorMajor === null) return;
+            const a = amountFromPos(
+              Number(e.target.value),
+              floorMajor,
+              sliderMaxMajor,
+              step,
+            );
+            // The leftmost stop maps back to the floor; clearing to "" hands
+            // checkout the fixed catalog price.
+            setCustomAmount(a <= floorMajor ? "" : String(a));
+          }}
+          onBlur={() => {
+            if (effectiveAmount === null) return;
+            trackEvent("custom_amount_entered", {
+              plan,
+              amount: effectiveAmount,
+              currency,
+              valid: isCustom,
+            });
+          }}
+          className="pwyc-slider mt-5 w-full"
+          style={{ "--pct": `${sliderPct}%` } as React.CSSProperties}
+        />
+
+        {/* Floor label only — we intentionally don't advertise a maximum, since
+            the amount field accepts more than the slider's drag range. */}
+        {floorMajor !== null ? (
+          <div className="mt-2 text-xs tabular-nums text-fg-faint">
+            {formatMajor(floorMajor, currency)} minimum
           </div>
-        </div>
-        {belowMin ? (
-          <p className="mt-2 text-body-sm text-danger" role="alert">
-            Minimum is ${price !== null ? fmtPrice(price) : ""}/{shortInterval}.
-          </p>
-        ) : (
-          <p className="mt-2 text-body-sm">
-            {price !== null
-              ? `From $${fmtPrice(price)}/${shortInterval} — give more to sustain independent Jewish media.`
-              : "Loading price…"}
-          </p>
-        )}
+        ) : null}
+
+        <p className="mt-3 text-body-sm">
+          {floorMajor !== null
+            ? "Give more to sustain independent Jewish media."
+            : "Loading price…"}
+        </p>
       </div>
 
       <form onSubmit={submit} className="mt-6 space-y-4">
@@ -740,7 +940,7 @@ function EmailForm({
         ) : null}
         <button
           type="submit"
-          disabled={working || belowMin}
+          disabled={working}
           aria-busy={working}
           className={ctaClass}
         >
@@ -877,12 +1077,6 @@ function CheckoutForm({
       {promo ? <PromoBanner promo={promo} /> : null}
 
       <form onSubmit={pay} className="mt-6 space-y-4">
-        <div>
-          <span className="eyebrow text-fg-muted">Pay in</span>
-          <div className="mt-2">
-            <CurrencySelectorElement />
-          </div>
-        </div>
         <PaymentElement />
         {/* Billing address powers Stripe Tax: the calculated tax updates the
             totals below as soon as a usable address is entered. */}

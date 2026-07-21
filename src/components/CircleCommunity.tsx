@@ -4,11 +4,7 @@ import { CheckoutModal } from "./CheckoutModal";
 import { ContentError } from "./ContentError";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
-
-function fmtPrice(cents: number): string {
-  const dollars = cents / 100;
-  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
-}
+import { formatMinor } from "../lib/currency";
 
 const pillars = [
   {
@@ -42,13 +38,17 @@ export function CircleCommunity() {
     const res = await fetch("/api/pricing");
     if (!res.ok) throw new Error("pricing request failed");
     const data = (await res.json().catch(() => ({}))) as {
-      tiers?: { circle?: { monthly_cents?: number } };
+      tiers?: { circle?: { monthly?: Record<string, number> } };
+      default_currency?: string;
+      minor_factors?: Record<string, number>;
     };
-    const cents = data.tiers?.circle?.monthly_cents;
-    if (typeof cents !== "number") throw new Error("pricing response malformed");
-    return { monthlyCents: cents };
+    const currency = data.default_currency ?? "usd";
+    const minor = data.tiers?.circle?.monthly?.[currency];
+    if (typeof minor !== "number") throw new Error("pricing response malformed");
+    const factor = data.minor_factors?.[currency] ?? 100;
+    return { monthlyMinor: minor, currency, factor };
   }, []);
-  const monthlyCents = pricing.data?.monthlyCents ?? null;
+  const monthly = pricing.data ?? null;
 
   return (
     <section id="community" className="relative border-t border-rule-soft">
@@ -84,8 +84,8 @@ export function CircleCommunity() {
               <>
                 <div className="mt-8 flex items-baseline gap-2 text-fg-strong">
                   <span className="display-upright text-[clamp(2.6rem,5vw,3.6rem)] leading-none">
-                    {monthlyCents !== null ? (
-                      `$${fmtPrice(monthlyCents)}`
+                    {monthly !== null ? (
+                      formatMinor(monthly.monthlyMinor, monthly.currency, monthly.factor)
                     ) : (
                       <span className="inline-block h-[0.7em] w-16 animate-pulse rounded bg-rule-strong/40 align-middle" />
                     )}
@@ -99,7 +99,7 @@ export function CircleCommunity() {
                     trackEvent("circle_join_clicked");
                     setCheckoutOpen(true);
                   }}
-                  disabled={monthlyCents === null}
+                  disabled={monthly === null}
                   className="group mt-6 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:gap-8"
                 >
                   Join the community
