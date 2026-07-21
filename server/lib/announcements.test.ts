@@ -36,13 +36,13 @@ describe('sanitizeAnnouncementBody', () => {
 })
 
 describe('isHexColor', () => {
-  test('accepts #rrggbb', () => {
-    expect(isHexColor('#4a9fe8')).toBe(true)
-    expect(isHexColor('#FFFFFF')).toBe(true)
-  })
-  test('rejects shorthand and names', () => {
-    expect(isHexColor('#fff')).toBe(false)
-    expect(isHexColor('blue')).toBe(false)
+  test.each<[string, boolean]>([
+    ['#4a9fe8', true],
+    ['#FFFFFF', true],
+    ['#fff', false],
+    ['blue', false],
+  ])('%s → %s', (input, expected) => {
+    expect(isHexColor(input)).toBe(expected)
   })
 })
 

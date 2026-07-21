@@ -24,21 +24,17 @@ const retention = (over: Partial<RetentionCouponLike>) =>
   coupon({ metadata: { retention_offer: 'true' }, ...over })
 
 describe('isRetentionCoupon', () => {
-  test('true only when valid and metadata.retention_offer is truthy', () => {
-    expect(isRetentionCoupon(coupon({ metadata: { retention_offer: 'true' } }))).toBe(true)
-    expect(
-      isRetentionCoupon(coupon({ valid: false, metadata: { retention_offer: 'true' } })),
-    ).toBe(false)
-    expect(isRetentionCoupon(coupon({ metadata: { retention_offer: 'false' } }))).toBe(false)
-    expect(isRetentionCoupon(coupon({ metadata: {} }))).toBe(false)
-    expect(isRetentionCoupon(coupon({ metadata: null }))).toBe(false)
-  })
-  test('is case-insensitive', () => {
-    expect(isRetentionCoupon(coupon({ metadata: { retention_offer: 'True' } }))).toBe(true)
-    expect(isRetentionCoupon(coupon({ metadata: { retention_offer: 'TRUE' } }))).toBe(true)
-  })
-  test('checkout auto_apply flag does not make a retention coupon', () => {
-    expect(isRetentionCoupon(coupon({ metadata: { auto_apply: 'true' } }))).toBe(false)
+  test.each<[string, Partial<RetentionCouponLike>, boolean]>([
+    ['valid + retention_offer truthy', { metadata: { retention_offer: 'true' } }, true],
+    ['invalid coupon is never a retention coupon', { valid: false, metadata: { retention_offer: 'true' } }, false],
+    ['retention_offer explicitly false', { metadata: { retention_offer: 'false' } }, false],
+    ['no retention_offer key', { metadata: {} }, false],
+    ['null metadata', { metadata: null }, false],
+    ['case-insensitive: True', { metadata: { retention_offer: 'True' } }, true],
+    ['case-insensitive: TRUE', { metadata: { retention_offer: 'TRUE' } }, true],
+    ['checkout auto_apply flag is not retention', { metadata: { auto_apply: 'true' } }, false],
+  ])('%s', (_label, over, expected) => {
+    expect(isRetentionCoupon(coupon(over))).toBe(expected)
   })
 })
 

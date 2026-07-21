@@ -218,39 +218,13 @@ describe('projectBeehiivPost', () => {
 })
 
 describe('isPublishedBeehiivPost', () => {
-  test('accepts confirmed posts with a publish_date', () => {
-    expect(
-      isPublishedBeehiivPost({
-        id: 'post_a',
-        status: 'confirmed',
-        publish_date: 1714161600,
-      }),
-    ).toBe(true)
-  })
-  test('rejects drafts', () => {
-    expect(
-      isPublishedBeehiivPost({
-        id: 'post_a',
-        status: 'draft',
-        publish_date: 1714161600,
-      }),
-    ).toBe(false)
-  })
-  test('rejects scheduled posts', () => {
-    expect(
-      isPublishedBeehiivPost({
-        id: 'post_a',
-        status: 'scheduled',
-        publish_date: 1714161600,
-      }),
-    ).toBe(false)
-  })
-  test('rejects posts with no id or date', () => {
-    expect(
-      isPublishedBeehiivPost({ status: 'confirmed', publish_date: 1714161600 }),
-    ).toBe(false)
-    expect(isPublishedBeehiivPost({ id: 'post_a', status: 'confirmed' })).toBe(
-      false,
-    )
+  test.each<[string, BeehiivPost, boolean]>([
+    ['accepts confirmed posts with a publish_date', { id: 'post_a', status: 'confirmed', publish_date: 1714161600 }, true],
+    ['rejects drafts', { id: 'post_a', status: 'draft', publish_date: 1714161600 }, false],
+    ['rejects scheduled posts', { id: 'post_a', status: 'scheduled', publish_date: 1714161600 }, false],
+    ['rejects posts with no id', { status: 'confirmed', publish_date: 1714161600 }, false],
+    ['rejects posts with no publish_date', { id: 'post_a', status: 'confirmed' }, false],
+  ])('%s', (_name, post, expected) => {
+    expect(isPublishedBeehiivPost(post)).toBe(expected)
   })
 })

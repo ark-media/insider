@@ -37,29 +37,15 @@ function makeRes() {
 }
 
 describe('readCookie', () => {
-  test('parses single cookie', () => {
-    expect(readCookie(makeReq('ark_checkout=abc'), 'ark_checkout')).toBe('abc')
-  })
-
-  test('parses one cookie from a multi-value header', () => {
-    const req = makeReq('foo=1; ark_checkout=xyz; bar=baz')
-    expect(readCookie(req, 'ark_checkout')).toBe('xyz')
-  })
-
-  test('returns null when cookie header is absent', () => {
-    expect(readCookie(makeReq(), 'ark_checkout')).toBeNull()
-  })
-
-  test('returns null when key is missing', () => {
-    expect(readCookie(makeReq('foo=1'), 'ark_checkout')).toBeNull()
-  })
-
-  test('trims surrounding whitespace', () => {
-    expect(readCookie(makeReq('  ark_checkout = abc '), 'ark_checkout')).toBe('abc')
-  })
-
-  test('does not partial-match cookie name', () => {
-    expect(readCookie(makeReq('ark_checkout_present=1'), 'ark_checkout')).toBeNull()
+  test.each<[string, string | undefined, string | null]>([
+    ['parses single cookie', 'ark_checkout=abc', 'abc'],
+    ['parses one cookie from a multi-value header', 'foo=1; ark_checkout=xyz; bar=baz', 'xyz'],
+    ['returns null when cookie header is absent', undefined, null],
+    ['returns null when key is missing', 'foo=1', null],
+    ['trims surrounding whitespace', '  ark_checkout = abc ', 'abc'],
+    ['does not partial-match cookie name', 'ark_checkout_present=1', null],
+  ])('%s', (_name, header, expected) => {
+    expect(readCookie(makeReq(header), 'ark_checkout')).toBe(expected)
   })
 })
 

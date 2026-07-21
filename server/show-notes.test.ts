@@ -132,33 +132,13 @@ describe('projectScEpisode', () => {
 })
 
 describe('isPublishedEpisode', () => {
-  test('keeps published episodes with id and published_at', () => {
-    expect(
-      isPublishedEpisode({
-        id: 'ep-1',
-        published_at: '2026-04-27T13:00:00.000Z',
-        is_published: true,
-      }),
-    ).toBe(true)
-  })
-
-  test('drops drafts (is_published: false)', () => {
-    expect(
-      isPublishedEpisode({
-        id: 'ep-1',
-        published_at: '2026-04-27T13:00:00.000Z',
-        is_published: false,
-      }),
-    ).toBe(false)
-  })
-
-  test('drops episodes with no published_at (scheduled)', () => {
-    expect(isPublishedEpisode({ id: 'ep-1' })).toBe(false)
-  })
-
-  test('drops episodes with no id', () => {
-    expect(
-      isPublishedEpisode({ published_at: '2026-04-27T13:00:00.000Z' }),
-    ).toBe(false)
+  const PUB_AT = '2026-04-27T13:00:00.000Z'
+  test.each<[string, ScEpisode, boolean]>([
+    ['keeps published episodes with id and published_at', { id: 'ep-1', published_at: PUB_AT, is_published: true }, true],
+    ['drops drafts (is_published: false)', { id: 'ep-1', published_at: PUB_AT, is_published: false }, false],
+    ['drops episodes with no published_at (scheduled)', { id: 'ep-1' }, false],
+    ['drops episodes with no id', { published_at: PUB_AT }, false],
+  ])('%s', (_name, episode, expected) => {
+    expect(isPublishedEpisode(episode)).toBe(expected)
   })
 })
