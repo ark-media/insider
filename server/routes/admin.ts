@@ -48,7 +48,7 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
       handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         if (req.method === 'GET') {
           const [coupons, codes] = await Promise.all([

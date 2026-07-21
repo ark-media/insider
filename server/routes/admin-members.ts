@@ -92,7 +92,7 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
         if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const params = new URL(req.url ?? '/', 'http://x').searchParams
         const tierParam = params.get('tier')

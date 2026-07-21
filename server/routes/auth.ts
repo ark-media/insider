@@ -106,9 +106,9 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
       path: '/api/auth/checkout-session',
       method: 'POST',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
         if (!env.CHECKOUT_SESSION_SECRET) {
-          return json(500, { error: 'CHECKOUT_SESSION_SECRET missing' })
+          return json(500, { error: 'not_configured' })
         }
 
         const body =

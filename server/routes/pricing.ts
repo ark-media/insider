@@ -19,7 +19,7 @@ export function pricingRoutes({ stripe }: Deps): Route[] {
     defineRoute({
       path: '/api/pricing',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'Stripe not configured' })
+        if (!stripe) return json(500, { error: 'not_configured' })
         try {
           const url = new URL(req.url ?? '/', 'http://x')
           // Precedence: explicit `?country=` test override → real platform geo

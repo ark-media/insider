@@ -71,7 +71,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       path: '/api/stripe/create-checkout-session',
       method: 'POST',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const body =
           (await readJson<{
@@ -253,7 +253,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       method: 'POST',
       handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const cancelEmail = await getSessionEmail(req, env)
         if (!cancelEmail) return json(401, { error: 'unauthenticated' })
@@ -325,7 +325,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       method: 'POST',
       handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
@@ -360,7 +360,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       path: '/api/stripe/retention-offer',
       method: 'GET',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
@@ -411,7 +411,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       method: 'POST',
       handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
@@ -482,7 +482,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     defineRoute({
       path: '/api/stripe/subscription-status',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '/', appBaseUrl)
         const subId = url.searchParams.get('id')
         if (!subId) return json(400, { error: 'id required' })
@@ -548,7 +548,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       path: '/api/stripe/my-subscription',
       method: 'GET',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
@@ -585,7 +585,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       method: 'POST',
       handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
@@ -741,9 +741,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       path: '/api/stripe/webhook',
       method: 'POST',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
         const whSecret = env.STRIPE_WEBHOOK_SECRET
-        if (!whSecret) return json(500, { error: 'STRIPE_WEBHOOK_SECRET missing' })
+        if (!whSecret) return json(500, { error: 'not_configured' })
 
         const sig = req.headers['stripe-signature']
         if (typeof sig !== 'string') return json(400, { error: 'Missing signature' })

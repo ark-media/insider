@@ -290,7 +290,7 @@ describe('POST /api/auth/checkout-session — validation', () => {
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(500)
-    expect((res.__json() as { error: string }).error).toMatch(/stripe_secret_key/i)
+    expect((res.__json() as { error: string }).error).toBe('not_configured')
   })
 
   test('500 when CHECKOUT_SESSION_SECRET is missing', async () => {
@@ -299,7 +299,7 @@ describe('POST /api/auth/checkout-session — validation', () => {
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(500)
-    expect((res.__json() as { error: string }).error).toMatch(/checkout_session_secret/i)
+    expect((res.__json() as { error: string }).error).toBe('not_configured')
   })
 
   test('400 when checkout_session_id is missing', async () => {

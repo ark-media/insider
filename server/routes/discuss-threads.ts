@@ -26,7 +26,6 @@ import {
 import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 import {
-  beehiivPublicationEnvKey,
   isNewsletterSlug,
   resolveBeehiivPublicationId,
 } from './newsletter-slugs.js'
@@ -45,7 +44,7 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
       handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
-        if (!env.DATABASE_URL) return json(500, { error: 'DATABASE_URL not configured' })
+        if (!env.DATABASE_URL) return json(500, { error: 'not_configured' })
 
         const sql = getDb(env)
         const url = new URL(req.url ?? '/', 'http://x')
@@ -59,15 +58,11 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
           if (!v.ok) return json(400, { error: v.error })
 
           const circleToken = env.CIRCLE_ADMIN_API_TOKEN
-          if (!circleToken) return json(500, { error: 'CIRCLE_ADMIN_API_TOKEN not configured' })
+          if (!circleToken) return json(500, { error: 'not_configured' })
           const beehiivToken = env.BEEHIIV_API_KEY
-          if (!beehiivToken) return json(500, { error: 'BEEHIIV_API_KEY not configured' })
+          if (!beehiivToken) return json(500, { error: 'not_configured' })
           const publicationId = resolveBeehiivPublicationId(env, v.value.newsletterSlug)
-          if (!publicationId) {
-            return json(500, {
-              error: `${beehiivPublicationEnvKey(v.value.newsletterSlug)} not configured`,
-            })
-          }
+          if (!publicationId) return json(500, { error: 'not_configured' })
 
           const result = await createCompanionThread(sql, v.value, {
             circleToken,

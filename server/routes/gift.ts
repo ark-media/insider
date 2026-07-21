@@ -53,7 +53,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
       path: '/api/gift/create-checkout',
       method: 'POST',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const body =
           (await readJson<{
@@ -189,7 +189,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
     defineRoute({
       path: '/api/gift/status',
       handler: async (req, res, json) => {
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '/', appBaseUrl)
         const sessionId = url.searchParams.get('id')
         if (!sessionId) return json(400, { error: 'id required' })
@@ -228,7 +228,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
       method: 'POST',
       handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
         if (!env.DATABASE_URL) return json(500, { error: 'database_not_configured' })
 
         const session = await getSessionProfile(req, env)

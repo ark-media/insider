@@ -308,7 +308,7 @@ describe('POST /api/gift/create-checkout — validation', () => {
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(500)
-    expect((res.__json() as { error: string }).error).toMatch(/stripe_secret_key/i)
+    expect((res.__json() as { error: string }).error).toBe('not_configured')
   })
 
   test('400 when giver_email missing', async () => {

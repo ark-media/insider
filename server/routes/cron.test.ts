@@ -60,7 +60,7 @@ describe('GET/POST /api/cron/reconcile-entitlements (auth gate)', () => {
   test('500s (not open) when CRON_SECRET is unset', async () => {
     const res = await call({}, makeReq({ auth: `Bearer whatever` }))
     expect(res.statusCode).toBe(500)
-    expect(JSON.parse(res.body).error).toBe('CRON_SECRET missing')
+    expect(JSON.parse(res.body).error).toBe('not_configured')
   })
 
   test('401s when the Authorization header is missing', async () => {
@@ -85,7 +85,7 @@ describe('GET/POST /api/cron/reconcile-entitlements (auth gate)', () => {
       // Reaching the Stripe check proves the constant-time compare accepted the
       // secret; a failed auth would have returned 401 first.
       expect(res.statusCode).toBe(500)
-      expect(JSON.parse(res.body).error).toBe('STRIPE_SECRET_KEY missing')
+      expect(JSON.parse(res.body).error).toBe('not_configured')
     }
   })
 })

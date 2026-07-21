@@ -29,11 +29,11 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       method: ['POST', 'GET'],
       handler: async (req, res, json) => {
         const cronSecret = env.CRON_SECRET
-        if (!cronSecret) return json(500, { error: 'CRON_SECRET missing' })
+        if (!cronSecret) return json(500, { error: 'not_configured' })
         if (!cronAuthorized(req, cronSecret)) {
           return json(401, { error: 'unauthorized' })
         }
-        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+        if (!stripe) return json(500, { error: 'not_configured' })
 
         const summary = await reconcileEntitlements(env, stripe)
         json(200, {
@@ -52,12 +52,12 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       method: ['POST', 'GET'],
       handler: async (req, res, json) => {
         const cronSecret = env.CRON_SECRET
-        if (!cronSecret) return json(500, { error: 'CRON_SECRET missing' })
+        if (!cronSecret) return json(500, { error: 'not_configured' })
         if (!cronAuthorized(req, cronSecret)) {
           return json(401, { error: 'unauthorized' })
         }
         if (!env.DATABASE_URL) {
-          return json(500, { error: 'DATABASE_URL missing' })
+          return json(500, { error: 'not_configured' })
         }
 
         const sql = getDb(env)

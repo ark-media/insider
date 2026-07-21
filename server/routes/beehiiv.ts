@@ -314,7 +314,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
       method: 'POST',
       handler: async (req, res, json) => {
         const secret = env.BEEHIIV_WEBHOOK_SECRET
-        if (!secret) return json(500, { error: 'BEEHIIV_WEBHOOK_SECRET missing' })
+        if (!secret) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '', 'http://x')
         if (!secretEquals(url.searchParams.get('key') ?? '', secret)) {
           return json(401, { error: 'unauthorized' })
