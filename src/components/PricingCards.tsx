@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { CheckoutModal } from "./CheckoutModal";
 import { ContentError } from "./ContentError";
@@ -9,11 +9,6 @@ import { TIERS, type Tier, type TierMeta } from "../data/pricingTiers";
 function fmtPrice(dollars: number): string {
   return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
 }
-
-// Pay-what-you-choose ceiling for the slider, as a multiple of the plan's base
-// price. The typed field still accepts more (the server caps at $10,000) — this
-// only bounds the drag range.
-const SLIDER_MAX_MULTIPLE = 4;
 
 type TierPricing = { monthly_cents: number; yearly_cents: number };
 type Plan = "monthly" | "yearly";
@@ -44,42 +39,18 @@ function PriceCard({
   meta: TierMeta;
   plan: Plan;
   pricing: TierPricing | null;
-  onSubscribe: (tier: Tier, customAmount: number | null) => void;
+  onSubscribe: (tier: Tier) => void;
 }) {
-  const [customAmount, setCustomAmount] = useState<string>("");
-  const [pwycOpen, setPwycOpen] = useState(false);
   const featured = Boolean(meta.featured);
 
+  // The floor price. It's a floor, not a fixed price: members choose their
+  // amount (this or more) at checkout, so the card leads with "From $X".
   const price = pricing
     ? (plan === "yearly" ? pricing.yearly_cents : pricing.monthly_cents) / 100
     : null;
-  const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
-  const customValid =
-    parsedCustom !== null &&
-    Number.isFinite(parsedCustom) &&
-    price !== null &&
-    parsedCustom >= price;
-  // What the member would actually be charged: their chosen amount if valid,
-  // otherwise the plan's base price.
-  const amount = customValid ? (parsedCustom as number) : price;
   const savingsPct = pricing
     ? Math.round((1 - pricing.yearly_cents / (pricing.monthly_cents * 12)) * 100)
     : null;
-
-  // The slider moves in whole dollars; the leftmost stop maps back to the exact
-  // base so the standard price is always reachable, and typing stays exact.
-  const sliderMin = price !== null ? Math.ceil(price) : 0;
-  const sliderMax = price !== null ? Math.round(price * SLIDER_MAX_MULTIPLE) : 0;
-  const sliderValue =
-    amount !== null
-      ? Math.min(Math.max(Math.round(amount), sliderMin), sliderMax)
-      : sliderMin;
-
-  const belowMin =
-    parsedCustom !== null &&
-    Number.isFinite(parsedCustom) &&
-    price !== null &&
-    parsedCustom < price;
 
   return (
     <div
@@ -101,9 +72,10 @@ function PriceCard({
 
       <div className="mt-5 border-t border-rule pt-5">
         <div className="flex items-baseline gap-2 text-fg-strong">
+          <span className="text-body-sm">From</span>
           <span className="display-upright text-[clamp(2.4rem,5vw,3rem)] leading-none">
-            {amount !== null ? (
-              `$${fmtPrice(amount)}`
+            {price !== null ? (
+              `$${fmtPrice(price)}`
             ) : (
               <span className="inline-block h-[0.7em] w-20 animate-pulse rounded bg-rule-strong/40 align-middle" />
             )}
@@ -118,6 +90,10 @@ function PriceCard({
             <span className="text-cyan">· Save {savingsPct}%</span>
           ) : null}
         </div>
+        <p className="mt-2 text-body-sm text-fg-muted">
+          Pay what you choose at checkout — give more to sustain independent
+          Jewish media.
+        </p>
       </div>
 
       <p className="mt-5 text-body-sm text-fg">{meta.blurb}</p>
@@ -131,105 +107,16 @@ function PriceCard({
         ))}
       </ul>
 
-      {/* Pay-what-you-choose — collapsed by default to keep the card clean;
-          drag for the shape, type for the exact figure. */}
-      <div className="mt-6 border-t border-rule pt-5">
-        <button
-          type="button"
-          aria-expanded={pwycOpen}
-          onClick={() => setPwycOpen((v) => !v)}
-          className="flex w-full items-center justify-between gap-2 button-text font-display font-bold text-fg-muted transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          <span>Pay what you choose</span>
-          <span
-            className={`text-cyan transition-transform duration-300 ${pwycOpen ? "rotate-180" : ""}`}
-            aria-hidden="true"
-          >
-            ▾
-          </span>
-        </button>
-
-        {pwycOpen ? (
-          <div className="mt-4">
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                aria-label={`${meta.label} amount per ${plan === "yearly" ? "year" : "month"}`}
-                min={sliderMin}
-                max={sliderMax}
-                step={1}
-                value={sliderValue}
-                disabled={price === null}
-                onChange={(e) => {
-                  // The leftmost stop is the base price itself; clearing to ""
-                  // hands checkout the base and its fixed price ID. Every other
-                  // stop is its own whole-dollar custom amount.
-                  const v = Number(e.target.value);
-                  setCustomAmount(v <= sliderMin ? "" : String(v));
-                }}
-                onBlur={() => {
-                  if (amount === null) return;
-                  trackEvent("custom_amount_entered", {
-                    plan,
-                    amount,
-                    valid: customValid,
-                  });
-                }}
-                className="h-9 min-w-0 flex-1 cursor-pointer bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ accentColor: "var(--color-cyan)" }}
-              />
-              <div className="flex w-28 shrink-0 items-center border-b border-rule-strong pb-1.5 focus-within:border-cyan">
-                <span className="mr-1 text-lg text-fg-muted">$</span>
-                <input
-                  type="number"
-                  aria-label={`${meta.label} custom amount`}
-                  min={price ?? undefined}
-                  step="any"
-                  value={customAmount}
-                  onChange={(e) => setCustomAmount(e.target.value)}
-                  onBlur={() => {
-                    if (parsedCustom === null || !Number.isFinite(parsedCustom))
-                      return;
-                    trackEvent("custom_amount_entered", {
-                      plan,
-                      amount: parsedCustom,
-                      valid: customValid,
-                    });
-                  }}
-                  placeholder={price !== null ? fmtPrice(price) : ""}
-                  className="min-w-0 flex-1 bg-transparent text-lg text-fg-strong outline-none placeholder:text-fg-placeholder"
-                />
-                <span className="ml-1 shrink-0 whitespace-nowrap text-body-sm">
-                  /{plan === "yearly" ? "yr" : "mo"}
-                </span>
-              </div>
-            </div>
-            {belowMin ? (
-              <p className="mt-2 text-body-sm text-danger" role="alert">
-                Minimum is ${price !== null ? fmtPrice(price) : ""}/
-                {plan === "yearly" ? "yr" : "mo"}.
-              </p>
-            ) : (
-              <p className="mt-2 text-body-sm">
-                {price !== null
-                  ? `$${fmtPrice(price)} minimum — give more to sustain independent Jewish media.`
-                  : ""}
-              </p>
-            )}
-          </div>
-        ) : null}
-      </div>
-
       <button
         type="button"
         onClick={() => {
           trackEvent("checkout_opened", {
             plan,
             tier: meta.key,
-            amount,
-            is_custom_amount: customValid,
+            amount: price,
+            is_custom_amount: false,
           });
-          onSubscribe(meta.key, customValid ? (parsedCustom as number) : null);
+          onSubscribe(meta.key);
         }}
         disabled={price === null}
         className={`group mt-7 inline-flex min-h-12 w-full items-center justify-between px-5 button-text font-display font-bold tracking-cta transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -259,14 +146,29 @@ export function PricingCards({
   showCompareLink?: boolean;
 }) {
   const [plan, setPlanRaw] = useState<Plan>("yearly");
-  const [checkout, setCheckout] = useState<{
-    tier: Tier;
-    customAmount: number | null;
-  } | null>(null);
+  const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
+  const periodRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const setPlan = (p: Plan) => {
     setPlanRaw(p);
     trackEvent("plan_selected", { plan: p });
+  };
+
+  // Roving-tabindex keyboard model for the billing-period radiogroup: arrow keys
+  // move to and select the adjacent option, Home/End jump to the ends.
+  const PERIODS = ["monthly", "yearly"] as const;
+  const onPeriodKeyDown = (e: React.KeyboardEvent, index: number) => {
+    let next = index;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown")
+      next = (index + 1) % PERIODS.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+      next = (index - 1 + PERIODS.length) % PERIODS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = PERIODS.length - 1;
+    else return;
+    e.preventDefault();
+    setPlan(PERIODS[next]);
+    periodRefs.current[next]?.focus();
   };
 
   const pricing = useAsyncResource(async () => {
@@ -313,15 +215,21 @@ export function PricingCards({
     <div id={id}>
       <div className="flex justify-center">
         <div
-          role="group"
+          role="radiogroup"
           aria-label="Billing period"
           className="inline-flex border border-rule-strong p-1"
         >
-          {(["monthly", "yearly"] as const).map((p) => (
+          {PERIODS.map((p, i) => (
             <button
               key={p}
+              ref={(el) => {
+                periodRefs.current[i] = el;
+              }}
               type="button"
-              aria-pressed={plan === p}
+              role="radio"
+              aria-checked={plan === p}
+              tabIndex={plan === p ? 0 : -1}
+              onKeyDown={(e) => onPeriodKeyDown(e, i)}
               onClick={() => setPlan(p)}
               className={`relative inline-flex min-h-11 items-center justify-center px-6 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
                 plan === p
@@ -349,9 +257,7 @@ export function PricingCards({
             meta={meta}
             plan={plan}
             pricing={tiers ? tiers[meta.key] : null}
-            onSubscribe={(tier, customAmount) =>
-              setCheckout({ tier, customAmount })
-            }
+            onSubscribe={(tier) => setCheckout({ tier })}
           />
         ))}
       </div>
@@ -374,7 +280,6 @@ export function PricingCards({
         open={checkout !== null}
         plan={plan}
         tier={checkout?.tier ?? "bundle"}
-        customAmount={checkout?.customAmount ?? null}
         onClose={() => setCheckout(null)}
       />
     </div>

@@ -17,6 +17,7 @@ import {
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { silenceExpectedConsole } from './test-utils'
+import { SUPPORTED_CURRENCIES } from './lib/pricing'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -64,6 +65,13 @@ class FakeStripe {
       stripeCalls.push({ method: 'prices.list', args: [args] })
       const key = args.lookup_keys?.[0] ?? ''
       const base = key.includes('monthly') ? 800 : 8000
+      // Provide currency_options for every supported currency but usd (the base)
+      // so resolveCatalogPrice, which loops SUPPORTED_CURRENCIES and throws on a
+      // gap, resolves cleanly regardless of how long that list grows.
+      const currency_options: Record<string, { unit_amount: number }> = {}
+      for (const cur of SUPPORTED_CURRENCIES) {
+        if (cur !== 'usd') currency_options[cur] = { unit_amount: base }
+      }
       return {
         data: [
           {
@@ -71,11 +79,7 @@ class FakeStripe {
             product: `prod_${key.replace(/_(monthly|yearly)$/, '')}`,
             unit_amount: base,
             currency: 'usd',
-            currency_options: {
-              gbp: { unit_amount: base },
-              eur: { unit_amount: base },
-              cad: { unit_amount: base },
-            },
+            currency_options,
           },
         ],
       }
@@ -468,7 +472,9 @@ describe('POST /api/stripe/create-checkout-session — tier + currency', () => {
   })
 
   test('unsupported currency falls back to USD', async () => {
-    const res = await post({ email: 'jp@b.co', plan: 'monthly', currency: 'jpy' })
+    // kwd (Kuwaiti dinar) is deliberately outside SUPPORTED_CURRENCIES — Kuwait
+    // prices in USD in the localized table.
+    const res = await post({ email: 'jp@b.co', plan: 'monthly', currency: 'kwd' })
     expect(res.statusCode).toBe(200)
     expect(lastSessionCreateArgs().currency).toBe('usd')
     expect((res.__json() as Record<string, unknown>).currency).toBe('usd')

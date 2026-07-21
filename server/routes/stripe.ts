@@ -18,6 +18,10 @@
 import { createHmac } from 'node:crypto'
 import type Stripe from 'stripe'
 import { AlreadySubscribedError } from '../lib/activation.js'
+import {
+  createAuth0PasswordChangeTicket,
+  findOrCreateAuth0User,
+} from '../lib/auth0-user.js'
 import { sendEmail } from '../lib/email.js'
 import { renderGiftRedemptionEmail } from '../lib/welcome-email.js'
 import {
@@ -50,6 +54,7 @@ import { createScClient } from '../lib/sc-client.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import {
   isSupportedCurrency,
+  minorUnitDivisor,
   resolveCatalogPrice,
   type Plan,
   type PricedTier,
@@ -100,26 +105,19 @@ async function findOrCreateSubscriber(
 // (churn-then-resubscribe); scan them all rather than assuming one. The
 // per-customer lookups run concurrently (one email rarely has many customers,
 // but this keeps the cancel flow off a serial chain of round-trips). Null when
-// the email has no billing record or no active subscription.
+// the email has no billing record or no live subscription.
 //
-// `status: 'active'` is deliberate: both the cancel and the retention offer
-// target a healthy live subscription. A delinquent (past_due/unpaid) or
-// trialing sub is intentionally not matched here — it's handled by Stripe's
-// own dunning/trial lifecycle, not this flow.
+// Matches any LIVE status (active/trialing/past_due/unpaid), not just 'active'
+// (task 14): a delinquent member in dunning is still entitled and must be able
+// to cancel, reactivate, or switch plans from the account UI — filtering to
+// 'active' locked them out of self-service (they could neither manage nor,
+// because the single-sub guard sees them as live, re-checkout). Excludes
+// incomplete / canceled the same way findLiveSubscription does.
 async function findActiveSubscription(
   stripe: Stripe,
   email: string,
 ): Promise<Stripe.Subscription | null> {
-  const customers = await stripe.customers.list({ email, limit: 100 })
-  const subLists = await Promise.all(
-    customers.data.map((customer) =>
-      stripe.subscriptions.list({ customer: customer.id, status: 'active', limit: 1 }),
-    ),
-  )
-  for (const subs of subLists) {
-    if (subs.data[0]) return subs.data[0]
-  }
-  return null
+  return findLiveSubscription(stripe, email)
 }
 
 // Statuses that count as a live membership for the single-active-subscription
@@ -161,15 +159,27 @@ function coerceTier(raw: unknown): PricedTier {
 
 // Minor units → a human currency string for the floor error message
 // (800, 'usd' → "$8.00"). Falls back to a bare number if Intl rejects the code.
-function formatMinor(cents: number, currency: string): string {
+function formatMinor(amount: number, currency: string): string {
+  // Divide by the currency's minor-unit factor, not a hardcoded 100: zero-
+  // decimal currencies (¥, ₩, ₫, CLP) store the whole-unit figure already, so
+  // /100 would under-report them 100×.
+  const value = amount / minorUnitDivisor(currency)
   try {
     return new Intl.NumberFormat('en', {
       style: 'currency',
       currency: currency.toUpperCase(),
-    }).format(cents / 100)
+    }).format(value)
   } catch {
-    return `${cents / 100} ${currency.toUpperCase()}`
+    return `${value} ${currency.toUpperCase()}`
   }
+}
+
+// Upper sanity bound on a PWYC custom amount, in the floor's own minor units. A
+// flat cap can't serve 40 currencies — a high-denomination floor (e.g. IDR
+// 12,900,000) would exceed any USD-scaled constant and reject every valid
+// amount. Scale off the floor, but never below the original ~$10k USD cap.
+function pwycMaxAmount(floor: number): number {
+  return Math.max(1_000_000, floor * 1000)
 }
 
 // The plan a subscription bills on, from its recurring interval, so the cancel
@@ -340,7 +350,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               error: `Amount must be at least ${formatMinor(floor, currency)}.`,
             })
           }
-          if (body.custom_amount_cents > 1_000_000) {
+          if (body.custom_amount_cents > pwycMaxAmount(floor)) {
             return json(400, { error: 'Custom amount too large.' })
           }
           amountCents = Math.round(body.custom_amount_cents)
@@ -730,7 +740,14 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         json(200, {
           status: sub.status,
-          activated: Boolean(sub.metadata?.sc_subscription_id),
+          // Provisioning is complete once ANY external-access axis is marked, not
+          // just SC: a Circle-only purchase never carries sc_subscription_id, so
+          // keying activation on it alone left the post-checkout poll spinning
+          // forever for Circle/Bundle buyers. Either axis marker means the webhook
+          // has provisioned what this tier grants.
+          activated:
+            Boolean(sub.metadata?.sc_subscription_id) ||
+            sub.metadata?.circle_provisioned === 'true',
         })
       },
     },
@@ -827,7 +844,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               error: `Amount must be at least ${formatMinor(floor, currency)}.`,
             })
           }
-          if (body.custom_amount_cents > 1_000_000) {
+          if (body.custom_amount_cents > pwycMaxAmount(floor)) {
             return json(400, { error: 'Custom amount too large.' })
           }
           amountCents = Math.round(body.custom_amount_cents)
@@ -846,11 +863,24 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           return json(200, { ok: true, changed: false })
         }
 
-        // The destination line item. A schedule phase can only carry a Price id
-        // (no inline price_data), so the period-end path always targets the
-        // catalog floor price; the immediate path can use inline price_data for a
-        // PWYC uplift.
+        // The destination line item. Both the immediate update and the schedule
+        // phase can carry inline price_data, so an above-floor PWYC amount is
+        // billed at that amount on either path — at the floor we reuse the
+        // catalog Price id, above it we mint an inline price for the chosen
+        // amount. (Recording amountCents in Neon while billing the floor was a
+        // silent undercharge + Neon↔Stripe drift.)
         const atFloor = amountCents === floor
+        const destinationPrice = atFloor
+          ? { price: catalog.priceId }
+          : {
+              price_data: {
+                currency,
+                product: catalog.productId,
+                unit_amount: amountCents,
+                recurring: { interval },
+                tax_behavior: 'exclusive' as const,
+              },
+            }
         const immediate = changeIsImmediate(prevEnt, nextEnt, prevAmount, amountCents)
 
         try {
@@ -859,17 +889,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             // (preserves the item id) with exact prorations. The webhook derives
             // the new tier from the price product and syncs SC/Circle/Neon.
             await releaseScheduleIfAny(stripe, sub, env)
-            const priceField = atFloor
-              ? { price: catalog.priceId }
-              : {
-                  price_data: {
-                    currency,
-                    product: catalog.productId,
-                    unit_amount: amountCents,
-                    recurring: { interval },
-                    tax_behavior: 'exclusive' as const,
-                  },
-                }
+            const priceField = destinationPrice
             await stripe.subscriptions.update(sub.id, {
               items: [{ id: item.id, ...priceField }],
               proration_behavior: 'create_prorations',
@@ -889,8 +909,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             return json(200, { ok: true, changed: true, timing: 'immediate' })
           }
 
-          // Period-end: schedule the destination (catalog floor) price to start at
-          // the current period end; entitlement isn't revoked until it lands.
+          // Period-end: schedule the destination price to start at the current
+          // period end; entitlement isn't revoked until it lands.
           let scheduleId = scheduleIdOf(sub)
           if (!scheduleId) {
             const created = await stripe.subscriptionSchedules.create({
@@ -899,7 +919,16 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             scheduleId = created.id
           }
           const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId)
-          const currentPhase = schedule.phases[schedule.phases.length - 1]
+          // The phase covering NOW — the active period we must preserve as phase 0.
+          // A freshly-created schedule has exactly this phase; a schedule that
+          // already carries a pending change has [active, future], and taking the
+          // LAST phase would grab the future one, rebuild the schedule off it, and
+          // drop the current period. Match by timestamp, falling back to phase 0.
+          const nowSec = Math.floor(Date.now() / 1000)
+          const currentPhase =
+            schedule.phases.find(
+              (p) => p.start_date <= nowSec && (p.end_date == null || nowSec < p.end_date),
+            ) ?? schedule.phases[0]
           if (!currentPhase) {
             return json(500, { error: 'Could not read subscription schedule.' })
           }
@@ -914,7 +943,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 start_date: currentPhase.start_date,
                 end_date: currentPhase.end_date,
               },
-              { items: [{ price: catalog.priceId, quantity: 1 }] },
+              { items: [{ ...destinationPrice, quantity: 1 }] },
             ],
           })
           if (env.DATABASE_URL) {
@@ -1207,8 +1236,15 @@ async function handleSubscriptionUpsert(
     !sub.metadata?.auth0_user_id
   const shouldFanOut = created || entitlementsChanged || notProvisioned
 
-  let auth0Sub = sub.metadata?.auth0_user_id ?? null
-  let scUserId = sub.metadata?.sc_user_id ? Number(sub.metadata.sc_user_id) : null
+  // Fall back to the prior row's sub when the event carries no auth0_user_id
+  // marker (an externally-triggered subscription.updated that skips the fan-out):
+  // the row we're about to write is keyed on auth0_sub, and re-using the known
+  // one avoids throwing — which would 500 the webhook and trap the event in an
+  // infinite Stripe retry loop.
+  let auth0Sub = sub.metadata?.auth0_user_id ?? priorRow?.auth0_sub ?? null
+  let scUserId = sub.metadata?.sc_user_id
+    ? Number(sub.metadata.sc_user_id)
+    : priorRow?.sc_user_id ?? null
   let plan = planFromSubscription(sub) ?? (sub.metadata?.plan as Plan | undefined) ?? 'yearly'
 
   if (shouldFanOut) {
@@ -1301,6 +1337,55 @@ async function handleGiftPaymentIntent(
 
   // Skip the email resend once the token is stamped (a prior delivery sent it).
   if (pi.metadata?.gift_token === token) return
+
+  // Provision the recipient's Auth0 login now, at purchase time — self-signup is
+  // gated (DB connection disabled, social logins screened), so a brand-new
+  // recipient would otherwise have no way to authenticate into /redeem to claim.
+  // Suppress Auth0's own reset email; our redemption email carries the set-
+  // password link for new accounts. Soft-fail: the claim link still works for an
+  // existing account, and a retry re-attempts provisioning.
+  const recipientName = pi.metadata?.recipient_name || undefined
+  const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
+  const redeemUrl = `${baseUrl}/redeem?token=${encodeURIComponent(token)}`
+  let passwordSetupUrl: string | undefined
+  try {
+    const auth0 = await findOrCreateAuth0User(recipientEmail, recipientName, env, {
+      emailPasswordReset: false,
+    })
+    if (auth0?.created && auth0.userId) {
+      // Land the recipient back on the claim link after they set a password, so
+      // the flow is set-password → sign in → claim in one line.
+      passwordSetupUrl =
+        (await createAuth0PasswordChangeTicket(auth0.userId, redeemUrl, env)) ?? undefined
+    }
+  } catch (err) {
+    console.error('[auth0] gift recipient provisioning failed:', recipientEmail, err)
+  }
+
+  // Send the claim email BEFORE stamping the idempotency marker: stamping first
+  // meant a transient send failure lost the only claim link forever (the retry
+  // early-returned on the now-set marker). Throw on failure so Stripe retries the
+  // webhook and re-sends; a rare duplicate email is strictly better than a gift
+  // the recipient can never claim. The marker is stamped only after success.
+  const { subject, html } = renderGiftRedemptionEmail({
+    recipientName,
+    giverName: pi.metadata?.giver_name || undefined,
+    term,
+    message: pi.metadata?.message || undefined,
+    redeemUrl,
+    passwordSetupUrl,
+  })
+  // Idempotency-keyed on the PI so a webhook retry (or a cross-instance race)
+  // re-sends at most one copy of the claim link.
+  const sent = await sendEmail(env, {
+    to: recipientEmail,
+    subject,
+    html,
+    idempotencyKey: `gift_redeem_${pi.id}`,
+  })
+  if (!sent) {
+    throw new Error(`gift redemption email failed to send to ${recipientEmail}`)
+  }
   try {
     await stripe.paymentIntents.update(pi.id, {
       metadata: { ...pi.metadata, gift_token: token },
@@ -1308,18 +1393,6 @@ async function handleGiftPaymentIntent(
   } catch (err) {
     console.error('[stripe] gift token stamp failed:', err)
   }
-
-  const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
-  const redeemUrl = `${baseUrl}/redeem?token=${encodeURIComponent(token)}`
-  const { subject, html } = renderGiftRedemptionEmail({
-    recipientName: pi.metadata?.recipient_name || undefined,
-    giverName: pi.metadata?.giver_name || undefined,
-    term,
-    message: pi.metadata?.message || undefined,
-    redeemUrl,
-  })
-  const sent = await sendEmail(env, { to: recipientEmail, subject, html })
-  if (!sent) console.error('[email] gift redemption email did not send:', recipientEmail)
 }
 
 // A high-entropy, deterministic redemption token: HMAC(SESSION_SECRET, pi.id).

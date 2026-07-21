@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as RedeemRouteImport } from './routes/redeem'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
@@ -60,6 +61,11 @@ const WelcomeRoute = WelcomeRouteImport.update({
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RedeemRoute = RedeemRouteImport.update({
+  id: '/redeem',
+  path: '/redeem',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingRoute = PricingRouteImport.update({
@@ -272,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
+  '/redeem': typeof RedeemRoute
   '/setup': typeof SetupRoute
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
@@ -315,6 +322,7 @@ export interface FileRoutesByTo {
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
+  '/redeem': typeof RedeemRoute
   '/setup': typeof SetupRoute
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
@@ -360,6 +368,7 @@ export interface FileRoutesById {
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
+  '/redeem': typeof RedeemRoute
   '/setup': typeof SetupRoute
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
@@ -406,6 +415,7 @@ export interface FileRouteTypes {
     | '/israel-votes'
     | '/logout'
     | '/pricing'
+    | '/redeem'
     | '/setup'
     | '/welcome'
     | '/about/network'
@@ -449,6 +459,7 @@ export interface FileRouteTypes {
     | '/israel-votes'
     | '/logout'
     | '/pricing'
+    | '/redeem'
     | '/setup'
     | '/welcome'
     | '/about/network'
@@ -493,6 +504,7 @@ export interface FileRouteTypes {
     | '/israel-votes'
     | '/logout'
     | '/pricing'
+    | '/redeem'
     | '/setup'
     | '/welcome'
     | '/about/network'
@@ -538,6 +550,7 @@ export interface RootRouteChildren {
   IsraelVotesRoute: typeof IsraelVotesRoute
   LogoutRoute: typeof LogoutRoute
   PricingRoute: typeof PricingRoute
+  RedeemRoute: typeof RedeemRoute
   SetupRoute: typeof SetupRoute
   WelcomeRoute: typeof WelcomeRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
@@ -582,6 +595,13 @@ declare module '@tanstack/react-router' {
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/redeem': {
+      id: '/redeem'
+      path: '/redeem'
+      fullPath: '/redeem'
+      preLoaderRoute: typeof RedeemRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing': {
@@ -916,6 +936,7 @@ const rootRouteChildren: RootRouteChildren = {
   IsraelVotesRoute: IsraelVotesRoute,
   LogoutRoute: LogoutRoute,
   PricingRoute: PricingRoute,
+  RedeemRoute: RedeemRoute,
   SetupRoute: SetupRoute,
   WelcomeRoute: WelcomeRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,

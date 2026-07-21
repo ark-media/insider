@@ -31,22 +31,62 @@ import Stripe from 'stripe'
 
 // --- Catalog definition ----------------------------------------------------
 
-// Pay-what-you-choose floors, in minor units (cents / pence). USD is each
-// price's base currency; gbp/eur/cad ride along as `currency_options` so
-// checkout can present a localized floor per §7 #4. Enabling currency_options
-// disables Stripe Adaptive Pricing — disable Adaptive in the Dashboard once the
-// new checkout (task 8) is live.
-//
-// Default is same-numeral localization (US$8 / £8 / €8 / C$8): clean round
-// floors, no FX noise. Edit these and re-run --apply to change or FX-refresh.
-const CURRENCIES = ['usd', 'gbp', 'eur', 'cad'] as const
+// Localized pay-what-you-choose floors, in minor units. USD is each price's base
+// currency; the rest ride along as `currency_options` so checkout can present a
+// localized floor per §7 #4. Enabling currency_options disables Stripe Adaptive
+// Pricing — disable Adaptive in the Dashboard once the new checkout (task 8) is
+// live. Keep this list in sync with server/lib/pricing.ts SUPPORTED_CURRENCIES.
+const CURRENCIES = [
+  'usd', 'gbp', 'eur', 'cad', 'czk', 'dkk', 'huf', 'nok', 'pln', 'ron',
+  'rub', 'sek', 'chf', 'aud', 'hkd', 'idr', 'jpy', 'kzt', 'krw', 'myr',
+  'nzd', 'php', 'sgd', 'twd', 'thb', 'vnd', 'egp', 'inr', 'ils', 'ngn',
+  'qar', 'sar', 'zar', 'tzs', 'aed', 'brl', 'clp', 'cop', 'mxn', 'pen',
+] as const
 type Currency = (typeof CURRENCIES)[number]
 type Amounts = Record<Currency, number>
+
+// Zero-decimal currencies — the amount IS the whole-unit figure (¥1300 = 1300),
+// never ×100. Mirrors server/lib/pricing.ts ZERO_DECIMAL_CURRENCIES (kept local
+// so this provisioning script stays standalone). Used only by the preview log —
+// BASE_MONTHLY_MINOR below is already encoded correctly per currency.
+const ZERO_DECIMAL = new Set<Currency>(['jpy', 'krw', 'vnd', 'clp'])
+
+// Column 1 of the localized price table (Stripe purchasing-power presets) for
+// the $8/mo Ark+ · Circle base, in MINOR units — 2-decimal currencies ×100 of
+// the table figure, zero-decimal currencies the whole figure. This is the ONE
+// place amounts are edited; Bundle scales off it (×13/8) and yearly is ×10.
+const BASE_MONTHLY_MINOR: Amounts = {
+  usd: 800, gbp: 800, eur: 900, cad: 1000, czk: 19900,
+  dkk: 6900, huf: 349000, nok: 9900, pln: 3999, ron: 3999,
+  rub: 69900, sek: 9900, chf: 700, aud: 1200, hkd: 5800,
+  idr: 12900000, jpy: 1300, kzt: 499000, krw: 12000, myr: 3990,
+  nzd: 1500, php: 49900, sgd: 998, twd: 29000, thb: 29900,
+  vnd: 249000, egp: 39999, inr: 79900, ils: 2990, ngn: 1290000,
+  qar: 2999, sar: 3499, zar: 14999, tzs: 2290000, aed: 2999,
+  brl: 4990, clp: 9990, cop: 3990000, mxn: 17900, pen: 3490,
+}
 
 // Suggested = the floor (PWYC lets buyers pay more, never less). §5: Founding
 // Member is cut for launch, but `founding_multiple` metadata stays on the
 // products (inert without any reading logic) so a later revival is config-only.
 const FOUNDING_MULTIPLE = '2'
+
+// Every currency's amount for a tier+plan, derived from the base table:
+//   monthly = base × (usdMonthlyMinor / base.usd)  — 1× for the $8 tiers, 13/8
+//                                                     for Bundle ($13)
+//   yearly  = monthly × 10                          — matches the USD 10:1 ratio
+// Rounded to an integer minor-unit amount (valid for every currency). Bundle's
+// non-USD rows are mechanically derived, not hand-tuned charm prices — swap in a
+// dedicated Bundle table here if that changes.
+function amountsFor(usdMonthlyMinor: number, interval: 'month' | 'year'): Amounts {
+  const monthScale = usdMonthlyMinor / BASE_MONTHLY_MINOR.usd
+  const yearFactor = interval === 'year' ? 10 : 1
+  const out = {} as Amounts
+  for (const cur of CURRENCIES) {
+    out[cur] = Math.round(BASE_MONTHLY_MINOR[cur] * monthScale * yearFactor)
+  }
+  return out
+}
 
 type PriceDef = {
   lookup_key: string
@@ -60,7 +100,15 @@ type ProductDef = {
   description: string
   entitlements: string // comma-separated: what buying this grants
   scPlan: boolean // does this product provision a Supporting Cast feed?
-  prices: PriceDef[]
+  usdMonthlyMinor: number // $8-base anchor; other currencies scale from BASE_MONTHLY_MINOR
+}
+
+// The monthly + yearly price for a product, generated from its USD anchor.
+function pricesFor(def: ProductDef): PriceDef[] {
+  return [
+    { lookup_key: `${def.catalogKey}_monthly`, interval: 'month', amounts: amountsFor(def.usdMonthlyMinor, 'month') },
+    { lookup_key: `${def.catalogKey}_yearly`, interval: 'year', amounts: amountsFor(def.usdMonthlyMinor, 'year') },
+  ]
 }
 
 const CATALOG: ProductDef[] = [
@@ -70,10 +118,7 @@ const CATALOG: ProductDef[] = [
     description: 'Private ad-free podcast feed (Supporting Cast).',
     entitlements: 'ark_plus',
     scPlan: true,
-    prices: [
-      { lookup_key: 'ark_plus_monthly', interval: 'month', amounts: { usd: 800, gbp: 800, eur: 800, cad: 800 } },
-      { lookup_key: 'ark_plus_yearly', interval: 'year', amounts: { usd: 8000, gbp: 8000, eur: 8000, cad: 8000 } },
-    ],
+    usdMonthlyMinor: 800,
   },
   {
     catalogKey: 'circle',
@@ -81,10 +126,7 @@ const CATALOG: ProductDef[] = [
     description: 'Access to the Ark community (Circle).',
     entitlements: 'circle',
     scPlan: false,
-    prices: [
-      { lookup_key: 'circle_monthly', interval: 'month', amounts: { usd: 800, gbp: 800, eur: 800, cad: 800 } },
-      { lookup_key: 'circle_yearly', interval: 'year', amounts: { usd: 8000, gbp: 8000, eur: 8000, cad: 8000 } },
-    ],
+    usdMonthlyMinor: 800,
   },
   {
     catalogKey: 'bundle',
@@ -92,10 +134,7 @@ const CATALOG: ProductDef[] = [
     description: 'Private ad-free feed and community access.',
     entitlements: 'ark_plus,circle',
     scPlan: true,
-    prices: [
-      { lookup_key: 'bundle_monthly', interval: 'month', amounts: { usd: 1300, gbp: 1300, eur: 1300, cad: 1300 } },
-      { lookup_key: 'bundle_yearly', interval: 'year', amounts: { usd: 13000, gbp: 13000, eur: 13000, cad: 13000 } },
-    ],
+    usdMonthlyMinor: 1300,
   },
 ]
 
@@ -137,7 +176,10 @@ function amountsMatch(price: Stripe.Price, amounts: Amounts): boolean {
 }
 
 function fmt(amounts: Amounts): string {
-  return CURRENCIES.map((c) => `${c} ${(amounts[c] / 100).toFixed(2)}`).join(' · ')
+  return CURRENCIES.map((c) => {
+    const zero = ZERO_DECIMAL.has(c)
+    return `${c} ${(amounts[c] / (zero ? 1 : 100)).toFixed(zero ? 0 : 2)}`
+  }).join(' · ')
 }
 
 // Scan every active product ONCE into a map keyed by catalog_key. Uses
@@ -281,7 +323,7 @@ async function main(): Promise<void> {
   for (const def of CATALOG) {
     console.log(`\n${def.name} [${def.entitlements}]`)
     const productId = await upsertProduct(stripe, def, byCatalogKey.get(def.catalogKey), apply)
-    for (const price of def.prices) {
+    for (const price of pricesFor(def)) {
       await upsertPrice(stripe, productId, price, apply)
     }
   }

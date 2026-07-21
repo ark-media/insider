@@ -52,6 +52,9 @@ class FakeStripe {
       stripeCalls.push({ method: 'subscriptions.list', args: [args] })
       const subs = (subsByCustomer[args.customer] ?? []).map((s) => ({
         id: s.id,
+        // These flows manage the member's live subscription; default to 'active'
+        // so the (status-filtered) live-subscription lookup matches it.
+        status: 'active',
         cancel_at_period_end: s.cancel_at_period_end ?? false,
         items: {
           data:

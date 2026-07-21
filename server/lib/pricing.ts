@@ -29,13 +29,36 @@ export function priceLookupKey(tier: PricedTier, plan: Plan): string {
 }
 
 // The currencies the catalog carries (USD base + `currency_options` for the
-// rest). Checkout presents one of these; anything else falls back to USD. Keep
-// in sync with scripts/stripe-catalog.ts CURRENCIES.
-export const SUPPORTED_CURRENCIES = ['usd', 'gbp', 'eur', 'cad'] as const
+// rest). Checkout presents one of these; anything else falls back to USD. These
+// mirror the localized price table (Stripe purchasing-power presets, column 1).
+// Keep in sync with scripts/stripe-catalog.ts CURRENCIES.
+export const SUPPORTED_CURRENCIES = [
+  'usd', 'gbp', 'eur', 'cad', 'czk', 'dkk', 'huf', 'nok', 'pln', 'ron',
+  'rub', 'sek', 'chf', 'aud', 'hkd', 'idr', 'jpy', 'kzt', 'krw', 'myr',
+  'nzd', 'php', 'sgd', 'twd', 'thb', 'vnd', 'egp', 'inr', 'ils', 'ngn',
+  'qar', 'sar', 'zar', 'tzs', 'aed', 'brl', 'clp', 'cop', 'mxn', 'pen',
+] as const
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 
 export function isSupportedCurrency(c: string): c is SupportedCurrency {
   return (SUPPORTED_CURRENCIES as readonly string[]).includes(c)
+}
+
+// Zero-decimal currencies: a Stripe amount is the whole-currency figure, not
+// hundredths (¥1300 = 1300, not 130000). The rest are 2-decimal (×100). This is
+// the Stripe zero-decimal list intersected with SUPPORTED_CURRENCIES; HUF/TWD
+// are 2-decimal (charge-safe as-is) so they are NOT here. Anything not selling
+// in these currencies must never divide their amounts by 100.
+export const ZERO_DECIMAL_CURRENCIES = ['jpy', 'krw', 'vnd', 'clp'] as const
+
+export function isZeroDecimal(currency: string): boolean {
+  return (ZERO_DECIMAL_CURRENCIES as readonly string[]).includes(currency.toLowerCase())
+}
+
+// Divisor from a Stripe minor-unit amount to its major-unit value for display:
+// 1 for zero-decimal currencies, 100 for the rest.
+export function minorUnitDivisor(currency: string): number {
+  return isZeroDecimal(currency) ? 1 : 100
 }
 
 // A resolved catalog price: the ids checkout needs (the price for the exact

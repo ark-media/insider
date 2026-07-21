@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CommunityAppLinks } from "./CommunityAppLinks";
 import { CheckoutModal } from "./CheckoutModal";
+import { ContentError } from "./ContentError";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 
@@ -69,36 +70,50 @@ export function CircleCommunity() {
               viral.
             </p>
 
-            <div className="mt-8 flex items-baseline gap-2 text-fg-strong">
-              <span className="display-upright text-[clamp(2.6rem,5vw,3.6rem)] leading-none">
-                {monthlyCents !== null ? (
-                  `$${fmtPrice(monthlyCents)}`
-                ) : (
-                  <span className="inline-block h-[0.7em] w-16 animate-pulse rounded bg-rule-strong/40 align-middle" />
-                )}
-              </span>
-              <span className="text-body-sm">/ month</span>
-            </div>
+            {pricing.status === "error" ? (
+              // Don't strand the buyer on a dead, disabled button when the price
+              // couldn't load — surface an in-place retry, matching the rest of
+              // the site's fetch-failure treatment.
+              <div className="mt-8">
+                <ContentError
+                  message="We couldn't load the community price just now."
+                  onRetry={pricing.retry}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="mt-8 flex items-baseline gap-2 text-fg-strong">
+                  <span className="display-upright text-[clamp(2.6rem,5vw,3.6rem)] leading-none">
+                    {monthlyCents !== null ? (
+                      `$${fmtPrice(monthlyCents)}`
+                    ) : (
+                      <span className="inline-block h-[0.7em] w-16 animate-pulse rounded bg-rule-strong/40 align-middle" />
+                    )}
+                  </span>
+                  <span className="text-body-sm">/ month</span>
+                </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                trackEvent("circle_join_clicked");
-                setCheckoutOpen(true);
-              }}
-              disabled={monthlyCents === null}
-              className="group mt-6 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:gap-8"
-            >
-              Join the community
-              <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
-                →
-              </span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    trackEvent("circle_join_clicked");
+                    setCheckoutOpen(true);
+                  }}
+                  disabled={monthlyCents === null}
+                  className="group mt-6 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:gap-8"
+                >
+                  Join the community
+                  <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
+                    →
+                  </span>
+                </button>
 
-            <p className="mt-6 max-w-md text-body-sm text-fg-muted">
-              Want the private feed too? The Ark+ &amp; Community bundle covers
-              both — see the plans above.
-            </p>
+                <p className="mt-6 max-w-md text-body-sm text-fg-muted">
+                  Want the private feed too? The Ark+ &amp; Community bundle
+                  covers both — see the plans above.
+                </p>
+              </>
+            )}
           </div>
 
           <div className="lg:col-span-7">
@@ -132,7 +147,6 @@ export function CircleCommunity() {
         open={checkoutOpen}
         plan="monthly"
         tier="circle"
-        customAmount={null}
         onClose={() => setCheckoutOpen(false)}
       />
     </section>

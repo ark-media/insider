@@ -311,11 +311,69 @@ describe('reconcileEntitlements', () => {
   test('SC drift: an expired gift row is not in the keep-set → its SC user is removed', async () => {
     const past = new Date(Date.now() - 86_400_000).toISOString()
     neonMembershipRows = [
+      // A live member keeps the keep-set non-empty so the empty-keep-set fail-
+      // safe doesn't trip; the expired gift member is the drift under test.
+      row({ auth0_sub: 'auth0|live', tier: 'ark-plus', sc_user_id: 1 }),
       row({ auth0_sub: 'auth0|gift', tier: 'ark-plus', sc_user_id: 5, gift_expires_at: past }),
     ]
-    installFetch(reconcilerFetch({ scMembers: [{ user_id: 5, email: 'gift@x.com' }] }))
+    installFetch(
+      reconcilerFetch({
+        scMembers: [
+          { user_id: 1, email: 'live@x.com' },
+          { user_id: 5, email: 'gift@x.com' },
+        ],
+      }),
+    )
     const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
     expect(summary.scRemoved).toBe(1)
+    expect(
+      calls.some((c) => c.url.includes('/users/5') && c.init?.method === 'DELETE'),
+    ).toBe(true)
+  })
+
+  test('SC roster loads on the v1 API; deletes go to v2', async () => {
+    // The membership roster lives on the key-scoped v1 API; DELETE /users is v2.
+    // Loading the roster with the v2 client would 404 and silently disable all
+    // drift removal, so assert each call hits its correct base.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus', sc_user_id: 1 })]
+    installFetch(
+      reconcilerFetch({
+        scMembers: [
+          { user_id: 1, email: 'keep@x.com' },
+          { user_id: 2, email: 'drift@x.com' },
+        ],
+      }),
+    )
+    await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    const roster = calls.find((c) => c.url.includes('/memberships'))
+    expect(roster?.url).toContain('/v1/')
+    const del = calls.find((c) => c.url.includes('/users/2') && c.init?.method === 'DELETE')
+    expect(del?.url).toContain('/v2/')
+  })
+
+  test('SC drift: empty keep-set against a non-empty roster → skips removal (fail-safe)', async () => {
+    // No live arkPlus rows (e.g. Neon not yet backfilled). Removing every SC
+    // member as "drift" would wipe the paid roster, so the axis must no-op.
+    neonMembershipRows = []
+    installFetch(reconcilerFetch({ scMembers: [{ user_id: 7, email: 'live@x.com' }] }))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.scRemoved).toBe(0)
+    expect(
+      calls.some((c) => c.url.includes('/users/7') && c.init?.method === 'DELETE'),
+    ).toBe(false)
+  })
+
+  test('SC drift: a live arkPlus row with a null sc_user_id → skips removal (incomplete keep-set)', async () => {
+    // The null-sc_user_id member can't be matched to the roster, so the keep-set
+    // is known-incomplete; deleting the "unmatched" roster entry could revoke a
+    // live feed. Skip removal this run rather than risk it.
+    neonMembershipRows = [
+      row({ auth0_sub: 'auth0|noscid', tier: 'ark-plus', sc_user_id: null }),
+      row({ auth0_sub: 'auth0|ok', tier: 'ark-plus', sc_user_id: 1 }),
+    ]
+    installFetch(reconcilerFetch({ scMembers: [{ user_id: 2, email: 'drift@x.com' }] }))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.scRemoved).toBe(0)
   })
 
   test('SC drift: a future gift row keeps its SC user', async () => {
@@ -350,9 +408,26 @@ describe('reconcileEntitlements', () => {
   })
 
   test('Circle drift: a member with an unstamped auth0_sub is left alone', async () => {
+    // A live circle member keeps the keep-set non-empty (so the empty-keep-set
+    // fail-safe doesn't trip); the unstamped member can't be positively
+    // identified as stale, so it is left alone.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    installFetch(
+      reconcilerFetch({
+        circleMembers: [
+          { auth0Sub: 'auth0|keep', email: 'keep@x.com' },
+          { auth0Sub: null, email: 'unstamped@x.com' },
+        ],
+      }),
+    )
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.circleRemoved).toBe(0)
+  })
+
+  test('Circle drift: empty keep-set against a non-empty group → skips removal (fail-safe)', async () => {
     neonMembershipRows = []
     installFetch(
-      reconcilerFetch({ circleMembers: [{ auth0Sub: null, email: 'unstamped@x.com' }] }),
+      reconcilerFetch({ circleMembers: [{ auth0Sub: 'auth0|x', email: 'x@x.com' }] }),
     )
     const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
     expect(summary.circleRemoved).toBe(0)

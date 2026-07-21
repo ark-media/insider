@@ -84,6 +84,9 @@ interface EventMap {
   gift_payment_submitted: { term: string }
   gift_checkout_succeeded: { term: string }
   gift_checkout_failed: { term: string; stage: 'create_session' | 'payment'; reason?: string }
+  // Recipient side of the gift funnel: the claim landed and access was granted
+  // (a new/extended membership term) or applied as account credit.
+  gift_redeemed: { applied: 'membership' | 'credit' }
   // Private-feed activation: which app a member picks, and the terminal
   // hand-off action (open deep link / copy URL / text themselves the link).
   feed_app_selected: { app: string }

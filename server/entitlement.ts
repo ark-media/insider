@@ -21,8 +21,15 @@ import type Stripe from 'stripe'
 import { getManagementClient } from './auth0.js'
 import { downgradeToFree as beehiivDowngradeToFree, tryPush } from './lib/beehiiv-sync.js'
 import { getDb } from './lib/db.js'
-import { loadAllMemberships as loadAllNeonMemberships } from './lib/membership.js'
-import { createScClient, loadAllMemberships as loadAllScMemberships } from './lib/sc-client.js'
+import {
+  deleteExpiredGiftMemberships,
+  loadAllMemberships as loadAllNeonMemberships,
+} from './lib/membership.js'
+import {
+  createScClient,
+  createScV1Client,
+  loadAllMemberships as loadAllScMemberships,
+} from './lib/sc-client.js'
 
 type Env = Record<string, string>
 
@@ -44,7 +51,15 @@ const GRANTS: Record<Tier, Entitlements> = {
 // stored (no drift). The two axes map 1:1 onto the two external access systems:
 // arkPlus → Supporting Cast (the private feed), circle → the Circle access group.
 export function deriveEntitlements(tier: Tier): Entitlements {
-  return GRANTS[tier]
+  // The row's `tier` is a free-text column, so a corrupt value typed as Tier can
+  // reach here at runtime; fall back to no entitlements (and log) rather than
+  // returning undefined and throwing `.arkPlus of undefined` through a gate.
+  const grant = GRANTS[tier]
+  if (!grant) {
+    console.error(`[entitlement] unknown tier "${tier}" — treating as free`)
+    return GRANTS.free
+  }
+  return grant
 }
 
 // Map a catalog product's `entitlements` metadata (comma-separated `ark_plus` /
@@ -412,19 +427,41 @@ export async function reconcileEntitlements(
   // Per-axis keep-sets from Neon, keyed on opaque ids.
   const arkPlusScUserIds = new Set<number>()
   const circleSubs = new Set<string>()
+  // A live arkPlus row whose sc_user_id is null can't be matched to an SC roster
+  // entry, so it can't be added to the keep-set — but that member may still have
+  // a live SC feed, which the axis would then delete as drift. If ANY such row
+  // exists the keep-set is known-incomplete, so we skip SC removal that run
+  // rather than risk revoking a paid feed we simply couldn't key.
+  let arkPlusMissingScId = false
   for (const r of live) {
     const ent = deriveEntitlements(r.tier)
-    if (ent.arkPlus && r.sc_user_id != null) arkPlusScUserIds.add(r.sc_user_id)
+    if (ent.arkPlus) {
+      if (r.sc_user_id != null) arkPlusScUserIds.add(r.sc_user_id)
+      else arkPlusMissingScId = true
+    }
     if (ent.circle) circleSubs.add(r.auth0_sub)
   }
 
-  const scRemoved = await reconcileScAxis(env, arkPlusScUserIds, batchSize).catch(
-    (err: unknown) => {
-      console.error('[reconcile] SC axis failed:', err)
-      errors += 1
-      return 0
-    },
-  )
+  // Housekeeping: drop provably-expired gift membership rows (customer-less rows
+  // whose gift term has elapsed). Reads already ignore them, but leaving them
+  // makes any status-based logic (e.g. the gift-redeem stacking check) wrong.
+  try {
+    await deleteExpiredGiftMemberships(getDb(env))
+  } catch (err) {
+    console.error('[reconcile] expired-gift cleanup failed:', err)
+    errors += 1
+  }
+
+  const scRemoved = await reconcileScAxis(
+    env,
+    arkPlusScUserIds,
+    arkPlusMissingScId,
+    batchSize,
+  ).catch((err: unknown) => {
+    console.error('[reconcile] SC axis failed:', err)
+    errors += 1
+    return 0
+  })
   const circleRemoved = await reconcileCircleAxis(
     env,
     circleSubs,
@@ -446,11 +483,38 @@ export async function reconcileEntitlements(
 async function reconcileScAxis(
   env: Env,
   keep: Set<number>,
+  keepIncomplete: boolean,
   batchSize: number,
 ): Promise<number> {
   if (!env.SC_API_KEY) return 0 // SC not configured
-  const sc = createScClient(env)
-  const roster = await loadAllScMemberships(sc)
+  // The membership roster lives on the SC v1 API (key-scoped, no network id in
+  // the path); DELETE /users is v2. Using the v2 client for the roster load
+  // 404s, throws, and silently disables all SC drift removal — so the two calls
+  // need their two distinct clients.
+  const scV1 = createScV1Client(env)
+  const scV2 = createScClient(env)
+  const roster = await loadAllScMemberships(scV1)
+
+  // Fail-safe against a mass wipe. An empty keep-set against a non-empty roster
+  // (Neon not yet backfilled, a truncated roster read) would classify every SC
+  // member as drift; a known-incomplete keep-set (an arkPlus row with no
+  // sc_user_id) could delete a member we just couldn't key. In either case skip
+  // removal this run rather than revoke live paid feeds — the cap alone wouldn't
+  // save a roster from being wiped over successive nightly runs.
+  if (roster.length === 0) return 0
+  if (keep.size === 0) {
+    console.error(
+      '[reconcile] SC keep-set empty but roster non-empty — skipping removal (run the backfill?)',
+    )
+    return 0
+  }
+  if (keepIncomplete) {
+    console.warn(
+      '[reconcile] SC keep-set incomplete (arkPlus row with null sc_user_id) — skipping removal this run',
+    )
+    return 0
+  }
+
   const drift = roster
     .filter((m) => !keep.has(m.user_id))
     .slice(0, SC_DRIFT_MAX_REMOVE)
@@ -461,7 +525,7 @@ async function reconcileScAxis(
   }
   await batched(drift, batchSize, async (m) => {
     try {
-      await sc.call('DELETE', `/users/${m.user_id}`)
+      await scV2.call('DELETE', `/users/${m.user_id}`)
     } catch (err) {
       console.error(`[reconcile] SC delete user ${m.user_id} failed:`, err)
       return
@@ -491,6 +555,15 @@ async function reconcileCircleAxis(
   if (!apiToken || !accessGroupId) return 0
 
   const members = await listCircleAccessGroupMembers(env, maxPages)
+  // Same fail-safe as the SC axis: an empty keep-set against a populated access
+  // group means Neon isn't the trustworthy authority yet (unbackfilled / bad
+  // read), so skip removal rather than clear the whole community group.
+  if (members.length > 0 && keep.size === 0) {
+    console.error(
+      '[reconcile] Circle keep-set empty but access group non-empty — skipping removal (run the backfill?)',
+    )
+    return 0
+  }
   const stale = members.filter(
     (m) => m.auth0Sub != null && !keep.has(m.auth0Sub) && m.email != null,
   )

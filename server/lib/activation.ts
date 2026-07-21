@@ -18,7 +18,6 @@ import type Stripe from 'stripe'
 import {
   deriveEntitlements,
   provisionCircleMember,
-  syncEntitlement,
   type Tier,
 } from '../entitlement.js'
 import {
@@ -30,15 +29,9 @@ import { getDb } from './db.js'
 import { sendEmail } from './email.js'
 import {
   renderCircleWelcomeEmail,
-  renderGiftWelcomeEmail,
   renderSubscriberWelcomeEmail,
 } from './welcome-email.js'
-import {
-  createScClient,
-  findOrCreateScUser,
-  findScUserByEmail,
-  type ScUser,
-} from './sc-client.js'
+import { createScClient, findOrCreateScUser } from './sc-client.js'
 
 type Env = Record<string, string>
 type Plan = 'monthly' | 'yearly'
@@ -47,15 +40,6 @@ type Plan = 'monthly' | 'yearly'
 // stamped with ends_at. Term + price live here so the activator owns the
 // gift policy in one place.
 export type GiftTerm = '6mo' | '1yr'
-
-export type GiftMetadata = {
-  giverEmail: string
-  giverName?: string
-  orderId: string // Stripe PaymentIntent id
-  term: GiftTerm
-  purchasedAt: string // ISO date
-  message?: string
-}
 
 export const GIFT_PRICES_CENTS: Record<GiftTerm, number> = {
   '6mo': 4800,
@@ -94,7 +78,6 @@ export type Activator = {
   // route): provisions the Ark+ tier. Task 9 moves the webhook onto the
   // tier-aware method above.
   activateScSubscriptionForStripeSub: (sub: Stripe.Subscription) => Promise<void>
-  activateScGiftForPaymentIntent: (pi: Stripe.PaymentIntent) => Promise<void>
   // Grant a redeemed gift to the signed-in recipient (routes/gift.ts). SC only
   // for arkPlus tiers, Circle only for circle; the entitlement runs for the gift
   // term from redemption. Returns the SC ids + the computed expiry for the
@@ -105,6 +88,10 @@ export type Activator = {
     tier: Tier
     term: GiftTerm
     auth0Sub: string | null
+    // Epoch ms the term is measured from. Defaults to now; the redeem flow passes
+    // an existing unexpired gift's expiry so a stacked gift extends rather than
+    // resets. The SC gift sub's ends_at and the returned endsAt both use it.
+    fromMs?: number
   }) => Promise<{ scUserId: number | null; scSubscriptionId: number | null; endsAt: string }>
 }
 
@@ -313,7 +300,15 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
             welcomeUrl: `${baseUrl}/welcome`,
             passwordSetupUrl,
           })
-      const sent = await sendEmail(env, { to: email, subject, html })
+      // Idempotency-keyed on the subscription so two callers on different
+      // instances (webhook + post-checkout route) collapse to one welcome email
+      // rather than each sending its own.
+      const sent = await sendEmail(env, {
+        to: email,
+        subject,
+        html,
+        idempotencyKey: `welcome_${fresh.id}`,
+      })
       if (!sent) {
         console.error('[email] member welcome email did not send:', email)
       }
@@ -391,155 +386,18 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     await activateMembershipForStripeSub(sub, 'ark-plus')
   }
 
-  const activateScGiftForPaymentIntent = async (
-    pi: Stripe.PaymentIntent,
-  ): Promise<void> => {
-    if (!stripe) return
-    if (pi.metadata?.sc_subscription_id) return // already granted (idempotent)
-
-    const term = pi.metadata?.term as GiftTerm | undefined
-    const recipientEmail = pi.metadata?.recipient_email
-    const giverEmail = pi.metadata?.giver_email
-    if (!term || !recipientEmail || !giverEmail) {
-      throw new Error('Gift PaymentIntent missing required metadata')
-    }
-    if (term !== '6mo' && term !== '1yr') {
-      throw new Error(`Unknown gift term: ${term}`)
-    }
-
-    const recipientName = pi.metadata?.recipient_name || undefined
-    const giverName = pi.metadata?.giver_name || undefined
-    const message = pi.metadata?.message || undefined
-
-    const gift: GiftMetadata = {
-      giverEmail,
-      giverName,
-      orderId: pi.id,
-      term,
-      purchasedAt: new Date().toISOString(),
-      message,
-    }
-
-    const sc = createScClient(env)
-    const scPriceId = resolveScGiftPriceId(term)
-
-    // Find-or-create the recipient SC user, stamping gift metadata on their
-    // record via the SC API's custom_1 / custom_2 fields.
-    let recipient = await findScUserByEmail(sc, recipientEmail)
-    if (recipient) {
-      await sc.call('PATCH', `/users/${recipient.id}`, {
-        custom_1: 'gift',
-        custom_2: JSON.stringify(gift),
-      })
-    } else {
-      const first = (recipientName || recipientEmail.split('@')[0] || 'Member').slice(0, 40)
-      const created = await sc.call<{ user: ScUser }>('POST', '/users', {
-        email: recipientEmail,
-        first_name: first,
-        last_name: '',
-        custom_1: 'gift',
-        custom_2: JSON.stringify(gift),
-      })
-      recipient = created.user
-    }
-
-    // Cross-instance race re-check (see doActivate above).
-    const piRecheck = await stripe.paymentIntents.retrieve(pi.id)
-    if (piRecheck.metadata?.sc_subscription_id) return
-
-    const endsAt = new Date(
-      Date.now() + GIFT_TERM_DAYS[term] * 24 * 60 * 60 * 1000,
-    ).toISOString()
-
-    const createdSub = await sc.call<{ subscription: { id: number } }>(
-      'POST',
-      '/subscriptions',
-      {
-        user_id: recipient.id,
-        subscription_price_id: Number(scPriceId),
-        ends_at: endsAt,
-      },
-      { idempotencyKey: `stripe_pi_${pi.id}` },
-    )
-
-    // Create the Auth0 login but suppress Auth0's own reset email — our single
-    // welcome email below carries the set-password link instead.
-    let auth0Result: Awaited<ReturnType<typeof findOrCreateAuth0User>> = null
-    try {
-      auth0Result = await findOrCreateAuth0User(recipientEmail, recipientName, env, {
-        emailPasswordReset: false,
-      })
-    } catch (err) {
-      console.error('[auth0] findOrCreateAuth0User (gift) failed:', err)
-    }
-    const auth0UserId = auth0Result?.userId ?? null
-
-    // New accounts get a password-change ticket embedded in the email; existing
-    // accounts already have a login, so the email points them at sign-in.
-    const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
-    let passwordSetupUrl: string | undefined
-    if (auth0Result?.created && auth0UserId) {
-      passwordSetupUrl =
-        (await createAuth0PasswordChangeTicket(
-          auth0UserId,
-          `${baseUrl}/welcome`,
-          env,
-        )) ?? undefined
-      if (!passwordSetupUrl) {
-        console.error(
-          '[auth0] gift recipient created but password-change ticket failed:',
-          recipientEmail,
-        )
-      }
-    }
-
-    await stripe.paymentIntents.update(pi.id, {
-      metadata: {
-        ...pi.metadata,
-        sc_user_id: String(recipient.id),
-        sc_subscription_id: String(createdSub.subscription.id),
-        ...(auth0UserId ? { auth0_user_id: auth0UserId } : {}),
-      },
-    })
-
-    // One branded welcome email — replaces both the SC welcome email (feed
-    // setup now lives on /welcome) and Auth0's reset email (link embedded
-    // above). Soft-fail: the gift is already granted.
-    const { subject, html } = renderGiftWelcomeEmail({
-      recipientName,
-      giverName,
-      term,
-      message,
-      welcomeUrl: `${baseUrl}/welcome`,
-      passwordSetupUrl,
-    })
-    const sent = await sendEmail(env, { to: recipientEmail, subject, html })
-    if (!sent) {
-      console.error('[email] gift welcome email did not send:', recipientEmail)
-    }
-
-    // Mirror the Circle axis (an ark-plus gift grants none, so this is a no-op
-    // here). The gift's SC sub already carries ends_at; gift expiry now lives on
-    // the Neon membership row written at redemption (task 9), not Auth0.
-    await syncEntitlement(env, recipientEmail, 'ark-plus')
-
-    if (env.DATABASE_URL) {
-      await tryPush('ensure premium (gift)', () =>
-        ensureSubscribedWithPremium({ env, sql: getDb(env) }, recipientEmail),
-      )
-    }
-  }
-
   const activateGiftForRecipient = async (opts: {
     email: string
     name?: string
     tier: Tier
     term: GiftTerm
     auth0Sub: string | null
+    fromMs?: number
   }): Promise<{ scUserId: number | null; scSubscriptionId: number | null; endsAt: string }> => {
     const entitlements = deriveEntitlements(opts.tier)
+    const fromMs = opts.fromMs ?? Date.now()
     const endsAt = new Date(
-      Date.now() + GIFT_TERM_DAYS[opts.term] * 24 * 60 * 60 * 1000,
+      fromMs + GIFT_TERM_DAYS[opts.term] * 24 * 60 * 60 * 1000,
     ).toISOString()
 
     let scUserId: number | null = null
@@ -568,7 +426,6 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
   return {
     activateMembershipForStripeSub,
     activateScSubscriptionForStripeSub,
-    activateScGiftForPaymentIntent,
     activateGiftForRecipient,
   }
 }

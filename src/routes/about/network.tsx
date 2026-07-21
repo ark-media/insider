@@ -40,7 +40,7 @@ const properties: NetworkProperty[] = [
     title: "Ark+ membership",
     kind: "Membership",
     description:
-      "Inside Call Me Back, members-only newsletters, the community, and live events — all included with Ark+.",
+      "Inside Call Me Back and members-only newsletters with Ark+; the community and live events with Circle. Get both in the bundle.",
     to: "/plus",
   },
 ];

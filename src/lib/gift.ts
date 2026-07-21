@@ -54,6 +54,44 @@ export async function createGiftCheckout(
   }
 }
 
+export type RedeemGiftResult =
+  | { ok: true; applied: "membership" | "credit"; expiresAt?: string }
+  | { ok: false; error: string; status?: number };
+
+// Claim a gift the recipient received by email. Requires a signed-in session
+// (the server keys the grant on the recipient's Auth0 sub); the /redeem page
+// gates on auth before calling this. Rides the httpOnly session cookie.
+export async function redeemGift(token: string): Promise<RedeemGiftResult> {
+  try {
+    const res = await fetch("/api/gift/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ token }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      redeemed?: boolean;
+      applied?: "membership" | "credit";
+      expires_at?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.redeemed) {
+      return {
+        ok: false,
+        status: res.status,
+        error: data.error ?? "Could not redeem this gift.",
+      };
+    }
+    return {
+      ok: true,
+      applied: data.applied ?? "membership",
+      expiresAt: data.expires_at,
+    };
+  } catch {
+    return { ok: false, error: "Network error. Please try again." };
+  }
+}
+
 export async function fetchGiftStatus(
   checkoutSessionId: string,
   giverEmail: string,

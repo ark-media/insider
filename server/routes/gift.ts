@@ -256,12 +256,18 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         if (!auth0Sub) return json(502, { error: 'could_not_resolve_account' })
 
         const existing = await getMembershipByAuth0Sub(sql, auth0Sub)
-        const alreadyActive =
+        // Only a real, creditable subscription diverts the gift to account credit.
+        // It must have a Stripe customer — applyGiftAsCredit no-ops without one, so
+        // routing a gift-only membership (null customer) here flipped the gift to
+        // redeemed while granting nothing. A gift-only or expired-gift row instead
+        // falls through to a fresh/extended gift term below.
+        const canCredit =
           existing != null &&
+          existing.stripe_customer_id != null &&
           existing.tier !== 'free' &&
           LIVE_MEMBERSHIP_STATUSES.has(existing.status)
 
-        if (alreadyActive) {
+        if (canCredit) {
           // Claim first — account credit is not idempotent, so the atomic flip
           // guards against a double-credit race.
           const claimed = await markGiftRedeemed(sql, token, auth0Sub)
@@ -274,14 +280,21 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           return json(200, { redeemed: true, applied: 'credit' })
         }
 
-        // No active membership → activate a gift term from now.
+        // Grant a gift term. If the recipient already holds an UNEXPIRED gift
+        // term, stack the new term onto the remaining time (start the clock at the
+        // current expiry) rather than resetting it to now and dropping the balance.
         const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
+        const existingGiftMs = existing?.gift_expires_at
+          ? Date.parse(existing.gift_expires_at)
+          : 0
+        const fromMs = existingGiftMs > Date.now() ? existingGiftMs : Date.now()
         const grant = await activator.activateGiftForRecipient({
           email: session.email,
           name: session.name,
           tier: gift.tier,
           term,
           auth0Sub,
+          fromMs,
         })
         await upsertMembership(sql, {
           auth0_sub: auth0Sub,

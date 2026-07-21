@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PricingCards } from "../components/PricingCards";
 import { PricingComparison } from "../components/PricingComparison";
 import { FAQ } from "../components/FAQ";
 import { fetchFaqs } from "../lib/faqs";
@@ -24,12 +23,6 @@ function PricingPage() {
             Three ways in — the private feed, the community, or both. Every plan
             is pay-what-you-choose, and you can cancel anytime.
           </p>
-        </div>
-      </section>
-
-      <section className="relative">
-        <div className="page-gutter pt-10 pb-4">
-          <PricingCards id="plans" />
         </div>
       </section>
 

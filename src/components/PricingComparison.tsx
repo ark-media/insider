@@ -1,5 +1,9 @@
-import { Fragment } from "react";
+import { Fragment, useRef, useState } from "react";
+import { CheckoutModal } from "./CheckoutModal";
+import { trackEvent } from "../lib/analytics";
 import type { Tier } from "../data/pricingTiers";
+
+type Plan = "monthly" | "yearly";
 
 // Column order mirrors the card grid: Ark+, the Bundle (featured), Community.
 const COLUMNS: { key: Tier; label: string; featured?: boolean }[] = [
@@ -87,11 +91,48 @@ function Mark({ on }: { on: boolean }) {
   );
 }
 
-// Static feature-comparison table for the /pricing page. Prices and PWYC live in
-// the card grid above; the per-column CTAs scroll back up to it (#plans).
+// Feature-comparison table for the /pricing page — the primary buying surface
+// there (the card grid was removed). A shared Monthly/Annual toggle sets the
+// billing period; each column's "Choose" button opens checkout for that tier at
+// that period. Amount (pay-what-you-choose) and the exact price are set inside
+// the checkout modal, which sources them live from Stripe.
 export function PricingComparison() {
+  const [plan, setPlan] = useState<Plan>("yearly");
+  const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
+  const periodRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
   const colClass = (featured?: boolean) =>
     featured ? "bg-navy-800/50" : "";
+
+  const PERIODS = ["monthly", "yearly"] as const;
+  const selectPeriod = (p: Plan) => {
+    setPlan(p);
+    trackEvent("plan_selected", { plan: p });
+  };
+  // Roving-tabindex keyboard model for the billing-period radiogroup.
+  const onPeriodKeyDown = (e: React.KeyboardEvent, index: number) => {
+    let next = index;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown")
+      next = (index + 1) % PERIODS.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+      next = (index - 1 + PERIODS.length) % PERIODS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = PERIODS.length - 1;
+    else return;
+    e.preventDefault();
+    selectPeriod(PERIODS[next]);
+    periodRefs.current[next]?.focus();
+  };
+
+  const openCheckout = (tier: Tier) => {
+    trackEvent("checkout_opened", {
+      plan,
+      tier,
+      amount: null,
+      is_custom_amount: false,
+    });
+    setCheckout({ tier });
+  };
 
   return (
     <section className="relative">
@@ -99,6 +140,36 @@ export function PricingComparison() {
         <div className="mx-auto max-w-2xl text-center">
           <div className="eyebrow">Compare plans</div>
           <h2 className="mt-3 text-h2">What you get with each tier</h2>
+        </div>
+
+        <div className="mt-8 flex justify-center">
+          <div
+            role="radiogroup"
+            aria-label="Billing period"
+            className="inline-flex border border-rule-strong p-1"
+          >
+            {PERIODS.map((p, i) => (
+              <button
+                key={p}
+                ref={(el) => {
+                  periodRefs.current[i] = el;
+                }}
+                type="button"
+                role="radio"
+                aria-checked={plan === p}
+                tabIndex={plan === p ? 0 : -1}
+                onKeyDown={(e) => onPeriodKeyDown(e, i)}
+                onClick={() => selectPeriod(p)}
+                className={`relative inline-flex min-h-11 items-center justify-center px-6 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                  plan === p
+                    ? "bg-cyan text-navy"
+                    : "text-fg-muted hover:text-fg-strong"
+                }`}
+              >
+                {p === "yearly" ? "Annual" : "Monthly"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-10 overflow-x-auto">
@@ -172,8 +243,9 @@ export function PricingComparison() {
                       c.featured ? "border-b-2 border-cyan" : ""
                     }`}
                   >
-                    <a
-                      href="#plans"
+                    <button
+                      type="button"
+                      onClick={() => openCheckout(c.key)}
                       className={`group inline-flex min-h-11 w-full items-center justify-center gap-2 px-4 button-text font-display font-bold tracking-cta transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
                         c.featured
                           ? "bg-cyan text-navy hover:bg-fg-strong hover:text-navy-900"
@@ -184,7 +256,7 @@ export function PricingComparison() {
                       <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
                         →
                       </span>
-                    </a>
+                    </button>
                   </td>
                 ))}
               </tr>
@@ -192,6 +264,13 @@ export function PricingComparison() {
           </table>
         </div>
       </div>
+
+      <CheckoutModal
+        open={checkout !== null}
+        plan={plan}
+        tier={checkout?.tier ?? "bundle"}
+        onClose={() => setCheckout(null)}
+      />
     </section>
   );
 }

@@ -17,7 +17,17 @@ const DEFAULT_FROM = 'Ark+ <hello@ark-plus.xyz>'
 
 export async function sendEmail(
   env: Env,
-  msg: { to: string; subject: string; html: string; replyTo?: string },
+  msg: {
+    to: string
+    subject: string
+    html: string
+    replyTo?: string
+    // A stable key for a logical send (e.g. `welcome_<subId>`). Passed to Resend
+    // as `Idempotency-Key` so two racing callers on different instances — or a
+    // webhook retry — collapse to a single delivery for ~24h, rather than each
+    // sending its own copy.
+    idempotencyKey?: string
+  },
 ): Promise<boolean> {
   const apiKey = env.RESEND_API_KEY
   if (!apiKey) {
@@ -32,6 +42,7 @@ export async function sendEmail(
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        ...(msg.idempotencyKey ? { 'Idempotency-Key': msg.idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from,

@@ -15,6 +15,15 @@ import { trackEvent } from "../lib/analytics";
 type Plan = "monthly" | "yearly";
 type Tier = "ark-plus" | "circle" | "bundle";
 
+function fmtPrice(dollars: number): string {
+  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+}
+
+// Pay-what-you-choose ceiling for the slider, as a multiple of the plan's floor
+// price. The typed field still accepts more (the server caps well above this) —
+// this only bounds the drag range.
+const SLIDER_MAX_MULTIPLE = 4;
+
 // The SKU label shown in the modal chrome. Checkout derives entitlements from
 // the tier's catalog product server-side; this is copy only.
 const TIER_LABEL: Record<Tier, string> = {
@@ -155,13 +164,11 @@ export function CheckoutModal({
   open,
   plan,
   tier = "ark-plus",
-  customAmount,
   onClose,
 }: {
   open: boolean;
   plan: Plan;
   tier?: Tier;
-  customAmount: number | null;
   onClose: () => void;
 }) {
   // Stripe.js is required before we can render Elements. Surface a clear error
@@ -182,6 +189,14 @@ export function CheckoutModal({
   // after an error rather than asking the buyer to retype it.
   const [lastEmail, setLastEmail] = useState("");
   const [promo, setPromo] = useState<PromoInfo | null>(null);
+  // The tier+plan floor (USD cents), fetched on open — the slider's minimum and
+  // the amount checkout charges if the buyer doesn't raise it. Pay-what-you-
+  // choose now lives on this screen (moved off the pricing cards), so the modal
+  // owns the price it needs rather than receiving a pre-chosen amount.
+  const [floorCents, setFloorCents] = useState<number | null>(null);
+  // Whether the buyer raised the amount above the floor — read at the bottom of
+  // the funnel (after the session is gone) for the checkout_succeeded event.
+  const customAmountRef = useRef<number | null>(null);
   const { refresh, signIn } = useSubscriberAuth();
   const { theme } = useTheme();
 
@@ -197,6 +212,8 @@ export function CheckoutModal({
     );
     setLastEmail("");
     setPromo(null);
+    setFloorCents(null);
+    customAmountRef.current = null;
     onClose();
   }, [onClose]);
 
@@ -237,9 +254,39 @@ export function CheckoutModal({
     };
   }, [open, plan]);
 
+  // Fetch the floor for this tier+plan so the pay-what-you-choose slider knows
+  // its minimum. Prices come from /api/pricing (Stripe, the source of truth) —
+  // never hardcoded. While it loads the slider stays disabled; a failure leaves
+  // it disabled and the buyer simply checks out at the floor.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/pricing");
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => ({}))) as {
+          tiers?: Record<
+            string,
+            { monthly_cents?: number; yearly_cents?: number }
+          >;
+        };
+        const t = data.tiers?.[tier];
+        const cents = plan === "yearly" ? t?.yearly_cents : t?.monthly_cents;
+        if (!cancelled && typeof cents === "number") setFloorCents(cents);
+      } catch {
+        /* non-fatal: buyer checks out at the floor */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tier, plan]);
+
   const submitEmail = useCallback(
-    async (email: string) => {
+    async (email: string, customAmount: number | null) => {
       setLastEmail(email);
+      customAmountRef.current = customAmount;
       trackEvent("checkout_email_submitted", {
         plan,
         tier,
@@ -295,7 +342,7 @@ export function CheckoutModal({
         });
       }
     },
-    [plan, tier, customAmount],
+    [plan, tier],
   );
 
   const handleActivated = useCallback(
@@ -305,7 +352,7 @@ export function CheckoutModal({
       trackEvent("checkout_succeeded", {
         plan,
         tier,
-        is_custom_amount: customAmount !== null,
+        is_custom_amount: customAmountRef.current !== null,
       });
       try {
         await refresh();
@@ -321,7 +368,7 @@ export function CheckoutModal({
         setStep({ kind: "processing", email });
       }
     },
-    [onClose, refresh, plan, tier, customAmount],
+    [onClose, refresh, plan, tier],
   );
 
   const stripePromiseValue = getStripe();
@@ -343,6 +390,7 @@ export function CheckoutModal({
           plan={plan}
           initialEmail={lastEmail}
           promo={promo}
+          floorCents={floorCents}
           onSubmit={submitEmail}
         />
       ) : null}
@@ -523,17 +571,45 @@ function EmailForm({
   plan,
   initialEmail,
   promo,
+  floorCents,
   onSubmit,
 }: {
   plan: Plan;
   initialEmail: string;
   promo: PromoInfo | null;
-  onSubmit: (email: string) => void | Promise<void>;
+  floorCents: number | null;
+  onSubmit: (email: string, customAmount: number | null) => void | Promise<void>;
 }) {
   const [email, setEmail] = useState(initialEmail);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const [customAmount, setCustomAmount] = useState("");
   const intervalLabel = plan === "yearly" ? "year" : "month";
+  const shortInterval = plan === "yearly" ? "yr" : "mo";
+
+  // The floor is what we charge if the buyer doesn't raise it. Pay-what-you-
+  // choose lets them give more, never less; the leftmost slider stop maps back
+  // to the exact floor so the standard price stays reachable.
+  const price = floorCents !== null ? floorCents / 100 : null;
+  const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
+  const customValid =
+    parsedCustom !== null &&
+    Number.isFinite(parsedCustom) &&
+    price !== null &&
+    parsedCustom >= price;
+  const amount = customValid ? (parsedCustom as number) : price;
+  const belowMin =
+    parsedCustom !== null &&
+    Number.isFinite(parsedCustom) &&
+    price !== null &&
+    parsedCustom < price;
+
+  const sliderMin = price !== null ? Math.ceil(price) : 0;
+  const sliderMax = price !== null ? Math.round(price * SLIDER_MAX_MULTIPLE) : 0;
+  const sliderValue =
+    amount !== null
+      ? Math.min(Math.max(Math.round(amount), sliderMin), sliderMax)
+      : sliderMin;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -544,10 +620,13 @@ function EmailForm({
       setError("Please enter a valid email.");
       return;
     }
+    if (belowMin) return;
     setError(null);
     setWorking(true);
     try {
-      await onSubmit(trimmed);
+      // A valid raised amount checks out at that figure; otherwise the floor
+      // (null hands checkout the fixed catalog price).
+      await onSubmit(trimmed, customValid ? (parsedCustom as number) : null);
     } finally {
       setWorking(false);
     }
@@ -562,6 +641,85 @@ function EmailForm({
         Billed {intervalLabel}ly. We'll send your sign-in link here.
       </p>
       {promo ? <PromoBanner promo={promo} /> : null}
+
+      {/* Pay what you choose — the floor is the minimum; give more to sustain
+          independent Jewish media. Drag for the shape, type for the exact
+          figure. Disabled until the floor loads. */}
+      <div className="mt-6 border-t border-rule pt-5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="eyebrow text-fg-muted">Choose your amount</span>
+          <span className="text-body-sm text-fg-strong">
+            {amount !== null ? `$${fmtPrice(amount)}` : ""}
+            <span className="text-fg-muted">/{shortInterval}</span>
+          </span>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <input
+            type="range"
+            aria-label={`Amount per ${intervalLabel}`}
+            min={sliderMin}
+            max={sliderMax}
+            step={1}
+            value={sliderValue}
+            disabled={price === null}
+            onChange={(e) => {
+              // The leftmost stop is the floor itself; clearing to "" hands
+              // checkout the fixed catalog price. Every other stop is its own
+              // whole-dollar custom amount.
+              const v = Number(e.target.value);
+              setCustomAmount(v <= sliderMin ? "" : String(v));
+            }}
+            onBlur={() => {
+              if (amount === null) return;
+              trackEvent("custom_amount_entered", {
+                plan,
+                amount,
+                valid: customValid,
+              });
+            }}
+            className="h-9 min-w-0 flex-1 cursor-pointer bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ accentColor: "var(--color-cyan)" }}
+          />
+          <div className="flex w-28 shrink-0 items-center border-b border-rule-strong pb-1.5 focus-within:border-cyan">
+            <span className="mr-1 text-lg text-fg-muted">$</span>
+            <input
+              type="number"
+              aria-label="Custom amount"
+              min={price ?? undefined}
+              step="any"
+              value={customAmount}
+              disabled={price === null}
+              onChange={(e) => setCustomAmount(e.target.value)}
+              onBlur={() => {
+                if (parsedCustom === null || !Number.isFinite(parsedCustom))
+                  return;
+                trackEvent("custom_amount_entered", {
+                  plan,
+                  amount: parsedCustom,
+                  valid: customValid,
+                });
+              }}
+              placeholder={price !== null ? fmtPrice(price) : ""}
+              className="min-w-0 flex-1 bg-transparent text-lg text-fg-strong outline-none placeholder:text-fg-placeholder disabled:opacity-50"
+            />
+            <span className="ml-1 shrink-0 whitespace-nowrap text-body-sm">
+              /{shortInterval}
+            </span>
+          </div>
+        </div>
+        {belowMin ? (
+          <p className="mt-2 text-body-sm text-danger" role="alert">
+            Minimum is ${price !== null ? fmtPrice(price) : ""}/{shortInterval}.
+          </p>
+        ) : (
+          <p className="mt-2 text-body-sm">
+            {price !== null
+              ? `From $${fmtPrice(price)}/${shortInterval} — give more to sustain independent Jewish media.`
+              : "Loading price…"}
+          </p>
+        )}
+      </div>
+
       <form onSubmit={submit} className="mt-6 space-y-4">
         <Field label="Email">
           <input
@@ -582,7 +740,7 @@ function EmailForm({
         ) : null}
         <button
           type="submit"
-          disabled={working}
+          disabled={working || belowMin}
           aria-busy={working}
           className={ctaClass}
         >

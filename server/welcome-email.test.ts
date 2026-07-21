@@ -1,8 +1,37 @@
 import { describe, test, expect } from 'bun:test'
 import {
+  renderGiftRedemptionEmail,
   renderGiftWelcomeEmail,
   renderSubscriberWelcomeEmail,
 } from './lib/welcome-email'
+
+describe('renderGiftRedemptionEmail', () => {
+  test('existing recipient: claim CTA points at the redeem link', () => {
+    const { html } = renderGiftRedemptionEmail({
+      recipientName: 'Alice',
+      giverName: 'Bob',
+      term: '1yr',
+      redeemUrl: 'https://app.test/redeem?token=abc',
+    })
+    expect(html).toContain('Claim your gift')
+    expect(html).toContain('https://app.test/redeem?token=abc')
+    expect(html).not.toContain('Set your password')
+  })
+
+  test('new recipient: set-password CTA carries the ticket, not the raw redeem link', () => {
+    // A brand-new recipient has no login yet, so the primary CTA must be the
+    // Auth0 password-change ticket (whose result URL is the claim link), never
+    // the bare /redeem link they can't authenticate into.
+    const { html } = renderGiftRedemptionEmail({
+      recipientName: 'Alice',
+      term: '1yr',
+      redeemUrl: 'https://app.test/redeem?token=abc',
+      passwordSetupUrl: 'https://auth.test/u/reset?ticket=xyz',
+    })
+    expect(html).toContain('Set your password')
+    expect(html).toContain('https://auth.test/u/reset?ticket=xyz')
+  })
+})
 
 describe('renderGiftWelcomeEmail', () => {
   test('new account: set-password CTA carries the ticket URL', () => {

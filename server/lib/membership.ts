@@ -169,6 +169,23 @@ export async function deleteMembershipByCustomer(
   await sql`delete from membership where stripe_customer_id = ${customerId}`
 }
 
+// Remove provably-expired gift membership rows: a gift is customer-less (no
+// Stripe subscription to cancel), so nothing else ever deletes it, and a lapsed
+// gift row left at status 'active' makes status-based logic (the gift-redeem
+// stacking check) misread it as live. Reads already treat an elapsed
+// gift_expires_at as free, so this is pure housekeeping. Returns the count
+// removed. Scoped tightly to customer-less rows so a real subscription is never
+// touched.
+export async function deleteExpiredGiftMemberships(sql: Sql): Promise<number> {
+  const rows = await sql`
+    delete from membership
+    where stripe_customer_id is null
+      and gift_expires_at is not null
+      and gift_expires_at <= now()
+    returning auth0_sub`
+  return rows.length
+}
+
 // --- Gifts ------------------------------------------------------------------
 
 export type GiftRow = {
