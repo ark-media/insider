@@ -1,9 +1,15 @@
 import { Fragment, useRef, useState } from "react";
 import { CheckoutModal } from "./CheckoutModal";
+import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 import type { Tier } from "../data/pricingTiers";
 
 type Plan = "monthly" | "yearly";
+type TierPricing = { monthly_cents: number; yearly_cents: number };
+
+function fmtPrice(dollars: number): string {
+  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+}
 
 // Column order mirrors the card grid: Ark+, the Bundle (featured), Community.
 const COLUMNS: { key: Tier; label: string; featured?: boolean }[] = [
@@ -101,6 +107,28 @@ export function PricingComparison() {
   const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
   const periodRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
+  // "From $X" floor per column, sourced live from Stripe (never hardcoded) — the
+  // same values the cards on /plus show. Price is secondary here: if it fails to
+  // load, the column simply omits the line and the "Choose" CTA (which fetches
+  // its own price in the modal) still works.
+  const pricing = useAsyncResource(async () => {
+    const res = await fetch("/api/pricing");
+    if (!res.ok) throw new Error("pricing request failed");
+    const data = (await res.json().catch(() => ({}))) as {
+      tiers?: Record<string, TierPricing>;
+    };
+    if (!data.tiers) throw new Error("pricing response malformed");
+    return data.tiers;
+  }, []);
+  const tiers = pricing.status === "ready" ? pricing.data : null;
+
+  const floorFor = (key: Tier): number | null => {
+    const t = tiers?.[key];
+    if (!t) return null;
+    const cents = plan === "yearly" ? t.yearly_cents : t.monthly_cents;
+    return typeof cents === "number" ? cents / 100 : null;
+  };
+
   const colClass = (featured?: boolean) =>
     featured ? "bg-navy-800/50" : "";
 
@@ -195,6 +223,22 @@ export function PricingComparison() {
                     ) : null}
                     <div className="text-h5 font-display font-bold text-fg-strong">
                       {c.label}
+                    </div>
+                    <div className="mt-2 text-body-sm text-fg-muted">
+                      {floorFor(c.key) !== null ? (
+                        <>
+                          From{" "}
+                          <span className="text-fg-strong">
+                            ${fmtPrice(floorFor(c.key) as number)}
+                          </span>
+                          <span className="whitespace-nowrap">
+                            {" "}
+                            / {plan === "yearly" ? "yr" : "mo"}
+                          </span>
+                        </>
+                      ) : pricing.status === "error" ? null : (
+                        <span className="inline-block h-[1em] w-16 animate-pulse rounded bg-rule-strong/40 align-middle" />
+                      )}
                     </div>
                   </th>
                 ))}
