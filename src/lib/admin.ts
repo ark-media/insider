@@ -14,10 +14,16 @@ import type {
 } from "../../shared/cancellation";
 import type { NewsletterSlug } from "../data/newsletters";
 import type { ReminderConfig } from "../../shared/feed-reminder";
+import type {
+  MemberDirectoryEntry,
+  MemberDirectoryFilter,
+  MemberDirectoryPage,
+} from "../../shared/member-directory";
 
 export type { Promo, BeehiivDraft, DiscussThread };
 export type { CancellationSummary, CancellationFilter };
 export type { ReminderConfig };
+export type { MemberDirectoryEntry, MemberDirectoryFilter, MemberDirectoryPage };
 
 // Kept as a thin indirection so call sites stay uniform; the session now
 // rides the cookie, so this only forwards any extra headers (e.g. content-type).
@@ -342,6 +348,28 @@ export async function backfillFeedActivations(
   });
   if (!res.ok) throw new Error(await errorMessage(res));
   return (await res.json()) as BackfillSummary;
+}
+
+// --- Member directory ----------------------------------------------------
+
+// One page of the member directory. Email/tier/activation narrow the results;
+// offset paginates (ignored when an email search is active). Throws on a non-OK
+// response so the page can show a retry.
+export async function listMembers(
+  filter: MemberDirectoryFilter & { offset?: number },
+): Promise<MemberDirectoryPage> {
+  const params = new URLSearchParams();
+  if (filter.email) params.set("email", filter.email);
+  if (filter.tier) params.set("tier", filter.tier);
+  if (filter.activation) params.set("activation", filter.activation);
+  if (filter.offset) params.set("offset", String(filter.offset));
+  const qs = params.toString();
+  const res = await fetch(`/api/admin/members${qs ? `?${qs}` : ""}`, {
+    headers: authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return (await res.json()) as MemberDirectoryPage;
 }
 
 // --- Discuss threads -----------------------------------------------------

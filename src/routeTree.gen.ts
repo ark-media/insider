@@ -39,6 +39,7 @@ import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
+import { Route as AdminMembersRouteImport } from './routes/admin/members'
 import { Route as AdminFeedRemindersRouteImport } from './routes/admin/feed-reminders'
 import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
 import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
@@ -203,6 +204,11 @@ const AdminPromosRoute = AdminPromosRouteImport.update({
   path: '/admin/promos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminMembersRoute = AdminMembersRouteImport.update({
+  id: '/admin/members',
+  path: '/admin/members',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminFeedRemindersRoute = AdminFeedRemindersRouteImport.update({
   id: '/admin/feed-reminders',
   path: '/admin/feed-reminders',
@@ -291,6 +297,7 @@ export interface FileRoutesByFullPath {
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
+  '/admin/members': typeof AdminMembersRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -335,6 +342,7 @@ export interface FileRoutesByTo {
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
+  '/admin/members': typeof AdminMembersRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -381,6 +389,7 @@ export interface FileRoutesById {
   '/admin/discuss-threads': typeof AdminDiscussThreadsRoute
   '/admin/faqs': typeof AdminFaqsRoute
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
+  '/admin/members': typeof AdminMembersRoute
   '/admin/promos': typeof AdminPromosRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
@@ -428,6 +437,7 @@ export interface FileRouteTypes {
     | '/admin/discuss-threads'
     | '/admin/faqs'
     | '/admin/feed-reminders'
+    | '/admin/members'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -472,6 +482,7 @@ export interface FileRouteTypes {
     | '/admin/discuss-threads'
     | '/admin/faqs'
     | '/admin/feed-reminders'
+    | '/admin/members'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -517,6 +528,7 @@ export interface FileRouteTypes {
     | '/admin/discuss-threads'
     | '/admin/faqs'
     | '/admin/feed-reminders'
+    | '/admin/members'
     | '/admin/promos'
     | '/careers/$slug'
     | '/hosts/$slug'
@@ -559,6 +571,7 @@ export interface RootRouteChildren {
   AdminDiscussThreadsRoute: typeof AdminDiscussThreadsRoute
   AdminFaqsRoute: typeof AdminFaqsRoute
   AdminFeedRemindersRoute: typeof AdminFeedRemindersRoute
+  AdminMembersRoute: typeof AdminMembersRoute
   AdminPromosRoute: typeof AdminPromosRoute
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
@@ -793,6 +806,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPromosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/members': {
+      id: '/admin/members'
+      path: '/admin/members'
+      fullPath: '/admin/members'
+      preLoaderRoute: typeof AdminMembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/feed-reminders': {
       id: '/admin/feed-reminders'
       path: '/admin/feed-reminders'
@@ -945,6 +965,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminDiscussThreadsRoute: AdminDiscussThreadsRoute,
   AdminFaqsRoute: AdminFaqsRoute,
   AdminFeedRemindersRoute: AdminFeedRemindersRoute,
+  AdminMembersRoute: AdminMembersRoute,
   AdminPromosRoute: AdminPromosRoute,
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,

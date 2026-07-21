@@ -176,6 +176,24 @@ export async function getSetupStates(
   return map
 }
 
+// Which of the given emails have at least one currently-activated feed. Powers
+// the admin member directory's activation column/filter. Emails are normalized
+// to match how activations are stored; the returned set holds the normalized
+// forms (callers normalize their lookup key too).
+export async function getActivatedEmails(
+  sql: Sql,
+  emails: string[],
+): Promise<Set<string>> {
+  const norm = emails.map(normalizeEmail)
+  if (norm.length === 0) return new Set()
+  const rows = (await sql`
+    select distinct email from sc_feed_activations
+    where activated = true and email = any(${norm}::text[])`) as Array<{
+    email: string
+  }>
+  return new Set(rows.map((r) => r.email))
+}
+
 // All currently-activated feeds for an email, as a map keyed by feed id. Only
 // rows with activated = true are returned; a revoked feed is absent.
 export async function getActivatedFeeds(

@@ -7,6 +7,11 @@ export const Route = createFileRoute("/admin/")({
 
 const CARDS = [
   {
+    to: "/admin/members",
+    title: "Members",
+    body: "Search members by email and filter by tier or feed-activation status. Each links out to their Stripe customer profile.",
+  },
+  {
     to: "/admin/announcements",
     title: "Announcements",
     body: "Create and schedule the dismissible banner at the top of the site.",

@@ -112,6 +112,35 @@ export async function loadAllMemberships(sql: Sql): Promise<MembershipReconcileR
   return rows as MembershipReconcileRow[]
 }
 
+// One page of the admin member directory, newest first. The optional tier
+// filter runs in SQL; email and activation are resolved outside this query
+// (email from Stripe, activation from sc_feed_activations) because Neon stores
+// no PII — see server/routes/admin-members.ts. `limit`/`offset` paginate the
+// membership spine; pass limit + 1 to detect a next page.
+export type MemberDirectoryRow = {
+  auth0_sub: string
+  stripe_customer_id: string | null
+  tier: Tier
+  status: string
+  current_period_end: string | null
+  cancel_at: string | null
+  gift_expires_at: string | null
+}
+
+export async function listMemberships(
+  sql: Sql,
+  opts: { tier: Tier | null; limit: number; offset: number },
+): Promise<MemberDirectoryRow[]> {
+  const rows = await sql`
+    select auth0_sub, stripe_customer_id, tier, status,
+           current_period_end, cancel_at, gift_expires_at
+    from membership
+    where (${opts.tier}::text is null or tier = ${opts.tier})
+    order by updated_at desc
+    limit ${opts.limit} offset ${opts.offset}`
+  return rows as MemberDirectoryRow[]
+}
+
 // Dunning / status-only update, matched on the Stripe customer (the event may
 // carry no membership context beyond it). No-op when no row matches.
 export async function setMembershipStatusByCustomer(
