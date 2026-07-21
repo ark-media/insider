@@ -25,7 +25,7 @@ export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
     defineRoute({
       path: '/api/faqs',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (_req, res, json) => {
         // FAQs change rarely; a short edge cache with SWR keeps the section
         // snappy without going stale for long.
         res.setHeader('cache-control', 'public, s-maxage=60, stale-while-revalidate=300')

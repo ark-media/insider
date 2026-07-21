@@ -251,7 +251,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     defineRoute({
       path: '/api/stripe/cancel-subscription',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
@@ -323,7 +323,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // syncScCancelSchedule mirrors the cleared schedule back to SC.
       path: '/api/stripe/reactivate-subscription',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
@@ -359,7 +359,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // existed. Failures fail closed (no offer), never 500 the flow.
       path: '/api/stripe/retention-offer',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
@@ -409,7 +409,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // is written, which burns eligibility.
       path: '/api/stripe/accept-retention-offer',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
@@ -481,7 +481,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
     defineRoute({
       path: '/api/stripe/subscription-status',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '/', appBaseUrl)
         const subId = url.searchParams.get('id')
@@ -547,7 +547,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // cancel button rather than an error.
       path: '/api/stripe/my-subscription',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
@@ -583,7 +583,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // confirmed against a live test-mode sub before this is exposed.
       path: '/api/stripe/change-tier',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
@@ -740,7 +740,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // parser would invalidate constructEvent().
       path: '/api/stripe/webhook',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
         const whSecret = env.STRIPE_WEBHOOK_SECRET
         if (!whSecret) return json(500, { error: 'not_configured' })

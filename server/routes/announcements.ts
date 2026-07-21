@@ -35,7 +35,7 @@ export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
     defineRoute({
       path: '/api/announcements/active',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (_req, res, json) => {
         // Short edge cache on top of the in-memory one; SWR keeps it snappy.
         res.setHeader('cache-control', 'public, s-maxage=30, stale-while-revalidate=60')
         if (!env.DATABASE_URL) return json(200, { announcement: null })

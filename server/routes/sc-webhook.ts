@@ -66,7 +66,7 @@ export function scWebhookRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/sc/webhook',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const secret = env.SC_WEBHOOK_SECRET
         if (!secret) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '', 'http://x')

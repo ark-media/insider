@@ -38,7 +38,7 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
   return [
     defineRoute({
       path: '/api/admin/me',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const admin = await requireAdmin(req, env)
         json(200, { isAdmin: admin !== null, email: admin?.email ?? null })
       },

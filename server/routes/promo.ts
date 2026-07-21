@@ -29,7 +29,7 @@ export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
   return [
     defineRoute({
       path: '/api/promo/active',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const url = new URL(req.url ?? '/', appBaseUrl)
         const plan = url.searchParams.get('plan')
 

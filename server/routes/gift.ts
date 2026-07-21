@@ -188,7 +188,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
 
     defineRoute({
       path: '/api/gift/status',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '/', appBaseUrl)
         const sessionId = url.searchParams.get('id')
@@ -226,7 +226,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
       // redeemed. No redeem-by — a gift is claimable anytime.
       path: '/api/gift/redeem',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
         if (!env.DATABASE_URL) return json(500, { error: 'database_not_configured' })

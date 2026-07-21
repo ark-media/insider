@@ -137,7 +137,7 @@ export function simplecastRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/simplecast/episodes',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const show = url.searchParams.get('show')
         if (!show) return json(400, { error: 'missing `show`' })
@@ -162,7 +162,7 @@ export function simplecastRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/simplecast/episode',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const id = url.searchParams.get('id')
         if (!id) return json(400, { error: 'missing `id`' })
@@ -186,7 +186,7 @@ export function simplecastRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/simplecast/podcast',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const show = url.searchParams.get('show')
         if (!show) return json(400, { error: 'missing `show`' })

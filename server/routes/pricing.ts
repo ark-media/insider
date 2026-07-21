@@ -18,7 +18,7 @@ export function pricingRoutes({ stripe }: Deps): Route[] {
   return [
     defineRoute({
       path: '/api/pricing',
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
         try {
           const url = new URL(req.url ?? '/', 'http://x')

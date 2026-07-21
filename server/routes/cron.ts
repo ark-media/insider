@@ -27,7 +27,7 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
     defineRoute({
       path: '/api/cron/reconcile-entitlements',
       method: ['POST', 'GET'],
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const cronSecret = env.CRON_SECRET
         if (!cronSecret) return json(500, { error: 'not_configured' })
         if (!cronAuthorized(req, cronSecret)) {
@@ -50,7 +50,7 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       // incomplete ones, and records each send so nobody is nagged twice.
       path: '/api/cron/feed-setup-reminders',
       method: ['POST', 'GET'],
-      handler: async (req, res, json) => {
+      handler: async (req, _res, json) => {
         const cronSecret = env.CRON_SECRET
         if (!cronSecret) return json(500, { error: 'not_configured' })
         if (!cronAuthorized(req, cronSecret)) {

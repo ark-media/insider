@@ -207,7 +207,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
     defineRoute({
       path: '/api/signout',
       method: 'POST',
-      handler: async (req, res, json) => {
+      handler: async (_req, res, json) => {
         clearCheckoutCookies(res, env)
         clearSessionCookies(res, env)
         json(200, { ok: true })

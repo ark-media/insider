@@ -410,7 +410,7 @@ export function circleRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/circle/community-events',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (_req, res, json) => {
         // Events shift on editorial cadence; SWR absorbs traffic between cold
         // starts. The client re-derives live/upcoming from `starts_at` on each
         // 45s poll, so a short cache here doesn't delay the "live" flip.
@@ -460,7 +460,7 @@ export function circleRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/circle/spaces',
       method: 'GET',
-      handler: async (req, res, json) => {
+      handler: async (_req, res, json) => {
         res.setHeader(
           'cache-control',
           'public, s-maxage=300, stale-while-revalidate=3600',
