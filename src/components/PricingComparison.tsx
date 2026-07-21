@@ -16,60 +16,59 @@ const COLUMNS: { key: Tier; label: string; featured?: boolean }[] = [
   { key: "circle", label: "Community" },
 ];
 
-type Row = { label: string; tiers: Record<Tier, boolean> };
+type Row = { label: string; detail?: string[]; tiers: Record<Tier, boolean> };
 type Group = { heading: string; rows: Row[] };
 
-// The truthful grant per tier — kept in sync with the `includes` copy in
-// PricingCards. Entitlements themselves are derived server-side from each
-// tier's Stripe product; this table is the reader-facing summary.
+// The truthful grant per tier, and the specific shows/items behind each
+// benefit. Entitlements themselves are derived server-side from each tier's
+// Stripe product; this table is the reader-facing summary.
 const GROUPS: Group[] = [
   {
-    heading: "Podcasts & newsletters",
+    heading: "Podcasts & video",
     rows: [
       {
-        label: "Every Ark Media podcast, ad-free",
+        label: "Ad-free podcasts",
+        detail: [
+          "Call Me Back",
+          "Ark News Daily",
+          "For Heaven's Sake",
+          "Chosen People Problems",
+        ],
         tiers: { "ark-plus": true, bundle: true, circle: false },
       },
       {
-        label: "Inside Call Me Back — private feed",
+        label: "Subscriber-exclusive content",
+        detail: [
+          "Inside Call Me Back — in your Call Me Back feed",
+          "Chosen People Problems AMA",
+          "Ark News Daily 6th episode",
+        ],
         tiers: { "ark-plus": true, bundle: true, circle: false },
       },
       {
-        label: "Members-only newsletters",
+        label: "Early access",
+        detail: [
+          "Mid-week Call Me Back episode — Wednesdays, not Fridays",
+          "History show",
+        ],
+        tiers: { "ark-plus": true, bundle: true, circle: false },
+      },
+      {
+        label: "Ad-free video episodes",
         tiers: { "ark-plus": true, bundle: true, circle: false },
       },
     ],
   },
   {
-    heading: "Community",
+    heading: "Community & newsletters",
     rows: [
       {
-        label: "The Ark Media community",
+        label: "Premium access to the Community app",
         tiers: { "ark-plus": false, bundle: true, circle: true },
       },
       {
-        label: "Live member events & Q&As",
-        tiers: { "ark-plus": false, bundle: true, circle: true },
-      },
-      {
-        label: "Dan's book club",
-        tiers: { "ark-plus": false, bundle: true, circle: true },
-      },
-    ],
-  },
-  {
-    heading: "Every membership",
-    rows: [
-      {
-        label: "Pay what you choose",
-        tiers: { "ark-plus": true, bundle: true, circle: true },
-      },
-      {
-        label: "Cancel anytime",
-        tiers: { "ark-plus": true, bundle: true, circle: true },
-      },
-      {
-        label: "Pay in your local currency",
+        label: "Full access to Ark Media newsletters",
+        detail: ["Weekly roundup", "Ark+ paid newsletter with Nadav's column"],
         tiers: { "ark-plus": true, bundle: true, circle: true },
       },
     ],
@@ -225,14 +224,29 @@ export function PricingComparison() {
                     <tr key={row.label} className="border-t border-rule-soft">
                       <th
                         scope="row"
-                        className="py-3.5 pr-4 text-body-sm font-normal text-fg"
+                        className="py-3.5 pr-4 align-top font-normal"
                       >
-                        {row.label}
+                        <span className="block text-body-sm text-fg">
+                          {row.label}
+                        </span>
+                        {row.detail ? (
+                          <ul className="mt-1.5 space-y-1 text-xs leading-snug text-fg-faint">
+                            {row.detail.map((item) => (
+                              <li key={item} className="flex gap-1.5">
+                                <span
+                                  aria-hidden="true"
+                                  className="mt-1.5 size-1 shrink-0 rounded-full bg-rule-strong"
+                                />
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
                       </th>
                       {COLUMNS.map((c) => (
                         <td
                           key={c.key}
-                          className={`py-3.5 text-center ${colClass(c.featured)}`}
+                          className={`py-3.5 text-center align-top ${colClass(c.featured)}`}
                         >
                           <Mark on={row.tiers[c.key]} />
                         </td>
