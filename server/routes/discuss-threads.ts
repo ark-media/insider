@@ -23,18 +23,12 @@ import {
   listDiscussThreads,
   validateCreateThreadInput,
 } from '../lib/discuss-threads.js'
-import type { Deps, Env, Route } from '../lib/route.js'
-import { isNewsletterSlug } from './newsletter-slugs.js'
-import type { NewsletterSlug } from '../../src/data/newsletters.js'
-
-function resolveBeehiivPublicationId(
-  env: Env,
-  newsletterSlug: NewsletterSlug,
-): string | undefined {
-  const key = `BEEHIIV_PUBLICATION_ID_${newsletterSlug.toUpperCase().replace(/-/g, '_')}`
-  const value = env[key]
-  return value && value.trim() ? value.trim() : undefined
-}
+import type { Deps, Route } from '../lib/route.js'
+import {
+  beehiivPublicationEnvKey,
+  isNewsletterSlug,
+  resolveBeehiivPublicationId,
+} from './newsletter-slugs.js'
 
 // UUID v1-v5 shape. discuss_threads.id is gen_random_uuid() (v4), so this
 // is just enough validation to reject obvious garbage before it reaches the
@@ -71,7 +65,7 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
           const publicationId = resolveBeehiivPublicationId(env, v.value.newsletterSlug)
           if (!publicationId) {
             return json(500, {
-              error: `BEEHIIV_PUBLICATION_ID_${v.value.newsletterSlug.toUpperCase().replace(/-/g, '_')} not configured`,
+              error: `${beehiivPublicationEnvKey(v.value.newsletterSlug)} not configured`,
             })
           }
 

@@ -31,7 +31,7 @@ import { getClientIp, makeJsonRes, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import type { Deps, Env, Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
-import { isNewsletterSlug } from './newsletter-slugs.js'
+import { isNewsletterSlug, resolveBeehiivPublicationId } from './newsletter-slugs.js'
 
 // Cache the raw upstream Beehiiv response keyed by publication id. Two slugs
 // can map to the same publication (e.g. ark-daily and members-letter sharing
@@ -49,18 +49,6 @@ const beehiivRawCache = makeTTLCache<string, BeehiivPost[]>(
 const BEEHIIV_AUTHOR_FALLBACK: Partial<Record<NewsletterSlug, string>> = {
   'ark-daily': 'Ark Media newsroom',
   'members-letter': 'Ark Media editorial',
-}
-
-function resolveBeehiivPublicationId(
-  env: Env,
-  newsletterSlug: NewsletterSlug,
-): string | undefined {
-  // Same shape as resolveSimplecastPodcastId: derive an env key from the
-  // newsletter slug. The slug is from a closed union (NewsletterSlug), so
-  // the derived key can't be attacker-controlled.
-  const key = `BEEHIIV_PUBLICATION_ID_${newsletterSlug.toUpperCase().replace(/-/g, '_')}`
-  const value = env[key]
-  return value && value.trim() ? value.trim() : undefined
 }
 
 async function fetchBeehiivRaw(

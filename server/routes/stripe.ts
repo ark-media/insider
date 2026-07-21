@@ -163,6 +163,30 @@ function pwycMaxAmount(floor: number): number {
   return Math.max(1_000_000, floor * 1000)
 }
 
+// Validate a pay-what-you-can custom amount against the tier/plan floor. No
+// custom amount (or a non-numeric one) charges the floor; a custom amount must
+// sit within [floor, pwycMaxAmount]. Returns the amount to charge, or a
+// client-facing error string. Shared by create-checkout-session and change-tier.
+function validatePwycAmount(
+  customAmountCents: unknown,
+  floor: number,
+  currency: string,
+): { amountCents: number } | { error: string } {
+  if (
+    typeof customAmountCents === 'number' &&
+    Number.isFinite(customAmountCents)
+  ) {
+    if (customAmountCents < floor) {
+      return { error: `Amount must be at least ${formatMinor(floor, currency)}.` }
+    }
+    if (customAmountCents > pwycMaxAmount(floor)) {
+      return { error: 'Custom amount too large.' }
+    }
+    return { amountCents: Math.round(customAmountCents) }
+  }
+  return { amountCents: floor }
+}
+
 // The plan a subscription bills on, from its recurring interval, so the cancel
 // save flow can offer a plan-targeted retention coupon. Null when the interval
 // isn't month/year (or the sub has no items) — the picker then offers only
@@ -179,9 +203,21 @@ function planFromSubscription(sub: Stripe.Subscription): Plan | null {
 // cancel, reactivate, and accept-offer responses — all read it *after* a Stripe
 // write has already succeeded, so an itemless sub must degrade to null rather
 // than throw a 500 that strands an action that already happened.
-function periodEndIso(sub: Stripe.Subscription): string | null {
-  const ts = sub.items.data[0]?.current_period_end
+// Stripe timestamps are unix seconds; our API/DB speak ISO strings. Null in
+// (or a non-finite value from a malformed payload) → null out, never "Invalid
+// Date".
+function tsToIso(ts: number | null | undefined): string | null {
   return ts != null && Number.isFinite(ts) ? new Date(ts * 1000).toISOString() : null
+}
+
+// The Stripe customer id off a subscription, whether the field is expanded to
+// an object or left as the bare id string.
+function customerIdOf(sub: Stripe.Subscription): string {
+  return typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+}
+
+function periodEndIso(sub: Stripe.Subscription): string | null {
+  return tsToIso(sub.items.data[0]?.current_period_end)
 }
 
 // The schedule id attached to a sub, or null. A subscription with a pending
@@ -207,7 +243,7 @@ async function releaseScheduleIfAny(
   const scheduleId = scheduleIdOf(sub)
   if (!scheduleId) return
   await stripe.subscriptionSchedules.release(scheduleId)
-  const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+  const customerId = customerIdOf(sub)
   if (env.DATABASE_URL) {
     try {
       await clearMembershipPending(getDb(env), customerId)
@@ -321,21 +357,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const catalog = await resolveCatalogPrice(stripe, tier, plan)
         const floor = catalog.floors[currency]
 
-        let amountCents = floor
-        if (
-          typeof body.custom_amount_cents === 'number' &&
-          Number.isFinite(body.custom_amount_cents)
-        ) {
-          if (body.custom_amount_cents < floor) {
-            return json(400, {
-              error: `Amount must be at least ${formatMinor(floor, currency)}.`,
-            })
-          }
-          if (body.custom_amount_cents > pwycMaxAmount(floor)) {
-            return json(400, { error: 'Custom amount too large.' })
-          }
-          amountCents = Math.round(body.custom_amount_cents)
-        }
+        const pwyc = validatePwycAmount(body.custom_amount_cents, floor, currency)
+        if ('error' in pwyc) return json(400, { error: pwyc.error })
+        const amountCents = pwyc.amountCents
 
         // Line item: the catalog price for the exact floor (it carries the
         // currency_options the session's `currency` selects), else inline
@@ -756,10 +780,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // to the current period end so we always have a date to show.
         let cancelAt: string | null = null
         if (sub?.cancel_at_period_end) {
-          cancelAt =
-            sub.cancel_at != null && Number.isFinite(sub.cancel_at)
-              ? new Date(sub.cancel_at * 1000).toISOString()
-              : periodEndIso(sub)
+          cancelAt = tsToIso(sub.cancel_at) ?? periodEndIso(sub)
         }
         json(200, {
           cancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),
@@ -807,7 +828,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
-        const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+        const customerId = customerIdOf(sub)
 
         // A EUR sub updated with USD price_data hard-fails (§6 point 1) — reuse
         // the subscription's own currency, and validate against ITS floor.
@@ -815,21 +836,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const catalog = await resolveCatalogPrice(stripe, newTier, plan)
         const floor = catalog.floors[currency] ?? catalog.floors.usd
 
-        let amountCents = floor
-        if (
-          typeof body.custom_amount_cents === 'number' &&
-          Number.isFinite(body.custom_amount_cents)
-        ) {
-          if (body.custom_amount_cents < floor) {
-            return json(400, {
-              error: `Amount must be at least ${formatMinor(floor, currency)}.`,
-            })
-          }
-          if (body.custom_amount_cents > pwycMaxAmount(floor)) {
-            return json(400, { error: 'Custom amount too large.' })
-          }
-          amountCents = Math.round(body.custom_amount_cents)
-        }
+        const pwyc = validatePwycAmount(body.custom_amount_cents, floor, currency)
+        if ('error' in pwyc) return json(400, { error: pwyc.error })
+        const amountCents = pwyc.amountCents
 
         const currentTier = await tierFromSubscription(sub, stripe)
         const prevEnt = deriveEntitlements(currentTier)
@@ -1054,9 +1063,7 @@ export async function tierFromSubscription(
 }
 
 function cancelAtIso(sub: Stripe.Subscription): string | null {
-  return sub.cancel_at != null && Number.isFinite(sub.cancel_at)
-    ? new Date(sub.cancel_at * 1000).toISOString()
-    : null
+  return tsToIso(sub.cancel_at)
 }
 
 // Serialize handling of same-customer deliveries within this instance so two
@@ -1098,7 +1105,7 @@ async function dispatchWebhookEvent(
     case 'customer.subscription.created':
     case 'customer.subscription.updated': {
       const sub = event.data.object as Stripe.Subscription
-      const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+      const customerId = customerIdOf(sub)
       await serializeByCustomer(customerId, () =>
         handleSubscriptionUpsert(event, sub, customerId, stripe, env, activator),
       )
@@ -1107,7 +1114,7 @@ async function dispatchWebhookEvent(
     case 'customer.subscription.deleted':
     case 'customer.subscription.paused': {
       const sub = event.data.object as Stripe.Subscription
-      const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+      const customerId = customerIdOf(sub)
       await serializeByCustomer(customerId, async () => {
         // Single-subscription member → no remaining entitlement. Revoke SC, drop
         // the entitlement signals, and remove the membership row (absence = free).
@@ -1410,10 +1417,9 @@ async function syncScCancelSchedule(
   if (!scSubId) return
   // Guard against a malformed payload pushing "Invalid Date" to SC, where it
   // would silently 422 into the catch and produce an unhelpful log line.
-  const hasValidCancelAt =
-    sub.cancel_at != null && Number.isFinite(sub.cancel_at)
-  const body = hasValidCancelAt
-    ? { ends_at: new Date(sub.cancel_at! * 1000).toISOString(), autorenew: false }
+  const endsAt = tsToIso(sub.cancel_at)
+  const body = endsAt
+    ? { ends_at: endsAt, autorenew: false }
     : { ends_at: null, autorenew: true }
   try {
     await createScClient(env).call('PATCH', `/subscriptions/${scSubId}`, body)
