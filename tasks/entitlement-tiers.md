@@ -448,14 +448,20 @@ Resolved 2026-07-20 unless marked **OPEN**.
 
 ## 9. Sequence (supersedes the old 9-step plan)
 
-**Status (2026-07-21):** Tasks 1, 2, 3, 6 landed (foundation commit). Tasks 4, 7,
-8, 9 landed. **Task 5 deferred** — removing the Auth0 tier claim strands
-/api/me/newsletters + /api/me until 10/11 re-point them at Neon (and 10/11 need
-`sub` in the session); pair 5 with 10/11. **Task 9 gift decision:** built the full
-redemption model — webhook writes a pending `gift` row + emails a claim link, and
-`POST /api/gift/redeem` grants it (account-credit branch's FX conversion is
-flagged, §7 #8). Remaining: 5, 10–17. Run `scripts/backfill-membership.ts --apply`
-before the tasks-10/11 cutover.
+**Status (2026-07-21):** Tasks 1–15 landed. Tasks 5, 10, 11, 12 shipped as the
+Neon-authoritative reader migration (a shared `resolveMembership` resolver keyed
+on the session `sub`, threaded through the ark_session cookie + post-activation
+checkout token); task 5 removed the Auth0 tier claim entirely; task 15 rewrote the
+reconciler Neon-authoritative + per-axis on opaque ids. Task 13 made checkout
+tier-aware, moved Circle onto first-party checkout, rewrote the false
+"community-included-with-Ark+" copy, and gave Pricing a three-tier selector (cut
+Founding). Task 14 made Cancel/Reactivate/retention schedule-safe (risk 7) and
+added `POST /api/stripe/change-tier`. Task 16 (Circle-admin cutover) + the
+empirical verify-pending items are captured in `tasks/entitlement-cutover-runbook.md`.
+**Remaining: task 17** — the test suite still needs updating from the old
+(Auth0-tier / SC-authoritative) model to the Neon model, and the analytics SKU
+dimension is partially wired (checkout funnel carries `tier`). Run
+`scripts/backfill-membership.ts --apply` before deploying the tasks-10/11 readers.
 
 Dependencies in brackets; ↺ reversible, ⚠ one-way. Tasks 1, 3, 6, 18 have no deps
 and can start immediately.
