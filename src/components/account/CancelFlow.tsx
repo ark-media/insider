@@ -173,9 +173,9 @@ export function CancelFlow({
   const [flowId, setFlowId] = useState<FlowId | null>(() =>
     tier === "ark-plus" ? "A" : tier === "circle" ? "B" : null,
   );
-  const [screen, setScreen] = useState<Screen>(() =>
-    tier === "bundle" ? "entry" : "mission",
-  );
+  // Every flow opens on the mission reminder (step 0); bundle then continues to
+  // its "keep any services?" selector, A/B to their save offers.
+  const [screen, setScreen] = useState<Screen>("mission");
   // All eligible offers, shown stacked on one "Are you sure?" screen (the
   // product design presents them together, not one at a time).
   const [offers, setOffers] = useState<RetentionOffer[]>([]);
@@ -616,20 +616,21 @@ export function CancelFlow({
           {errorLine}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button type="button" className={primaryBtn} onClick={onClose}>
-              Keep my subscription
+              {tier === "bundle" ? "Keep my bundle" : "Keep my subscription"}
             </button>
             <button
               type="button"
               disabled={busy}
               className={secondaryBtn}
               onClick={() => {
-                // Mission is A/B only now (bundle enters via the selector). The
-                // offer screen doubles as the "Are you sure?" step.
+                // A/B → their save offers (the offer screen doubles as "Are you
+                // sure?"); bundle → the "keep any services?" selector.
                 if (flowId === "A") void loadOffers("A", "offer");
                 else if (flowId === "B") void loadOffers("B", "offer");
+                else setScreen("entry");
               }}
             >
-              {busy ? "…" : "Continue to cancel"}
+              {busy ? "…" : tier === "bundle" ? "Continue" : "Continue to cancel"}
             </button>
           </div>
         </>
