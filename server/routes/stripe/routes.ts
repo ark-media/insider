@@ -29,7 +29,7 @@ import {
   insertCancellationSurvey,
   updateCancellationSurveyReasons,
 } from '../../lib/cancellation.js'
-import { debundlePricePreview, deriveSaveOffers } from '../../lib/retention.js'
+import { bundleBreakdown, debundlePricePreview, deriveSaveOffers } from '../../lib/retention.js'
 import { isPlanSwitchKind, isSaveIntent } from '../../../shared/retention.js'
 import {
   isCancelOfferOutcome,
@@ -678,6 +678,33 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // annual (Flow A / Flow D). Null when there's no live sub.
           plan: sub ? planFromSubscription(sub) : null,
         })
+      },
+    }),
+
+    defineRoute({
+      // Prices for the bundle "keep any services?" selector (Flows C/D/E entry):
+      // the current bundle price + each product's standalone price, for the
+      // member's cadence. Fails closed to null so the selector can still render
+      // its checkboxes (just without the price/total lines) on a Stripe hiccup.
+      path: '/api/stripe/bundle-breakdown',
+      method: 'GET',
+      handler: async (req, _res, json) => {
+        if (!stripe) return json(500, { error: 'not_configured' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const sub = await findLiveSubscription(stripe, email)
+        const plan = sub ? planFromSubscription(sub) : null
+        if (!plan) return json(200, { breakdown: null })
+
+        try {
+          const breakdown = await bundleBreakdown(stripe, plan)
+          return json(200, { breakdown })
+        } catch (err) {
+          console.error('[stripe] bundle-breakdown failed:', err)
+          return json(200, { breakdown: null })
+        }
       },
     }),
 

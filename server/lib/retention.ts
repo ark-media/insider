@@ -185,6 +185,26 @@ export async function debundlePricePreview(
   return { tier: targetTier, plan, priceCents }
 }
 
+// The prices behind the bundle "keep any services?" selector: the current
+// bundle price (shown when both are kept) plus each product's standalone price
+// (shown per service and when only that one is kept). All from the Stripe
+// catalog for the member's cadence — never hardcoded.
+export type BundleBreakdown = {
+  plan: Plan
+  bundleCents: number
+  arkPlusCents: number
+  circleCents: number
+}
+
+export async function bundleBreakdown(stripe: Stripe, plan: Plan): Promise<BundleBreakdown> {
+  const [bundleCents, arkPlusCents, circleCents] = await Promise.all([
+    getPlanPriceCents(stripe, 'bundle', plan),
+    getPlanPriceCents(stripe, 'ark-plus', plan),
+    getPlanPriceCents(stripe, 'circle', plan),
+  ])
+  return { plan, bundleCents, arkPlusCents, circleCents }
+}
+
 // Derive the ordered list of eligible save offers for a subscriber's tier +
 // billing cadence, per the cancellation PRD. Returned in the order a flow should
 // present them (e.g. annual switch first, supporter coupon on decline). All

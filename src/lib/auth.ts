@@ -181,6 +181,29 @@ export async function getMySubscription(): Promise<{
   }
 }
 
+// Prices behind the bundle "keep any services?" selector: the current bundle
+// price and each standalone. Null when unavailable (no live sub / Stripe hiccup)
+// — the selector then renders without price lines.
+export type BundleBreakdown = {
+  plan: "monthly" | "yearly";
+  bundleCents: number;
+  arkPlusCents: number;
+  circleCents: number;
+};
+
+export async function getBundleBreakdown(): Promise<BundleBreakdown | null> {
+  try {
+    const res = await fetch("/api/stripe/bundle-breakdown", {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { breakdown: BundleBreakdown | null };
+    return json.breakdown;
+  } catch {
+    return null;
+  }
+}
+
 // The ordered save offers for a tier-aware cancel/debundle flow. The server
 // resolves cadence + amounts from Stripe and window-suppresses coupons. Any
 // failure degrades to no offers so the flow proceeds to reason/confirm.

@@ -11,8 +11,10 @@ import {
   acceptSaveOffer,
   cancelSubscription,
   changeTier,
+  getBundleBreakdown,
   getSaveOffers,
   submitCancellationSurvey,
+  type BundleBreakdown,
   type StandalonePrice,
 } from "../../lib/auth";
 import type {
@@ -128,10 +130,9 @@ function offerCta(kind: OfferKind): string {
 
 type Screen =
   | "loading"
+  // Bundle entry = the "keep any services?" checkbox selector (Flows C/D/E).
   | "entry"
   | "mission"
-  | "bundle-value"
-  | "keep-one"
   | "offer"
   | "confirm"
   // Post-cancel reasons survey (survey-after-cancel): the cancel has already
@@ -180,11 +181,11 @@ export function CancelFlow({
   const [offers, setOffers] = useState<RetentionOffer[]>([]);
   const [offerShownAny, setOfferShownAny] = useState(false);
   const [standalone, setStandalone] = useState<StandalonePrice | null>(null);
-  // Flow E keep-just-one standalone prices for each single product.
-  const [keepOne, setKeepOne] = useState<{
-    arkPlus: StandalonePrice | null;
-    circle: StandalonePrice | null;
-  }>({ arkPlus: null, circle: null });
+  // Bundle selector: the catalog prices behind the "keep any services?" screen,
+  // and which of the two products the member still has checked (both by default).
+  const [breakdown, setBreakdown] = useState<BundleBreakdown | null>(null);
+  const [keptArkPlus, setKeptArkPlus] = useState(true);
+  const [keptCircle, setKeptCircle] = useState(true);
   const [terminal, setTerminal] = useState<Terminal>({ kind: "cancel" });
   // Multi-select survey (checkboxes). Collected after the cancel commits.
   const [reasons, setReasons] = useState<Set<string>>(() => new Set());
@@ -215,6 +216,20 @@ export function CancelFlow({
   useEffect(() => {
     headingRef.current?.focus();
   }, [screen]);
+
+  // Bundle members open on the selector; load its prices once. A null result
+  // (no sub / Stripe hiccup) just hides the price/total lines — the checkboxes
+  // still work.
+  useEffect(() => {
+    if (tier !== "bundle") return;
+    let live = true;
+    void getBundleBreakdown().then((b) => {
+      if (live) setBreakdown(b);
+    });
+    return () => {
+      live = false;
+    };
+  }, [tier]);
 
   const flow = (id: FlowId) => {
     setFlowId(id);
@@ -345,9 +360,11 @@ export function CancelFlow({
 
   // Commit the cancel, then show the reasons survey (survey-after-cancel). The
   // member sees "your subscription has been cancelled" before we ask why; the
-  // survey is optional and can't fail the cancel.
-  const doCancel = async () => {
-    if (!flowId) return;
+  // survey is optional and can't fail the cancel. `id` defaults to the active
+  // flow, but the bundle selector passes "E" explicitly since it sets flowId and
+  // cancels in the same handler (state hasn't flushed yet).
+  const doCancel = async (id: FlowId | null = flowId) => {
+    if (!id) return;
     setBusy(true);
     setError(null);
     const outcome = offerShownAny ? "declined" : "not_offered";
@@ -356,7 +373,7 @@ export function CancelFlow({
     if (r.ok) {
       trackEvent("subscription_cancelled", {
         offer_outcome: outcome,
-        flow: flowId,
+        flow: id,
         retained_product: "full-exit",
       });
       setAccessUntil(r.access_until ?? "");
@@ -420,17 +437,29 @@ export function CancelFlow({
     }
   };
 
-  // Enter Flow E's keep-just-one step, loading both single-product prices.
-  const enterKeepOne = async () => {
-    setBusy(true);
-    setError(null);
-    const [arkPlusRes, circleRes] = await Promise.all([
-      getSaveOffers("debundle-remove-circle"), // keep Ark+ → its standalone price
-      getSaveOffers("debundle-remove-ark-plus"), // keep Community → its standalone price
-    ]);
-    setBusy(false);
-    setKeepOne({ arkPlus: arkPlusRes.standalone, circle: circleRes.standalone });
-    setScreen("keep-one");
+  // Act on the bundle selector's current selection. Keeping both is a no-op
+  // (the "Keep Bundle" button); keeping one debundles to it (via its save
+  // offer, then confirm); keeping none cancels everything.
+  const applySelection = () => {
+    if (keptArkPlus && keptCircle) {
+      onClose();
+    } else if (keptArkPlus) {
+      // Remove the Community, keep Ark+ → Flow D.
+      flow("D");
+      setTerminal({ kind: "debundle", to: "ark-plus", retained: "kept-ark-plus" });
+      void loadOffers("D", "confirm");
+    } else if (keptCircle) {
+      // Remove Ark+, keep the Community → Flow C.
+      flow("C");
+      setTerminal({ kind: "debundle", to: "circle", retained: "kept-circle" });
+      void loadOffers("C", "confirm");
+    } else {
+      // Keep nothing → cancel everything (Flow E). Pass the id explicitly: flowId
+      // state hasn't flushed by the time doCancel reads it.
+      flow("E");
+      setTerminal({ kind: "cancel" });
+      void doCancel("E");
+    }
   };
 
   // Dismissing the modal from a terminal screen must finalize, not just hide it:
@@ -475,49 +504,108 @@ export function CancelFlow({
           {heading("Loading…")}
         </div>
       ) : screen === "entry" ? (
-        // Bundle-only decision tree → Flows C / D / E.
-        <>
-          {heading("What would you like to do?")}
-          <p className="mt-4 text-body-sm text-fg">
-            You have Ark+ and the Community together. You can drop one and keep
-            the other, or cancel everything.
-          </p>
-          <div className="mt-8 flex flex-col gap-3">
-            <button
-              type="button"
-              className={secondaryBtn}
-              onClick={() => {
-                flow("C");
-                setTerminal({ kind: "debundle", to: "circle", retained: "kept-circle" });
-                setScreen("mission");
-              }}
-            >
-              Remove Ark+, keep the Community
-            </button>
-            <button
-              type="button"
-              className={secondaryBtn}
-              onClick={() => {
-                flow("D");
-                setTerminal({ kind: "debundle", to: "ark-plus", retained: "kept-ark-plus" });
-                setScreen("mission");
-              }}
-            >
-              Remove the Community, keep Ark+
-            </button>
-            <button
-              type="button"
-              className={dangerBtn}
-              onClick={() => {
-                flow("E");
-                setTerminal({ kind: "cancel" });
-                setScreen("mission");
-              }}
-            >
-              Cancel everything
-            </button>
-          </div>
-        </>
+        // Bundle: "keep any services?" — checkbox per product with live total.
+        // Keep both = no change; keep one = debundle; keep none = cancel all.
+        (() => {
+          const cadence = plan === "yearly" ? "yr" : "mo";
+          const count = (keptArkPlus ? 1 : 0) + (keptCircle ? 1 : 0);
+          const totalCents = !breakdown
+            ? null
+            : count === 2
+              ? breakdown.bundleCents
+              : keptArkPlus
+                ? breakdown.arkPlusCents
+                : keptCircle
+                  ? breakdown.circleCents
+                  : 0;
+          const row =
+            "flex cursor-pointer items-center justify-between gap-3 border border-rule p-4 text-body-sm";
+          const box =
+            "h-4 w-4 shrink-0 accent-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+          return (
+            <>
+              {heading("Do you want to keep any services?")}
+              <p className="mt-4 text-body-sm text-fg">
+                Your membership includes both of these. Choose any you'd like to
+                keep — uncheck the rest.
+              </p>
+              <fieldset className="mt-6">
+                <legend className="sr-only">Services to keep</legend>
+                <div className="flex flex-col gap-3">
+                  <label className={row}>
+                    <span className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={keptArkPlus}
+                        onChange={() => setKeptArkPlus((v) => !v)}
+                        className={box}
+                      />
+                      <span className="text-fg-strong">Ark+</span>
+                    </span>
+                    {breakdown ? (
+                      <span className="text-fg-muted">
+                        {usd(breakdown.arkPlusCents)}/{cadence}
+                      </span>
+                    ) : null}
+                  </label>
+                  <label className={row}>
+                    <span className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={keptCircle}
+                        onChange={() => setKeptCircle((v) => !v)}
+                        className={box}
+                      />
+                      <span className="text-fg-strong">The Community</span>
+                    </span>
+                    {breakdown ? (
+                      <span className="text-fg-muted">
+                        {usd(breakdown.circleCents)}/{cadence}
+                      </span>
+                    ) : null}
+                  </label>
+                </div>
+              </fieldset>
+              <div className="mt-6 flex items-baseline justify-between border-t border-rule pt-4 text-body-sm">
+                <span className="text-fg-muted">
+                  {count === 0
+                    ? "Nothing selected"
+                    : `${count} service${count === 1 ? "" : "s"}`}
+                </span>
+                {totalCents !== null && count > 0 ? (
+                  <span className="font-display text-fg-strong">
+                    {usd(totalCents)}/{cadence}
+                  </span>
+                ) : null}
+              </div>
+              {errorLine}
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                {count === 0 ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={dangerBtn}
+                    onClick={applySelection}
+                  >
+                    {busy ? "Cancelling…" : "Cancel everything"}
+                  </button>
+                ) : count === 1 ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={secondaryBtn}
+                    onClick={applySelection}
+                  >
+                    {busy ? "…" : "Continue"}
+                  </button>
+                ) : null}
+                <button type="button" className={primaryBtn} onClick={onClose}>
+                  Keep bundle
+                </button>
+              </div>
+            </>
+          );
+        })()
       ) : screen === "mission" ? (
         <>
           <MissionReminder
@@ -535,84 +623,15 @@ export function CancelFlow({
               disabled={busy}
               className={secondaryBtn}
               onClick={() => {
-                // A/B → their save offers (the offer screen doubles as "Are you
-                // sure?"); C/D → the bundle-value popup first; E → keep-just-one.
+                // Mission is A/B only now (bundle enters via the selector). The
+                // offer screen doubles as the "Are you sure?" step.
                 if (flowId === "A") void loadOffers("A", "offer");
                 else if (flowId === "B") void loadOffers("B", "offer");
-                else if (flowId === "C" || flowId === "D") setScreen("bundle-value");
-                else if (flowId === "E") void enterKeepOne();
               }}
             >
               {busy ? "…" : "Continue to cancel"}
             </button>
           </div>
-        </>
-      ) : screen === "bundle-value" ? (
-        // Flows C/D: the value of the combined subscription before separating.
-        <>
-          {heading("Your bundle saves you money.")}
-          <p className="mt-4 text-body-sm text-fg">
-            Ark+ and the Community are cheaper together than apart. Separating
-            them means giving up that combined value —{" "}
-            {flowId === "C"
-              ? "the Community continues on its own at its standalone price."
-              : "Ark+ continues on its own at its standalone price."}
-          </p>
-          {errorLine}
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <button
-              type="button"
-              disabled={busy}
-              className={secondaryBtn}
-              onClick={() => {
-                if (flowId === "C") void loadOffers("C", "confirm");
-                else void loadOffers("D", "confirm");
-              }}
-            >
-              {busy ? "…" : "Continue"}
-            </button>
-            <button type="button" className={primaryBtn} onClick={onClose}>
-              Keep my bundle
-            </button>
-          </div>
-        </>
-      ) : screen === "keep-one" ? (
-        // Flow E: keep just one product before cancelling both.
-        <>
-          {heading("Would you keep just one?")}
-          <p className="mt-4 text-body-sm text-fg">
-            Instead of leaving entirely, you can keep one at its standalone
-            price:
-          </p>
-          <div className="mt-8 flex flex-col gap-3">
-            <button
-              type="button"
-              disabled={busy}
-              className={secondaryBtn}
-              onClick={() => void doDebundle("ark-plus", "kept-ark-plus")}
-            >
-              Keep Ark+
-              {keepOne.arkPlus ? ` — ${usd(keepOne.arkPlus.priceCents)}/${plan === "yearly" ? "yr" : "mo"}` : ""}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              className={secondaryBtn}
-              onClick={() => void doDebundle("circle", "kept-circle")}
-            >
-              Keep the Community
-              {keepOne.circle ? ` — ${usd(keepOne.circle.priceCents)}/${plan === "yearly" ? "yr" : "mo"}` : ""}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              className={dangerBtn}
-              onClick={() => void doCancel()}
-            >
-              No — cancel everything
-            </button>
-          </div>
-          {errorLine}
         </>
       ) : screen === "offer" ? (
         // All eligible offers, stacked on one "Are you sure?" screen. Each card
@@ -764,8 +783,8 @@ export function CancelFlow({
           </div>
         </>
       ) : (
-        // confirm — terminal debundle only (cancels commit from the offer/
-        // keep-one screens straight into the post-cancel survey).
+        // confirm — terminal debundle only (cancels commit from the offer or
+        // selector screens straight into the post-cancel survey).
         terminal.kind === "debundle" ? (
           <>
             {heading(
