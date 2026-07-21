@@ -225,8 +225,8 @@ function ShowUpsell() {
       </div>
       <p className="mt-3 max-w-xl text-body-lg">
         <span className="font-display text-[18px]">Ark+</span> members get the
-        members-only newsletter, full access to the Ark community, and the
-        ad-free Call Me Back Ark+ feed.
+        members-only newsletter and the ad-free Call Me Back Ark+ feed — add the
+        community, or get both in the bundle.
       </p>
       <Link
         to="/plus"

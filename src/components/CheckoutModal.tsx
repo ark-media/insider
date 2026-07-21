@@ -13,6 +13,15 @@ import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
 
 type Plan = "monthly" | "yearly";
+type Tier = "ark-plus" | "circle" | "bundle";
+
+// The SKU label shown in the modal chrome. Checkout derives entitlements from
+// the tier's catalog product server-side; this is copy only.
+const TIER_LABEL: Record<Tier, string> = {
+  "ark-plus": "Ark+ Membership",
+  circle: "Ark Community",
+  bundle: "Ark+ & Community",
+};
 
 type PromoInfo = {
   name: string | null;
@@ -145,11 +154,13 @@ async function pollForCheckoutSession(
 export function CheckoutModal({
   open,
   plan,
+  tier = "ark-plus",
   customAmount,
   onClose,
 }: {
   open: boolean;
   plan: Plan;
+  tier?: Tier;
   customAmount: number | null;
   onClose: () => void;
 }) {
@@ -231,6 +242,7 @@ export function CheckoutModal({
       setLastEmail(email);
       trackEvent("checkout_email_submitted", {
         plan,
+        tier,
         is_custom_amount: customAmount !== null,
       });
       setStep({ kind: "creating" });
@@ -241,6 +253,7 @@ export function CheckoutModal({
           body: JSON.stringify({
             email,
             plan,
+            tier,
             custom_amount_cents:
               customAmount !== null
                 ? Math.round(customAmount * 100)
@@ -282,7 +295,7 @@ export function CheckoutModal({
         });
       }
     },
-    [plan, customAmount],
+    [plan, tier, customAmount],
   );
 
   const handleActivated = useCallback(
@@ -291,6 +304,7 @@ export function CheckoutModal({
       // subscription — the true bottom of the funnel.
       trackEvent("checkout_succeeded", {
         plan,
+        tier,
         is_custom_amount: customAmount !== null,
       });
       try {
@@ -307,7 +321,7 @@ export function CheckoutModal({
         setStep({ kind: "processing", email });
       }
     },
-    [onClose, refresh, plan, customAmount],
+    [onClose, refresh, plan, tier, customAmount],
   );
 
   const stripePromiseValue = getStripe();
@@ -321,7 +335,7 @@ export function CheckoutModal({
       describedBy="checkout-desc"
     >
       <p id="checkout-desc" className="eyebrow">
-        Ark+ Membership · {plan === "yearly" ? "Annual" : "Monthly"}
+        {TIER_LABEL[tier]} · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
 
       {step.kind === "email" ? (

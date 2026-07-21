@@ -23,6 +23,11 @@ import { track } from './observability'
 
 type Plan = 'monthly' | 'yearly'
 
+// The SKU dimension on the revenue funnel, so PostHog can break checkout down by
+// Ark+ vs Circle vs Bundle. Optional on each event — a call site that predates
+// the three-tier split still compiles and just omits it.
+type Tier = 'ark-plus' | 'circle' | 'bundle'
+
 // Where a checkout attempt died, so `checkout_failed` is one event you can
 // break down by stage in PostHog instead of three near-duplicate events.
 type CheckoutFailureStage =
@@ -48,14 +53,19 @@ interface EventMap {
   custom_amount_entered: { plan: Plan; amount: number; valid: boolean }
   checkout_opened: {
     plan: Plan
+    tier?: Tier
     amount: number | null
     is_custom_amount: boolean
-    is_founding: boolean
   }
-  checkout_email_submitted: { plan: Plan; is_custom_amount: boolean }
-  checkout_payment_submitted: { plan: Plan }
-  checkout_succeeded: { plan: Plan; is_custom_amount: boolean }
-  checkout_failed: { plan: Plan; stage: CheckoutFailureStage; reason?: string }
+  checkout_email_submitted: { plan: Plan; tier?: Tier; is_custom_amount: boolean }
+  checkout_payment_submitted: { plan: Plan; tier?: Tier }
+  checkout_succeeded: { plan: Plan; tier?: Tier; is_custom_amount: boolean }
+  checkout_failed: {
+    plan: Plan
+    tier?: Tier
+    stage: CheckoutFailureStage
+    reason?: string
+  }
 
   // --- Tier 2: churn / retention ---
   cancel_initiated: void

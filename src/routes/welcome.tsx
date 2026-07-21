@@ -29,8 +29,8 @@ function WelcomePage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <WelcomeStep
               n="01"
-              title="Open the Ark+ community"
-              body="Nadav, Amit and Tal are in the Community app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically."
+              title="Open the community"
+              body="Community and Bundle members: Nadav, Amit and Tal are in the Community app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically."
               slot={<CommunityAppLinks className="mt-6" />}
             />
             <WelcomeStep

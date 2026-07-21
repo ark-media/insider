@@ -255,7 +255,7 @@ function CommunityVisual() {
 const plusIncludes = [
   "The ad-free paid feed",
   "Members-only newsletters",
-  "The community app",
+  "The full network, ad-free",
 ];
 
 function PlusVisual() {
@@ -450,7 +450,7 @@ function AlsoFromArkMedia() {
       <FeatureBand
         eyebrow="Ark+"
         title="All in."
-        body="The paid feed, members-only newsletters, and the community — all included."
+        body="The paid feed and members-only newsletters. Add the community, or get both in the bundle."
         visual={<PlusVisual />}
         cta="Explore Ark+"
         to="/plus"

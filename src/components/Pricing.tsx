@@ -10,11 +10,60 @@ function fmtPrice(dollars: number): string {
 
 // Pay-what-you-choose ceiling for the slider, as a multiple of the plan's base
 // price. The typed field still accepts more (the server caps at $10,000) — this
-// only bounds the drag range so the meaningful part of it, the stretch from base
-// to Founding, isn't squeezed into the first few pixels.
+// only bounds the drag range.
 const SLIDER_MAX_MULTIPLE = 4;
 
+type Tier = "ark-plus" | "circle" | "bundle";
+
+// The three SKUs, each on its own entitlement footing (§4). Community is NOT
+// part of Ark+ (decision #2) — it's its own tier, and the Bundle is what buys
+// both. `includes` is the exact, truthful grant per tier.
+const TIERS: {
+  key: Tier;
+  label: string;
+  blurb: string;
+  includes: string[];
+}[] = [
+  {
+    key: "ark-plus",
+    label: "Ark+",
+    blurb:
+      "Every Ark Media podcast, ad-free, plus the members-only newsletters.",
+    includes: [
+      "Inside Call Me Back — private, ad-free feed",
+      "The full network, ad-free",
+      "Members-only newsletters",
+    ],
+  },
+  {
+    key: "circle",
+    label: "Community",
+    blurb:
+      "The Ark Media community app — conversations, member events, and Dan's book club.",
+    includes: [
+      "The Ark Media community in Circle",
+      "Live member events & Q&As",
+      "Dan's book club",
+    ],
+  },
+  {
+    key: "bundle",
+    label: "Ark+ & Community",
+    blurb: "Both — the private feed and the community, one membership.",
+    includes: [
+      "Inside Call Me Back — private, ad-free feed",
+      "The full network, ad-free",
+      "Members-only newsletters",
+      "The Ark Media community in Circle",
+      "Live member events & Q&As",
+    ],
+  },
+];
+
+type TierPricing = { monthly_cents: number; yearly_cents: number };
+
 export function Pricing() {
+  const [tier, setTierRaw] = useState<Tier>("bundle");
   const [plan, setPlanRaw] = useState<"monthly" | "yearly">("yearly");
   const [customAmount, setCustomAmount] = useState<string>("");
   const setPlan = (p: "monthly" | "yearly") => {
@@ -22,11 +71,14 @@ export function Pricing() {
     setCustomAmount("");
     trackEvent("plan_selected", { plan: p });
   };
+  const setTier = (t: Tier) => {
+    setTierRaw(t);
+    setCustomAmount("");
+  };
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  // Top of the revenue funnel: fire once when the pricing section actually
-  // scrolls into view, not on mount — otherwise every homepage load counts as
-  // a pricing view and the funnel's first step is meaningless.
+  // Top of the revenue funnel: fire once when the pricing section scrolls into
+  // view, not on mount.
   const sectionRef = useRef<HTMLElement>(null);
   const viewedRef = useRef(false);
   useEffect(() => {
@@ -47,75 +99,61 @@ export function Pricing() {
   }, []);
 
   // Prices come from Stripe (the source of truth) via /api/pricing — never
-  // hardcoded, so the displayed amount can't drift from what we actually
-  // charge. (USD source amount; buyers pay the localized equivalent.) A failed
-  // or malformed response rejects, so the UI shows an error+retry instead of
-  // spinning on the skeleton forever.
+  // hardcoded, so the displayed amount can't drift from what we charge. A failed
+  // or malformed response rejects, so the UI shows error+retry.
   const pricing = useAsyncResource(async () => {
     const res = await fetch("/api/pricing");
     if (!res.ok) throw new Error("pricing request failed");
     const data = (await res.json().catch(() => ({}))) as {
-      monthly_cents?: number;
-      yearly_cents?: number;
-      founding_multiple?: number;
+      tiers?: Record<string, TierPricing>;
     };
+    const tiers = data.tiers;
     if (
-      typeof data.monthly_cents !== "number" ||
-      typeof data.yearly_cents !== "number" ||
-      typeof data.founding_multiple !== "number"
+      !tiers ||
+      !TIERS.every(
+        (t) =>
+          typeof tiers[t.key]?.monthly_cents === "number" &&
+          typeof tiers[t.key]?.yearly_cents === "number",
+      )
     ) {
       throw new Error("pricing response malformed");
     }
-    return {
-      monthly: data.monthly_cents / 100,
-      yearly: data.yearly_cents / 100,
-      // The Founding threshold is the server's to define — it's what checkout
-      // actually enforces. Shipping it with the prices keeps the promise on
-      // this page and the rule in the webhook from drifting apart.
-      foundingMultiple: data.founding_multiple,
-    };
+    return tiers;
   }, []);
-  const prices = pricing.status === "ready" ? pricing.data : null;
+  const tiers = pricing.status === "ready" ? pricing.data : null;
+  const selected = TIERS.find((t) => t.key === tier)!;
 
-  const price = prices ? (plan === "yearly" ? prices.yearly : prices.monthly) : null;
+  const price = tiers
+    ? (plan === "yearly"
+        ? tiers[tier].yearly_cents
+        : tiers[tier].monthly_cents) / 100
+    : null;
   const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
   const customValid =
     parsedCustom !== null &&
     Number.isFinite(parsedCustom) &&
     price !== null &&
     parsedCustom >= price;
-  const savingsPct = prices
-    ? Math.round((1 - prices.yearly / (prices.monthly * 12)) * 100)
+  const savingsPct = tiers
+    ? Math.round(
+        (1 -
+          tiers[tier].yearly_cents / (tiers[tier].monthly_cents * 12)) *
+          100,
+      )
     : null;
 
-  // What the member would actually be charged: their chosen amount if it's a
-  // valid one, otherwise the plan's base price.
+  // What the member would actually be charged: their chosen amount if valid,
+  // otherwise the plan's base price.
   const amount = customValid ? (parsedCustom as number) : price;
-  const foundingAt = prices && price !== null ? price * prices.foundingMultiple : null;
-  // Decided in integer cents, exactly as the server does (stripe.ts:
-  // `amountCents >= defaultCents * FOUNDING_MULTIPLE`), so the badge this page
-  // promises and the one checkout stamps agree bit-for-bit — no float slack at
-  // the boundary, whatever the multiple.
-  const isFounding =
-    amount !== null && prices !== null && price !== null
-      ? Math.round(amount * 100) >= Math.round(price * 100) * prices.foundingMultiple
-      : false;
 
-  // The slider moves in whole dollars — a base price like $59.99 would otherwise
-  // drag through $60.99, $61.99, and every stop after it would carry the cents.
-  // The floor is the first whole dollar at or above the base; the range's
-  // onChange maps that leftmost stop back to the exact base (see below), so the
-  // standard price is always reachable. Typing stays exact and can exceed the
-  // slider's ceiling.
+  // The slider moves in whole dollars; the leftmost stop maps back to the exact
+  // base so the standard price is always reachable, and typing stays exact.
   const sliderMin = price !== null ? Math.ceil(price) : 0;
   const sliderMax = price !== null ? Math.round(price * SLIDER_MAX_MULTIPLE) : 0;
   const sliderValue =
-    amount !== null ? Math.min(Math.max(Math.round(amount), sliderMin), sliderMax) : sliderMin;
-  // Where the Founding threshold sits along the track, as a percentage.
-  const foundingPct =
-    foundingAt !== null && sliderMax > sliderMin
-      ? ((foundingAt - sliderMin) / (sliderMax - sliderMin)) * 100
-      : 0;
+    amount !== null
+      ? Math.min(Math.max(Math.round(amount), sliderMin), sliderMax)
+      : sliderMin;
 
   return (
     <section id="pricing" ref={sectionRef} className="relative">
@@ -131,30 +169,22 @@ export function Pricing() {
               </span>
             </h2>
             <p className="mt-6 max-w-md text-body-sm text-fg">
-              {prices
-                ? `$${fmtPrice(prices.monthly)} a month or $${fmtPrice(prices.yearly)} a year`
-                : "Monthly or annual"}{" "}
-              — or name a higher amount to support the work. Every Ark+ member
-              gets the same feed, the same newsletters, the same community. Give
-              more and you're helping sustain independent Jewish media.
+              Three ways in: the private feed, the community, or both. Every plan
+              is pay-what-you-choose — name the suggested amount or give more to
+              help sustain independent Jewish media.
             </p>
             <ul className="mt-10 space-y-2 text-body-sm">
-              <li className="flex items-center gap-2">
-                <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                Cancel anytime
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                Gift Ark+ available
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                Secure checkout via Stripe
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                Pay in your local currency
-              </li>
+              {[
+                "Cancel anytime",
+                "Gift Ark+ available",
+                "Secure checkout via Stripe",
+                "Pay in your local currency",
+              ].map((f) => (
+                <li key={f} className="flex items-center gap-2">
+                  <span className="inline-block size-1.5 rounded-full bg-cyan" />
+                  {f}
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -165,265 +195,215 @@ export function Pricing() {
                 onRetry={pricing.retry}
               />
             ) : (
-            <>
-            {/* Plan toggle — fluid on phones (each button takes half the row) and
-                intrinsic from `sm` up. An `inline-flex` here sized to its content,
-                which at 320px is wider than the gutter and forced the whole page
-                to overflow horizontally. */}
-            <div
-              role="group"
-              aria-label="Billing period"
-              className="flex w-full border border-rule-strong p-1 sm:inline-flex sm:w-auto"
-            >
-              {(["monthly", "yearly"] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  aria-pressed={plan === p}
-                  onClick={() => setPlan(p)}
-                  className={`relative inline-flex min-h-11 flex-1 items-center justify-center px-3 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:flex-none sm:px-6 ${
-                    plan === p
-                      ? "bg-cyan text-navy"
-                      : "text-fg-muted hover:text-fg-strong"
-                  }`}
+              <>
+                {/* Tier selector — the three SKUs. */}
+                <div
+                  role="group"
+                  aria-label="Membership"
+                  className="mb-3 grid grid-cols-3 gap-1 border border-rule-strong p-1"
                 >
-                  {p === "yearly" ? "annual" : "monthly"}
-                  {p === "yearly" && savingsPct ? (
-                    <span
-                      className={`ml-2 text-xs ${plan === p ? "opacity-80" : "text-cyan"}`}
+                  {TIERS.map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      aria-pressed={tier === t.key}
+                      onClick={() => setTier(t.key)}
+                      className={`inline-flex min-h-11 items-center justify-center px-2 text-center button-text font-display font-bold leading-tight transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                        tier === t.key
+                          ? "bg-cyan text-navy"
+                          : "text-fg-muted hover:text-fg-strong"
+                      }`}
                     >
-                      −{savingsPct}%
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
 
-            {/* Plan block */}
-            <div className="mt-6 border border-rule bg-navy-800/50">
-              <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_1fr]">
-                {/* Price column */}
-                <div className="relative border-b border-rule p-8 sm:border-b-0 sm:border-r">
-                  <div className="eyebrow">
-                    {plan === "yearly" ? "Annual · billed once" : "Monthly · billed monthly"}
-                  </div>
-                  {/* Said up front, not in the small print: the community isn't a
-                      second purchase. It's the question every membership page of
-                      this shape gets asked. */}
-                  <div className="mt-4 inline-flex items-center border border-rule-strong px-3 py-1.5 text-xs text-fg-muted">
-                    Includes Circle community access at no extra cost
-                  </div>
-                  {/* The headline is the amount they'll actually be charged, not
-                      the list price — once someone names a higher figure, showing
-                      them the base would be quoting a number we aren't going to
-                      bill. The base is still on the record: it's stated to the
-                      left, and as the minimum on the field below. */}
-                  <div className="mt-6 flex items-baseline gap-2 text-fg-strong">
-                    <span className="display-upright text-[clamp(3.5rem,7vw,5rem)] leading-none">
-                      {amount !== null ? (
-                        `$${fmtPrice(amount)}`
-                      ) : (
-                        <span className="inline-block h-[0.7em] w-28 animate-pulse rounded bg-rule-strong/40 align-middle" />
-                      )}
-                    </span>
-                    <span className="text-body-sm">
-                      / {plan === "yearly" ? "year" : "month"}
-                    </span>
-                  </div>
-                  <div className="mt-3 text-body-sm">
-                    {plan === "yearly"
-                      ? price !== null
-                        ? `$${fmtPrice(price)}/year minimum — pay what you choose.`
-                        : ""
-                      : "Billed monthly. Cancel anytime."}
-                  </div>
+                {/* Plan toggle — monthly / annual. */}
+                <div
+                  role="group"
+                  aria-label="Billing period"
+                  className="flex w-full border border-rule-strong p-1 sm:inline-flex sm:w-auto"
+                >
+                  {(["monthly", "yearly"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      aria-pressed={plan === p}
+                      onClick={() => setPlan(p)}
+                      className={`relative inline-flex min-h-11 flex-1 items-center justify-center px-3 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:flex-none sm:px-6 ${
+                        plan === p
+                          ? "bg-cyan text-navy"
+                          : "text-fg-muted hover:text-fg-strong"
+                      }`}
+                    >
+                      {p === "yearly" ? "annual" : "monthly"}
+                      {p === "yearly" && savingsPct ? (
+                        <span
+                          className={`ml-2 text-xs ${plan === p ? "opacity-80" : "text-cyan"}`}
+                        >
+                          −{savingsPct}%
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
 
-                  <p className="mt-5 max-w-[42ch] text-body-sm text-fg">
-                    {plan === "yearly"
-                      ? "Full access to every Ark Media podcast, ad-free. Give more to help sustain independent Jewish media."
-                      : "The best way to listen to every Ark Media podcast. Full access across the network, ad-free, with subscriber-exclusive episodes."}
-                  </p>
+                {/* Plan block */}
+                <div className="mt-6 border border-rule bg-navy-800/50">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_1fr]">
+                    {/* Price column */}
+                    <div className="relative border-b border-rule p-8 sm:border-b-0 sm:border-r">
+                      <div className="eyebrow">
+                        {selected.label} ·{" "}
+                        {plan === "yearly" ? "billed annually" : "billed monthly"}
+                      </div>
+                      <div className="mt-6 flex items-baseline gap-2 text-fg-strong">
+                        <span className="display-upright text-[clamp(3.5rem,7vw,5rem)] leading-none">
+                          {amount !== null ? (
+                            `$${fmtPrice(amount)}`
+                          ) : (
+                            <span className="inline-block h-[0.7em] w-28 animate-pulse rounded bg-rule-strong/40 align-middle" />
+                          )}
+                        </span>
+                        <span className="text-body-sm">
+                          / {plan === "yearly" ? "year" : "month"}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-body-sm">
+                        {price !== null
+                          ? `$${fmtPrice(price)}/${plan === "yearly" ? "year" : "month"} minimum — pay what you choose.`
+                          : ""}
+                      </div>
 
-                  {/* Custom amount — drag for the shape of it, type for the
-                      exact figure. The slider carries the persuasion (you can
-                      see Founding sitting a third of the way along); the box
-                      keeps the control precise and keyboard-reachable. */}
-                  <div className="mt-10">
-                    <label htmlFor="custom-amount" className="eyebrow text-fg-muted">
-                      Adjust amount
-                    </label>
+                      <p className="mt-5 max-w-[42ch] text-body-sm text-fg">
+                        {selected.blurb}
+                      </p>
 
-                    {/* Stacked on phones: side by side, the range input's ~129px
-                        intrinsic width plus the amount box overflows the card's
-                        padded interior at 320px (flex-1 alone won't shrink past
-                        content — hence min-w-0 once they do sit in a row). */}
-                    <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
-                      <div className="relative min-w-0 flex-1">
-                        <input
-                          type="range"
-                          aria-label={`Amount per ${plan === "yearly" ? "year" : "month"}`}
-                          min={sliderMin}
-                          max={sliderMax}
-                          step={1}
-                          value={sliderValue}
-                          disabled={price === null}
-                          onChange={(e) => {
-                            // The leftmost stop is the base price itself, not the
-                            // whole dollar above it. `sliderMin` is `ceil(base)`,
-                            // so a $59.99 plan has no whole-dollar stop at base —
-                            // without this, dragging to the far left would select
-                            // "$60", charge a penny over, and (since it no longer
-                            // equals the fixed price) mint a one-off dynamic
-                            // Stripe price. Clearing to "" hands checkout the base
-                            // and its configured price ID. Every other stop is its
-                            // own whole-dollar custom amount.
-                            const v = Number(e.target.value);
-                            setCustomAmount(v <= sliderMin ? "" : String(v));
-                          }}
-                          // Track on blur, not pointer-up: pointer-up misses
-                          // keyboard users adjusting with arrow keys entirely, and
-                          // blur fires once with the committed value for both
-                          // input methods (before the checkout button's click, so
-                          // the figure is still captured if they proceed).
-                          onBlur={() => {
-                            if (amount === null) return;
-                            trackEvent("custom_amount_entered", {
-                              plan,
-                              amount,
-                              valid: customValid,
-                            });
-                          }}
-                          className="h-11 w-full cursor-pointer bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
-                          // The thumb and fill turn gold the moment the amount
-                          // crosses into Founding — the control itself confirms
-                          // the unlock, before you read a word about it.
-                          style={{
-                            accentColor: isFounding
-                              ? "var(--color-founding)"
-                              : "var(--color-cyan)",
-                          }}
-                        />
-                        {/* Founding tick. Decorative — the threshold is stated
-                            in words below, so it carries no meaning of its own. */}
-                        {price !== null ? (
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute top-1/2 h-3 w-px -translate-y-1/2 bg-founding/60"
-                            style={{ left: `${foundingPct}%` }}
-                          />
+                      {/* Custom amount — drag for the shape, type for the exact
+                          figure. */}
+                      <div className="mt-10">
+                        <label
+                          htmlFor="custom-amount"
+                          className="eyebrow text-fg-muted"
+                        >
+                          Adjust amount
+                        </label>
+                        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
+                          <div className="relative min-w-0 flex-1">
+                            <input
+                              type="range"
+                              aria-label={`Amount per ${plan === "yearly" ? "year" : "month"}`}
+                              min={sliderMin}
+                              max={sliderMax}
+                              step={1}
+                              value={sliderValue}
+                              disabled={price === null}
+                              onChange={(e) => {
+                                // The leftmost stop is the base price itself;
+                                // clearing to "" hands checkout the base and its
+                                // fixed price ID. Every other stop is its own
+                                // whole-dollar custom amount.
+                                const v = Number(e.target.value);
+                                setCustomAmount(v <= sliderMin ? "" : String(v));
+                              }}
+                              onBlur={() => {
+                                if (amount === null) return;
+                                trackEvent("custom_amount_entered", {
+                                  plan,
+                                  amount,
+                                  valid: customValid,
+                                });
+                              }}
+                              className="h-11 w-full cursor-pointer bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+                              style={{ accentColor: "var(--color-cyan)" }}
+                            />
+                          </div>
+
+                          <div className="flex w-full shrink-0 items-center border-b border-rule-strong pb-2 focus-within:border-cyan sm:w-32">
+                            <span className="mr-1 text-[22px] text-fg-muted">
+                              $
+                            </span>
+                            <input
+                              id="custom-amount"
+                              type="number"
+                              min={price ?? undefined}
+                              step="any"
+                              value={customAmount}
+                              onChange={(e) => setCustomAmount(e.target.value)}
+                              onBlur={() => {
+                                if (
+                                  parsedCustom === null ||
+                                  !Number.isFinite(parsedCustom)
+                                )
+                                  return;
+                                trackEvent("custom_amount_entered", {
+                                  plan,
+                                  amount: parsedCustom,
+                                  valid: customValid,
+                                });
+                              }}
+                              placeholder={price !== null ? fmtPrice(price) : ""}
+                              className="min-h-11 w-full bg-transparent text-[22px] text-fg-strong outline-none placeholder:text-fg-placeholder"
+                            />
+                            <span className="ml-1 shrink-0 whitespace-nowrap text-body-sm">
+                              /{plan === "yearly" ? "yr" : "mo"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {parsedCustom !== null &&
+                        Number.isFinite(parsedCustom) &&
+                        price !== null &&
+                        parsedCustom < price ? (
+                          <p
+                            className="mt-2 text-body-sm text-danger"
+                            role="alert"
+                          >
+                            Minimum is ${fmtPrice(price)}/
+                            {plan === "yearly" ? "yr" : "mo"}.
+                          </p>
                         ) : null}
                       </div>
 
-                      <div className="flex w-full shrink-0 items-center border-b border-rule-strong pb-2 focus-within:border-cyan sm:w-32">
-                        <span className="mr-1 text-[22px] text-fg-muted">$</span>
-                        <input
-                          id="custom-amount"
-                          type="number"
-                          min={price ?? undefined}
-                          // Without this the input inherits step=1, and a base
-                          // price with cents ($59.99) makes every round figure a
-                          // step mismatch — $200 would report itself invalid.
-                          step="any"
-                          value={customAmount}
-                          onChange={(e) => setCustomAmount(e.target.value)}
-                          onBlur={() => {
-                            // Fire on commit, not per keystroke, so we capture
-                            // the buyer's intended figure once instead of N noisy
-                            // partial values.
-                            if (parsedCustom === null || !Number.isFinite(parsedCustom)) return;
-                            trackEvent("custom_amount_entered", {
-                              plan,
-                              amount: parsedCustom,
-                              valid: customValid,
-                            });
-                          }}
-                          placeholder={price !== null ? fmtPrice(price) : ""}
-                          // 44px — it's a payment field on a phone.
-                          className="min-h-11 w-full bg-transparent text-[22px] text-fg-strong outline-none placeholder:text-fg-placeholder"
-                        />
-                        <span className="ml-1 shrink-0 whitespace-nowrap text-body-sm">
-                          /{plan === "yearly" ? "yr" : "mo"}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          trackEvent("checkout_opened", {
+                            plan,
+                            tier,
+                            amount,
+                            is_custom_amount: customValid,
+                          });
+                          setCheckoutOpen(true);
+                        }}
+                        disabled={price === null}
+                        className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-cyan disabled:hover:text-navy"
+                      >
+                        {plan === "yearly" ? "Subscribe annually" : "Subscribe monthly"}
+                        <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
+                          →
                         </span>
+                      </button>
+                    </div>
+
+                    {/* Includes column — the exact grant for the selected tier. */}
+                    <div className="p-8">
+                      <div className="eyebrow text-fg-muted">
+                        {selected.label} includes
                       </div>
-                    </div>
-
-                    {parsedCustom !== null &&
-                    Number.isFinite(parsedCustom) &&
-                    price !== null &&
-                    parsedCustom < price ? (
-                      <p className="mt-2 text-body-sm text-danger" role="alert">
-                        Minimum is ${fmtPrice(price)}/{plan === "yearly" ? "yr" : "mo"}.
-                      </p>
-                    ) : null}
-
-                    {/* The unlock. Announced politely so a screen-reader user
-                        crossing the threshold with arrow keys hears it too. */}
-                    <div aria-live="polite">
-                      {isFounding ? (
-                        <div className="mt-4 border-l-2 border-founding bg-founding/8 p-4">
-                          <div className="eyebrow text-founding">
-                            You'll unlock Founding Member
-                          </div>
-                          <p className="mt-2 text-body-sm text-fg">
-                            Your Circle profile will show this badge for as long as
-                            your {plan === "yearly" ? "annual" : "monthly"} gift stays
-                            at this level.
-                          </p>
-                        </div>
-                      ) : foundingAt !== null ? (
-                        <p className="mt-4 text-body-sm text-fg-muted">
-                          Give ${fmtPrice(foundingAt)}/{plan === "yearly" ? "yr" : "mo"}{" "}
-                          or more and you'll unlock a{" "}
-                          <span className="text-founding">Founding Member</span> badge
-                          in the community.
-                        </p>
-                      ) : null}
+                      <ul className="mt-5 space-y-3 text-body-sm text-fg">
+                        {selected.includes.map((f) => (
+                          <li key={f} className="flex items-start gap-3">
+                            <span className="mt-[7px] h-px w-4 bg-cyan" />
+                            {f}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      trackEvent("checkout_opened", {
-                        plan,
-                        amount,
-                        is_custom_amount: customValid,
-                        is_founding: isFounding,
-                      });
-                      setCheckoutOpen(true);
-                    }}
-                    disabled={price === null}
-                    className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-cyan disabled:hover:text-navy"
-                  >
-                    {plan === "yearly" ? "Subscribe annually" : "Subscribe monthly"}
-                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
-                      →
-                    </span>
-                  </button>
                 </div>
-
-                {/* Includes column */}
-                <div className="p-8">
-                  <div className="eyebrow text-fg-muted">
-                    Every Ark+ member gets
-                  </div>
-                  <ul className="mt-5 space-y-3 text-body-sm text-fg">
-                    {[
-                      "Inside Call Me Back — private, ad-free feed",
-                      "Members-only newsletters",
-                      "The Ark Media community in Circle",
-                      "Live events and Q&As",
-                    ].map((f) => (
-                      <li key={f} className="flex items-start gap-3">
-                        <span className="mt-[7px] h-px w-4 bg-cyan" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-            </>
+              </>
             )}
           </div>
         </div>
@@ -431,6 +411,7 @@ export function Pricing() {
       <CheckoutModal
         open={checkoutOpen}
         plan={plan}
+        tier={tier}
         customAmount={customValid ? (parsedCustom as number) : null}
         onClose={() => setCheckoutOpen(false)}
       />

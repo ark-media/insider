@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { CommunityAppLinks } from "./CommunityAppLinks";
-import { circleUrls } from "../config/urls";
+import { CheckoutModal } from "./CheckoutModal";
+import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 
-// Circle is billed by Circle, not by us — there's no Stripe Price behind this
-// number for /api/pricing to read, so unlike the Ark+ plans it has to live in
-// the copy. If community pricing changes on Circle's side, change it here too.
-const CIRCLE_PRICE = "$2";
+function fmtPrice(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+}
 
 const pillars = [
   {
@@ -26,12 +28,27 @@ const pillars = [
 ];
 
 /**
- * The community, sold on its own terms — a peer of the Ark+ pricing section
- * rather than a line item inside it. Membership here is bought from Circle
- * directly; Ark+ members already have it, which is stated once, at the end,
- * where it belongs.
+ * The community, sold on its own terms — a peer of the Ark+ pricing section, not
+ * a line item inside it. Community is its own SKU (the `circle` axis): we bill it
+ * through our own Stripe checkout, and it is NOT included with Ark+ (decision
+ * #2). The price is sourced live from /api/pricing so it never drifts from what
+ * checkout actually charges. Bundle (Ark+ + Community) lives on the Pricing page.
  */
 export function CircleCommunity() {
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  const pricing = useAsyncResource(async () => {
+    const res = await fetch("/api/pricing");
+    if (!res.ok) throw new Error("pricing request failed");
+    const data = (await res.json().catch(() => ({}))) as {
+      tiers?: { circle?: { monthly_cents?: number } };
+    };
+    const cents = data.tiers?.circle?.monthly_cents;
+    if (typeof cents !== "number") throw new Error("pricing response malformed");
+    return { monthlyCents: cents };
+  }, []);
+  const monthlyCents = pricing.data?.monthlyCents ?? null;
+
   return (
     <section id="community" className="relative border-t border-rule-soft">
       <div className="page-gutter pt-12 pb-16">
@@ -54,27 +71,33 @@ export function CircleCommunity() {
 
             <div className="mt-8 flex items-baseline gap-2 text-fg-strong">
               <span className="display-upright text-[clamp(2.6rem,5vw,3.6rem)] leading-none">
-                {CIRCLE_PRICE}
+                {monthlyCents !== null ? (
+                  `$${fmtPrice(monthlyCents)}`
+                ) : (
+                  <span className="inline-block h-[0.7em] w-16 animate-pulse rounded bg-rule-strong/40 align-middle" />
+                )}
               </span>
               <span className="text-body-sm">/ month</span>
             </div>
 
-            <a
-              href={circleUrls.community}
-              target="_blank"
-              rel="noreferrer noopener"
-              onClick={() => trackEvent("circle_join_clicked")}
-              className="group mt-6 inline-flex min-h-12 w-full items-center justify-between border border-rule-strong px-5 button-text font-display font-bold tracking-cta text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:w-auto sm:gap-8"
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent("circle_join_clicked");
+                setCheckoutOpen(true);
+              }}
+              disabled={monthlyCents === null}
+              className="group mt-6 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:gap-8"
             >
-              Join Circle
+              Join the community
               <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                 →
               </span>
-            </a>
+            </button>
 
             <p className="mt-6 max-w-md text-body-sm text-fg-muted">
-              Already an Ark+ member? Circle community access is included at no
-              extra cost — you don't pay for it twice.
+              Want the private feed too? The Ark+ &amp; Community bundle covers
+              both — see the plans above.
             </p>
           </div>
 
@@ -105,6 +128,13 @@ export function CircleCommunity() {
           </div>
         </div>
       </div>
+      <CheckoutModal
+        open={checkoutOpen}
+        plan="monthly"
+        tier="circle"
+        customAmount={null}
+        onClose={() => setCheckoutOpen(false)}
+      />
     </section>
   );
 }

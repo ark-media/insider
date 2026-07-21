@@ -3,7 +3,7 @@
 // actually charge.
 
 import { makeJsonRes } from '../lib/http.js'
-import { FOUNDING_MULTIPLE, getAllTierPricing } from '../lib/pricing.js'
+import { getAllTierPricing } from '../lib/pricing.js'
 import type { Deps, Route } from '../lib/route.js'
 
 export function pricingRoutes({ stripe }: Deps): Route[] {
@@ -14,16 +14,11 @@ export function pricingRoutes({ stripe }: Deps): Route[] {
         const json = makeJsonRes(res)
         if (!stripe) return json(500, { error: 'Stripe not configured' })
         try {
+          // Per-tier prices ({ 'ark-plus' | circle | bundle }: { monthly_cents,
+          // yearly_cents }). The client renders all three from this. Founding is
+          // cut for launch (§5), so no founding_multiple is served.
           const tiers = await getAllTierPricing(stripe)
-          json(200, {
-            tiers,
-            founding_multiple: FOUNDING_MULTIPLE,
-            // Transitional: the current Pricing page reads these top-level Ark+
-            // fields. Task 13 reworks Pricing.tsx to render all three tiers off
-            // `tiers` and removes these.
-            monthly_cents: tiers['ark-plus'].monthly_cents,
-            yearly_cents: tiers['ark-plus'].yearly_cents,
-          })
+          json(200, { tiers })
         } catch (err) {
           console.error('[pricing] lookup failed:', err)
           json(502, { error: 'Could not load pricing' })

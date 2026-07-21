@@ -80,10 +80,10 @@ function GiftPage() {
                 </span>
               </h1>
               <p className="mt-6 max-w-md text-body-sm text-fg">
-                A fixed-term gift of Ark+ — Inside Call Me Back, members-only
-                newsletters, the community, and live events. No autorenew. We
-                email the recipient a redemption link the moment your payment
-                clears.
+                A fixed-term gift of Ark+ — Inside Call Me Back and the
+                members-only newsletters, ad-free across the network. No
+                autorenew. We email the recipient a redemption link the moment
+                your payment clears.
               </p>
               <ul className="mt-10 space-y-2 text-body-sm">
                 <li className="flex items-center gap-2">
