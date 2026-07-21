@@ -67,6 +67,23 @@ export async function getMembershipByStripeCustomer(
   return (rows[0] as MembershipRow | undefined) ?? null
 }
 
+// The tier a scheduled period-end change will land the member on, keyed on the
+// Stripe customer (the account page has the customer off the live sub, not the
+// auth0_sub). Null when no change is pending. Lets the UI name the change
+// ("bundle → Ark+") instead of a generic "a plan change is scheduled".
+export async function getScheduledTierByCustomer(
+  sql: Sql,
+  customerId: string,
+): Promise<Tier | null> {
+  const rows = await sql`
+    select scheduled_tier from membership
+    where stripe_customer_id = ${customerId}
+    order by updated_at desc limit 1`
+  const scheduled = (rows[0] as { scheduled_tier: Tier | null } | undefined)
+    ?.scheduled_tier
+  return scheduled ?? null
+}
+
 // Upsert keyed on auth0_sub. `updated_at` is bumped to now(). gift_expires_at is
 // preserved when omitted (a subscription event shouldn't clear a gift term).
 export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<void> {

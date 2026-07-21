@@ -21,6 +21,7 @@ import { deriveEntitlements } from '../../entitlement.js'
 import { getDb } from '../../lib/db.js'
 import {
   clearMembershipPending,
+  getScheduledTierByCustomer,
   setMembershipPending,
 } from '../../lib/membership.js'
 import { hasAcceptedRetention, insertCancellationSurvey } from '../../lib/cancellation.js'
@@ -594,12 +595,34 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (sub?.cancel_at_period_end) {
           cancelAt = tsToIso(sub.cancel_at) ?? periodEndIso(sub)
         }
+        const hasSchedule = Boolean(sub && scheduleIdOf(sub))
+        // The tier a pending period-end change lands on (e.g. a debundle's
+        // bundle → ark-plus), read from the Neon row by the sub's customer, so the
+        // account page can name the change rather than say "a plan change".
+        let scheduledTier: string | null = null
+        if (hasSchedule && sub && env.DATABASE_URL) {
+          try {
+            scheduledTier = await getScheduledTierByCustomer(
+              getDb(env),
+              customerIdOf(sub),
+            )
+          } catch (err) {
+            console.error('[stripe] my-subscription scheduled-tier read failed:', err)
+          }
+        }
         json(200, {
           cancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),
           cancelAt,
           // A schedule-managed sub has a pending period-end tier/PWYC change
           // (task 14). The account page can surface "a plan change is scheduled".
-          pendingChange: Boolean(sub && scheduleIdOf(sub)),
+          pendingChange: hasSchedule,
+          // The tier that change lands on, so the page can say "bundle → Ark+".
+          // Null when nothing is scheduled (or the row is unreadable).
+          scheduledTier,
+          // The current period end — the date any pending change / debundle takes
+          // effect and through which access continues. Lets the account page show
+          // a concrete date instead of "the end of your current billing period".
+          periodEnd: sub ? periodEndIso(sub) : null,
           // Billing cadence, so the cancel flows can branch copy by monthly vs
           // annual (Flow A / Flow D). Null when there's no live sub.
           plan: sub ? planFromSubscription(sub) : null,

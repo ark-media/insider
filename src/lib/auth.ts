@@ -131,6 +131,8 @@ export async function getMySubscription(): Promise<{
   cancelAtPeriodEnd: boolean;
   cancelAt: string | null;
   pendingChange?: boolean;
+  scheduledTier?: "ark-plus" | "circle" | "bundle" | "free" | null;
+  periodEnd?: string | null;
   plan?: "monthly" | "yearly" | null;
 }> {
   try {
@@ -142,6 +144,8 @@ export async function getMySubscription(): Promise<{
       cancelAtPeriodEnd: boolean;
       cancelAt: string | null;
       pendingChange?: boolean;
+      scheduledTier?: "ark-plus" | "circle" | "bundle" | "free" | null;
+      periodEnd?: string | null;
       plan?: "monthly" | "yearly" | null;
     };
   } catch {
