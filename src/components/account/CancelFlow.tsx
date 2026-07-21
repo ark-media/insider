@@ -159,9 +159,11 @@ export function CancelFlow({
 
   // Move focus to the live heading on each screen change (a11y): one heading is
   // mounted at a time, tabIndex={-1} so it takes focus without joining tab order.
+  // offerIndex is a dep too: cycling to the next offer swaps the heading text
+  // without changing `screen`, so re-focus it to announce the new offer.
   useEffect(() => {
     headingRef.current?.focus();
-  }, [screen]);
+  }, [screen, offerIndex]);
 
   const flow = (id: FlowId) => {
     setFlowId(id);
@@ -245,20 +247,33 @@ export function CancelFlow({
     if (isSwitch(offer.kind)) {
       const targetPlan: Plan = offer.kind === "annual_switch" ? "yearly" : "monthly";
       const r = await changeTier({ tier, plan: targetPlan });
-      if (r.ok && intent && offer.kind === "monthly_switch" && offer.couponId) {
-        await acceptSaveOffer(intent, offer.kind);
+      if (!r.ok) {
+        setBusy(false);
+        setError(r.error ?? "Could not switch your plan — please try again.");
+        return;
+      }
+      // The perpetual monthly_switch's whole promise ("keep your annual rate")
+      // rests on its forever coupon. If the switch lands but the coupon fails to
+      // attach, the member would be billed full monthly price — so treat the
+      // attach as required and surface the failure instead of a false "saved".
+      if (intent && offer.kind === "monthly_switch" && offer.couponId) {
+        const c = await acceptSaveOffer(intent, offer.kind);
+        if (!c.ok) {
+          setBusy(false);
+          setError(
+            c.error ??
+              "Your plan was switched but we couldn't lock in your rate — please try again or contact support.",
+          );
+          return;
+        }
       }
       setBusy(false);
-      if (r.ok) {
-        trackEvent("save_offer_accepted", {
-          flow: flowId,
-          tier,
-          offer_kind: offer.kind,
-        });
-        onSaved(offerCopy(offer).heading, r.effective_at ?? "");
-      } else {
-        setError(r.error ?? "Could not switch your plan — please try again.");
-      }
+      trackEvent("save_offer_accepted", {
+        flow: flowId,
+        tier,
+        offer_kind: offer.kind,
+      });
+      onSaved(offerCopy(offer).heading, r.effective_at ?? "");
       return;
     }
 
@@ -308,7 +323,14 @@ export function CancelFlow({
     if (!plan || !flowId) return;
     setBusy(true);
     setError(null);
-    const r = await changeTier({ tier: to, plan, retainedProduct: retained });
+    // Record whether a save offer was shown-and-declined before this debundle,
+    // so the win-back row reads 'declined' vs 'not_offered' like a full cancel.
+    const r = await changeTier({
+      tier: to,
+      plan,
+      retainedProduct: retained,
+      offerOutcome: offerShownAny ? "declined" : "not_offered",
+    });
     setBusy(false);
     if (r.ok) {
       trackEvent("subscription_debundled", { flow: flowId, retained_product: retained });

@@ -41,7 +41,7 @@ export function isCancellationReason(slug: unknown): slug is string {
 export type OfferOutcome = 'accepted' | 'declined' | 'not_offered'
 
 // The two outcomes the cancel endpoint accepts from the client. 'accepted' is
-// written only server-side by accept-retention-offer, never sent on a cancel.
+// written only server-side by accept-save-offer, never sent on a cancel.
 const CANCEL_OUTCOMES: ReadonlySet<string> = new Set(['declined', 'not_offered'])
 
 export function isCancelOfferOutcome(v: unknown): v is 'declined' | 'not_offered' {

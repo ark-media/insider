@@ -99,57 +99,6 @@ export async function cancelSubscription(input: {
   }
 }
 
-// Is the current member eligible for a retention discount on cancel, and what
-// is it? Any failure — non-OK response, network error, non-JSON body —
-// degrades to "no offer" so the cancel flow always proceeds (worst case: skips
-// straight to the reason step).
-export async function getRetentionOffer(): Promise<{
-  eligible: boolean;
-  offer: RetentionOffer | null;
-}> {
-  try {
-    const res = await fetch("/api/stripe/retention-offer", {
-      credentials: "include",
-    });
-    if (!res.ok) return { eligible: false, offer: null };
-    return (await res.json()) as {
-      eligible: boolean;
-      offer: RetentionOffer | null;
-    };
-  } catch {
-    return { eligible: false, offer: null };
-  }
-}
-
-// Accept the offer: the server re-derives the coupon, attaches it to the live
-// subscription, and clears any pending cancel. Returns the applied discount +
-// next charge date for the confirmation.
-export async function acceptRetentionOffer(): Promise<{
-  ok: boolean;
-  percentOff?: number | null;
-  amountOff?: number | null;
-  durationMonths?: number | null;
-  next_charge_at?: string;
-  error?: string;
-}> {
-  try {
-    const res = await fetch("/api/stripe/accept-retention-offer", {
-      method: "POST",
-      credentials: "include",
-    });
-    return (await res.json()) as {
-      ok: boolean;
-      percentOff?: number | null;
-      amountOff?: number | null;
-      durationMonths?: number | null;
-      next_charge_at?: string;
-      error?: string;
-    };
-  } catch {
-    return { ok: false, error: "Something went wrong — please try again." };
-  }
-}
-
 // Undo a pending cancel: the server clears cancel_at_period_end so the
 // membership renews normally again. Returns the next charge date for the
 // confirmation message.
@@ -276,6 +225,9 @@ export async function changeTier(input: {
   // Set on a debundle so the server records the win-back cancellation record
   // (what was kept). Omitted for a plain upgrade/PWYC change.
   retainedProduct?: "kept-circle" | "kept-ark-plus";
+  // On a debundle, whether a save offer was shown-and-declined first, so the
+  // win-back record reads 'declined' vs 'not_offered' like the full-cancel path.
+  offerOutcome?: "declined" | "not_offered";
 }): Promise<{
   ok: boolean;
   changed?: boolean;
@@ -293,6 +245,7 @@ export async function changeTier(input: {
         plan: input.plan,
         custom_amount_cents: input.customAmountCents,
         retained_product: input.retainedProduct,
+        offer_outcome: input.offerOutcome,
       }),
     });
     return (await res.json()) as {
