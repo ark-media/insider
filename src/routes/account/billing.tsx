@@ -25,6 +25,7 @@ function BillingPage() {
     | { kind: "saved"; headline: string; nextChargeAt: string }
     | { kind: "debundled"; kept: "ark-plus" | "circle" }
     | { kind: "resumed"; nextChargeAt: string }
+    | { kind: "reverted"; nextChargeAt: string }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
   // The ISO date this membership is already scheduled to cancel, or null when
@@ -36,6 +37,14 @@ function BillingPage() {
   // A period-end tier/PWYC change is pending (task 14) — surfaced so the member
   // knows a scheduled change is in flight. Debundles land here too.
   const [pendingChange, setPendingChange] = useState(false);
+  // The tier a pending period-end change lands on (e.g. a debundle's ark-plus),
+  // so the banner can name the change instead of "a plan change is scheduled".
+  const [scheduledTier, setScheduledTier] = useState<
+    "ark-plus" | "circle" | "bundle" | "free" | null
+  >(null);
+  // The current period end (ISO) — the concrete date a pending change/debundle
+  // takes effect and through which access continues. Null until loaded / no sub.
+  const [periodEnd, setPeriodEnd] = useState<string | null>(null);
   // The member's billing cadence, passed to the cancel flow so it can branch
   // copy by monthly vs annual (Flows A/D). Null until loaded.
   const [plan, setPlan] = useState<"monthly" | "yearly" | null>(null);
@@ -67,6 +76,8 @@ function BillingPage() {
       if (!active) return;
       if (s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
       setPendingChange(Boolean(s.pendingChange));
+      setScheduledTier(s.scheduledTier ?? null);
+      setPeriodEnd(s.periodEnd ?? null);
       setPlan(s.plan ?? null);
     });
     return () => {
@@ -82,7 +93,8 @@ function BillingPage() {
       status.kind === "ok" ||
       status.kind === "saved" ||
       status.kind === "debundled" ||
-      status.kind === "resumed"
+      status.kind === "resumed" ||
+      status.kind === "reverted"
     ) {
       confirmationRef.current?.focus();
     }
@@ -113,6 +125,31 @@ function BillingPage() {
 
   const me = state.me;
   const cancelTier = me.tier as "ark-plus" | "circle" | "bundle";
+  // The billing-period-end date, localized, or null when we don't have it — used
+  // to turn "the end of your current billing period" into a concrete date.
+  const periodEndLabel = periodEnd
+    ? new Date(periodEnd).toLocaleDateString()
+    : null;
+
+  // A human noun phrase for a tier, so the pending-change banner can name the
+  // change ("from the Ark+ & Community bundle to Ark+").
+  const tierLabel = (t: "ark-plus" | "circle" | "bundle" | "free") =>
+    t === "bundle"
+      ? "the Ark+ & Community bundle"
+      : t === "ark-plus"
+        ? "Ark+"
+        : t === "circle"
+          ? "the Community"
+          : "the free plan";
+
+  // The tier the cancel flow should operate on. Normally the current tier, but
+  // when a debundle is already scheduled the bundle is effectively becoming a
+  // single product — so cancelling should target that remaining piece
+  // (scheduledTier), not re-offer the bundle decision tree.
+  const flowTier: "ark-plus" | "circle" | "bundle" =
+    pendingChange && (scheduledTier === "ark-plus" || scheduledTier === "circle")
+      ? scheduledTier
+      : cancelTier;
 
   const onReactivate = async () => {
     setStatus({ kind: "reactivating" });
@@ -126,6 +163,26 @@ function BillingPage() {
       setStatus({
         kind: "error",
         message: r.error ?? "Could not reactivate — please try again.",
+      });
+    }
+  };
+
+  // Undo a scheduled period-end change (e.g. a debundle's bundle → Ark+) so the
+  // membership continues unchanged. Same endpoint as reactivate — it releases the
+  // pending schedule and clears any pending cancel.
+  const onUndoChange = async () => {
+    setStatus({ kind: "reactivating" });
+    const r = await reactivateSubscription();
+    if (r.ok) {
+      trackEvent("subscription_reactivated");
+      setPendingChange(false);
+      setScheduledTier(null);
+      setStatus({ kind: "reverted", nextChargeAt: r.next_charge_at ?? "" });
+      refresh();
+    } else {
+      setStatus({
+        kind: "error",
+        message: r.error ?? "Could not undo the change — please try again.",
       });
     }
   };
@@ -151,8 +208,15 @@ function BillingPage() {
               className="mb-6 border border-cyan/50 bg-cyan/10 px-4 py-3 text-body-sm text-fg-strong"
               aria-live="polite"
             >
-              A plan change is scheduled and will take effect at the end of your
-              current billing period.
+              {scheduledTier && scheduledTier !== me.tier
+                ? `Your membership will change from ${tierLabel(cancelTier)} to ${tierLabel(scheduledTier)}${
+                    periodEndLabel
+                      ? ` on ${periodEndLabel}`
+                      : " at the end of your current billing period"
+                  }. You'll keep full access until then.`
+                : `A plan change is scheduled and will take effect at the end of your current billing period${
+                    periodEndLabel ? `, on ${periodEndLabel}` : ""
+                  }.`}
             </p>
           ) : null}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -179,7 +243,11 @@ function BillingPage() {
               <p className="mt-4 max-w-md text-body-sm text-fg">
                 {scheduledCancelAt
                   ? "Your membership is set to cancel and won't renew."
-                  : "Cancel anytime. You'll keep access through the end of your current billing period."}
+                  : pendingChange
+                    ? "Changed your mind? You can undo the scheduled change and keep your full membership, or cancel it entirely."
+                    : periodEndLabel
+                      ? `Cancel anytime. You'll keep access through the end of your current billing period, on ${periodEndLabel}.`
+                      : "Cancel anytime. You'll keep access through the end of your current billing period."}
               </p>
 
               {status.kind === "ok" ? (
@@ -216,7 +284,7 @@ function BillingPage() {
                   Done — you'll keep{" "}
                   {status.kept === "ark-plus" ? "Ark+" : "the Community"} on its
                   own. The change takes effect at the end of your current billing
-                  period.
+                  period{periodEndLabel ? `, on ${periodEndLabel}` : ""}.
                 </p>
               ) : status.kind === "resumed" ? (
                 <p
@@ -230,6 +298,19 @@ function BillingPage() {
                     ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
                     : ""}
                 </p>
+              ) : status.kind === "reverted" ? (
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
+                  The scheduled change was cancelled — your membership continues
+                  unchanged.{" "}
+                  {status.nextChargeAt
+                    ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
+                    : ""}
+                </p>
               ) : scheduledCancelAt ? (
                 <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
                   You'll keep access until{" "}
@@ -237,6 +318,12 @@ function BillingPage() {
                 </p>
               ) : null}
 
+              {/* Actions reflect the current membership state, not the last
+                  action: a pending cancel → reactivate; a pending change →
+                  undo/cancel; otherwise the normal cancel-or-change entry. The
+                  confirmation message above is what changes per action, so the
+                  member is never left without a next step (e.g. after accepting
+                  a save offer or undoing a change). */}
               {scheduledCancelAt ? (
                 <button
                   type="button"
@@ -248,9 +335,34 @@ function BillingPage() {
                     ? "Reactivating…"
                     : "Reactivate membership"}
                 </button>
-              ) : status.kind === "saved" ||
-                status.kind === "resumed" ||
-                status.kind === "debundled" ? null : (
+              ) : pendingChange ? (
+                // A period-end change is scheduled (e.g. a debundle): the two
+                // useful actions are undoing it (keep the full membership) or
+                // cancelling outright — not the generic change tree.
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={onUndoChange}
+                    disabled={status.kind === "reactivating"}
+                    className="inline-flex items-center justify-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  >
+                    {status.kind === "reactivating"
+                      ? "Undoing…"
+                      : `Keep ${tierLabel(cancelTier)}`}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={status.kind === "reactivating"}
+                    onClick={() => {
+                      setStatus({ kind: "idle" });
+                      setFlowOpen(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  >
+                    Cancel my membership
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
                   onClick={() => {
@@ -278,23 +390,35 @@ function BillingPage() {
 
       {flowOpen ? (
         <CancelFlow
-          tier={cancelTier}
+          tier={flowTier}
           plan={plan}
           onClose={() => setFlowOpen(false)}
           onSaved={(headline, nextChargeAt) => {
             setFlowOpen(false);
             setScheduledCancelAt(null);
+            // Accepting a save offer releases any pending schedule, so the
+            // pending-change banner no longer applies.
+            setPendingChange(false);
+            setScheduledTier(null);
             setStatus({ kind: "saved", headline, nextChargeAt });
             refresh();
           }}
           onCancelled={(accessUntil) => {
             setFlowOpen(false);
             setScheduledCancelAt(accessUntil || null);
+            // A full cancel supersedes (and releases) any pending debundle
+            // schedule, so clear the pending-change banner.
+            setPendingChange(false);
+            setScheduledTier(null);
             setStatus({ kind: "ok", until: accessUntil });
           }}
           onDebundled={(retained) => {
             setFlowOpen(false);
             setPendingChange(true);
+            // The kept product is the tier the membership lands on at period end,
+            // so the banner names the change and a later cancel targets it —
+            // without waiting for the getMySubscription reload.
+            setScheduledTier(retained === "kept-ark-plus" ? "ark-plus" : "circle");
             setStatus({
               kind: "debundled",
               kept: retained === "kept-ark-plus" ? "ark-plus" : "circle",
