@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "../../components/Modal";
+import { Modal } from "../Modal";
 import { MissionReminder } from "./MissionReminder";
 import { trackEvent } from "../../lib/analytics";
 import { formatCouponDiscount, formatMinor } from "../../lib/currency";

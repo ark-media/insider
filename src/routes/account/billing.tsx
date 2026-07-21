@@ -9,7 +9,7 @@ import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { trackEvent } from "../../lib/analytics";
-import { CancelFlow } from "./CancelFlow";
+import { CancelFlow } from "../../components/account/CancelFlow";
 
 export const Route = createFileRoute("/account/billing")({
   component: BillingPage,
