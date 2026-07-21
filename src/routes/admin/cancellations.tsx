@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "../../components/AdminShell";
+import { AdminBadge, AdminTag } from "../../components/admin/AdminList";
 import {
   createPromo,
   deletePromo,
@@ -12,8 +13,14 @@ import {
   type Promo,
   type PromoDraft,
 } from "../../lib/admin";
-import { adminField, adminFieldLabel } from "../../lib/admin-styles";
+import {
+  adminField,
+  adminFieldLabel,
+  adminPrimaryButton,
+} from "../../lib/admin-styles";
 import { formatCouponDiscount } from "../../lib/currency";
+import { errMessage } from "../../lib/errMessage";
+import { useCrudResource } from "../../lib/useCrudResource";
 import {
   CANCELLATION_REASONS,
   OFFER_OUTCOMES,
@@ -83,36 +90,15 @@ function planLabel(plan: string | null): string {
 }
 
 function RetentionOffers() {
-  const [items, setItems] = useState<Promo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
-
-  const [form, setForm] = useState<OfferForm>(emptyOffer);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const crud = useCrudResource<Promo, OfferForm>({
+    load: () => listPromos().then((all) => all.filter((p) => p.retentionOffer)),
+    emptyForm: emptyOffer,
+  });
+  const { form, setForm, saving, formError } = crud;
   const [notice, setNotice] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const all = await listPromos();
-      setItems(all.filter((p) => p.retentionOffer));
-      setListError(null);
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to load.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setFormError(null);
     setNotice(null);
 
     const draft: PromoDraft = {
@@ -139,28 +125,18 @@ function RetentionOffers() {
       draft.redeemBy = new Date(form.redeemBy).toISOString();
     }
 
-    try {
-      await createPromo(draft);
+    const ok = await crud.runSave(() => createPromo(draft));
+    if (ok) {
       setNotice(`Created retention offer for ${planLabel(form.plan)}.`);
       setForm(emptyOffer());
-      await refresh();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to create.");
-    } finally {
-      setSaving(false);
     }
   };
 
-  const remove = async (p: Promo) => {
+  const remove = (p: Promo) => {
     if (!confirm(`Delete this retention offer? Members in the cancel flow will no longer see it.`)) {
       return;
     }
-    try {
-      await deletePromo(p.id);
-      await refresh();
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to delete.");
-    }
+    void crud.runRemove(() => deletePromo(p.id));
   };
 
   return (
@@ -354,28 +330,24 @@ function RetentionOffers() {
           ) : null}
           {notice ? <p className="text-body-sm text-cyan">{notice}</p> : null}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-          >
+          <button type="submit" disabled={saving} className={adminPrimaryButton}>
             {saving ? "Creating…" : "Create offer"}
           </button>
         </form>
 
         <div aria-label="Existing retention offers">
           <h3 className="font-display text-lg text-fg-strong">Active offers</h3>
-          {loading ? (
+          {crud.loading ? (
             <p className="mt-6 text-body-sm">Loading…</p>
-          ) : listError ? (
-            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
-          ) : items.length === 0 ? (
+          ) : crud.listError ? (
+            <p className="mt-6 text-body-sm text-red-400">{crud.listError}</p>
+          ) : crud.items.length === 0 ? (
             <p className="mt-6 text-body-sm text-fg-muted">
               No retention offers yet — members who cancel see no discount.
             </p>
           ) : (
             <ul className="mt-4 space-y-3">
-              {items.map((p) => (
+              {crud.items.map((p) => (
                 <li key={p.id} className="border border-rule p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-body-lg font-display text-fg-strong">
@@ -383,7 +355,7 @@ function RetentionOffers() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => void remove(p)}
+                      onClick={() => remove(p)}
                       className="button-text font-bold text-red-400 hover:text-red-300"
                     >
                       Delete
@@ -393,20 +365,17 @@ function RetentionOffers() {
                     {describeDiscount(p)}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 label font-bold">
-                    <Tag>{planLabel(p.plan)}</Tag>
-                    <Badge
-                      on={p.valid}
-                      label={p.valid ? "valid" : "expired"}
-                    />
+                    <AdminTag>{planLabel(p.plan)}</AdminTag>
+                    <AdminBadge on={p.valid} label={p.valid ? "valid" : "expired"} />
                     {p.maxRedemptions != null ? (
-                      <Tag>
+                      <AdminTag>
                         {p.timesRedeemed}/{p.maxRedemptions} used
-                      </Tag>
+                      </AdminTag>
                     ) : null}
                     {p.redeemBy ? (
-                      <Tag>
+                      <AdminTag>
                         expires {new Date(p.redeemBy).toLocaleDateString()}
-                      </Tag>
+                      </AdminTag>
                     ) : null}
                   </div>
                 </li>
@@ -416,26 +385,6 @@ function RetentionOffers() {
         </div>
       </div>
     </section>
-  );
-}
-
-function Badge({ on, label }: { on: boolean; label: string }) {
-  return (
-    <span
-      className={`inline-flex items-center border px-2 py-0.5 ${
-        on ? "border-cyan/60 text-cyan" : "border-rule-strong text-fg-muted"
-      }`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function Tag({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center border border-rule-strong px-2 py-0.5 text-fg-muted">
-      {children}
-    </span>
   );
 }
 
@@ -464,7 +413,7 @@ function CancellationSurvey() {
       setData(await fetchCancellations(filter));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load.");
+      setError(errMessage(err, "Failed to load."));
     } finally {
       setLoading(false);
     }
@@ -480,7 +429,7 @@ function CancellationSurvey() {
     try {
       await downloadCancellationsCsv(filter);
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Export failed.");
+      setExportError(errMessage(err, "Export failed."));
     } finally {
       setExporting(false);
     }
@@ -533,7 +482,7 @@ function CancellationSurvey() {
           type="button"
           onClick={() => void exportCsv()}
           disabled={exporting}
-          className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+          className={adminPrimaryButton}
         >
           {exporting ? "Exporting…" : "Export CSV"}
         </button>

@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
 import parse from "html-react-parser";
 import { AdminShell } from "../../components/AdminShell";
+import {
+  AdminListPanel,
+  AdminListRow,
+  StatusPill,
+} from "../../components/admin/AdminList";
 import { RichTextEditor } from "../../components/RichTextEditor";
 import {
   deleteAnnouncement,
@@ -9,8 +13,15 @@ import {
   saveAnnouncement,
   type AnnouncementDraft,
 } from "../../lib/admin";
+import {
+  adminField,
+  adminFieldLabel,
+  adminPrimaryButton,
+  adminSecondaryButton,
+} from "../../lib/admin-styles";
 import type { Announcement } from "../../lib/announcements";
 import { sanitizeRichPreview } from "../../lib/richTextPreview";
+import { useCrudResource } from "../../lib/useCrudResource";
 import {
   COMMON_TIME_ZONES,
   DEFAULT_TIME_ZONE,
@@ -95,41 +106,11 @@ const STATUS_STYLE: Record<Status, string> = {
 };
 
 function AnnouncementsAdmin() {
-  const [items, setItems] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setItems(await listAnnouncements());
-      setListError(null);
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to load.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const startNew = () => {
-    setEditingId(null);
-    setForm(emptyForm());
-    setFormError(null);
-  };
-  const startEdit = (a: Announcement) => {
-    setEditingId(a.id);
-    setForm(formFrom(a));
-    setFormError(null);
-  };
+  const crud = useCrudResource<Announcement, FormState>({
+    load: listAnnouncements,
+    emptyForm,
+  });
+  const { editingId, form, setForm, saving, formError, setFormError } = crud;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,8 +118,6 @@ function AnnouncementsAdmin() {
       setFormError("Body is required.");
       return;
     }
-    setSaving(true);
-    setFormError(null);
     const draft: AnnouncementDraft = {
       body: form.body,
       actionUrl: form.actionUrl.trim(),
@@ -149,26 +128,20 @@ function AnnouncementsAdmin() {
       startsAt: zonedWallClockToUtc(form.startsAt, form.timeZone),
       endsAt: zonedWallClockToUtc(form.endsAt, form.timeZone),
     };
-    try {
-      await saveAnnouncement(draft, editingId ?? undefined);
-      await refresh();
-      startNew();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save.");
-    } finally {
-      setSaving(false);
-    }
+    const ok = await crud.runSave(() =>
+      saveAnnouncement(draft, editingId ?? undefined),
+    );
+    if (ok) crud.startNew();
   };
 
-  const remove = async (a: Announcement) => {
+  const remove = (a: Announcement) => {
     if (!confirm("Delete this announcement? This cannot be undone.")) return;
-    try {
-      await deleteAnnouncement(a.id);
-      if (editingId === a.id) startNew();
-      await refresh();
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to delete.");
-    }
+    void crud.runRemove(
+      () => deleteAnnouncement(a.id),
+      () => {
+        if (editingId === a.id) crud.startNew();
+      },
+    );
   };
 
   return (
@@ -181,89 +154,52 @@ function AnnouncementsAdmin() {
           saving={saving}
           error={formError}
           onSubmit={submit}
-          onCancel={startNew}
+          onCancel={crud.startNew}
         />
 
-        <section aria-label="Existing announcements">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-lg text-fg-strong">All announcements</h2>
-            <button
-              type="button"
-              onClick={startNew}
-              className="button-text font-bold text-cyan hover:underline"
-            >
-              + New
-            </button>
-          </div>
+        <AdminListPanel
+          title="All announcements"
+          ariaLabel="Existing announcements"
+          onNew={crud.startNew}
+          loading={crud.loading}
+          error={crud.listError}
+          items={crud.items}
+          emptyText="No announcements yet. Create one with the form."
+          renderItem={(a) => {
+            const status = statusOf(a);
+            return (
+              <AdminListRow
+                key={a.id}
+                active={editingId === a.id}
+                pill={<StatusPill tone={STATUS_STYLE[status]}>{status}</StatusPill>}
+                onEdit={() => crud.startEdit(a.id, formFrom(a))}
+                onDelete={() => remove(a)}
+              >
+                <div className="mt-3 truncate text-body-sm text-fg">
+                  {parse(a.body)}
+                </div>
 
-          {loading ? (
-            <p className="mt-6 text-body-sm">Loading…</p>
-          ) : listError ? (
-            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
-          ) : items.length === 0 ? (
-            <p className="mt-6 text-body-sm">
-              No announcements yet. Create one with the form.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {items.map((a) => {
-                const status = statusOf(a);
-                return (
-                  <li
-                    key={a.id}
-                    className={`border p-4 ${
-                      editingId === a.id ? "border-cyan" : "border-rule"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span
-                        className={`inline-flex items-center border px-2 py-0.5 label font-bold ${STATUS_STYLE[status]}`}
-                      >
-                        {status}
-                      </span>
-                      <span className="flex gap-3 button-text font-bold">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(a)}
-                          className="text-fg-strong hover:text-cyan"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void remove(a)}
-                          className="text-red-400 hover:text-red-300"
-                        >
-                          Delete
-                        </button>
-                      </span>
-                    </div>
-
-                    <div className="mt-3 truncate text-body-sm text-fg">
-                      {parse(a.body)}
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
-                      <span>
-                        {new Date(a.startsAt).toLocaleString()} →{" "}
-                        {new Date(a.endsAt).toLocaleString()}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span
-                          aria-hidden="true"
-                          className="inline-block size-3 rounded-sm border border-rule"
-                          style={{ backgroundColor: a.barColor }}
-                        />
-                        {a.barColor}
-                      </span>
-                      {a.actionUrl ? <span className="truncate">{a.actionUrl}</span> : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
+                  <span>
+                    {new Date(a.startsAt).toLocaleString()} →{" "}
+                    {new Date(a.endsAt).toLocaleString()}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block size-3 rounded-sm border border-rule"
+                      style={{ backgroundColor: a.barColor }}
+                    />
+                    {a.barColor}
+                  </span>
+                  {a.actionUrl ? (
+                    <span className="truncate">{a.actionUrl}</span>
+                  ) : null}
+                </div>
+              </AdminListRow>
+            );
+          }}
+        />
       </div>
     </AdminShell>
   );
@@ -316,8 +252,8 @@ function AnnouncementForm({
   onSubmit: (e: React.FormEvent) => void;
   onCancel: () => void;
 }) {
-  const field = "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
-  const label = "block button-text font-display font-bold text-fg-strong";
+  const field = adminField;
+  const label = adminFieldLabel;
 
   return (
     <section aria-label={editing ? "Edit announcement" : "New announcement"}>
@@ -473,18 +409,14 @@ function AnnouncementForm({
         {error ? <p className="text-body-sm text-red-400">{error}</p> : null}
 
         <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-          >
+          <button type="submit" disabled={saving} className={adminPrimaryButton}>
             {saving ? "Saving…" : editing ? "Save changes" : "Create"}
           </button>
           {editing ? (
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan"
+              className={adminSecondaryButton}
             >
               Cancel
             </button>

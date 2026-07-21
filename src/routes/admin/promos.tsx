@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { AdminShell } from "../../components/AdminShell";
+import {
+  AdminBadge,
+  AdminListPanel,
+  AdminTag,
+} from "../../components/admin/AdminList";
 import {
   createPromo,
   deletePromo,
@@ -8,8 +13,13 @@ import {
   type Promo,
   type PromoDraft,
 } from "../../lib/admin";
-import { adminField, adminFieldLabel } from "../../lib/admin-styles";
+import {
+  adminField,
+  adminFieldLabel,
+  adminPrimaryButton,
+} from "../../lib/admin-styles";
 import { formatCouponDiscount } from "../../lib/currency";
+import { useCrudResource } from "../../lib/useCrudResource";
 
 export const Route = createFileRoute("/admin/promos")({
   component: PromosAdmin,
@@ -57,35 +67,15 @@ function describeDiscount(p: Promo): string {
 }
 
 function PromosAdmin() {
-  const [items, setItems] = useState<Promo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
-
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const crud = useCrudResource<Promo, FormState>({
+    load: listPromos,
+    emptyForm,
+  });
+  const { form, setForm, saving, formError } = crud;
   const [notice, setNotice] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setItems(await listPromos());
-      setListError(null);
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to load.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setFormError(null);
     setNotice(null);
 
     const draft: PromoDraft = {
@@ -111,37 +101,27 @@ function PromosAdmin() {
       draft.redeemBy = new Date(form.redeemBy).toISOString();
     }
 
-    try {
+    const ok = await crud.runSave(async () => {
       const promo = await createPromo(draft);
       setNotice(
         `Created ${promo.code ? `code ${promo.code}` : promo.id}${
           promo.autoApply ? " — auto-applies at checkout." : "."
         }`,
       );
-      setForm(emptyForm());
-      await refresh();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to create.");
-    } finally {
-      setSaving(false);
-    }
+    });
+    if (ok) setForm(emptyForm());
   };
 
-  const remove = async (p: Promo) => {
+  const remove = (p: Promo) => {
     if (!confirm(`Delete coupon ${p.code ?? p.id}? This invalidates its code.`)) {
       return;
     }
-    try {
-      await deletePromo(p.id);
-      await refresh();
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to delete.");
-    }
+    void crud.runRemove(() => deletePromo(p.id));
   };
 
   // Retention save offers are managed on the Cancellations page; keep this list
   // to the checkout coupons it's about.
-  const checkoutPromos = items.filter((p) => !p.retentionOffer);
+  const checkoutPromos = crud.items.filter((p) => !p.retentionOffer);
 
   return (
     <AdminShell active="promos" title="Promo codes">
@@ -357,80 +337,56 @@ function PromosAdmin() {
             {formError ? <p className="text-body-sm text-red-400">{formError}</p> : null}
             {notice ? <p className="text-body-sm text-cyan">{notice}</p> : null}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-            >
+            <button type="submit" disabled={saving} className={adminPrimaryButton}>
               {saving ? "Creating…" : "Create promo"}
             </button>
           </form>
         </section>
 
-        <section aria-label="Existing promos">
-          <h2 className="font-display text-lg text-fg-strong">All promos</h2>
-          {loading ? (
-            <p className="mt-6 text-body-sm">Loading…</p>
-          ) : listError ? (
-            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
-          ) : checkoutPromos.length === 0 ? (
-            <p className="mt-6 text-body-sm">No coupons in Stripe yet.</p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {checkoutPromos.map((p) => (
-                <li key={p.id} className="border border-rule p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-body-lg font-display text-fg-strong">
-                      {p.code ?? p.name ?? p.id}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void remove(p)}
-                      className="button-text font-bold text-red-400 hover:text-red-300"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  <p className="mt-1 text-body-sm text-fg">{describeDiscount(p)}</p>
-                  <div className="mt-2 flex flex-wrap gap-2 label font-bold">
-                    <Badge on={p.autoApply} label={p.autoApply ? "auto-apply" : "code only"} />
-                    <Badge on={p.valid} label={p.valid ? "valid" : "expired"} />
-                    {p.plan ? <Tag>{p.plan}</Tag> : <Tag>both plans</Tag>}
-                    {p.maxRedemptions != null ? (
-                      <Tag>
-                        {p.timesRedeemed}/{p.maxRedemptions} used
-                      </Tag>
-                    ) : null}
-                    {p.redeemBy ? (
-                      <Tag>expires {new Date(p.redeemBy).toLocaleDateString()}</Tag>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ul>
+        <AdminListPanel
+          title="All promos"
+          ariaLabel="Existing promos"
+          loading={crud.loading}
+          error={crud.listError}
+          items={checkoutPromos}
+          emptyText="No coupons in Stripe yet."
+          renderItem={(p) => (
+            <li key={p.id} className="border border-rule p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-body-lg font-display text-fg-strong">
+                  {p.code ?? p.name ?? p.id}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => remove(p)}
+                  className="button-text font-bold text-red-400 hover:text-red-300"
+                >
+                  Delete
+                </button>
+              </div>
+              <p className="mt-1 text-body-sm text-fg">{describeDiscount(p)}</p>
+              <div className="mt-2 flex flex-wrap gap-2 label font-bold">
+                <AdminBadge
+                  on={p.autoApply}
+                  label={p.autoApply ? "auto-apply" : "code only"}
+                />
+                <AdminBadge on={p.valid} label={p.valid ? "valid" : "expired"} />
+                {p.plan ? <AdminTag>{p.plan}</AdminTag> : <AdminTag>both plans</AdminTag>}
+                {p.maxRedemptions != null ? (
+                  <AdminTag>
+                    {p.timesRedeemed}/{p.maxRedemptions} used
+                  </AdminTag>
+                ) : null}
+                {p.redeemBy ? (
+                  <AdminTag>
+                    expires {new Date(p.redeemBy).toLocaleDateString()}
+                  </AdminTag>
+                ) : null}
+              </div>
+            </li>
           )}
-        </section>
+        />
       </div>
     </AdminShell>
-  );
-}
-
-function Badge({ on, label }: { on: boolean; label: string }) {
-  return (
-    <span
-      className={`inline-flex items-center border px-2 py-0.5 ${
-        on ? "border-cyan/60 text-cyan" : "border-rule-strong text-fg-muted"
-      }`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function Tag({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center border border-rule-strong px-2 py-0.5 text-fg-muted">
-      {children}
-    </span>
   );
 }

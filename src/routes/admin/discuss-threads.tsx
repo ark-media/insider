@@ -13,6 +13,12 @@ import {
   newsletters,
   type NewsletterSlug,
 } from "../../data/newsletters";
+import {
+  adminField,
+  adminFieldLabel,
+  adminPrimaryButton,
+} from "../../lib/admin-styles";
+import { errMessage } from "../../lib/errMessage";
 
 export const Route = createFileRoute("/admin/discuss-threads")({
   component: DiscussThreadsAdmin,
@@ -49,7 +55,7 @@ function DiscussThreadsAdmin() {
       setThreads(await listDiscussThreads());
       setListError(null);
     } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to load threads.");
+      setListError(errMessage(err, "Failed to load threads."));
     } finally {
       setLoadingThreads(false);
     }
@@ -67,7 +73,7 @@ function DiscussThreadsAdmin() {
     } catch (err) {
       setFlash({
         kind: "error",
-        message: err instanceof Error ? err.message : "Failed to load Beehiiv drafts.",
+        message: errMessage(err, "Failed to load Beehiiv drafts."),
       });
     } finally {
       setLoadingDrafts(false);
@@ -111,7 +117,7 @@ function DiscussThreadsAdmin() {
     } catch (err) {
       setFlash({
         kind: "error",
-        message: err instanceof Error ? err.message : "Failed to create thread.",
+        message: errMessage(err, "Failed to create thread."),
       });
     } finally {
       setSubmitting(false);
@@ -129,7 +135,7 @@ function DiscussThreadsAdmin() {
       await deleteDiscussThread(t.id);
       await refreshThreads();
     } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to delete.");
+      setListError(errMessage(err, "Failed to delete."));
     }
   };
 
@@ -142,10 +148,8 @@ function DiscussThreadsAdmin() {
     }
   };
 
-  const field =
-    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
-  const labelClass =
-    "block button-text font-display font-bold text-fg-strong";
+  const field = adminField;
+  const labelClass = adminFieldLabel;
 
   return (
     <AdminShell active="discuss-threads" title="Discuss threads">
@@ -234,7 +238,7 @@ function DiscussThreadsAdmin() {
               <button
                 type="submit"
                 disabled={submitting || !selectedDraft}
-                className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                className={adminPrimaryButton}
               >
                 {submitting ? "Creating…" : "Create companion thread"}
               </button>

@@ -95,17 +95,56 @@ Into existing `server/test-utils.ts`:
 - Prune framework-behavior/dup 400 tests LAST, per-test review (~100, Med-High risk).
 Coverage held equal throughout.
 
-## Phase 3 — Frontend DRY (~1,400 LOC)
+## Phase 3 — Frontend DRY
 
-- `useCrudResource<T,Draft>` + `<AdminList>` + `StatusPill`/`EditDeleteRow` across
-  careers/faqs/announcements/promos/discuss-threads/cancellations → **~900 LOC**.
-- `adminField`/`adminFieldLabel` import stragglers; `adminPrimaryButton`/
-  `adminSecondaryButton`; `errMessage(err, fallback)` helper.
-- `usePricing()` hook (3 copies), `<BillingPeriodToggle>`, `<CtaButton>`/`<CtaLink>`,
-  shared `<Spinner>`/`<PriceSkeleton>`/`<PlayGlyph>`/`<CheckIcon>` (fixes stroke
-  inconsistency), `useFocusTrap`, `useCopyToClipboard`, `<EpisodeMeta>`.
-- Consolidate `pollForCheckoutSession`/`pollUntilActivated` → one `lib/pollCheckout`.
-- Delete dead `useAsyncResource` + commented code.
+### Admin CRUD consolidation ✅ DONE
+
+Landed; tsc + eslint clean; full suite green (733 pass, 0 fail — unchanged from
+baseline). Admin routes 2,710 → 2,412 LOC (−298); shared infra +252 across three
+new files, so the raw net is modest (~−50) — the win is **de-duplication /
+bug-surface**, not line count (a change to the load/save/delete/error contract or
+the button/field styling is now one edit, not six).
+
+- `useCrudResource<T,Form>` (`src/lib/useCrudResource.ts`) — owns the
+  items/loading/listError/editingId/form/saving/formError state, `refresh`,
+  `startNew`/`startEdit`, and `runSave`/`runRemove` lifecycle wrappers. Adopted by
+  careers, faqs, announcements, promos, and retention offers (cancellations).
+- `<AdminListPanel>` / `<AdminListRow>` / `<StatusPill>` / `<AdminBadge>` /
+  `<AdminTag>` (`src/components/admin/AdminList.tsx`) — the loading/error/empty/list
+  shell and row chrome. `AdminBadge`/`AdminTag` replaced the `Badge`/`Tag` copies
+  duplicated across promos + cancellations.
+- `adminPrimaryButton`/`adminSecondaryButton` added to `admin-styles.ts`; all six
+  admin routes now import `adminField`/`adminFieldLabel`/the buttons (was inline
+  class strings).
+- `errMessage(err, fallback)` (`src/lib/errMessage.ts`) — replaces the
+  `err instanceof Error ? err.message : "…"` idiom in the admin routes.
+
+### Deferred — plan premises did not hold on inspection
+
+Verified against the current tree; these items rest on stale/incorrect assumptions
+and were **not** executed (would force bad abstractions or delete live code):
+
+- **`useAsyncResource` is NOT dead.** Live importers: `LatestEpisodes`,
+  `PricingComparison`, `PricingCards`, `ShowPage`, `CircleCommunity`. Deleting it
+  breaks the build. (Phase 0 also lists it for deletion — same error.)
+- **Commented-code deletion.** No commented `ThemeToggle` exists at
+  `PublicMasthead.tsx:805-849` (that's the live `MemberMenu`). The only nearby
+  commented block is an intentional "Sign up" CTA toggle (`:349-355`) — a product
+  decision, not dead code; left in place.
+- **`pollForCheckoutSession` / `pollUntilActivated`** are genuinely different
+  (different endpoints, return shapes, status handling) and sit in **payment-
+  critical** paths. The only shared part is a generic deadline/sleep loop (~15 LOC);
+  not worth the blast radius. Left as-is.
+- **`usePricing()` (3 copies)** are more divergent than described: `CheckoutModal`
+  owns interactive currency selection (stateful, `?locale_hint=`), while
+  `PricingCards` (strict per-tier validation) and `PricingComparison` (presence
+  check only) type the same `/api/pricing` response with **different `TierAmounts`
+  shapes**. Only the ~8-line fetch+currency/factor core is truly shared — a
+  `fetchPricingSnapshot()` helper is defensible but ~net-zero LOC.
+- Not yet assessed (need per-file duplication verification before touching):
+  `<BillingPeriodToggle>`, `<CtaButton>`/`<CtaLink>`, shared
+  `<Spinner>`/`<PriceSkeleton>`/`<PlayGlyph>`/`<CheckIcon>`, `useFocusTrap`,
+  `useCopyToClipboard`, `<EpisodeMeta>`.
 
 ## Phase 4 — Server DRY (~440 LOC)
 

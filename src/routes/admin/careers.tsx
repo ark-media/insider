@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
 import parse from "html-react-parser";
 import { AdminShell } from "../../components/AdminShell";
+import {
+  AdminListPanel,
+  AdminListRow,
+  StatusPill,
+} from "../../components/admin/AdminList";
 import { RichTextEditor } from "../../components/RichTextEditor";
 import {
   deleteCareer,
@@ -9,8 +13,15 @@ import {
   saveCareer,
   type CareerDraft,
 } from "../../lib/admin";
+import {
+  adminField,
+  adminFieldLabel,
+  adminPrimaryButton,
+  adminSecondaryButton,
+} from "../../lib/admin-styles";
 import type { Career } from "../../lib/careers";
 import { RICH_TEXT_CLASS, sanitizeRichPreview } from "../../lib/richTextPreview";
+import { useCrudResource } from "../../lib/useCrudResource";
 
 export const Route = createFileRoute("/admin/careers")({
   component: CareersAdmin,
@@ -60,41 +71,11 @@ function formFrom(c: Career): FormState {
 }
 
 function CareersAdmin() {
-  const [items, setItems] = useState<Career[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [listError, setListError] = useState<string | null>(null);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setItems(await listCareers());
-      setListError(null);
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to load.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const startNew = () => {
-    setEditingId(null);
-    setForm(emptyForm());
-    setFormError(null);
-  };
-  const startEdit = (c: Career) => {
-    setEditingId(c.id);
-    setForm(formFrom(c));
-    setFormError(null);
-  };
+  const crud = useCrudResource<Career, FormState>({
+    load: listCareers,
+    emptyForm,
+  });
+  const { editingId, form, setForm, saving, formError, setFormError } = crud;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,8 +83,6 @@ function CareersAdmin() {
       setFormError("Description is required.");
       return;
     }
-    setSaving(true);
-    setFormError(null);
     const draft: CareerDraft = {
       slug: form.slug.trim(),
       title: form.title.trim(),
@@ -116,26 +95,20 @@ function CareersAdmin() {
       enabled: form.enabled,
       displayOrder: Number(form.displayOrder) || 0,
     };
-    try {
-      await saveCareer(draft, editingId ?? undefined);
-      await refresh();
-      startNew();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save.");
-    } finally {
-      setSaving(false);
-    }
+    const ok = await crud.runSave(() =>
+      saveCareer(draft, editingId ?? undefined),
+    );
+    if (ok) crud.startNew();
   };
 
-  const remove = async (c: Career) => {
+  const remove = (c: Career) => {
     if (!confirm(`Delete "${c.title}"? This cannot be undone.`)) return;
-    try {
-      await deleteCareer(c.id);
-      if (editingId === c.id) startNew();
-      await refresh();
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : "Failed to delete.");
-    }
+    void crud.runRemove(
+      () => deleteCareer(c.id),
+      () => {
+        if (editingId === c.id) crud.startNew();
+      },
+    );
   };
 
   return (
@@ -148,89 +121,56 @@ function CareersAdmin() {
           saving={saving}
           error={formError}
           onSubmit={submit}
-          onCancel={startNew}
+          onCancel={crud.startNew}
         />
 
-        <section aria-label="Existing positions">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-lg text-fg-strong">All positions</h2>
-            <button
-              type="button"
-              onClick={startNew}
-              className="button-text font-bold text-cyan hover:underline"
-            >
-              + New
-            </button>
-          </div>
-
-          {loading ? (
-            <p className="mt-6 text-body-sm">Loading…</p>
-          ) : listError ? (
-            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
-          ) : items.length === 0 ? (
-            <p className="mt-6 text-body-sm">
-              No positions yet. Create one with the form.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {items.map((c) => (
-                <li
-                  key={c.id}
-                  className={`border p-4 ${
-                    editingId === c.id ? "border-cyan" : "border-rule"
-                  }`}
+        <AdminListPanel
+          title="All positions"
+          ariaLabel="Existing positions"
+          onNew={crud.startNew}
+          loading={crud.loading}
+          error={crud.listError}
+          items={crud.items}
+          emptyText="No positions yet. Create one with the form."
+          renderItem={(c) => (
+            <AdminListRow
+              key={c.id}
+              active={editingId === c.id}
+              pill={
+                <StatusPill
+                  tone={
+                    c.enabled
+                      ? "border-cyan/60 text-cyan"
+                      : "border-rule-strong text-fg-faint"
+                  }
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span
-                      className={`inline-flex items-center border px-2 py-0.5 label font-bold ${
-                        c.enabled
-                          ? "border-cyan/60 text-cyan"
-                          : "border-rule-strong text-fg-faint"
-                      }`}
-                    >
-                      {c.enabled ? "Published" : "Hidden"}
-                    </span>
-                    <span className="flex gap-3 button-text font-bold">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(c)}
-                        className="text-fg-strong hover:text-cyan"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void remove(c)}
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        Delete
-                      </button>
-                    </span>
-                  </div>
+                  {c.enabled ? "Published" : "Hidden"}
+                </StatusPill>
+              }
+              onEdit={() => crud.startEdit(c.id, formFrom(c))}
+              onDelete={() => remove(c)}
+            >
+              <h3 className="mt-3 font-display text-[16px] text-fg-strong">
+                {c.title}
+              </h3>
+              <p className="mt-1 text-body-sm">{c.summary}</p>
 
-                  <h3 className="mt-3 font-display text-[16px] text-fg-strong">
-                    {c.title}
-                  </h3>
-                  <p className="mt-1 text-body-sm">{c.summary}</p>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
-                    <span className="text-fg-faint">/careers/{c.slug}</span>
-                    {[c.team, c.location, c.employmentType]
-                      .filter(Boolean)
-                      .map((meta, i) => (
-                        <span key={i}>{meta}</span>
-                      ))}
-                    {c.applyUrl ? (
-                      <span className="truncate">→ {c.applyUrl}</span>
-                    ) : (
-                      <span className="text-amber-300">no apply URL</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
+                <span className="text-fg-faint">/careers/{c.slug}</span>
+                {[c.team, c.location, c.employmentType]
+                  .filter(Boolean)
+                  .map((meta, i) => (
+                    <span key={i}>{meta}</span>
+                  ))}
+                {c.applyUrl ? (
+                  <span className="truncate">→ {c.applyUrl}</span>
+                ) : (
+                  <span className="text-amber-300">no apply URL</span>
+                )}
+              </div>
+            </AdminListRow>
           )}
-        </section>
+        />
       </div>
     </AdminShell>
   );
@@ -253,10 +193,8 @@ function CareerForm({
   onSubmit: (e: React.FormEvent) => void;
   onCancel: () => void;
 }) {
-  const field =
-    "w-full border border-rule-strong bg-navy-900 px-3 py-2 text-body text-fg-strong placeholder:text-fg-faint focus:border-cyan focus:outline-none";
-  const label =
-    "block button-text font-display font-bold text-fg-strong";
+  const field = adminField;
+  const label = adminFieldLabel;
 
   return (
     <section aria-label={editing ? "Edit position" : "New position"}>
@@ -442,18 +380,14 @@ function CareerForm({
         {error ? <p className="text-body-sm text-red-400">{error}</p> : null}
 
         <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-          >
+          <button type="submit" disabled={saving} className={adminPrimaryButton}>
             {saving ? "Saving…" : editing ? "Save changes" : "Create"}
           </button>
           {editing ? (
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan"
+              className={adminSecondaryButton}
             >
               Cancel
             </button>
