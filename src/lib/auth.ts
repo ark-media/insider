@@ -181,6 +181,7 @@ export async function reactivateSubscription(): Promise<{
 export async function getMySubscription(): Promise<{
   cancelAtPeriodEnd: boolean;
   cancelAt: string | null;
+  pendingChange?: boolean;
 }> {
   try {
     const res = await fetch("/api/stripe/my-subscription", {
@@ -190,9 +191,47 @@ export async function getMySubscription(): Promise<{
     return (await res.json()) as {
       cancelAtPeriodEnd: boolean;
       cancelAt: string | null;
+      pendingChange?: boolean;
     };
   } catch {
     return { cancelAtPeriodEnd: false, cancelAt: null };
+  }
+}
+
+// Switch tier / plan / PWYC amount on the member's existing subscription
+// (task 14). Gaining an entitlement applies immediately and prorated; losing one
+// lands at period end. The server derives direction and timing.
+export async function changeTier(input: {
+  tier: "ark-plus" | "circle" | "bundle";
+  plan: "monthly" | "yearly";
+  customAmountCents?: number;
+}): Promise<{
+  ok: boolean;
+  changed?: boolean;
+  timing?: "immediate" | "period_end";
+  effective_at?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch("/api/stripe/change-tier", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        tier: input.tier,
+        plan: input.plan,
+        custom_amount_cents: input.customAmountCents,
+      }),
+    });
+    return (await res.json()) as {
+      ok: boolean;
+      changed?: boolean;
+      timing?: "immediate" | "period_end";
+      effective_at?: string;
+      error?: string;
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
   }
 }
 

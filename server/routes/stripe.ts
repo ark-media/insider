@@ -24,7 +24,6 @@ import {
   deriveEntitlements,
   emailForStripeCustomer,
   redactEmail,
-  syncCircleAccess,
   syncEntitlement,
   tierFromEntitlementString,
   type Tier,
@@ -32,9 +31,11 @@ import {
 import { downgradeToFree, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
 import {
+  clearMembershipPending,
   deleteMembershipByCustomer,
   getMembershipByStripeCustomer,
   insertGift,
+  setMembershipPending,
   setMembershipStatusByCustomer,
   upsertMembership,
 } from '../lib/membership.js'
@@ -190,6 +191,57 @@ function planFromSubscription(sub: Stripe.Subscription): Plan | null {
 function periodEndIso(sub: Stripe.Subscription): string | null {
   const ts = sub.items.data[0]?.current_period_end
   return ts != null && Number.isFinite(ts) ? new Date(ts * 1000).toISOString() : null
+}
+
+// The schedule id attached to a sub, or null. A subscription with a pending
+// period-end change (task 14) is schedule-managed; several plain
+// subscriptions.update calls (cancel_at_period_end, discounts) are REJECTED by
+// Stripe while a schedule is attached (§6 point 2), so the billing routes must
+// detach it first.
+function scheduleIdOf(sub: Stripe.Subscription): string | null {
+  if (!sub.schedule) return null
+  return typeof sub.schedule === 'string' ? sub.schedule : sub.schedule.id
+}
+
+// Release any attached subscription schedule so a following plain
+// subscriptions.update succeeds. Releasing detaches the schedule and leaves the
+// subscription on its current phase — exactly what Cancel / Reactivate /
+// retention want before they mutate the sub. Also clears the Neon pending-change
+// columns for the customer. Idempotent: a no-schedule sub is a no-op.
+async function releaseScheduleIfAny(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+  env: Env,
+): Promise<void> {
+  const scheduleId = scheduleIdOf(sub)
+  if (!scheduleId) return
+  await stripe.subscriptionSchedules.release(scheduleId)
+  const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+  if (env.DATABASE_URL) {
+    try {
+      await clearMembershipPending(getDb(env), customerId)
+    } catch (err) {
+      console.error('[stripe] clear pending after schedule release failed:', err)
+    }
+  }
+}
+
+// Whether a tier/amount change applies immediately (prorated in place) or at
+// period end (via a schedule). Rules (§6 table): gaining an entitlement →
+// immediate; losing one → period end; same entitlements → immediate iff the new
+// amount is >= the old (a raise, or monthly→yearly), else period end.
+function changeIsImmediate(
+  prev: { arkPlus: boolean; circle: boolean },
+  next: { arkPlus: boolean; circle: boolean },
+  prevAmountCents: number | null,
+  nextAmountCents: number,
+): boolean {
+  const gains = (next.arkPlus && !prev.arkPlus) || (next.circle && !prev.circle)
+  const loses = (prev.arkPlus && !next.arkPlus) || (prev.circle && !next.circle)
+  if (gains && !loses) return true
+  if (loses) return false
+  // Same entitlement set — a PWYC raise / monthly→yearly is immediate.
+  return prevAmountCents == null || nextAmountCents >= prevAmountCents
 }
 
 export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
@@ -444,6 +496,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
 
+        // A pending tier/PWYC change makes the sub schedule-managed, and Stripe
+        // rejects cancel_at_period_end on such a sub — release the schedule first
+        // (cancel supersedes the pending change). Also clears the pending row.
+        await releaseScheduleIfAny(stripe, sub, env)
+
         // Cancel at period end so they keep access until the billing cycle ends.
         await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true })
 
@@ -472,13 +529,14 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const sub = await findActiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
 
-        // Idempotent: if it isn't actually scheduled to cancel there's nothing
-        // to undo — report success with the existing renewal date.
-        const updated = sub.cancel_at_period_end
-          ? await stripe.subscriptions.update(sub.id, {
-              cancel_at_period_end: false,
-            })
-          : sub
+        // Resume the current plan: drop any pending period-end change (schedule)
+        // and clear a pending cancel. Releasing the schedule undoes a pending
+        // downgrade; clearing cancel_at_period_end undoes a pending cancel. Both
+        // are idempotent, so this also covers a plain "undo cancel".
+        await releaseScheduleIfAny(stripe, sub, env)
+        const updated = await stripe.subscriptions.update(sub.id, {
+          cancel_at_period_end: false,
+        })
 
         json(200, { ok: true, next_charge_at: periodEndIso(updated) })
       },
@@ -580,6 +638,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
 
+        // A schedule-managed sub rejects this update — release any pending
+        // change first so the retention save reinstates the current plan cleanly.
+        await releaseScheduleIfAny(stripe, sub, env)
         const updated = await stripe.subscriptions.update(sub.id, {
           discounts: [{ coupon: coupon.id }],
           cancel_at_period_end: false,
@@ -694,7 +755,175 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         json(200, {
           cancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),
           cancelAt,
+          // A schedule-managed sub has a pending period-end tier/PWYC change
+          // (task 14). The account page can surface "a plan change is scheduled".
+          pendingChange: Boolean(sub && scheduleIdOf(sub)),
         })
+      },
+    },
+
+    {
+      // Switch tier / plan / PWYC amount on the member's existing subscription
+      // — the in-app flow the single-active-subscription guard routes a second
+      // purchase into (§1a, §6). Direction decides timing: gaining an
+      // entitlement (or a PWYC raise / monthly→yearly) applies immediately and
+      // prorated; losing one (or a PWYC lower) lands at period end via a Stripe
+      // schedule. The webhook fans out on the resulting entitlement diff.
+      //
+      // VERIFY-PENDING (§6): the schedule phase-boundary handling and the
+      // proration behavior are written against the documented API and must be
+      // confirmed against a live test-mode sub before this is exposed.
+      path: '/api/stripe/change-tier',
+      handler: async (req, res) => {
+        const json = makeJsonRes(res)
+        if (req.method !== 'POST') return json(405, { error: 'Method Not Allowed' })
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'STRIPE_SECRET_KEY missing' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const body =
+          (await readJson<{
+            tier?: string
+            plan?: 'monthly' | 'yearly'
+            custom_amount_cents?: number
+          }>(req)) ?? {}
+        if (body.plan !== 'monthly' && body.plan !== 'yearly') {
+          return json(400, { error: 'plan must be "monthly" or "yearly"' })
+        }
+        const plan = body.plan
+        const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
+        const newTier = coerceTier(body.tier)
+
+        const sub = await findActiveSubscription(stripe, email)
+        if (!sub) return json(404, { error: 'No active subscription found' })
+        const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+
+        // A EUR sub updated with USD price_data hard-fails (§6 point 1) — reuse
+        // the subscription's own currency, and validate against ITS floor.
+        const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
+        const catalog = await resolveCatalogPrice(stripe, newTier, plan)
+        const floor = catalog.floors[currency] ?? catalog.floors.usd
+
+        let amountCents = floor
+        if (
+          typeof body.custom_amount_cents === 'number' &&
+          Number.isFinite(body.custom_amount_cents)
+        ) {
+          if (body.custom_amount_cents < floor) {
+            return json(400, {
+              error: `Amount must be at least ${formatMinor(floor, currency)}.`,
+            })
+          }
+          if (body.custom_amount_cents > 1_000_000) {
+            return json(400, { error: 'Custom amount too large.' })
+          }
+          amountCents = Math.round(body.custom_amount_cents)
+        }
+
+        const currentTier = await tierFromSubscription(sub, stripe)
+        const prevEnt = deriveEntitlements(currentTier)
+        const nextEnt = deriveEntitlements(newTier)
+        const item = sub.items.data[0]
+        if (!item) return json(409, { error: 'Subscription has no item to change.' })
+        const prevAmount = item.price?.unit_amount ?? null
+        const prevPlan = planFromSubscription(sub)
+
+        // No-op: identical tier, plan, and amount.
+        if (currentTier === newTier && prevPlan === plan && prevAmount === amountCents) {
+          return json(200, { ok: true, changed: false })
+        }
+
+        // The destination line item. A schedule phase can only carry a Price id
+        // (no inline price_data), so the period-end path always targets the
+        // catalog floor price; the immediate path can use inline price_data for a
+        // PWYC uplift.
+        const atFloor = amountCents === floor
+        const immediate = changeIsImmediate(prevEnt, nextEnt, prevAmount, amountCents)
+
+        try {
+          if (immediate) {
+            // Release any prior pending change, then update the item in place
+            // (preserves the item id) with exact prorations. The webhook derives
+            // the new tier from the price product and syncs SC/Circle/Neon.
+            await releaseScheduleIfAny(stripe, sub, env)
+            const priceField = atFloor
+              ? { price: catalog.priceId }
+              : {
+                  price_data: {
+                    currency,
+                    product: catalog.productId,
+                    unit_amount: amountCents,
+                    recurring: { interval },
+                    tax_behavior: 'exclusive' as const,
+                  },
+                }
+            await stripe.subscriptions.update(sub.id, {
+              items: [{ id: item.id, ...priceField }],
+              proration_behavior: 'create_prorations',
+              // monthly→yearly resets the billing cycle to now (§6 table).
+              ...(prevPlan !== plan ? { billing_cycle_anchor: 'now' as const } : {}),
+              metadata: {
+                ...sub.metadata,
+                tier: newTier,
+                plan,
+                amount_cents: String(amountCents),
+                currency,
+              },
+            })
+            if (env.DATABASE_URL) {
+              await clearMembershipPending(getDb(env), customerId)
+            }
+            return json(200, { ok: true, changed: true, timing: 'immediate' })
+          }
+
+          // Period-end: schedule the destination (catalog floor) price to start at
+          // the current period end; entitlement isn't revoked until it lands.
+          let scheduleId = scheduleIdOf(sub)
+          if (!scheduleId) {
+            const created = await stripe.subscriptionSchedules.create({
+              from_subscription: sub.id,
+            })
+            scheduleId = created.id
+          }
+          const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId)
+          const currentPhase = schedule.phases[schedule.phases.length - 1]
+          if (!currentPhase) {
+            return json(500, { error: 'Could not read subscription schedule.' })
+          }
+          await stripe.subscriptionSchedules.update(scheduleId, {
+            end_behavior: 'release',
+            phases: [
+              {
+                items: currentPhase.items.map((i) => ({
+                  price: typeof i.price === 'string' ? i.price : i.price.id,
+                  quantity: i.quantity ?? 1,
+                })),
+                start_date: currentPhase.start_date,
+                end_date: currentPhase.end_date,
+              },
+              { items: [{ price: catalog.priceId, quantity: 1 }] },
+            ],
+          })
+          if (env.DATABASE_URL) {
+            await setMembershipPending(getDb(env), customerId, {
+              scheduled_tier: newTier,
+              schedule_id: scheduleId,
+              pending_amount_cents: amountCents,
+              pending_plan: plan,
+            })
+          }
+          return json(200, {
+            ok: true,
+            changed: true,
+            timing: 'period_end',
+            effective_at: periodEndIso(sub),
+          })
+        } catch (err) {
+          console.error('[stripe] change-tier failed:', err)
+          return json(502, { error: 'Could not change your plan. Please try again.' })
+        }
       },
     },
 
@@ -1021,6 +1250,12 @@ async function handleSubscriptionUpsert(
       current_period_end: periodEndIso(sub),
       cancel_at: cancelAtIso(sub),
     })
+    // A pending period-end change only exists while a schedule is attached; once
+    // it lands (or is released) the sub carries no schedule, so any recorded
+    // pending columns are stale — clear them. Best-effort.
+    if (!scheduleIdOf(sub)) {
+      await clearMembershipPending(getDb(env), customerId)
+    }
   }
 }
 

@@ -124,6 +124,42 @@ export async function setMembershipStatusByCustomer(
     where stripe_customer_id = ${customerId}`
 }
 
+// Record a pending period-end change (a scheduled downgrade / PWYC-lowering),
+// keyed on the Stripe customer. The webhook clears these when the schedule
+// lands. No-op when no row matches.
+export async function setMembershipPending(
+  sql: Sql,
+  customerId: string,
+  pending: {
+    scheduled_tier: Tier
+    schedule_id: string | null
+    pending_amount_cents: number | null
+    pending_plan: string | null
+  },
+): Promise<void> {
+  await sql`
+    update membership set
+      scheduled_tier       = ${pending.scheduled_tier},
+      schedule_id          = ${pending.schedule_id},
+      pending_amount_cents = ${pending.pending_amount_cents},
+      pending_plan         = ${pending.pending_plan},
+      updated_at           = now()
+    where stripe_customer_id = ${customerId}`
+}
+
+// Clear any pending period-end change (an immediate change superseded it, or the
+// schedule was released). Matched on the Stripe customer.
+export async function clearMembershipPending(
+  sql: Sql,
+  customerId: string,
+): Promise<void> {
+  await sql`
+    update membership set
+      scheduled_tier = null, schedule_id = null,
+      pending_amount_cents = null, pending_plan = null, updated_at = now()
+    where stripe_customer_id = ${customerId}`
+}
+
 // Full cancel/pause on a single-subscription member leaves no remaining
 // entitlement, so the row is removed (absence = free). Matched on the customer.
 export async function deleteMembershipByCustomer(

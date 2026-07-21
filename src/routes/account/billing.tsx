@@ -57,6 +57,9 @@ function BillingPage() {
   const [scheduledCancelAt, setScheduledCancelAt] = useState<string | null>(
     null,
   );
+  // A period-end tier/PWYC change is pending (task 14) — surfaced so the member
+  // knows a scheduled change is in flight.
+  const [pendingChange, setPendingChange] = useState(false);
   // The cancel flow is a stepper inside the existing Modal. Eligible members
   // start at Offer (Offer → Reason → Confirm); everyone else skips straight to
   // Reason → Confirm and never learns an offer existed. `offerShown` drives the
@@ -100,7 +103,9 @@ function BillingPage() {
     if (!isPaidMember(state)) return;
     let active = true;
     void getMySubscription().then((s) => {
-      if (active && s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
+      if (!active) return;
+      if (s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
+      setPendingChange(Boolean(s.pendingChange));
     });
     return () => {
       active = false;
@@ -276,6 +281,15 @@ function BillingPage() {
     >
       <section>
         <div className="page-section">
+          {pendingChange ? (
+            <p
+              className="mb-6 border border-cyan/50 bg-cyan/10 px-4 py-3 text-body-sm text-fg-strong"
+              aria-live="polite"
+            >
+              A plan change is scheduled and will take effect at the end of your
+              current billing period.
+            </p>
+          ) : null}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="border border-rule bg-navy-800/40 p-8">
               <h2 className="label text-cyan">
