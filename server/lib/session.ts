@@ -33,6 +33,14 @@ const SESSION_TOKEN_AUDIENCE = 'ark-session'
 const AUTH_TXN_ISSUER = 'ark-insider'
 const AUTH_TXN_AUDIENCE = 'ark-auth-txn'
 
+const GIFT_CLAIM_ISSUER = 'ark-insider'
+const GIFT_CLAIM_AUDIENCE = 'gift-claim'
+// A gift is claimable anytime (no redeem-by), but a signed link that both logs
+// the recipient in and redeems is a standing credential — bound it to 90 days.
+// After that the recipient signs in normally (or asks for a resend) and claims
+// via the token-based /redeem fallback.
+const GIFT_CLAIM_TTL_SEC = 90 * 24 * 60 * 60
+
 const jwks = createRemoteJWKSet(
   new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`),
 )
@@ -242,6 +250,54 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     name: (payload.name as string | undefined) ?? undefined,
     sub: (payload.sub as string | undefined) ?? undefined,
   }
+}
+
+// --- gift-claim magic link -----------------------------------------------
+//
+// The single-email gift flow: the recipient's claim email carries one link to
+// /redeem?mt=<this token>. Verifying it server-side proves the sender vouched
+// for this email (the token is HMAC-signed with SESSION_SECRET), so the claim
+// endpoint can create/log-in the recipient and redeem in one click — no Auth0
+// redirect, no "verify your email". Self-contained: it carries the recipient's
+// email + name and the gift's redemption token, so the `gift` table needs no
+// recipient columns.
+
+export type GiftClaimToken = { giftToken: string; email: string; name?: string }
+
+export async function signGiftClaimToken(
+  claim: GiftClaimToken,
+  env: Env,
+): Promise<string> {
+  const secret = env.SESSION_SECRET
+  if (!secret) throw new Error('SESSION_SECRET not configured')
+  return signHs256(
+    {
+      giftToken: claim.giftToken,
+      email: claim.email,
+      ...(claim.name ? { name: claim.name } : {}),
+    },
+    {
+      issuer: GIFT_CLAIM_ISSUER,
+      audience: GIFT_CLAIM_AUDIENCE,
+      ttl: `${GIFT_CLAIM_TTL_SEC}s`,
+      secret,
+    },
+  )
+}
+
+export async function verifyGiftClaimToken(
+  token: string,
+  env: Env,
+): Promise<GiftClaimToken | null> {
+  const payload = await verifyHs256(token, {
+    issuer: GIFT_CLAIM_ISSUER,
+    audience: GIFT_CLAIM_AUDIENCE,
+    secret: env.SESSION_SECRET,
+  })
+  const giftToken = payload?.giftToken as string | undefined
+  const email = payload?.email as string | undefined
+  if (!giftToken || !email) return null
+  return { giftToken, email, name: (payload?.name as string | undefined) ?? undefined }
 }
 
 // --- ark_auth_txn: the in-flight OAuth transaction -----------------------

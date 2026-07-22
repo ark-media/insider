@@ -92,6 +92,41 @@ export async function redeemGift(token: string): Promise<RedeemGiftResult> {
   }
 }
 
+// Claim a gift via the single-email magic link. The `mt` token (from
+// /redeem?mt=…) both authenticates and identifies the gift: one call creates or
+// finds the recipient's account, logs them in (sets the session cookie on the
+// response), and redeems. No prior sign-in needed — that's the whole point.
+export async function claimGiftWithMagicToken(mt: string): Promise<RedeemGiftResult> {
+  try {
+    const res = await fetch("/api/gift/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ mt }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      redeemed?: boolean;
+      applied?: "membership" | "credit";
+      expires_at?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.redeemed) {
+      return {
+        ok: false,
+        status: res.status,
+        error: data.error ?? "Could not redeem this gift.",
+      };
+    }
+    return {
+      ok: true,
+      applied: data.applied ?? "membership",
+      expiresAt: data.expires_at,
+    };
+  } catch {
+    return { ok: false, error: "Network error. Please try again." };
+  }
+}
+
 export async function fetchGiftStatus(
   checkoutSessionId: string,
   giverEmail: string,

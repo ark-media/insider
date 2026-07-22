@@ -14,6 +14,10 @@
 import type Stripe from 'stripe'
 import * as client from 'openid-client'
 import { AlreadySubscribedError } from '../lib/activation.js'
+import {
+  createAuth0PasswordChangeTicket,
+  findOrCreateAuth0User,
+} from '../lib/auth0-user.js'
 import { tierFromSubscription } from './stripe/webhook.js'
 import { AUTH0_DOMAIN } from '../auth0.js'
 import { AUTH0_AUDIENCE } from '../../shared/auth0-claims.js'
@@ -28,10 +32,11 @@ import {
   setCheckoutCookies,
   setSessionCookies,
 } from '../lib/cookies.js'
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getOidcConfig, OidcNotConfiguredError } from '../lib/oidc.js'
 import {
+  getSessionProfile,
   signAuthTxnToken,
   signCheckoutToken,
   signSessionToken,
@@ -227,6 +232,11 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         const returnTo = safeReturnTo(url.searchParams.get('returnTo'), appBaseUrl)
         const screenHint = url.searchParams.get('screen_hint')
         const loginHint = url.searchParams.get('login_hint')
+        // Preselect a connection so Universal Login skips its chooser. Only the
+        // passwordless email (magic link) connection is allowed through — never
+        // let an arbitrary connection name ride into /authorize.
+        const connection =
+          url.searchParams.get('connection') === 'email' ? 'email' : null
 
         const config = await loadOidcConfig(env, res)
         if (!config) return
@@ -249,6 +259,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           nonce,
           ...(screenHint === 'signup' ? { screen_hint: 'signup' } : {}),
           ...(loginHint ? { login_hint: loginHint } : {}),
+          ...(connection ? { connection } : {}),
         })
 
         redirect(res, authUrl.href)
@@ -366,5 +377,41 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         redirect(res, appBaseUrl)
       },
     },
+
+    // Mint a set-password link for the logged-in user, on demand. Gift
+    // recipients arrive via a magic link with no password (they can sign in
+    // with the link or Google); this lets them optionally set one from the
+    // welcome flow so they can log in with email + password later. Returns the
+    // Auth0 change-password ticket URL for the client to redirect to; the
+    // ticket also marks the email verified.
+    defineRoute({
+      path: '/api/account/password-setup',
+      method: 'POST',
+      handler: async (req, _res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+
+        const session = await getSessionProfile(req, env)
+        if (!session) return json(401, { error: 'unauthenticated' })
+
+        // Prefer the sub carried in the session; fall back to an email lookup
+        // (never creates — the caller is already logged in).
+        let sub = session.sub ?? null
+        if (!sub) {
+          const auth0 = await findOrCreateAuth0User(session.email, session.name, env, {
+            emailPasswordReset: false,
+          })
+          sub = auth0?.userId ?? null
+        }
+        if (!sub) return json(502, { error: 'could_not_resolve_account' })
+
+        const url = await createAuth0PasswordChangeTicket(
+          sub,
+          `${appBaseUrl}/welcome?claimed=1`,
+          env,
+        )
+        if (!url) return json(502, { error: 'ticket_failed' })
+        return json(200, { url })
+      },
+    }),
   ]
 }

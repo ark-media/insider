@@ -1,11 +1,8 @@
 import { createHmac } from 'node:crypto'
 import type Stripe from 'stripe'
-import {
-  createAuth0PasswordChangeTicket,
-  findOrCreateAuth0User,
-} from '../../lib/auth0-user.js'
 import { AlreadySubscribedError } from '../../lib/activation.js'
 import { sendEmail } from '../../lib/email.js'
+import { signGiftClaimToken } from '../../lib/session.js'
 import { renderGiftRedemptionEmail } from '../../lib/welcome-email.js'
 import {
   deriveEntitlements,
@@ -345,29 +342,19 @@ async function handleGiftPaymentIntent(
   // Skip the email resend once the token is stamped (a prior delivery sent it).
   if (pi.metadata?.gift_token === token) return
 
-  // Provision the recipient's Auth0 login now, at purchase time — self-signup is
-  // gated (DB connection disabled, social logins screened), so a brand-new
-  // recipient would otherwise have no way to authenticate into /redeem to claim.
-  // Suppress Auth0's own reset email; our redemption email carries the set-
-  // password link for new accounts. Soft-fail: the claim link still works for an
-  // existing account, and a retry re-attempts provisioning.
+  // A single magic link is the whole recipient flow. We deliberately do NOT
+  // provision an Auth0 account here: creating one at purchase time (with
+  // email_verified:false) is what triggered Auth0's own "Verify your email"
+  // message — a second, confusing email. Instead the recipient gets one branded
+  // email; clicking its link (POST /api/gift/claim) creates the account,
+  // pre-verified, logs them in, and redeems — see routes/gift.ts.
   const recipientName = pi.metadata?.recipient_name || undefined
   const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
-  const redeemUrl = `${baseUrl}/redeem?token=${encodeURIComponent(token)}`
-  let passwordSetupUrl: string | undefined
-  try {
-    const auth0 = await findOrCreateAuth0User(recipientEmail, recipientName, env, {
-      emailPasswordReset: false,
-    })
-    if (auth0?.created && auth0.userId) {
-      // Land the recipient back on the claim link after they set a password, so
-      // the flow is set-password → sign in → claim in one line.
-      passwordSetupUrl =
-        (await createAuth0PasswordChangeTicket(auth0.userId, redeemUrl, env)) ?? undefined
-    }
-  } catch (err) {
-    console.error('[auth0] gift recipient provisioning failed:', recipientEmail, err)
-  }
+  const mt = await signGiftClaimToken(
+    { giftToken: token, email: recipientEmail, name: recipientName },
+    env,
+  )
+  const claimUrl = `${baseUrl}/redeem?mt=${encodeURIComponent(mt)}`
 
   // Send the claim email BEFORE stamping the idempotency marker: stamping first
   // meant a transient send failure lost the only claim link forever (the retry
@@ -379,8 +366,7 @@ async function handleGiftPaymentIntent(
     giverName: pi.metadata?.giver_name || undefined,
     term,
     message: pi.metadata?.message || undefined,
-    redeemUrl,
-    passwordSetupUrl,
+    claimUrl,
   })
   // Idempotency-keyed on the PI so a webhook retry (or a cross-instance race)
   // re-sends at most one copy of the claim link.

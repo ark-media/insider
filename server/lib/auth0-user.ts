@@ -28,7 +28,13 @@ export async function findOrCreateAuth0User(
   // own branded welcome email carrying a password-change ticket instead — see
   // createAuth0PasswordChangeTicket below. The subscription path leaves this
   // default so its change_password email keeps going out.
-  opts: { emailPasswordReset?: boolean } = {},
+  //
+  // `emailVerified` creates the account with email_verified:true. The gift
+  // magic-link flow sets it: the recipient clicked a link delivered to their
+  // inbox, which proves control of the address — and creating the user
+  // pre-verified suppresses Auth0's own "Verify your email" message (which
+  // otherwise fires on every email_verified:false creation).
+  opts: { emailPasswordReset?: boolean; emailVerified?: boolean } = {},
 ): Promise<Auth0UserResult | null> {
   const emailPasswordReset = opts.emailPasswordReset ?? true
   const mgmt = getManagementClient(env)
@@ -55,7 +61,7 @@ export async function findOrCreateAuth0User(
       password: tempPassword,
       given_name: (givenName || email.split('@')[0]).slice(0, 40),
       ...(familyName ? { family_name: familyName.slice(0, 40) } : {}),
-      email_verified: false,
+      email_verified: opts.emailVerified ?? false,
     })
     userId = created.user_id
   } catch (err) {

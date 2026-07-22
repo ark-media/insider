@@ -137,6 +137,7 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 // Static import AFTER mock.module so the plugin picks up the fake Stripe.
 import { devApiPlugin } from './dev-api'
 import { giftTokenForPaymentIntent } from './routes/stripe/webhook'
+import { signGiftClaimToken, verifyGiftClaimToken } from './lib/session'
 
 // ---------------------------------------------------------------------------
 // Plugin harness
@@ -286,6 +287,7 @@ beforeEach(() => {
 
 const CREATE_PATH = '/api/gift/create-checkout'
 const STATUS_PATH = '/api/gift/status'
+const CLAIM_PATH = '/api/gift/claim'
 const WEBHOOK_PATH = '/api/stripe/webhook'
 
 // ===========================================================================
@@ -760,7 +762,7 @@ describe('Webhook — gift purchase (redemption model)', () => {
   // gift row (skipped here — no DB) and emails the recipient a claim link, never
   // touching Supporting Cast. Redemption (POST /api/gift/redeem) writes the row.
 
-  test('stamps the gift_token on the PI and emails a redemption link — no SC calls', async () => {
+  test('stamps the gift_token on the PI and emails a single magic link — no SC/Auth0 calls', async () => {
     const pi = buildGiftPI({ term: '1yr', giver_name: 'Bob', message: 'Enjoy' })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
     retrievedPI = pi
@@ -774,9 +776,11 @@ describe('Webhook — gift purchase (redemption model)', () => {
     const res = await runWebhook({ RESEND_API_KEY: 'rk_test' })
     expect(res.statusCode).toBe(200)
 
-    // No Supporting Cast provisioning at purchase time.
+    // No provisioning at purchase time — not SC, and crucially not Auth0 (an
+    // Auth0 account created here is what triggered the extra "verify email").
     expect(fetchCalls.some((c) => c.url.includes('/users'))).toBe(false)
     expect(fetchCalls.some((c) => c.url.endsWith('/subscriptions'))).toBe(false)
+    expect(fetchCalls.some((c) => c.url.includes('/api/v2/'))).toBe(false)
 
     // gift_token stamped on the PI (idempotency + link source), kind preserved.
     const token = giftTokenForPaymentIntent('pi_gift_1', {
@@ -788,17 +792,25 @@ describe('Webhook — gift purchase (redemption model)', () => {
     expect(md.gift_token).toBe(token)
     expect(md.kind).toBe('gift')
 
-    // Redemption email to the recipient carrying the claim link with the token.
-    const emailCall = fetchCalls.find(
+    // Exactly one email, carrying the single /redeem?mt=… magic link.
+    const emailCalls = fetchCalls.filter(
       (c) => c.method === 'POST' && c.url.startsWith('https://api.resend.com'),
     )
-    expect(emailCall).toBeDefined()
-    const body = emailCall!.body as { to: string; subject: string; html: string }
+    expect(emailCalls.length).toBe(1)
+    const body = emailCalls[0]!.body as { to: string; subject: string; html: string }
     expect(body.to).toBe('recip@x.com')
     expect(body.subject).toContain('Bob')
     expect(body.html).toContain('1 year')
-    expect(body.html).toContain('Claim your gift')
-    expect(body.html).toContain(`token=${token}`)
+    expect(body.html).toContain('Start your membership')
+
+    // The link's mt token round-trips to this gift + recipient.
+    const m = body.html.match(/\/redeem\?mt=([^"&\s]+)/)
+    expect(m).not.toBeNull()
+    const claim = await verifyGiftClaimToken(decodeURIComponent(m![1]!), {
+      SESSION_SECRET: BASE_ENV.SESSION_SECRET,
+    })
+    expect(claim?.giftToken).toBe(token)
+    expect(claim?.email).toBe('recip@x.com')
   })
 
   test('idempotent: a PI already carrying the derived gift_token does not resend', async () => {
@@ -848,5 +860,58 @@ describe('giftTokenForPaymentIntent', () => {
     expect(a).toBe(b) // deterministic → idempotent retries
     expect(a).not.toBe(giftTokenForPaymentIntent('pi_xyz', env)) // per-PI
     expect(a.length).toBeGreaterThan(20) // not guessable from the PI id
+  })
+})
+
+describe('gift claim (magic-link) token', () => {
+  const env = { SESSION_SECRET: BASE_ENV.SESSION_SECRET }
+
+  test('round-trips giftToken + email + name', async () => {
+    const mt = await signGiftClaimToken(
+      { giftToken: 'gt_1', email: 'r@x.com', name: 'Rae' },
+      env,
+    )
+    expect(await verifyGiftClaimToken(mt, env)).toEqual({
+      giftToken: 'gt_1',
+      email: 'r@x.com',
+      name: 'Rae',
+    })
+  })
+
+  test('rejects a token signed with a different secret', async () => {
+    const mt = await signGiftClaimToken({ giftToken: 'gt_1', email: 'r@x.com' }, env)
+    expect(
+      await verifyGiftClaimToken(mt, {
+        SESSION_SECRET: 'another-secret-0123456789abcdef0123456789',
+      }),
+    ).toBeNull()
+  })
+})
+
+describe('POST /api/gift/claim — guards', () => {
+  test('500 when the database is not configured', async () => {
+    const h = getHandler(CLAIM_PATH)
+    const res = makeRes()
+    await runHandler(h, makeReq({ method: 'POST', body: { mt: 'x' } }), res)
+    expect(res.statusCode).toBe(500)
+    expect((res.__json() as { error: string }).error).toBe('database_not_configured')
+  })
+
+  test('400 when mt is missing', async () => {
+    const h = getHandler(CLAIM_PATH, { DATABASE_URL: 'postgres://x' })
+    const res = makeRes()
+    await runHandler(h, makeReq({ method: 'POST', body: {} }), res)
+    expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toBe('token required')
+  })
+
+  test('400 expired_link on an unverifiable mt (before any DB call)', async () => {
+    const h = getHandler(CLAIM_PATH, { DATABASE_URL: 'postgres://x' })
+    const res = makeRes()
+    await runHandler(h, makeReq({ method: 'POST', body: { mt: 'not-a-token' } }), res)
+    expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toBe('expired_link')
+    // Never reached Stripe or the DB — verification fails first.
+    expect(stripeCalls.length).toBe(0)
   })
 })

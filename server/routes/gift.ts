@@ -26,9 +26,14 @@ import {
   type GiftRow,
   type MembershipRow,
 } from '../lib/membership.js'
+import { setSessionCookies } from '../lib/cookies.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
-import { getSessionProfile } from '../lib/session.js'
+import {
+  getSessionProfile,
+  signSessionToken,
+  verifyGiftClaimToken,
+} from '../lib/session.js'
 import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import type Stripe from 'stripe'
 
@@ -252,74 +257,179 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const auth0Sub = auth0?.userId ?? null
         if (!auth0Sub) return json(502, { error: 'could_not_resolve_account' })
 
-        const existing = await getMembershipByAuth0Sub(sql, auth0Sub)
-        // Only a real, creditable subscription diverts the gift to account credit.
-        // It must have a Stripe customer — applyGiftAsCredit no-ops without one, so
-        // routing a gift-only membership (null customer) here flipped the gift to
-        // redeemed while granting nothing. A gift-only or expired-gift row instead
-        // falls through to a fresh/extended gift term below.
-        const canCredit =
-          existing != null &&
-          existing.stripe_customer_id != null &&
-          existing.tier !== 'free' &&
-          LIVE_MEMBERSHIP_STATUSES.has(existing.status)
-
-        if (canCredit) {
-          // Claim first — account credit is not idempotent, so the atomic flip
-          // guards against a double-credit race.
-          const claimed = await markGiftRedeemed(sql, token, auth0Sub)
-          if (!claimed) return json(409, { error: 'already_redeemed' })
-          try {
-            await applyGiftAsCredit(stripe, existing, gift)
-          } catch (err) {
-            console.error('[gift] credit apply failed:', err)
-          }
-          return json(200, { redeemed: true, applied: 'credit' })
-        }
-
-        // Grant a gift term. If the recipient already holds an UNEXPIRED gift
-        // term, stack the new term onto the remaining time (start the clock at the
-        // current expiry) rather than resetting it to now and dropping the balance.
-        const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
-        const existingGiftMs = existing?.gift_expires_at
-          ? Date.parse(existing.gift_expires_at)
-          : 0
-        const fromMs = existingGiftMs > Date.now() ? existingGiftMs : Date.now()
-        const grant = await activator.activateGiftForRecipient({
-          email: session.email,
-          name: session.name,
-          tier: gift.tier,
-          term,
-          auth0Sub,
-          fromMs,
+        const result = await redeemGiftForRecipient(
+          { sql, stripe, env, activator },
+          gift,
+          { email: session.email, name: session.name, auth0Sub },
+        )
+        if (!result.ok) return json(409, { error: result.error })
+        return json(200, {
+          redeemed: true,
+          applied: result.applied,
+          expires_at: result.expiresAt,
         })
-        await upsertMembership(sql, {
-          auth0_sub: auth0Sub,
-          stripe_customer_id: null,
-          stripe_subscription_id: null,
-          sc_user_id: grant.scUserId,
-          tier: gift.tier,
-          status: 'active',
-          plan: gift.plan,
-          amount_cents: gift.amount_cents,
-          current_period_end: null,
-          cancel_at: null,
-          gift_expires_at: grant.endsAt,
+      },
+    }),
+
+    defineRoute({
+      // The single-email magic link lands here (POSTed by the /redeem confirm
+      // page carrying its `mt` token). One call creates/logs-in the recipient
+      // and redeems — the whole gift flow in one click, no Auth0 redirect and no
+      // "verify your email". The confirm-page indirection (vs. a bare GET link)
+      // keeps email link-scanners that auto-open links from consuming the gift
+      // before the real recipient clicks.
+      path: '/api/gift/claim',
+      method: 'POST',
+      handler: async (req, res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'not_configured' })
+        if (!env.DATABASE_URL) return json(500, { error: 'database_not_configured' })
+
+        const body = await readJson<{ mt?: string }>(req)
+        const mt = typeof body?.mt === 'string' ? body.mt.trim() : ''
+        if (!mt) return json(400, { error: 'token required' })
+
+        const claim = await verifyGiftClaimToken(mt, env)
+        if (!claim) return json(400, { error: 'expired_link' })
+
+        const sql = getDb(env)
+        const gift = await getGiftByToken(sql, claim.giftToken)
+        if (!gift) return json(404, { error: 'invalid_gift' })
+        // Not pending → already claimed. Do NOT mint a session here: a spent
+        // magic link must not double as a standing login credential.
+        if (gift.status !== 'pending') return json(409, { error: 'already_redeemed' })
+
+        // Provision the recipient's Auth0 login now — pre-verified, since
+        // clicking a link delivered to their inbox proves control of the
+        // address (and pre-verifying suppresses Auth0's own verification email).
+        // This is the ONLY account-provisioning point in the gift flow — nothing
+        // is created at purchase — so exactly one email ever reaches the
+        // recipient. An existing account is found, not recreated.
+        const auth0 = await findOrCreateAuth0User(claim.email, claim.name, env, {
+          emailPasswordReset: false,
+          emailVerified: true,
         })
-        // Mirror the entitlement signals (Auth0 shim + Circle group) and the
-        // Beehiiv premium letter (arkPlus axis only).
-        await syncEntitlement(env, session.email, gift.tier)
-        if (deriveEntitlements(gift.tier).arkPlus) {
-          await tryPush('ensure premium (gift redeem)', () =>
-            ensureSubscribedWithPremium({ env, sql }, session.email),
-          )
-        }
-        // Flip last: the grant is idempotent, so a concurrent redeem is harmless.
-        await markGiftRedeemed(sql, token, auth0Sub)
-        return json(200, { redeemed: true, applied: 'membership', expires_at: grant.endsAt })
+        const auth0Sub = auth0?.userId ?? null
+        if (!auth0Sub) return json(502, { error: 'could_not_resolve_account' })
+
+        const result = await redeemGiftForRecipient(
+          { sql, stripe, env, activator },
+          gift,
+          { email: claim.email, name: claim.name, auth0Sub },
+        )
+        if (!result.ok) return json(409, { error: result.error })
+
+        // Log them straight in — mint the same ark_session the OAuth callback
+        // would, so they land on /welcome already authenticated. Roles are empty:
+        // a gift recipient is never an admin.
+        const sessionToken = await signSessionToken(
+          { email: claim.email, roles: [], name: claim.name, sub: auth0Sub },
+          env,
+        )
+        setSessionCookies(res, sessionToken, env)
+
+        return json(200, {
+          redeemed: true,
+          applied: result.applied,
+          expires_at: result.expiresAt,
+        })
       },
     }),
   ]
+}
+
+// The credit-vs-term core of a redemption, shared by the session-authenticated
+// POST /api/gift/redeem and the magic-link POST /api/gift/claim. The caller has
+// already loaded a PENDING gift and resolved the recipient's Auth0 sub. Branches
+// on whether they already hold an active paid membership (§3 "Gifts"): none →
+// activate a gift term; already active → apply the gift amount as Stripe account
+// credit. Either way the gift flips to redeemed.
+async function redeemGiftForRecipient(
+  {
+    sql,
+    stripe,
+    env,
+    activator,
+  }: {
+    sql: ReturnType<typeof getDb>
+    stripe: Stripe
+    env: Deps['env']
+    activator: Deps['activator']
+  },
+  gift: GiftRow,
+  recipient: { email: string; name?: string; auth0Sub: string },
+): Promise<
+  | { ok: true; applied: 'credit' | 'membership'; expiresAt?: string }
+  | { ok: false; error: 'already_redeemed' }
+> {
+  const { email, name, auth0Sub } = recipient
+  const token = gift.redemption_token
+
+  const existing = await getMembershipByAuth0Sub(sql, auth0Sub)
+  // Only a real, creditable subscription diverts the gift to account credit.
+  // It must have a Stripe customer — applyGiftAsCredit no-ops without one, so
+  // routing a gift-only membership (null customer) here flipped the gift to
+  // redeemed while granting nothing. A gift-only or expired-gift row instead
+  // falls through to a fresh/extended gift term below.
+  const canCredit =
+    existing != null &&
+    existing.stripe_customer_id != null &&
+    existing.tier !== 'free' &&
+    LIVE_MEMBERSHIP_STATUSES.has(existing.status)
+
+  if (canCredit) {
+    // Claim first — account credit is not idempotent, so the atomic flip
+    // guards against a double-credit race.
+    const claimed = await markGiftRedeemed(sql, token, auth0Sub)
+    if (!claimed) return { ok: false, error: 'already_redeemed' }
+    try {
+      await applyGiftAsCredit(stripe, existing, gift)
+    } catch (err) {
+      console.error('[gift] credit apply failed:', err)
+    }
+    return { ok: true, applied: 'credit' }
+  }
+
+  // Grant a gift term. If the recipient already holds an UNEXPIRED gift term,
+  // stack the new term onto the remaining time (start the clock at the current
+  // expiry) rather than resetting it to now and dropping the balance.
+  const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
+  const existingGiftMs = existing?.gift_expires_at
+    ? Date.parse(existing.gift_expires_at)
+    : 0
+  const fromMs = existingGiftMs > Date.now() ? existingGiftMs : Date.now()
+  const grant = await activator.activateGiftForRecipient({
+    email,
+    name,
+    tier: gift.tier,
+    term,
+    auth0Sub,
+    fromMs,
+  })
+  await upsertMembership(sql, {
+    auth0_sub: auth0Sub,
+    stripe_customer_id: null,
+    stripe_subscription_id: null,
+    sc_user_id: grant.scUserId,
+    tier: gift.tier,
+    status: 'active',
+    plan: gift.plan,
+    amount_cents: gift.amount_cents,
+    current_period_end: null,
+    cancel_at: null,
+    gift_expires_at: grant.endsAt,
+  })
+  // Mirror the entitlement signals (Auth0 shim + Circle group) and the Beehiiv
+  // premium letter (arkPlus axis only).
+  await syncEntitlement(env, email, gift.tier)
+  if (deriveEntitlements(gift.tier).arkPlus) {
+    await tryPush('ensure premium (gift redeem)', () =>
+      ensureSubscribedWithPremium({ env, sql }, email),
+    )
+  }
+  // Flip last: the grant is idempotent, so a concurrent redeem is harmless.
+  await markGiftRedeemed(sql, token, auth0Sub)
+  return { ok: true, applied: 'membership', expiresAt: grant.endsAt }
 }
 
 // Apply an unwasted gift as Stripe customer-balance credit on the recipient's

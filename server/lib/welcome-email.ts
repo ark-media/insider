@@ -248,13 +248,10 @@ export type GiftRedemptionEmailParams = {
   giverName?: string
   term: GiftTerm
   message?: string
-  // Where the recipient claims the gift (sign in, then it activates).
-  redeemUrl: string
-  // Present only for a brand-new recipient account: an Auth0 password-change
-  // ticket whose result URL is the claim link. New recipients set a password
-  // first (they have no login yet), then sign in and claim; existing accounts go
-  // straight to the claim link.
-  passwordSetupUrl?: string
+  // The single magic link (/redeem?mt=…). One click logs the recipient in,
+  // redeems the gift, and drops them into the welcome flow — no separate
+  // sign-in or set-password step, and no Auth0 email.
+  claimUrl: string
 }
 
 // A gift now grants nothing until the recipient redeems it (§3): this email
@@ -297,11 +294,9 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
     bodyHtml: `Claim your gift to start your membership. It includes ${WHATS_INCLUDED}.`,
     messageBlockHtml,
     footerHtml: `Gifts are one-time — once claimed, your access runs for ${termLabel} and won't auto-renew. Redeem whenever you like; there's no deadline. Need help? Just reply to this email.`,
-    ctaHref: p.passwordSetupUrl ?? p.redeemUrl,
-    ctaLabel: p.passwordSetupUrl ? 'Set your password' : 'Claim your gift',
-    ctaFollowupHtml: p.passwordSetupUrl
-      ? `Set a password to create your Ark account, then sign in to claim your gift and start your membership.`
-      : `You'll sign in and your membership activates right away.`,
+    ctaHref: p.claimUrl,
+    ctaLabel: 'Start your membership',
+    ctaFollowupHtml: `You'll be signed in automatically — no password needed. You can set one anytime from your welcome page.`,
   })
 
   return { subject, html }

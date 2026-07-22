@@ -6,30 +6,22 @@ import {
 } from './lib/welcome-email'
 
 describe('renderGiftRedemptionEmail', () => {
-  test('existing recipient: claim CTA points at the redeem link', () => {
-    const { html } = renderGiftRedemptionEmail({
+  test('single magic link: one CTA points at the claim link, no set-password step', () => {
+    // The whole recipient flow is one magic link — no separate sign-in or
+    // set-password link, and no Auth0 provisioning at purchase, so exactly one
+    // email reaches the recipient.
+    const { subject, html } = renderGiftRedemptionEmail({
       recipientName: 'Alice',
       giverName: 'Bob',
       term: '1yr',
-      redeemUrl: 'https://app.test/redeem?token=abc',
+      claimUrl: 'https://app.test/redeem?mt=jwt.abc.def',
     })
-    expect(html).toContain('Claim your gift')
-    expect(html).toContain('https://app.test/redeem?token=abc')
+    expect(subject).toContain('Bob')
+    expect(html).toContain('Start your membership')
+    expect(html).toContain('https://app.test/redeem?mt=jwt.abc.def')
     expect(html).not.toContain('Set your password')
-  })
-
-  test('new recipient: set-password CTA carries the ticket, not the raw redeem link', () => {
-    // A brand-new recipient has no login yet, so the primary CTA must be the
-    // Auth0 password-change ticket (whose result URL is the claim link), never
-    // the bare /redeem link they can't authenticate into.
-    const { html } = renderGiftRedemptionEmail({
-      recipientName: 'Alice',
-      term: '1yr',
-      redeemUrl: 'https://app.test/redeem?token=abc',
-      passwordSetupUrl: 'https://auth.test/u/reset?ticket=xyz',
-    })
-    expect(html).toContain('Set your password')
-    expect(html).toContain('https://auth.test/u/reset?ticket=xyz')
+    // Auto-login promise, not a "sign in first" instruction.
+    expect(html).toContain('signed in automatically')
   })
 })
 
