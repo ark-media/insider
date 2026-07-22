@@ -1,6 +1,15 @@
 import { Link } from "@tanstack/react-router";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { plusAudience, HERO_CONTENT } from "../data/plusContent";
 
 export function Hero() {
+  // Personalize the pitch to what the viewer doesn't already own. While auth is
+  // still resolving, `plusAudience` returns "guest" — the right default for this
+  // conversion page (a returning member briefly sees the guest copy, then it
+  // swaps once /api/me resolves).
+  const { state } = useSubscriberAuth();
+  const content = HERO_CONTENT[plusAudience(state)];
+
   return (
     <section className="section-hero ark-bg grain-overlay relative overflow-hidden">
       <div className="page-gutter relative grid grid-cols-1 gap-8 pt-10 pb-12 sm:pt-12 lg:grid-cols-12 lg:gap-8 lg:pt-16 lg:pb-16">
@@ -8,33 +17,24 @@ export function Hero() {
         <div className="relative z-10 lg:col-span-7">
           <div className="rise rise-1 flex items-center gap-3 eyebrow">
             <span className="h-px w-10 bg-cyan" />
-            Ark+
+            {content.eyebrow}
           </div>
 
           <h1 className="rise rise-2 mt-8 text-fg-strong">
             <span className="display-upright block text-[clamp(2.2rem,5.2vw,4.6rem)]">
-              The full
+              {content.head.line1}
             </span>
             <span className="display-upright block text-[clamp(2.2rem,5.2vw,4.6rem)]">
-              Ark Media{" "}
-              <span className="display text-cyan">experience.</span>
+              {content.head.line2Pre}
+              <span className="display text-cyan">{content.head.line2Accent}</span>
+              {content.head.line2Post}
             </span>
           </h1>
 
-          <p className="rise rise-3 mt-8 max-w-lg text-body-lg">
-            Ark+ is our premium membership, offering ad-free podcasts,
-            unlimited access to all written content, and full access to the
-            Ark community.
-          </p>
+          <p className="rise rise-3 mt-8 max-w-lg text-body-lg">{content.lead}</p>
 
           <ul className="rise rise-4 mt-8 space-y-2 text-body-sm text-fg">
-            {[
-              "Inside Call Me Back — extended interviews, ad-free",
-              "Members-only newsletters — sharper analysis, weekly",
-              "The Ark+ community — join the hosts and other members in the room",
-              "Live events and Q&As",
-              "Early access to new shows",
-            ].map((line) => (
+            {content.bullets.map((line) => (
               <li key={line} className="flex items-start gap-3">
                 <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
                 {line}
@@ -43,45 +43,70 @@ export function Hero() {
           </ul>
 
           <div className="rise rise-5 mt-10 flex flex-wrap items-center gap-6">
-            <a
-              href="#pricing"
-              className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
-            >
-              Become a member
-              <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
-                →
-              </span>
-            </a>
+            {content.cta.to ? (
+              <Link
+                to={content.cta.to}
+                className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
+              >
+                {content.cta.label}
+                <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
+                  →
+                </span>
+              </Link>
+            ) : (
+              <a
+                href={content.cta.href}
+                className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
+              >
+                {content.cta.label}
+                <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
+                  →
+                </span>
+              </a>
+            )}
             <Link
               to="/plus/gift"
               className="inline-flex min-h-11 items-center text-body-lg text-fg underline decoration-rule-strong underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
             >
-              Gift Ark+
+              {content.giftLabel}
             </Link>
           </div>
         </div>
 
-        {/* Right — Ark+ logo placeholder */}
+        {/* Right — membership mark placeholder */}
         <div className="relative lg:col-span-5">
           <div className="rise rise-2 relative mx-auto max-w-[380px]">
             <div
               className="relative flex aspect-square items-center justify-center overflow-hidden border border-rule-strong bg-navy-900/60 shadow-cover"
               style={{ transform: "rotate(-1.5deg)" }}
             >
-              {/* Placeholder Ark+ mark — final artwork TBD */}
+              {/* Placeholder mark — final artwork TBD */}
               <div className="text-center">
-                <div className="display-upright text-[clamp(3rem,9vw,5rem)] leading-none text-fg-strong">
-                  Ark<span className="display text-cyan">+</span>
-                </div>
-                <div className="mt-3 eyebrow text-fg-muted">Membership</div>
+                {content.mark === "community" ? (
+                  <>
+                    <div className="eyebrow text-fg-muted">The Ark</div>
+                    <div className="display-upright mt-2 text-[clamp(2.2rem,7vw,3.6rem)] leading-none text-fg-strong">
+                      Commun<span className="display text-cyan">ity</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="display-upright text-[clamp(3rem,9vw,5rem)] leading-none text-fg-strong">
+                      Ark<span className="display text-cyan">+</span>
+                    </div>
+                    <div className="mt-3 eyebrow text-fg-muted">
+                      {content.markSub}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
             {/* Floating member badge */}
             <div className="absolute -bottom-6 -left-4 rotate-[4deg] bg-navy-900 px-5 py-3 text-fg-strong shadow-float ring-1 ring-cyan/40">
-              <div className="eyebrow">Ark+ Member</div>
+              <div className="eyebrow">{content.badgeLabel}</div>
               <div className="display-upright mt-1 text-[22px]">
-                No. 00214
+                {content.badgeValue}
               </div>
             </div>
           </div>
