@@ -18,6 +18,7 @@ export type { Faq }
 export type FaqInput = {
   question: string
   answer: string
+  category: string
   enabled: boolean
   displayOrder: number
 }
@@ -61,6 +62,9 @@ export function validateFaqInput(raw: unknown): ValidationResult {
     return { ok: false, error: 'Answer has no visible text after sanitizing.' }
   }
 
+  // Category is an optional plain-text section heading; strip any markup.
+  const category = typeof r.category === 'string' ? sanitizeQuestion(r.category) : ''
+
   const enabled = r.enabled == null ? true : r.enabled === true
 
   let displayOrder = 0
@@ -72,7 +76,7 @@ export function validateFaqInput(raw: unknown): ValidationResult {
     displayOrder = n
   }
 
-  return { ok: true, value: { question, answer, enabled, displayOrder } }
+  return { ok: true, value: { question, answer, category, enabled, displayOrder } }
 }
 
 // --- DB accessors --------------------------------------------------------
@@ -84,6 +88,7 @@ function mapRow(r: Row): Faq {
     id: String(r.id),
     question: String(r.question),
     answer: String(r.answer),
+    category: String(r.category ?? ''),
     enabled: Boolean(r.enabled),
     displayOrder: Number(r.display_order),
     createdAt: new Date(r.created_at as string).toISOString(),
@@ -91,7 +96,7 @@ function mapRow(r: Row): Faq {
   }
 }
 
-const COLUMNS = `id, question, answer, enabled, display_order, created_at, updated_at`
+const COLUMNS = `id, question, answer, category, enabled, display_order, created_at, updated_at`
 
 // All FAQs, for the admin list (enabled or not).
 export async function listFaqs(sql: Sql): Promise<Faq[]> {
@@ -116,8 +121,8 @@ export async function listEnabledFaqs(sql: Sql): Promise<Faq[]> {
 
 export async function createFaq(sql: Sql, input: FaqInput): Promise<Faq> {
   const rows = (await sql`
-    insert into faqs (question, answer, enabled, display_order)
-    values (${input.question}, ${input.answer}, ${input.enabled}, ${input.displayOrder})
+    insert into faqs (question, answer, category, enabled, display_order)
+    values (${input.question}, ${input.answer}, ${input.category}, ${input.enabled}, ${input.displayOrder})
     returning ${sql.unsafe(COLUMNS)}
   `) as Row[]
   return mapRow(rows[0])
@@ -132,6 +137,7 @@ export async function updateFaq(
     update faqs set
       question = ${input.question},
       answer = ${input.answer},
+      category = ${input.category},
       enabled = ${input.enabled},
       display_order = ${input.displayOrder},
       updated_at = now()

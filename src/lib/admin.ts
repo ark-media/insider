@@ -220,6 +220,7 @@ export async function deleteCareer(id: string): Promise<void> {
 export type FaqDraft = {
   question: string;
   answer: string;
+  category: string;
   enabled: boolean;
   displayOrder: number;
 };

@@ -76,6 +76,15 @@ describe('validateFaqInput', () => {
     const r = validateFaqInput({ ...valid, displayOrder: 1.5 })
     expect(r.ok).toBe(false)
   })
+  test('defaults category to empty string and strips markup', () => {
+    const plain = validateFaqInput(valid)
+    expect(plain.ok).toBe(true)
+    if (plain.ok) expect(plain.value.category).toBe('')
+
+    const tagged = validateFaqInput({ ...valid, category: '<b>Choosing</b> a Plan' })
+    expect(tagged.ok).toBe(true)
+    if (tagged.ok) expect(tagged.value.category).toBe('Choosing a Plan')
+  })
   test('coerces enabled to a strict boolean', () => {
     const r = validateFaqInput({ ...valid, enabled: 'yes' })
     expect(r.ok).toBe(true)

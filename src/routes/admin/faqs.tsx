@@ -25,18 +25,26 @@ export const Route = createFileRoute("/admin/faqs")({
 type FormState = {
   question: string;
   answer: string;
+  category: string;
   enabled: boolean;
   displayOrder: string; // text input; coerced to a number on submit
 };
 
 function emptyForm(): FormState {
-  return { question: "", answer: "", enabled: true, displayOrder: "0" };
+  return {
+    question: "",
+    answer: "",
+    category: "",
+    enabled: true,
+    displayOrder: "0",
+  };
 }
 
 function formFrom(f: Faq): FormState {
   return {
     question: f.question,
     answer: f.answer,
+    category: f.category,
     enabled: f.enabled,
     displayOrder: String(f.displayOrder),
   };
@@ -55,6 +63,7 @@ function FaqsAdmin() {
     const draft: FaqDraft = {
       question: form.question.trim(),
       answer: form.answer,
+      category: form.category.trim(),
       enabled: form.enabled,
       displayOrder: Number(form.displayOrder) || 0,
     };
@@ -111,7 +120,10 @@ function FaqsAdmin() {
               onEdit={() => crud.startEdit(f.id, formFrom(f))}
               onDelete={() => remove(f)}
             >
-              <h3 className="mt-3 font-display text-[16px] text-fg-strong">
+              {f.category ? (
+                <p className="mt-3 eyebrow text-cyan">{f.category}</p>
+              ) : null}
+              <h3 className="mt-1 font-display text-[16px] text-fg-strong">
                 {f.question}
               </h3>
               <div className="mt-1 line-clamp-2 text-body-sm [&_a]:underline">
@@ -153,6 +165,24 @@ function FaqForm({
       </h2>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-5">
+        <div>
+          <label htmlFor="faq-category" className={adminFieldLabel}>
+            Section
+          </label>
+          <input
+            id="faq-category"
+            type="text"
+            value={form.category}
+            onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+            placeholder="Choosing a Subscription"
+            className={`mt-2 ${adminField}`}
+          />
+          <p className="mt-1 text-body-sm">
+            Optional heading that groups questions on the site. Reuse the same
+            text across questions to group them; leave blank for ungrouped.
+          </p>
+        </div>
+
         <div>
           <label htmlFor="faq-question" className={adminFieldLabel}>
             Question
