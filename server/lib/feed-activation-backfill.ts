@@ -8,6 +8,11 @@
 // The DB write is create-if-absent (see backfillActivations), so a real
 // webhook-recorded activation or revocation always wins over the derived
 // download signal, and the backfill is safe to run repeatedly.
+//
+// BLIND SPOT: Spotify Open Access members activate by linking Spotify and then
+// stream, so they never generate a download and are invisible here. The SC v1
+// API doesn't expose their registration type either — only the memberships CSV
+// export does. To credit them, use feed-activation-csv.ts (the CSV backfill).
 
 import type { Sql } from './db.js'
 import {
