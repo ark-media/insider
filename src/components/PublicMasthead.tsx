@@ -56,6 +56,7 @@ const NAV_ITEMS: NavItem[] = [
   // non-subscribers in place of the members-only Community app links.
   { variant: "text", label: "Community", to: "/community", matchPrefix: "/community" },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
+  { variant: "text", label: "Book Club", to: "/book-club", matchPrefix: "/book-club" },
   {
     variant: "menu",
     label: "Subscribe",

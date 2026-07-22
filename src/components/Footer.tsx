@@ -73,6 +73,11 @@ export function Footer() {
           <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
             © {new Date().getFullYear()} Ark Media LLC
           </span>
+          {/* Amazon Associates Operating Agreement §5 — site-wide disclosure
+              covering the affiliate buy links on the Book Club page. */}
+          <span className="text-[11px] leading-snug text-fg-faint sm:max-w-md sm:text-right">
+            As an Amazon Associate, Ark Media earns from qualifying purchases.
+          </span>
           {/* Social links are hidden until real Ark Media profile URLs exist —
               SocialLinks.tsx still holds the (placeholder) markup to re-enable. */}
         </div>
