@@ -475,7 +475,6 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     expect(pid.metadata.tier).toBe('ark-plus')
     expect(pid.metadata.term).toBe('1yr')
     expect(pid.metadata.currency).toBe('usd')
-    expect(pid.metadata.amount_cents).toBe('8000')
     expect(pid.metadata.giver_email).toBe('giver@example.com')
     expect(pid.metadata.giver_name).toBe('Bob')
     expect(pid.metadata.recipient_email).toBe('recip@example.com')
@@ -501,7 +500,6 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     const args = sessionCreateArgs()
     expect(args.line_items[0].price).toBe('price_gift_ark_plus_6mo')
     expect(args.payment_intent_data.metadata.term).toBe('6mo')
-    expect(args.payment_intent_data.metadata.amount_cents).toBe('4800')
   })
 
   test('tier param routes to the Bundle gift Price', async () => {
@@ -614,7 +612,6 @@ describe('POST /api/gift/create-checkout — promo auto-apply', () => {
     expect(args.discounts).toEqual([{ coupon: 'coupon_pct20' }])
     // Source price is still the full $80 gift Price — Stripe applies the discount.
     expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
-    expect(args.payment_intent_data.metadata.amount_cents).toBe('8000')
   })
 
   test('no eligible coupon → no `discounts` field on the session', async () => {

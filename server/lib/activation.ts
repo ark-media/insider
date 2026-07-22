@@ -81,6 +81,11 @@ export type Activator = {
     name?: string
     auth0Sub: string | null
     term: GiftTerm
+    // The gift's redemption token — the SC idempotency scope. Keying on the gift
+    // (not recipient+term) dedups a RETRY of the same redemption while letting a
+    // second, distinct gift mint its own SC subscription instead of silently
+    // collapsing into the first (which left its ends_at un-extended).
+    giftToken: string
     // Epoch ms each axis's term is measured from — null means "don't grant this
     // axis". The redeem flow passes an existing unexpired gift expiry so a
     // stacked same-axis gift extends rather than resets. The SC gift sub's
@@ -384,6 +389,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     name?: string
     auth0Sub: string | null
     term: GiftTerm
+    giftToken: string
     arkPlusFromMs: number | null
     circleFromMs: number | null
   }): Promise<{
@@ -403,13 +409,16 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       const sc = createScClient(env)
       const user = await findOrCreateScUser(sc, opts.email, opts.name)
       const scPriceId = resolveScGiftPriceId(opts.term)
-      // Idempotency key ties the SC gift sub to (recipient, term) so a redeem
-      // retry returns the existing record rather than stacking a second.
+      // Idempotency key ties the SC gift sub to THIS gift (its redemption token),
+      // so a redeem retry returns the existing record while a second, distinct
+      // gift creates its own fixed-term subscription — feed access is the union
+      // of their ends_at. (The old recipient+term key silently collapsed two
+      // gifts into one, leaving the stacked ends_at un-extended on SC.)
       const created = await sc.call<{ subscription: { id: number } }>(
         'POST',
         '/subscriptions',
         { user_id: user.id, subscription_price_id: Number(scPriceId), ends_at: arkPlusEndsAt },
-        { idempotencyKey: `gift_redeem_${opts.auth0Sub ?? opts.email}_${opts.term}` },
+        { idempotencyKey: `gift_redeem_${opts.giftToken}` },
       )
       scUserId = user.id
       scSubscriptionId = created.subscription.id

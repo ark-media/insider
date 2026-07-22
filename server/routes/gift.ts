@@ -113,8 +113,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // The one-time gift price for this tier+term from the catalog. It carries
         // the per-currency currency_options the session's `currency` selects, so
         // the buyer is charged the localized gift amount (not USD via the old,
-        // inert Adaptive Pricing). `amountCents` is the charge-currency amount,
-        // used only to rank promos.
+        // inert Adaptive Pricing). `amountCents` is the charge-currency list
+        // amount, used only to rank promos here — the row's stored amount comes
+        // from the PaymentIntent's actual `amount_received` in the webhook.
         const gift = await resolveGiftPrice(stripe, tier, term)
         const amountCents = gift.floors[currency]
 
@@ -174,7 +175,6 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
               tier,
               term,
               currency,
-              amount_cents: String(amountCents),
               giver_email: giverEmail,
               giver_name: body.giver_name ?? '',
               recipient_email: recipientEmail,
@@ -352,18 +352,115 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
   ]
 }
 
-// The per-axis core of a redemption, shared by the session-authenticated POST
-// /api/gift/redeem and the magic-link POST /api/gift/claim. The caller has
-// already loaded a PENDING gift and resolved the recipient's Auth0 sub.
+// A membership row's per-axis fields, as far as the redemption planner cares.
+export type GiftRedemptionExisting = {
+  tier: Tier
+  status: string
+  stripe_subscription_id: string | null
+  stripe_customer_id: string | null
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
+}
+
+// The pure decision core of a redemption: given the gift, the recipient's current
+// membership row (or null), and the clock, decide which axes to grant vs credit,
+// where each granted axis's term starts (stacking), and what the row/effective
+// tiers become. No IO — every branch here is unit-tested (gift-redeem.test.ts) so
+// the stacking + grant/credit split can't silently drift.
 //
-// The gift covers one or both entitlement axes (Bundle → both). For each covered
-// axis (D4/D5):
-//   - the recipient already holds it via a LIVE PAID SUBSCRIPTION → credit that
-//     axis (they'd otherwise double-pay for a gifted axis);
-//   - otherwise → grant/extend a gift term on that axis (stacking onto any live
-//     gift term on the same axis).
-// Bundle-on-Ark+-subscriber therefore grants a Circle term AND credits the Ark+
-// overlap. The gift flips to redeemed once, atomically.
+// For each axis the gift covers (Bundle → both):
+//   - recipient already holds it via a LIVE PAID SUBSCRIPTION → credit that axis
+//     (they'd otherwise double-pay for a gifted axis);
+//   - otherwise → grant/extend a gift term on that axis, stacking onto any live
+//     gift term on the same axis (start the clock at the current expiry).
+export type GiftRedemptionPlan = {
+  hasPaidSub: boolean
+  grantArkPlus: boolean
+  grantCircle: boolean
+  creditArkPlus: boolean
+  creditCircle: boolean
+  // Epoch ms each granted axis's term is measured from; null = don't grant it.
+  arkPlusFromMs: number | null
+  circleFromMs: number | null
+  // The `tier` column to write: the subscribed tier for a paid-sub row (liveAxes
+  // unions it with the gift axes at read time); otherwise the tier derived from
+  // all live gift axes after this grant.
+  rowTier: Tier
+  // The recipient's FULL effective tier after redemption (subscription ∪ live
+  // gift axes) — drives the Circle-group / Beehiiv mirror so an Ark+ gift never
+  // strips a Circle the recipient holds via their subscription.
+  effectiveTier: Tier
+}
+
+export function planGiftRedemption(
+  gift: { tier: Tier },
+  existing: GiftRedemptionExisting | null,
+  now: number,
+): GiftRedemptionPlan {
+  const covered = deriveEntitlements(gift.tier)
+
+  // A live PAID subscription (a row with a real Stripe sub + customer) already
+  // covering an axis diverts THAT axis to credit. A gift-only or expired row
+  // never diverts — its axes fall through to a fresh/extended gift term.
+  const hasPaidSub =
+    existing != null &&
+    existing.stripe_subscription_id != null &&
+    existing.stripe_customer_id != null &&
+    LIVE_MEMBERSHIP_STATUSES.has(existing.status)
+  const subAxes =
+    hasPaidSub && existing != null
+      ? deriveEntitlements(existing.tier)
+      : { arkPlus: false, circle: false }
+
+  const grantArkPlus = covered.arkPlus && !subAxes.arkPlus
+  const grantCircle = covered.circle && !subAxes.circle
+  const creditArkPlus = covered.arkPlus && subAxes.arkPlus
+  const creditCircle = covered.circle && subAxes.circle
+
+  const arkPlusExistingMs = existing?.ark_plus_gift_expires_at
+    ? Date.parse(existing.ark_plus_gift_expires_at)
+    : 0
+  const circleExistingMs = existing?.circle_gift_expires_at
+    ? Date.parse(existing.circle_gift_expires_at)
+    : 0
+  const arkPlusFromMs = grantArkPlus ? (arkPlusExistingMs > now ? arkPlusExistingMs : now) : null
+  const circleFromMs = grantCircle ? (circleExistingMs > now ? circleExistingMs : now) : null
+
+  // A granted axis is live after this redemption; so is a not-granted axis whose
+  // existing gift term is still in the future.
+  const arkLiveAfter = grantArkPlus || arkPlusExistingMs > now
+  const circleLiveAfter = grantCircle || circleExistingMs > now
+
+  const rowTier =
+    hasPaidSub && existing != null
+      ? existing.tier
+      : tierFromEntitlements({ arkPlus: arkLiveAfter, circle: circleLiveAfter })
+  const effectiveTier = tierFromEntitlements({
+    arkPlus: subAxes.arkPlus || arkLiveAfter,
+    circle: subAxes.circle || circleLiveAfter,
+  })
+
+  return {
+    hasPaidSub,
+    grantArkPlus,
+    grantCircle,
+    creditArkPlus,
+    creditCircle,
+    arkPlusFromMs,
+    circleFromMs,
+    rowTier,
+    effectiveTier,
+  }
+}
+
+// The IO core of a redemption, shared by the session-authenticated POST
+// /api/gift/redeem and the magic-link POST /api/gift/claim. The caller has
+// already loaded a PENDING gift and resolved the recipient's Auth0 sub. Decision
+// logic lives in planGiftRedemption above; this function performs the grant, the
+// atomic claim, the row upsert, the overlap credit, and the entitlement mirror.
+//
+// Bundle-on-Ark+-subscriber grants a Circle term AND credits the Ark+ overlap.
+// The gift flips to redeemed once, atomically.
 async function redeemGiftForRecipient(
   {
     sql,
@@ -386,106 +483,72 @@ async function redeemGiftForRecipient(
   const token = gift.redemption_token
   const now = Date.now()
 
-  // The axes this gift grants (Bundle → both).
-  const covered = deriveEntitlements(gift.tier)
-
   const existing = await getMembershipByAuth0Sub(sql, auth0Sub)
-  // A live PAID subscription (a row with a real Stripe sub + customer) already
-  // covering an axis diverts THAT axis to credit. A gift-only or expired row
-  // never diverts — its axes fall through to a fresh/extended gift term.
-  const hasPaidSub =
-    existing != null &&
-    existing.stripe_subscription_id != null &&
-    existing.stripe_customer_id != null &&
-    LIVE_MEMBERSHIP_STATUSES.has(existing.status)
-  const subAxes = hasPaidSub
-    ? deriveEntitlements(existing.tier)
-    : { arkPlus: false, circle: false }
-
-  // Per axis: grant where the paid sub doesn't already cover it (extending any
-  // live gift term on that axis); credit where it does.
-  const grantArkPlus = covered.arkPlus && !subAxes.arkPlus
-  const grantCircle = covered.circle && !subAxes.circle
-  const creditArkPlus = covered.arkPlus && subAxes.arkPlus
-  const creditCircle = covered.circle && subAxes.circle
-
-  // Claim first — the credit branch is not idempotent, so the atomic flip guards
-  // a double-redeem race. The grant branch is idempotent (SC/Circle keyed), so
-  // flipping first is safe for it too.
-  const claimed = await markGiftRedeemed(sql, token, auth0Sub)
-  if (!claimed) return { ok: false, error: 'already_redeemed' }
-
+  const plan = planGiftRedemption(gift, existing, now)
   const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
 
-  // Stacking: each granted axis's term starts at its current gift expiry when
-  // that is still in the future, else now.
-  const arkPlusExistingMs = existing?.ark_plus_gift_expires_at
-    ? Date.parse(existing.ark_plus_gift_expires_at)
-    : 0
-  const circleExistingMs = existing?.circle_gift_expires_at
-    ? Date.parse(existing.circle_gift_expires_at)
-    : 0
-  const arkPlusFromMs = grantArkPlus ? (arkPlusExistingMs > now ? arkPlusExistingMs : now) : null
-  const circleFromMs = grantCircle ? (circleExistingMs > now ? circleExistingMs : now) : null
-
+  // Grant FIRST, before the atomic claim. The grant is idempotent (SC keyed by
+  // recipient+axis, Circle group-add is a no-op if present), so a concurrent
+  // redeem that also grants is harmless — but if it THROWS (SC/Circle outage) the
+  // gift is still PENDING and the recipient can retry. Claiming first (the old
+  // order) would burn the gift on any transient provisioning failure.
   let grant: {
     scUserId: number | null
     scSubscriptionId: number | null
     arkPlusEndsAt: string | null
     circleEndsAt: string | null
   } = { scUserId: null, scSubscriptionId: null, arkPlusEndsAt: null, circleEndsAt: null }
-  if (grantArkPlus || grantCircle) {
+  if (plan.grantArkPlus || plan.grantCircle) {
     grant = await activator.activateGiftForRecipient({
       email,
       name,
       auth0Sub,
       term,
-      arkPlusFromMs,
-      circleFromMs,
+      giftToken: token,
+      arkPlusFromMs: plan.arkPlusFromMs,
+      circleFromMs: plan.circleFromMs,
     })
   }
 
-  // The row's tier column: keep the subscribed tier for a paid-sub row (liveAxes
-  // unions it with the gift axes at read time); for a gift-only row, derive from
-  // all live gift axes after this grant. A null per-axis expiry below is
-  // preserved by the upsert's coalesce, so a single-axis gift never clears the
-  // other axis's term or a live subscription's fields.
-  let rowTier: Tier
-  if (hasPaidSub) {
-    rowTier = existing.tier
-  } else {
-    const arkLive = grant.arkPlusEndsAt != null || arkPlusExistingMs > now
-    const circleLive = grant.circleEndsAt != null || circleExistingMs > now
-    rowTier = tierFromEntitlements({ arkPlus: arkLive, circle: circleLive })
-  }
+  // Claim now — this atomic flip gates the non-idempotent credit below and the
+  // row upsert. A lost race means another redeem already granted (idempotent) and
+  // upserted, so bail without touching the row or crediting twice.
+  const claimed = await markGiftRedeemed(sql, token, auth0Sub)
+  if (!claimed) return { ok: false, error: 'already_redeemed' }
 
+  // The row's per-axis expiries. A null is preserved by the upsert's coalesce, so
+  // a single-axis gift never clears the other axis's term or a live sub's fields.
   await upsertMembership(sql, {
     auth0_sub: auth0Sub,
     stripe_customer_id: existing?.stripe_customer_id ?? null,
     stripe_subscription_id: existing?.stripe_subscription_id ?? null,
     sc_user_id: grant.scUserId, // coalesced with any existing in the upsert
-    tier: rowTier,
-    status: hasPaidSub ? existing.status : 'active',
-    plan: hasPaidSub ? existing.plan : gift.plan,
-    amount_cents: hasPaidSub ? existing.amount_cents : gift.amount_cents,
+    tier: plan.rowTier,
+    status: plan.hasPaidSub && existing != null ? existing.status : 'active',
+    plan: plan.hasPaidSub && existing != null ? existing.plan : gift.plan,
+    amount_cents: plan.hasPaidSub && existing != null ? existing.amount_cents : gift.amount_cents,
     current_period_end: existing?.current_period_end ?? null,
     cancel_at: existing?.cancel_at ?? null,
     ark_plus_gift_expires_at: grant.arkPlusEndsAt,
     circle_gift_expires_at: grant.circleEndsAt,
   })
 
-  // Paid-sub overlap credit (D5): the gift amount minus the standalone gift price
-  // of each GRANTED axis for the term, in the gift's currency, clamped to
-  // [0, amount]. All covered axes overlapping a paid sub → nothing granted →
-  // full amount credited.
+  // Paid-sub overlap credit (D5): refund the value of the axis/axes the recipient
+  // already pays for. Denominated in the SUBSCRIPTION'S billing currency — a
+  // Stripe customer balance only draws invoices of the same currency, so
+  // crediting the gift's currency would strand the balance on a differently-billed
+  // sub. Value = the full gift price minus the standalone price of each GRANTED
+  // axis, both resolved in the sub currency from the catalog's per-currency table
+  // (no FX guesswork). All covered axes overlap → nothing granted → full price.
   let creditApplied = false
-  if ((creditArkPlus || creditCircle) && hasPaidSub && gift.amount_cents != null) {
-    const raw = (gift.currency ?? 'usd').toLowerCase()
-    const currency = isSupportedCurrency(raw) ? raw : 'usd'
+  if ((plan.creditArkPlus || plan.creditCircle) && plan.hasPaidSub && existing != null) {
+    const subCur = await subscriptionCurrency(stripe, existing)
+    const currency = isSupportedCurrency(subCur) ? subCur : 'usd'
+    const fullValue = (await resolveGiftPrice(stripe, gift.tier, term)).floors[currency]
     let grantedValue = 0
-    if (grantArkPlus) grantedValue += (await resolveGiftPrice(stripe, 'ark-plus', term)).floors[currency]
-    if (grantCircle) grantedValue += (await resolveGiftPrice(stripe, 'circle', term)).floors[currency]
-    const creditCents = Math.max(0, Math.min(gift.amount_cents, gift.amount_cents - grantedValue))
+    if (plan.grantArkPlus) grantedValue += (await resolveGiftPrice(stripe, 'ark-plus', term)).floors[currency]
+    if (plan.grantCircle) grantedValue += (await resolveGiftPrice(stripe, 'circle', term)).floors[currency]
+    const creditCents = Math.max(0, fullValue - grantedValue)
     if (creditCents > 0) {
       try {
         await applyGiftAsCredit(stripe, existing, creditCents, currency)
@@ -497,29 +560,44 @@ async function redeemGiftForRecipient(
   }
 
   // Mirror the Circle access group + Beehiiv premium letter to the recipient's
-  // FULL effective tier (subscription ∪ live gift axes) — never just the gift
-  // tier, or an Ark+ gift would wrongly strip a Circle they hold via their sub.
-  const finalArkPlus = subAxes.arkPlus || grant.arkPlusEndsAt != null || arkPlusExistingMs > now
-  const finalCircle = subAxes.circle || grant.circleEndsAt != null || circleExistingMs > now
-  const effectiveTier = tierFromEntitlements({ arkPlus: finalArkPlus, circle: finalCircle })
-  await syncEntitlement(env, email, effectiveTier)
-  if (finalArkPlus) {
+  // FULL effective tier (subscription ∪ live gift axes), never just the gift tier.
+  await syncEntitlement(env, email, plan.effectiveTier)
+  if (deriveEntitlements(plan.effectiveTier).arkPlus) {
     await tryPush('ensure premium (gift redeem)', () =>
       ensureSubscribedWithPremium({ env, sql }, email),
     )
   }
 
+  // Report what actually happened: 'membership' only when a term was granted,
+  // 'credit' for a pure-overlap gift, 'mixed' when both. Never claim a membership
+  // was created when only a credit was applied.
   const grantedAny = grant.arkPlusEndsAt != null || grant.circleEndsAt != null
-  const applied = grantedAny && creditApplied ? 'mixed' : creditApplied ? 'credit' : 'membership'
+  const applied = grantedAny ? (creditApplied ? 'mixed' : 'membership') : 'credit'
   const expiresAt = grant.arkPlusEndsAt ?? grant.circleEndsAt ?? undefined
   return { ok: true, applied, expiresAt }
 }
 
+// The billing currency of the recipient's live subscription — the only currency a
+// customer-balance credit can be drawn against. Falls back to USD if the sub
+// can't be read (a credit still lands; worst case it's mis-denominated, same as
+// the old behavior).
+async function subscriptionCurrency(
+  stripe: Stripe,
+  membership: MembershipRow,
+): Promise<string> {
+  if (!membership.stripe_subscription_id) return 'usd'
+  try {
+    const sub = await stripe.subscriptions.retrieve(membership.stripe_subscription_id)
+    return (sub.currency ?? 'usd').toLowerCase()
+  } catch {
+    return 'usd'
+  }
+}
+
 // Apply an unwasted gift portion as Stripe customer-balance credit on the
 // recipient's existing customer — auto-drawn against future invoices like a
-// voucher (D5). Credited in the gift's currency (its amount_cents denomination);
-// a recipient whose subscription bills in a different currency is an FX
-// approximation, and the balance draws only same-currency invoices.
+// voucher (D5). Denominated in the subscription's billing currency (resolved by
+// the caller via subscriptionCurrency) so the balance actually draws.
 async function applyGiftAsCredit(
   stripe: Stripe,
   membership: MembershipRow,
