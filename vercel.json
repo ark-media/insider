@@ -18,6 +18,10 @@
       "schedule": "0 15 * * *"
     },
     {
+      "path": "/api/cron/gift-expiry-reminders",
+      "schedule": "0 16 * * *"
+    },
+    {
       "path": "/api/cron/prune-webhook-events",
       "schedule": "0 4 1 * *"
     }

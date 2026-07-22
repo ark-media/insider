@@ -10,6 +10,11 @@ import { reconcileEntitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
 import { getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
+import {
+  GIFT_EXPIRY_REMINDER_DAYS,
+  runGiftExpiryReminders,
+} from '../lib/gift-expiry-reminders.js'
+import { getAuth0UserEmail } from '../lib/auth0-user.js'
 import { createScV1Client } from '../lib/sc-client.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import type { IncomingMessage } from 'node:http'
@@ -81,6 +86,42 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
           json(200, summary)
         } catch (err) {
           console.error('[cron] feed-setup-reminders failed:', err)
+          json(500, { error: 'reminder_run_failed' })
+        }
+      },
+    }),
+    defineRoute({
+      // Nudge gift recipients whose gifted axis (Ark+ / Community) is nearing
+      // its term end, so they can convert to a paid subscription before access
+      // lapses. Scans Neon membership rows, resolves each recipient's email from
+      // Auth0 (membership stores no PII), sends a one-time Resend reminder per
+      // (recipient, axis, term-end), and records each send so nobody is nagged
+      // twice for the same term.
+      path: '/api/cron/gift-expiry-reminders',
+      method: ['POST', 'GET'],
+      handler: async (req, _res, json) => {
+        const cronSecret = env.CRON_SECRET
+        if (!cronSecret) return json(500, { error: 'not_configured' })
+        if (!cronAuthorized(req, cronSecret)) {
+          return json(401, { error: 'unauthorized' })
+        }
+        if (!env.DATABASE_URL) {
+          return json(500, { error: 'not_configured' })
+        }
+
+        const sql = getDb(env)
+        try {
+          const summary = await runGiftExpiryReminders({
+            env,
+            sql,
+            appBaseUrl,
+            withinDays: GIFT_EXPIRY_REMINDER_DAYS,
+            nowMs: Date.now(),
+            resolveEmail: (sub) => getAuth0UserEmail(env, sub),
+          })
+          json(200, summary)
+        } catch (err) {
+          console.error('[cron] gift-expiry-reminders failed:', err)
           json(500, { error: 'reminder_run_failed' })
         }
       },

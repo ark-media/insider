@@ -327,3 +327,63 @@ export async function markGiftRedeemed(
     returning redemption_token`
   return rows.length > 0
 }
+
+// --- gift-expiry reminders (T7.5) -----------------------------------------
+
+// A membership row with at least one gift axis whose term ends inside the
+// reminder window. `tier` + `stripe_subscription_id` let the caller tell a
+// sub-backed axis (never remind — it's not the gift's coverage that's ending)
+// from a genuinely gift-sourced one, and detect the D9 bundle-switch case (the
+// OTHER axis held via a live subscription).
+export type GiftExpiryRow = {
+  auth0_sub: string
+  tier: Tier
+  stripe_subscription_id: string | null
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
+}
+
+// Rows where an Ark+ or Community gift term ends in (now, now + withinDays]. The
+// window is evaluated in SQL (make_interval binds the day count as a value).
+export async function getGiftAxesExpiringWithin(
+  sql: Sql,
+  withinDays: number,
+): Promise<GiftExpiryRow[]> {
+  const rows = await sql`
+    select auth0_sub, tier, stripe_subscription_id,
+           ark_plus_gift_expires_at, circle_gift_expires_at
+    from membership
+    where (ark_plus_gift_expires_at is not null
+             and ark_plus_gift_expires_at > now()
+             and ark_plus_gift_expires_at <= now() + make_interval(days => ${withinDays}))
+       or (circle_gift_expires_at is not null
+             and circle_gift_expires_at > now()
+             and circle_gift_expires_at <= now() + make_interval(days => ${withinDays}))`
+  return rows as GiftExpiryRow[]
+}
+
+// Has a reminder already gone out for this exact (recipient, axis, term-end)?
+export async function giftExpiryReminderSent(
+  sql: Sql,
+  auth0Sub: string,
+  axis: 'ark_plus' | 'circle',
+  expiresAt: string,
+): Promise<boolean> {
+  const rows = (await sql`
+    select 1 from gift_expiry_reminder_sends
+    where auth0_sub = ${auth0Sub} and axis = ${axis} and expires_at = ${expiresAt}
+    limit 1`) as unknown[]
+  return rows.length > 0
+}
+
+export async function recordGiftExpiryReminderSent(
+  sql: Sql,
+  auth0Sub: string,
+  axis: 'ark_plus' | 'circle',
+  expiresAt: string,
+): Promise<void> {
+  await sql`
+    insert into gift_expiry_reminder_sends (auth0_sub, axis, expires_at)
+    values (${auth0Sub}, ${axis}, ${expiresAt})
+    on conflict (auth0_sub, axis, expires_at) do nothing`
+}

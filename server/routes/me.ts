@@ -10,16 +10,70 @@ import {
   PremiumNotConfiguredError,
   refreshSubscriptionFromBeehiiv,
 } from '../lib/beehiiv-sync.js'
+import { deriveEntitlements, type Entitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
 import {
   resolveMembership,
   resolveRequestIdentity,
 } from '../lib/entitlement-resolver.js'
+import type { MembershipRow } from '../lib/membership.js'
 import { getSetupStates, recordFeedsPending } from '../lib/feed-activations.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { createScClient, type ScError, type ScUserFeed } from '../lib/sc-client.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
+
+// Per-axis access for account settings (T7.1): what the member has on each
+// entitlement axis (Ark+ = arkPlus, Community = circle) and from what source —
+// a live gift term shows its end date, a subscription shows its renewal (or
+// cancel) date. Recipients are members with an expiry, not subscribers, so the
+// UI must say what they hold and until when, per axis.
+type AxisSource = 'subscription' | 'gift'
+export type AxisAccess = {
+  active: boolean
+  source: AxisSource | null
+  expiresAt: string | null // gift term end, or a canceling subscription's cancel_at
+  renewsAt: string | null // subscription renewal (current_period_end); null for gifts
+}
+
+// Attribute each active axis to its source using the membership row. A gifted
+// axis on a paid-sub row (D5 grant) resolves to 'gift' with its own expiry; the
+// subscription axis resolves to 'subscription'. Mirrors entitlement.ts liveAxes
+// (subscription/comp base ∪ per-axis gift terms).
+function computeAxes(
+  row: MembershipRow | null,
+  entitlements: Entitlements,
+): { arkPlus: AxisAccess; circle: AxisAccess } {
+  const now = Date.now()
+  const axis = (key: 'arkPlus' | 'circle', giftExpiry: string | null): AxisAccess => {
+    if (!entitlements[key]) {
+      return { active: false, source: null, expiresAt: null, renewsAt: null }
+    }
+    if (row) {
+      const hasGift =
+        row.ark_plus_gift_expires_at != null || row.circle_gift_expires_at != null
+      // A subscription row, or a comp/staff row (no sub, no gift), grants via tier.
+      const subOrComp = row.stripe_subscription_id != null || !hasGift
+      if (subOrComp && deriveEntitlements(row.tier)[key]) {
+        return {
+          active: true,
+          source: 'subscription',
+          expiresAt: row.cancel_at,
+          renewsAt: row.current_period_end,
+        }
+      }
+      if (giftExpiry != null && Date.parse(giftExpiry) > now) {
+        return { active: true, source: 'gift', expiresAt: giftExpiry, renewsAt: null }
+      }
+    }
+    // Row-less active axis = the transitional SC-by-email fallback (arkPlus).
+    return { active: true, source: 'subscription', expiresAt: null, renewsAt: null }
+  }
+  return {
+    arkPlus: axis('arkPlus', row?.ark_plus_gift_expires_at ?? null),
+    circle: axis('circle', row?.circle_gift_expires_at ?? null),
+  }
+}
 
 // Bucket the PUT route by normalized email so flapping toggles can't burn
 // Beehiiv quota or rate-limit the upstream API. 10 saves per minute is more
@@ -90,6 +144,9 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         if (!resolved) return json(401, { error: 'unauthenticated' })
         const { identity, tier, entitlements, scUserId } = resolved
         const email = identity.email
+        // Per-axis access (source + expiry) for account settings — recipients are
+        // members-with-an-expiry, not subscribers, so the UI needs per-axis facts.
+        const axes = computeAxes(resolved.row, entitlements)
 
         // A checkout-token holder (just paid) with no resolved entitlement is a
         // provisioning gap, not a free user — keep the 401 so the client keeps
@@ -125,7 +182,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           await ensureFreeSubscription({ env, sql: getDb(env) }, email)
         }
 
-        return json(200, { email, tier, entitlements, feeds: enriched })
+        return json(200, { email, tier, entitlements, axes, feeds: enriched })
       },
     }),
     defineRoute({

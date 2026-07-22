@@ -40,10 +40,25 @@ export type Entitlements = { arkPlus: boolean; circle: boolean };
 // both have arkPlus, but they're different SKUs.
 export type Tier = "ark-plus" | "circle" | "bundle" | "free";
 
+// Per-axis access for account settings (T7.1): what the member holds on each
+// entitlement axis and from what source. A gifted axis shows its term-end date
+// (`expiresAt`); a subscription shows its renewal (`renewsAt`) or, if canceling,
+// its access-until date (`expiresAt` = cancel_at). Recipients are members with
+// an expiry, not subscribers, so the UI needs these facts per axis.
+export type AxisAccess = {
+  active: boolean;
+  source: "subscription" | "gift" | null;
+  expiresAt: string | null;
+  renewsAt: string | null;
+};
+
 export type Me = {
   email: string;
   tier: Tier;
   entitlements: Entitlements;
+  // Present on every /api/me response (computed server-side). Optional-typed only
+  // to stay resilient to a stale cached response; the UI guards for it.
+  axes?: { arkPlus: AxisAccess; circle: AxisAccess };
   feeds: UserFeed[];
 };
 

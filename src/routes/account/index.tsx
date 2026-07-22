@@ -5,11 +5,13 @@ import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { CommunityAppLinks } from "../../components/CommunityAppLinks";
+import { EntitlementAccess } from "../../components/account/EntitlementAccess";
 import {
   HeadphonesIcon,
   MailIcon,
   ChatIcon,
 } from "../../components/account/SurfaceIcons";
+import type { Me } from "../../lib/auth";
 
 export const Route = createFileRoute("/account/")({
   component: AccountDashboard,
@@ -55,16 +57,19 @@ function AccountDashboard() {
   if (me.tier === "free") {
     return <FreeDashboard email={me.email} onSignOut={signOut} />;
   }
-  return <SubscriberDashboard email={me.email} onSignOut={signOut} />;
+  return <SubscriberDashboard me={me} onSignOut={signOut} onRefresh={refresh} />;
 }
 
 function SubscriberDashboard({
-  email,
+  me,
   onSignOut,
+  onRefresh,
 }: {
-  email: string;
+  me: Me;
   onSignOut: () => void;
+  onRefresh: () => void;
 }) {
+  const email = me.email;
   return (
     <PageShell
       title="Welcome back."
@@ -72,6 +77,7 @@ function SubscriberDashboard({
     >
       <section>
         <div className="page-section">
+          <EntitlementAccess me={me} onRefresh={onRefresh} />
           <div className="divide-y divide-rule">
             <SurfaceRow
               icon={<HeadphonesIcon />}

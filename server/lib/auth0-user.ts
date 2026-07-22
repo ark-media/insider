@@ -97,6 +97,26 @@ export async function findOrCreateAuth0User(
   return { userId, created: true, passwordResetSent }
 }
 
+// Look up a user's email by their Auth0 `sub`/user_id via the Management API.
+// Membership rows store only the opaque sub (no PII), so the gift-expiry
+// reminder cron (T7.5) resolves the recipient's email here at send time.
+// Returns null on any failure or a user without an email (caller soft-fails and
+// counts it as a miss rather than throwing the whole run).
+export async function getAuth0UserEmail(
+  env: Env,
+  userId: string,
+): Promise<string | null> {
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return null
+  try {
+    const user = await mgmt.users.get(userId)
+    return user.email?.trim() || null
+  } catch (err) {
+    console.error('[auth0] user email lookup failed:', err)
+    return null
+  }
+}
+
 // Mints a password-change ticket (a self-contained URL) via the Management API
 // instead of triggering Auth0's own email. Used by the gift flow so the
 // set-password link can ride inside our single branded welcome email. The M2M

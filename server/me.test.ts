@@ -146,6 +146,19 @@ afterAll(() => {
   globalThis.fetch = originalFetch
 })
 
+// Per-axis access shapes in the /api/me response (T7.1). With no Neon row these
+// tests exercise the free path (both axes inactive) and the SC-by-email arkPlus
+// fallback (arkPlus active, attributed to a subscription, no gift expiry).
+const FREE_AXIS = { active: false, source: null, expiresAt: null, renewsAt: null }
+const SUB_ARKPLUS_AXIS = {
+  active: true,
+  source: 'subscription',
+  expiresAt: null,
+  renewsAt: null,
+}
+const FREE_AXES = { arkPlus: FREE_AXIS, circle: FREE_AXIS }
+const ARKPLUS_AXES = { arkPlus: SUB_ARKPLUS_AXIS, circle: FREE_AXIS }
+
 // ===========================================================================
 // Auth + transport
 // ===========================================================================
@@ -182,6 +195,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'free@x.com',
       tier: 'free',
       entitlements: { arkPlus: false, circle: false },
+      axes: FREE_AXES,
       feeds: [],
     })
   })
@@ -200,6 +214,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'paid@x.com',
       tier: 'ark-plus',
       entitlements: { arkPlus: true, circle: false },
+      axes: ARKPLUS_AXES,
       feeds: [
         { id: 1, name: 'Private feed', url: 'https://example.com/feed.xml' },
       ],
@@ -221,6 +236,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'upgraded@x.com',
       tier: 'ark-plus',
       entitlements: { arkPlus: true, circle: false },
+      axes: ARKPLUS_AXES,
       feeds: [],
     })
   })
@@ -238,6 +254,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'gone@x.com',
       tier: 'free',
       entitlements: { arkPlus: false, circle: false },
+      axes: FREE_AXES,
       feeds: [],
     })
   })
@@ -252,6 +269,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'unknown-tier@x.com',
       tier: 'free',
       entitlements: { arkPlus: false, circle: false },
+      axes: FREE_AXES,
       feeds: [],
     })
   })
@@ -268,6 +286,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'newpaid@x.com',
       tier: 'ark-plus',
       entitlements: { arkPlus: true, circle: false },
+      axes: ARKPLUS_AXES,
       feeds: [],
     })
   })
@@ -286,6 +305,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'oops@x.com',
       tier: 'free',
       entitlements: { arkPlus: false, circle: false },
+      axes: FREE_AXES,
       feeds: [],
     })
   })
@@ -312,6 +332,7 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'fresh@x.com',
       tier: 'ark-plus',
       entitlements: { arkPlus: true, circle: false },
+      axes: ARKPLUS_AXES,
       feeds: [],
     })
   })
@@ -327,6 +348,7 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'member@x.com',
       tier: 'ark-plus',
       entitlements: { arkPlus: true, circle: false },
+      axes: ARKPLUS_AXES,
       feeds: [],
     })
   })
@@ -340,6 +362,7 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'freebie@x.com',
       tier: 'free',
       entitlements: { arkPlus: false, circle: false },
+      axes: FREE_AXES,
       feeds: [],
     })
   })
@@ -442,6 +465,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
       email: 'newfree@x.com',
       tier: 'free',
       entitlements: { arkPlus: false, circle: false },
+      axes: FREE_AXES,
       feeds: [],
     })
 
@@ -493,6 +517,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
       email: 'unlucky@x.com',
       tier: 'free',
       entitlements: { arkPlus: false, circle: false },
+      axes: FREE_AXES,
       feeds: [],
     })
   })
