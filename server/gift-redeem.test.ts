@@ -50,8 +50,8 @@ describe('planGiftRedemption — fresh recipient (no membership)', () => {
     const p = planGiftRedemption({ tier: 'ark-plus' }, null, NOW)
     expect(p.grantArkPlus).toBe(true)
     expect(p.grantCircle).toBe(false)
-    expect(p.creditArkPlus).toBe(false)
-    expect(p.creditCircle).toBe(false)
+    expect(p.extendSub).toBe(false)
+    expect(p.creditFull).toBe(false)
     expect(p.hasPaidSub).toBe(false)
     expect(p.arkPlusFromMs).toBe(NOW)
     expect(p.circleFromMs).toBeNull()
@@ -80,43 +80,63 @@ describe('planGiftRedemption — fresh recipient (no membership)', () => {
   })
 })
 
-describe('planGiftRedemption — overlap with a live paid subscription → credit', () => {
-  test('Ark+ gift on an Ark+ sub credits, grants nothing', () => {
+describe('planGiftRedemption — overlap with a live paid subscription (extend-first, D5)', () => {
+  test('Ark+ gift on an Ark+ sub extends the sub, grants/credits nothing', () => {
     const p = planGiftRedemption({ tier: 'ark-plus' }, paidSub('ark-plus'), NOW)
     expect(p.hasPaidSub).toBe(true)
     expect(p.grantArkPlus).toBe(false)
-    expect(p.creditArkPlus).toBe(true)
+    expect(p.extendSub).toBe(true)
+    expect(p.creditFull).toBe(false)
     expect(p.arkPlusFromMs).toBeNull()
     // Row keeps the subscribed tier; effective tier is unchanged.
     expect(p.rowTier).toBe('ark-plus')
     expect(p.effectiveTier).toBe('ark-plus')
   })
 
-  test('Bundle gift on an Ark+ sub grants Circle AND credits the Ark+ overlap (mixed)', () => {
+  test('Bundle gift on a Bundle sub extends the sub (exact-tier), grants nothing', () => {
+    const p = planGiftRedemption({ tier: 'bundle' }, paidSub('bundle'), NOW)
+    expect(p.grantArkPlus).toBe(false)
+    expect(p.grantCircle).toBe(false)
+    expect(p.extendSub).toBe(true)
+    expect(p.creditFull).toBe(false)
+    expect(p.rowTier).toBe('bundle')
+    expect(p.effectiveTier).toBe('bundle')
+  })
+
+  test('Bundle gift on an Ark+ sub grants Circle AND extends the Ark+ sub (mixed)', () => {
     const p = planGiftRedemption({ tier: 'bundle' }, paidSub('ark-plus'), NOW)
     expect(p.hasPaidSub).toBe(true)
     expect(p.grantArkPlus).toBe(false)
     expect(p.grantCircle).toBe(true)
-    expect(p.creditArkPlus).toBe(true)
-    expect(p.creditCircle).toBe(false)
+    expect(p.extendSub).toBe(true)
+    expect(p.creditFull).toBe(false)
     expect(p.circleFromMs).toBe(NOW)
     // Row keeps the subscribed (ark-plus) tier; effective is the union → bundle.
     expect(p.rowTier).toBe('ark-plus')
     expect(p.effectiveTier).toBe('bundle')
   })
 
-  test('Community gift on a Bundle sub credits, grants nothing', () => {
+  test('Community gift fully inside a Bundle sub credits the full amount, grants/extends nothing', () => {
     const p = planGiftRedemption({ tier: 'circle' }, paidSub('bundle'), NOW)
     expect(p.grantCircle).toBe(false)
-    expect(p.creditCircle).toBe(true)
+    expect(p.extendSub).toBe(false)
+    expect(p.creditFull).toBe(true)
     expect(p.rowTier).toBe('bundle')
     expect(p.effectiveTier).toBe('bundle')
   })
 
-  test('Ark+ gift on a Community-only sub grants Ark+; effective tier unions to bundle', () => {
+  test('Ark+ gift fully inside a Bundle sub credits the full amount', () => {
+    const p = planGiftRedemption({ tier: 'ark-plus' }, paidSub('bundle'), NOW)
+    expect(p.grantArkPlus).toBe(false)
+    expect(p.extendSub).toBe(false)
+    expect(p.creditFull).toBe(true)
+  })
+
+  test('Ark+ gift on a Community-only sub grants Ark+ (no overlap → no extend/credit)', () => {
     const p = planGiftRedemption({ tier: 'ark-plus' }, paidSub('circle'), NOW)
     expect(p.grantArkPlus).toBe(true)
-    expect(p.creditArkPlus).toBe(false)
+    expect(p.extendSub).toBe(false)
+    expect(p.creditFull).toBe(false)
     expect(p.arkPlusFromMs).toBe(NOW)
     // The sub lacks ark-plus, so we grant it; the mirror must not strip the
     // Circle the recipient holds via their sub.
@@ -151,7 +171,7 @@ describe('planGiftRedemption — stacking onto an existing gift term', () => {
 })
 
 describe('planGiftRedemption — a non-live subscription does not divert to credit', () => {
-  test('canceled sub falls through to a fresh gift term (grant, not credit)', () => {
+  test('canceled sub falls through to a fresh gift term (grant, not extend/credit)', () => {
     const row = existing({
       tier: 'ark-plus',
       status: 'canceled',
@@ -161,7 +181,8 @@ describe('planGiftRedemption — a non-live subscription does not divert to cred
     const p = planGiftRedemption({ tier: 'ark-plus' }, row, NOW)
     expect(p.hasPaidSub).toBe(false)
     expect(p.grantArkPlus).toBe(true)
-    expect(p.creditArkPlus).toBe(false)
+    expect(p.extendSub).toBe(false)
+    expect(p.creditFull).toBe(false)
     expect(p.arkPlusFromMs).toBe(NOW)
   })
 })

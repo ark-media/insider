@@ -13,15 +13,15 @@
 //     Session's giver_email metadata is sufficient proof of ownership (same
 //     pattern as /api/stripe/subscription-status).
 
-import { type GiftTerm } from '../lib/activation.js'
+import { GIFT_TERM_DAYS, type GiftTerm } from '../lib/activation.js'
 import {
   deriveEntitlements,
   syncEntitlement,
   tierFromEntitlements,
   type Tier,
 } from '../entitlement.js'
-import { isSupportedCurrency, resolveGiftPrice } from '../lib/pricing.js'
-import { coerceTier } from './stripe/helpers.js'
+import { isSupportedCurrency, resolveGiftPrice, type PricedTier } from '../lib/pricing.js'
+import { coerceTier, releaseScheduleIfAny } from './stripe/helpers.js'
 import { findOrCreateAuth0User } from '../lib/auth0-user.js'
 import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
@@ -368,17 +368,23 @@ export type GiftRedemptionExisting = {
 // tiers become. No IO — every branch here is unit-tested (gift-redeem.test.ts) so
 // the stacking + grant/credit split can't silently drift.
 //
-// For each axis the gift covers (Bundle → both):
-//   - recipient already holds it via a LIVE PAID SUBSCRIPTION → credit that axis
-//     (they'd otherwise double-pay for a gifted axis);
-//   - otherwise → grant/extend a gift term on that axis, stacking onto any live
-//     gift term on the same axis (start the clock at the current expiry).
+// Overlap with a live paid subscription resolves extend-first (D5):
+//   - axis the recipient LACKS → grant/stack a gift term on that axis (start the
+//     clock at any live gift expiry, else now);
+//   - gift overlaps a SINGLE-AXIS or EXACT-TIER paid sub → EXTEND that sub by the
+//     term (defer billing; no balance moves — see extendSubscription / T5.4);
+//   - a SINGLE-AXIS gift landing entirely inside a BUNDLE sub → CREDIT the full
+//     gift amount (the sole credit path; can't pause part of a bundle).
 export type GiftRedemptionPlan = {
   hasPaidSub: boolean
   grantArkPlus: boolean
   grantCircle: boolean
-  creditArkPlus: boolean
-  creditCircle: boolean
+  // Extend the recipient's live subscription by the gift term (D5). True for any
+  // overlap that isn't the bundle-subset credit case below.
+  extendSub: boolean
+  // Credit the FULL gift amount to the customer balance (D5/D10) — reached only
+  // when a single-axis gift is fully contained in a Bundle sub.
+  creditFull: boolean
   // Epoch ms each granted axis's term is measured from; null = don't grant it.
   arkPlusFromMs: number | null
   circleFromMs: number | null
@@ -414,8 +420,15 @@ export function planGiftRedemption(
 
   const grantArkPlus = covered.arkPlus && !subAxes.arkPlus
   const grantCircle = covered.circle && !subAxes.circle
-  const creditArkPlus = covered.arkPlus && subAxes.arkPlus
-  const creditCircle = covered.circle && subAxes.circle
+
+  // Overlap between the gift and the paid sub (D5, extend-first). A single-axis
+  // gift fully inside a Bundle sub is the ONLY credit case; every other overlap
+  // (single-axis sub, or bundle-on-bundle exact-tier) extends the sub instead.
+  const overlap = (covered.arkPlus && subAxes.arkPlus) || (covered.circle && subAxes.circle)
+  const subIsBundle = subAxes.arkPlus && subAxes.circle
+  const giftIsSingleAxis = !(covered.arkPlus && covered.circle)
+  const creditFull = overlap && giftIsSingleAxis && subIsBundle
+  const extendSub = overlap && !creditFull
 
   const arkPlusExistingMs = existing?.ark_plus_gift_expires_at
     ? Date.parse(existing.ark_plus_gift_expires_at)
@@ -444,8 +457,8 @@ export function planGiftRedemption(
     hasPaidSub,
     grantArkPlus,
     grantCircle,
-    creditArkPlus,
-    creditCircle,
+    extendSub,
+    creditFull,
     arkPlusFromMs,
     circleFromMs,
     rowTier,
@@ -457,10 +470,11 @@ export function planGiftRedemption(
 // /api/gift/redeem and the magic-link POST /api/gift/claim. The caller has
 // already loaded a PENDING gift and resolved the recipient's Auth0 sub. Decision
 // logic lives in planGiftRedemption above; this function performs the grant, the
-// atomic claim, the row upsert, the overlap credit, and the entitlement mirror.
+// atomic claim, the row upsert, the overlap extend/credit, and the entitlement
+// mirror.
 //
-// Bundle-on-Ark+-subscriber grants a Circle term AND credits the Ark+ overlap.
-// The gift flips to redeemed once, atomically.
+// Bundle-on-Ark+-subscriber grants a Circle term AND extends the Ark+ sub by the
+// term. The gift flips to redeemed once, atomically.
 async function redeemGiftForRecipient(
   {
     sql,
@@ -476,7 +490,7 @@ async function redeemGiftForRecipient(
   gift: GiftRow,
   recipient: { email: string; name?: string; auth0Sub: string },
 ): Promise<
-  | { ok: true; applied: 'credit' | 'membership' | 'mixed'; expiresAt?: string }
+  | { ok: true; applied: 'credit' | 'membership' | 'mixed' | 'extended'; expiresAt?: string }
   | { ok: false; error: 'already_redeemed' }
 > {
   const { email, name, auth0Sub } = recipient
@@ -533,22 +547,28 @@ async function redeemGiftForRecipient(
     circle_gift_expires_at: grant.circleEndsAt,
   })
 
-  // Paid-sub overlap credit (D5): refund the value of the axis/axes the recipient
-  // already pays for. Denominated in the SUBSCRIPTION'S billing currency — a
-  // Stripe customer balance only draws invoices of the same currency, so
-  // crediting the gift's currency would strand the balance on a differently-billed
-  // sub. Value = the full gift price minus the standalone price of each GRANTED
-  // axis, both resolved in the sub currency from the catalog's per-currency table
-  // (no FX guesswork). All covered axes overlap → nothing granted → full price.
+  // Paid-sub overlap (D5, extend-first). Two mutually-exclusive mechanics:
+  //   - extendSub → defer the recipient's live sub by the gift term (term-faithful:
+  //     pause monthly / push the annual period). No balance moves.
+  //   - creditFull → a single-axis gift fully inside a Bundle sub: nothing to grant
+  //     or extend, so credit the full gift amount to the customer balance. It's
+  //     denominated in the SUBSCRIPTION'S billing currency (D10) — a Stripe balance
+  //     only draws invoices of the same currency, so crediting the gift's currency
+  //     would strand it. Resolved from the catalog's per-currency table (no FX).
+  let extended = false
   let creditApplied = false
-  if ((plan.creditArkPlus || plan.creditCircle) && plan.hasPaidSub && existing != null) {
+  if (plan.extendSub && existing?.stripe_subscription_id) {
+    try {
+      await extendSubscription(stripe, env, existing.stripe_subscription_id, term)
+      extended = true
+    } catch (err) {
+      console.error('[gift] subscription extend failed:', err)
+    }
+  } else if (plan.creditFull && existing != null) {
     const subCur = await subscriptionCurrency(stripe, existing)
     const currency = isSupportedCurrency(subCur) ? subCur : 'usd'
-    const fullValue = (await resolveGiftPrice(stripe, gift.tier, term)).floors[currency]
-    let grantedValue = 0
-    if (plan.grantArkPlus) grantedValue += (await resolveGiftPrice(stripe, 'ark-plus', term)).floors[currency]
-    if (plan.grantCircle) grantedValue += (await resolveGiftPrice(stripe, 'circle', term)).floors[currency]
-    const creditCents = Math.max(0, fullValue - grantedValue)
+    // A gift row's tier is always a priced tier (never 'free').
+    const creditCents = (await resolveGiftPrice(stripe, gift.tier as PricedTier, term)).floors[currency]
     if (creditCents > 0) {
       try {
         await applyGiftAsCredit(stripe, existing, creditCents, currency)
@@ -568,13 +588,58 @@ async function redeemGiftForRecipient(
     )
   }
 
-  // Report what actually happened: 'membership' only when a term was granted,
-  // 'credit' for a pure-overlap gift, 'mixed' when both. Never claim a membership
-  // was created when only a credit was applied.
+  // Report what actually happened: 'membership' when a fresh term was granted,
+  // 'extended' when only a live sub was deferred, 'mixed' when both (bundle gift
+  // on a single-axis sub), 'credit' for the bundle-subset case. Never claim a
+  // membership was created when only a sub was extended or credit applied.
   const grantedAny = grant.arkPlusEndsAt != null || grant.circleEndsAt != null
-  const applied = grantedAny ? (creditApplied ? 'mixed' : 'membership') : 'credit'
+  const applied: 'credit' | 'membership' | 'mixed' | 'extended' = creditApplied
+    ? 'credit'
+    : grantedAny && extended
+      ? 'mixed'
+      : extended
+        ? 'extended'
+        : 'membership'
   const expiresAt = grant.arkPlusEndsAt ?? grant.circleEndsAt ?? undefined
   return { ok: true, applied, expiresAt }
+}
+
+// T5.4 — extend a live subscription by a gift term, term-faithfully (a year is a
+// year regardless of the recipient's rate). Monthly subs PAUSE collection for the
+// term (invoices during the window stay drafts, access continues, Stripe
+// auto-resumes at resumes_at); annual subs get their current period PUSHED out by
+// the term via trial_end (the renewal date visibly moves; a bare pause would only
+// skip a cycle). Never moves the customer balance — that's the credit path
+// (D5/D10). The resulting subscription.updated is a no-op for entitlement: same
+// tier + already-provisioned sub → the webhook's diff-gate skips fan-out/revoke.
+async function extendSubscription(
+  stripe: Stripe,
+  env: Deps['env'],
+  subscriptionId: string,
+  term: GiftTerm,
+): Promise<void> {
+  const sub = await stripe.subscriptions.retrieve(subscriptionId)
+  // A pending period-end change (attached schedule) makes Stripe reject a plain
+  // subscriptions.update — detach it first, then extend on the current phase.
+  await releaseScheduleIfAny(stripe, sub, env)
+  const termMs = GIFT_TERM_DAYS[term] * 24 * 60 * 60 * 1000
+  const item = sub.items.data[0]
+  if (item?.price?.recurring?.interval === 'year') {
+    // Push the renewal: trial_end = current period end + term, no proration, so
+    // no charge lands now and billing resumes at the moved-out date.
+    const periodEndSec = item.current_period_end ?? Math.floor(Date.now() / 1000)
+    const newEndSec = Math.floor((periodEndSec * 1000 + termMs) / 1000)
+    await stripe.subscriptions.update(subscriptionId, {
+      trial_end: newEndSec,
+      proration_behavior: 'none',
+    })
+  } else {
+    // Monthly (or any non-annual cadence) → pause collection for the term.
+    const resumesAtSec = Math.floor((Date.now() + termMs) / 1000)
+    await stripe.subscriptions.update(subscriptionId, {
+      pause_collection: { behavior: 'keep_as_draft', resumes_at: resumesAtSec },
+    })
+  }
 }
 
 // The billing currency of the recipient's live subscription — the only currency a

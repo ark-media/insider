@@ -106,7 +106,9 @@ function MagicClaimBody({ mt }: { mt: string }) {
       // Pull the freshly-minted session so the app reflects the new access,
       // then drop into the new-account welcome flow.
       await refresh();
-      if (result.applied === "credit") {
+      // Credit and extend both land on an existing account/subscription — send
+      // them to /account; a fresh (or mixed) grant drops into the welcome flow.
+      if (result.applied === "credit" || result.applied === "extended") {
         navigate({ to: "/account" });
       } else {
         navigate({ to: "/welcome", search: { claimed: true } });
@@ -189,18 +191,23 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
   }
 
   if (claim.kind === "done") {
-    const credited = claim.result.applied === "credit";
+    const applied = claim.result.applied;
+    // Credit and extend both act on an account the recipient already has — the
+    // copy differs but both route to /account rather than the new-member welcome.
+    const alreadyActive = applied === "credit" || applied === "extended";
+    const message =
+      applied === "credit"
+        ? "You already have an active membership, so your gift has been added as account credit toward your future renewals."
+        : applied === "extended"
+          ? "You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift."
+          : "Your Ark+ membership is active. Set up your private podcast feed and join the community from your welcome page.";
     return (
       <Card>
         <p className="eyebrow text-cyan">You're all set</p>
-        <p className="mt-4 text-body-sm">
-          {credited
-            ? "You already have an active membership, so your gift has been added as account credit toward your future renewals."
-            : "Your Ark+ membership is active. Set up your private podcast feed and join the community from your welcome page."}
-        </p>
+        <p className="mt-4 text-body-sm">{message}</p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link to={credited ? "/account" : "/welcome"} className={primaryCta}>
-            {credited ? "Go to your account" : "Get started"} →
+          <Link to={alreadyActive ? "/account" : "/welcome"} className={primaryCta}>
+            {alreadyActive ? "Go to your account" : "Get started"} →
           </Link>
         </div>
       </Card>

@@ -20,7 +20,13 @@
 - **D2 — Product structure.** Recommended: 3 one-time gift products mirroring subscriptions, with lookup keys `gift_<tier>_6mo` / `gift_<tier>_1yr`. Confirm naming.
 - **D3 — Bundle-gift entitlement on redemption.** A gift-activated (non-subscription) Bundle grants both `ark_plus` and `circle` axes.
 - **D4 — Gift stacking model.** Stack **per entitlement axis**. Replace the single `gift_expires_at` column with `ark_plus_gift_expires_at` + `circle_gift_expires_at`; derive `tier` from which axes are live. Each gift extends only the axes it covers; Bundle extends both. Same-axis gift term → extend expiry (existing `fromMs` logic, per-axis); no axis yet → start term from today.
-- **D5 — Paid-sub overlap (RESOLVED, Basis B / value-conserving).** When the recipient already has a live *paid* subscription on an axis the gift covers: grant a term on any axis they lack, and credit the remainder: `creditCents = gift.amount_cents − Σ(standalone gift price of each granted axis for the term)`, clamped to `[0, gift.amount_cents]`. If all covered axes overlap a paid sub → grant nothing, credit the full gift amount (today's behavior). E.g. Bundle 1yr ($130) to an Ark+ subscriber → grant Circle 1yr term ($80) + credit $50.
+- **D5 — Paid-sub overlap (RESOLVED, extend-first).** A gift delivers exactly the coverage its price buys, at the tier purchased — as **time** wherever there's a subscription to extend, and as **credit** only when the gift is already fully contained in what the recipient owns. Resolve **per axis the gift covers**:
+  - **Axis the recipient lacks** → grant a fresh term on that axis (or stack onto a live gift term, per D4).
+  - **Axis covered by a live *single-axis* or *exact-tier* paid sub** → **extend** that subscription by the gift term (defer billing): monthly → pause `term` of charges (`pause_collection`); annual → push the renewal / period end out by `term`. No credit.
+  - **Single-axis gift landing entirely inside a Bundle sub** (nothing to add, can't pause part of a bundle) → **credit the full gift amount** to the Stripe customer balance; no new access.
+  - Worked examples: *Bundle 1yr ($130) → Ark+ subscriber* = grant Circle 1yr **+** extend the Ark+ sub +1yr = a full bundle year (the bundle price **is** the price of both axes for a year; the discount vs two standalone gifts is intended, not over-delivery). *Ark+ 1yr ($80) → Bundle holder* = credit $80. *Bundle 1yr → Bundle subscriber* = extend the bundle +1yr.
+  - This supersedes the earlier Basis-B *credit-the-remainder* model: credit is now the **fallback** for the bundle-subset case only, never the primary path.
+- **D10 — N1 credit currency (RESOLVED, catalog-denominated, no FX).** The bundle-subset credit (D5 case 3) is denominated from the **gift catalog in the recipient's *subscription* currency**, not the currency the giver paid in. Resolve `giftPrice[recipientSubCurrency]` via the same per-currency resolver (T2.1 `currency_options`) and post it as a customer-balance transaction in that currency (Stripe balances are multi-currency; same-currency credit auto-applies to the next invoice before the card). **No live FX** — giver-paid and recipient-credited are two independent catalog anchors for the same gift SKU, and the small anchor spread is the same one already absorbed across the per-currency subscription model. Guaranteed to resolve by the `SUPPORTED_CURRENCIES == CURRENCIES` invariant; assert loudly in the N1 path if the recipient's sub currency is somehow absent.
 
 ---
 
@@ -64,7 +70,18 @@
 
 **T5.1** Rewrite `redeemGiftForRecipient` (`gift.ts:347`) to stack **per axis** (D4): for each axis the gift covers, extend that axis's expiry if a gift term is live, else start a term from today. Bundle applies to both axes. Same-tier repeat gifts must still stack duration.
 
-**T5.2** Paid-sub overlap (D5): for axes the recipient already pays for, apply credit via `applyGiftAsCredit`; for axes they lack, grant the term. (Today `canCredit` diverts the *whole* gift to credit — split it per axis.)
+**T5.2** Paid-sub overlap (D5), resolved **per axis**:
+- Axis the recipient lacks → grant the term (as T5.1).
+- Axis covered by a **single-axis or exact-tier** paid sub → **extend that subscription** by the gift term via the new extend mechanic (T5.4); do **not** credit.
+- Single-axis gift fully inside a **Bundle** sub → `applyGiftAsCredit` the full gift amount **in the recipient's sub currency** (D10, catalog-denominated, no FX). This is the only surviving credit path.
+- (Today `canCredit` diverts the *whole* gift to credit — replace with this per-axis extend/credit split.)
+
+**T5.4** **Extend mechanic (net-new).** Add a helper to defer a live Stripe subscription by a gift term. Extends are **term-faithful** (a year is a year, regardless of the recipient's rate), so:
+- monthly → **`pause_collection`** for the term (behavior `keep_as_draft`), then resume — *not* balance credit (crediting the gift's dollar value would over/under-deliver months since gift price ≠ 12× monthly rate).
+- annual → push the renewal by editing the current period / `trial_end` so the **date visibly moves** out by the term (a bare pause skips a cycle but doesn't move the date).
+- Credit (customer balance) is **not** an extend mechanic — it's reserved for the D5/D10 bundle-subset case only.
+- Redemption (T5.2) calls this for extend-eligible axes.
+- **Acceptance:** extending a monthly sub suppresses exactly `term` worth of charges and resumes normal billing after; extending an annual sub moves the renewal date out by exactly the term; no entitlement gap during the paused/shifted window.
 
 **T5.3** Verify entitlement sync handles the `circle` and `ark_plus,circle` axes for gift-activated (non-subscription) memberships — SC feed for Ark+/Bundle, Circle provisioning for Community/Bundle, Beehiiv/newsletter axis.
 - **Acceptance:** redeeming each tier as a new recipient activates the correct entitlements; cross-axis stacking (Ark+ gift + Community gift = both axes live with independent expiries) works; Bundle-on-Ark+ extends/credits ark_plus and grants circle.
@@ -114,3 +131,6 @@ Recipients are members with an expiry, not subscribers — account settings must
 - **Gift prices are independent** of subscription prices — don't derive gift amounts from subscription floors.
 - **One-time vs recurring:** gift prices must be non-recurring; subscription (recurring) prices can't be reused in `mode: 'payment'`.
 - Keep `scripts/stripe-catalog.ts` `CURRENCIES` and `pricing.ts` `SUPPORTED_CURRENCIES` in sync (existing invariant).
+- **Extend mechanic is net-new (D5/T5.4):** pausing/period-shifting a live subscription is not in the redemption path today. A paused or period-shifted sub emits Stripe events — the webhook must **no-op these against entitlement changes** (the gift, not the sub state, owns the entitlement during the deferred window).
+- **N1 credit on cancel (edge):** a full-gift credit to a Bundle holder sits on the Stripe customer balance and persists **unused** if they later cancel — it applies only against a future invoice. Acceptable (not a refund), but call it out in redemption/settings copy so it doesn't read as lost value.
+- **Extend vs credit map to different Stripe mechanics (RESOLVED, T5.4/D10):** extends are term-faithful → `pause_collection` (monthly) / period-push (annual), *no* balance movement; credit is value-faithful and used only for the D5/D10 bundle-subset case → customer balance in the recipient's sub currency, auto-applied before the card. The two are not interchangeable.

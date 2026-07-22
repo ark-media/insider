@@ -110,9 +110,10 @@ interface EventMap {
     stage: 'create_session' | 'payment'
     reason?: string
   }
-  // Recipient side of the gift funnel: the claim landed and access was granted
-  // (a new/extended membership term) or applied as account credit.
-  gift_redeemed: { applied: 'membership' | 'credit' | 'mixed' }
+  // Recipient side of the gift funnel: the claim landed and access was granted (a
+  // new membership term), an existing subscription was extended, or the value was
+  // applied as account credit.
+  gift_redeemed: { applied: 'membership' | 'credit' | 'mixed' | 'extended' }
   // Private-feed activation: which app a member picks, and the terminal
   // hand-off action (open deep link / copy URL / text themselves the link).
   feed_app_selected: { app: string }
