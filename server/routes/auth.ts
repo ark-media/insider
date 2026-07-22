@@ -232,11 +232,6 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         const returnTo = safeReturnTo(url.searchParams.get('returnTo'), appBaseUrl)
         const screenHint = url.searchParams.get('screen_hint')
         const loginHint = url.searchParams.get('login_hint')
-        // Preselect a connection so Universal Login skips its chooser. Only the
-        // passwordless email (magic link) connection is allowed through — never
-        // let an arbitrary connection name ride into /authorize.
-        const connection =
-          url.searchParams.get('connection') === 'email' ? 'email' : null
 
         const config = await loadOidcConfig(env, res)
         if (!config) return
@@ -259,7 +254,6 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           nonce,
           ...(screenHint === 'signup' ? { screen_hint: 'signup' } : {}),
           ...(loginHint ? { login_hint: loginHint } : {}),
-          ...(connection ? { connection } : {}),
         })
 
         redirect(res, authUrl.href)
