@@ -48,24 +48,6 @@ export async function recordFeedRevoked(
       updated_at = now()`
 }
 
-// Record an activation ONLY if we have no row for this (email, feed) yet.
-// Unlike recordFeedActivated this never overwrites existing state — it won't
-// resurrect a revoked feed or clobber an authoritative activated_at. Used by
-// the download-derived signals (backfill + audio.downloaded webhook), where a
-// download proves the feed was set up but is weaker than an explicit
-// activation/revocation event.
-export async function recordFeedActivatedIfAbsent(
-  sql: Sql,
-  email: string,
-  feedId: number,
-  activatedAt: string | null,
-): Promise<void> {
-  await sql`
-    insert into sc_feed_activations (email, feed_id, activated, activated_at, revoked_at, updated_at)
-    values (${normalizeEmail(email)}, ${feedId}, true, ${activatedAt}, null, now())
-    on conflict (email, feed_id) do nothing`
-}
-
 export type ActivationSeed = {
   email: string
   feedId: number

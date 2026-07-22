@@ -17,7 +17,6 @@ import { secretEquals } from '../lib/timing-safe.js'
 import { getDb } from '../lib/db.js'
 import {
   recordFeedActivated,
-  recordFeedActivatedIfAbsent,
   recordFeedRevoked,
 } from '../lib/feed-activations.js'
 import { readBody } from '../lib/http.js'
@@ -26,7 +25,7 @@ import { defineRoute, type Deps, type Route } from '../lib/route.js'
 // SC webhook envelope (WebhookEvent + event-specific data). Field access is
 // defensive: `event`/`event_type` are used interchangeably across SC's docs;
 // `event_id` is documented as an integer; feed events nest the feed under
-// `feed`, while audio.downloaded carries `feed_id` directly (AudioDownloadEvent).
+// `feed`.
 type ScWebhookEvent = {
   event?: string
   event_type?: string
@@ -37,8 +36,6 @@ type ScWebhookEvent = {
   member?: { email?: string } | null
   feed?: { id?: number | string } | null
   feed_id?: number | string
-  audio?: { feed_id?: number | string } | null
-  download?: { feed_id?: number | string } | null
 }
 
 function eventType(e: ScWebhookEvent): string {
@@ -53,12 +50,10 @@ function parseFeedId(raw: unknown): number | null {
   return n
 }
 
-// Feed id can live in different places by event: `feed.id` for feed.* events,
-// or `feed_id` (top-level or under audio/download) for audio.downloaded.
+// Feed events nest the id under `feed` (`feed.id`); accept a top-level
+// `feed_id` as a defensive fallback.
 function extractFeedId(e: ScWebhookEvent): number | null {
-  return parseFeedId(
-    e.feed?.id ?? e.feed_id ?? e.audio?.feed_id ?? e.download?.feed_id,
-  )
+  return parseFeedId(e.feed?.id ?? e.feed_id)
 }
 
 export function scWebhookRoutes({ env }: Deps): Route[] {
@@ -129,11 +124,6 @@ export function scWebhookRoutes({ env }: Deps): Route[] {
           } else if (type === 'feed.access_revoked') {
             const at = event.revoked_at ?? event.timestamp ?? null
             await recordFeedRevoked(sql, email, feedId, at)
-          } else if (type === 'audio.downloaded') {
-            // A download proves the feed is set up. Create-if-absent only, so it
-            // never resurrects a revoked feed or overwrites an explicit
-            // activation timestamp — feed.* events stay authoritative.
-            await recordFeedActivatedIfAbsent(sql, email, feedId, event.timestamp ?? null)
           } else {
             // A subscribed-but-unhandled event type. Ack so SC stops retrying.
             return json(200, { received: true, skipped: 'unhandled_type' })

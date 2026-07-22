@@ -3,7 +3,7 @@
 // The webhook gates on a query-string secret (`?key=…`), dedupes against an
 // idempotency ledger it READS first and WRITES only after a successful upsert,
 // and upserts sc_feed_activations based on the event type (feed.activated /
-// feed.access_revoked / audio.downloaded). Tests cover:
+// feed.access_revoked). Tests cover:
 //   - 405 on non-POST
 //   - 401 on missing / wrong key
 //   - 500 when SC_WEBHOOK_SECRET unset
@@ -338,50 +338,6 @@ describe('sc webhook event dispatch', () => {
     // No ledger claim attempted, but the activation write happens.
     expect(sqlCalls.some((c) => c.sql.includes('insert into sc_webhook_events'))).toBe(false)
     expect(sqlCalls.some((c) => c.sql.includes('insert into sc_feed_activations'))).toBe(true)
-  })
-
-  test('audio.downloaded → create-if-absent activation from top-level feed_id', async () => {
-    const res = makeRes()
-    await runHandler(
-      buildHandler(),
-      makeReq({
-        body: {
-          event: 'audio.downloaded',
-          event_id: 555,
-          timestamp: '2026-07-16T09:00:00Z',
-          member: { email: 'Listener@X.com' },
-          feed_id: 77,
-        },
-      }),
-      res,
-    )
-    expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ received: true })
-    const write = sqlCalls.find((c) => c.sql.includes('insert into sc_feed_activations'))
-    expect(write).toBeDefined()
-    // create-if-absent, not the authoritative upsert.
-    expect(write!.sql).toContain('on conflict (email, feed_id) do nothing')
-    expect(write!.values).toContain('listener@x.com')
-    expect(write!.values).toContain(77)
-  })
-
-  test('audio.downloaded reads feed_id nested under audio', async () => {
-    const res = makeRes()
-    await runHandler(
-      buildHandler(),
-      makeReq({
-        body: {
-          event: 'audio.downloaded',
-          event_id: 556,
-          member: { email: 'a@x.com' },
-          audio: { feed_id: 88 },
-        },
-      }),
-      res,
-    )
-    expect(res.statusCode).toBe(200)
-    const write = sqlCalls.find((c) => c.sql.includes('insert into sc_feed_activations'))
-    expect(write!.values).toContain(88)
   })
 
   test('integer event_id is stringified for the ledger lookup and deduped', async () => {
