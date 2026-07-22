@@ -30,7 +30,7 @@ type NavItem = {
   to: string;
   variant: NavVariant;
   matchPrefix?: string;
-  hideWhen?: "subscriber" | "nonSubscriber";
+  hideWhen?: "subscriber" | "nonSubscriber" | "fullMember";
   children?: NavChild[];
 };
 
@@ -57,23 +57,20 @@ const NAV_ITEMS: NavItem[] = [
   { variant: "text", label: "Community", to: "/community", matchPrefix: "/community" },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
   { variant: "text", label: "Book Club", to: "/book-club", matchPrefix: "/book-club" },
+  // One landing page to browse membership (/plus) — a plain link now, not a
+  // dropdown; the per-tier sub-menus were removed. On /plus the pricing grid
+  // shows only the tier(s) the visitor doesn't already own. Hidden from
+  // full-bundle members (they own Ark+ AND Community, so there's nothing left to
+  // buy) — they still reach gifting via the always-on "Gift" tab below.
   {
-    variant: "menu",
+    variant: "text",
     label: "Subscribe",
     to: "/plus",
-    matchPrefix: "/plus",
-    // Upgrade CTA — free users still need to see this, only subscribers don't.
-    // Community repeats here (it's also top-level) because it's part of what a
-    // membership buys; the top-level link is what paid members use, since this
-    // whole menu is hidden from them.
-    hideWhen: "subscriber",
-    children: [
-      { label: "Ark+", to: "/plus", hash: "pricing" },
-      { label: "Compare plans", to: "/pricing" },
-      { label: "Community", to: "/community", crossLink: true },
-      { label: "Gifting", to: "/plus/gift" },
-    ],
+    hideWhen: "fullMember",
   },
+  // Always visible — anyone (guest, member, or full member) can buy a gift.
+  // This is what surfaces gifting in the main nav even when you're signed in.
+  { variant: "text", label: "Gift", to: "/plus/gift" },
   {
     variant: "menu",
     label: "About",
@@ -108,12 +105,17 @@ function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "
   return false;
 }
 
-// "Subscriber" for the nav means any paid member (Ark+, Circle, or Bundle) —
-// they've already bought something, so the upgrade "Subscribe" menu is hidden.
-function visibleNavItems(isSubscriber: boolean): NavItem[] {
+// Nav visibility flags. `isSubscriber` = any paid member (Ark+, Circle, or
+// Bundle). `isFullMember` = owns both axes (Ark+ AND Community), so there's
+// nothing left to subscribe to — the "Subscribe" tab is hidden for them.
+function visibleNavItems(flags: {
+  isSubscriber: boolean;
+  isFullMember: boolean;
+}): NavItem[] {
   return NAV_ITEMS.filter((item) => {
-    if (item.hideWhen === "subscriber") return !isSubscriber;
-    if (item.hideWhen === "nonSubscriber") return isSubscriber;
+    if (item.hideWhen === "subscriber") return !flags.isSubscriber;
+    if (item.hideWhen === "nonSubscriber") return flags.isSubscriber;
+    if (item.hideWhen === "fullMember") return !flags.isFullMember;
     return true;
   });
 }
@@ -128,15 +130,22 @@ export function PublicMasthead() {
   const [hidden, setHidden] = useState(false);
   const lastScrollY = useRef(0);
   const { state, signOut, signIn, isAdmin } = useSubscriberAuth();
-  // Any paid tier counts as a subscriber for the nav (hides the upgrade menu).
+  // Any paid tier counts as a subscriber for the nav (drives the mobile CTA and
+  // the "Set up your feed" account link).
   const isSubscriber = state.kind === "member" && state.me.tier !== "free";
+  // Owns both axes (Ark+ AND Community) — nothing left to buy, so the
+  // "Subscribe" tab is hidden (they still get the always-on "Gift" tab).
+  const isFullMember =
+    state.kind === "member" &&
+    state.me.entitlements.arkPlus &&
+    state.me.entitlements.circle;
   // The subscribe / conversion CTA, surfaced identically in the top bar and the
   // pulldown. Only meaningful for non-subscribers, and only once auth has
   // resolved (so it never flashes).
   const showSubscribe = !isSubscriber && state.kind !== "loading";
   const navItems = isAdmin
-    ? [...visibleNavItems(isSubscriber), ADMIN_NAV_ITEM]
-    : visibleNavItems(isSubscriber);
+    ? [...visibleNavItems({ isSubscriber, isFullMember }), ADMIN_NAV_ITEM]
+    : visibleNavItems({ isSubscriber, isFullMember });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);

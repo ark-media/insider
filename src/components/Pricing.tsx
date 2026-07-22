@@ -37,9 +37,8 @@ export function Pricing() {
             </span>
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-body-sm text-fg">
-            Three ways in: the private feed, the community, or both. Every plan
-            is pay-what-you-choose — name the suggested amount or give more to
-            help sustain independent Jewish media.
+            Every plan is pay-what-you-choose — name the suggested amount or give
+            more to help sustain independent Jewish media.
           </p>
         </div>
 
