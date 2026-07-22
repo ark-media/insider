@@ -97,7 +97,7 @@
 **T6.4** Update `src/routes/plus/gift.tsx` copy/entry points for multi-tier gifting.
 - **Acceptance:** user can pick tier + term, sees the price in their currency, and completes checkout.
 
-## Phase 7 — Account settings & gift visibility
+## Phase 7 — Account settings & gift visibility ✅ DONE (commit 75b29a5)
 
 Recipients are members with an expiry, not subscribers — account settings must show *what they have and until when* (per axis) and give a gift-safe path to the axis they lack.
 
@@ -106,22 +106,24 @@ Recipients are members with an expiry, not subscribers — account settings must
 - **D8 (RESOLVED)** — expiry conversion: in-app **banner + reminder email** via the existing reminder cron (`server/lib/feed-reminders.ts` / `feed-reminder-email.ts`, Resend).
 - **D9 (RESOLVED, lightweight)** — no standalone feature. At gift expiry, if the recipient already holds the *other* axis via a live paid sub, the banner (T7.4) and email (T7.5) offer **switch-to-Bundle via change-tier** (in-branch, `server/routes/stripe/routes.ts`) instead of a standalone sub; otherwise the standard standalone CTA. (cancellation-flows is merged, so `retention.ts` / `cancellation.ts` / change-tier are all in-branch.)
 
-**T7.1** Extend `/api/me` (`server/routes/me.ts` + `server/lib/entitlement-resolver.ts`) to return **per-axis** `{ active, source: 'gift'|'subscription', expiresAt }` from the new schema columns.
+**T7.1 ✅** `/api/me` returns per-axis `axes: { arkPlus, circle }` each `{ active, source: 'gift'|'subscription', expiresAt, renewsAt }` (`computeAxes` in `server/routes/me.ts`); threaded onto the client `Me` type.
 
-**T7.2** Render per-axis entitlement rows in account settings (`src/routes/account/`) — each row shows access, source (🎁 Gift / Subscription), and expiry/renewal date.
+**T7.2 ✅** Per-axis rows in `src/components/account/EntitlementAccess.tsx` (wired into `src/routes/account/index.tsx`) — each row shows access, source (🎁 Gift / Subscription), and the expiry/renewal date.
 
-**T7.3** Missing-axis CTA (gift-aware): offer only axes not held by any source; open the standalone-tier `CheckoutModal`; suppress Bundle while a gift covers an axis.
+**T7.3 ✅** Missing-axis CTA opens the standalone-tier `CheckoutModal` (Ark+-only / Community-only); Bundle is never offered while a gift covers the other axis (standalone by construction, D7).
 
-**T7.4** Near-expiry banner in account settings for gifted axes approaching expiry.
+**T7.4 ✅** Near-expiry banner (≤14 days) for gifted axes. D9: offers **switch-to-Bundle via `changeTier`** when the other axis is a live sub, else a standalone renewal.
 
-**T7.5** Gift-expiry reminder email via the existing reminder cron + Resend.
-- **Acceptance:** a gifted-Ark+ member sees an Ark+ row (gift, expiry) + a "Get Community" CTA that opens the Community standalone checkout; near expiry they see a banner and receive a reminder email.
+**T7.5 ✅** Gift-expiry reminder cron (`server/lib/gift-expiry-reminders.ts` + `gift-expiry-email.ts`, Resend): scans membership rows for gift axes ending ≤14 days out, resolves the recipient's email from Auth0 (membership stores no PII), one-time send per `(recipient, axis, term-end)` via ledger `gift_expiry_reminder_sends` (migration 0016, **applied**). Cron route `/api/cron/gift-expiry-reminders` (vercel.json, daily 16:00). 11 unit tests.
+- **Acceptance ✅ (browser-verified):** a gifted-Ark+ member sees an Ark+ row (🎁 Gift, expiry) + a "Get Community" CTA opening the Community standalone checkout, and a near-expiry banner. The D9 bundle-mix case (Community gift + Ark+ sub) shows "Add it to your plan". Reminder email send path unit-tested.
 
 ## Phase 8 — Verification
 
-**T8.1** Browser test (Chrome DevTools MCP): full gift purchase → redemption for one tier in a non-USD currency; confirm Stripe charges the `currency_options` amount, not USD.
+**T8.1 ⏳ PENDING (needs live env).** Full gift purchase → redemption for one tier in a non-USD currency, confirming the `currency_options` charge. Requires Stripe **test mode** + a running `stripe listen` webhook forwarder + Auth0 (makes real test-mode charges) — not runnable headlessly. The redemption logic (extend-first, per-axis) is covered by 13 unit tests (`server/gift-redeem.test.ts`).
 
-**T8.2** Confirm no regression to Ark+ gifting and to subscription checkout (shared `pricing.ts` / catalog script).
+**T8.2 ⏳ PENDING (needs live env).** Confirm no regression to Ark+ gifting and subscription checkout (shared `pricing.ts` / catalog). Same live-env dependency as T8.1.
+
+**Verified so far:** full production build passes; 750 server tests green (incl. 13 redemption + 11 reminder); account UI (T7.2–T7.4, incl. the D9 branch) browser-verified via Chrome DevTools against a mocked `/api/me`, console clean.
 
 ---
 
