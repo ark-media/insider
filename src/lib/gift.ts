@@ -39,9 +39,9 @@ export const GIFT_TIER_LABEL: Record<GiftTier, string> = {
 };
 
 export const GIFT_TIER_BLURB: Record<GiftTier, string> = {
-  "ark-plus": "Private ad-free podcast feed",
+  "ark-plus": "Private, ad-free podcast feed",
   circle: "Access to the Ark community",
-  bundle: "The private feed and the community",
+  bundle: "The private feed plus the community",
 };
 
 export const GIFT_LABEL: Record<GiftTerm, string> = {

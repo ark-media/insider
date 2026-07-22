@@ -82,50 +82,54 @@ function GiftPage() {
 
   return (
     <>
-      <section className="section-hero relative">
-        <div className="page-gutter pt-10 pb-16">
-          <div className="grid grid-cols-1 gap-14 lg:grid-cols-12">
+      <section className="section-hero ark-bg grain-overlay relative overflow-hidden">
+        <div className="page-gutter relative pt-10 pb-16 lg:pt-16">
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-12 lg:gap-8">
             {/* Left: pitch */}
             <div className="lg:col-span-5">
-              <h1 className="text-fg-strong">
-                <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
+              <div className="rise rise-1 flex items-center gap-3 eyebrow">
+                <span className="h-px w-10 bg-cyan" />
+                Give a membership
+              </div>
+              <h1 className="rise rise-2 mt-8 text-fg-strong">
+                <span className="display-upright block text-[clamp(2rem,4.4vw,3.4rem)]">
                   Give the full
                 </span>
-                <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
+                <span className="display-upright block text-[clamp(2rem,4.4vw,3.4rem)]">
                   Ark Media{" "}
                   <span className="display text-cyan">experience.</span>
                 </span>
               </h1>
-              <p className="mt-6 max-w-md text-body-sm text-fg">
-                A fixed-term gift — choose Ark+ (the private ad-free feed and
-                members-only newsletters), the Community, or the Bundle of both.
-                No autorenew. We email the recipient a redemption link the moment
-                your payment clears.
+              <p className="rise rise-3 mt-8 max-w-md text-body-lg text-fg">
+                Pick Ark+ for the private, ad-free feed and members-only
+                newsletters, the Community, or the Bundle of both. It's a
+                one-time gift — no renewals, no surprise charges — and they'll
+                get an email with everything they need to start.
               </p>
-              <ul className="mt-10 space-y-2 text-body-sm">
-                <li className="flex items-center gap-2">
-                  <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                  No autorenew — the gift ends when the term ends
+              <ul className="rise rise-4 mt-10 space-y-2 text-body-sm text-fg">
+                <li className="flex items-start gap-3">
+                  <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
+                  A one-time gift — it never renews or charges again
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                  Delivered by email within minutes
+                <li className="flex items-start gap-3">
+                  <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
+                  Lands in their inbox within minutes
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className="inline-block size-1.5 rounded-full bg-cyan" />
-                  Secure checkout via Stripe
+                <li className="flex items-start gap-3">
+                  <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
+                  Encrypted, secure checkout
                 </li>
               </ul>
             </div>
 
             {/* Right: form */}
-            <div className="lg:col-span-7">
+            <div className="rise rise-3 lg:col-span-7">
               <form
                 onSubmit={onSubmit}
-                className="border border-rule bg-navy-800/50 p-5 sm:p-8"
+                className="border border-rule-strong bg-navy-800/60 p-5 shadow-cover backdrop-blur-sm sm:p-8"
               >
-                <div className="label text-fg-muted">
-                  Gift
+                <div className="label text-fg-strong">
+                  Choose a membership
                 </div>
                 <div
                   role="radiogroup"
@@ -157,7 +161,7 @@ function GiftPage() {
                         </span>
                         <span
                           className={`text-body-sm leading-snug ${
-                            selected ? "opacity-80" : "text-fg-muted"
+                            selected ? "opacity-90" : "text-fg"
                           }`}
                         >
                           {GIFT_TIER_BLURB[t]}
@@ -167,8 +171,8 @@ function GiftPage() {
                   })}
                 </div>
 
-                <div className="mt-8 label text-fg-muted">
-                  Gift length
+                <div className="mt-8 label text-fg-strong">
+                  Choose a length
                 </div>
                 <div
                   role="radiogroup"
@@ -200,7 +204,7 @@ function GiftPage() {
                         </span>
                         <span
                           className={`button-text font-semibold ${
-                            selected ? "opacity-80" : "text-fg-muted"
+                            selected ? "opacity-90" : "text-fg"
                           }`}
                         >
                           {GIFT_LABEL[t]}
@@ -210,7 +214,7 @@ function GiftPage() {
                   })}
                 </div>
 
-                <div className="mt-8 label text-fg-muted">
+                <div className="mt-8 label text-fg-strong">
                   From
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -237,7 +241,7 @@ function GiftPage() {
                   </label>
                 </div>
 
-                <div className="mt-6 label text-fg-muted">
+                <div className="mt-6 label text-fg-strong">
                   To
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -266,7 +270,7 @@ function GiftPage() {
 
                 <div className="mt-6">
                   <label className="block">
-                    <span className="label text-fg-muted">
+                    <span className="label text-fg-strong">
                       Message (optional)
                     </span>
                     <textarea
@@ -298,9 +302,9 @@ function GiftPage() {
                     →
                   </span>
                 </button>
-                <p className="mt-3 text-body-sm">
-                  The recipient receives a redemption email as soon as your
-                  payment clears.
+                <p className="mt-3 text-body-sm text-fg">
+                  As soon as you check out, we'll email them a link to start
+                  their membership.
                 </p>
               </form>
             </div>

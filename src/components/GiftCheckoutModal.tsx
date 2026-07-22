@@ -149,7 +149,7 @@ export function GiftCheckoutModal({
         if (!cancelled) {
           setStep({
             kind: "error",
-            message: "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+            message: "Checkout is temporarily unavailable. Please try again in a moment.",
           });
         }
         return;
@@ -271,7 +271,7 @@ export function GiftCheckoutModal({
           <h2 id="gift-title" className={titleClass}>
             Almost there
           </h2>
-          <LoadingRow label="Payment received — setting up the gift…" />
+          <LoadingRow label="Payment received — wrapping up your gift…" />
         </>
       ) : null}
 
@@ -282,14 +282,14 @@ export function GiftCheckoutModal({
           </h2>
           <div className="mt-6 space-y-3 text-sm text-fg">
             <p>
-              Your payment is being processed. We'll email{" "}
+              Your payment is going through. We'll email{" "}
               <span
                 className="font-semibold text-fg-strong break-all"
                 title={input.recipientEmail}
               >
                 {input.recipientEmail}
               </span>{" "}
-              as soon as it clears.
+              a link to start their membership the moment it's confirmed.
             </p>
             <button type="button" onClick={handleClose} className={closeButtonClass}>
               Close

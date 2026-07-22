@@ -562,7 +562,7 @@ function HomePage() {
 
       {gift === "complete" ? (
         <Toast
-          message="Gift sent — we emailed your recipient their redemption link to set up their feed."
+          message="Gift sent — we emailed your recipient a link to start their membership."
           onDismiss={() =>
             void navigate({
               to: "/",
