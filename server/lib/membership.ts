@@ -20,7 +20,11 @@ export type MembershipRow = {
   amount_cents: number | null
   current_period_end: string | null
   cancel_at: string | null
-  gift_expires_at: string | null
+  // Per-axis gift expiries (D4): a gift extends only the axis/axes it covers, so
+  // an Ark+ gift and a Community gift can run concurrently with independent end
+  // dates. Effective tier is derived from these + the subscription via liveAxes.
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
 }
 
 // What the webhook writes for a subscription event. Pending-change columns
@@ -36,7 +40,11 @@ export type MembershipUpsert = {
   amount_cents: number | null
   current_period_end: string | null
   cancel_at: string | null
-  gift_expires_at?: string | null
+  // Per-axis gift expiries. Each is preserved when omitted (a subscription event
+  // must not clear a gift term, and a single-axis gift must not clear the other
+  // axis) — see the coalesce in upsertMembership.
+  ark_plus_gift_expires_at?: string | null
+  circle_gift_expires_at?: string | null
 }
 
 export async function getMembershipByAuth0Sub(
@@ -46,7 +54,8 @@ export async function getMembershipByAuth0Sub(
   const rows = await sql`
     select auth0_sub, stripe_customer_id, stripe_subscription_id, sc_user_id,
            tier, status, plan, amount_cents,
-           current_period_end, cancel_at, gift_expires_at
+           current_period_end, cancel_at,
+           ark_plus_gift_expires_at, circle_gift_expires_at
     from membership where auth0_sub = ${auth0Sub}`
   return (rows[0] as MembershipRow | undefined) ?? null
 }
@@ -61,7 +70,8 @@ export async function getMembershipByStripeCustomer(
   const rows = await sql`
     select auth0_sub, stripe_customer_id, stripe_subscription_id, sc_user_id,
            tier, status, plan, amount_cents,
-           current_period_end, cancel_at, gift_expires_at
+           current_period_end, cancel_at,
+           ark_plus_gift_expires_at, circle_gift_expires_at
     from membership where stripe_customer_id = ${customerId}
     order by updated_at desc limit 1`
   return (rows[0] as MembershipRow | undefined) ?? null
@@ -84,32 +94,35 @@ export async function getScheduledTierByCustomer(
   return scheduled ?? null
 }
 
-// Upsert keyed on auth0_sub. `updated_at` is bumped to now(). gift_expires_at is
-// preserved when omitted (a subscription event shouldn't clear a gift term).
+// Upsert keyed on auth0_sub. `updated_at` is bumped to now(). Each per-axis gift
+// expiry is preserved when omitted (a subscription event must not clear a gift
+// term, and a single-axis gift must not clear the other axis's term).
 export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<void> {
-  const giftExpires = m.gift_expires_at ?? null
+  const arkPlusGift = m.ark_plus_gift_expires_at ?? null
+  const circleGift = m.circle_gift_expires_at ?? null
   await sql`
     insert into membership (
       auth0_sub, stripe_customer_id, stripe_subscription_id, sc_user_id,
       tier, status, plan, amount_cents, current_period_end, cancel_at,
-      gift_expires_at, updated_at
+      ark_plus_gift_expires_at, circle_gift_expires_at, updated_at
     ) values (
       ${m.auth0_sub}, ${m.stripe_customer_id}, ${m.stripe_subscription_id}, ${m.sc_user_id},
       ${m.tier}, ${m.status}, ${m.plan}, ${m.amount_cents}, ${m.current_period_end}, ${m.cancel_at},
-      ${giftExpires}, now()
+      ${arkPlusGift}, ${circleGift}, now()
     )
     on conflict (auth0_sub) do update set
-      stripe_customer_id     = excluded.stripe_customer_id,
-      stripe_subscription_id = excluded.stripe_subscription_id,
-      sc_user_id             = coalesce(excluded.sc_user_id, membership.sc_user_id),
-      tier                   = excluded.tier,
-      status                 = excluded.status,
-      plan                   = excluded.plan,
-      amount_cents           = excluded.amount_cents,
-      current_period_end     = excluded.current_period_end,
-      cancel_at              = excluded.cancel_at,
-      gift_expires_at        = coalesce(excluded.gift_expires_at, membership.gift_expires_at),
-      updated_at             = now()`
+      stripe_customer_id       = excluded.stripe_customer_id,
+      stripe_subscription_id   = excluded.stripe_subscription_id,
+      sc_user_id               = coalesce(excluded.sc_user_id, membership.sc_user_id),
+      tier                     = excluded.tier,
+      status                   = excluded.status,
+      plan                     = excluded.plan,
+      amount_cents             = excluded.amount_cents,
+      current_period_end       = excluded.current_period_end,
+      cancel_at                = excluded.cancel_at,
+      ark_plus_gift_expires_at = coalesce(excluded.ark_plus_gift_expires_at, membership.ark_plus_gift_expires_at),
+      circle_gift_expires_at   = coalesce(excluded.circle_gift_expires_at, membership.circle_gift_expires_at),
+      updated_at               = now()`
 }
 
 // The whole membership roster, projected to just what the reconciler needs to
@@ -120,12 +133,16 @@ export type MembershipReconcileRow = {
   sc_user_id: number | null
   tier: Tier
   status: string
-  gift_expires_at: string | null
+  stripe_subscription_id: string | null
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
 }
 
 export async function loadAllMemberships(sql: Sql): Promise<MembershipReconcileRow[]> {
   const rows = await sql`
-    select auth0_sub, sc_user_id, tier, status, gift_expires_at from membership`
+    select auth0_sub, sc_user_id, tier, status, stripe_subscription_id,
+           ark_plus_gift_expires_at, circle_gift_expires_at
+    from membership`
   return rows as MembershipReconcileRow[]
 }
 
@@ -141,7 +158,8 @@ export type MemberDirectoryRow = {
   status: string
   current_period_end: string | null
   cancel_at: string | null
-  gift_expires_at: string | null
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
 }
 
 export async function listMemberships(
@@ -150,7 +168,8 @@ export async function listMemberships(
 ): Promise<MemberDirectoryRow[]> {
   const rows = await sql`
     select auth0_sub, stripe_customer_id, tier, status,
-           current_period_end, cancel_at, gift_expires_at
+           current_period_end, cancel_at,
+           ark_plus_gift_expires_at, circle_gift_expires_at
     from membership
     where (${opts.tier}::text is null or tier = ${opts.tier})
     order by updated_at desc
@@ -170,7 +189,8 @@ export async function getMembershipsByStripeCustomers(
   const rows = (await sql`
     select distinct on (stripe_customer_id)
            auth0_sub, stripe_customer_id, tier, status,
-           current_period_end, cancel_at, gift_expires_at
+           current_period_end, cancel_at,
+           ark_plus_gift_expires_at, circle_gift_expires_at
     from membership
     where stripe_customer_id = any(${customerIds}::text[])
     order by stripe_customer_id, updated_at desc`) as MemberDirectoryRow[]
@@ -237,16 +257,19 @@ export async function deleteMembershipByCustomer(
 // Remove provably-expired gift membership rows: a gift is customer-less (no
 // Stripe subscription to cancel), so nothing else ever deletes it, and a lapsed
 // gift row left at status 'active' makes status-based logic (the gift-redeem
-// stacking check) misread it as live. Reads already treat an elapsed
-// gift_expires_at as free, so this is pure housekeeping. Returns the count
+// stacking check) misread it as live. Reads already treat elapsed gift expiries
+// as free, so this is pure housekeeping. A per-axis gift row is expired only when
+// EVERY axis it holds has lapsed — an Ark+ gift still running keeps the row even
+// though a shorter Community gift on the same row elapsed. Returns the count
 // removed. Scoped tightly to customer-less rows so a real subscription is never
 // touched.
 export async function deleteExpiredGiftMemberships(sql: Sql): Promise<number> {
   const rows = await sql`
     delete from membership
     where stripe_customer_id is null
-      and gift_expires_at is not null
-      and gift_expires_at <= now()
+      and (ark_plus_gift_expires_at is not null or circle_gift_expires_at is not null)
+      and coalesce(ark_plus_gift_expires_at, 'epoch') <= now()
+      and coalesce(circle_gift_expires_at, 'epoch') <= now()
     returning auth0_sub`
   return rows.length
 }
@@ -258,6 +281,7 @@ export type GiftRow = {
   tier: Tier
   plan: string | null
   amount_cents: number | null
+  currency: string | null
   giver_sub: string | null
   status: 'pending' | 'redeemed'
   redeemed_by: string | null
@@ -272,18 +296,19 @@ export async function insertGift(
     tier: Tier
     plan: string | null
     amount_cents: number | null
+    currency: string | null
     giver_sub: string | null
   },
 ): Promise<void> {
   await sql`
-    insert into gift (redemption_token, tier, plan, amount_cents, giver_sub, status)
-    values (${g.redemption_token}, ${g.tier}, ${g.plan}, ${g.amount_cents}, ${g.giver_sub}, 'pending')
+    insert into gift (redemption_token, tier, plan, amount_cents, currency, giver_sub, status)
+    values (${g.redemption_token}, ${g.tier}, ${g.plan}, ${g.amount_cents}, ${g.currency}, ${g.giver_sub}, 'pending')
     on conflict (redemption_token) do nothing`
 }
 
 export async function getGiftByToken(sql: Sql, token: string): Promise<GiftRow | null> {
   const rows = await sql`
-    select redemption_token, tier, plan, amount_cents, giver_sub, status, redeemed_by
+    select redemption_token, tier, plan, amount_cents, currency, giver_sub, status, redeemed_by
     from gift where redemption_token = ${token}`
   return (rows[0] as GiftRow | undefined) ?? null
 }

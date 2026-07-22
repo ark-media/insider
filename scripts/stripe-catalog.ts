@@ -90,7 +90,10 @@ function amountsFor(usdMonthlyMinor: number, interval: 'month' | 'year'): Amount
 
 type PriceDef = {
   lookup_key: string
-  interval: 'month' | 'year'
+  // 'month' | 'year' for recurring subscription prices; undefined for one-time
+  // gift prices (mode: 'payment'). A recurring price can't be used in a
+  // payment-mode Checkout Session, so gifts need their own non-recurring prices.
+  interval: 'month' | 'year' | undefined
   amounts: Amounts
 }
 
@@ -135,6 +138,77 @@ const CATALOG: ProductDef[] = [
     entitlements: 'ark_plus,circle',
     scPlan: true,
     usdMonthlyMinor: 1300,
+  },
+]
+
+// --- Gift catalog ----------------------------------------------------------
+
+// Gifts are one-time purchases, priced INDEPENDENTLY of the subscription tiers
+// (tasks/prd-gift-tiers.md D1). USD anchors are hand-set charm prices; the other
+// 39 currencies scale the axis's localized monthly base by (giftUsd /
+// tierMonthlyUsd), so a localized gift floor tracks localized subscription
+// pricing without being derived from a subscription Price object at runtime.
+//   | Tier      | 6mo | 1yr  |
+//   | Ark+      | $48 | $80  |
+//   | Community | $48 | $80  |
+//   | Bundle    | $75 | $130 |
+type GiftTerm = '6mo' | '1yr'
+const GIFT_TERMS = ['6mo', '1yr'] as const
+
+type GiftProductDef = {
+  catalogKey: string // gift_ark_plus | gift_circle | gift_bundle
+  name: string
+  description: string
+  entitlements: string // ark_plus | circle | ark_plus,circle
+  tierMonthlyUsdMinor: number // the axis's monthly USD base, to localize non-USD amounts
+  anchors: Record<GiftTerm, number> // USD minor-unit anchors per term
+}
+
+// Per-currency amounts for a gift term: USD is the exact charm anchor; the rest
+// scale the axis's localized monthly base by (anchor / tierMonthly).
+function giftAmountsFor(tierMonthlyUsdMinor: number, usdAnchorMinor: number): Amounts {
+  const monthly = amountsFor(tierMonthlyUsdMinor, 'month')
+  const scale = usdAnchorMinor / tierMonthlyUsdMinor
+  const out = {} as Amounts
+  for (const cur of CURRENCIES) out[cur] = Math.round(monthly[cur] * scale)
+  out.usd = usdAnchorMinor // exact anchor, never a rounded scale
+  return out
+}
+
+// One-time (recurring: undefined) prices for a gift product, lookup-keyed
+// gift_<tier>_<term>.
+function giftPricesFor(def: GiftProductDef): PriceDef[] {
+  return GIFT_TERMS.map((term) => ({
+    lookup_key: `${def.catalogKey}_${term}`,
+    interval: undefined,
+    amounts: giftAmountsFor(def.tierMonthlyUsdMinor, def.anchors[term]),
+  }))
+}
+
+const GIFT_CATALOG: GiftProductDef[] = [
+  {
+    catalogKey: 'gift_ark_plus',
+    name: 'Ark+ Gift',
+    description: 'Gift a private ad-free podcast feed (Supporting Cast).',
+    entitlements: 'ark_plus',
+    tierMonthlyUsdMinor: 800,
+    anchors: { '6mo': 4800, '1yr': 8000 },
+  },
+  {
+    catalogKey: 'gift_circle',
+    name: 'Ark Community Gift',
+    description: 'Gift access to the Ark community (Circle).',
+    entitlements: 'circle',
+    tierMonthlyUsdMinor: 800,
+    anchors: { '6mo': 4800, '1yr': 8000 },
+  },
+  {
+    catalogKey: 'gift_bundle',
+    name: 'Ark+ & Community Gift',
+    description: 'Gift the private ad-free feed and community access.',
+    entitlements: 'ark_plus,circle',
+    tierMonthlyUsdMinor: 1300,
+    anchors: { '6mo': 7500, '1yr': 13000 },
   },
 ]
 
@@ -268,7 +342,8 @@ async function upsertPrice(
     product: productId,
     currency: 'usd',
     unit_amount: def.amounts.usd,
-    recurring: { interval: def.interval },
+    // Recurring for subscription prices; omitted → one-time for gift prices.
+    ...(def.interval ? { recurring: { interval: def.interval } } : {}),
     lookup_key: def.lookup_key,
     transfer_lookup_key: true, // moves the key off the old price if one holds it
     currency_options: currencyOptions(def.amounts),
@@ -276,6 +351,40 @@ async function upsertPrice(
   if (existing) {
     await stripe.prices.update(existing.id, { active: false })
   }
+}
+
+// Gift products carry kind:'gift' and no founding/SC metadata (SC gift feeds are
+// provisioned via SC_SUBSCRIPTION_PRICE_ID_GIFT_* env, not this Stripe product).
+async function upsertGiftProduct(
+  stripe: Stripe,
+  def: GiftProductDef,
+  existing: Stripe.Product | undefined,
+  apply: boolean,
+): Promise<string | null> {
+  const metadata: Record<string, string> = {
+    catalog_key: def.catalogKey,
+    entitlements: def.entitlements,
+    kind: 'gift',
+  }
+  if (existing) {
+    console.log(`  product ${def.catalogKey}: exists (${existing.id}) — updating name/metadata`)
+    if (apply) {
+      await stripe.products.update(existing.id, {
+        name: def.name,
+        description: def.description,
+        metadata,
+      })
+    }
+    return existing.id
+  }
+  console.log(`  product ${def.catalogKey}: CREATE "${def.name}"`)
+  if (!apply) return null
+  const created = await stripe.products.create({
+    name: def.name,
+    description: def.description,
+    metadata,
+  })
+  return created.id
 }
 
 // Sandbox orphans — products created by the old `product_data`-per-checkout
@@ -324,6 +433,15 @@ async function main(): Promise<void> {
     console.log(`\n${def.name} [${def.entitlements}]`)
     const productId = await upsertProduct(stripe, def, byCatalogKey.get(def.catalogKey), apply)
     for (const price of pricesFor(def)) {
+      await upsertPrice(stripe, productId, price, apply)
+    }
+  }
+
+  console.log('\n--- Gifts (one-time) ---')
+  for (const def of GIFT_CATALOG) {
+    console.log(`\n${def.name} [${def.entitlements}]`)
+    const productId = await upsertGiftProduct(stripe, def, byCatalogKey.get(def.catalogKey), apply)
+    for (const price of giftPricesFor(def)) {
       await upsertPrice(stripe, productId, price, apply)
     }
   }

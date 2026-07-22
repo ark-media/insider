@@ -67,7 +67,8 @@ mock.module('@neondatabase/serverless', () =>
               amount_cents: 800,
               current_period_end: null,
               cancel_at: null,
-              gift_expires_at: null,
+              ark_plus_gift_expires_at: null,
+              circle_gift_expires_at: null,
             },
           ]
         : []

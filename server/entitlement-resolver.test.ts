@@ -68,7 +68,8 @@ const row = (over: Record<string, unknown>) => ({
   amount_cents: 800,
   current_period_end: null,
   cancel_at: null,
-  gift_expires_at: null,
+  ark_plus_gift_expires_at: null,
+  circle_gift_expires_at: null,
   ...over,
 })
 
@@ -94,7 +95,13 @@ describe('resolveMembershipForIdentity — no access leak', () => {
   })
 
   test('an expired gift membership is not live → free (no leak)', async () => {
-    membershipRows = [row({ tier: 'ark-plus', gift_expires_at: '2000-01-01T00:00:00.000Z' })]
+    membershipRows = [
+      row({
+        tier: 'ark-plus',
+        stripe_subscription_id: null,
+        ark_plus_gift_expires_at: '2000-01-01T00:00:00.000Z',
+      }),
+    ]
     const res = await resolveMembershipForIdentity(IDENTITY, ENV)
     expect(res.tier).toBe('free')
     expect(res.entitlements).toEqual({ arkPlus: false, circle: false })
@@ -139,7 +146,14 @@ describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
   test('no leak: a not-live row found by customer is ignored (not resolved to its paid tier)', async () => {
     // Row is present by customer but cancelled/expired → must not grant its tier.
     // The SC net finds no user here (stubbed fetch), so it falls through to free.
-    membershipRows = [row({ tier: 'bundle', gift_expires_at: '2000-01-01T00:00:00.000Z' })]
+    membershipRows = [
+      row({
+        tier: 'bundle',
+        stripe_subscription_id: null,
+        ark_plus_gift_expires_at: '2000-01-01T00:00:00.000Z',
+        circle_gift_expires_at: '2000-01-01T00:00:00.000Z',
+      }),
+    ]
     const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
       scFallback: true,
       stripe: fakeStripe,

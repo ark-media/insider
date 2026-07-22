@@ -1,23 +1,47 @@
 export type GiftTerm = "6mo" | "1yr";
 
+// The three sellable tiers a gift can grant (mirrors the server PricedTier).
+export type GiftTier = "ark-plus" | "circle" | "bundle";
+
 export type GiftInput = {
   giverEmail: string;
   giverName?: string;
   recipientEmail: string;
   recipientName?: string;
+  tier: GiftTier;
   term: GiftTerm;
+  // Presentment/charge currency; the server falls back to USD when absent or
+  // unsupported. Chosen in the modal before the Session is created.
+  currency?: string;
   message?: string;
 };
 
 export type CreateGiftResponse = {
   checkout_session_id: string;
   client_secret: string;
+  tier: GiftTier;
   term: GiftTerm;
+  currency: string;
 };
 
-export const GIFT_PRICE_DOLLARS: Record<GiftTerm, number> = {
-  "6mo": 48,
-  "1yr": 80,
+// USD anchors per tier + term (D1). Page display only — the modal shows the
+// localized total from the Stripe session's currency_options.
+export const GIFT_PRICE_DOLLARS: Record<GiftTier, Record<GiftTerm, number>> = {
+  "ark-plus": { "6mo": 48, "1yr": 80 },
+  circle: { "6mo": 48, "1yr": 80 },
+  bundle: { "6mo": 75, "1yr": 130 },
+};
+
+export const GIFT_TIER_LABEL: Record<GiftTier, string> = {
+  "ark-plus": "Ark+",
+  circle: "Community",
+  bundle: "Bundle",
+};
+
+export const GIFT_TIER_BLURB: Record<GiftTier, string> = {
+  "ark-plus": "Private ad-free podcast feed",
+  circle: "Access to the Ark community",
+  bundle: "The private feed and the community",
 };
 
 export const GIFT_LABEL: Record<GiftTerm, string> = {
@@ -37,7 +61,9 @@ export async function createGiftCheckout(
         giver_name: input.giverName,
         recipient_email: input.recipientEmail,
         recipient_name: input.recipientName,
+        tier: input.tier,
         term: input.term,
+        currency: input.currency,
         message: input.message,
       }),
     });
@@ -55,7 +81,7 @@ export async function createGiftCheckout(
 }
 
 export type RedeemGiftResult =
-  | { ok: true; applied: "membership" | "credit"; expiresAt?: string }
+  | { ok: true; applied: "membership" | "credit" | "mixed"; expiresAt?: string }
   | { ok: false; error: string; status?: number };
 
 // Claim a gift the recipient received by email. Requires a signed-in session
@@ -71,7 +97,7 @@ export async function redeemGift(token: string): Promise<RedeemGiftResult> {
     });
     const data = (await res.json().catch(() => ({}))) as {
       redeemed?: boolean;
-      applied?: "membership" | "credit";
+      applied?: "membership" | "credit" | "mixed";
       expires_at?: string;
       error?: string;
     };
@@ -106,7 +132,7 @@ export async function claimGiftWithMagicToken(mt: string): Promise<RedeemGiftRes
     });
     const data = (await res.json().catch(() => ({}))) as {
       redeemed?: boolean;
-      applied?: "membership" | "credit";
+      applied?: "membership" | "credit" | "mixed";
       expires_at?: string;
       error?: string;
     };

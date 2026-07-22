@@ -221,7 +221,9 @@ function row(over: Partial<Record<string, unknown>>): Record<string, unknown> {
     sc_user_id: null,
     tier: 'free',
     status: 'active',
-    gift_expires_at: null,
+    stripe_subscription_id: null,
+    ark_plus_gift_expires_at: null,
+    circle_gift_expires_at: null,
     ...over,
   }
 }
@@ -314,7 +316,7 @@ describe('reconcileEntitlements', () => {
       // A live member keeps the keep-set non-empty so the empty-keep-set fail-
       // safe doesn't trip; the expired gift member is the drift under test.
       row({ auth0_sub: 'auth0|live', tier: 'ark-plus', sc_user_id: 1 }),
-      row({ auth0_sub: 'auth0|gift', tier: 'ark-plus', sc_user_id: 5, gift_expires_at: past }),
+      row({ auth0_sub: 'auth0|gift', tier: 'ark-plus', sc_user_id: 5, ark_plus_gift_expires_at: past }),
     ]
     installFetch(
       reconcilerFetch({
@@ -379,7 +381,7 @@ describe('reconcileEntitlements', () => {
   test('SC drift: a future gift row keeps its SC user', async () => {
     const future = new Date(Date.now() + 7 * 86_400_000).toISOString()
     neonMembershipRows = [
-      row({ auth0_sub: 'auth0|gift', tier: 'ark-plus', sc_user_id: 5, gift_expires_at: future }),
+      row({ auth0_sub: 'auth0|gift', tier: 'ark-plus', sc_user_id: 5, ark_plus_gift_expires_at: future }),
     ]
     installFetch(reconcilerFetch({ scMembers: [{ user_id: 5, email: 'gift@x.com' }] }))
     const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)

@@ -4,8 +4,11 @@ import { GiftCheckoutModal } from "../../components/GiftCheckoutModal";
 import {
   GIFT_LABEL,
   GIFT_PRICE_DOLLARS,
+  GIFT_TIER_BLURB,
+  GIFT_TIER_LABEL,
   type GiftInput,
   type GiftTerm,
+  type GiftTier,
 } from "../../lib/gift";
 import { trackEvent } from "../../lib/analytics";
 
@@ -16,9 +19,22 @@ export const Route = createFileRoute("/plus/gift")({
 const inputClass =
   "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-muted outline-none transition focus:border-cyan disabled:opacity-50";
 
+const GIFT_TIERS = ["ark-plus", "circle", "bundle"] as const;
 const GIFT_TERMS = ["6mo", "1yr"] as const;
 
+// The next index a roving-tabindex arrow/Home/End keypress lands on, or null if
+// the key isn't a navigation key. Shared by the tier + term radiogroups; the
+// caller focuses/selects it (refs are read in the event handler, never render).
+function nextRovingIndex(key: string, index: number, count: number): number | null {
+  if (key === "ArrowRight" || key === "ArrowDown") return (index + 1) % count;
+  if (key === "ArrowLeft" || key === "ArrowUp") return (index - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
 function GiftPage() {
+  const [tier, setTier] = useState<GiftTier>("ark-plus");
   const [term, setTerm] = useState<GiftTerm>("1yr");
   const [giverName, setGiverName] = useState("");
   const [giverEmail, setGiverEmail] = useState("");
@@ -26,22 +42,22 @@ function GiftPage() {
   const [recipientEmail, setRecipientEmail] = useState("");
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState<GiftInput | null>(null);
-  const radioRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const tierRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const termRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  // Roving-tabindex keyboard model for the gift-length radiogroup: arrow keys
-  // move and select the next/previous option, Home/End jump to the ends.
-  const onRadioKeyDown = (e: React.KeyboardEvent, index: number) => {
-    let next = index;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown")
-      next = (index + 1) % GIFT_TERMS.length;
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
-      next = (index - 1 + GIFT_TERMS.length) % GIFT_TERMS.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = GIFT_TERMS.length - 1;
-    else return;
+  const onTierKeyDown = (e: React.KeyboardEvent, index: number) => {
+    const next = nextRovingIndex(e.key, index, GIFT_TIERS.length);
+    if (next === null) return;
+    e.preventDefault();
+    setTier(GIFT_TIERS[next]);
+    tierRefs.current[next]?.focus();
+  };
+  const onTermKeyDown = (e: React.KeyboardEvent, index: number) => {
+    const next = nextRovingIndex(e.key, index, GIFT_TERMS.length);
+    if (next === null) return;
     e.preventDefault();
     setTerm(GIFT_TERMS[next]);
-    radioRefs.current[next]?.focus();
+    termRefs.current[next]?.focus();
   };
 
   const canSubmit =
@@ -52,12 +68,13 @@ function GiftPage() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
-    trackEvent("gift_checkout_opened", { term });
+    trackEvent("gift_checkout_opened", { tier, term });
     setSubmitted({
       giverEmail: giverEmail.trim(),
       giverName: giverName.trim() || undefined,
       recipientEmail: recipientEmail.trim(),
       recipientName: recipientName.trim() || undefined,
+      tier,
       term,
       message: message.trim() || undefined,
     });
@@ -80,9 +97,9 @@ function GiftPage() {
                 </span>
               </h1>
               <p className="mt-6 max-w-md text-body-sm text-fg">
-                A fixed-term gift of Ark+ — Inside Call Me Back and the
-                members-only newsletters, ad-free across the network. No
-                autorenew. We email the recipient a redemption link the moment
+                A fixed-term gift — choose Ark+ (the private ad-free feed and
+                members-only newsletters), the Community, or the Bundle of both.
+                No autorenew. We email the recipient a redemption link the moment
                 your payment clears.
               </p>
               <ul className="mt-10 space-y-2 text-body-sm">
@@ -108,6 +125,49 @@ function GiftPage() {
                 className="border border-rule bg-navy-800/50 p-5 sm:p-8"
               >
                 <div className="label text-fg-muted">
+                  Gift
+                </div>
+                <div
+                  role="radiogroup"
+                  aria-label="Gift tier"
+                  className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3"
+                >
+                  {GIFT_TIERS.map((t, i) => {
+                    const selected = tier === t;
+                    return (
+                      <button
+                        key={t}
+                        ref={(el) => {
+                          tierRefs.current[i] = el;
+                        }}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        tabIndex={selected ? 0 : -1}
+                        onClick={() => setTier(t)}
+                        onKeyDown={(e) => onTierKeyDown(e, i)}
+                        className={`group flex flex-col items-start gap-1 border px-4 py-4 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                          selected
+                            ? "border-cyan bg-cyan text-navy"
+                            : "border-rule-strong text-fg-strong hover:border-cyan"
+                        }`}
+                      >
+                        <span className="button-text font-display font-bold tracking-cta">
+                          {GIFT_TIER_LABEL[t]}
+                        </span>
+                        <span
+                          className={`text-body-sm leading-snug ${
+                            selected ? "opacity-80" : "text-fg-muted"
+                          }`}
+                        >
+                          {GIFT_TIER_BLURB[t]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-8 label text-fg-muted">
                   Gift length
                 </div>
                 <div
@@ -121,14 +181,14 @@ function GiftPage() {
                       <button
                         key={t}
                         ref={(el) => {
-                          radioRefs.current[i] = el;
+                          termRefs.current[i] = el;
                         }}
                         type="button"
                         role="radio"
                         aria-checked={selected}
                         tabIndex={selected ? 0 : -1}
                         onClick={() => setTerm(t)}
-                        onKeyDown={(e) => onRadioKeyDown(e, i)}
+                        onKeyDown={(e) => onTermKeyDown(e, i)}
                         className={`group flex flex-col items-center gap-1 border px-4 py-6 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
                           selected
                             ? "border-cyan bg-cyan text-navy"
@@ -136,7 +196,7 @@ function GiftPage() {
                         }`}
                       >
                         <span className="display-upright text-[clamp(2.2rem,4vw,2.8rem)] leading-none">
-                          ${GIFT_PRICE_DOLLARS[t]}
+                          ${GIFT_PRICE_DOLLARS[tier][t]}
                         </span>
                         <span
                           className={`button-text font-semibold ${
@@ -233,7 +293,7 @@ function GiftPage() {
                   disabled={!canSubmit}
                   className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
-                  Continue to payment · ${GIFT_PRICE_DOLLARS[term]}
+                  Continue to payment · ${GIFT_PRICE_DOLLARS[tier][term]}
                   <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
                     →
                   </span>

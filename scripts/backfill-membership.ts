@@ -188,9 +188,11 @@ async function main(): Promise<void> {
         amount_cents: null,
         current_period_end: null,
         cancel_at: null,
-        // Unknown expiry from v1; leave null (perpetual) rather than risk
-        // downgrading a real gift. Flag for manual correction on true gifts.
-        gift_expires_at: null,
+        // Unknown expiry from v1; leave both axes null (perpetual comp grant)
+        // rather than risk downgrading a real gift. Flag for manual correction on
+        // true gifts.
+        ark_plus_gift_expires_at: null,
+        circle_gift_expires_at: null,
       },
       'sc-gift/comp',
     )

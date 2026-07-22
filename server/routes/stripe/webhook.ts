@@ -327,14 +327,17 @@ async function handleGiftPaymentIntent(
   }
   const token = giftTokenForPaymentIntent(pi.id, env)
 
-  // Current gift product is Ark+; the term is stored as the row's `plan` and the
-  // duration clock starts at redemption.
+  // The purchased tier (Ark+, Community, or Bundle) rides in on PI metadata,
+  // stamped by the gift checkout route; coerce defensively. The term is stored as
+  // the row's `plan` and the duration clock starts at redemption.
+  const tier = coerceTier(pi.metadata?.tier)
   if (env.DATABASE_URL) {
     await insertGift(getDb(env), {
       redemption_token: token,
-      tier: 'ark-plus',
+      tier,
       plan: term,
       amount_cents: pi.amount_received ?? pi.amount ?? null,
+      currency: pi.metadata?.currency ?? pi.currency ?? null,
       giver_sub: null,
     })
   }

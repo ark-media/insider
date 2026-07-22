@@ -1,19 +1,27 @@
 // Gift purchase + activation polling.
 //
 //   POST /api/gift/create-checkout — one-time, payment-mode Checkout Session
-//     (ui_mode: 'elements') with Adaptive Pricing, so the buyer is charged in
-//     their detected local currency. We use a Checkout Session (not a bare
-//     PaymentIntent) specifically because Adaptive Pricing is only available
-//     through Checkout Sessions. Gift metadata is stamped on the underlying
-//     PaymentIntent (payment_intent_data) so activation happens on the webhook
-//     (payment_intent.succeeded) via the activator, unchanged.
+//     (ui_mode: 'elements') for any of the three tiers. The buyer is charged the
+//     localized gift amount via the catalog gift Price's per-currency
+//     currency_options (the session's `currency` selects it) — the same
+//     per-currency model as the subscription checkout, replacing the old, inert
+//     Adaptive Pricing. Gift metadata (tier/term/currency) is stamped on the
+//     underlying PaymentIntent (payment_intent_data) so activation happens on the
+//     webhook (payment_intent.succeeded) via the activator.
 //   GET  /api/gift/status         — poll for activation. The giver just
 //     created this Session moments ago, so an email param matching the
 //     Session's giver_email metadata is sufficient proof of ownership (same
 //     pattern as /api/stripe/subscription-status).
 
-import { GIFT_PRICES_CENTS, type GiftTerm } from '../lib/activation.js'
-import { deriveEntitlements, syncEntitlement } from '../entitlement.js'
+import { type GiftTerm } from '../lib/activation.js'
+import {
+  deriveEntitlements,
+  syncEntitlement,
+  tierFromEntitlements,
+  type Tier,
+} from '../entitlement.js'
+import { isSupportedCurrency, resolveGiftPrice } from '../lib/pricing.js'
+import { coerceTier } from './stripe/helpers.js'
 import { findOrCreateAuth0User } from '../lib/auth0-user.js'
 import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
@@ -66,7 +74,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
             giver_name?: string
             recipient_email?: string
             recipient_name?: string
+            tier?: string
             term?: GiftTerm
+            currency?: string
             message?: string
           }>(req)) ?? {}
 
@@ -81,6 +91,14 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           return json(400, { error: 'Message is too long (max 500 characters).' })
         }
 
+        // Any of the three sellable tiers can be gifted (default Ark+). Currency
+        // selects which currency_options amount the gift price charges; an
+        // unsupported (or absent) currency falls back to USD, parity with the
+        // subscription checkout.
+        const tier = coerceTier(body.tier)
+        const requestedCurrency = (body.currency ?? '').toLowerCase()
+        const currency = isSupportedCurrency(requestedCurrency) ? requestedCurrency : 'usd'
+
         const wait = giftLimiter.take(giverEmail)
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
@@ -90,18 +108,25 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         }
 
         const term = body.term
-        const amountCents = GIFT_PRICES_CENTS[term]
         const termLabel = term === '6mo' ? '6 months' : '1 year'
+
+        // The one-time gift price for this tier+term from the catalog. It carries
+        // the per-currency currency_options the session's `currency` selects, so
+        // the buyer is charged the localized gift amount (not USD via the old,
+        // inert Adaptive Pricing). `amountCents` is the charge-currency amount,
+        // used only to rank promos.
+        const gift = await resolveGiftPrice(stripe, tier, term)
+        const amountCents = gift.floors[currency]
 
         // Auto-apply the best active promo to gifts too. Per product decision,
         // any auto-apply coupon qualifies regardless of its plan target, so we
-        // pass plan=null (a gift has no monthly/yearly plan). Ranked against the
-        // USD source amount; Adaptive Pricing then converts the discounted
-        // total. The discount is optional, so a lookup failure must never block
-        // checkout: log and charge full price.
+        // pass plan=null (a gift has no monthly/yearly plan). Ranked in the charge
+        // currency (a foreign-currency amount_off coupon can't apply). The
+        // discount is optional, so a lookup failure must never block checkout:
+        // log and charge full price.
         let discountCoupon: string | null = null
         try {
-          const best = pickBestCoupon(await listActiveCoupons(stripe), null, amountCents)
+          const best = pickBestCoupon(await listActiveCoupons(stripe), null, amountCents, currency)
           if (best) discountCoupon = best.id
         } catch (err) {
           console.error('[gift] promo lookup failed; charging full price:', err)
@@ -122,29 +147,13 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           // SPA confirms in place without a client-side email step (the giver's
           // email is already known when the modal opens).
           customer: customer.id,
-          line_items: [
-            {
-              quantity: 1,
-              // Always USD — the source currency Adaptive Pricing converts from
-              // per buyer. The gift price is fixed, so an inline price_data
-              // avoids minting reusable Price objects.
-              price_data: {
-                currency: 'usd',
-                unit_amount: amountCents,
-                // Exclusive: the USD amount is pre-tax; Stripe Tax adds tax on
-                // top at checkout. Required once automatic_tax is on — an inline
-                // price with no tax_behavior errors under automatic tax.
-                tax_behavior: 'exclusive',
-                product_data: { name: `Ark Insider gift · ${termLabel}` },
-              },
-            },
-          ],
-          // Adaptive Pricing: Stripe detects the buyer's country from their IP
-          // and presents/charges in their local currency, with the USD price
-          // above as the source. Requires the account-level setting in the
-          // Stripe Dashboard (Settings → Adaptive Pricing) — this flag is inert
-          // until that is enabled.
-          adaptive_pricing: { enabled: true },
+          // Selects which currency_options amount the gift price charges.
+          currency,
+          // The persistent one-time gift Price (its currency_options carry every
+          // supported currency). Fixed amount — no PWYC uplift, so no inline
+          // price_data — and reusing the catalog Price avoids the product sprawl
+          // the old product_data-per-checkout pattern caused.
+          line_items: [{ price: gift.priceId, quantity: 1 }],
           // Stripe Tax: compute and add tax on top of the (exclusive) price.
           // Works for one-time payment-mode sessions too; the calculated tax
           // appears in Tax Reports. Requires Stripe Tax active in the Dashboard.
@@ -162,7 +171,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
             description: `Ark Insider gift · ${termLabel}`,
             metadata: {
               kind: 'gift',
+              tier,
               term,
+              currency,
+              amount_cents: String(amountCents),
               giver_email: giverEmail,
               giver_name: body.giver_name ?? '',
               recipient_email: recipientEmail,
@@ -186,7 +198,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         json(200, {
           checkout_session_id: session.id,
           client_secret: session.client_secret,
+          tier,
           term,
+          currency,
         })
       },
     }),
@@ -338,12 +352,18 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
   ]
 }
 
-// The credit-vs-term core of a redemption, shared by the session-authenticated
-// POST /api/gift/redeem and the magic-link POST /api/gift/claim. The caller has
-// already loaded a PENDING gift and resolved the recipient's Auth0 sub. Branches
-// on whether they already hold an active paid membership (§3 "Gifts"): none →
-// activate a gift term; already active → apply the gift amount as Stripe account
-// credit. Either way the gift flips to redeemed.
+// The per-axis core of a redemption, shared by the session-authenticated POST
+// /api/gift/redeem and the magic-link POST /api/gift/claim. The caller has
+// already loaded a PENDING gift and resolved the recipient's Auth0 sub.
+//
+// The gift covers one or both entitlement axes (Bundle → both). For each covered
+// axis (D4/D5):
+//   - the recipient already holds it via a LIVE PAID SUBSCRIPTION → credit that
+//     axis (they'd otherwise double-pay for a gifted axis);
+//   - otherwise → grant/extend a gift term on that axis (stacking onto any live
+//     gift term on the same axis).
+// Bundle-on-Ark+-subscriber therefore grants a Circle term AND credits the Ark+
+// overlap. The gift flips to redeemed once, atomically.
 async function redeemGiftForRecipient(
   {
     sql,
@@ -359,101 +379,157 @@ async function redeemGiftForRecipient(
   gift: GiftRow,
   recipient: { email: string; name?: string; auth0Sub: string },
 ): Promise<
-  | { ok: true; applied: 'credit' | 'membership'; expiresAt?: string }
+  | { ok: true; applied: 'credit' | 'membership' | 'mixed'; expiresAt?: string }
   | { ok: false; error: 'already_redeemed' }
 > {
   const { email, name, auth0Sub } = recipient
   const token = gift.redemption_token
+  const now = Date.now()
+
+  // The axes this gift grants (Bundle → both).
+  const covered = deriveEntitlements(gift.tier)
 
   const existing = await getMembershipByAuth0Sub(sql, auth0Sub)
-  // Only a real, creditable subscription diverts the gift to account credit.
-  // It must have a Stripe customer — applyGiftAsCredit no-ops without one, so
-  // routing a gift-only membership (null customer) here flipped the gift to
-  // redeemed while granting nothing. A gift-only or expired-gift row instead
-  // falls through to a fresh/extended gift term below.
-  const canCredit =
+  // A live PAID subscription (a row with a real Stripe sub + customer) already
+  // covering an axis diverts THAT axis to credit. A gift-only or expired row
+  // never diverts — its axes fall through to a fresh/extended gift term.
+  const hasPaidSub =
     existing != null &&
+    existing.stripe_subscription_id != null &&
     existing.stripe_customer_id != null &&
-    existing.tier !== 'free' &&
     LIVE_MEMBERSHIP_STATUSES.has(existing.status)
+  const subAxes = hasPaidSub
+    ? deriveEntitlements(existing.tier)
+    : { arkPlus: false, circle: false }
 
-  if (canCredit) {
-    // Claim first — account credit is not idempotent, so the atomic flip
-    // guards against a double-credit race.
-    const claimed = await markGiftRedeemed(sql, token, auth0Sub)
-    if (!claimed) return { ok: false, error: 'already_redeemed' }
-    try {
-      await applyGiftAsCredit(stripe, existing, gift)
-    } catch (err) {
-      console.error('[gift] credit apply failed:', err)
-    }
-    return { ok: true, applied: 'credit' }
+  // Per axis: grant where the paid sub doesn't already cover it (extending any
+  // live gift term on that axis); credit where it does.
+  const grantArkPlus = covered.arkPlus && !subAxes.arkPlus
+  const grantCircle = covered.circle && !subAxes.circle
+  const creditArkPlus = covered.arkPlus && subAxes.arkPlus
+  const creditCircle = covered.circle && subAxes.circle
+
+  // Claim first — the credit branch is not idempotent, so the atomic flip guards
+  // a double-redeem race. The grant branch is idempotent (SC/Circle keyed), so
+  // flipping first is safe for it too.
+  const claimed = await markGiftRedeemed(sql, token, auth0Sub)
+  if (!claimed) return { ok: false, error: 'already_redeemed' }
+
+  const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
+
+  // Stacking: each granted axis's term starts at its current gift expiry when
+  // that is still in the future, else now.
+  const arkPlusExistingMs = existing?.ark_plus_gift_expires_at
+    ? Date.parse(existing.ark_plus_gift_expires_at)
+    : 0
+  const circleExistingMs = existing?.circle_gift_expires_at
+    ? Date.parse(existing.circle_gift_expires_at)
+    : 0
+  const arkPlusFromMs = grantArkPlus ? (arkPlusExistingMs > now ? arkPlusExistingMs : now) : null
+  const circleFromMs = grantCircle ? (circleExistingMs > now ? circleExistingMs : now) : null
+
+  let grant: {
+    scUserId: number | null
+    scSubscriptionId: number | null
+    arkPlusEndsAt: string | null
+    circleEndsAt: string | null
+  } = { scUserId: null, scSubscriptionId: null, arkPlusEndsAt: null, circleEndsAt: null }
+  if (grantArkPlus || grantCircle) {
+    grant = await activator.activateGiftForRecipient({
+      email,
+      name,
+      auth0Sub,
+      term,
+      arkPlusFromMs,
+      circleFromMs,
+    })
   }
 
-  // Grant a gift term. If the recipient already holds an UNEXPIRED gift term,
-  // stack the new term onto the remaining time (start the clock at the current
-  // expiry) rather than resetting it to now and dropping the balance.
-  const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
-  const existingGiftMs = existing?.gift_expires_at
-    ? Date.parse(existing.gift_expires_at)
-    : 0
-  const fromMs = existingGiftMs > Date.now() ? existingGiftMs : Date.now()
-  const grant = await activator.activateGiftForRecipient({
-    email,
-    name,
-    tier: gift.tier,
-    term,
-    auth0Sub,
-    fromMs,
-  })
+  // The row's tier column: keep the subscribed tier for a paid-sub row (liveAxes
+  // unions it with the gift axes at read time); for a gift-only row, derive from
+  // all live gift axes after this grant. A null per-axis expiry below is
+  // preserved by the upsert's coalesce, so a single-axis gift never clears the
+  // other axis's term or a live subscription's fields.
+  let rowTier: Tier
+  if (hasPaidSub) {
+    rowTier = existing.tier
+  } else {
+    const arkLive = grant.arkPlusEndsAt != null || arkPlusExistingMs > now
+    const circleLive = grant.circleEndsAt != null || circleExistingMs > now
+    rowTier = tierFromEntitlements({ arkPlus: arkLive, circle: circleLive })
+  }
+
   await upsertMembership(sql, {
     auth0_sub: auth0Sub,
-    stripe_customer_id: null,
-    stripe_subscription_id: null,
-    sc_user_id: grant.scUserId,
-    tier: gift.tier,
-    status: 'active',
-    plan: gift.plan,
-    amount_cents: gift.amount_cents,
-    current_period_end: null,
-    cancel_at: null,
-    gift_expires_at: grant.endsAt,
+    stripe_customer_id: existing?.stripe_customer_id ?? null,
+    stripe_subscription_id: existing?.stripe_subscription_id ?? null,
+    sc_user_id: grant.scUserId, // coalesced with any existing in the upsert
+    tier: rowTier,
+    status: hasPaidSub ? existing.status : 'active',
+    plan: hasPaidSub ? existing.plan : gift.plan,
+    amount_cents: hasPaidSub ? existing.amount_cents : gift.amount_cents,
+    current_period_end: existing?.current_period_end ?? null,
+    cancel_at: existing?.cancel_at ?? null,
+    ark_plus_gift_expires_at: grant.arkPlusEndsAt,
+    circle_gift_expires_at: grant.circleEndsAt,
   })
-  // Mirror the entitlement signals (Auth0 shim + Circle group) and the Beehiiv
-  // premium letter (arkPlus axis only).
-  await syncEntitlement(env, email, gift.tier)
-  if (deriveEntitlements(gift.tier).arkPlus) {
+
+  // Paid-sub overlap credit (D5): the gift amount minus the standalone gift price
+  // of each GRANTED axis for the term, in the gift's currency, clamped to
+  // [0, amount]. All covered axes overlapping a paid sub → nothing granted →
+  // full amount credited.
+  let creditApplied = false
+  if ((creditArkPlus || creditCircle) && hasPaidSub && gift.amount_cents != null) {
+    const raw = (gift.currency ?? 'usd').toLowerCase()
+    const currency = isSupportedCurrency(raw) ? raw : 'usd'
+    let grantedValue = 0
+    if (grantArkPlus) grantedValue += (await resolveGiftPrice(stripe, 'ark-plus', term)).floors[currency]
+    if (grantCircle) grantedValue += (await resolveGiftPrice(stripe, 'circle', term)).floors[currency]
+    const creditCents = Math.max(0, Math.min(gift.amount_cents, gift.amount_cents - grantedValue))
+    if (creditCents > 0) {
+      try {
+        await applyGiftAsCredit(stripe, existing, creditCents, currency)
+        creditApplied = true
+      } catch (err) {
+        console.error('[gift] credit apply failed:', err)
+      }
+    }
+  }
+
+  // Mirror the Circle access group + Beehiiv premium letter to the recipient's
+  // FULL effective tier (subscription ∪ live gift axes) — never just the gift
+  // tier, or an Ark+ gift would wrongly strip a Circle they hold via their sub.
+  const finalArkPlus = subAxes.arkPlus || grant.arkPlusEndsAt != null || arkPlusExistingMs > now
+  const finalCircle = subAxes.circle || grant.circleEndsAt != null || circleExistingMs > now
+  const effectiveTier = tierFromEntitlements({ arkPlus: finalArkPlus, circle: finalCircle })
+  await syncEntitlement(env, email, effectiveTier)
+  if (finalArkPlus) {
     await tryPush('ensure premium (gift redeem)', () =>
       ensureSubscribedWithPremium({ env, sql }, email),
     )
   }
-  // Flip last: the grant is idempotent, so a concurrent redeem is harmless.
-  await markGiftRedeemed(sql, token, auth0Sub)
-  return { ok: true, applied: 'membership', expiresAt: grant.endsAt }
+
+  const grantedAny = grant.arkPlusEndsAt != null || grant.circleEndsAt != null
+  const applied = grantedAny && creditApplied ? 'mixed' : creditApplied ? 'credit' : 'membership'
+  const expiresAt = grant.arkPlusEndsAt ?? grant.circleEndsAt ?? undefined
+  return { ok: true, applied, expiresAt }
 }
 
-// Apply an unwasted gift as Stripe customer-balance credit on the recipient's
-// existing customer — auto-drawn against future invoices like a voucher (§7 #8).
-// Credited in the active subscription's currency; gift amounts are USD today, so
-// a non-USD sub is an FX approximation (full conversion deferred).
+// Apply an unwasted gift portion as Stripe customer-balance credit on the
+// recipient's existing customer — auto-drawn against future invoices like a
+// voucher (D5). Credited in the gift's currency (its amount_cents denomination);
+// a recipient whose subscription bills in a different currency is an FX
+// approximation, and the balance draws only same-currency invoices.
 async function applyGiftAsCredit(
   stripe: Stripe,
   membership: MembershipRow,
-  gift: GiftRow,
+  amountCents: number,
+  currency: string,
 ): Promise<void> {
-  if (!membership.stripe_customer_id || gift.amount_cents == null) return
-  let currency = 'usd'
-  if (membership.stripe_subscription_id) {
-    try {
-      const sub = await stripe.subscriptions.retrieve(membership.stripe_subscription_id)
-      currency = sub.currency ?? 'usd'
-    } catch {
-      // Fall back to USD — a credit still lands, just possibly mis-denominated.
-    }
-  }
+  if (!membership.stripe_customer_id || amountCents <= 0) return
   await stripe.customers.createBalanceTransaction(membership.stripe_customer_id, {
-    amount: -gift.amount_cents, // negative = credit toward future invoices
+    amount: -amountCents, // negative = credit toward future invoices
     currency,
-    description: `Ark+ gift credit (${gift.plan ?? 'gift'})`,
+    description: 'Ark gift credit',
   })
 }

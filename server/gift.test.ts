@@ -130,6 +130,22 @@ class FakeStripe {
       return { data: availableCoupons, has_more: false }
     },
   }
+  prices = {
+    // The gift checkout resolves the one-time gift Price by lookup_key. Return a
+    // canned price whose USD unit_amount matches the term ($48 6mo / $80 1yr) and
+    // carries currency_options for EVERY supported currency (resolveGiftPrice
+    // throws on a missing one).
+    list: async (args: { lookup_keys?: string[] }) => {
+      stripeCalls.push({ method: 'prices.list', args: [args] })
+      const key = args.lookup_keys?.[0] ?? ''
+      const unit = key.endsWith('_6mo') ? 4800 : 8000
+      const currency_options: Record<string, { unit_amount: number }> = {}
+      for (const c of SUPPORTED_CURRENCIES) currency_options[c] = { unit_amount: unit }
+      return {
+        data: [{ id: `price_${key}`, product: 'prod_gift', unit_amount: unit, currency_options }],
+      }
+    },
+  }
 }
 
 mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
@@ -138,6 +154,7 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 import { devApiPlugin } from './dev-api'
 import { giftTokenForPaymentIntent } from './routes/stripe/webhook'
 import { signGiftClaimToken, verifyGiftClaimToken } from './lib/session'
+import { SUPPORTED_CURRENCIES } from './lib/pricing'
 
 // ---------------------------------------------------------------------------
 // Plugin harness
@@ -376,18 +393,11 @@ type SessionArgs = {
   mode: string
   ui_mode: string
   customer: string
-  adaptive_pricing: { enabled: boolean }
+  currency: string
+  adaptive_pricing?: { enabled: boolean }
   automatic_tax: { enabled: boolean }
   customer_update: { address: string }
-  line_items: Array<{
-    quantity: number
-    price_data: {
-      currency: string
-      unit_amount: number
-      tax_behavior: string
-      product_data: { name: string }
-    }
-  }>
+  line_items: Array<{ quantity: number; price: string }>
   payment_intent_data: {
     receipt_email: string
     description: string
@@ -403,7 +413,7 @@ function sessionCreateArgs(): SessionArgs {
 }
 
 describe('POST /api/gift/create-checkout — happy paths', () => {
-  test('1yr: creates new Stripe customer + payment-mode Session with $80 source price, Adaptive Pricing, and full PI metadata', async () => {
+  test('1yr: creates new Stripe customer + payment-mode Session with the $80 gift Price (USD), per-currency, and full PI metadata', async () => {
     const h = getHandler(CREATE_PATH)
     const req = makeReq({
       body: {
@@ -436,8 +446,7 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     const createCustomerCall = stripeCalls.find((c) => c.method === 'customers.create')
     expect(createCustomerCall).toBeDefined()
 
-    // No bare PaymentIntent — gifts route through a Checkout Session so
-    // Adaptive Pricing can localize the currency.
+    // No bare PaymentIntent — gifts route through a Checkout Session.
     expect(stripeCalls.some((c) => c.method === 'paymentIntents.create')).toBe(false)
 
     // Verify Checkout Session create args
@@ -445,23 +454,28 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     expect(args.mode).toBe('payment')
     expect(args.ui_mode).toBe('elements')
     expect(args.customer).toBe('cus_new')
-    expect(args.adaptive_pricing.enabled).toBe(true)
+    // Per-currency model replaced Adaptive Pricing: no adaptive_pricing flag; the
+    // session's currency selects the gift Price's currency_options amount.
+    expect(args.adaptive_pricing).toBeUndefined()
+    expect(args.currency).toBe('usd')
     // Stripe Tax on the one-time gift session, with the address saved back to
     // the pre-set customer (feeds the tax jurisdiction).
     expect(args.automatic_tax).toEqual({ enabled: true })
     expect(args.customer_update).toEqual({ address: 'auto' })
     expect(args.line_items[0].quantity).toBe(1)
-    expect(args.line_items[0].price_data.currency).toBe('usd')
-    expect(args.line_items[0].price_data.unit_amount).toBe(8000)
-    // Exclusive so Stripe Tax adds tax on top; required under automatic tax.
-    expect(args.line_items[0].price_data.tax_behavior).toBe('exclusive')
+    // The persistent one-time gift Price, resolved by lookup_key (default tier
+    // Ark+, 1yr term → gift_ark_plus_1yr).
+    expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
 
     // Gift metadata lives on the PaymentIntent (payment_intent_data) so the
     // existing payment_intent.succeeded webhook activates it unchanged.
     const pid = args.payment_intent_data
     expect(pid.receipt_email).toBe('giver@example.com')
     expect(pid.metadata.kind).toBe('gift')
+    expect(pid.metadata.tier).toBe('ark-plus')
     expect(pid.metadata.term).toBe('1yr')
+    expect(pid.metadata.currency).toBe('usd')
+    expect(pid.metadata.amount_cents).toBe('8000')
     expect(pid.metadata.giver_email).toBe('giver@example.com')
     expect(pid.metadata.giver_name).toBe('Bob')
     expect(pid.metadata.recipient_email).toBe('recip@example.com')
@@ -472,7 +486,7 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     expect(args.metadata.giver_email).toBe('giver@example.com')
   })
 
-  test('6mo: source price is $48', async () => {
+  test('6mo: resolves the $48 gift Price', async () => {
     const h = getHandler(CREATE_PATH)
     const req = makeReq({
       body: {
@@ -485,8 +499,27 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(200)
     const args = sessionCreateArgs()
-    expect(args.line_items[0].price_data.unit_amount).toBe(4800)
+    expect(args.line_items[0].price).toBe('price_gift_ark_plus_6mo')
     expect(args.payment_intent_data.metadata.term).toBe('6mo')
+    expect(args.payment_intent_data.metadata.amount_cents).toBe('4800')
+  })
+
+  test('tier param routes to the Bundle gift Price', async () => {
+    const h = getHandler(CREATE_PATH)
+    const req = makeReq({
+      body: {
+        giver_email: 'g@x.com',
+        recipient_email: 'r@x.com',
+        tier: 'bundle',
+        term: '1yr',
+      },
+    })
+    const res = makeRes()
+    await runHandler(h, req, res)
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs()
+    expect(args.line_items[0].price).toBe('price_gift_bundle_1yr')
+    expect(args.payment_intent_data.metadata.tier).toBe('bundle')
   })
 
   test('reuses existing Stripe customer by email (no customers.create)', async () => {
@@ -579,8 +612,9 @@ describe('POST /api/gift/create-checkout — promo auto-apply', () => {
     expect(res.statusCode).toBe(200)
     const args = sessionCreateArgs() as SessionWithDiscounts
     expect(args.discounts).toEqual([{ coupon: 'coupon_pct20' }])
-    // Source price is still the full $80 — Stripe applies the discount.
-    expect(args.line_items[0].price_data.unit_amount).toBe(8000)
+    // Source price is still the full $80 gift Price — Stripe applies the discount.
+    expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
+    expect(args.payment_intent_data.metadata.amount_cents).toBe('8000')
   })
 
   test('no eligible coupon → no `discounts` field on the session', async () => {
@@ -640,7 +674,7 @@ describe('POST /api/gift/create-checkout — promo auto-apply', () => {
     expect(res.statusCode).toBe(200)
     const args = sessionCreateArgs() as SessionWithDiscounts
     expect(args.discounts).toBeUndefined()
-    expect(args.line_items[0].price_data.unit_amount).toBe(8000)
+    expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
   })
 })
 

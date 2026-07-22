@@ -3,26 +3,29 @@ import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
   BillingAddressElement,
   CheckoutElementsProvider,
-  CurrencySelectorElement,
   PaymentElement,
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
 import { useNavigate } from "@tanstack/react-router";
 import { Modal } from "./Modal";
 import { LoadingRow } from "./Spinner";
+import { CurrencySelect } from "./CurrencySelect";
 import { modalPrimaryCta, modalSecondaryCta } from "../lib/modalCta";
 import { useTheme } from "../lib/theme";
+import { browserCountry, type PricingResponse } from "../lib/currency";
 import {
   createGiftCheckout,
   fetchGiftStatus,
   GIFT_LABEL,
+  GIFT_TIER_LABEL,
   type GiftInput,
 } from "../lib/gift";
 import { trackEvent } from "../lib/analytics";
 
 type Step =
-  // The Checkout Session is created the moment the modal opens so the giver's
-  // localized price (Adaptive Pricing) shows on the first screen.
+  // The Checkout Session is created once the presentment currency is resolved
+  // (geo-detected default, changeable), so the giver's localized price shows on
+  // the first screen. Changing currency recreates the Session.
   | { kind: "creating" }
   | { kind: "ready"; clientSecret: string; checkoutSessionId: string }
   | { kind: "activating" }
@@ -77,6 +80,12 @@ export function GiftCheckoutModal({
   onClose: () => void;
 }) {
   const [step, setStep] = useState<Step>({ kind: "creating" });
+  // Presentment currency: seeded from the geo-detected default, changeable via
+  // the selector. `currencyReady` gates Session creation until that default has
+  // resolved (or failed → USD) so we don't mint a throwaway USD Session first.
+  const [currency, setCurrency] = useState<string>("usd");
+  const [currencies, setCurrencies] = useState<string[] | null>(null);
+  const [currencyReady, setCurrencyReady] = useState(false);
   const startedFor = useRef<string | null>(null);
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -84,22 +93,55 @@ export function GiftCheckoutModal({
   const handleClose = useCallback(() => {
     startedFor.current = null;
     setStep({ kind: "creating" });
+    setCurrencyReady(false);
     onClose();
   }, [onClose]);
 
-  // Kick off the Checkout Session creation once per open. Keyed on the input
-  // identity so re-opening with a different gift restarts cleanly.
-  const inputKey = input
-    ? `${input.giverEmail}|${input.recipientEmail}|${input.term}`
-    : null;
+  // Resolve the presentment currency once per open: /api/pricing carries a
+  // geo-detected default and the supported-currency list (Stripe is the source
+  // of truth). A failure leaves the default USD. Either way, flip currencyReady
+  // so Session creation proceeds.
   useEffect(() => {
-    if (!open || !input || !inputKey) return;
-    if (startedFor.current === inputKey) return;
-    startedFor.current = inputKey;
-    // Intentional: re-opening with a different gift must reset the prior
-    // success/error state back to "creating" before we kick off the new
-    // Session. Setting this in a callback would flash the stale state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const hint = browserCountry();
+        const res = await fetch(
+          `/api/pricing${hint ? `?locale_hint=${encodeURIComponent(hint)}` : ""}`,
+        );
+        if (res.ok) {
+          const data = (await res.json().catch(() => null)) as PricingResponse | null;
+          if (!cancelled && data?.currencies) {
+            setCurrencies(data.currencies);
+            if (typeof data.default_currency === "string") setCurrency(data.default_currency);
+          }
+        }
+      } catch {
+        /* non-fatal: gift is presented in USD */
+      } finally {
+        if (!cancelled) setCurrencyReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  // Kick off (or recreate) the Checkout Session. Keyed on the gift identity AND
+  // the currency, so changing currency mints a fresh Session charging the new
+  // currency_options amount. Waits for currencyReady so the first Session uses
+  // the geo default, not a throwaway USD one.
+  const inputKey = input
+    ? `${input.giverEmail}|${input.recipientEmail}|${input.tier}|${input.term}`
+    : null;
+  const sessionKey = inputKey ? `${inputKey}|${currency}` : null;
+  useEffect(() => {
+    if (!open || !input || !sessionKey || !currencyReady) return;
+    if (startedFor.current === sessionKey) return;
+    startedFor.current = sessionKey;
+    // Intentional: recreating for a new gift/currency must reset the prior
+    // success/error state back to "creating" before we kick off the new Session.
     setStep({ kind: "creating" });
     let cancelled = false;
     (async () => {
@@ -112,10 +154,11 @@ export function GiftCheckoutModal({
         }
         return;
       }
-      const result = await createGiftCheckout(input);
+      const result = await createGiftCheckout({ ...input, currency });
       if (cancelled) return;
       if (!result.ok) {
         trackEvent("gift_checkout_failed", {
+          tier: input.tier,
           term: input.term,
           stage: "create_session",
           reason: result.error,
@@ -132,7 +175,7 @@ export function GiftCheckoutModal({
     return () => {
       cancelled = true;
     };
-  }, [open, input, inputKey]);
+  }, [open, input, sessionKey, currency, currencyReady]);
 
   const stripePromiseValue = getStripe();
 
@@ -144,7 +187,9 @@ export function GiftCheckoutModal({
       labelledBy="gift-title"
       describedBy="gift-desc"
     >
-      <p id="gift-desc" className="eyebrow">Gift · Inside Call Me Back</p>
+      <p id="gift-desc" className="eyebrow">
+        {input ? `Gift · ${GIFT_TIER_LABEL[input.tier]} · ${GIFT_LABEL[input.term]}` : "Gift"}
+      </p>
 
       {input ? (
         <p className="mt-3 text-body-sm break-words">
@@ -174,34 +219,51 @@ export function GiftCheckoutModal({
       ) : null}
 
       {step.kind === "ready" && stripePromiseValue && input ? (
-        <CheckoutElementsProvider
-          stripe={stripePromiseValue}
-          options={{
-            clientSecret: step.clientSecret,
-            elementsOptions: {
-              appearance: {
-                theme: theme === "light" ? "stripe" : "night",
-                labels: "floating",
+        <>
+          {/* Currency lives OUTSIDE the Elements provider: changing it recreates
+              the Session (new currency_options amount), so the picker can't live
+              on the provider it tears down. */}
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <span className="eyebrow text-fg-muted">Pay in</span>
+            <CurrencySelect
+              value={currency}
+              options={currencies ?? [currency]}
+              disabled={!currencies}
+              onChange={setCurrency}
+            />
+          </div>
+          <CheckoutElementsProvider
+            stripe={stripePromiseValue}
+            options={{
+              clientSecret: step.clientSecret,
+              elementsOptions: {
+                appearance: {
+                  theme: theme === "light" ? "stripe" : "night",
+                  labels: "floating",
+                },
               },
-            },
-            // Mark this integration as ready for Adaptive Pricing; Stripe then
-            // localizes the currency and powers the Currency Selector Element.
-            adaptivePricing: { allowed: true },
-          }}
-        >
-          <GiftPaymentForm
-            input={input}
-            checkoutSessionId={step.checkoutSessionId}
-            onError={(message) => setStep({ kind: "error", message })}
-            onActivating={() => setStep({ kind: "activating" })}
-            onProcessing={() => setStep({ kind: "processing" })}
-            onDone={() => {
-              trackEvent("gift_checkout_succeeded", { term: input.term });
-              handleClose();
-              void navigate({ to: "/", search: { gift: "complete" } });
+              // Currency is fixed on the Session server-side (from
+              // currency_options) — no Adaptive Pricing; the giver chose the
+              // currency above before the Session was created.
             }}
-          />
-        </CheckoutElementsProvider>
+          >
+            <GiftPaymentForm
+              input={input}
+              checkoutSessionId={step.checkoutSessionId}
+              onError={(message) => setStep({ kind: "error", message })}
+              onActivating={() => setStep({ kind: "activating" })}
+              onProcessing={() => setStep({ kind: "processing" })}
+              onDone={() => {
+                trackEvent("gift_checkout_succeeded", {
+                  tier: input.tier,
+                  term: input.term,
+                });
+                handleClose();
+                void navigate({ to: "/", search: { gift: "complete" } });
+              }}
+            />
+          </CheckoutElementsProvider>
+        </>
       ) : null}
 
       {step.kind === "activating" ? (
@@ -311,7 +373,7 @@ function GiftPaymentForm({
     if (submittedRef.current) return;
     submittedRef.current = true;
     setSubmitting(true);
-    trackEvent("gift_payment_submitted", { term: input.term });
+    trackEvent("gift_payment_submitted", { tier: input.tier, term: input.term });
 
     // redirect: 'if_required' keeps card payments in the modal; methods that
     // need an off-site step (e.g. 3DS) use the session's return_url.
@@ -322,6 +384,7 @@ function GiftPaymentForm({
       submittedRef.current = false;
       setSubmitting(false);
       trackEvent("gift_checkout_failed", {
+        tier: input.tier,
         term: input.term,
         stage: "payment",
         reason: result.error.message ?? "payment_failed",
@@ -351,12 +414,6 @@ function GiftPaymentForm({
         </span>
       </h2>
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
-        <div>
-          <span className="eyebrow text-fg-muted">Pay in</span>
-          <div className="mt-2">
-            <CurrencySelectorElement />
-          </div>
-        </div>
         <PaymentElement />
         {/* Billing address powers Stripe Tax: the calculated tax updates the
             totals below as soon as a usable address is entered. */}

@@ -23,7 +23,11 @@ export type MemberDirectoryEntry = {
   activated: boolean; // ≥1 currently-activated private feed
   currentPeriodEnd: string | null;
   cancelAt: string | null;
-  giftExpiresAt: string | null;
+  // Per-axis gift expiries (D4): a gift extends a specific entitlement axis, so
+  // an Ark+ gift and a Community gift can run concurrently with independent end
+  // dates. Null on either axis = no gift term for it.
+  arkPlusGiftExpiresAt: string | null;
+  circleGiftExpiresAt: string | null;
 };
 
 export type MemberDirectoryFilter = {

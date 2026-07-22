@@ -28,6 +28,16 @@ export function priceLookupKey(tier: PricedTier, plan: Plan): string {
   return `${LOOKUP_PREFIX[tier]}_${plan}`
 }
 
+// Gifts are one-time SKUs on their own catalog products (scripts/stripe-catalog.ts
+// GIFT_CATALOG), lookup-keyed `gift_<prefix>_<term>` — independent of the
+// recurring subscription prices. Prices are $48/$80 (Ark+, Community) and
+// $75/$130 (Bundle), each with the same 40-currency `currency_options`.
+export type GiftTerm = '6mo' | '1yr'
+
+export function giftPriceLookupKey(tier: PricedTier, term: GiftTerm): string {
+  return `gift_${LOOKUP_PREFIX[tier]}_${term}`
+}
+
 // The currencies the catalog carries (USD base + `currency_options` for the
 // rest). Checkout presents one of these; anything else falls back to USD. These
 // mirror the localized price table (Stripe purchasing-power presets, column 1).
@@ -84,7 +94,29 @@ export async function resolveCatalogPrice(
   tier: PricedTier,
   plan: Plan,
 ): Promise<CatalogPrice> {
-  const key = priceLookupKey(tier, plan)
+  return resolvePriceByLookupKey(stripe, priceLookupKey(tier, plan))
+}
+
+// The one-time gift price for a tier+term, addressed by its `gift_<prefix>_<term>`
+// lookup key. Same resolved shape as a subscription price (priceId, productId,
+// per-currency floors) with the same loud failure on a missing/mis-provisioned
+// currency — gift checkout uses `priceId` directly (fixed amount, not PWYC).
+export async function resolveGiftPrice(
+  stripe: Stripe,
+  tier: PricedTier,
+  term: GiftTerm,
+): Promise<CatalogPrice> {
+  return resolvePriceByLookupKey(stripe, giftPriceLookupKey(tier, term))
+}
+
+// Resolve any catalog price by lookup_key into ids + per-currency floors, cached
+// by key. Throws if no active price carries the key, it has no `unit_amount`, or
+// a supported currency is missing from `currency_options` (so a mis-provisioned
+// catalog fails loudly rather than silently pricing a currency at the USD number).
+async function resolvePriceByLookupKey(
+  stripe: Stripe,
+  key: string,
+): Promise<CatalogPrice> {
   const now = Date.now()
   const hit = cache.get(key)
   if (hit && now - hit.at < PRICE_TTL_MS) return hit.price

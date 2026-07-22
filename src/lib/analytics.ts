@@ -101,13 +101,18 @@ interface EventMap {
   newsletter_subscribed: { slug: string; result: 'ok' | 'error' }
   login_initiated: { intent: 'login' | 'signup' }
   // Gift checkout mirrors the Tier 1 funnel shape (opened → payment → result).
-  gift_checkout_opened: { term: string }
-  gift_payment_submitted: { term: string }
-  gift_checkout_succeeded: { term: string }
-  gift_checkout_failed: { term: string; stage: 'create_session' | 'payment'; reason?: string }
+  gift_checkout_opened: { tier?: Tier; term: string }
+  gift_payment_submitted: { tier?: Tier; term: string }
+  gift_checkout_succeeded: { tier?: Tier; term: string }
+  gift_checkout_failed: {
+    tier?: Tier
+    term: string
+    stage: 'create_session' | 'payment'
+    reason?: string
+  }
   // Recipient side of the gift funnel: the claim landed and access was granted
   // (a new/extended membership term) or applied as account credit.
-  gift_redeemed: { applied: 'membership' | 'credit' }
+  gift_redeemed: { applied: 'membership' | 'credit' | 'mixed' }
   // Private-feed activation: which app a member picks, and the terminal
   // hand-off action (open deep link / copy URL / text themselves the link).
   feed_app_selected: { app: string }

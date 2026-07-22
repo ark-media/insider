@@ -37,14 +37,11 @@ type Env = Record<string, string>
 type Plan = 'monthly' | 'yearly'
 
 // Gift purchases — one-time Stripe charge, fixed-term SC subscription
-// stamped with ends_at. Term + price live here so the activator owns the
-// gift policy in one place.
+// stamped with ends_at. Term-length policy lives here so the activator owns it;
+// the charge AMOUNT now comes from the Stripe catalog gift Price
+// (server/lib/pricing.ts resolveGiftPrice), not a hardcoded USD table.
 export type GiftTerm = '6mo' | '1yr'
 
-export const GIFT_PRICES_CENTS: Record<GiftTerm, number> = {
-  '6mo': 4800,
-  '1yr': 8000,
-}
 export const GIFT_TERM_DAYS: Record<GiftTerm, number> = {
   '6mo': 182,
   '1yr': 365,
@@ -74,21 +71,28 @@ export type Activator = {
     sub: Stripe.Subscription,
     tier: Tier,
   ) => Promise<MembershipProvisionResult>
-  // Grant a redeemed gift to the signed-in recipient (routes/gift.ts). SC only
-  // for arkPlus tiers, Circle only for circle; the entitlement runs for the gift
-  // term from redemption. Returns the SC ids + the computed expiry for the
-  // membership row.
+  // Grant a redeemed gift to the signed-in recipient (routes/gift.ts), one axis
+  // at a time (D4): the redeem flow decides WHICH axes this gift extends (a
+  // Bundle gift extends both; a gift overlapping a paid sub extends only the
+  // axis the sub lacks). SC is provisioned for the arkPlus axis, Circle for the
+  // circle axis. Returns the SC ids + the per-axis expiry for the membership row.
   activateGiftForRecipient: (opts: {
     email: string
     name?: string
-    tier: Tier
-    term: GiftTerm
     auth0Sub: string | null
-    // Epoch ms the term is measured from. Defaults to now; the redeem flow passes
-    // an existing unexpired gift's expiry so a stacked gift extends rather than
-    // resets. The SC gift sub's ends_at and the returned endsAt both use it.
-    fromMs?: number
-  }) => Promise<{ scUserId: number | null; scSubscriptionId: number | null; endsAt: string }>
+    term: GiftTerm
+    // Epoch ms each axis's term is measured from — null means "don't grant this
+    // axis". The redeem flow passes an existing unexpired gift expiry so a
+    // stacked same-axis gift extends rather than resets. The SC gift sub's
+    // ends_at (arkPlus) and the returned per-axis endsAt both use these.
+    arkPlusFromMs: number | null
+    circleFromMs: number | null
+  }) => Promise<{
+    scUserId: number | null
+    scSubscriptionId: number | null
+    arkPlusEndsAt: string | null
+    circleEndsAt: string | null
+  }>
 }
 
 // SC rejects a second active subscription per user with HTTP 409. We translate
@@ -378,20 +382,24 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
   const activateGiftForRecipient = async (opts: {
     email: string
     name?: string
-    tier: Tier
-    term: GiftTerm
     auth0Sub: string | null
-    fromMs?: number
-  }): Promise<{ scUserId: number | null; scSubscriptionId: number | null; endsAt: string }> => {
-    const entitlements = deriveEntitlements(opts.tier)
-    const fromMs = opts.fromMs ?? Date.now()
-    const endsAt = new Date(
-      fromMs + GIFT_TERM_DAYS[opts.term] * 24 * 60 * 60 * 1000,
-    ).toISOString()
-
+    term: GiftTerm
+    arkPlusFromMs: number | null
+    circleFromMs: number | null
+  }): Promise<{
+    scUserId: number | null
+    scSubscriptionId: number | null
+    arkPlusEndsAt: string | null
+    circleEndsAt: string | null
+  }> => {
+    const termMs = GIFT_TERM_DAYS[opts.term] * 24 * 60 * 60 * 1000
     let scUserId: number | null = null
     let scSubscriptionId: number | null = null
-    if (entitlements.arkPlus) {
+    let arkPlusEndsAt: string | null = null
+    let circleEndsAt: string | null = null
+
+    if (opts.arkPlusFromMs != null) {
+      arkPlusEndsAt = new Date(opts.arkPlusFromMs + termMs).toISOString()
       const sc = createScClient(env)
       const user = await findOrCreateScUser(sc, opts.email, opts.name)
       const scPriceId = resolveScGiftPriceId(opts.term)
@@ -400,16 +408,17 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       const created = await sc.call<{ subscription: { id: number } }>(
         'POST',
         '/subscriptions',
-        { user_id: user.id, subscription_price_id: Number(scPriceId), ends_at: endsAt },
+        { user_id: user.id, subscription_price_id: Number(scPriceId), ends_at: arkPlusEndsAt },
         { idempotencyKey: `gift_redeem_${opts.auth0Sub ?? opts.email}_${opts.term}` },
       )
       scUserId = user.id
       scSubscriptionId = created.subscription.id
     }
-    if (entitlements.circle) {
+    if (opts.circleFromMs != null) {
+      circleEndsAt = new Date(opts.circleFromMs + termMs).toISOString()
       await provisionCircleMember(env, opts.email, opts.name, opts.auth0Sub)
     }
-    return { scUserId, scSubscriptionId, endsAt }
+    return { scUserId, scSubscriptionId, arkPlusEndsAt, circleEndsAt }
   }
 
   return {

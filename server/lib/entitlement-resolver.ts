@@ -14,7 +14,9 @@ import type { IncomingMessage } from 'node:http'
 import type Stripe from 'stripe'
 import {
   deriveEntitlements,
+  liveAxes,
   membershipIsLive,
+  tierFromEntitlements,
   type Entitlements,
   type Tier,
 } from '../entitlement.js'
@@ -105,10 +107,13 @@ export async function resolveMembershipForIdentity(
   if (identity.sub && env.DATABASE_URL) {
     const row = await getMembershipByAuth0Sub(getDb(env), identity.sub)
     if (row && membershipIsLive(row)) {
+      // Effective tier is the UNION of the subscription and any live gift axes
+      // (D4): an Ark+ subscriber with a live Community gift resolves to bundle.
+      const axes = liveAxes(row)
       return {
         identity,
-        tier: row.tier,
-        entitlements: deriveEntitlements(row.tier),
+        tier: tierFromEntitlements(axes),
+        entitlements: axes,
         row,
         scUserId: row.sc_user_id,
         origin: 'neon',
@@ -126,10 +131,11 @@ export async function resolveMembershipForIdentity(
     if (opts.stripe && env.DATABASE_URL) {
       const row = await membershipByEmailViaStripe(opts.stripe, env, identity.email)
       if (row) {
+        const axes = liveAxes(row)
         return {
           identity,
-          tier: row.tier,
-          entitlements: deriveEntitlements(row.tier),
+          tier: tierFromEntitlements(axes),
+          entitlements: axes,
           row,
           scUserId: row.sc_user_id,
           origin: 'neon',

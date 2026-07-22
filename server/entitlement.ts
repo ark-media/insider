@@ -383,17 +383,59 @@ export type ReconcileSummary = {
   errors: number
 }
 
-// A live membership row grants its tier — unless it's a gift term that elapsed.
-// Subscription rows in dunning (past_due / unpaid) still grant: Stripe retries
-// within the grace window before a later .deleted revokes. The single predicate
-// behind both the resolver's per-request gate and the reconciler's keep-set.
+// The tier a set of live axes adds up to — the inverse of deriveEntitlements.
+// Effective tier is DERIVED from which axes are live (gift stacking, D4), never
+// stored: an Ark+ sub plus a live Community gift is a bundle-equivalent member.
+export function tierFromEntitlements(ent: Entitlements): Tier {
+  if (ent.arkPlus && ent.circle) return 'bundle'
+  if (ent.arkPlus) return 'ark-plus'
+  if (ent.circle) return 'circle'
+  return 'free'
+}
+
+// The entitlement axes a membership row grants RIGHT NOW — the union of:
+//   - base axes: a row with a live subscription grants its tier's axes (dunning
+//     rows still grant; a full cancel deletes the row). A row with NO
+//     subscription and NO gift term is a comp / staff / legacy grant — perpetual
+//     access to its tier (matching the pre-per-axis "non-free tier = live").
+//   - gift axes: each per-axis gift expiry still in the future grants that axis.
+// A gift-only row has no subscription and at least one gift expiry, so its axes
+// come purely from the two gift expiries. This is the single predicate behind the
+// resolver's per-request gate and the reconciler's keep-set. Absence of a row =
+// free (no axes).
+export function liveAxes(row: {
+  tier: Tier
+  stripe_subscription_id: string | null
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
+}): Entitlements {
+  const now = Date.now()
+  const hasGift =
+    row.ark_plus_gift_expires_at != null || row.circle_gift_expires_at != null
+  // Subscription row → its tier; comp/staff row (no sub, no gift) → perpetual its
+  // tier; gift-only row → no base axes (gift expiries decide below).
+  const base =
+    row.stripe_subscription_id != null || !hasGift ? deriveEntitlements(row.tier) : GRANTS.free
+  const giftArkPlus =
+    row.ark_plus_gift_expires_at != null && Date.parse(row.ark_plus_gift_expires_at) > now
+  const giftCircle =
+    row.circle_gift_expires_at != null && Date.parse(row.circle_gift_expires_at) > now
+  return {
+    arkPlus: base.arkPlus || giftArkPlus,
+    circle: base.circle || giftCircle,
+  }
+}
+
+// A membership row is live when it still grants at least one axis. Behind both
+// the resolver's per-request gate and the reconciler's keep-set.
 export function membershipIsLive(row: {
   tier: Tier
-  gift_expires_at: string | null
+  stripe_subscription_id: string | null
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
 }): boolean {
-  if (row.tier === 'free') return false
-  if (row.gift_expires_at) return Date.parse(row.gift_expires_at) > Date.now()
-  return true
+  const axes = liveAxes(row)
+  return axes.arkPlus || axes.circle
 }
 
 export async function reconcileEntitlements(
@@ -424,7 +466,7 @@ export async function reconcileEntitlements(
   // rather than risk revoking a paid feed we simply couldn't key.
   let arkPlusMissingScId = false
   for (const r of live) {
-    const ent = deriveEntitlements(r.tier)
+    const ent = liveAxes(r)
     if (ent.arkPlus) {
       if (r.sc_user_id != null) arkPlusScUserIds.add(r.sc_user_id)
       else arkPlusMissingScId = true

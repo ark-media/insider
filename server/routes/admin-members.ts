@@ -94,7 +94,8 @@ function toEntry(
     activated: info.email != null && activatedEmails.has(normalizeEmail(info.email)),
     currentPeriodEnd: row.current_period_end,
     cancelAt: row.cancel_at,
-    giftExpiresAt: row.gift_expires_at,
+    arkPlusGiftExpiresAt: row.ark_plus_gift_expires_at,
+    circleGiftExpiresAt: row.circle_gift_expires_at,
   }
 }
 
@@ -161,7 +162,8 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
                 info.email != null && activatedEmails.has(normalizeEmail(info.email)),
               currentPeriodEnd: null,
               cancelAt: null,
-              giftExpiresAt: null,
+              arkPlusGiftExpiresAt: null,
+              circleGiftExpiresAt: null,
             }
           })
           const members = entries
