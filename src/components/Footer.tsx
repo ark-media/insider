@@ -39,6 +39,7 @@ const sections: FooterSection[] = [
     title: "Ark+",
     links: [
       { label: "Become a member", to: "/plus" },
+      { label: "Pricing", to: "/pricing" },
       { label: "Gift Ark+", to: "/plus/gift" },
     ],
   },
