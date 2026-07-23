@@ -101,6 +101,46 @@ export const bookClubPicks: BookClubPick[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Books by Dan — Dan's own titles, shown in their own section (not the monthly
+// rotation). No month or "why I picked it" note; the note is in Dan's voice as
+// the author. Covers behave exactly like picks: drop a 2:3 image in
+// `public/book-club/` and set `coverArt`, else the branded placeholder renders.
+// ---------------------------------------------------------------------------
+export type AuthoredBook = {
+  slug: string;
+  title: string;
+  /** The book's subtitle, shown under the title in the section. */
+  subtitle?: string;
+  author: string;
+  coverArt?: string;
+  /** Dan's note on the book, in his own voice as the author. */
+  note: string;
+  amazonAsin: string;
+};
+
+export const danBooks: AuthoredBook[] = [
+  {
+    slug: "the-genius-of-israel",
+    title: "The Genius of Israel",
+    subtitle:
+      "The Surprising Resilience of a Divided Nation in a Turbulent World",
+    author: "Dan Senor & Saul Singer",
+    coverArt: "/book-club/the-genius-of-israel.png",
+    note: "How has a small nation of 9 million people, forced to fight for its existence and security since its founding and riven by ethnic, religious, and economic divides, proven resistant to so many of the societal ills plaguing other wealthy democracies?",
+    amazonAsin: "1982115769",
+  },
+  {
+    slug: "start-up-nation",
+    title: "Start-Up Nation",
+    subtitle: "The Story of Israel's Economic Miracle",
+    author: "Dan Senor & Saul Singer",
+    coverArt: "/book-club/start-up-nation.png",
+    note: "Start-Up Nation addresses the trillion dollar question: How is it that Israel — a country of 7.1 million, only 60 years old, surrounded by enemies, in a constant state of war since its founding, with no natural resources — produces more start-up companies than large, peaceful, and stable nations like Japan, China, India, Korea, Canada and the UK?",
+    amazonAsin: "044654146X",
+  },
+];
+
 /** The current month's featured pick. */
 export function getCurrentPick(): BookClubPick | undefined {
   return bookClubPicks.find((b) => b.featured) ?? bookClubPicks[0];

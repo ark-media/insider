@@ -3,6 +3,7 @@ import { loadStripe, type Stripe as StripeJs } from "@stripe/stripe-js";
 import {
   BillingAddressElement,
   CheckoutElementsProvider,
+  ExpressCheckoutElement,
   PaymentElement,
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
@@ -467,6 +468,7 @@ export function CheckoutModal({
             checkoutSessionId={step.checkoutSessionId}
             email={step.email}
             promo={promo}
+            theme={theme}
             onActivating={(email) => setStep({ kind: "activating", email })}
             onActivated={handleActivated}
             onProcessing={(email) => setStep({ kind: "processing", email })}
@@ -912,6 +914,7 @@ function CheckoutForm({
   checkoutSessionId,
   email,
   promo,
+  theme,
   onActivating,
   onActivated,
   onProcessing,
@@ -921,6 +924,7 @@ function CheckoutForm({
   checkoutSessionId: string;
   email: string;
   promo: PromoInfo | null;
+  theme: "light" | "dark";
   onActivating: (email: string) => void;
   onActivated: (email: string) => void | Promise<void>;
   onProcessing: (email: string) => void;
@@ -930,6 +934,13 @@ function CheckoutForm({
   const [payError, setPayError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const submittedRef = useRef(false);
+  // Wallet (Apple Pay / Google Pay) availability, reported by the Express
+  // Checkout Element's onReady. "pending" until Stripe probes the device;
+  // "none" on browsers/devices with no eligible wallet (most desktops) so we
+  // render neither the buttons nor the "or pay with card" divider.
+  const [walletState, setWalletState] = useState<"pending" | "available" | "none">(
+    "pending",
+  );
 
   if (checkoutState.type === "loading") {
     return <LoadingRow label="Loading secure checkout…" />;
@@ -961,22 +972,14 @@ function CheckoutForm({
   const hasTax = checkout.total.taxExclusive.minorUnitsAmount > 0;
   const tax = checkout.total.taxExclusive.amount;
 
-  const pay = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (submittedRef.current) return;
-    submittedRef.current = true;
-    setWorking(true);
-    setPayError(null);
-    trackEvent("checkout_payment_submitted", { plan });
-
-    // redirect: 'if_required' keeps card payments in the modal; methods that
-    // need an off-site step (e.g. 3DS) use the session's return_url. Email is
-    // already on the Customer attached to the Session, so passing it here is
-    // rejected by Stripe with an IntegrationError.
-    const result = await checkout.confirm({
-      redirect: "if_required",
-    });
-
+  // Shared tail for both the card form and the wallet button: Stripe has
+  // returned a confirm result, so surface a decline (retryable) or poll for
+  // provisioning. Identical for both paths because checkout.confirm() returns
+  // the same StripeCheckoutConfirmResult whether the payment came from the
+  // PaymentElement or an Express Checkout wallet.
+  const handleConfirmResult = async (
+    result: Awaited<ReturnType<typeof checkout.confirm>>,
+  ) => {
     if (result.type === "error") {
       // A decline is retryable — stay on the payment form rather than tearing
       // down the session.
@@ -1014,6 +1017,48 @@ function CheckoutForm({
     }
   };
 
+  const pay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setWorking(true);
+    setPayError(null);
+    trackEvent("checkout_payment_submitted", { plan });
+
+    // redirect: 'if_required' keeps card payments in the modal; methods that
+    // need an off-site step (e.g. 3DS) use the session's return_url. Email is
+    // already on the Customer attached to the Session, so passing it here is
+    // rejected by Stripe with an IntegrationError.
+    const result = await checkout.confirm({
+      redirect: "if_required",
+    });
+    await handleConfirmResult(result);
+  };
+
+  // Wallet path: the buyer authorized Apple Pay / Google Pay in the native
+  // sheet, so hand the event to checkout.confirm(). The wallet supplies the
+  // billing address; the Session's automatic_tax already recomputes tax from
+  // it, so no BillingAddressElement is involved on this path. redirect stays
+  // 'if_required' for parity with the card path (3DS from a wallet is rare but
+  // possible). The submittedRef guard blocks a double-confirm if the buyer
+  // also had the card form partly filled.
+  const confirmWallet = async (
+    event: Parameters<
+      NonNullable<React.ComponentProps<typeof ExpressCheckoutElement>["onConfirm"]>
+    >[0],
+  ) => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setWorking(true);
+    setPayError(null);
+    trackEvent("checkout_payment_submitted", { plan });
+    const result = await checkout.confirm({
+      expressCheckoutConfirmEvent: event,
+      redirect: "if_required",
+    });
+    await handleConfirmResult(result);
+  };
+
   return (
     <>
       <h2 id="checkout-title" className={titleClass}>
@@ -1026,6 +1071,41 @@ function CheckoutForm({
       {promo ? <PromoBanner promo={promo} /> : null}
 
       <form onSubmit={pay} className="mt-6 space-y-4">
+        {/* Apple Pay / Google Pay. Always mounted so onReady can report wallet
+            availability; the wrapper collapses to nothing when no wallet exists
+            (most desktops) so there's no orphan "or pay with card" divider. The
+            wallet supplies the billing address, so tax still resolves via the
+            Session's automatic_tax — no BillingAddressElement on this path. */}
+        <div className={walletState === "none" ? "hidden" : "space-y-4"}>
+          <ExpressCheckoutElement
+            options={{
+              buttonHeight: 48,
+              // Contrast the button against the modal surface.
+              buttonTheme:
+                theme === "light"
+                  ? { applePay: "black", googlePay: "black" }
+                  : { applePay: "white", googlePay: "white" },
+              buttonType: undefined,
+              layout: undefined,
+              paymentMethodOrder: undefined,
+              paymentMethods: undefined,
+            }}
+            onReady={(event) =>
+              setWalletState(
+                event.availablePaymentMethods ? "available" : "none",
+              )
+            }
+            onConfirm={confirmWallet}
+            onLoadError={() => setWalletState("none")}
+          />
+          {walletState === "available" ? (
+            <div className="flex items-center gap-3 text-xs uppercase tracking-button text-fg-faint">
+              <span className="h-px flex-1 bg-rule" />
+              Or pay with card
+              <span className="h-px flex-1 bg-rule" />
+            </div>
+          ) : null}
+        </div>
         <PaymentElement />
         {/* Billing address powers Stripe Tax: the calculated tax updates the
             totals below as soon as a usable address is entered. */}

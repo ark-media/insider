@@ -2,9 +2,11 @@ import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   amazonUrl,
+  danBooks,
   formatPickMonth,
   getCurrentPick,
   getPastPicks,
+  type AuthoredBook,
   type BookClubPick,
 } from "../data/bookClub";
 import { BookCover } from "../components/BookCover";
@@ -22,7 +24,7 @@ function BuyOnAmazon({
   book,
   className,
 }: {
-  book: BookClubPick;
+  book: Pick<BookClubPick | AuthoredBook, "slug" | "amazonAsin">;
   className?: string;
 }) {
   return (
@@ -135,6 +137,45 @@ function BookClubPage() {
                       {formatPickMonth(book.month)} Pick
                     </span>
                   </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
+
+      {/* Books by Dan — his own titles, shown outside the monthly rotation. */}
+      {danBooks.length > 0 ? (
+        <section className="relative border-t border-rule-soft">
+          <div className="page-gutter pt-12 pb-16">
+            <h2 className="max-w-2xl text-fg-strong">
+              <span className="display-upright block text-[clamp(1.7rem,3.5vw,2.8rem)]">
+                Books by Dan
+              </span>
+            </h2>
+
+            <ul className="mt-10 grid grid-cols-1 gap-10 sm:grid-cols-2">
+              {danBooks.map((book) => (
+                <li
+                  key={book.slug}
+                  className="grid grid-cols-[minmax(0,140px)_1fr] items-start gap-6"
+                >
+                  <BookCover book={book} className="w-full" />
+                  <div>
+                    <h3 className="display-upright text-[clamp(1.3rem,2.2vw,1.8rem)] leading-[1.1] text-fg-strong">
+                      {book.title}
+                    </h3>
+                    {book.subtitle ? (
+                      <p className="mt-2 text-body-sm text-fg-muted">
+                        {book.subtitle}
+                      </p>
+                    ) : null}
+                    <p className="mt-2 text-body-sm text-fg-muted">
+                      {book.author}
+                    </p>
+                    <p className="mt-4 text-body-sm text-fg">{book.note}</p>
+                    <BuyOnAmazon book={book} className="mt-6" />
+                  </div>
                 </li>
               ))}
             </ul>

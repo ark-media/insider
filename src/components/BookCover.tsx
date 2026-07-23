@@ -1,8 +1,11 @@
-import type { BookClubPick } from "../data/bookClub";
+import type { BookClubPick, AuthoredBook } from "../data/bookClub";
+
+/** The fields a cover needs — satisfied by both a monthly pick and a Dan title. */
+type CoverBook = Pick<BookClubPick | AuthoredBook, "title" | "author" | "coverArt">;
 
 /**
  * Portrait (2:3) book cover. Uses the uploaded `coverArt` when present; until
- * real art lands in `public/book-club/`, picks fall back to a branded
+ * real art lands in `public/book-club/`, books fall back to a branded
  * placeholder panel carrying the title + author — the v1 state.
  *
  * Callers size the cover with `className` on the outer box (e.g. `w-full` in a
@@ -14,7 +17,7 @@ export function BookCover({
   className,
   priority = false,
 }: {
-  book: BookClubPick;
+  book: CoverBook;
   className?: string;
   priority?: boolean;
 }) {
