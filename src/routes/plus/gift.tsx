@@ -161,7 +161,7 @@ function GiftPage() {
                         </span>
                         <span
                           className={`text-body-sm leading-snug ${
-                            selected ? "opacity-90" : "text-fg"
+                            selected ? "text-inherit opacity-90" : "text-fg"
                           }`}
                         >
                           {GIFT_TIER_BLURB[t]}
