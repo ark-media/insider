@@ -15,6 +15,7 @@ import { Route as RedeemRouteImport } from './routes/redeem'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
+import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CommunityRouteImport } from './routes/community'
 import { Route as BookClubRouteImport } from './routes/book-club'
@@ -83,6 +84,11 @@ const LogoutRoute = LogoutRouteImport.update({
 const IsraelVotesRoute = IsraelVotesRouteImport.update({
   id: '/israel-votes',
   path: '/israel-votes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactRoute = ContactRouteImport.update({
@@ -288,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/book-club': typeof BookClubRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
+  '/faq': typeof FaqRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
@@ -334,6 +341,7 @@ export interface FileRoutesByTo {
   '/book-club': typeof BookClubRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
+  '/faq': typeof FaqRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
@@ -382,6 +390,7 @@ export interface FileRoutesById {
   '/book-club': typeof BookClubRoute
   '/community': typeof CommunityRoute
   '/contact': typeof ContactRoute
+  '/faq': typeof FaqRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
@@ -431,6 +440,7 @@ export interface FileRouteTypes {
     | '/book-club'
     | '/community'
     | '/contact'
+    | '/faq'
     | '/israel-votes'
     | '/logout'
     | '/pricing'
@@ -477,6 +487,7 @@ export interface FileRouteTypes {
     | '/book-club'
     | '/community'
     | '/contact'
+    | '/faq'
     | '/israel-votes'
     | '/logout'
     | '/pricing'
@@ -524,6 +535,7 @@ export interface FileRouteTypes {
     | '/book-club'
     | '/community'
     | '/contact'
+    | '/faq'
     | '/israel-votes'
     | '/logout'
     | '/pricing'
@@ -572,6 +584,7 @@ export interface RootRouteChildren {
   BookClubRoute: typeof BookClubRoute
   CommunityRoute: typeof CommunityRoute
   ContactRoute: typeof ContactRoute
+  FaqRoute: typeof FaqRoute
   IsraelVotesRoute: typeof IsraelVotesRoute
   LogoutRoute: typeof LogoutRoute
   PricingRoute: typeof PricingRoute
@@ -649,6 +662,13 @@ declare module '@tanstack/react-router' {
       path: '/israel-votes'
       fullPath: '/israel-votes'
       preLoaderRoute: typeof IsraelVotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -974,6 +994,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookClubRoute: BookClubRoute,
   CommunityRoute: CommunityRoute,
   ContactRoute: ContactRoute,
+  FaqRoute: FaqRoute,
   IsraelVotesRoute: IsraelVotesRoute,
   LogoutRoute: LogoutRoute,
   PricingRoute: PricingRoute,

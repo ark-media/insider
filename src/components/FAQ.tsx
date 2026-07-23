@@ -1,5 +1,6 @@
 import { useState } from "react";
 import parse from "html-react-parser";
+import { Link } from "@tanstack/react-router";
 import type { Faq } from "../lib/faqs";
 
 // Group FAQs into ordered sections by their `category` heading. Input arrives
@@ -16,7 +17,10 @@ function groupByCategory(faqs: Faq[]): { category: string; items: Faq[] }[] {
   return Array.from(groups, ([category, items]) => ({ category, items }));
 }
 
-export function FAQ({ faqs }: { faqs: Faq[] }) {
+// `as` promotes the section heading to the page's h1 on the standalone /faq
+// route, where this section is the whole page. Inline on /plus and /pricing it
+// stays an h2 under those pages' own h1.
+export function FAQ({ faqs, as: Heading = "h2" }: { faqs: Faq[]; as?: "h1" | "h2" }) {
   // Two independent accordion layers. Sections are collapsed by default (a Set
   // of open category names — several may be open at once). Questions keep the
   // one-at-a-time behaviour, keyed by FAQ id since an index isn't unique across
@@ -112,17 +116,22 @@ export function FAQ({ faqs }: { faqs: Faq[] }) {
       <div className="page-section">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-4">
-            <h2 className="mt-10 text-fg-strong">
+            <Heading className="mt-10 text-fg-strong">
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 Frequently
               </span>
               <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)]">
                 <span className="display text-cyan">asked.</span>
               </span>
-            </h2>
+            </Heading>
             <p className="mt-8 max-w-sm text-body-lg">
-              Everything you need to know before joining Ark+. Still stuck?
-              Drop us a line.
+              Everything you need to know before joining Ark+. Still stuck?{" "}
+              <Link
+                to="/contact"
+                className="underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Drop us a line.
+              </Link>
             </p>
           </div>
 
