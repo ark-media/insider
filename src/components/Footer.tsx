@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArkLogo } from "./ArkLogo";
+import { SocialLinks } from "./SocialLinks";
 
 type FooterLink = { label: string; to: string };
 type FooterSection = {
@@ -61,6 +62,7 @@ export function Footer() {
                 Near and Far.
               </span>
             </p>
+            <SocialLinks className="mt-4 -ml-3" />
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 text-[13px] sm:gap-x-6 sm:grid-cols-4 lg:col-span-7">
@@ -79,8 +81,6 @@ export function Footer() {
           <span className="text-[11px] leading-snug text-fg-faint sm:max-w-md sm:text-right">
             As an Amazon Associate, Ark Media earns from qualifying purchases.
           </span>
-          {/* Social links are hidden until real Ark Media profile URLs exist —
-              SocialLinks.tsx still holds the (placeholder) markup to re-enable. */}
         </div>
       </div>
     </footer>

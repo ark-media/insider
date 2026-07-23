@@ -27,6 +27,8 @@ export const ARK_DOMAIN = "ark-plus.xyz";
 export const socialUrls = {
   instagram: "https://www.instagram.com/arkmediaorg/",
   x: "https://x.com/dansenor",
+  tiktok: "https://www.tiktok.com/@arkmediaorg",
+  facebook: "https://www.facebook.com/people/Ark-Media/61576391075039/",
   linkedin: "https://www.linkedin.com/company/ark-media1/",
   youtube: "https://www.youtube.com/@CallMeBackPodcast",
   spotify: "https://open.spotify.com/show/3btft3E1KPwj0yCOcOvqhR",
