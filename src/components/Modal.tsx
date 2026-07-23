@@ -9,6 +9,7 @@ export function Modal({
   className,
   labelledBy,
   describedBy,
+  scrollBody = false,
   children,
 }: {
   open: boolean;
@@ -16,6 +17,9 @@ export function Modal({
   className?: string;
   labelledBy?: string;
   describedBy?: string;
+  /** Cap the panel to the viewport on sm+ and scroll its body instead of the
+   *  whole overlay, so the close button stays reachable on tall content. */
+  scrollBody?: boolean;
   children: React.ReactNode;
 }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -92,7 +96,9 @@ export function Modal({
     >
       <div
         ref={panelRef}
-        className={`relative mx-3 my-auto w-full border border-rule bg-navy-900 p-6 text-fg-strong shadow-2xl sm:mx-4 sm:p-8 ${className ?? ""}`}
+        className={`relative mx-3 my-auto w-full border border-rule bg-navy-900 p-6 text-fg-strong shadow-2xl sm:mx-4 sm:p-8 ${
+          scrollBody ? "flex flex-col sm:max-h-[calc(100dvh-4rem)]" : ""
+        } ${className ?? ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -114,7 +120,15 @@ export function Modal({
             <path d="M3 3l10 10M13 3L3 13" />
           </svg>
         </button>
-        {children}
+        {scrollBody ? (
+          // Negative margins pull the scroll area out to the panel edges so the
+          // scrollbar hugs the border rather than floating inside the padding.
+          <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6 sm:-mx-8 sm:px-8">
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </div>
     </div>
   );

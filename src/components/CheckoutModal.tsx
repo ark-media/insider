@@ -417,6 +417,7 @@ export function CheckoutModal({
       className="max-w-lg"
       labelledBy="checkout-title"
       describedBy="checkout-desc"
+      scrollBody
     >
       <p id="checkout-desc" className="eyebrow">
         {TIER_LABEL[tier]} · {plan === "yearly" ? "Annual" : "Monthly"}

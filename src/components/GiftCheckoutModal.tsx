@@ -186,6 +186,7 @@ export function GiftCheckoutModal({
       className="max-w-lg"
       labelledBy="gift-title"
       describedBy="gift-desc"
+      scrollBody
     >
       <p id="gift-desc" className="eyebrow">
         {input ? `Gift · ${GIFT_TIER_LABEL[input.tier]} · ${GIFT_LABEL[input.term]}` : "Gift"}
