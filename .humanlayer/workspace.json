@@ -1,0 +1,21 @@
+{
+  "disabled": false,
+  "pathTemplate": "~/.humanlayer/workspaces/{{ TASKSLUG }}/{{ REPOBASENAME }}",
+  "branchTemplate": "{{ TASKSLUG }}",
+  "sourceRef": "HEAD",
+  "setupCommand": "bun install",
+  "copyGlobs": [
+    ".env",
+    ".env.local",
+    ".env.development.local",
+    ".claude/settings.local.json",
+    ".humanlayer/workspace.local.json"
+  ],
+  "repos": [
+    {
+      "localPath": ".",
+      "description": "Ark Media Insider — Vite/React app with Bun server routes",
+      "primary": true
+    }
+  ]
+}

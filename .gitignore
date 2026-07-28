@@ -28,3 +28,6 @@ dist-ssr
 
 # Use bun.lock as the single lockfile
 package-lock.json
+
+# Machine-specific workspace overrides
+.humanlayer/workspace.local.json
