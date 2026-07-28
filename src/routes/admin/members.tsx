@@ -47,8 +47,9 @@ function MembersAdmin() {
 
   const [members, setMembers] = useState<MemberDirectoryEntry[]>([]);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the Retry button to re-run the current filter.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   const searching = email.length > 0;
 
@@ -63,23 +64,35 @@ function MembersAdmin() {
     [email, tier, activation, offset, searching],
   );
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const page = await listMembers(filter);
-      setMembers(page.members);
-      setHasMore(page.hasMore);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load.");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
+  const refresh = useCallback(() => setReloadNonce((n) => n + 1), []);
+
+  // The fetch this render wants. `loading` is derived: it stays true until a
+  // response for exactly this request lands, so a filter change or a retry
+  // shows the spinner without the effect having to set state synchronously.
+  const request = useMemo(() => ({ filter, reloadNonce }), [filter, reloadNonce]);
+  const [loaded, setLoaded] = useState<typeof request | null>(null);
+  const loading = loaded !== request;
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let live = true;
+    listMembers(request.filter).then(
+      (page) => {
+        if (!live) return;
+        setMembers(page.members);
+        setHasMore(page.hasMore);
+        setError(null);
+        setLoaded(request);
+      },
+      (err: unknown) => {
+        if (!live) return;
+        setError(err instanceof Error ? err.message : "Failed to load.");
+        setLoaded(request);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [request]);
 
   // Any filter change starts back at the first page.
   const changeTier = (v: TierFilter) => {

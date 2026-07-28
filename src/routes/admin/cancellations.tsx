@@ -22,6 +22,12 @@ import { formatCouponDiscount } from "../../lib/currency";
 import { errMessage } from "../../lib/errMessage";
 import { useCrudResource } from "../../lib/useCrudResource";
 import {
+  COUPON_SLOT_LABEL,
+  COUPON_SLOTS,
+  isCouponSlot,
+  type CouponSlot,
+} from "../../../shared/retention";
+import {
   CANCELLATION_REASONS,
   OFFER_OUTCOMES,
   outcomeLabel,
@@ -49,10 +55,12 @@ function CancellationsAdmin() {
 
 type OfferForm = {
   name: string;
+  offerKind: CouponSlot;
   discountType: "percent" | "amount";
   percentOff: string;
   amountDollars: string;
-  duration: "once" | "forever" | "repeating";
+  // A save is always temporary — a retention discount is never "forever".
+  duration: "once" | "repeating";
   durationInMonths: string;
   plan: "" | "monthly" | "yearly";
   maxRedemptions: string;
@@ -62,11 +70,12 @@ type OfferForm = {
 function emptyOffer(): OfferForm {
   return {
     name: "",
+    offerKind: "supporter_coupon",
     discountType: "percent",
-    percentOff: "25",
+    percentOff: "20",
     amountDollars: "",
     duration: "repeating",
-    durationInMonths: "3",
+    durationInMonths: "6",
     plan: "",
     maxRedemptions: "",
     redeemBy: "",
@@ -78,10 +87,16 @@ function describeDiscount(p: Promo): string {
   const dur =
     p.duration === "repeating"
       ? `for ${p.durationInMonths} mo`
-      : p.duration === "forever"
-        ? "forever"
-        : "once";
+      : "one billing period";
   return `${amount} · ${dur}`;
+}
+
+// The save this offer fills. An untagged coupon predates the slot selector and
+// is never shown to a member, so name it plainly rather than leave it blank.
+function slotLabel(kind: string | null): string {
+  return isCouponSlot(kind)
+    ? COUPON_SLOT_LABEL[kind]
+    : "not shown — no slot set";
 }
 
 function planLabel(plan: string | null): string {
@@ -110,6 +125,7 @@ function RetentionOffers() {
       plan: form.plan,
       autoApply: false,
       retentionOffer: true,
+      offerKind: form.offerKind,
     };
     if (form.discountType === "percent") {
       draft.percentOff = Number(form.percentOff);
@@ -145,9 +161,10 @@ function RetentionOffers() {
       <h2 className="label text-cyan">Retention offers</h2>
       <p className="mt-2 max-w-2xl text-body-sm text-fg-muted">
         The discount a member is offered when they start to cancel. Target an
-        offer to the <strong className="text-fg">monthly</strong> or{" "}
-        <strong className="text-fg">annual</strong> plan, or to both. When
-        several offers match a member's plan, the largest discount is shown.
+        Choose which card it fills and which plan it targets; when several
+        offers match, the largest discount is shown. A save always runs for a set
+        number of months — never in perpetuity — and a member can take one only
+        once every 12 months.
       </p>
 
       <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
@@ -166,6 +183,36 @@ function RetentionOffers() {
             />
             <p className="mt-1 text-body-sm text-fg-muted">
               Optional internal label.
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="o-kind" className={adminFieldLabel}>
+              Where it appears
+            </label>
+            <select
+              id="o-kind"
+              value={form.offerKind}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  offerKind: e.target.value as CouponSlot,
+                }))
+              }
+              className={`mt-2 ${adminField}`}
+            >
+              {COUPON_SLOTS.map((k) => (
+                <option key={k} value={k}>
+                  {COUPON_SLOT_LABEL[k]}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-body-sm text-fg-muted">
+              Where in the cancel flow this discount is used. One coupon per slot
+              applies — the largest matching discount wins. The debundle slot
+              isn't a card: it's the intro rate a member lands on automatically
+              after splitting the bundle, so its duration sets how long that rate
+              lasts.
             </p>
           </div>
 
@@ -268,9 +315,8 @@ function RetentionOffers() {
                 }
                 className={`mt-2 ${adminField}`}
               >
-                <option value="once">Once</option>
-                <option value="forever">Forever</option>
-                <option value="repeating">Repeating</option>
+                <option value="repeating">For a set number of months</option>
+                <option value="once">One billing period</option>
               </select>
             </div>
             {form.duration === "repeating" ? (
@@ -366,6 +412,7 @@ function RetentionOffers() {
                     {describeDiscount(p)}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 label font-bold">
+                    <AdminTag>{slotLabel(p.offerKind)}</AdminTag>
                     <AdminTag>{planLabel(p.plan)}</AdminTag>
                     <AdminBadge on={p.valid} label={p.valid ? "valid" : "expired"} />
                     {p.maxRedemptions != null ? (
@@ -393,8 +440,9 @@ function RetentionOffers() {
 
 function CancellationSurvey() {
   const [data, setData] = useState<CancellationSummary | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by the Retry button to re-run the current filter.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   const [outcome, setOutcome] = useState<OfferOutcome | "">("");
   const [reason, setReason] = useState<string>("");
@@ -408,21 +456,34 @@ function CancellationSurvey() {
     [outcome, reason],
   );
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setData(await fetchCancellations(filter));
-      setError(null);
-    } catch (err) {
-      setError(errMessage(err, "Failed to load."));
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
+  const refresh = useCallback(() => setReloadNonce((n) => n + 1), []);
+
+  // The fetch this render wants. `loading` is derived: it stays true until a
+  // response for exactly this request lands, so a filter change or a retry
+  // shows the spinner without the effect having to set state synchronously.
+  const request = useMemo(() => ({ filter, reloadNonce }), [filter, reloadNonce]);
+  const [loaded, setLoaded] = useState<typeof request | null>(null);
+  const loading = loaded !== request;
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let live = true;
+    fetchCancellations(request.filter).then(
+      (next) => {
+        if (!live) return;
+        setData(next);
+        setError(null);
+        setLoaded(request);
+      },
+      (err: unknown) => {
+        if (!live) return;
+        setError(errMessage(err, "Failed to load."));
+        setLoaded(request);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [request]);
 
   const exportCsv = async () => {
     setExporting(true);

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { AdminShell } from "../../components/AdminShell";
 import { adminField, adminFieldLabel } from "../../lib/admin-styles";
 import {
@@ -45,21 +45,27 @@ function FeedRemindersAdmin() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setForm(formFrom(await fetchReminderConfig()));
-      setLoadError(null);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to load.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Mount-only load. `loading` already starts true, so nothing needs to be set
+  // synchronously here — state moves only once the request settles.
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let live = true;
+    fetchReminderConfig().then(
+      (config) => {
+        if (!live) return;
+        setForm(formFrom(config));
+        setLoadError(null);
+        setLoading(false);
+      },
+      (err: unknown) => {
+        if (!live) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to load.");
+        setLoading(false);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -14,6 +14,7 @@ import { modalPrimaryCta, modalSecondaryCta } from "../lib/modalCta";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
+import { getAttribution } from "../lib/attribution";
 import {
   type PricingResponse,
   browserCountry,
@@ -343,6 +344,11 @@ export function CheckoutModal({
             tier,
             currency: selectedCurrency,
             custom_amount_cents: customAmountMinor ?? undefined,
+            // Ride the acquisition channel into Stripe's subscription metadata
+            // so the webhook's server-side revenue events carry attribution
+            // without having to rejoin to this browser session (BI plan §4.1).
+            // Server-side allowlisted — see shared/attribution.ts.
+            attribution: getAttribution(),
           }),
         });
         const data = (await res.json().catch(() => ({}))) as {
@@ -635,11 +641,15 @@ function EmailForm({
   const shortInterval = plan === "yearly" ? "yr" : "mo";
 
   // Switching currency resets the chosen amount to the new floor — a raw number
-  // carried across currencies is meaningless (300 USD ≠ 300 JPY).
-  useEffect(() => {
+  // carried across currencies is meaningless (300 USD ≠ 300 JPY). Adjusted
+  // during render rather than in an effect so the reset lands in the same pass
+  // as the currency change, with no interim frame showing the stale amount.
+  const [prevCurrency, setPrevCurrency] = useState(currency);
+  if (prevCurrency !== currency) {
+    setPrevCurrency(currency);
     setCustomAmount("");
     setEditing(false);
-  }, [currency]);
+  }
 
   // Everything below works in MAJOR units of the selected currency. The floor is
   // what we charge if the buyer doesn't raise it; the slider drags up to

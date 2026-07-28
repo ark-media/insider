@@ -16,25 +16,36 @@ export type AsyncResource<T> = {
   retry: () => void;
 };
 
+function sameKey(a: DependencyList, b: DependencyList): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((value, i) => Object.is(value, b[i]));
+}
+
 export function useAsyncResource<T>(
   load: () => Promise<T>,
   deps: DependencyList,
 ): AsyncResource<T> {
-  const [state, setState] = useState<{
-    status: "loading" | "error" | "ready";
-    data: T | null;
-  }>({ status: "loading", data: null });
   const [nonce, setNonce] = useState(0);
+
+  // Identifies the current request. Settled state carries the key it was
+  // fetched for, so a stale result is recognised by comparison rather than by
+  // resetting state from inside the effect.
+  const key: DependencyList = [...deps, nonce];
+
+  const [settled, setSettled] = useState<{
+    status: "error" | "ready";
+    data: T | null;
+    key: DependencyList;
+  } | null>(null);
 
   useEffect(() => {
     let live = true;
-    setState({ status: "loading", data: null });
     load().then(
       (data) => {
-        if (live) setState({ status: "ready", data });
+        if (live) setSettled({ status: "ready", data, key });
       },
       () => {
-        if (live) setState({ status: "error", data: null });
+        if (live) setSettled({ status: "error", data: null, key });
       },
     );
     return () => {
@@ -42,9 +53,17 @@ export function useAsyncResource<T>(
     };
     // `load` is intentionally excluded — callers pass its inputs via `deps`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, nonce]);
+  }, key);
 
   const retry = useCallback(() => setNonce((n) => n + 1), []);
 
-  return { status: state.status, data: state.data, retry };
+  // Anything settled under a previous key belongs to a superseded request, so
+  // a deps change (or retry) reads as "loading" on the very next render.
+  const fresh = settled && sameKey(settled.key, key) ? settled : null;
+
+  return {
+    status: fresh ? fresh.status : "loading",
+    data: fresh ? fresh.data : null,
+    retry,
+  };
 }

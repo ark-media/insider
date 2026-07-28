@@ -36,7 +36,6 @@ function DiscussThreadsAdmin() {
     useState<NewsletterSlug>(DEFAULT_NEWSLETTER);
   const [selectedDraftId, setSelectedDraftId] = useState<string>("");
   const [loadingThreads, setLoadingThreads] = useState(true);
-  const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [flash, setFlash] = useState<Flash | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -49,44 +48,72 @@ function DiscussThreadsAdmin() {
     [threads],
   );
 
+  // Fetch and apply, guarded so a response arriving after unmount is dropped.
+  // State moves only in the settled callbacks, never synchronously.
+  const loadThreadsInto = useCallback(
+    (isLive: () => boolean) =>
+      listDiscussThreads().then(
+        (next) => {
+          if (!isLive()) return;
+          setThreads(next);
+          setListError(null);
+          setLoadingThreads(false);
+        },
+        (err: unknown) => {
+          if (!isLive()) return;
+          setListError(errMessage(err, "Failed to load threads."));
+          setLoadingThreads(false);
+        },
+      ),
+    [],
+  );
+
   const refreshThreads = useCallback(async () => {
     setLoadingThreads(true);
-    try {
-      setThreads(await listDiscussThreads());
-      setListError(null);
-    } catch (err) {
-      setListError(errMessage(err, "Failed to load threads."));
-    } finally {
-      setLoadingThreads(false);
-    }
-  }, []);
-
-  const refreshDrafts = useCallback(async (slug: NewsletterSlug) => {
-    setLoadingDrafts(true);
-    try {
-      const next = await listBeehiivDrafts(slug);
-      setDrafts(next);
-      setSelectedDraftId((curr) => {
-        if (curr && next.some((d) => d.id === curr)) return curr;
-        return next[0]?.id ?? "";
-      });
-    } catch (err) {
-      setFlash({
-        kind: "error",
-        message: errMessage(err, "Failed to load Beehiiv drafts."),
-      });
-    } finally {
-      setLoadingDrafts(false);
-    }
-  }, []);
+    await loadThreadsInto(() => true);
+  }, [loadThreadsInto]);
 
   useEffect(() => {
-    void refreshThreads();
-  }, [refreshThreads]);
+    let live = true;
+    void loadThreadsInto(() => live);
+    return () => {
+      live = false;
+    };
+  }, [loadThreadsInto]);
+
+  // Derived: drafts are "loading" until a response for the currently selected
+  // newsletter lands, so switching newsletters shows the spinner immediately
+  // without the effect setting state synchronously.
+  const [loadedDraftsFor, setLoadedDraftsFor] = useState<NewsletterSlug | null>(
+    null,
+  );
+  const loadingDrafts = loadedDraftsFor !== selectedNewsletter;
 
   useEffect(() => {
-    void refreshDrafts(selectedNewsletter);
-  }, [refreshDrafts, selectedNewsletter]);
+    let live = true;
+    listBeehiivDrafts(selectedNewsletter).then(
+      (next) => {
+        if (!live) return;
+        setDrafts(next);
+        setSelectedDraftId((curr) => {
+          if (curr && next.some((d) => d.id === curr)) return curr;
+          return next[0]?.id ?? "";
+        });
+        setLoadedDraftsFor(selectedNewsletter);
+      },
+      (err: unknown) => {
+        if (!live) return;
+        setFlash({
+          kind: "error",
+          message: errMessage(err, "Failed to load Beehiiv drafts."),
+        });
+        setLoadedDraftsFor(selectedNewsletter);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [selectedNewsletter]);
 
   const selectedDraft = useMemo(
     () => drafts.find((d) => d.id === selectedDraftId) ?? null,

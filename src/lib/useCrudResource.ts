@@ -15,9 +15,13 @@ export function useCrudResource<T, Form>(config: {
   emptyForm: () => Form;
 }) {
   const loadRef = useRef(config.load);
-  loadRef.current = config.load;
   const emptyFormRef = useRef(config.emptyForm);
-  emptyFormRef.current = config.emptyForm;
+  // Synced after render rather than during it. The `useRef` seeds above are
+  // already correct for the mount load below, so nothing reads a stale closure.
+  useEffect(() => {
+    loadRef.current = config.load;
+    emptyFormRef.current = config.emptyForm;
+  });
 
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,21 +32,35 @@ export function useCrudResource<T, Form>(config: {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  // Fetch and apply, guarded so a response arriving after unmount is dropped.
+  const loadInto = useCallback(async (isLive: () => boolean) => {
     try {
-      setItems(await loadRef.current());
-      setListError(null);
+      const next = await loadRef.current();
+      if (isLive()) {
+        setItems(next);
+        setListError(null);
+      }
     } catch (err) {
-      setListError(errMessage(err, "Failed to load."));
+      if (isLive()) setListError(errMessage(err, "Failed to load."));
     } finally {
-      setLoading(false);
+      if (isLive()) setLoading(false);
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    await loadInto(() => true);
+  }, [loadInto]);
+
+  // `loading` already starts true, so the mount fetch has no need to set it —
+  // which keeps this effect free of synchronous state updates.
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let live = true;
+    void loadInto(() => live);
+    return () => {
+      live = false;
+    };
+  }, [loadInto]);
 
   const startNew = useCallback(() => {
     setEditingId(null);
