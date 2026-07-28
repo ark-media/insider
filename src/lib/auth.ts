@@ -28,7 +28,12 @@ export function feedIsSetUp(feed: UserFeed): boolean {
   return feed.activated === true || feed.pending === true;
 }
 
-import type { OfferKind, RetentionOffer, SaveIntent } from "../../shared/retention";
+import type {
+  DebundlePrice,
+  OfferKind,
+  RetentionOffer,
+  SaveIntent,
+} from "../../shared/retention";
 
 // The two independent access axes: arkPlus → the private feed, circle → the
 // community. Derived server-side from the tier; every gate checks an entitlement,
@@ -197,13 +202,14 @@ export async function getMySubscription(): Promise<{
 }
 
 // Prices behind the bundle "keep any services?" selector: the current bundle
-// price and each standalone. Null when unavailable (no live sub / Stripe hiccup)
-// — the selector then renders without price lines.
+// price plus what each product costs alone (its standalone catalog price and the
+// bounded intro rate it lands on first). Null when unavailable (no live sub /
+// Stripe hiccup) — the selector then renders without price lines.
 export type BundleBreakdown = {
   plan: "monthly" | "yearly";
   bundleCents: number;
-  arkPlusCents: number;
-  circleCents: number;
+  arkPlus: DebundlePrice;
+  circle: DebundlePrice;
 };
 
 export async function getBundleBreakdown(): Promise<BundleBreakdown | null> {
@@ -221,16 +227,12 @@ export async function getBundleBreakdown(): Promise<BundleBreakdown | null> {
 
 // The ordered save offers for a tier-aware cancel/debundle flow. The server
 // resolves cadence + amounts from Stripe and window-suppresses coupons. Any
-// failure degrades to no offers so the flow proceeds to reason/confirm.
-export type StandalonePrice = {
-  tier: "ark-plus" | "circle" | "bundle";
-  plan: "monthly" | "yearly";
-  priceCents: number;
-};
-
+// failure degrades to no offers so the flow proceeds to reason/confirm. The two
+// debundle intents carry no offers at all — only `standalone`, the price the
+// kept product continues at.
 export async function getSaveOffers(
   intent: SaveIntent,
-): Promise<{ offers: RetentionOffer[]; standalone: StandalonePrice | null }> {
+): Promise<{ offers: RetentionOffer[]; standalone: DebundlePrice | null }> {
   try {
     const res = await fetch(
       `/api/stripe/save-offers?intent=${encodeURIComponent(intent)}`,
@@ -239,7 +241,7 @@ export async function getSaveOffers(
     if (!res.ok) return { offers: [], standalone: null };
     return (await res.json()) as {
       offers: RetentionOffer[];
-      standalone: StandalonePrice | null;
+      standalone: DebundlePrice | null;
     };
   } catch {
     return { offers: [], standalone: null };
@@ -247,7 +249,7 @@ export async function getSaveOffers(
 }
 
 // Accept a coupon-backed save offer (supporter / affordability /
-// circle-free-months / perpetual). The server re-derives the coupon for
+// affordability). The server re-derives the coupon for
 // (intent, cadence), attaches it, and clears any pending cancel. Plan switches
 // go through changeTier instead.
 export async function acceptSaveOffer(
@@ -259,7 +261,6 @@ export async function acceptSaveOffer(
   percentOff?: number | null;
   amountOff?: number | null;
   durationMonths?: number | null;
-  forever?: boolean;
   next_charge_at?: string;
   error?: string;
 }> {
@@ -276,8 +277,7 @@ export async function acceptSaveOffer(
       percentOff?: number | null;
       amountOff?: number | null;
       durationMonths?: number | null;
-      forever?: boolean;
-      next_charge_at?: string;
+          next_charge_at?: string;
       error?: string;
     };
   } catch {

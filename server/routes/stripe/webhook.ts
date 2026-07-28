@@ -11,6 +11,11 @@ import {
   tierFromEntitlementString,
   type Tier,
 } from '../../entitlement.js'
+import {
+  attributionFromMetadata,
+  captureServerEvent,
+  emailDistinctId,
+} from '../../lib/analytics-server.js'
 import { downgradeToFree, tryPush } from '../../lib/beehiiv-sync.js'
 import { getDb } from '../../lib/db.js'
 import {
@@ -61,6 +66,24 @@ export async function tierFromSubscription(
 
 function cancelAtIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.cancel_at)
+}
+
+// Shared props for the two subscription-shaped analytics events. Read entirely
+// off the event payload — no extra Stripe calls. These are segmentation
+// dimensions for a PostHog funnel, NOT a revenue figure: Stripe is the system
+// of record for money (see server/lib/analytics-server.ts).
+function subscriptionAnalyticsProps(
+  sub: Stripe.Subscription,
+  tier: Tier,
+): { tier: string; plan: string | null; amount_cents: number | null; currency: string | null } {
+  return {
+    tier,
+    plan: planFromSubscription(sub) ?? sub.metadata?.plan ?? null,
+    amount_cents:
+      sub.items?.data?.[0]?.price?.unit_amount ??
+      (sub.metadata?.amount_cents ? Number(sub.metadata.amount_cents) : null),
+    currency: sub.currency ?? null,
+  }
 }
 
 // Serialize handling of same-customer deliveries within this instance so two
@@ -128,6 +151,9 @@ export async function dispatchWebhookEvent(
         if (env.DATABASE_URL) {
           await deleteMembershipByCustomer(getDb(env), customerId)
         }
+        // No churn event here on purpose. Stripe Billing already reports churn,
+        // splits voluntary from involuntary via `cancellation_details.reason`,
+        // and reconciles to the ledger. See server/lib/analytics-server.ts.
       })
       break
     }
@@ -149,6 +175,8 @@ export async function dispatchWebhookEvent(
       if (customerId && env.DATABASE_URL) {
         await setMembershipStatusByCustomer(getDb(env), customerId, 'past_due')
       }
+      // No dunning event here on purpose — Stripe's own Smart Retries reporting
+      // covers failed payments and recovery rate. See lib/analytics-server.ts.
       break
     }
     default:
@@ -197,6 +225,7 @@ async function handleSubscriptionUpsert(
     await activator.activateMembershipForStripeSub(sub, noDbTier)
     const email = await emailForStripeCustomer(sub.customer, stripe)
     if (email) await syncEntitlement(env, email, noDbTier)
+    await emitProvisioningEvents(env, sub, noDbTier, email, created)
     return
   }
 
@@ -231,6 +260,18 @@ async function handleSubscriptionUpsert(
     ? Number(sub.metadata.sc_user_id)
     : priorRow?.sc_user_id ?? null
   let plan = planFromSubscription(sub) ?? (sub.metadata?.plan as Plan | undefined) ?? 'yearly'
+
+  // The customer's email backs the analytics distinct_id, and the fan-out below
+  // already needs it. Resolve at most once per event — a PWYC-only change skips
+  // the fan-out entirely but still emits `subscription_tier_changed`, so the
+  // lookup can't live inside that branch.
+  let resolvedEmail: string | null | undefined
+  const memberEmail = async (): Promise<string | null> => {
+    if (resolvedEmail === undefined) {
+      resolvedEmail = await emailForStripeCustomer(sub.customer, stripe)
+    }
+    return resolvedEmail
+  }
 
   if (shouldFanOut) {
     // Grant the (possibly new) tier — Auth0 login + the axes it grants. Provision
@@ -267,7 +308,7 @@ async function handleSubscriptionUpsert(
     // Mirror the entitlement signals: Auth0 tier claim (transitional shim, task 5
     // pending) + the Circle access group per the circle axis. Circle-member
     // creation already happened in activation; this add is idempotent.
-    const email = await emailForStripeCustomer(sub.customer, stripe)
+    const email = await memberEmail()
     if (email) {
       await syncEntitlement(env, email, tier)
       // Beehiiv premium mirrors the arkPlus axis: drop it when arkPlus is lost.
@@ -307,6 +348,62 @@ async function handleSubscriptionUpsert(
     if (!scheduleIdOf(sub)) {
       await clearMembershipPending(getDb(env), customerId)
     }
+
+    // Analytics last, and only after the membership row has actually committed —
+    // the conversion count must never claim a member the DB doesn't have.
+    //
+    // Gated so a routine `subscription.updated` (a payment-method swap, our own
+    // metadata stamp from activation) neither emits nor pays for the customer
+    // lookup that resolving the distinct_id would cost. Tier/plan/amount changes
+    // emit nothing here — expansion and contraction MRR live in Stripe.
+    if (created || shouldFanOut) {
+      await emitProvisioningEvents(env, sub, tier, await memberEmail(), created, shouldFanOut)
+    }
+  }
+}
+
+// The two subscription-side server events that survive the "is this already in
+// Stripe?" test:
+//
+//   subscription_started_confirmed — the honest numerator for a conversion rate
+//     whose denominator (pricing_viewed, checkout_opened) only exists in the
+//     browser. Browser `checkout_succeeded` is undercounted by ad blockers and
+//     inflated by double-submits, so it can't play that role itself. This is not
+//     a revenue count — Stripe is.
+//   member_provisioned — "paid" vs "actually got access". A member whose
+//     SC/Circle/Auth0 provisioning silently fails looks identical to a happy one
+//     in every revenue dashboard; they are the ones who file support tickets.
+async function emitProvisioningEvents(
+  env: Env,
+  sub: Stripe.Subscription,
+  tier: Tier,
+  email: string | null,
+  created: boolean,
+  provisioned = true,
+): Promise<void> {
+  const distinctId = emailDistinctId(email)
+  const attribution = attributionFromMetadata(sub.metadata)
+  const props = subscriptionAnalyticsProps(sub, tier)
+
+  if (created) {
+    await captureServerEvent(env, {
+      event: 'subscription_started_confirmed',
+      distinctId,
+      properties: props,
+      attribution,
+    })
+  }
+  if (provisioned) {
+    const ent = deriveEntitlements(tier)
+    const axes = [ent.arkPlus ? 'ark-plus' : null, ent.circle ? 'circle' : null]
+      .filter(Boolean)
+      .join('+')
+    await captureServerEvent(env, {
+      event: 'member_provisioned',
+      distinctId,
+      properties: { ...props, axes: axes || 'none' },
+      attribution,
+    })
   }
 }
 
@@ -341,6 +438,12 @@ async function handleGiftPaymentIntent(
       giver_sub: null,
     })
   }
+
+  // No gift-purchase event here on purpose. Stripe has the PaymentIntent and
+  // Neon has the `gift` row, so purchase → redemption rate is a query over the
+  // gift table (`status = 'redeemed'` / total), not something to re-derive in
+  // PostHog. Only the redemption itself is instrumented (routes/gift.ts), and
+  // only because the magic-link path redeems server-side with no browser event.
 
   // Skip the email resend once the token is stamped (a prior delivery sent it).
   if (pi.metadata?.gift_token === token) return

@@ -73,7 +73,7 @@ interface EventMap {
   // and the member's current tier.
   cancel_initiated: { flow: Flow; tier: Tier }
   // Save-offer funnel per flow + offer kind (annual_switch, supporter_coupon,
-  // affordability_coupon, circle_free_months, monthly_switch, perpetual_discount).
+  // affordability_coupon, monthly_switch).
   save_offer_shown: { flow: Flow; tier: Tier; offer_kind: OfferKind }
   save_offer_accepted: { flow: Flow; tier: Tier; offer_kind: OfferKind }
   save_offer_declined: { flow: Flow; tier: Tier; offer_kind: OfferKind }
@@ -89,8 +89,8 @@ interface EventMap {
     flow: Flow
     retained_product: RetainedProduct
   }
-  // Terminal debundle (Flows C / D, and Flow E keep-just-one): kept one product,
-  // dropped the other. Never a full exit.
+  // Terminal debundle (Flows C / D): kept one product, dropped the other. Never
+  // a full exit — unchecking both services is Flow E, a full cancel.
   subscription_debundled: {
     flow: Flow
     retained_product: Exclude<RetainedProduct, 'full-exit'>
@@ -121,9 +121,30 @@ interface EventMap {
   // The one-click path: linking Spotify once follows every private feed in the
   // network. `feed_count` is how many feeds that link covers.
   feed_spotify_linked: { feed_count: number }
-  // Hand-off to Circle's own paid signup — the last thing we can measure before
-  // the funnel leaves our domain.
+  // Intent to buy the Community tier from the /community page — it opens OUR
+  // CheckoutModal, so this is a top-of-funnel event that continues into
+  // checkout_opened, not a hand-off. (It was previously documented as a
+  // hand-off to Circle's own paid signup; that is wrong. Every purchase
+  // transacts through our Stripe checkout — there is no other buy path.)
   circle_join_clicked: void
+
+  // --- Attribution: outbound traffic we send off-domain ---
+  // One generic event behind <OutboundLink>, rather than a bespoke event per
+  // surface (BI plan §4.1, "one chokepoint, not seven"). We are a media company
+  // that deliberately sends people to Circle, the app stores, social, and the
+  // podcast platforms — that outflow is a first-class metric, not exhaust.
+  //   destination — the target HOST only. Never the full URL: private-feed and
+  //                 Circle deep links carry per-member tokens in the path/query.
+  //   platform    — the brand being handed off to ('instagram', 'circle', 'ios').
+  //   placement   — where on our site the link sat ('footer', 'community_feed').
+  //   context     — optional discriminator within a placement (a space slug, an
+  //                 event id, the newsletter post slug).
+  outbound_link_clicked: {
+    destination: string
+    platform: string
+    placement: string
+    context?: string
+  }
 
   // --- Tier 4: content engagement (high-value subset) ---
   episode_play_clicked: { show: string; episode: string }

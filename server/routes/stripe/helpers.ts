@@ -136,7 +136,13 @@ export function validatePwycAmount(
 // isn't month/year (or the sub has no items) — the picker then offers only
 // untargeted coupons rather than guessing.
 export function planFromSubscription(sub: Stripe.Subscription): Plan | null {
-  const interval = sub.items.data[0]?.price?.recurring?.interval
+  // `items` itself optional-chained, not just `data[0]`: the doc above promises
+  // null for an itemless sub, but `sub.items.data` threw outright when `items`
+  // was absent — which a `customer.subscription.deleted` payload can be. Every
+  // caller sits on a webhook or a request path where a throw becomes a 5xx, so
+  // this matches the documented contract rather than relying on callers to
+  // never pass a partial subscription.
+  const interval = sub.items?.data?.[0]?.price?.recurring?.interval
   if (interval === 'month') return 'monthly'
   if (interval === 'year') return 'yearly'
   return null

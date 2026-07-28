@@ -4,6 +4,7 @@ import { SpotifyIcon } from "./PlatformIcons";
 import { feedIsSetUp, type UserFeed } from "../lib/auth";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
+import { OutboundLink } from "./OutboundLink";
 
 // The landing surface for private-feed setup. Two paths, in priority order:
 //   1. Spotify — link once, follow every show in the network automatically.
@@ -195,9 +196,14 @@ function SpotifyHero({ url, onLink }: { url: string; onLink: () => void }) {
             we launch show up on their own, too.
           </p>
         </div>
-        <a
+        {/* Keeps its own `feed_spotify_linked` (which carries feed_count) and
+            additionally reports the hand-off through the outbound chokepoint,
+            so Spotify traffic shows up in the outbound map alongside every
+            other off-domain link. */}
+        <OutboundLink
           href={url}
-          target="_blank"
+          platform="spotify"
+          placement="setup_hub_spotify"
           rel="noreferrer"
           onClick={onLink}
           className="group inline-flex shrink-0 items-center justify-center gap-3 bg-cyan px-6 py-3.5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
@@ -206,7 +212,7 @@ function SpotifyHero({ url, onLink }: { url: string; onLink: () => void }) {
           <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
             →
           </span>
-        </a>
+        </OutboundLink>
       </div>
     </section>
   );

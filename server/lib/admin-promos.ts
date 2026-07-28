@@ -10,6 +10,7 @@
 
 import type Stripe from 'stripe'
 import type { Promo } from '../../shared/promo.js'
+import { isCouponSlot } from '../../shared/retention.js'
 
 export type BuiltPromo = {
   coupon: Stripe.CouponCreateParams
@@ -75,7 +76,31 @@ export function buildPromo(raw: unknown): BuildResult {
   // (server/lib/retention.ts). A retention coupon is offered, never auto-applied
   // at checkout, so the two flags are independent.
   const metadata: Record<string, string> = { auto_apply: String(r.autoApply === true) }
-  if (r.retentionOffer === true) metadata.retention_offer = 'true'
+  const isRetention = r.retentionOffer === true
+  if (isRetention) metadata.retention_offer = 'true'
+
+  // offer_kind names WHICH save in the cancel flow a retention coupon fills.
+  // Required for a retention coupon — an untagged one would be flagged but never
+  // reachable by the deriver, i.e. silently inert. Meaningless on a checkout
+  // promo, so reject it there rather than write a tag nothing reads.
+  if (r.offerKind != null && r.offerKind !== '') {
+    if (!isRetention) {
+      return { ok: false, error: 'Only a retention offer can target a cancel-flow save.' }
+    }
+    if (!isCouponSlot(r.offerKind)) {
+      return { ok: false, error: 'Unknown cancel-flow save slot.' }
+    }
+    metadata.offer_kind = r.offerKind
+  } else if (isRetention) {
+    return { ok: false, error: 'Choose where this retention offer appears.' }
+  }
+
+  // A save is a temporary discount, never a permanent price cut: a forever
+  // coupon here would silently discount the member for life.
+  if (isRetention && coupon.duration === 'forever') {
+    return { ok: false, error: 'A retention offer must run for a set number of months.' }
+  }
+
   if (r.plan === 'monthly' || r.plan === 'yearly') {
     metadata.plan = r.plan
   } else if (r.plan != null && r.plan !== '' && r.plan !== 'both') {
@@ -126,6 +151,7 @@ export function serializeCoupon(c: Stripe.Coupon, code: string | null): Promo {
     durationInMonths: c.duration_in_months ?? null,
     autoApply: c.metadata?.auto_apply?.toLowerCase() === 'true',
     retentionOffer: c.metadata?.retention_offer?.toLowerCase() === 'true',
+    offerKind: c.metadata?.offer_kind ?? null,
     plan: c.metadata?.plan ?? null,
     maxRedemptions: c.max_redemptions ?? null,
     timesRedeemed: c.times_redeemed ?? 0,

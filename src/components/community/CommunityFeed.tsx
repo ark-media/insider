@@ -4,6 +4,7 @@ import {
   type SuggestedSpace,
 } from "../../lib/circle";
 import { FeedEmptyState } from "./FeedEmptyState";
+import { OutboundLink } from "../OutboundLink";
 
 function formatPostDate(iso: string): string {
   const d = new Date(iso);
@@ -61,10 +62,11 @@ export function CommunityFeed({
 
 function FeedCard({ item }: { item: CommunityFeedItem }) {
   return (
-    <a
+    <OutboundLink
       href={item.href}
-      target="_blank"
-      rel="noreferrer noopener"
+      platform="circle"
+      placement="community_feed"
+      context={item.id}
       className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
     >
       <div className="flex items-baseline justify-between gap-4">
@@ -80,7 +82,7 @@ function FeedCard({ item }: { item: CommunityFeedItem }) {
       <p className="mt-3 button-text font-display font-bold text-cyan transition group-hover:underline">
         Read &amp; reply in the app →
       </p>
-    </a>
+    </OutboundLink>
   );
 }
 

@@ -11,16 +11,28 @@
 //     specific elements with `data-ph-mask="false"` (or remove `mask_all_text`
 //     globally if you decide the trade-off later). Stripe Elements render in
 //     a cross-origin iframe so they're naturally outside replay scope.
-//   - Emails sent to PostHog are SHA-256-hashed in the browser. PostHog
-//     never sees the plaintext address. Sentry continues to receive the
-//     real email because it's the support-debugging channel and stays in
-//     a per-org backend, not a public dashboard.
+//   - Emails sent to PostHog are SHA-256-hashed in the browser — INCLUDING the
+//     distinct_id, which is the hash itself rather than the address. (It was
+//     previously the plaintext email, which quietly contradicted the paragraph
+//     above and made every PostHog person record a piece of PII.) Sentry
+//     continues to receive the real email because it's the support-debugging
+//     channel and stays in a per-org backend, not a public dashboard.
+//   - The same `email_sha256` is what the server-side revenue events key on
+//     (server/lib/analytics-server.ts), so browser intent and server outcome
+//     land on ONE person. It is also the universal join key across Beehiiv /
+//     Circle / Supporting Cast / Stripe in the warehouse (BI plan §2.6).
+//     Note it is pseudonymous, not anonymous — still an identifier.
 //   - Tier is sent as a person property so funnels can segment subscriber
 //     vs free without sending tier on every event.
+//   - Acquisition attribution (src/lib/attribution.ts) is registered here as
+//     super-properties, and set on the person at identify time: first-touch
+//     with $set_once so it can never be overwritten, last-touch with $set.
 // ---------------------------------------------------------------------------
 
 import * as Sentry from '@sentry/react'
 import posthog from 'posthog-js'
+import { captureAttribution, getAttribution } from './attribution'
+import { FIRST_TOUCH_KEYS, type Attribution } from '../../shared/attribution'
 
 let posthogReady = false
 
@@ -53,10 +65,32 @@ export function initObservability() {
     })
     posthogReady = true
   }
+
+  // Capture acquisition attribution regardless of whether PostHog is
+  // configured — the checkout modals forward it into Stripe metadata, which is
+  // how server-side revenue events get attributed, and that path must work even
+  // in a build with no PostHog key.
+  const captured = captureAttribution()
+  if (captured) {
+    superProperties = {
+      ...captured.attribution,
+      entry_page: captured.entryPage,
+      is_returning: captured.isReturning,
+    }
+    registerSuperProperties()
+  }
+}
+
+// The attribution super-properties, held here because posthog.reset() wipes the
+// registered set and we have to put them back — see resetIdentity().
+let superProperties: Record<string, unknown> | null = null
+
+function registerSuperProperties() {
+  if (posthogReady && superProperties) posthog.register(superProperties)
 }
 
 // SHA-256 hex digest. PostHog gets the hash, never the plaintext email.
-async function hashEmail(email: string): Promise<string> {
+export async function hashEmail(email: string): Promise<string> {
   const bytes = new TextEncoder().encode(email.trim().toLowerCase())
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   return Array.from(new Uint8Array(digest))
@@ -64,32 +98,59 @@ async function hashEmail(email: string): Promise<string> {
     .join('')
 }
 
+// Split captured attribution into the two PostHog person-property buckets:
+// first-touch must never change once written ($set_once), last-touch always
+// reflects the most recent session ($set).
+function splitTouchProperties(attribution: Attribution): {
+  set: Record<string, unknown>
+  setOnce: Record<string, unknown>
+} {
+  const firstTouch: ReadonlySet<string> = new Set<string>(FIRST_TOUCH_KEYS)
+  const set: Record<string, unknown> = {}
+  const setOnce: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(attribution)) {
+    if (firstTouch.has(key)) setOnce[key] = value
+    else set[key] = value
+  }
+  return { set, setOnce }
+}
+
 export function identifyUser(opts: {
-  id: string
-  email?: string
+  email: string
   // The member's SKU tier, widened to the three-tier vocabulary so funnels can
   // segment Ark+ vs Circle vs Bundle vs free.
   tier?: 'ark-plus' | 'circle' | 'bundle' | 'free'
 }) {
-  Sentry.setUser({ id: opts.id, email: opts.email })
+  // Sentry keeps the real address on purpose — it's the support-debugging
+  // channel, and a hash there would make a bug report untraceable to a member.
+  Sentry.setUser({ id: opts.email, email: opts.email })
   if (!posthogReady) return
-  const properties: Record<string, unknown> = { tier: opts.tier ?? 'free' }
-  if (opts.email) {
-    // Hash is async; identify with id+tier immediately, then patch in the
-    // hashed email as a person property when ready. PostHog merges by
-    // distinct_id so the second call is a no-op-with-update.
-    void hashEmail(opts.email).then((hash) => {
-      posthog.identify(opts.id, { ...properties, email_sha256: hash })
-    })
-  } else {
-    posthog.identify(opts.id, properties)
-  }
-  if (opts.tier) posthog.group('tier', opts.tier)
+  const { set, setOnce } = splitTouchProperties(getAttribution())
+  // The hash is async and IS the distinct_id, so there is nothing to identify
+  // with until it resolves — unlike the previous version, which identified
+  // immediately on the plaintext email and patched the hash in afterwards.
+  void hashEmail(opts.email).then((hash) => {
+    posthog.identify(
+      hash,
+      { ...set, tier: opts.tier ?? 'free', email_sha256: hash },
+      setOnce,
+    )
+    if (opts.tier) posthog.group('tier', opts.tier)
+  })
 }
 
 export function resetIdentity() {
   Sentry.setUser(null)
-  if (posthogReady) posthog.reset()
+  if (!posthogReady) return
+  posthog.reset()
+  // posthog.reset() clears ALL registered super-properties, not just identity.
+  // This runs on every guest page load (the auth provider calls it as soon as
+  // the session resolves to "not signed in"), so without re-registering here the
+  // attribution properties are wiped microseconds after init — and wiped for
+  // exactly the population that matters most: the logged-out first-time visitor
+  // who just arrived from a campaign. Verified in-browser; the properties were
+  // absent from persistence and `$last_posthog_reset` was stamped at page load.
+  registerSuperProperties()
 }
 
 export function track(event: string, properties?: Record<string, unknown>) {

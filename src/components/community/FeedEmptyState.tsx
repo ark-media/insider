@@ -1,4 +1,5 @@
 import type { SuggestedSpace } from "../../lib/circle";
+import { OutboundLink } from "../OutboundLink";
 
 /**
  * Shown when the feed is empty/quiet. Instead of a blank panel, nudge the
@@ -28,10 +29,11 @@ export function FeedEmptyState({
         <ul className="mt-6 divide-y divide-rule border-y border-rule">
           {spaces.map((space) => (
             <li key={space.id} className="py-4">
-              <a
+              <OutboundLink
                 href={space.href}
-                target="_blank"
-                rel="noreferrer noopener"
+                platform="circle"
+                placement="community_space_suggestion"
+                context={space.id}
                 className="group grid grid-cols-1 items-center gap-2 sm:grid-cols-12 sm:gap-4"
               >
                 <div className="sm:col-span-9">
@@ -52,7 +54,7 @@ export function FeedEmptyState({
                     Join in the app →
                   </span>
                 </div>
-              </a>
+              </OutboundLink>
             </li>
           ))}
         </ul>

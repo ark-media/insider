@@ -9,6 +9,7 @@ import {
   type DOMNode,
   type HTMLReactParserOptions,
 } from "html-react-parser";
+import { OutboundLink } from "../components/OutboundLink";
 
 // Duck-typed node checks. We can't use `instanceof Element`/`Text` from
 // html-react-parser because html-dom-parser ships its own copy of domhandler,
@@ -162,17 +163,21 @@ export const showNotesParserOptions: HTMLReactParserOptions = {
           </>
         );
       }
+      // Show notes are a link-dense surface (books, sponsors, guest sites) and
+      // every one of those clicks used to be invisible. OutboundLink reports
+      // only the destination HOST, and stays silent for links back to us.
       return (
         <>
           {lead ? " " : null}
-          <a
+          <OutboundLink
             href={href}
-            target="_blank"
+            platform="show_notes_link"
+            placement="show_notes"
             rel="noopener noreferrer"
             className="text-cyan underline underline-offset-2 transition hover:text-fg-strong"
           >
             {children}
-          </a>
+          </OutboundLink>
           {trail ? " " : null}
         </>
       );

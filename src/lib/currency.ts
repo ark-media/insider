@@ -89,6 +89,21 @@ export function formatCouponDiscount(
   return "a discount";
 }
 
+// A coupon's discount applied to a minor-unit list price, for previewing the
+// post-discount figure (e.g. the "$6" in "$8 $6/month"). Mirrors Stripe's own
+// arithmetic: percent coupons round to the nearest minor unit, amount coupons
+// subtract and floor at zero. Null when the coupon carries neither, so the
+// caller shows the list price alone rather than a wrong number.
+export function applyCouponDiscount(
+  listMinor: number,
+  percentOff: number | null | undefined,
+  amountOffMinor: number | null | undefined,
+): number | null {
+  if (percentOff != null) return Math.round(listMinor * (1 - percentOff / 100));
+  if (amountOffMinor != null) return Math.max(0, listMinor - amountOffMinor);
+  return null;
+}
+
 // The currency symbol alone (for the edit-mode prefix), e.g. "£", "¥", "R$".
 // Falls back to the ISO code if the runtime can't resolve a narrow symbol.
 export function currencySymbol(currency: string): string {

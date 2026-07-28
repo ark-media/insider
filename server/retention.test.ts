@@ -5,7 +5,6 @@ import {
   couponOfferKind,
   isRetentionCoupon,
   pickOfferCoupon,
-  pickRetentionCoupon,
   toRetentionOffer,
   type RetentionCouponLike,
 } from './lib/retention'
@@ -40,70 +39,81 @@ describe('isRetentionCoupon', () => {
   })
 })
 
-describe('pickRetentionCoupon', () => {
-  test('null when nothing is flagged', () => {
-    expect(pickRetentionCoupon([coupon({ percent_off: 50 })])).toBeNull()
+// Selection logic, exercised through pickOfferCoupon (the only picker): a
+// coupon must be flagged, usable, tagged for the slot, and match the plan.
+const sup = (over: Partial<RetentionCouponLike>) =>
+  retention({ metadata: { retention_offer: 'true', offer_kind: 'supporter_coupon' }, ...over })
+
+describe('pickOfferCoupon selection', () => {
+  test('null when nothing is flagged for retention', () => {
+    const untagged = coupon({ percent_off: 50, metadata: { offer_kind: 'supporter_coupon' } })
+    expect(pickOfferCoupon([untagged], 'supporter_coupon')).toBeNull()
+  })
+
+  test('null when flagged for retention but tagged for no slot', () => {
+    expect(pickOfferCoupon([retention({ percent_off: 50 })], 'supporter_coupon')).toBeNull()
   })
 
   test('prefers the largest percent_off', () => {
-    const small = retention({ id: 'small', percent_off: 10 })
-    const big = retention({ id: 'big', percent_off: 30 })
-    expect(pickRetentionCoupon([small, big])?.id).toBe('big')
+    const small = sup({ id: 'small', percent_off: 10 })
+    const big = sup({ id: 'big', percent_off: 30 })
+    expect(pickOfferCoupon([small, big], 'supporter_coupon')?.id).toBe('big')
   })
 
-  test('falls back to the largest USD amount_off when no percent coupon is flagged', () => {
-    const a = retention({ id: 'a', amount_off: 300 })
-    const b = retention({ id: 'b', amount_off: 700 })
-    expect(pickRetentionCoupon([a, b])?.id).toBe('b')
+  test('falls back to the largest USD amount_off when no percent coupon is tagged', () => {
+    const a = sup({ id: 'a', amount_off: 300 })
+    const b = sup({ id: 'b', amount_off: 700 })
+    expect(pickOfferCoupon([a, b], 'supporter_coupon')?.id).toBe('b')
   })
 
   test('a percent coupon wins over a fixed one regardless of order', () => {
-    const fixed = retention({ id: 'fix', amount_off: 9999 })
-    const pct = retention({ id: 'pct', percent_off: 5 })
-    expect(pickRetentionCoupon([fixed, pct])?.id).toBe('pct')
-    expect(pickRetentionCoupon([pct, fixed])?.id).toBe('pct')
+    const fixed = sup({ id: 'fix', amount_off: 9999 })
+    const pct = sup({ id: 'pct', percent_off: 5 })
+    expect(pickOfferCoupon([fixed, pct], 'supporter_coupon')?.id).toBe('pct')
+    expect(pickOfferCoupon([pct, fixed], 'supporter_coupon')?.id).toBe('pct')
   })
 
   test('ignores invalid coupons and non-USD fixed amounts', () => {
-    const invalid = retention({ id: 'inv', percent_off: 90, valid: false })
-    const foreign = retention({ id: 'gbp', amount_off: 1000, currency: 'gbp' })
-    const ok = retention({ id: 'ok', percent_off: 20 })
-    expect(pickRetentionCoupon([invalid, foreign, ok])?.id).toBe('ok')
+    const invalid = sup({ id: 'inv', percent_off: 90, valid: false })
+    const foreign = sup({ id: 'gbp', amount_off: 1000, currency: 'gbp' })
+    const ok = sup({ id: 'ok', percent_off: 20 })
+    expect(pickOfferCoupon([invalid, foreign, ok], 'supporter_coupon')?.id).toBe('ok')
   })
 
   test('a coupon with neither percent nor amount is not usable', () => {
-    expect(pickRetentionCoupon([retention({ percent_off: null, amount_off: null })])).toBeNull()
+    expect(pickOfferCoupon([sup({})], 'supporter_coupon')).toBeNull()
   })
 })
 
-describe('pickRetentionCoupon plan targeting', () => {
-  const monthlyOnly = retention({ id: 'm', percent_off: 40, metadata: { retention_offer: 'true', plan: 'monthly' } })
-  const yearlyOnly = retention({ id: 'y', percent_off: 30, metadata: { retention_offer: 'true', plan: 'yearly' } })
-  const both = retention({ id: 'b', percent_off: 10 })
+describe('pickOfferCoupon plan targeting', () => {
+  const kind = { retention_offer: 'true', offer_kind: 'supporter_coupon' }
+  const monthlyOnly = retention({ id: 'm', percent_off: 40, metadata: { ...kind, plan: 'monthly' } })
+  const yearlyOnly = retention({ id: 'y', percent_off: 30, metadata: { ...kind, plan: 'yearly' } })
+  const both = retention({ id: 'b', percent_off: 10, metadata: kind })
 
   test('offers a plan-targeted coupon only to that plan', () => {
-    expect(pickRetentionCoupon([monthlyOnly], 'monthly')?.id).toBe('m')
-    expect(pickRetentionCoupon([monthlyOnly], 'yearly')).toBeNull()
-    expect(pickRetentionCoupon([yearlyOnly], 'yearly')?.id).toBe('y')
-    expect(pickRetentionCoupon([yearlyOnly], 'monthly')).toBeNull()
+    expect(pickOfferCoupon([monthlyOnly], 'supporter_coupon', 'monthly')?.id).toBe('m')
+    expect(pickOfferCoupon([monthlyOnly], 'supporter_coupon', 'yearly')).toBeNull()
+    expect(pickOfferCoupon([yearlyOnly], 'supporter_coupon', 'yearly')?.id).toBe('y')
+    expect(pickOfferCoupon([yearlyOnly], 'supporter_coupon', 'monthly')).toBeNull()
   })
 
   test('picks the best among the coupons that match the plan', () => {
     const all = [monthlyOnly, yearlyOnly, both]
     // monthly member sees monthly-only (40) over the both-plans 10
-    expect(pickRetentionCoupon(all, 'monthly')?.id).toBe('m')
+    expect(pickOfferCoupon(all, 'supporter_coupon', 'monthly')?.id).toBe('m')
     // yearly member sees yearly-only (30) over the both-plans 10
-    expect(pickRetentionCoupon(all, 'yearly')?.id).toBe('y')
+    expect(pickOfferCoupon(all, 'supporter_coupon', 'yearly')?.id).toBe('y')
   })
 
   test('an untargeted ("both") coupon applies to either plan', () => {
-    expect(pickRetentionCoupon([both], 'monthly')?.id).toBe('b')
-    expect(pickRetentionCoupon([both], 'yearly')?.id).toBe('b')
+    expect(pickOfferCoupon([both], 'supporter_coupon', 'monthly')?.id).toBe('b')
+    expect(pickOfferCoupon([both], 'supporter_coupon', 'yearly')?.id).toBe('b')
   })
 
   test('unknown plan (null) offers only untargeted coupons', () => {
-    expect(pickRetentionCoupon([monthlyOnly, yearlyOnly], null)).toBeNull()
-    expect(pickRetentionCoupon([monthlyOnly, both], null)?.id).toBe('b')
+    expect(pickOfferCoupon([monthlyOnly, yearlyOnly], 'supporter_coupon', null)).toBeNull()
+    expect(pickOfferCoupon([monthlyOnly, both], 'supporter_coupon', null)?.id).toBe('b')
   })
 })
 
@@ -130,19 +140,6 @@ describe('pickOfferCoupon', () => {
     amount_off: 300,
     metadata: { retention_offer: 'true', offer_kind: 'affordability_coupon' },
   })
-  const perpetualForever = retention({
-    id: 'perp',
-    duration: 'forever',
-    amount_off: 133,
-    metadata: { retention_offer: 'true', offer_kind: 'perpetual_discount', plan: 'monthly' },
-  })
-  const perpetualBounded = retention({
-    id: 'perp-bad',
-    duration: 'repeating',
-    amount_off: 999,
-    metadata: { retention_offer: 'true', offer_kind: 'perpetual_discount' },
-  })
-
   test('matches by offer_kind + plan', () => {
     expect(pickOfferCoupon([supporter, affordability], 'supporter_coupon', 'monthly')?.id).toBe('sup')
     expect(pickOfferCoupon([supporter, affordability], 'affordability_coupon', null)?.id).toBe('aff')
@@ -150,9 +147,8 @@ describe('pickOfferCoupon', () => {
   test('supporter coupon targeted to monthly is not offered to a yearly member', () => {
     expect(pickOfferCoupon([supporter], 'supporter_coupon', 'yearly')).toBeNull()
   })
-  test('perpetual_discount requires a duration: forever coupon', () => {
-    expect(pickOfferCoupon([perpetualForever], 'perpetual_discount', 'monthly')?.id).toBe('perp')
-    expect(pickOfferCoupon([perpetualBounded], 'perpetual_discount', 'monthly')).toBeNull()
+  test('a coupon tagged for another slot is never served', () => {
+    expect(pickOfferCoupon([supporter], 'affordability_coupon', 'monthly')).toBeNull()
   })
 })
 
@@ -171,7 +167,6 @@ describe('toRetentionOffer', () => {
       percentOff: 20,
       amountOff: null,
       durationMonths: 3,
-      forever: false,
     })
   })
 })

@@ -14,7 +14,7 @@ type CouponLike = {
   percent_off: number | null;
   amount_off: number | null;
   currency: string | null;
-  duration: "once" | "repeating" | "forever";
+  duration: "once" | "repeating";
   duration_in_months: number | null;
   metadata: Record<string, string>;
 };
@@ -60,26 +60,14 @@ function fakeStripe(coupons: CouponLike[]): Stripe {
 const supporter = coupon({
   id: "sup",
   amount_off: 600,
+  duration_in_months: 6,
   metadata: { retention_offer: "true", offer_kind: "supporter_coupon", plan: "monthly" },
-});
-const perpetual = coupon({
-  id: "perp",
-  duration: "forever",
-  duration_in_months: null,
-  amount_off: 667,
-  metadata: { retention_offer: "true", offer_kind: "perpetual_discount", plan: "monthly" },
 });
 const affordability = coupon({
   id: "aff",
   amount_off: 500,
   duration_in_months: 3,
   metadata: { retention_offer: "true", offer_kind: "affordability_coupon" },
-});
-const freeMonths = coupon({
-  id: "free3",
-  percent_off: 100,
-  duration_in_months: 3,
-  metadata: { retention_offer: "true", offer_kind: "circle_free_months" },
 });
 
 describe("deriveSaveOffers", () => {
@@ -90,9 +78,11 @@ describe("deriveSaveOffers", () => {
     expect(offers[0].currentPriceCents).toBe(800);
     expect(offers[0].targetPriceCents).toBe(8000);
     expect(offers[0].couponId).toBeNull();
-    // supporter coupon carried through.
+    // supporter coupon carried through, with the list price it discounts so the
+    // card can render the design's struck-through "$8 $6/month".
     expect(offers[1].couponId).toBe("sup");
     expect(offers[1].amountOff).toBe(600);
+    expect(offers[1].currentPriceCents).toBe(800);
   });
 
   test("cancel-ark-plus monthly still offers the annual switch when no coupon is configured", async () => {
@@ -100,33 +90,41 @@ describe("deriveSaveOffers", () => {
     expect(offers.map((o) => o.kind)).toEqual(["annual_switch"]);
   });
 
-  test("cancel-ark-plus yearly → perpetual monthly_switch only when a forever coupon exists", async () => {
-    const withCoupon = await deriveSaveOffers(fakeStripe([perpetual]), "cancel-ark-plus", "yearly");
-    expect(withCoupon.map((o) => o.kind)).toEqual(["monthly_switch"]);
-    expect(withCoupon[0].forever).toBe(true);
-    expect(withCoupon[0].couponId).toBe("perp");
+  test("cancel-ark-plus yearly → monthly_switch carrying the monthly discount", async () => {
+    // The switch quotes the same bounded discount the monthly card offers, so
+    // moving to monthly isn't a price rise for its term.
+    const offers = await deriveSaveOffers(fakeStripe([supporter]), "cancel-ark-plus", "yearly");
+    expect(offers.map((o) => o.kind)).toEqual(["monthly_switch"]);
+    expect(offers[0].targetPriceCents).toBe(800);
+    expect(offers[0].couponId).toBe("sup");
+    expect(offers[0].durationMonths).toBe(6);
+  });
 
-    const without = await deriveSaveOffers(fakeStripe([]), "cancel-ark-plus", "yearly");
-    expect(without).toEqual([]);
+  test("cancel-ark-plus yearly still offers the switch when no discount is configured", async () => {
+    const offers = await deriveSaveOffers(fakeStripe([]), "cancel-ark-plus", "yearly");
+    expect(offers.map((o) => o.kind)).toEqual(["monthly_switch"]);
+    expect(offers[0].couponId).toBeNull();
+    expect(offers[0].targetPriceCents).toBe(800);
   });
 
   test("cancel-circle → affordability_coupon when configured", async () => {
     const offers = await deriveSaveOffers(fakeStripe([affordability]), "cancel-circle", "monthly");
     expect(offers.map((o) => o.kind)).toEqual(["affordability_coupon"]);
     expect(offers[0].durationMonths).toBe(3);
+    // The Circle list price the coupon discounts, for the card's price pair.
+    expect(offers[0].currentPriceCents).toBe(800);
   });
 
-  test("debundle-remove-circle: monthly gets no offer; yearly gets 3 months free", async () => {
-    const monthly = await deriveSaveOffers(fakeStripe([freeMonths]), "debundle-remove-circle", "monthly");
-    expect(monthly).toEqual([]);
-
-    const yearly = await deriveSaveOffers(fakeStripe([freeMonths]), "debundle-remove-circle", "yearly");
-    expect(yearly.map((o) => o.kind)).toEqual(["circle_free_months"]);
-    expect(yearly[0].couponId).toBe("free3");
-  });
-
-  test("debundle-remove-ark-plus reuses the Ark+ save (mission + cadence offer)", async () => {
-    const offers = await deriveSaveOffers(fakeStripe([supporter]), "debundle-remove-ark-plus", "monthly");
-    expect(offers.map((o) => o.kind)).toEqual(["annual_switch", "supporter_coupon"]);
+  test("neither debundle offers a card — the save is priced into the exit", async () => {
+    // A debundle's alternative is "pay less, keep one product", which no card
+    // can beat; the kept product lands on the debundle_intro rate instead and
+    // the flow goes straight to confirm. Both directions, both cadences — and
+    // staged coupons must not leak in: remove-ark-plus once reused the Ark+
+    // cancel save, quoting standalone Ark+ prices to a bundle member.
+    for (const intent of ["debundle-remove-ark-plus", "debundle-remove-circle"] as const) {
+      for (const plan of ["monthly", "yearly"] as const) {
+        expect(await deriveSaveOffers(fakeStripe([supporter, affordability]), intent, plan)).toEqual([]);
+      }
+    }
   });
 });

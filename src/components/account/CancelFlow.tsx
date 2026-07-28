@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../Modal";
 import { MissionReminder } from "./MissionReminder";
 import { trackEvent } from "../../lib/analytics";
-import { formatCouponDiscount, formatMinor } from "../../lib/currency";
+import { applyCouponDiscount, formatCouponDiscount } from "../../lib/currency";
+import { continuationCopy, introTerm, usd } from "../../lib/debundleCopy";
 import {
   CANCELLATION_REASONS,
   OTHER_REASON_SLUG,
@@ -15,9 +16,9 @@ import {
   getSaveOffers,
   submitCancellationSurvey,
   type BundleBreakdown,
-  type StandalonePrice,
 } from "../../lib/auth";
 import type {
+  DebundlePrice,
   OfferKind,
   RetentionOffer,
   SaveIntent,
@@ -31,9 +32,60 @@ type FlowId = "A" | "B" | "C" | "D" | "E";
 // record + analytics. Debundles keep one product; full cancels keep none.
 type Retained = "kept-ark-plus" | "kept-circle";
 
-// USD-cents helper: the catalog is priced in USD, so save-offer + standalone
-// amounts are USD minor units (2-decimal).
-const usd = (cents: number) => formatMinor(cents, "usd", 100);
+// The product a save offer is measured in. The design words the Circle card
+// "of Ark+" too, but a Community member isn't being offered Ark+ — name what
+// they'd actually keep.
+const productName = (tier: Tier) => (tier === "circle" ? "the Community" : "Ark+");
+
+// The struck-through list price next to the discounted one — the design's
+// "$8 $6/month". Falls back to the list price alone when the offer carries no
+// coupon (e.g. a bare switch to monthly) or the discount doesn't reduce it.
+function PricePair({
+  listCents,
+  offer,
+  cadence,
+}: {
+  listCents: number;
+  offer: RetentionOffer;
+  cadence: "month" | "year";
+}) {
+  const discounted = applyCouponDiscount(listCents, offer.percentOff, offer.amountOff);
+  return discounted !== null && discounted < listCents ? (
+    <>
+      <s className="text-fg-muted">{usd(listCents)}</s> {usd(discounted)}/{cadence}
+    </>
+  ) : (
+    <>
+      {usd(listCents)}/{cadence}
+    </>
+  );
+}
+
+// A service row's price in the bundle selector: what this product costs if it's
+// the one you keep. The intro rate leads with the standalone price struck
+// through — "$8.00 $6.50/month" — with its term underneath.
+function RowPrice({
+  price,
+  plan,
+}: {
+  price: DebundlePrice;
+  plan: Plan | null;
+}) {
+  const cadence = plan === "yearly" ? "year" : "month";
+  return price.introCents !== null ? (
+    <span className="text-right">
+      <span className="text-fg-strong">
+        <s className="text-fg-muted">{usd(price.priceCents)}</s>{" "}
+        {usd(price.introCents)}/{cadence}
+      </span>
+      <span className="block text-fg-muted">{introTerm(price, plan)}</span>
+    </span>
+  ) : (
+    <span className="text-fg-muted">
+      {usd(price.priceCents)}/{cadence}
+    </span>
+  );
+}
 
 // A readable next-payment date for the success screen; "" for a missing/invalid
 // ISO string so the caller can omit the line.
@@ -49,59 +101,88 @@ function formatDate(iso: string): string {
       });
 }
 
-// A human headline for a coupon-backed offer, e.g. "$6/mo for 12 months".
+// A human headline for a coupon-backed offer, e.g. "20% off for 6 months".
 function couponHeadline(o: RetentionOffer): string {
   const amount = formatCouponDiscount(o.percentOff, o.amountOff);
   if (o.durationMonths) {
     return `${amount} for ${o.durationMonths} month${o.durationMonths === 1 ? "" : "s"}`;
   }
-  if (o.forever) return `${amount}, for as long as you stay`;
   return amount;
 }
 
-// Copy for each offer kind's headline + supporting line. Amounts come from the
-// resolved offer (Stripe), never hardcoded.
-function offerCopy(o: RetentionOffer): { heading: string; body: string } {
+// How long a coupon-backed rate lasts, as the trailing clause of the design's
+// "$8 $6/month for 6 months of Ark+".
+function couponTerm(o: RetentionOffer): string {
+  if (o.durationMonths) {
+    return ` for ${o.durationMonths} month${o.durationMonths === 1 ? "" : "s"}`;
+  }
+  return "";
+}
+
+// Copy for each offer kind's headline + supporting line, per the product
+// cancellation-flows design. Amounts come from the resolved offer (Stripe),
+// never hardcoded.
+function offerCopy(
+  o: RetentionOffer,
+  tier: Tier,
+  plan: Plan | null,
+): { heading: string; body: ReactNode } {
+  // The member's own billing cadence — what a coupon-backed rate is quoted in.
+  const cadence = plan === "yearly" ? "year" : "month";
   switch (o.kind) {
     case "annual_switch": {
       const monthly = o.currentPriceCents ?? 0;
       const yearly = o.targetPriceCents ?? 0;
-      const savings = monthly * 12 - yearly;
+      const yearOfMonthly = monthly * 12;
+      const percent =
+        yearOfMonthly > 0
+          ? Math.round(((yearOfMonthly - yearly) / yearOfMonthly) * 100)
+          : 0;
       return {
-        heading: "Switch to annual and save.",
+        heading: "Get a full year of Ark+ for less",
         body:
-          savings > 0
-            ? `Pay ${usd(yearly)} a year instead of ${usd(monthly)} a month — that's ${usd(savings)} less over a year, same full access.`
-            : `Move to the annual plan at ${usd(yearly)} a year for the same full access.`,
+          percent > 0
+            ? `Save ${percent}% when you switch to annual billing`
+            : `Switch to annual billing at ${usd(yearly)}/year`,
       };
     }
     case "monthly_switch": {
-      const monthly = o.targetPriceCents ?? 0;
+      const monthly = o.targetPriceCents;
+      if (monthly == null) {
+        return { heading: "Cancel any time", body: "Switch to monthly billing" };
+      }
+      // The hold keeps their annual rate for a set term, then the list price
+      // takes over — say so on the card rather than surprise them later.
+      const held = applyCouponDiscount(monthly, o.percentOff, o.amountOff);
       return {
-        heading: "Prefer to pay monthly?",
-        body: `Switch to monthly billing and keep your annual rate of about ${usd(monthly)} a month — the flexibility of monthly, none of the extra cost.`,
+        heading: "Cancel any time",
+        body: (
+          <>
+            Switch to monthly billing for{" "}
+            <PricePair listCents={monthly} offer={o} cadence="month" />
+            {held !== null && held < monthly && o.durationMonths
+              ? `${couponTerm(o)}, then ${usd(monthly)}/month`
+              : null}
+          </>
+        ),
       };
     }
     case "supporter_coupon":
+    case "affordability_coupon": {
+      const list = o.currentPriceCents;
       return {
-        heading: `Stay for ${couponHeadline(o)}.`,
-        body: "Keep everything you have now at a supporter rate — our thank-you for continuing to fund independent Jewish media.",
+        heading: `Keep your benefits for ${formatCouponDiscount(o.percentOff, o.amountOff)}`,
+        body:
+          list != null ? (
+            <>
+              <PricePair listCents={list} offer={o} cadence={cadence} />
+              {couponTerm(o)} of {productName(tier)}
+            </>
+          ) : (
+            `${couponHeadline(o)} of ${productName(tier)}`
+          ),
       };
-    case "affordability_coupon":
-      return {
-        heading: `Make it easier to stay: ${couponHeadline(o)}.`,
-        body: "We'd love to keep you in the community. Here's a lower rate so cost isn't what decides it.",
-      };
-    case "circle_free_months":
-      return {
-        heading: `${couponHeadline(o)} of the Community, on us.`,
-        body: "Before you drop the Community, take a few months free — stay connected and decide later.",
-      };
-    case "perpetual_discount":
-      return {
-        heading: `Keep your rate: ${couponHeadline(o)}.`,
-        body: "Continue at your current rate for as long as you stay a member.",
-      };
+    }
   }
 }
 
@@ -110,21 +191,18 @@ function isSwitch(kind: OfferKind): boolean {
   return kind === "annual_switch" || kind === "monthly_switch";
 }
 
-// The accept-button label for an offer card. Mirrors the product design's CTAs
-// ("Switch to annual", "Redeem discount"); offers are shown stacked, so each
-// card names its own action rather than a generic "keep me".
-function offerCta(kind: OfferKind): string {
-  switch (kind) {
+// The accept-button label for an offer card, per the design's CTAs ("Switch to
+// annual", "Redeem 20% off discount"); offers are shown stacked, so each card
+// names its own action rather than a generic "keep me".
+function offerCta(o: RetentionOffer): string {
+  switch (o.kind) {
     case "annual_switch":
       return "Switch to annual";
     case "monthly_switch":
       return "Switch to monthly";
-    case "circle_free_months":
-      return "Add free months";
     case "supporter_coupon":
     case "affordability_coupon":
-    case "perpetual_discount":
-      return "Redeem this offer";
+      return `Redeem ${formatCouponDiscount(o.percentOff, o.amountOff)} discount`;
   }
 }
 
@@ -180,7 +258,7 @@ export function CancelFlow({
   // product design presents them together, not one at a time).
   const [offers, setOffers] = useState<RetentionOffer[]>([]);
   const [offerShownAny, setOfferShownAny] = useState(false);
-  const [standalone, setStandalone] = useState<StandalonePrice | null>(null);
+  const [standalone, setStandalone] = useState<DebundlePrice | null>(null);
   // Bundle selector: the catalog prices behind the "keep any services?" screen,
   // and which of the two products the member still has checked (both by default).
   const [breakdown, setBreakdown] = useState<BundleBreakdown | null>(null);
@@ -293,8 +371,8 @@ export function CancelFlow({
     setBusy(true);
     setError(null);
 
-    // Plan switches go through change-tier (keeping the member's current tier);
-    // the perpetual monthly_switch also attaches its forever coupon.
+    // Plan switches go through change-tier, keeping the member's current tier.
+    // They carry no coupon — a switch just changes the billing cadence.
     if (isSwitch(offer.kind)) {
       const targetPlan: Plan = offer.kind === "annual_switch" ? "yearly" : "monthly";
       const r = await changeTier({ tier, plan: targetPlan });
@@ -303,17 +381,17 @@ export function CancelFlow({
         setError(r.error ?? "Could not switch your plan — please try again.");
         return;
       }
-      // The perpetual monthly_switch's whole promise ("keep your annual rate")
-      // rests on its forever coupon. If the switch lands but the coupon fails to
-      // attach, the member would be billed full monthly price — so treat the
-      // attach as required and surface the failure instead of a false "saved".
+      // The monthly switch's quoted rate rests on the discount riding it. If the
+      // switch lands but the discount fails to attach the member would be billed
+      // the full monthly price, so treat it as required and surface the failure
+      // rather than report a false save.
       if (intent && offer.kind === "monthly_switch" && offer.couponId) {
-        const c = await acceptSaveOffer(intent, offer.kind);
-        if (!c.ok) {
+        const h = await acceptSaveOffer(intent, offer.kind);
+        if (!h.ok) {
           setBusy(false);
           setError(
-            c.error ??
-              "Your plan was switched but we couldn't lock in your rate — please try again or contact support.",
+            h.error ??
+              "Your plan was switched but we couldn't apply your discount — please try again or contact support.",
           );
           return;
         }
@@ -327,10 +405,13 @@ export function CancelFlow({
       // New recurring price = the figure the accepted offer quoted, so the
       // success screen matches what they just agreed to.
       const cadence = targetPlan === "yearly" ? "year" : "month";
-      const detail =
-        offer.targetPriceCents != null
-          ? `${usd(offer.targetPriceCents)}/${cadence}`
-          : "";
+      const list = offer.targetPriceCents;
+      // A held rate bills below list for its term — quote what they'll pay next.
+      const rate =
+        list == null
+          ? null
+          : (applyCouponDiscount(list, offer.percentOff, offer.amountOff) ?? list);
+      const detail = rate != null ? `${usd(rate)}/${cadence}` : "";
       setSaved({ detail, nextChargeAt: r.effective_at ?? "" });
       setScreen("saved");
       return;
@@ -349,9 +430,21 @@ export function CancelFlow({
         tier,
         offer_kind: offer.kind,
       });
-      // For a coupon we don't hold the resolved amount, so the discount headline
-      // (e.g. "$6/mo for 6 months") stands in for the new details.
-      setSaved({ detail: couponHeadline(offer), nextChargeAt: r.next_charge_at ?? "" });
+      // "New subscription details" wants a price: the discounted rate the card
+      // quoted. Without a resolved list price to discount, the headline (e.g.
+      // "20% off for 6 months") stands in.
+      const list = offer.currentPriceCents;
+      const discounted =
+        list != null
+          ? applyCouponDiscount(list, offer.percentOff, offer.amountOff)
+          : null;
+      setSaved({
+        detail:
+          discounted !== null
+            ? `${usd(discounted)}/${plan === "yearly" ? "year" : "month"}`
+            : couponHeadline(offer),
+        nextChargeAt: r.next_charge_at ?? "",
+      });
       setScreen("saved");
     } else {
       setError(r.error ?? "Could not apply your offer — please try again.");
@@ -507,17 +600,25 @@ export function CancelFlow({
         // Bundle: "keep any services?" — checkbox per product with live total.
         // Keep both = no change; keep one = debundle; keep none = cancel all.
         (() => {
-          const cadence = plan === "yearly" ? "yr" : "mo";
+          const cadence = plan === "yearly" ? "year" : "month";
           const count = (keptArkPlus ? 1 : 0) + (keptCircle ? 1 : 0);
-          const totalCents = !breakdown
+          // The single product being kept, when exactly one is checked — the
+          // price the summary line and the primary button both quote.
+          const keptOne = !breakdown
+            ? null
+            : count !== 1
+              ? null
+              : keptArkPlus
+                ? breakdown.arkPlus
+                : breakdown.circle;
+          const keptOneName = keptArkPlus ? "Ark+" : "The Community";
+          // What the primary button charges: the bundle unchanged, or the kept
+          // product at whatever it actually bills first (its intro rate).
+          const buttonCents = !breakdown
             ? null
             : count === 2
               ? breakdown.bundleCents
-              : keptArkPlus
-                ? breakdown.arkPlusCents
-                : keptCircle
-                  ? breakdown.circleCents
-                  : 0;
+              : (keptOne?.introCents ?? keptOne?.priceCents ?? null);
           const row =
             "flex cursor-pointer items-center justify-between gap-3 border border-rule p-4 text-body-sm";
           const box =
@@ -526,8 +627,9 @@ export function CancelFlow({
             <>
               {heading("Do you want to keep any services?")}
               <p className="mt-4 text-body-sm text-fg">
-                Your membership includes both of these. Choose any you'd like to
-                keep — uncheck the rest.
+                {breakdown
+                  ? `Your membership includes these services for ${usd(breakdown.bundleCents)}/${cadence}. Choose any individual services you'd like to keep.`
+                  : "Your membership includes both of these. Choose any you'd like to keep — uncheck the rest."}
               </p>
               <fieldset className="mt-6">
                 <legend className="sr-only">Services to keep</legend>
@@ -543,9 +645,7 @@ export function CancelFlow({
                       <span className="text-fg-strong">Ark+</span>
                     </span>
                     {breakdown ? (
-                      <span className="text-fg-muted">
-                        {usd(breakdown.arkPlusCents)}/{cadence}
-                      </span>
+                      <RowPrice price={breakdown.arkPlus} plan={plan} />
                     ) : null}
                   </label>
                   <label className={row}>
@@ -559,46 +659,41 @@ export function CancelFlow({
                       <span className="text-fg-strong">The Community</span>
                     </span>
                     {breakdown ? (
-                      <span className="text-fg-muted">
-                        {usd(breakdown.circleCents)}/{cadence}
-                      </span>
+                      <RowPrice price={breakdown.circle} plan={plan} />
                     ) : null}
                   </label>
                 </div>
               </fieldset>
-              <div className="mt-6 flex items-baseline justify-between border-t border-rule pt-4 text-body-sm">
-                <span className="text-fg-muted">
-                  {count === 0
-                    ? "Nothing selected"
-                    : `${count} service${count === 1 ? "" : "s"}`}
-                </span>
-                {totalCents !== null && count > 0 ? (
-                  <span className="font-display text-fg-strong">
-                    {usd(totalCents)}/{cadence}
-                  </span>
-                ) : null}
-              </div>
+              {/* What the selection means, spelled out — the intro rate and the
+                  price it reverts to, so the term is never only in the fine
+                  print. Nothing to say when the bundle is unchanged. */}
+              <p className="mt-6 border-t border-rule pt-4 text-body-sm text-fg-muted">
+                {count === 0
+                  ? "Your membership ends at the end of your current billing period."
+                  : count === 1
+                    ? continuationCopy(keptOne, plan, keptOneName)
+                    : "Keeping both — your membership is unchanged."}
+              </p>
               {errorLine}
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                {count === 0 ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className={dangerBtn}
-                    onClick={applySelection}
-                  >
-                    {busy ? "Cancelling…" : "Cancel everything"}
-                  </button>
-                ) : count === 1 ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className={secondaryBtn}
-                    onClick={applySelection}
-                  >
-                    {busy ? "…" : "Continue"}
-                  </button>
-                ) : null}
+                {/* Primary carries the resulting count + price (the Apple One
+                    pattern); at two services it's the no-change state, so it's
+                    disabled rather than hidden — the row stays put as the member
+                    toggles. */}
+                <button
+                  type="button"
+                  disabled={busy || count === 2}
+                  className={count === 0 ? dangerBtn : secondaryBtn}
+                  onClick={applySelection}
+                >
+                  {busy
+                    ? "…"
+                    : count === 0
+                      ? "Cancel all services"
+                      : buttonCents !== null
+                        ? `${count} service${count === 1 ? "" : "s"}: ${usd(buttonCents)}/${cadence}`
+                        : `Keep ${count} service${count === 1 ? "" : "s"}`}
+                </button>
                 <button type="button" className={primaryBtn} onClick={onClose}>
                   Keep bundle
                 </button>
@@ -649,7 +744,7 @@ export function CancelFlow({
           {offers.length > 0 ? (
             <div className="mt-6 flex flex-col gap-4">
               {offers.map((offer) => {
-                const copy = offerCopy(offer);
+                const copy = offerCopy(offer, tier, plan);
                 return (
                   <div key={offer.kind} className="border border-rule p-4">
                     <p className="font-display text-fg-strong">{copy.heading}</p>
@@ -661,7 +756,7 @@ export function CancelFlow({
                       className={`mt-4 ${primaryBtn}`}
                       onClick={() => void acceptOffer(offer)}
                     >
-                      {busy ? "Applying…" : offerCta(offer.kind)}
+                      {busy ? "Applying…" : offerCta(offer)}
                     </button>
                   </div>
                 );
@@ -669,6 +764,9 @@ export function CancelFlow({
             </div>
           ) : null}
           {errorLine}
+          {/* The design closes this screen with the single decline action — the
+              offer cards are the way to stay, and the modal's close button is
+              the way out. Debundles aren't in the design and keep their pair. */}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
@@ -682,17 +780,19 @@ export function CancelFlow({
                   : "No thanks, just cancel"
                 : "Continue"}
             </button>
-            <button type="button" className={secondaryBtn} onClick={onClose}>
-              {tier === "bundle" ? "Keep my bundle" : "Keep my subscription"}
-            </button>
+            {terminal.kind === "cancel" ? null : (
+              <button type="button" className={secondaryBtn} onClick={onClose}>
+                Keep my bundle
+              </button>
+            )}
           </div>
         </>
       ) : screen === "survey" ? (
         // Post-cancel: the subscription is already cancelled; ask why (optional).
         <>
-          {heading("Your subscription has been cancelled.")}
+          {heading("Your subscription has been cancelled")}
           <p className="mt-4 text-body-sm text-fg">
-            Help us improve by letting us know why you're cancelling:
+            Help us improve by letting us know why you're cancelling
           </p>
           <fieldset className="mt-6">
             <legend className="sr-only">Reasons for cancelling</legend>
@@ -733,31 +833,24 @@ export function CancelFlow({
             </>
           ) : null}
           {errorLine}
+          {/* One button, as designed: the cancel has already committed, so an
+              empty Submit is simply a skip (finishSurvey persists nothing when
+              nothing was checked). */}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
-              // Nothing checked ⇒ Submit would be indistinguishable from Skip, so
-              // disable it and let the member Skip explicitly instead.
-              disabled={busy || reasons.size === 0}
+              disabled={busy}
               className={primaryBtn}
               onClick={() => void finishSurvey(false)}
             >
               {busy ? "Submitting…" : "Submit"}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              className={secondaryBtn}
-              onClick={() => void finishSurvey(true)}
-            >
-              Skip
             </button>
           </div>
         </>
       ) : screen === "saved" && saved ? (
         // "Thanks for sticking around" — the offer is already applied.
         <>
-          {heading("Thanks for sticking around.")}
+          {heading("Thanks for sticking around")}
           <p className="mt-4 text-body-sm text-fg">
             Your subscription helps make Ark Media's work possible.
           </p>
@@ -794,9 +887,11 @@ export function CancelFlow({
                 : "Remove the Community and keep Ark+?",
             )}
             <p className="mt-4 text-body-sm text-fg">
-              {standalone
-                ? `Your ${terminal.to === "circle" ? "Community" : "Ark+"} membership will continue on its own at ${usd(standalone.priceCents)}/${plan === "yearly" ? "yr" : "mo"}, starting at the end of your current billing period.`
-                : "The remaining membership continues on its own at its standalone price, starting at the end of your current billing period."}
+              {continuationCopy(
+                standalone,
+                plan,
+                terminal.to === "circle" ? "The Community" : "Ark+",
+              )}
             </p>
             {errorLine}
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">

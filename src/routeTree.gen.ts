@@ -9,101 +9,56 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WelcomeRouteImport } from './routes/welcome'
-import { Route as SetupRouteImport } from './routes/setup'
-import { Route as RedeemRouteImport } from './routes/redeem'
-import { Route as PricingRouteImport } from './routes/pricing'
-import { Route as LogoutRouteImport } from './routes/logout'
-import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
-import { Route as FaqRouteImport } from './routes/faq'
-import { Route as ContactRouteImport } from './routes/contact'
-import { Route as CommunityRouteImport } from './routes/community'
-import { Route as BookClubRouteImport } from './routes/book-club'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AccountRouteRouteImport } from './routes/account/route'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as ShowsIndexRouteImport } from './routes/shows/index'
-import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
-import { Route as PlusIndexRouteImport } from './routes/plus/index'
-import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
-import { Route as HostsIndexRouteImport } from './routes/hosts/index'
-import { Route as CareersIndexRouteImport } from './routes/careers/index'
-import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as AccountIndexRouteImport } from './routes/account/index'
-import { Route as ShowsShowRouteImport } from './routes/shows/$show'
-import { Route as PodcastsWhatsYourNumberRouteImport } from './routes/podcasts/whats-your-number'
-import { Route as PodcastsForHeavensSakeRouteImport } from './routes/podcasts/for-heavens-sake'
-import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-me-back'
-import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-news-daily'
-import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
-import { Route as PlusGiftRouteImport } from './routes/plus/gift'
-import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
-import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
-import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
-import { Route as AdminPromosRouteImport } from './routes/admin/promos'
-import { Route as AdminMembersRouteImport } from './routes/admin/members'
-import { Route as AdminFeedRemindersRouteImport } from './routes/admin/feed-reminders'
-import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
-import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
-import { Route as AdminCareersRouteImport } from './routes/admin/careers'
-import { Route as AdminCancellationsRouteImport } from './routes/admin/cancellations'
-import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
-import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
-import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
-import { Route as AccountBillingRouteImport } from './routes/account/billing'
+import { Route as BookClubRouteImport } from './routes/book-club'
+import { Route as CommunityRouteImport } from './routes/community'
+import { Route as ContactRouteImport } from './routes/contact'
+import { Route as FaqRouteImport } from './routes/faq'
+import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
+import { Route as LogoutRouteImport } from './routes/logout'
+import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as RedeemRouteImport } from './routes/redeem'
+import { Route as SetupRouteImport } from './routes/setup'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as AboutNetworkRouteImport } from './routes/about/network'
-import { Route as ShowsShowEpisodeRouteImport } from './routes/shows/$show/$episode'
-import { Route as PodcastsShowEpisodeRouteImport } from './routes/podcasts/$show/$episode'
+import { Route as AccountIndexRouteImport } from './routes/account/index'
+import { Route as AccountBillingRouteImport } from './routes/account/billing'
+import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
+import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
+import { Route as AdminCancellationsRouteImport } from './routes/admin/cancellations'
+import { Route as AdminCareersRouteImport } from './routes/admin/careers'
+import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-threads'
+import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
+import { Route as AdminFeedRemindersRouteImport } from './routes/admin/feed-reminders'
+import { Route as AdminMembersRouteImport } from './routes/admin/members'
+import { Route as AdminPromosRouteImport } from './routes/admin/promos'
+import { Route as CareersIndexRouteImport } from './routes/careers/index'
+import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
+import { Route as HostsIndexRouteImport } from './routes/hosts/index'
+import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
+import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
+import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
+import { Route as PlusIndexRouteImport } from './routes/plus/index'
+import { Route as PlusGiftRouteImport } from './routes/plus/gift'
+import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
+import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
+import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-news-daily'
+import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-me-back'
+import { Route as PodcastsForHeavensSakeRouteImport } from './routes/podcasts/for-heavens-sake'
+import { Route as PodcastsWhatsYourNumberRouteImport } from './routes/podcasts/whats-your-number'
+import { Route as ShowsIndexRouteImport } from './routes/shows/index'
+import { Route as ShowsShowRouteImport } from './routes/shows/$show'
 import { Route as NewslettersSlugPostRouteImport } from './routes/newsletters/$slug/$post'
+import { Route as PodcastsShowEpisodeRouteImport } from './routes/podcasts/$show/$episode'
+import { Route as ShowsShowEpisodeRouteImport } from './routes/shows/$show/$episode'
 
-const WelcomeRoute = WelcomeRouteImport.update({
-  id: '/welcome',
-  path: '/welcome',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SetupRoute = SetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RedeemRoute = RedeemRouteImport.update({
-  id: '/redeem',
-  path: '/redeem',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PricingRoute = PricingRouteImport.update({
-  id: '/pricing',
-  path: '/pricing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LogoutRoute = LogoutRouteImport.update({
-  id: '/logout',
-  path: '/logout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IsraelVotesRoute = IsraelVotesRouteImport.update({
-  id: '/israel-votes',
-  path: '/israel-votes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FaqRoute = FaqRouteImport.update({
-  id: '/faq',
-  path: '/faq',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ContactRoute = ContactRouteImport.update({
-  id: '/contact',
-  path: '/contact',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CommunityRoute = CommunityRouteImport.update({
-  id: '/community',
-  path: '/community',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BookClubRoute = BookClubRouteImport.update({
-  id: '/book-club',
-  path: '/book-club',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -116,149 +71,64 @@ const AccountRouteRoute = AccountRouteRouteImport.update({
   path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const BookClubRoute = BookClubRouteImport.update({
+  id: '/book-club',
+  path: '/book-club',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShowsIndexRoute = ShowsIndexRouteImport.update({
-  id: '/shows/',
-  path: '/shows/',
+const CommunityRoute = CommunityRouteImport.update({
+  id: '/community',
+  path: '/community',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PodcastsIndexRoute = PodcastsIndexRouteImport.update({
-  id: '/podcasts/',
-  path: '/podcasts/',
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlusIndexRoute = PlusIndexRouteImport.update({
-  id: '/plus/',
-  path: '/plus/',
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
-const NewslettersIndexRoute = NewslettersIndexRouteImport.update({
-  id: '/newsletters/',
-  path: '/newsletters/',
+const IsraelVotesRoute = IsraelVotesRouteImport.update({
+  id: '/israel-votes',
+  path: '/israel-votes',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HostsIndexRoute = HostsIndexRouteImport.update({
-  id: '/hosts/',
-  path: '/hosts/',
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CareersIndexRoute = CareersIndexRouteImport.update({
-  id: '/careers/',
-  path: '/careers/',
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/admin/',
-  path: '/admin/',
+const RedeemRoute = RedeemRouteImport.update({
+  id: '/redeem',
+  path: '/redeem',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutNetworkRoute = AboutNetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
+  getParentRoute: () => AboutRoute,
 } as any)
 const AccountIndexRoute = AccountIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AccountRouteRoute,
-} as any)
-const ShowsShowRoute = ShowsShowRouteImport.update({
-  id: '/shows/$show',
-  path: '/shows/$show',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PodcastsWhatsYourNumberRoute = PodcastsWhatsYourNumberRouteImport.update({
-  id: '/podcasts/whats-your-number',
-  path: '/podcasts/whats-your-number',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PodcastsForHeavensSakeRoute = PodcastsForHeavensSakeRouteImport.update({
-  id: '/podcasts/for-heavens-sake',
-  path: '/podcasts/for-heavens-sake',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PodcastsCallMeBackRoute = PodcastsCallMeBackRouteImport.update({
-  id: '/podcasts/call-me-back',
-  path: '/podcasts/call-me-back',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PodcastsArkNewsDailyRoute = PodcastsArkNewsDailyRouteImport.update({
-  id: '/podcasts/ark-news-daily',
-  path: '/podcasts/ark-news-daily',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlusInsideCallMeBackRoute = PlusInsideCallMeBackRouteImport.update({
-  id: '/plus/inside-call-me-back',
-  path: '/plus/inside-call-me-back',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlusGiftRoute = PlusGiftRouteImport.update({
-  id: '/plus/gift',
-  path: '/plus/gift',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NewslettersPostRoute = NewslettersPostRouteImport.update({
-  id: '/newsletters/$post',
-  path: '/newsletters/$post',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HostsSlugRoute = HostsSlugRouteImport.update({
-  id: '/hosts/$slug',
-  path: '/hosts/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CareersSlugRoute = CareersSlugRouteImport.update({
-  id: '/careers/$slug',
-  path: '/careers/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminPromosRoute = AdminPromosRouteImport.update({
-  id: '/admin/promos',
-  path: '/admin/promos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminMembersRoute = AdminMembersRouteImport.update({
-  id: '/admin/members',
-  path: '/admin/members',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminFeedRemindersRoute = AdminFeedRemindersRouteImport.update({
-  id: '/admin/feed-reminders',
-  path: '/admin/feed-reminders',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminFaqsRoute = AdminFaqsRouteImport.update({
-  id: '/admin/faqs',
-  path: '/admin/faqs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminDiscussThreadsRoute = AdminDiscussThreadsRouteImport.update({
-  id: '/admin/discuss-threads',
-  path: '/admin/discuss-threads',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminCareersRoute = AdminCareersRouteImport.update({
-  id: '/admin/careers',
-  path: '/admin/careers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminCancellationsRoute = AdminCancellationsRouteImport.update({
-  id: '/admin/cancellations',
-  path: '/admin/cancellations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
-  id: '/admin/announcements',
-  path: '/admin/announcements',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AccountPodcastFeedRoute = AccountPodcastFeedRouteImport.update({
-  id: '/podcast-feed',
-  path: '/podcast-feed',
-  getParentRoute: () => AccountRouteRoute,
-} as any)
-const AccountNewslettersRoute = AccountNewslettersRouteImport.update({
-  id: '/newsletters',
-  path: '/newsletters',
   getParentRoute: () => AccountRouteRoute,
 } as any)
 const AccountBillingRoute = AccountBillingRouteImport.update({
@@ -266,25 +136,155 @@ const AccountBillingRoute = AccountBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AccountRouteRoute,
 } as any)
-const AboutNetworkRoute = AboutNetworkRouteImport.update({
-  id: '/network',
-  path: '/network',
-  getParentRoute: () => AboutRoute,
+const AccountNewslettersRoute = AccountNewslettersRouteImport.update({
+  id: '/newsletters',
+  path: '/newsletters',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
-const ShowsShowEpisodeRoute = ShowsShowEpisodeRouteImport.update({
-  id: '/$episode',
-  path: '/$episode',
-  getParentRoute: () => ShowsShowRoute,
+const AccountPodcastFeedRoute = AccountPodcastFeedRouteImport.update({
+  id: '/podcast-feed',
+  path: '/podcast-feed',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
-const PodcastsShowEpisodeRoute = PodcastsShowEpisodeRouteImport.update({
-  id: '/podcasts/$show/$episode',
-  path: '/podcasts/$show/$episode',
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
+  id: '/admin/announcements',
+  path: '/admin/announcements',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminCancellationsRoute = AdminCancellationsRouteImport.update({
+  id: '/admin/cancellations',
+  path: '/admin/cancellations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminCareersRoute = AdminCareersRouteImport.update({
+  id: '/admin/careers',
+  path: '/admin/careers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminDiscussThreadsRoute = AdminDiscussThreadsRouteImport.update({
+  id: '/admin/discuss-threads',
+  path: '/admin/discuss-threads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminFaqsRoute = AdminFaqsRouteImport.update({
+  id: '/admin/faqs',
+  path: '/admin/faqs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminFeedRemindersRoute = AdminFeedRemindersRouteImport.update({
+  id: '/admin/feed-reminders',
+  path: '/admin/feed-reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminMembersRoute = AdminMembersRouteImport.update({
+  id: '/admin/members',
+  path: '/admin/members',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminPromosRoute = AdminPromosRouteImport.update({
+  id: '/admin/promos',
+  path: '/admin/promos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CareersIndexRoute = CareersIndexRouteImport.update({
+  id: '/careers/',
+  path: '/careers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CareersSlugRoute = CareersSlugRouteImport.update({
+  id: '/careers/$slug',
+  path: '/careers/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HostsIndexRoute = HostsIndexRouteImport.update({
+  id: '/hosts/',
+  path: '/hosts/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HostsSlugRoute = HostsSlugRouteImport.update({
+  id: '/hosts/$slug',
+  path: '/hosts/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NewslettersIndexRoute = NewslettersIndexRouteImport.update({
+  id: '/newsletters/',
+  path: '/newsletters/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NewslettersPostRoute = NewslettersPostRouteImport.update({
+  id: '/newsletters/$post',
+  path: '/newsletters/$post',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlusIndexRoute = PlusIndexRouteImport.update({
+  id: '/plus/',
+  path: '/plus/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlusGiftRoute = PlusGiftRouteImport.update({
+  id: '/plus/gift',
+  path: '/plus/gift',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlusInsideCallMeBackRoute = PlusInsideCallMeBackRouteImport.update({
+  id: '/plus/inside-call-me-back',
+  path: '/plus/inside-call-me-back',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PodcastsIndexRoute = PodcastsIndexRouteImport.update({
+  id: '/podcasts/',
+  path: '/podcasts/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PodcastsArkNewsDailyRoute = PodcastsArkNewsDailyRouteImport.update({
+  id: '/podcasts/ark-news-daily',
+  path: '/podcasts/ark-news-daily',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PodcastsCallMeBackRoute = PodcastsCallMeBackRouteImport.update({
+  id: '/podcasts/call-me-back',
+  path: '/podcasts/call-me-back',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PodcastsForHeavensSakeRoute = PodcastsForHeavensSakeRouteImport.update({
+  id: '/podcasts/for-heavens-sake',
+  path: '/podcasts/for-heavens-sake',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PodcastsWhatsYourNumberRoute = PodcastsWhatsYourNumberRouteImport.update({
+  id: '/podcasts/whats-your-number',
+  path: '/podcasts/whats-your-number',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShowsIndexRoute = ShowsIndexRouteImport.update({
+  id: '/shows/',
+  path: '/shows/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShowsShowRoute = ShowsShowRouteImport.update({
+  id: '/shows/$show',
+  path: '/shows/$show',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NewslettersSlugPostRoute = NewslettersSlugPostRouteImport.update({
   id: '/newsletters/$slug/$post',
   path: '/newsletters/$slug/$post',
   getParentRoute: () => rootRouteImport,
+} as any)
+const PodcastsShowEpisodeRoute = PodcastsShowEpisodeRouteImport.update({
+  id: '/podcasts/$show/$episode',
+  path: '/podcasts/$show/$episode',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShowsShowEpisodeRoute = ShowsShowEpisodeRouteImport.update({
+  id: '/$episode',
+  path: '/$episode',
+  getParentRoute: () => ShowsShowRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -622,74 +622,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/welcome': {
-      id: '/welcome'
-      path: '/welcome'
-      fullPath: '/welcome'
-      preLoaderRoute: typeof WelcomeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/setup': {
-      id: '/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof SetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/redeem': {
-      id: '/redeem'
-      path: '/redeem'
-      fullPath: '/redeem'
-      preLoaderRoute: typeof RedeemRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pricing': {
-      id: '/pricing'
-      path: '/pricing'
-      fullPath: '/pricing'
-      preLoaderRoute: typeof PricingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/logout': {
-      id: '/logout'
-      path: '/logout'
-      fullPath: '/logout'
-      preLoaderRoute: typeof LogoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/israel-votes': {
-      id: '/israel-votes'
-      path: '/israel-votes'
-      fullPath: '/israel-votes'
-      preLoaderRoute: typeof IsraelVotesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/faq': {
-      id: '/faq'
-      path: '/faq'
-      fullPath: '/faq'
-      preLoaderRoute: typeof FaqRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/contact': {
-      id: '/contact'
-      path: '/contact'
-      fullPath: '/contact'
-      preLoaderRoute: typeof ContactRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/community': {
-      id: '/community'
-      path: '/community'
-      fullPath: '/community'
-      preLoaderRoute: typeof CommunityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/book-club': {
-      id: '/book-club'
-      path: '/book-club'
-      fullPath: '/book-club'
-      preLoaderRoute: typeof BookClubRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -706,207 +643,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/book-club': {
+      id: '/book-club'
+      path: '/book-club'
+      fullPath: '/book-club'
+      preLoaderRoute: typeof BookClubRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/shows/': {
-      id: '/shows/'
-      path: '/shows'
-      fullPath: '/shows/'
-      preLoaderRoute: typeof ShowsIndexRouteImport
+    '/community': {
+      id: '/community'
+      path: '/community'
+      fullPath: '/community'
+      preLoaderRoute: typeof CommunityRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/podcasts/': {
-      id: '/podcasts/'
-      path: '/podcasts'
-      fullPath: '/podcasts/'
-      preLoaderRoute: typeof PodcastsIndexRouteImport
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plus/': {
-      id: '/plus/'
-      path: '/plus'
-      fullPath: '/plus/'
-      preLoaderRoute: typeof PlusIndexRouteImport
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/newsletters/': {
-      id: '/newsletters/'
-      path: '/newsletters'
-      fullPath: '/newsletters/'
-      preLoaderRoute: typeof NewslettersIndexRouteImport
+    '/israel-votes': {
+      id: '/israel-votes'
+      path: '/israel-votes'
+      fullPath: '/israel-votes'
+      preLoaderRoute: typeof IsraelVotesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/hosts/': {
-      id: '/hosts/'
-      path: '/hosts'
-      fullPath: '/hosts/'
-      preLoaderRoute: typeof HostsIndexRouteImport
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/careers/': {
-      id: '/careers/'
-      path: '/careers'
-      fullPath: '/careers/'
-      preLoaderRoute: typeof CareersIndexRouteImport
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/': {
-      id: '/admin/'
-      path: '/admin'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AdminIndexRouteImport
+    '/redeem': {
+      id: '/redeem'
+      path: '/redeem'
+      fullPath: '/redeem'
+      preLoaderRoute: typeof RedeemRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about/network': {
+      id: '/about/network'
+      path: '/network'
+      fullPath: '/about/network'
+      preLoaderRoute: typeof AboutNetworkRouteImport
+      parentRoute: typeof AboutRoute
     }
     '/account/': {
       id: '/account/'
       path: '/'
       fullPath: '/account/'
       preLoaderRoute: typeof AccountIndexRouteImport
-      parentRoute: typeof AccountRouteRoute
-    }
-    '/shows/$show': {
-      id: '/shows/$show'
-      path: '/shows/$show'
-      fullPath: '/shows/$show'
-      preLoaderRoute: typeof ShowsShowRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/podcasts/whats-your-number': {
-      id: '/podcasts/whats-your-number'
-      path: '/podcasts/whats-your-number'
-      fullPath: '/podcasts/whats-your-number'
-      preLoaderRoute: typeof PodcastsWhatsYourNumberRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/podcasts/for-heavens-sake': {
-      id: '/podcasts/for-heavens-sake'
-      path: '/podcasts/for-heavens-sake'
-      fullPath: '/podcasts/for-heavens-sake'
-      preLoaderRoute: typeof PodcastsForHeavensSakeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/podcasts/call-me-back': {
-      id: '/podcasts/call-me-back'
-      path: '/podcasts/call-me-back'
-      fullPath: '/podcasts/call-me-back'
-      preLoaderRoute: typeof PodcastsCallMeBackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/podcasts/ark-news-daily': {
-      id: '/podcasts/ark-news-daily'
-      path: '/podcasts/ark-news-daily'
-      fullPath: '/podcasts/ark-news-daily'
-      preLoaderRoute: typeof PodcastsArkNewsDailyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/plus/inside-call-me-back': {
-      id: '/plus/inside-call-me-back'
-      path: '/plus/inside-call-me-back'
-      fullPath: '/plus/inside-call-me-back'
-      preLoaderRoute: typeof PlusInsideCallMeBackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/plus/gift': {
-      id: '/plus/gift'
-      path: '/plus/gift'
-      fullPath: '/plus/gift'
-      preLoaderRoute: typeof PlusGiftRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/newsletters/$post': {
-      id: '/newsletters/$post'
-      path: '/newsletters/$post'
-      fullPath: '/newsletters/$post'
-      preLoaderRoute: typeof NewslettersPostRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/hosts/$slug': {
-      id: '/hosts/$slug'
-      path: '/hosts/$slug'
-      fullPath: '/hosts/$slug'
-      preLoaderRoute: typeof HostsSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/careers/$slug': {
-      id: '/careers/$slug'
-      path: '/careers/$slug'
-      fullPath: '/careers/$slug'
-      preLoaderRoute: typeof CareersSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/promos': {
-      id: '/admin/promos'
-      path: '/admin/promos'
-      fullPath: '/admin/promos'
-      preLoaderRoute: typeof AdminPromosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/members': {
-      id: '/admin/members'
-      path: '/admin/members'
-      fullPath: '/admin/members'
-      preLoaderRoute: typeof AdminMembersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/feed-reminders': {
-      id: '/admin/feed-reminders'
-      path: '/admin/feed-reminders'
-      fullPath: '/admin/feed-reminders'
-      preLoaderRoute: typeof AdminFeedRemindersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/faqs': {
-      id: '/admin/faqs'
-      path: '/admin/faqs'
-      fullPath: '/admin/faqs'
-      preLoaderRoute: typeof AdminFaqsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/discuss-threads': {
-      id: '/admin/discuss-threads'
-      path: '/admin/discuss-threads'
-      fullPath: '/admin/discuss-threads'
-      preLoaderRoute: typeof AdminDiscussThreadsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/careers': {
-      id: '/admin/careers'
-      path: '/admin/careers'
-      fullPath: '/admin/careers'
-      preLoaderRoute: typeof AdminCareersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/cancellations': {
-      id: '/admin/cancellations'
-      path: '/admin/cancellations'
-      fullPath: '/admin/cancellations'
-      preLoaderRoute: typeof AdminCancellationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/announcements': {
-      id: '/admin/announcements'
-      path: '/admin/announcements'
-      fullPath: '/admin/announcements'
-      preLoaderRoute: typeof AdminAnnouncementsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/account/podcast-feed': {
-      id: '/account/podcast-feed'
-      path: '/podcast-feed'
-      fullPath: '/account/podcast-feed'
-      preLoaderRoute: typeof AccountPodcastFeedRouteImport
-      parentRoute: typeof AccountRouteRoute
-    }
-    '/account/newsletters': {
-      id: '/account/newsletters'
-      path: '/newsletters'
-      fullPath: '/account/newsletters'
-      preLoaderRoute: typeof AccountNewslettersRouteImport
       parentRoute: typeof AccountRouteRoute
     }
     '/account/billing': {
@@ -916,25 +734,193 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountBillingRouteImport
       parentRoute: typeof AccountRouteRoute
     }
-    '/about/network': {
-      id: '/about/network'
-      path: '/network'
-      fullPath: '/about/network'
-      preLoaderRoute: typeof AboutNetworkRouteImport
-      parentRoute: typeof AboutRoute
+    '/account/newsletters': {
+      id: '/account/newsletters'
+      path: '/newsletters'
+      fullPath: '/account/newsletters'
+      preLoaderRoute: typeof AccountNewslettersRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
-    '/shows/$show/$episode': {
-      id: '/shows/$show/$episode'
-      path: '/$episode'
-      fullPath: '/shows/$show/$episode'
-      preLoaderRoute: typeof ShowsShowEpisodeRouteImport
-      parentRoute: typeof ShowsShowRoute
+    '/account/podcast-feed': {
+      id: '/account/podcast-feed'
+      path: '/podcast-feed'
+      fullPath: '/account/podcast-feed'
+      preLoaderRoute: typeof AccountPodcastFeedRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
-    '/podcasts/$show/$episode': {
-      id: '/podcasts/$show/$episode'
-      path: '/podcasts/$show/$episode'
-      fullPath: '/podcasts/$show/$episode'
-      preLoaderRoute: typeof PodcastsShowEpisodeRouteImport
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/announcements': {
+      id: '/admin/announcements'
+      path: '/admin/announcements'
+      fullPath: '/admin/announcements'
+      preLoaderRoute: typeof AdminAnnouncementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/cancellations': {
+      id: '/admin/cancellations'
+      path: '/admin/cancellations'
+      fullPath: '/admin/cancellations'
+      preLoaderRoute: typeof AdminCancellationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/careers': {
+      id: '/admin/careers'
+      path: '/admin/careers'
+      fullPath: '/admin/careers'
+      preLoaderRoute: typeof AdminCareersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/discuss-threads': {
+      id: '/admin/discuss-threads'
+      path: '/admin/discuss-threads'
+      fullPath: '/admin/discuss-threads'
+      preLoaderRoute: typeof AdminDiscussThreadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/faqs': {
+      id: '/admin/faqs'
+      path: '/admin/faqs'
+      fullPath: '/admin/faqs'
+      preLoaderRoute: typeof AdminFaqsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/feed-reminders': {
+      id: '/admin/feed-reminders'
+      path: '/admin/feed-reminders'
+      fullPath: '/admin/feed-reminders'
+      preLoaderRoute: typeof AdminFeedRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/members': {
+      id: '/admin/members'
+      path: '/admin/members'
+      fullPath: '/admin/members'
+      preLoaderRoute: typeof AdminMembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/promos': {
+      id: '/admin/promos'
+      path: '/admin/promos'
+      fullPath: '/admin/promos'
+      preLoaderRoute: typeof AdminPromosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/careers/': {
+      id: '/careers/'
+      path: '/careers'
+      fullPath: '/careers/'
+      preLoaderRoute: typeof CareersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/careers/$slug': {
+      id: '/careers/$slug'
+      path: '/careers/$slug'
+      fullPath: '/careers/$slug'
+      preLoaderRoute: typeof CareersSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hosts/': {
+      id: '/hosts/'
+      path: '/hosts'
+      fullPath: '/hosts/'
+      preLoaderRoute: typeof HostsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hosts/$slug': {
+      id: '/hosts/$slug'
+      path: '/hosts/$slug'
+      fullPath: '/hosts/$slug'
+      preLoaderRoute: typeof HostsSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/newsletters/': {
+      id: '/newsletters/'
+      path: '/newsletters'
+      fullPath: '/newsletters/'
+      preLoaderRoute: typeof NewslettersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/newsletters/$post': {
+      id: '/newsletters/$post'
+      path: '/newsletters/$post'
+      fullPath: '/newsletters/$post'
+      preLoaderRoute: typeof NewslettersPostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plus/': {
+      id: '/plus/'
+      path: '/plus'
+      fullPath: '/plus/'
+      preLoaderRoute: typeof PlusIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plus/gift': {
+      id: '/plus/gift'
+      path: '/plus/gift'
+      fullPath: '/plus/gift'
+      preLoaderRoute: typeof PlusGiftRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plus/inside-call-me-back': {
+      id: '/plus/inside-call-me-back'
+      path: '/plus/inside-call-me-back'
+      fullPath: '/plus/inside-call-me-back'
+      preLoaderRoute: typeof PlusInsideCallMeBackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/podcasts/': {
+      id: '/podcasts/'
+      path: '/podcasts'
+      fullPath: '/podcasts/'
+      preLoaderRoute: typeof PodcastsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/podcasts/ark-news-daily': {
+      id: '/podcasts/ark-news-daily'
+      path: '/podcasts/ark-news-daily'
+      fullPath: '/podcasts/ark-news-daily'
+      preLoaderRoute: typeof PodcastsArkNewsDailyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/podcasts/call-me-back': {
+      id: '/podcasts/call-me-back'
+      path: '/podcasts/call-me-back'
+      fullPath: '/podcasts/call-me-back'
+      preLoaderRoute: typeof PodcastsCallMeBackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/podcasts/for-heavens-sake': {
+      id: '/podcasts/for-heavens-sake'
+      path: '/podcasts/for-heavens-sake'
+      fullPath: '/podcasts/for-heavens-sake'
+      preLoaderRoute: typeof PodcastsForHeavensSakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/podcasts/whats-your-number': {
+      id: '/podcasts/whats-your-number'
+      path: '/podcasts/whats-your-number'
+      fullPath: '/podcasts/whats-your-number'
+      preLoaderRoute: typeof PodcastsWhatsYourNumberRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shows/': {
+      id: '/shows/'
+      path: '/shows'
+      fullPath: '/shows/'
+      preLoaderRoute: typeof ShowsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shows/$show': {
+      id: '/shows/$show'
+      path: '/shows/$show'
+      fullPath: '/shows/$show'
+      preLoaderRoute: typeof ShowsShowRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/newsletters/$slug/$post': {
@@ -943,6 +929,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/newsletters/$slug/$post'
       preLoaderRoute: typeof NewslettersSlugPostRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/podcasts/$show/$episode': {
+      id: '/podcasts/$show/$episode'
+      path: '/podcasts/$show/$episode'
+      fullPath: '/podcasts/$show/$episode'
+      preLoaderRoute: typeof PodcastsShowEpisodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shows/$show/$episode': {
+      id: '/shows/$show/$episode'
+      path: '/$episode'
+      fullPath: '/shows/$show/$episode'
+      preLoaderRoute: typeof ShowsShowEpisodeRouteImport
+      parentRoute: typeof ShowsShowRoute
     }
   }
 }

@@ -414,6 +414,63 @@ async function handleOrphans(
   }
 }
 
+// --- Debundle intro coupon -------------------------------------------------
+
+// How long the intro rate runs after a bundle is split. Six monthly invoices —
+// or, on an annual plan, the one annual invoice that falls inside the window,
+// i.e. a full discounted year. Both are intended; see debundlePricePreview.
+const DEBUNDLE_INTRO_MONTHS = 6
+
+// The bounded rate a debundling member lands on: the per-component price they
+// already paid inside the bundle (half of it), expressed as a percentage off the
+// standalone price they're moving to. Derived from the catalog rather than
+// hardcoded, so it stays correct if Ryan retunes either number — and it's the
+// same percentage for both cadences, since the yearly prices scale together.
+//
+//   $8.00 standalone → 18.75% off → $6.50   (half of the $13 bundle)
+//   $80.00 standalone → 18.75% off → $65.00 (half of the $130 bundle)
+//
+// Rounded to Stripe's 2-decimal limit on percent_off.
+function introPercentOff(): number {
+  const single = CATALOG.find((d) => d.catalogKey === 'ark_plus')!.usdMonthlyMinor
+  const bundle = CATALOG.find((d) => d.catalogKey === 'bundle')!.usdMonthlyMinor
+  return Math.round((1 - bundle / 2 / single) * 10_000) / 100
+}
+
+// A coupon's discount is immutable in Stripe, so the id carries the percent: a
+// retuned catalog mints a new coupon rather than silently leaving a stale rate
+// attached to the slot. The server picks whichever is active, and derives the
+// price it quotes by applying that coupon — so the quote can never drift from
+// what gets charged.
+function introCouponId(percentOff: number): string {
+  return `debundle_intro_${String(percentOff).replace('.', '_')}_${DEBUNDLE_INTRO_MONTHS}mo`
+}
+
+// Provision the debundle intro coupon, tagged for the `debundle_intro` save slot
+// so server/lib/retention.ts finds it. Idempotent: a coupon with this id already
+// existing means the rate is unchanged.
+async function upsertIntroCoupon(stripe: Stripe, apply: boolean): Promise<void> {
+  const percentOff = introPercentOff()
+  const id = introCouponId(percentOff)
+
+  const existing = await stripe.coupons.retrieve(id).catch(() => null)
+  if (existing) {
+    console.log(`  coupon ${id}: unchanged (${percentOff}% off, ${DEBUNDLE_INTRO_MONTHS}mo)`)
+    return
+  }
+
+  console.log(`  coupon ${id}: CREATE (${percentOff}% off for ${DEBUNDLE_INTRO_MONTHS} months)`)
+  if (!apply) return
+  await stripe.coupons.create({
+    id,
+    name: 'Debundle intro rate',
+    percent_off: percentOff,
+    duration: 'repeating',
+    duration_in_months: DEBUNDLE_INTRO_MONTHS,
+    metadata: { retention_offer: 'true', offer_kind: 'debundle_intro' },
+  })
+}
+
 // --- Main ------------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -445,6 +502,9 @@ async function main(): Promise<void> {
       await upsertPrice(stripe, productId, price, apply)
     }
   }
+
+  console.log('\n--- Debundle intro rate ---')
+  await upsertIntroCoupon(stripe, apply)
 
   console.log('\nOrphans:')
   await handleOrphans(stripe, orphans, archiveOrphans, apply)

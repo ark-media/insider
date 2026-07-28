@@ -272,6 +272,8 @@ export type PromoDraft = {
   autoApply: boolean;
   // Flags the coupon for the cancel save flow instead of checkout auto-apply.
   retentionOffer?: boolean;
+  // Which save in that flow it fills; required when retentionOffer is set.
+  offerKind?: string;
   maxRedemptions?: number;
   redeemBy?: string;
 };

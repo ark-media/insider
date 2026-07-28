@@ -1,5 +1,6 @@
 import { circleEventLink, type EventStripItem } from "../../lib/circle";
 import { formatEventStart, type ArkEvent } from "../../data/events";
+import { OutboundLink } from "../OutboundLink";
 
 const FORMAT_LABEL: Record<ArkEvent["format"], string> = {
   "audio-room": "Audio room",
@@ -34,10 +35,11 @@ export function LiveEventsStrip({ items }: { items: EventStripItem[] | null }) {
     <ul className="flex gap-4 overflow-x-auto pb-2">
       {items.map(({ event, status }) => (
         <li key={event.id} className="w-[280px] shrink-0">
-          <a
+          <OutboundLink
             href={event.deepLink ?? circleEventLink()}
-            target="_blank"
-            rel="noreferrer noopener"
+            platform="circle"
+            placement={status === "live" ? "events_strip_live" : "events_strip_upcoming"}
+            context={event.id}
             className="group flex h-full flex-col border border-rule bg-navy-800/40 p-5 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             <div className="flex items-center gap-2">
@@ -62,7 +64,7 @@ export function LiveEventsStrip({ items }: { items: EventStripItem[] | null }) {
             <p className="mt-auto pt-4 button-text font-display font-bold text-cyan">
               {status === "live" ? "Join in the app" : "Open in the app"} →
             </p>
-          </a>
+          </OutboundLink>
         </li>
       ))}
     </ul>

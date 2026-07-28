@@ -29,7 +29,12 @@ import {
   insertCancellationSurvey,
   updateCancellationSurveyReasons,
 } from '../../lib/cancellation.js'
-import { bundleBreakdown, debundlePricePreview, deriveSaveOffers } from '../../lib/retention.js'
+import {
+  bundleBreakdown,
+  debundlePricePreview,
+  deriveSaveOffers,
+  pickIntroCoupon,
+} from '../../lib/retention.js'
 import { isPlanSwitchKind, isSaveIntent } from '../../../shared/retention.js'
 import {
   isCancelOfferOutcome,
@@ -42,6 +47,7 @@ import {
   isSupportedCurrency,
   resolveCatalogPrice,
 } from '../../lib/pricing.js'
+import { sanitizeAttribution } from '../../../shared/attribution.js'
 import { isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
 import { getSessionEmail } from '../../lib/session.js'
@@ -88,6 +94,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             tier?: string
             currency?: string
             custom_amount_cents?: number
+            attribution?: unknown
           }>(req)) ?? {}
 
         // Email is required up front so we can pre-create the Stripe Customer
@@ -233,6 +240,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               plan,
               amount_cents: String(amountCents),
               currency,
+              // Acquisition channel, captured in the browser on first visit and
+              // forwarded here (BI plan §4.1). The webhook reads it straight
+              // back off the subscription so every server-side revenue event —
+              // including renewals and churn months later — carries the channel
+              // that produced the member, with no browser session to rejoin.
+              // Allowlisted + length-capped: the client is untrusted.
+              ...sanitizeAttribution(body.attribution),
             },
           },
           // Required for ui_mode 'elements'; only used when a payment method
@@ -465,7 +479,20 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           } catch (err) {
             console.error('[stripe] save-offers eligibility check failed:', err)
           }
-          if (blocked) offers = offers.filter((o) => isPlanSwitchKind(o.kind))
+          // A spent window removes the discount, not the switch itself: the
+          // member can still change plan, just at the plain catalog price.
+          if (blocked) {
+            offers = offers
+              .filter((o) => isPlanSwitchKind(o.kind))
+              .map((o) => ({
+                ...o,
+                couponId: null,
+                label: null,
+                percentOff: null,
+                amountOff: null,
+                durationMonths: null,
+              }))
+          }
         }
 
         json(200, { offers, standalone })
@@ -473,12 +500,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     }),
 
     defineRoute({
-      // Accept a coupon-backed save offer (supporter / affordability /
-      // circle-free-months / perpetual). The coupon is re-derived server-side
-      // for (intent, cadence) — never trusted from the client — attached to the
-      // live sub, and any pending cancel is cleared in one update. An accepted
-      // survey row is written, which burns the 12-month window. Plan switches
-      // (annual/monthly) go through change-tier instead, not this route.
+      // Accept a coupon-backed save offer (supporter / affordability). The
+      // coupon is re-derived server-side for (intent, cadence) — never trusted
+      // from the client — attached to the live sub, and any pending cancel is
+      // cleared in one update. An accepted survey row is written, which burns the
+      // 12-month window. Plan switches (annual/monthly) carry no coupon and go
+      // through change-tier instead, not this route.
       path: '/api/stripe/accept-save-offer',
       method: 'POST',
       handler: async (req, _res, json) => {
@@ -499,6 +526,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!plan) return json(409, { error: 'No billing cadence on subscription.' })
 
         const offers = await deriveSaveOffers(stripe, body.intent, plan)
+
         const offer = offers.find((o) => o.kind === wantKind && o.couponId)
         // A pure plan switch (annual_switch, no coupon) is applied via
         // change-tier, not here — nothing to attach.
@@ -506,14 +534,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           return json(409, { error: 'No such save offer available.' })
         }
 
-        // The perpetual monthly_switch coupon is the counterpart of a plan
-        // switch (Decision #5) — a plan switch is never rate-limited (Decision
-        // #6), so it neither burns nor is blocked by the 12-month window, and it
-        // must not touch cancel_at_period_end (the switch itself is scheduled by
-        // change-tier). Promotional coupons do all three.
-        const isSwitchCoupon = isPlanSwitchKind(offer.kind)
-
-        if (!isSwitchCoupon && env.DATABASE_URL) {
+        // One temporary promotional discount per rolling 12 months, so a member
+        // can't re-enter the cancel flow to collect it again. This covers the
+        // discount riding the annual→monthly switch too — it's the same coupon.
+        if (env.DATABASE_URL) {
           let blocked = true
           try {
             blocked = await hasAcceptedRetention(getDb(env), email)
@@ -524,9 +548,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         }
 
         let updated
-        if (isSwitchCoupon) {
-          // Attach the perpetual coupon alongside the change-tier-scheduled
-          // switch; don't release the schedule or clear cancel here.
+        if (isPlanSwitchKind(offer.kind)) {
+          // change-tier already scheduled the switch — attach the discount
+          // alongside it, without releasing that schedule or touching
+          // cancel_at_period_end.
           updated = await stripe.subscriptions.update(sub.id, {
             discounts: [{ coupon: offer.couponId }],
           })
@@ -538,18 +563,18 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             discounts: [{ coupon: offer.couponId }],
             cancel_at_period_end: false,
           })
-          if (env.DATABASE_URL) {
-            try {
-              await insertCancellationSurvey(getDb(env), {
-                email,
-                reasons: [],
-                note: null,
-                offerOutcome: 'accepted',
-                couponId: offer.couponId,
-              })
-            } catch (err) {
-              console.error('[stripe] accept-save-offer survey write failed:', err)
-            }
+        }
+        if (env.DATABASE_URL) {
+          try {
+            await insertCancellationSurvey(getDb(env), {
+              email,
+              reasons: [],
+              note: null,
+              offerOutcome: 'accepted',
+              couponId: offer.couponId,
+            })
+          } catch (err) {
+            console.error('[stripe] accept-save-offer survey write failed:', err)
           }
         }
 
@@ -559,7 +584,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           percentOff: offer.percentOff,
           amountOff: offer.amountOff,
           durationMonths: offer.durationMonths,
-          forever: offer.forever,
           next_charge_at: periodEndIso(updated),
         })
       },
@@ -764,11 +788,32 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const catalog = await resolveCatalogPrice(stripe, newTier, plan)
         const floor = catalog.floors[currency] ?? catalog.floors.usd
 
-        const pwyc = validatePwycAmount(body.custom_amount_cents, floor, currency)
-        if ('error' in pwyc) return json(400, { error: pwyc.error })
-        const amountCents = pwyc.amountCents
-
         const currentTier = await tierFromSubscription(sub, stripe)
+        // Unbundling settles at the kept product's own catalog price: the bundle
+        // is a discount on two standalone prices, and splitting it forfeits that.
+        // The softer landing is a bounded intro coupon on the scheduled phase
+        // (below), not a permanently reduced price. Gated on the subscription
+        // really being a bundle, and never member-chosen — a debundle takes the
+        // catalog floor, so PWYC can't be smuggled in via retained_product.
+        const isDebundle =
+          retainedProduct !== null && currentTier === 'bundle' && newTier !== 'bundle'
+        let amountCents: number
+        if (isDebundle) {
+          amountCents = floor
+        } else {
+          const pwyc = validatePwycAmount(body.custom_amount_cents, floor, currency)
+          if ('error' in pwyc) return json(400, { error: pwyc.error })
+          amountCents = pwyc.amountCents
+        }
+
+        // The intro coupon rides the *scheduled phase*, not the subscription, so
+        // its clock starts when the new price does. Attaching it now would burn
+        // the term against the bundle the member is still on — up to a full
+        // billing period before the product it discounts exists.
+        const introCoupon = isDebundle
+          ? pickIntroCoupon(await listActiveCoupons(stripe))
+          : null
+
         const prevEnt = deriveEntitlements(currentTier)
         const nextEnt = deriveEntitlements(newTier)
         const item = sub.items.data[0]
@@ -886,7 +931,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 start_date: currentPhase.start_date,
                 end_date: currentPhase.end_date,
               },
-              { items: [{ ...destinationPrice, quantity: 1 }] },
+              {
+                items: [{ ...destinationPrice, quantity: 1 }],
+                // Phase-scoped so the intro term is measured from the moment the
+                // debundled price takes effect. A repeating N-month coupon then
+                // discounts every invoice inside that window: N monthly invoices,
+                // but only the one annual invoice — so an annual debundler gets a
+                // full discounted year. Intended, and what the quote promises.
+                ...(introCoupon ? { discounts: [{ coupon: introCoupon.id }] } : {}),
+              },
             ],
           })
           if (env.DATABASE_URL) {

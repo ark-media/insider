@@ -217,159 +217,139 @@ function BillingPage() {
                   }.`}
             </p>
           ) : null}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="border border-rule bg-navy-800/40 p-8">
-              <h2 className="label text-cyan">Manage payment & invoices</h2>
-              <p className="mt-4 max-w-md text-body-sm text-fg">
-                Update your card, change your billing email, or download
-                invoices in the Stripe Customer Portal.
+          <div className="max-w-xl border border-rule bg-navy-800/40 p-8">
+            <h2 className="label text-cyan">Cancel</h2>
+            <p className="mt-4 max-w-md text-body-sm text-fg">
+              {scheduledCancelAt
+                ? "Your membership is set to cancel and won't renew."
+                : pendingChange
+                  ? "Changed your mind? You can undo the scheduled change and keep your full membership, or cancel it entirely."
+                  : periodEndLabel
+                    ? `Cancel anytime. You'll keep access through the end of your current billing period, on ${periodEndLabel}.`
+                    : "Cancel anytime. You'll keep access through the end of your current billing period."}
+            </p>
+
+            {status.kind === "ok" ? (
+              <p
+                ref={confirmationRef}
+                tabIndex={-1}
+                className="mt-6 text-body-sm text-cyan focus:outline-none"
+                aria-live="polite"
+              >
+                Cancellation confirmed.{" "}
+                {status.until
+                  ? `Access continues until ${new Date(status.until).toLocaleDateString()}.`
+                  : ""}
               </p>
+            ) : status.kind === "debundled" ? (
+              <p
+                ref={confirmationRef}
+                tabIndex={-1}
+                className="mt-6 text-body-sm text-cyan focus:outline-none"
+                aria-live="polite"
+              >
+                Done — you'll keep{" "}
+                {status.kept === "ark-plus" ? "Ark+" : "the Community"} on its
+                own. The change takes effect at the end of your current billing
+                period{periodEndLabel ? `, on ${periodEndLabel}` : ""}.
+              </p>
+            ) : status.kind === "resumed" ? (
+              <p
+                ref={confirmationRef}
+                tabIndex={-1}
+                className="mt-6 text-body-sm text-cyan focus:outline-none"
+                aria-live="polite"
+              >
+                Your membership is back on.{" "}
+                {status.nextChargeAt
+                  ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
+                  : ""}
+              </p>
+            ) : status.kind === "reverted" ? (
+              <p
+                ref={confirmationRef}
+                tabIndex={-1}
+                className="mt-6 text-body-sm text-cyan focus:outline-none"
+                aria-live="polite"
+              >
+                The scheduled change was cancelled — your membership continues
+                unchanged.{" "}
+                {status.nextChargeAt
+                  ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
+                  : ""}
+              </p>
+            ) : scheduledCancelAt ? (
+              <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                You'll keep access until{" "}
+                {new Date(scheduledCancelAt).toLocaleDateString()}.
+              </p>
+            ) : null}
+
+            {/* Actions reflect the current membership state, not the last
+                action: a pending cancel → reactivate; a pending change →
+                undo/cancel; otherwise the normal cancel-or-change entry. The
+                confirmation message above is what changes per action, so the
+                member is never left without a next step (e.g. after accepting
+                a save offer or undoing a change). */}
+            {scheduledCancelAt ? (
               <button
                 type="button"
-                disabled
-                className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-muted opacity-60"
+                onClick={onReactivate}
+                disabled={status.kind === "reactivating"}
+                className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
               >
-                Open Stripe portal →
+                {status.kind === "reactivating"
+                  ? "Reactivating…"
+                  : "Reactivate membership"}
               </button>
-              <p className="mt-3 text-body-sm">
-                Stripe portal redirect not yet wired in this preview build.
-              </p>
-            </div>
-
-            <div className="border border-rule bg-navy-800/40 p-8">
-              <h2 className="label text-cyan">Cancel</h2>
-              <p className="mt-4 max-w-md text-body-sm text-fg">
-                {scheduledCancelAt
-                  ? "Your membership is set to cancel and won't renew."
-                  : pendingChange
-                    ? "Changed your mind? You can undo the scheduled change and keep your full membership, or cancel it entirely."
-                    : periodEndLabel
-                      ? `Cancel anytime. You'll keep access through the end of your current billing period, on ${periodEndLabel}.`
-                      : "Cancel anytime. You'll keep access through the end of your current billing period."}
-              </p>
-
-              {status.kind === "ok" ? (
-                <p
-                  ref={confirmationRef}
-                  tabIndex={-1}
-                  className="mt-6 text-body-sm text-cyan focus:outline-none"
-                  aria-live="polite"
-                >
-                  Cancellation confirmed.{" "}
-                  {status.until
-                    ? `Access continues until ${new Date(status.until).toLocaleDateString()}.`
-                    : ""}
-                </p>
-              ) : status.kind === "debundled" ? (
-                <p
-                  ref={confirmationRef}
-                  tabIndex={-1}
-                  className="mt-6 text-body-sm text-cyan focus:outline-none"
-                  aria-live="polite"
-                >
-                  Done — you'll keep{" "}
-                  {status.kept === "ark-plus" ? "Ark+" : "the Community"} on its
-                  own. The change takes effect at the end of your current billing
-                  period{periodEndLabel ? `, on ${periodEndLabel}` : ""}.
-                </p>
-              ) : status.kind === "resumed" ? (
-                <p
-                  ref={confirmationRef}
-                  tabIndex={-1}
-                  className="mt-6 text-body-sm text-cyan focus:outline-none"
-                  aria-live="polite"
-                >
-                  Your membership is back on.{" "}
-                  {status.nextChargeAt
-                    ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
-                    : ""}
-                </p>
-              ) : status.kind === "reverted" ? (
-                <p
-                  ref={confirmationRef}
-                  tabIndex={-1}
-                  className="mt-6 text-body-sm text-cyan focus:outline-none"
-                  aria-live="polite"
-                >
-                  The scheduled change was cancelled — your membership continues
-                  unchanged.{" "}
-                  {status.nextChargeAt
-                    ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
-                    : ""}
-                </p>
-              ) : scheduledCancelAt ? (
-                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
-                  You'll keep access until{" "}
-                  {new Date(scheduledCancelAt).toLocaleDateString()}.
-                </p>
-              ) : null}
-
-              {/* Actions reflect the current membership state, not the last
-                  action: a pending cancel → reactivate; a pending change →
-                  undo/cancel; otherwise the normal cancel-or-change entry. The
-                  confirmation message above is what changes per action, so the
-                  member is never left without a next step (e.g. after accepting
-                  a save offer or undoing a change). */}
-              {scheduledCancelAt ? (
+            ) : pendingChange ? (
+              // A period-end change is scheduled (e.g. a debundle): the two
+              // useful actions are undoing it (keep the full membership) or
+              // cancelling outright — not the generic change tree.
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
-                  onClick={onReactivate}
+                  onClick={onUndoChange}
                   disabled={status.kind === "reactivating"}
-                  className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   {status.kind === "reactivating"
-                    ? "Reactivating…"
-                    : "Reactivate membership"}
+                    ? "Undoing…"
+                    : `Keep ${tierLabel(cancelTier)}`}
                 </button>
-              ) : pendingChange ? (
-                // A period-end change is scheduled (e.g. a debundle): the two
-                // useful actions are undoing it (keep the full membership) or
-                // cancelling outright — not the generic change tree.
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={onUndoChange}
-                    disabled={status.kind === "reactivating"}
-                    className="inline-flex items-center justify-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-                  >
-                    {status.kind === "reactivating"
-                      ? "Undoing…"
-                      : `Keep ${tierLabel(cancelTier)}`}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={status.kind === "reactivating"}
-                    onClick={() => {
-                      setStatus({ kind: "idle" });
-                      setFlowOpen(true);
-                    }}
-                    className="inline-flex items-center justify-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-                  >
-                    Cancel my membership
-                  </button>
-                </div>
-              ) : (
                 <button
                   type="button"
+                  disabled={status.kind === "reactivating"}
                   onClick={() => {
                     setStatus({ kind: "idle" });
                     setFlowOpen(true);
                   }}
-                  className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                  className="inline-flex items-center justify-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
-                  {cancelTier === "bundle"
-                    ? "Cancel or change my membership"
-                    : cancelTier === "circle"
-                      ? "Cancel Community"
-                      : "Cancel Ark+"}
+                  Cancel my membership
                 </button>
-              )}
-              {status.kind === "error" ? (
-                <p className="mt-3 text-body-sm text-danger" aria-live="polite">
-                  {status.message}
-                </p>
-              ) : null}
-            </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatus({ kind: "idle" });
+                  setFlowOpen(true);
+                }}
+                className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                {cancelTier === "bundle"
+                  ? "Cancel or change my membership"
+                  : cancelTier === "circle"
+                    ? "Cancel Community"
+                    : "Cancel Ark+"}
+              </button>
+            )}
+            {status.kind === "error" ? (
+              <p className="mt-3 text-body-sm text-danger" aria-live="polite">
+                {status.message}
+              </p>
+            ) : null}
           </div>
         </div>
       </section>

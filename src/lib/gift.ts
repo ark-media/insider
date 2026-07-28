@@ -1,3 +1,5 @@
+import { getAttribution } from "./attribution";
+
 export type GiftTerm = "6mo" | "1yr";
 
 // The three sellable tiers a gift can grant (mirrors the server PricedTier).
@@ -65,6 +67,10 @@ export async function createGiftCheckout(
         term: input.term,
         currency: input.currency,
         message: input.message,
+        // Attribution rides onto the gift PaymentIntent's metadata the same way
+        // it does for subscriptions, so `gift_purchased_confirmed` is
+        // channel-attributed too (BI plan §4.1). Allowlisted server-side.
+        attribution: getAttribution(),
       }),
     });
     const data = (await res.json().catch(() => ({}))) as

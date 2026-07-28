@@ -14,6 +14,8 @@ export type Promo = {
   autoApply: boolean
   // Eligible to be offered in the cancel save flow (metadata.retention_offer).
   retentionOffer: boolean
+  // Which save in that flow it fills (metadata.offer_kind) — see CouponOfferKind.
+  offerKind: string | null
   plan: string | null
   maxRedemptions: number | null
   timesRedeemed: number

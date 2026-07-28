@@ -25,6 +25,8 @@ import { coerceTier, releaseScheduleIfAny } from './stripe/helpers.js'
 import { findOrCreateAuth0User } from '../lib/auth0-user.js'
 import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
+import { sanitizeAttribution } from '../../shared/attribution.js'
+import { captureServerEvent, emailDistinctId } from '../lib/analytics-server.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import {
   getGiftByToken,
@@ -78,6 +80,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
             term?: GiftTerm
             currency?: string
             message?: string
+            attribution?: unknown
           }>(req)) ?? {}
 
         const giverEmail = body.giver_email?.trim().toLowerCase()
@@ -180,6 +183,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
               recipient_email: recipientEmail,
               recipient_name: body.recipient_name ?? '',
               message: body.message ?? '',
+              // Acquisition channel for the GIVER, forwarded from the browser
+              // (BI plan §4.1) so `gift_purchased_confirmed` is attributable.
+              // Allowlisted + length-capped — the client is untrusted.
+              ...sanitizeAttribution(body.attribution),
             },
           },
           // Lightweight Session-level metadata for the ownership check in
@@ -601,6 +608,19 @@ async function redeemGiftForRecipient(
         ? 'extended'
         : 'membership'
   const expiresAt = grant.arkPlusEndsAt ?? grant.circleEndsAt ?? undefined
+
+  // Closes the gift loop server-side (BI plan §4.2). The client already fires
+  // `gift_redeemed`, but the magic-link path auto-logs the recipient in and
+  // redeems server-side, so a redemption can complete with no browser event at
+  // all. Paired with `gift_purchased_confirmed` this gives the purchase →
+  // redemption rate, and keys the recipient — not the giver — so the follow-on
+  // question ("does a gift recipient convert to paid?") is answerable.
+  await captureServerEvent(env, {
+    event: 'gift_redeemed_confirmed',
+    distinctId: emailDistinctId(email),
+    properties: { tier: plan.rowTier, plan: gift.plan ?? null, applied },
+  })
+
   return { ok: true, applied, expiresAt }
 }
 

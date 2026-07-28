@@ -26,6 +26,7 @@ import {
   type HTMLReactParserOptions,
 } from "html-react-parser";
 import type { SanitizedHtml } from "../../shared/sanitized-html";
+import { OutboundLink } from "../components/OutboundLink";
 
 // Anchor-href scheme allowlist. Mirrors the upstream sanitize-html config
 // (http/https/mailto) plus same-document fragments. Any other scheme (or a
@@ -359,15 +360,19 @@ const inlineOptions: HTMLReactParserOptions = {
       // missing), render the children as bare text rather than a styled-
       // but-dead link. Same behavior as the show-notes renderer.
       if (!href) return <>{children}</>;
+      // Beehiiv posts link out constantly — sponsors, sources, our own show
+      // pages. OutboundLink reports the destination HOST only, and fires
+      // nothing for links back to us.
       return (
-        <a
+        <OutboundLink
           href={href}
-          target="_blank"
+          platform="newsletter_link"
+          placement="newsletter_body"
           rel="noopener noreferrer"
           className="text-cyan underline decoration-cyan/35 underline-offset-[5px] transition hover:decoration-cyan hover:text-fg-strong"
         >
           {children}
-        </a>
+        </OutboundLink>
       );
     }
     if (node.name === "img" && isNoiseImage(node)) {

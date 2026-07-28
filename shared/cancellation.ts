@@ -25,7 +25,7 @@ export const CANCELLATION_REASONS: readonly CancellationReason[] = [
   {
     slug: 'support_only',
     label:
-      "I subscribed mainly to support Ark Media and don't need an ongoing subscription.",
+      "I subscribed mainly to support Ark Media and don't need an ongoing subscription",
   },
   {
     slug: 'technical_issues',
@@ -108,7 +108,7 @@ export function reasonLabel(slug: string | null): string | null {
 // email). Independent of whether the membership row is later deleted.
 //   full-exit     → cancelled everything (Flows A / B / E full cancel)
 //   kept-circle   → debundled, kept Community, dropped Ark+ (Flow C)
-//   kept-ark-plus → debundled, kept Ark+, dropped Community (Flow D / Flow E keep-one)
+//   kept-ark-plus → debundled, kept Ark+, dropped Community (Flow D)
 export type RetainedProduct = 'full-exit' | 'kept-circle' | 'kept-ark-plus'
 
 const RETAINED_PRODUCTS: ReadonlySet<string> = new Set([

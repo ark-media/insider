@@ -131,7 +131,6 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.kind === "member") {
       identifyUser({
-        id: state.me.email,
         email: state.me.email,
         tier: state.me.tier,
       });

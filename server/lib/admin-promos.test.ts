@@ -107,4 +107,73 @@ describe('serializeCoupon', () => {
     })
     expect(v.redeemBy).toBe(new Date(1_800_000_000 * 1000).toISOString())
   })
+
+  test('a retention offer must name the save it fills', () => {
+    const r = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'repeating',
+      durationInMonths: 6,
+      retentionOffer: true,
+    })
+    // Without offer_kind the coupon would be flagged but unreachable — inert.
+    expect(r).toEqual({ ok: false, error: 'Choose where this retention offer appears.' })
+  })
+
+  test('a retention offer can never run forever', () => {
+    const r = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'forever',
+      retentionOffer: true,
+      offerKind: 'supporter_coupon',
+    })
+    expect(r).toEqual({
+      ok: false,
+      error: 'A retention offer must run for a set number of months.',
+    })
+  })
+
+  test('rejects an unknown save slot, and a slot on a checkout promo', () => {
+    const unknown = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'once',
+      retentionOffer: true,
+      offerKind: 'nope',
+    })
+    expect(unknown).toEqual({ ok: false, error: 'Unknown cancel-flow save slot.' })
+
+    const onCheckout = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'once',
+      offerKind: 'supporter_coupon',
+    })
+    expect(onCheckout).toEqual({
+      ok: false,
+      error: 'Only a retention offer can target a cancel-flow save.',
+    })
+  })
+
+  test('tags a valid retention offer with its slot', () => {
+    const r = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'repeating',
+      durationInMonths: 6,
+      plan: 'monthly',
+      retentionOffer: true,
+      offerKind: 'supporter_coupon',
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.coupon.metadata).toEqual({
+      auto_apply: 'false',
+      retention_offer: 'true',
+      offer_kind: 'supporter_coupon',
+      plan: 'monthly',
+    })
+    expect(r.value.coupon.duration_in_months).toBe(6)
+  })
 })
