@@ -27,7 +27,7 @@ import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
 import { sanitizeAttribution } from '../../shared/attribution.js'
 import { captureServerEvent, emailDistinctId } from '../lib/analytics-server.js'
-import { isSameOrigin, readJson } from '../lib/http.js'
+import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
 import {
   getGiftByToken,
   getMembershipByAuth0Sub,
@@ -55,12 +55,25 @@ const LIVE_MEMBERSHIP_STATUSES = new Set(['active', 'trialing', 'past_due', 'unp
 
 export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
   // Each create-checkout call provisions a Stripe Checkout Session (and its
-  // PaymentIntent) and may also create a Stripe customer. Cap per giver email
-  // so a scripted caller can't produce thousands of zombie sessions or trigger
-  // gift-spam against recipients via the receipt_email Stripe sends.
+  // PaymentIntent) and may also create a Stripe customer. The endpoint is
+  // unauthenticated by necessity — anonymous buyers must be able to purchase —
+  // so the bucket key is the only thing bounding Stripe writes.
+  //
+  // Two buckets, because keying on the giver email alone did NOT achieve the
+  // cap it was written for: `giver_email` is attacker-supplied free text, so
+  // every request could mint a fresh bucket just by varying it.
+  //   - per email+IP: the intended "one buyer, a few retries" cap.
+  //   - per IP: bounds total Stripe writes from one source regardless of how
+  //     many identities it invents. Vercel overwrites x-forwarded-for with the
+  //     real client IP (it does not forward external values), so this key can't
+  //     be spoofed in production.
   const giftLimiter = createRateLimiter({
     capacity: 5,
     refillPerSec: 5 / (60 * 60), // 5 per hour
+  })
+  const giftIpLimiter = createRateLimiter({
+    capacity: 15,
+    refillPerSec: 15 / (60 * 60), // 15 per hour per source
   })
 
   return [
@@ -102,7 +115,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const requestedCurrency = (body.currency ?? '').toLowerCase()
         const currency = isSupportedCurrency(requestedCurrency) ? requestedCurrency : 'usd'
 
-        const wait = giftLimiter.take(giverEmail)
+        const clientIp = getClientIp(req)
+        const wait =
+          giftIpLimiter.take(clientIp) ?? giftLimiter.take(`${clientIp}|${giverEmail}`)
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, {
@@ -267,7 +282,11 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const sql = getDb(env)
         const gift = await getGiftByToken(sql, token)
         if (!gift) return json(404, { error: 'invalid_gift' })
-        if (gift.status !== 'pending') return json(409, { error: 'already_redeemed' })
+        if (gift.status !== 'pending') {
+          return json(409, {
+            error: gift.status === 'void' ? 'gift_voided' : 'already_redeemed',
+          })
+        }
 
         // Resolve the recipient's primary Auth0 sub. They're signed in, so this
         // finds the existing account (never creates one here); the membership row
@@ -316,9 +335,14 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const sql = getDb(env)
         const gift = await getGiftByToken(sql, claim.giftToken)
         if (!gift) return json(404, { error: 'invalid_gift' })
-        // Not pending → already claimed. Do NOT mint a session here: a spent
-        // magic link must not double as a standing login credential.
-        if (gift.status !== 'pending') return json(409, { error: 'already_redeemed' })
+        // Not pending → already claimed, or voided by a refund/dispute. Do NOT
+        // mint a session in either case: a spent or reversed magic link must not
+        // double as a standing login credential.
+        if (gift.status !== 'pending') {
+          return json(409, {
+            error: gift.status === 'void' ? 'gift_voided' : 'already_redeemed',
+          })
+        }
 
         // Provision the recipient's Auth0 login now — pre-verified, since
         // clicking a link delivered to their inbox proves control of the
@@ -558,10 +582,18 @@ async function redeemGiftForRecipient(
   //   - extendSub → defer the recipient's live sub by the gift term (term-faithful:
   //     pause monthly / push the annual period). No balance moves.
   //   - creditFull → a single-axis gift fully inside a Bundle sub: nothing to grant
-  //     or extend, so credit the full gift amount to the customer balance. It's
-  //     denominated in the SUBSCRIPTION'S billing currency (D10) — a Stripe balance
-  //     only draws invoices of the same currency, so crediting the gift's currency
-  //     would strand it. Resolved from the catalog's per-currency table (no FX).
+  //     or extend, so credit the gift back to the customer balance.
+  //
+  //     Credit what was actually PAID (`gift.amount_cents`, captured from the
+  //     PaymentIntent's amount_received), never the catalog list price. Crediting
+  //     list turned any auto-apply promo — and the spread between per-currency
+  //     purchasing-power floors — into free balance: buy discounted, redeem
+  //     against your own Bundle sub, collect the undiscounted amount. Capped at
+  //     list so a mis-stamped row can't over-credit.
+  //
+  //     A Stripe balance only draws invoices of its own currency, so a gift paid
+  //     in another currency can't be credited here without inventing an FX rate.
+  //     Skip rather than guess — the gift still granted/extended above.
   let extended = false
   let creditApplied = false
   if (plan.extendSub && existing?.stripe_subscription_id) {
@@ -575,8 +607,20 @@ async function redeemGiftForRecipient(
     const subCur = await subscriptionCurrency(stripe, existing)
     const currency = isSupportedCurrency(subCur) ? subCur : 'usd'
     // A gift row's tier is always a priced tier (never 'free').
-    const creditCents = (await resolveGiftPrice(stripe, gift.tier as PricedTier, term)).floors[currency]
-    if (creditCents > 0) {
+    const list = (await resolveGiftPrice(stripe, gift.tier as PricedTier, term)).floors[currency]
+    const creditCents = giftCreditCents({
+      paidCents: gift.amount_cents,
+      listCents: list ?? 0,
+      giftCurrency: gift.currency,
+      subscriptionCurrency: currency,
+    })
+    if (creditCents === null) {
+      console.error('[gift] credit skipped — currency mismatch or no captured amount', {
+        giftCurrency: gift.currency,
+        subscriptionCurrency: currency,
+        amountCents: gift.amount_cents,
+      })
+    } else {
       try {
         await applyGiftAsCredit(stripe, existing, creditCents, currency)
         creditApplied = true
@@ -677,6 +721,30 @@ async function subscriptionCurrency(
   } catch {
     return 'usd'
   }
+}
+
+// How much customer balance a fully-overlapped gift is worth, or null when it
+// can't be credited safely. Split out from the redeem handler so the invariant
+// that matters — you get back what you PAID, never the catalog list price — is
+// directly testable.
+//
+// Crediting list was a money bug: gift checkout auto-applies any active coupon
+// and lets the buyer pick any supported presentment currency, whose floors are
+// purchasing-power presets rather than FX-equivalent. Buying low and redeeming
+// against your own Bundle sub then minted the difference as balance.
+export function giftCreditCents(opts: {
+  paidCents: number | null
+  listCents: number
+  giftCurrency: string | null
+  subscriptionCurrency: string
+}): number | null {
+  const gift = (opts.giftCurrency ?? 'usd').toLowerCase()
+  // A Stripe balance only offsets invoices in its own currency, so crossing
+  // currencies here would require inventing an FX rate. Refuse instead.
+  if (gift !== opts.subscriptionCurrency.toLowerCase()) return null
+  const paid = opts.paidCents ?? 0
+  if (paid <= 0 || opts.listCents <= 0) return null
+  return Math.min(paid, opts.listCents)
 }
 
 // Apply an unwasted gift portion as Stripe customer-balance credit on the

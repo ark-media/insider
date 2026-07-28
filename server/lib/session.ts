@@ -7,7 +7,7 @@
 
 import type { IncomingMessage } from 'node:http'
 import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from 'jose'
-import { AUTH0_DOMAIN } from '../auth0.js'
+import { AUTH0_DOMAIN, getManagementClient } from '../auth0.js'
 import {
   AUTH0_AUDIENCE,
   AUTH0_EMAIL_CLAIM,
@@ -36,10 +36,13 @@ const AUTH_TXN_AUDIENCE = 'ark-auth-txn'
 const GIFT_CLAIM_ISSUER = 'ark-insider'
 const GIFT_CLAIM_AUDIENCE = 'gift-claim'
 // A gift is claimable anytime (no redeem-by), but a signed link that both logs
-// the recipient in and redeems is a standing credential — bound it to 90 days.
-// After that the recipient signs in normally (or asks for a resend) and claims
-// via the token-based /redeem fallback.
-const GIFT_CLAIM_TTL_SEC = 90 * 24 * 60 * 60
+// the recipient in and redeems is a standing credential — so its lifetime should
+// be the delivery window, not the gift's. 90 days meant an unclicked link sat
+// live in an inbox (and in any analytics/log that captured the URL) for a
+// quarter. After expiry the recipient signs in normally (or asks for a resend)
+// and claims via the token-based /redeem fallback — the gift itself is
+// unaffected.
+const GIFT_CLAIM_TTL_SEC = 14 * 24 * 60 * 60
 
 const jwks = createRemoteJWKSet(
   new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`),
@@ -405,17 +408,80 @@ export async function getSessionEmail(
   return (await resolveRequestIdentity(req, env))?.email ?? null
 }
 
+// --- live admin-role revocation ------------------------------------------
+//
+// `roles` is snapshotted into the session cookie at login and the cookie is a
+// stateless JWT valid for SESSION_TOKEN_TTL_SEC (7 days) with no server-side
+// store to revoke. Left alone, that means removing someone's admin role in
+// Auth0 — offboarding, or responding to a compromised account — has no effect
+// for up to a week, and signing them out doesn't help either since logout only
+// clears the cookie and the token itself stays valid.
+//
+// So re-check the role against Auth0 before honoring it. Cached briefly: the
+// back office fires several requests per screen and none of them should cost a
+// Management API round-trip.
+const ADMIN_ROLE_TTL_MS = 60_000
+const adminRoleCache = new Map<string, { isAdmin: boolean; at: number }>()
+
+// Exported for tests, which need a clean slate between cases.
+export function __resetAdminRoleCacheForTests(): void {
+  adminRoleCache.clear()
+}
+
+// Does Auth0 still say this user is an admin?
+//
+// Failure semantics, deliberately asymmetric:
+//   - A definitive answer is authoritative, including a definitive "no" — that
+//     is the revocation this exists for.
+//   - No Management credentials, or a failed lookup, returns null meaning
+//     "unknown". Callers fall back to the cookie's claim. Denying here would
+//     turn a missing env var or a transient Auth0 outage into a total back-office
+//     lockout, and an attacker can't induce either condition; the exposure is
+//     bounded by the cookie TTL, which is where it already was.
+async function auth0SaysAdmin(sub: string, env: Env): Promise<boolean | null> {
+  const hit = adminRoleCache.get(sub)
+  if (hit && Date.now() - hit.at < ADMIN_ROLE_TTL_MS) return hit.isAdmin
+
+  const mgmt = getManagementClient(env)
+  if (!mgmt) {
+    console.warn(
+      '[session] no Management credentials — admin role served from the session cookie, revocation will lag until it expires',
+    )
+    return null
+  }
+  try {
+    const page = await mgmt.users.roles.list(sub)
+    const isAdmin = page.data.some((r: { name?: string }) => r.name === 'admin')
+    adminRoleCache.set(sub, { isAdmin, at: Date.now() })
+    return isAdmin
+  } catch (err) {
+    console.error('[session] live admin role lookup failed:', err)
+    return null
+  }
+}
+
 // Admin gate for the back office. Passes only for a session that carries the
 // "admin" role: the `ark_session` login cookie (set after the OAuth exchange,
 // so its roles came from a verified Auth0 token) or a raw Auth0 Bearer. The
 // short-lived checkout cookie is deliberately not accepted (no roles). Returns
 // the profile so the caller can log who acted; null means "not an admin".
+//
+// The cookie's claim is necessary but not sufficient — it is re-checked against
+// Auth0 (see auth0SaysAdmin) so a revoked admin loses access within a minute
+// rather than at cookie expiry.
 export async function requireAdmin(
   req: IncomingMessage,
   env: Env,
 ): Promise<Auth0Profile | null> {
   const session = await getSessionProfile(req, env)
   if (session && session.roles.includes('admin')) {
+    if (session.sub) {
+      const live = await auth0SaysAdmin(session.sub, env)
+      if (live === false) {
+        console.warn('[session] rejecting session whose admin role was revoked:', session.sub)
+        return null
+      }
+    }
     return {
       email: session.email,
       sub: session.sub,

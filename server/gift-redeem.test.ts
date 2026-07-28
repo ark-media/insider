@@ -15,6 +15,7 @@ mock.module('@neondatabase/serverless', () => ({
 }))
 
 import {
+  giftCreditCents,
   planGiftRedemption,
   type GiftRedemptionExisting,
 } from './routes/gift'
@@ -184,5 +185,52 @@ describe('planGiftRedemption — a non-live subscription does not divert to cred
     expect(p.extendSub).toBe(false)
     expect(p.creditFull).toBe(false)
     expect(p.arkPlusFromMs).toBe(NOW)
+  })
+})
+
+describe('giftCreditCents — credit what was paid, never the list price', () => {
+  const base = { listCents: 8000, giftCurrency: 'usd', subscriptionCurrency: 'usd' }
+
+  test('credits the captured amount when it is below list', () => {
+    // The bug this guards: a gift bought under a 50%-off auto-apply coupon used
+    // to credit the full 8000 list price back as balance.
+    expect(giftCreditCents({ ...base, paidCents: 4000 })).toBe(4000)
+  })
+
+  test('caps at list so a mis-stamped row cannot over-credit', () => {
+    expect(giftCreditCents({ ...base, paidCents: 99_000 })).toBe(8000)
+  })
+
+  test('credits the full amount when it was paid at list', () => {
+    expect(giftCreditCents({ ...base, paidCents: 8000 })).toBe(8000)
+  })
+
+  test('refuses to cross currencies rather than invent an FX rate', () => {
+    // Cheap presentment currency in, expensive billing currency out — this was
+    // the arbitrage. A Stripe balance only draws its own currency anyway.
+    expect(
+      giftCreditCents({
+        paidCents: 998,
+        listCents: 800,
+        giftCurrency: 'sgd',
+        subscriptionCurrency: 'gbp',
+      }),
+    ).toBeNull()
+  })
+
+  test('is case-insensitive about currency codes', () => {
+    expect(
+      giftCreditCents({ paidCents: 500, listCents: 800, giftCurrency: 'USD', subscriptionCurrency: 'usd' }),
+    ).toBe(500)
+  })
+
+  test('refuses when the row carries no usable amount', () => {
+    expect(giftCreditCents({ ...base, paidCents: null })).toBeNull()
+    expect(giftCreditCents({ ...base, paidCents: 0 })).toBeNull()
+    expect(giftCreditCents({ ...base, paidCents: -100 })).toBeNull()
+  })
+
+  test('refuses when the catalog list price is unresolvable', () => {
+    expect(giftCreditCents({ ...base, listCents: 0, paidCents: 4000 })).toBeNull()
   })
 })

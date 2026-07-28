@@ -9,6 +9,9 @@
 
 type Env = Record<string, string>
 
+import { fetchWithTimeout } from './http.js'
+import { redactEmail } from "../../shared/validation.js"
+
 const RESEND_ENDPOINT = 'https://api.resend.com/emails'
 
 // Default sender. The domain must be verified in Resend; override per-env with
@@ -31,13 +34,13 @@ export async function sendEmail(
 ): Promise<boolean> {
   const apiKey = env.RESEND_API_KEY
   if (!apiKey) {
-    console.warn('[email] RESEND_API_KEY unset — skipping send to', msg.to)
+    console.warn('[email] RESEND_API_KEY unset — skipping send to', redactEmail(msg.to))
     return false
   }
 
   const from = env.EMAIL_FROM || DEFAULT_FROM
   try {
-    const r = await fetch(RESEND_ENDPOINT, {
+    const r = await fetchWithTimeout(RESEND_ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,

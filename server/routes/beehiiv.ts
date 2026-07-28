@@ -27,7 +27,7 @@ import { getDb, type Sql } from '../lib/db.js'
 import { fetchAuth0EmailVerified } from '../entitlement.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
-import { getClientIp, readBody, readJson } from '../lib/http.js'
+import { fetchWithTimeout, getClientIp, readBody, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
@@ -70,7 +70,7 @@ async function fetchBeehiivRaw(
     `https://api.beehiiv.com/v2/publications/${publicationId}/posts` +
     `?status=confirmed&limit=50` +
     `&expand[]=free_web_content&expand[]=premium_web_content`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
   if (!res.ok) {
@@ -170,7 +170,7 @@ async function createBeehiivSubscription(
     return { ok: false, status: 500, error: 'invalid_publication_id' }
   }
   const url = `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -179,8 +179,13 @@ async function createBeehiivSubscription(
     },
     body: JSON.stringify({
       email,
-      // Re-subscribe readers who previously unsubscribed instead of erroring.
-      reactivate_existing: true,
+      // Deliberately false. This endpoint is unauthenticated and accepts any
+      // address with no proof of control, so reactivating would let anyone
+      // silently re-subscribe a person who chose to unsubscribe — overriding a
+      // recorded opt-out, which is a consent problem (CAN-SPAM / GDPR) rather
+      // than a convenience one. A genuine returning reader can subscribe again
+      // from Beehiiv's own confirmed flow.
+      reactivate_existing: false,
       // Tag the source so we can distinguish site signups in Beehiiv.
       utm_source: 'insider-site',
     }),

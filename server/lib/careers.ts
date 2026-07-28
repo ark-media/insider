@@ -165,7 +165,10 @@ function mapRow(r: Row): Career {
     location: r.location == null ? null : String(r.location),
     employmentType: r.employment_type == null ? null : String(r.employment_type),
     summary: String(r.summary),
-    description: String(r.description),
+    // Re-sanitized on read as well as write — see the note in lib/faqs.ts:
+    // stored HTML shouldn't be trusted just because the normal write path
+    // validates it.
+    description: sanitizeRichText(String(r.description)),
     applyUrl: r.apply_url == null ? null : String(r.apply_url),
     enabled: Boolean(r.enabled),
     displayOrder: Number(r.display_order),

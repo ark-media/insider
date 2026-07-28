@@ -164,6 +164,32 @@ export async function dispatchWebhookEvent(
       }
       break
     }
+    case 'charge.refunded':
+    case 'charge.dispute.created': {
+      // A gift is redeemable indefinitely (no redeem-by), so without this the
+      // money can be reversed while the claim link stays live forever. Void the
+      // gift if it hasn't been claimed yet; if it already has, the grant can't
+      // be walked back automatically — surface it loudly for manual handling.
+      const charge = event.data.object as Stripe.Charge
+      const piId =
+        typeof charge.payment_intent === 'string'
+          ? charge.payment_intent
+          : charge.payment_intent?.id ?? null
+      if (piId && env.DATABASE_URL) {
+        const token = giftTokenForPaymentIntent(piId, env)
+        const rows = await getDb(env)`
+          update gift set status = 'void'
+          where redemption_token = ${token} and status = 'pending'
+          returning redemption_token`
+        if (rows.length === 0) {
+          console.error(
+            `[stripe] ${event.type} did not void a pending gift (already redeemed, or not a gift):`,
+            piId,
+          )
+        }
+      }
+      break
+    }
     case 'invoice.payment_failed': {
       // Dunning: reflect the delinquency on the membership row (task 9). Keep
       // entitlement — Stripe's dunning retries within the grace window; a later
@@ -498,7 +524,15 @@ async function handleGiftPaymentIntent(
 // Deterministic so webhook retries re-derive the same token (idempotent gift
 // row); unguessable so the link can't be brute-forced from a PI id.
 export function giftTokenForPaymentIntent(piId: string, env: Env): string {
-  const secret = env.SESSION_SECRET || env.CHECKOUT_SESSION_SECRET || 'gift'
+  const secret = env.SESSION_SECRET || env.CHECKOUT_SESSION_SECRET
+  // Never default this. The token is the ONLY authorization on /api/gift/redeem,
+  // so a hardcoded fallback key ('gift') would make it a pure function of a
+  // PaymentIntent id — a value the buyer sees and that appears in Stripe
+  // tooling. Match the 32-byte floor the other first-party tokens enforce, and
+  // fail loudly rather than minting forgeable instruments in a misconfigured env.
+  if (!secret || secret.length < 32) {
+    throw new Error('SESSION_SECRET (>= 32 bytes) required to derive gift tokens')
+  }
   return createHmac('sha256', secret).update(`gift:${piId}`).digest('base64url')
 }
 

@@ -31,6 +31,7 @@ import {
   createScV1Client,
   loadAllMemberships as loadAllScMemberships,
 } from './lib/sc-client.js'
+import { fetchWithTimeout } from "./lib/http.js"
 
 type Env = Record<string, string>
 
@@ -169,7 +170,7 @@ async function setCircleAccessGroup(
   const base = `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members`
 
   if (wantCircle) {
-    const res = await fetch(base, {
+    const res = await fetchWithTimeout(base, {
       method: 'POST',
       headers,
       body: JSON.stringify({ email }),
@@ -189,7 +190,7 @@ async function setCircleAccessGroup(
   }
 
   // wantCircle false → remove
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${base}?email=${encodeURIComponent(email)}`,
     { method: 'DELETE', headers },
   )
@@ -275,7 +276,7 @@ async function ensureCircleMember(
   email: string,
   name: string | undefined,
 ): Promise<number | null> {
-  const res = await fetch(`${CIRCLE_API}/community_members`, {
+  const res = await fetchWithTimeout(`${CIRCLE_API}/community_members`, {
     method: 'POST',
     headers,
     body: JSON.stringify(name ? { email, name } : { email }),
@@ -297,7 +298,7 @@ async function findCircleMemberIdByEmail(
   headers: Record<string, string>,
   email: string,
 ): Promise<number | null> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${CIRCLE_API}/community_members/search?email=${encodeURIComponent(email)}`,
     { headers },
   )
@@ -317,7 +318,7 @@ async function stampCircleAuth0Sub(
   fieldKey: string,
   auth0Sub: string,
 ): Promise<void> {
-  const res = await fetch(`${CIRCLE_API}/community_members/${memberId}`, {
+  const res = await fetchWithTimeout(`${CIRCLE_API}/community_members/${memberId}`, {
     method: 'PUT',
     headers,
     body: JSON.stringify({ profile_fields: { [fieldKey]: auth0Sub } }),
@@ -642,7 +643,7 @@ async function listCircleAccessGroupMembers(
     const url =
       `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members` +
       `?per_page=100&page=${page}`
-    const res = await fetch(url, { headers })
+    const res = await fetchWithTimeout(url, { headers })
     if (!res.ok) {
       throw new Error(`Circle access-group list ${res.status}: ${await res.text()}`)
     }
@@ -662,7 +663,7 @@ async function listCircleAccessGroupMembers(
   const out: CircleReconcileMember[] = []
   for (let page = 1; page <= maxPages; page += 1) {
     const url = `${CIRCLE_API}/community_members?per_page=100&page=${page}`
-    const res = await fetch(url, { headers })
+    const res = await fetchWithTimeout(url, { headers })
     if (!res.ok) {
       throw new Error(`Circle members list ${res.status}: ${await res.text()}`)
     }

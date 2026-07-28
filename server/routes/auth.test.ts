@@ -200,6 +200,24 @@ describe('safeReturnTo', () => {
     expect(safeReturnTo('http://evil.com', APP)).toBe('/')
     expect(safeReturnTo('javascript:alert(1)', APP)).toBe('/')
   })
+
+  // These parse to OUR origin but normalize to a pathname beginning with "//",
+  // which a browser re-reads as protocol-relative once it lands in a Location
+  // header. An origin check alone lets every one of them through.
+  test('rejects paths that normalize to protocol-relative', () => {
+    expect(safeReturnTo('/..//evil.com', APP)).toBe('/')
+    expect(safeReturnTo('/../..//evil.com', APP)).toBe('/')
+    expect(safeReturnTo(`//${new URL(APP).host}//evil.com`, APP)).toBe('/')
+    expect(safeReturnTo(`${APP}//evil.com`, APP)).toBe('/')
+    expect(safeReturnTo(`//${new URL(APP).host}/\\/evil.com`, APP)).toBe('/')
+    expect(safeReturnTo('/\t/evil.com', APP)).toBe('/')
+  })
+
+  test('still preserves legitimate paths that contain traversal or encoding', () => {
+    expect(safeReturnTo('/a/../b', APP)).toBe('/b')
+    expect(safeReturnTo('/%2F/evil.com', APP)).toBe('/%2F/evil.com')
+    expect(safeReturnTo('/redeem?mt=abc#top', APP)).toBe('/redeem?mt=abc#top')
+  })
 })
 
 describe('POST /api/signout', () => {

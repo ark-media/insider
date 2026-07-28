@@ -13,7 +13,15 @@ dist-ssr
 .tanstack
 *.local
 .env
+# Deliberately covers .env.example too. Despite the name, that file currently
+# holds REAL values (Circle tokens, CHECKOUT_SESSION_SECRET, CIRCLE_SSO_SECRET),
+# not placeholders — so it must not be tracked. If you want a committed schema,
+# add a separate .env.template with every value stubbed out.
 .env.*
+
+# Scratch artifacts — screenshots of signed-in pages, copy extracts. Untracked
+# already, but nothing stopped a `git add -A` from sweeping them in.
+.tmp/
 
 # Editor directories and files
 .vscode/*

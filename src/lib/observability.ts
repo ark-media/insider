@@ -36,6 +36,32 @@ import { FIRST_TOUCH_KEYS, type Attribution } from '../../shared/attribution'
 
 let posthogReady = false
 
+// Query params that carry a bearer credential rather than navigation state.
+// `mt` is the gift magic link: presenting it logs the holder in AS the recipient
+// and redeems the gift, so a captured $current_url is an account takeover, not
+// just a privacy leak.
+const SENSITIVE_QUERY_KEYS = ['mt', 'token', 'session_id', 'code', 'state']
+
+// Replace the value of any sensitive query param with a placeholder, preserving
+// the rest of the URL so funnels still work. Non-string / unparseable input is
+// passed through untouched.
+export function redactSensitiveQuery(raw: unknown): unknown {
+  if (typeof raw !== 'string') return raw
+  try {
+    const url = new URL(raw)
+    let redacted = false
+    for (const key of SENSITIVE_QUERY_KEYS) {
+      if (url.searchParams.has(key)) {
+        url.searchParams.set(key, 'redacted')
+        redacted = true
+      }
+    }
+    return redacted ? url.toString() : raw
+  } catch {
+    return raw
+  }
+}
+
 export function initObservability() {
   const sentryDsn = import.meta.env.VITE_SENTRY_DSN
   if (sentryDsn) {
@@ -62,6 +88,15 @@ export function initObservability() {
       // elements by setting `data-ph-mask="false"` on the node.
       mask_all_text: true,
       session_recording: { maskAllInputs: true },
+      // Masking covers replay DOM text, NOT event properties — $current_url is
+      // sent verbatim on every pageview. Some of our URLs carry bearer
+      // credentials (see SENSITIVE_QUERY_KEYS), so redact before anything leaves
+      // the browser rather than trusting a third party to hold them safely.
+      sanitize_properties: (props) => ({
+        ...props,
+        $current_url: redactSensitiveQuery(props.$current_url),
+        $referrer: redactSensitiveQuery(props.$referrer),
+      }),
     })
     posthogReady = true
   }

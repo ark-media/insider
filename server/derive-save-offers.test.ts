@@ -6,6 +6,7 @@ import { describe, test, expect } from "bun:test";
 import type Stripe from "stripe";
 import { SUPPORTED_CURRENCIES } from "./lib/pricing";
 import { deriveSaveOffers } from "./lib/retention";
+import { intentAllowedForTier } from "../shared/retention";
 
 type CouponLike = {
   id: string;
@@ -128,3 +129,28 @@ describe("deriveSaveOffers", () => {
     }
   });
 });
+
+describe('intentAllowedForTier — the intent is a claim, not a fact', () => {
+  test('each tier can open only its own cancel/debundle flows', () => {
+    expect(intentAllowedForTier('cancel-ark-plus', 'ark-plus')).toBe(true)
+    expect(intentAllowedForTier('cancel-circle', 'circle')).toBe(true)
+    expect(intentAllowedForTier('debundle-remove-ark-plus', 'bundle')).toBe(true)
+    expect(intentAllowedForTier('debundle-remove-circle', 'bundle')).toBe(true)
+  })
+
+  test('rejects an intent for a product the member does not hold', () => {
+    // The exploit: a Bundle member opening the Circle cancel flow to pull that
+    // flow's coupon onto their (more expensive) bundle subscription.
+    expect(intentAllowedForTier('cancel-circle', 'bundle')).toBe(false)
+    expect(intentAllowedForTier('cancel-ark-plus', 'bundle')).toBe(false)
+    expect(intentAllowedForTier('cancel-circle', 'ark-plus')).toBe(false)
+    expect(intentAllowedForTier('cancel-ark-plus', 'circle')).toBe(false)
+    expect(intentAllowedForTier('debundle-remove-ark-plus', 'ark-plus')).toBe(false)
+    expect(intentAllowedForTier('debundle-remove-circle', 'circle')).toBe(false)
+  })
+
+  test('a free member can open nothing, and an unknown tier defaults closed', () => {
+    expect(intentAllowedForTier('cancel-ark-plus', 'free')).toBe(false)
+    expect(intentAllowedForTier('cancel-ark-plus', 'nonsense')).toBe(false)
+  })
+})

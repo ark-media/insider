@@ -4,6 +4,8 @@
 
 type Env = Record<string, string>
 
+import { fetchWithTimeout } from './http.js'
+
 export type ScError = Error & { status?: number; data?: unknown }
 
 export type ScUser = {
@@ -44,7 +46,7 @@ function buildScCall(base: string, apiKey: string) {
       // racing on the same Stripe subscription.
       reqHeaders['Idempotency-Key'] = opts.idempotencyKey
     }
-    const r = await fetch(`${base}${path}`, {
+    const r = await fetchWithTimeout(`${base}${path}`, {
       method,
       headers: reqHeaders,
       body: body === undefined ? undefined : JSON.stringify(body),

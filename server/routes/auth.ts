@@ -52,15 +52,30 @@ import { defineRoute, type Deps, type Route } from '../lib/route.js'
 // keep only the path/query/hash; anything that lands on another origin (or
 // won't parse) falls back to "/". This authoritative parse replaces the older
 // prefix-matching, which enumerated cases the browser could still normalize.
+//
+// A same-origin *parse* is not the same as a same-origin *redirect*. `URL`
+// happily produces a pathname that itself starts with "//" — "/..//evil.com"
+// normalizes to "//evil.com", and "https://ark-plus.xyz//evil.com" parses with
+// our origin but yields the same pathname. Emitted in a Location header the
+// browser reads that as protocol-relative and leaves the site. So the origin
+// check alone is not sufficient: reject protocol-relative shapes explicitly,
+// then re-resolve the exact string we are about to emit and require it to land
+// back on us.
 export function safeReturnTo(
   raw: string | null | undefined,
   appBaseUrl: string,
 ): string {
   if (!raw) return '/'
+  const origin = new URL(appBaseUrl).origin
   try {
     const u = new URL(raw, appBaseUrl)
-    if (u.origin !== new URL(appBaseUrl).origin) return '/'
-    return u.pathname + u.search + u.hash
+    if (u.origin !== origin) return '/'
+    const path = u.pathname + u.search + u.hash
+    if (!path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) {
+      return '/'
+    }
+    if (new URL(path, appBaseUrl).origin !== origin) return '/'
+    return path
   } catch {
     return '/'
   }

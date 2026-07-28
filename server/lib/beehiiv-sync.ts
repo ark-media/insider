@@ -26,6 +26,7 @@
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { redactEmail } from '../../shared/validation.js'
 import type { Sql } from './db.js'
+import { fetchWithTimeout } from "./http.js"
 
 // Beehiiv statuses where the reader is still on the list (not fully unsubscribed).
 const RECEIVING_EMAIL_STATUSES = new Set(['active', 'pending'])
@@ -126,7 +127,7 @@ async function getSubscriptionByEmail(
   email: string,
 ): Promise<BeehiivSubscription | null> {
   const url = `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions/by_email/${encodeURIComponent(email)}`
-  const res = await fetch(url, { headers: beehiivHeaders(token) })
+  const res = await fetchWithTimeout(url, { headers: beehiivHeaders(token) })
   if (res.status === 404) return null
   if (!res.ok) {
     throw new Error(`Beehiiv lookup ${res.status}: ${await res.text()}`)
@@ -155,7 +156,7 @@ async function createSubscription(
     utm_source: opts.premiumTierId ? 'insider-membership' : 'insider-site',
   }
   if (opts.premiumTierId) body.premium_tier_ids = [opts.premiumTierId]
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions`,
     {
       method: 'POST',
@@ -181,7 +182,7 @@ async function updateSubscription(
   subscriptionId: string,
   body: UpdateBody,
 ): Promise<BeehiivSubscription> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions/${subscriptionId}`,
     {
       method: 'PUT',

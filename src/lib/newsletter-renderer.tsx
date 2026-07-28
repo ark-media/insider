@@ -27,18 +27,7 @@ import {
 } from "html-react-parser";
 import type { SanitizedHtml } from "../../shared/sanitized-html";
 import { OutboundLink } from "../components/OutboundLink";
-
-// Anchor-href scheme allowlist. Mirrors the upstream sanitize-html config
-// (http/https/mailto) plus same-document fragments. Any other scheme (or a
-// missing href) renders the anchor's children as bare text rather than a
-// clickable link.
-const SAFE_HREF_RE = /^(?:https?:|mailto:|#)/i;
-
-function safeHref(href: string | undefined): string | undefined {
-  if (!href) return undefined;
-  const trimmed = href.trim();
-  return SAFE_HREF_RE.test(trimmed) ? trimmed : undefined;
-}
+import { safeHref } from "./safeHref";
 
 // Normalize-compare for matching titles that Beehiiv may have smart-quoted,
 // re-cased, or padded. Avoids re-emitting the title in body content just

@@ -35,7 +35,11 @@ import {
   deriveSaveOffers,
   pickIntroCoupon,
 } from '../../lib/retention.js'
-import { isPlanSwitchKind, isSaveIntent } from '../../../shared/retention.js'
+import {
+  intentAllowedForTier,
+  isPlanSwitchKind,
+  isSaveIntent,
+} from '../../../shared/retention.js'
 import {
   isCancelOfferOutcome,
   isCancellationReasons,
@@ -48,7 +52,7 @@ import {
   resolveCatalogPrice,
 } from '../../lib/pricing.js'
 import { sanitizeAttribution } from '../../../shared/attribution.js'
-import { isSameOrigin, readBody, readJson } from '../../lib/http.js'
+import { getClientIp, isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
 import { getSessionEmail } from '../../lib/session.js'
 import { isValidEmail, redactEmail } from '../../../shared/validation.js'
@@ -63,6 +67,7 @@ import {
   periodEndIso,
   planFromSubscription,
   releaseScheduleIfAny,
+  scheduledPlanOf,
   scheduleIdOf,
   tsToIso,
   validatePwycAmount,
@@ -77,6 +82,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   const subscribeLimiter = createRateLimiter({
     capacity: 5,
     refillPerSec: 5 / (60 * 60), // 5 per hour
+  })
+  // Keying only on the submitted email let a caller reset the bucket by
+  // changing it — which mattered twice over, because this endpoint both writes
+  // to Stripe (customer + session) and answers "is this address a member?".
+  // The per-IP bucket is what actually bounds enumeration. Vercel overwrites
+  // x-forwarded-for with the true client IP, so it can't be spoofed in prod.
+  const subscribeIpLimiter = createRateLimiter({
+    capacity: 15,
+    refillPerSec: 15 / (60 * 60), // 15 per hour per source
   })
 
   return [
@@ -116,7 +130,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         // Rate-limit after input validation so a clearly-malformed request
         // doesn't consume a token from a legitimate retry.
-        const wait = subscribeLimiter.take(email)
+        const clientIp = getClientIp(req)
+        const wait =
+          subscribeIpLimiter.take(clientIp) ?? subscribeLimiter.take(`${clientIp}|${email}`)
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, {
@@ -525,6 +541,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const plan = planFromSubscription(sub)
         if (!plan) return json(409, { error: 'No billing cadence on subscription.' })
 
+        // The intent is a claim from the client, not a fact. Derive the offer
+        // set only for a flow this member's ACTUAL tier can open — otherwise a
+        // caller picks the offer set (e.g. 'cancel-circle' while on Bundle) and
+        // lands another product's coupon on their own subscription.
+        const currentTier = await tierFromSubscription(sub, stripe)
+        if (!intentAllowedForTier(body.intent, currentTier)) {
+          return json(409, { error: 'No such save offer available.' })
+        }
+
         const offers = await deriveSaveOffers(stripe, body.intent, plan)
 
         const offer = offers.find((o) => o.kind === wantKind && o.couponId)
@@ -549,9 +574,20 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         let updated
         if (isPlanSwitchKind(offer.kind)) {
-          // change-tier already scheduled the switch — attach the discount
-          // alongside it, without releasing that schedule or touching
-          // cancel_at_period_end.
+          // change-tier is supposed to have scheduled the switch already, but
+          // only the client calls it — so verify rather than assume. A
+          // plan-switch coupon is priced for its target cadence (the monthly
+          // supporter rate is configured with metadata.plan = 'monthly'), and
+          // attaching it to a subscription still on the old cadence discounts
+          // the wrong invoice: a repeating N-month coupon takes its cut off a
+          // whole annual charge.
+          const target = offer.targetPlan ?? null
+          const scheduled = await scheduledPlanOf(stripe, sub)
+          if (!target || (plan !== target && scheduled !== target)) {
+            return json(409, { error: 'Plan switch not applied.' })
+          }
+          // Attach the discount alongside the schedule, without releasing it or
+          // touching cancel_at_period_end.
           updated = await stripe.subscriptions.update(sub.id, {
             discounts: [{ coupon: offer.couponId }],
           })
@@ -810,9 +846,27 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // its clock starts when the new price does. Attaching it now would burn
         // the term against the bundle the member is still on — up to a full
         // billing period before the product it discounts exists.
-        const introCoupon = isDebundle
-          ? pickIntroCoupon(await listActiveCoupons(stripe))
-          : null
+        //
+        // It is a retention discount like any other, so it spends the same
+        // once-per-12-months budget the save offers do. Without this check a
+        // member could debundle, re-bundle, and debundle again to collect the
+        // intro rate indefinitely — the accept-window guard only covered
+        // /accept-save-offer. On a DB error, treat the window as spent: skipping
+        // a discount is recoverable, granting an unlimited one isn't.
+        let introCoupon: Awaited<ReturnType<typeof pickIntroCoupon>> | null = null
+        if (isDebundle) {
+          let windowSpent = true
+          if (env.DATABASE_URL) {
+            try {
+              windowSpent = await hasAcceptedRetention(getDb(env), email)
+            } catch (err) {
+              console.error('[stripe] debundle intro eligibility check failed:', err)
+            }
+          } else {
+            windowSpent = false
+          }
+          if (!windowSpent) introCoupon = pickIntroCoupon(await listActiveCoupons(stripe))
+        }
 
         const prevEnt = deriveEntitlements(currentTier)
         const nextEnt = deriveEntitlements(newTier)
@@ -853,6 +907,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // debundle is loss-of-entitlement so it is normally period-end, but this
         // stays correct if that ever changes. Non-blocking — a failed analytics
         // write must never fail the debundle. No-op for a plain upgrade/PWYC.
+        //
+        // When an intro coupon was granted this row is also what SPENDS the
+        // 12-month retention window: hasAcceptedRetention only counts rows with
+        // a non-null coupon_id and outcome 'accepted', so writing null here (as
+        // it previously did) left the discount invisible to the eligibility read
+        // and therefore repeatable.
         const recordDebundleWinBack = async () => {
           if (!retainedProduct || !env.DATABASE_URL) return
           try {
@@ -860,8 +920,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               email,
               reasons: [],
               note: null,
-              offerOutcome: debundleOutcome,
-              couponId: null,
+              offerOutcome: introCoupon ? 'accepted' : debundleOutcome,
+              couponId: introCoupon?.id ?? null,
               canceledTier: currentTier,
               retainedProduct,
             })

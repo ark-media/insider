@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import {
   claimGiftWithMagicToken,
@@ -66,6 +66,20 @@ const secondaryCta =
 function RedeemPage() {
   const { token, mt } = Route.useSearch();
 
+  // `mt` is a bearer credential: it both logs the holder in and redeems the
+  // gift. Keep the value in state and drop it from the address bar on mount so
+  // it doesn't linger in browser history, get shoulder-surfed, or ride along in
+  // any later analytics pageview. (The initial pageview is covered separately by
+  // redactSensitiveQuery in lib/observability.) Captured once via the lazy
+  // initializer so clearing the URL can't blank it out.
+  const [magicToken] = useState(() => mt);
+  useEffect(() => {
+    if (!mt) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("mt");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [mt]);
+
   return (
     <main className="relative">
       <section className="section-hero relative">
@@ -78,8 +92,8 @@ function RedeemPage() {
           </h1>
 
           <div className="mt-10 max-w-xl">
-            {mt ? (
-              <MagicClaimBody mt={mt} />
+            {magicToken ? (
+              <MagicClaimBody mt={magicToken} />
             ) : (
               <TokenClaimBody token={token} />
             )}

@@ -10,6 +10,7 @@ import {
   type HTMLReactParserOptions,
 } from "html-react-parser";
 import { OutboundLink } from "../components/OutboundLink";
+import { safeHref } from "./safeHref";
 
 // Duck-typed node checks. We can't use `instanceof Element`/`Text` from
 // html-react-parser because html-dom-parser ships its own copy of domhandler,
@@ -130,8 +131,9 @@ export const showNotesParserOptions: HTMLReactParserOptions = {
     }
 
     if (node.name === "a") {
-      const href =
-        typeof node.attribs.href === "string" ? node.attribs.href : undefined;
+      const href = safeHref(
+        typeof node.attribs.href === "string" ? node.attribs.href : undefined,
+      );
       // Simplecast often nests surrounding spaces inside the anchor
       // (`<a> Inside Call me Back</a>`). Pull them out so the underline hugs
       // the link text instead of bleeding into the gap beside it.

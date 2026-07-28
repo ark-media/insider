@@ -13,6 +13,7 @@ import type { DiscussThread, BeehiivDraft } from '../../shared/discuss-thread.js
 import type { NewsletterSlug } from '../../src/data/newsletters.js'
 import { isNewsletterSlug } from '../routes/newsletter-slugs.js'
 import { escapeHtml } from '../../shared/validation.js'
+import { fetchWithTimeout } from "./http.js"
 
 // newsletter slug → Circle space slug the companion thread lives in. The
 // read-side bindings in `server/routes/circle.ts` only cover `members-letter`
@@ -203,7 +204,7 @@ async function resolveCircleSpaceId(
     const url =
       `https://app.circle.so/api/admin/v2/spaces` +
       `?per_page=100&page=${page}`
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     })
     if (!res.ok) {
@@ -268,7 +269,7 @@ async function createCircleSpacePost(opts: {
   // Circle Admin v2 POST /posts. We use tiptap_body for the body — Circle's
   // create endpoints accept both `body` (string/HTML) and `tiptap_body` (doc),
   // and the doc form survives Circle's editor round-trip more cleanly.
-  const res = await fetch('https://app.circle.so/api/admin/v2/posts', {
+  const res = await fetchWithTimeout('https://app.circle.so/api/admin/v2/posts', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.token}`,
@@ -315,7 +316,7 @@ export async function listBeehiivDrafts(opts: {
   const url =
     `https://api.beehiiv.com/v2/publications/${opts.publicationId}/posts` +
     `?status=draft&limit=50`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${opts.token}`, Accept: 'application/json' },
   })
   if (!res.ok) {
@@ -387,7 +388,7 @@ async function patchBeehiivDraftBody(opts: {
   //     replacing the post's current content. PUT 404s on this route.
   // Any non-2xx is treated as "Beehiiv refused our update"; we don't fail the
   // whole orchestration, the admin gets a flag back to paste manually.
-  const get = await fetch(
+  const get = await fetchWithTimeout(
     `https://api.beehiiv.com/v2/publications/${opts.publicationId}/posts/${opts.beehiivPostId}?expand[]=free_web_content`,
     { headers: { Authorization: `Bearer ${opts.token}`, Accept: 'application/json' } },
   )
@@ -402,7 +403,7 @@ async function patchBeehiivDraftBody(opts: {
   }
   const existing = fetched.data?.content?.free?.web ?? ''
   const next = spliceDiscussLink(existing, opts.threadUrl)
-  const patch = await fetch(
+  const patch = await fetchWithTimeout(
     `https://api.beehiiv.com/v2/publications/${opts.publicationId}/posts/${opts.beehiivPostId}`,
     {
       method: 'PATCH',

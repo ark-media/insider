@@ -48,6 +48,7 @@
 
 import { createHash } from 'node:crypto'
 import { FIRST_TOUCH_KEYS, LAST_TOUCH_KEYS, type Attribution } from '../../shared/attribution.js'
+import { fetchWithTimeout } from './http.js'
 
 type Env = Record<string, string>
 
@@ -124,7 +125,7 @@ export async function captureServerEvent<E extends ServerEvent>(
 
   const host = (env.POSTHOG_HOST || env.VITE_POSTHOG_HOST || DEFAULT_HOST).replace(/\/+$/, '')
   try {
-    const res = await fetch(`${host}/i/v0/e/`, {
+    const res = await fetchWithTimeout(`${host}/i/v0/e/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

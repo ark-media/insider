@@ -237,7 +237,10 @@ describe('POST /api/beehiiv/subscribe — happy path', () => {
 
     const body = JSON.parse(call.init?.body as string) as Record<string, unknown>
     expect(body.email).toBe('reader@example.com') // trimmed
-    expect(body.reactivate_existing).toBe(true)
+    // Must stay false: this endpoint is unauthenticated and takes any address
+    // without proof of control, so reactivating would let anyone override a
+    // reader's recorded opt-out.
+    expect(body.reactivate_existing).toBe(false)
     expect(body.utm_source).toBe('insider-site')
   })
 })

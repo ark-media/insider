@@ -509,16 +509,33 @@ describe('GET /api/circle/community-events', () => {
     expect(res.__status()).toBe(405)
   })
 
-  test('maps upstream 5xx to 502', async () => {
-    fetchImpl = async () => new Response('down', { status: 500 })
+  test('withholds the calendar from an unauthenticated caller', async () => {
+    // The projection ships `venue` — the physical address of in-person member
+    // events — so a caller without the circle axis must get nothing, and no
+    // upstream call should be made on their behalf.
+    fetchImpl = async (url) => {
+      throw new Error(`unexpected fetch: ${url}`)
+    }
     const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), EVENTS_PATH)
     const res = makeRes()
     await handler(makeReq(EVENTS_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ events: [] })
+    expect(res.__header('cache-control')).toBe('private, no-store')
+    expect(fetchCalls.length).toBe(0)
+  })
+
+  test('maps upstream 5xx to 502', async () => {
+    fetchImpl = async () => new Response('down', { status: 500 })
+    membershipRow = circleMembershipRow()
+    const handler = findHandler(buildDeps(MEMBER_ENV), EVENTS_PATH)
+    const res = makeRes()
+    await handler(await makeMemberReq(EVENTS_PATH), res)
     expect(res.__status()).toBe(502)
     expect(res.__json()).toEqual({ error: 'circle_unavailable' })
   })
 
-  test('projects events and sets SWR cache-control', async () => {
+  test('projects events for a member and never shared-caches them', async () => {
     fetchImpl = async () =>
       new Response(
         JSON.stringify({
@@ -538,9 +555,10 @@ describe('GET /api/circle/community-events', () => {
         }),
         { status: 200 },
       )
-    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), EVENTS_PATH)
+    membershipRow = circleMembershipRow()
+    const handler = findHandler(buildDeps(MEMBER_ENV), EVENTS_PATH)
     const res = makeRes()
-    await handler(makeReq(EVENTS_PATH, ''), res)
+    await handler(await makeMemberReq(EVENTS_PATH), res)
     expect(res.__status()).toBe(200)
     const body = res.__json() as { events: Array<{ id: string; deepLink: string }> }
     expect(body.events.length).toBe(1)
@@ -548,9 +566,7 @@ describe('GET /api/circle/community-events', () => {
     expect(body.events[0]!.deepLink).toBe(
       'https://app.arkmedia.org/c/events-71d23b/coalition-roundtable',
     )
-    expect(res.__header('cache-control')).toBe(
-      'public, s-maxage=300, stale-while-revalidate=3600',
-    )
+    expect(res.__header('cache-control')).toBe('private, no-store')
   })
 })
 
@@ -650,11 +666,26 @@ describe('GET /api/circle/spaces', () => {
       }
       throw new Error(`unexpected fetch: ${url}`)
     }
-    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SPACES_PATH)
+    membershipRow = circleMembershipRow()
+    const handler = findHandler(buildDeps(MEMBER_ENV), SPACES_PATH)
     const res = makeRes()
-    await handler(makeReq(SPACES_PATH, ''), res)
+    await handler(await makeMemberReq(SPACES_PATH), res)
     const body = res.__json() as { spaces: Array<{ id: string; href: string }> }
     expect(body.spaces.map((s) => s.id)).toEqual(['world'])
     expect(body.spaces[0]!.href).toBe('https://app.arkmedia.org/c/world')
+    expect(res.__header('cache-control')).toBe('private, no-store')
+  })
+
+  test('withholds the space directory from an unauthenticated caller', async () => {
+    fetchImpl = async (url) => {
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SPACES_PATH)
+    const res = makeRes()
+    await handler(makeReq(SPACES_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ spaces: [] })
+    expect(res.__header('cache-control')).toBe('private, no-store')
+    expect(fetchCalls.length).toBe(0)
   })
 })

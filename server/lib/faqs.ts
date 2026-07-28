@@ -83,11 +83,17 @@ export function validateFaqInput(raw: unknown): ValidationResult {
 
 type Row = Record<string, unknown>
 
+// Re-sanitize the stored rich text on the way OUT, not just on the way in.
+// Every write path validates, but stored HTML is otherwise trusted forever: a
+// seed script, a migration, a manual SQL fix, or a future endpoint that skips
+// validation would render unsanitized, and tightening the allowlist later
+// wouldn't retroactively clean existing rows. sanitizeRichText is cheap and
+// idempotent, so making the projection the enforcement point costs nothing.
 function mapRow(r: Row): Faq {
   return {
     id: String(r.id),
     question: String(r.question),
-    answer: String(r.answer),
+    answer: sanitizeRichText(String(r.answer)),
     category: String(r.category ?? ''),
     enabled: Boolean(r.enabled),
     displayOrder: Number(r.display_order),

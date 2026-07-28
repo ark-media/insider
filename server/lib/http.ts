@@ -52,6 +52,27 @@ export async function readBody(
   return Buffer.concat(chunks)
 }
 
+// Default budget for a call to a third party on the request path. Long enough
+// to absorb a slow-but-working upstream, short enough that a black-holing one
+// can't pin a function instance until Vercel's max duration kills it.
+const DEFAULT_FETCH_TIMEOUT_MS = 8000
+
+// `fetch` with a deadline. Node's fetch waits indefinitely for response headers,
+// so without this our availability is coupled to the SLOWEST of five third
+// parties: a degraded upstream behind an unauthenticated endpoint (episodes,
+// community feed, newsletter posts) exhausts concurrent function slots and takes
+// the whole API down with it, checkout and the Stripe webhook included.
+//
+// Rejects with a TimeoutError, which every existing call site already handles —
+// they all treat an upstream failure as soft-fail or a 502.
+export function fetchWithTimeout(
+  input: string | URL,
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  return fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+}
+
 // CSRF defense for cookie-authenticated mutations. Now that the session rides
 // an httpOnly cookie (auto-attached by the browser), a cross-site page could
 // otherwise trigger state-changing requests. SameSite=Lax already blocks the

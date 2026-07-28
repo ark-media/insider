@@ -283,7 +283,10 @@ export type GiftRow = {
   amount_cents: number | null
   currency: string | null
   giver_sub: string | null
-  status: 'pending' | 'redeemed'
+  // 'void' = the purchase was refunded or disputed before anyone claimed it.
+  // Terminal, and deliberately distinct from 'redeemed' so a reversal on an
+  // already-claimed gift stays visible rather than being silently overwritten.
+  status: 'pending' | 'redeemed' | 'void'
   redeemed_by: string | null
 }
 

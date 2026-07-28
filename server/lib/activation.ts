@@ -32,6 +32,7 @@ import {
   renderSubscriberWelcomeEmail,
 } from './welcome-email.js'
 import { createScClient, findOrCreateScUser } from './sc-client.js'
+import { redactEmail } from "../../shared/validation.js"
 
 type Env = Record<string, string>
 type Plan = 'monthly' | 'yearly'
@@ -168,7 +169,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         (await createAuth0PasswordChangeTicket(userId, `${baseUrl}/welcome`, env)) ??
         undefined
       if (!passwordSetupUrl) {
-        console.error('[auth0] new member created but password-change ticket failed:', email)
+        console.error('[auth0] new member created but password-change ticket failed:', redactEmail(email))
       }
     }
     return { userId, created: auth0Result?.created ?? false, passwordSetupUrl }
@@ -317,7 +318,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         idempotencyKey: `welcome_${fresh.id}`,
       })
       if (!sent) {
-        console.error('[email] member welcome email did not send:', email)
+        console.error('[email] member welcome email did not send:', redactEmail(email))
       }
 
       // Beehiiv premium letter gates on arkPlus (task 11), so Circle-only does

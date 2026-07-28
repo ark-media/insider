@@ -89,6 +89,22 @@ export function isSaveIntent(v: unknown): v is SaveIntent {
   return typeof v === 'string' && SAVE_INTENTS.has(v)
 }
 
+// Which intents a given tier can legitimately open. The intent arrives in the
+// request body, so `isSaveIntent` only proves it is a well-formed value — not
+// that this member is entitled to that flow. Without a tier check the caller
+// chooses which offer set the server derives, and can pull a coupon scoped to a
+// product they don't hold onto the subscription they do.
+const INTENTS_BY_TIER: Record<string, readonly SaveIntent[]> = {
+  'ark-plus': ['cancel-ark-plus'],
+  circle: ['cancel-circle'],
+  bundle: ['debundle-remove-ark-plus', 'debundle-remove-circle'],
+  free: [],
+}
+
+export function intentAllowedForTier(intent: SaveIntent, tier: string): boolean {
+  return (INTENTS_BY_TIER[tier] ?? []).includes(intent)
+}
+
 export type RetentionOffer = {
   // The save kind — see OfferKind. Determines copy + accept action client-side.
   kind: OfferKind

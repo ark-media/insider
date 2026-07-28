@@ -170,6 +170,36 @@ export function periodEndIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.items.data[0]?.current_period_end)
 }
 
+// The plan a subscription is *scheduled* to move to at period end, or null when
+// nothing is scheduled (or it can't be read). change-tier books a cadence switch
+// as a future schedule phase, so between that call and period end the live sub
+// still reports the OLD interval — `planFromSubscription` alone can't tell you a
+// switch is coming. Soft-fails to null: callers treat "unknown" as "not
+// switched", which is the safe direction for an authorization check.
+export async function scheduledPlanOf(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+): Promise<Plan | null> {
+  const scheduleId = scheduleIdOf(sub)
+  if (!scheduleId) return null
+  try {
+    const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId)
+    const lastPhase = schedule.phases?.[schedule.phases.length - 1]
+    const price = lastPhase?.items?.[0]?.price
+    if (!price) return null
+    const resolved =
+      typeof price === 'string' ? await stripe.prices.retrieve(price) : price
+    if ('deleted' in resolved && resolved.deleted) return null
+    const interval = resolved.recurring?.interval
+    if (interval === 'month') return 'monthly'
+    if (interval === 'year') return 'yearly'
+    return null
+  } catch (err) {
+    console.error('[stripe] scheduled plan lookup failed:', err)
+    return null
+  }
+}
+
 // The schedule id attached to a sub, or null. A subscription with a pending
 // period-end change (task 14) is schedule-managed; several plain
 // subscriptions.update calls (cancel_at_period_end, discounts) are REJECTED by

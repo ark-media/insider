@@ -140,7 +140,8 @@ type Row = Record<string, unknown>
 function mapRow(r: Row): Announcement {
   return {
     id: String(r.id),
-    body: String(r.body),
+    // Re-sanitized on read as well as write — see the note in lib/faqs.ts.
+    body: sanitizeRichText(String(r.body)),
     actionUrl: r.action_url == null ? null : String(r.action_url),
     barColor: String(r.bar_color),
     textColor: String(r.text_color),

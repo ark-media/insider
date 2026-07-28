@@ -39,6 +39,7 @@ import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug } from './newsletter-slugs.js'
 import type { IncomingMessage } from 'node:http'
+import { fetchWithTimeout } from "../lib/http.js"
 
 /**
  * Does the caller hold Circle access? The community lives on the `circle`
@@ -118,7 +119,7 @@ async function paginateCircleAdmin<R>(
     const url =
       `https://app.circle.so/api/admin/v2/${path}${sep}` +
       `per_page=${pageSize}&page=${page}`
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     })
     if (!res.ok) throw new Error(`Circle ${res.status}: ${await res.text()}`)
@@ -410,17 +411,21 @@ export function circleRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/circle/community-events',
       method: 'GET',
-      handler: async (_req, res, json) => {
-        // Events shift on editorial cadence; SWR absorbs traffic between cold
-        // starts. The client re-derives live/upcoming from `starts_at` on each
-        // 45s poll, so a short cache here doesn't delay the "live" flip.
-        res.setHeader(
-          'cache-control',
-          'public, s-maxage=300, stale-while-revalidate=3600',
-        )
+      handler: async (req, res, json) => {
+        // Member-only calendar — projectEvent ships `venue`, the physical
+        // address of in-person events. Identity-scoped, so it must never sit in
+        // a shared cache: one anonymous fill would then be served to members
+        // (and vice versa). Gated like community-feed.
+        res.setHeader('cache-control', 'private, no-store')
 
         const token = env.CIRCLE_ADMIN_API_TOKEN
         if (!token) return json(200, { events: [] })
+
+        // Empty rather than 403 so the client renders the real empty state
+        // instead of a mock fallback — same contract as community-feed.
+        if (!(await callerHasCircleAccess(req, env))) {
+          return json(200, { events: [] })
+        }
 
         try {
           const events = await fetchCircleEvents(token)
@@ -460,14 +465,17 @@ export function circleRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/circle/spaces',
       method: 'GET',
-      handler: async (_req, res, json) => {
-        res.setHeader(
-          'cache-control',
-          'public, s-maxage=300, stale-while-revalidate=3600',
-        )
+      handler: async (req, res, json) => {
+        // The member space directory — same gating and cache contract as
+        // community-events above.
+        res.setHeader('cache-control', 'private, no-store')
 
         const token = env.CIRCLE_ADMIN_API_TOKEN
         if (!token) return json(200, { spaces: [] })
+
+        if (!(await callerHasCircleAccess(req, env))) {
+          return json(200, { spaces: [] })
+        }
 
         try {
           const spaces = await fetchMemberSpaces(token)

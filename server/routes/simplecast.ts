@@ -21,6 +21,7 @@ import {
 } from '../show-notes.js'
 import type { ScPodcast } from '../show-notes.js'
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
+import { fetchWithTimeout } from "../lib/http.js"
 
 const SIMPLECAST_CACHE_TTL_MS = 5 * 60 * 1000
 const simplecastCache = new Map<
@@ -70,7 +71,7 @@ async function fetchSimplecastEpisodes(
   }
 
   const url = `https://api.simplecast.com/podcasts/${encodeURIComponent(podcastId)}/episodes?limit=50`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
   if (!res.ok) {
@@ -95,7 +96,7 @@ async function fetchSimplecastEpisodeNotes(
     return cached.notes
   }
   const url = `https://api.simplecast.com/episodes/${encodeURIComponent(episodeId)}`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
   if (!res.ok) {
@@ -120,7 +121,7 @@ async function fetchSimplecastPodcastDescription(
     return cached.description
   }
   const url = `https://api.simplecast.com/podcasts/${encodeURIComponent(podcastId)}`
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
   if (!res.ok) {

@@ -198,7 +198,14 @@ export function createCatchAllHandler(env: Env) {
     // pathname for non-Vercel callers (the dev server, tests) where the
     // handler is mounted directly at each route.
     const url = new URL(req.url ?? '', 'http://x')
-    const slug = url.searchParams.get('_path')
+    // A caller can put their own `_path` in the original query string, and
+    // Vercel merges it with the rewrite-injected one. `.get()` returns the FIRST
+    // match, whose position depends on undocumented merge ordering — so take the
+    // LAST, which is the value the rewrite appended. No gate depends on the
+    // path (every handler re-checks its own auth), but routing shouldn't rest on
+    // a platform detail that could change under us.
+    const slugs = url.searchParams.getAll('_path')
+    const slug = slugs.length > 0 ? slugs[slugs.length - 1]! : null
     const pathname = slug !== null ? `/api/${slug}` : url.pathname
     const handler = routesByPath.get(pathname)
     if (!handler) {
