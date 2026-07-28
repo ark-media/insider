@@ -602,7 +602,9 @@ function Field({
 // Session server-side (with the Customer pre-set to this email) and advances
 // to the payment screen. Lives outside CheckoutElementsProvider — no Session
 // exists yet — so it can't use useCheckout.
-function EmailForm({
+// Exported for tests — the currency-reset behaviour below is not reachable
+// through CheckoutModal without a live Stripe session.
+export function EmailForm({
   plan,
   initialEmail,
   promo,

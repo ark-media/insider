@@ -43,7 +43,6 @@ function RootContent() {
       {chromeless ? null : (
         <>
           <AnnouncementBanner />
-          {/* <LiveStatus /> */}
           <PublicMasthead />
           <AuthErrorNotice />
         </>

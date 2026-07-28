@@ -6,7 +6,7 @@ import {
   AdminListRow,
   StatusPill,
 } from "../../components/admin/AdminList";
-import { RichTextEditor } from "../../components/RichTextEditor";
+import { LazyRichTextEditor } from "../../components/LazyRichTextEditor";
 import {
   adminField,
   adminFieldLabel,
@@ -204,7 +204,7 @@ function FaqForm({
         <div>
           <span className={adminFieldLabel}>Answer</span>
           <div className="mt-2">
-            <RichTextEditor
+            <LazyRichTextEditor
               ariaLabel="FAQ answer"
               value={form.answer}
               onChange={(html) => setForm((f) => ({ ...f, answer: html }))}

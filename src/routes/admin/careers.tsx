@@ -6,7 +6,7 @@ import {
   AdminListRow,
   StatusPill,
 } from "../../components/admin/AdminList";
-import { RichTextEditor } from "../../components/RichTextEditor";
+import { LazyRichTextEditor } from "../../components/LazyRichTextEditor";
 import {
   deleteCareer,
   listCareers,
@@ -301,7 +301,7 @@ function CareerForm({
         <div>
           <span className={label}>Description</span>
           <div className="mt-2">
-            <RichTextEditor
+            <LazyRichTextEditor
               ariaLabel="Job description"
               value={form.description}
               onChange={(html) =>

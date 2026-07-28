@@ -6,7 +6,7 @@ import {
   AdminListRow,
   StatusPill,
 } from "../../components/admin/AdminList";
-import { RichTextEditor } from "../../components/RichTextEditor";
+import { LazyRichTextEditor } from "../../components/LazyRichTextEditor";
 import {
   deleteAnnouncement,
   listAnnouncements,
@@ -276,7 +276,7 @@ function AnnouncementForm({
         <div>
           <span className={label}>Body</span>
           <div className="mt-2">
-            <RichTextEditor
+            <LazyRichTextEditor
               ariaLabel="Announcement body"
               value={form.body}
               onChange={(html) => setForm((f) => ({ ...f, body: html }))}

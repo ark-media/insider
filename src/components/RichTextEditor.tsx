@@ -13,13 +13,15 @@ import { RICH_TEXT_CLASS } from "../lib/richTextPreview";
 // identical everywhere. Enter starts a new paragraph; Shift+Enter inserts a
 // line break — both are preserved through the server allowlist.
 
-type Props = {
+export type RichTextEditorProps = {
   value: string;
   onChange: (html: string) => void;
   ariaLabel: string;
   /** Minimum editing height, e.g. "12rem". */
   minHeight?: string;
 };
+
+type Props = RichTextEditorProps;
 
 function buildExtensions() {
   return [
