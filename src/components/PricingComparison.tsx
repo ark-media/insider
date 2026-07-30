@@ -9,8 +9,10 @@ import { type TierAmounts, formatMinor } from "../lib/currency";
 
 type Plan = "monthly" | "yearly";
 
+type Column = { key: Tier; label: string; featured?: boolean };
+
 // Column order mirrors the card grid: Ark+, the Bundle (featured), Community.
-const COLUMNS: { key: Tier; label: string; featured?: boolean }[] = [
+const COLUMNS: Column[] = [
   { key: "ark-plus", label: "Ark+" },
   { key: "bundle", label: "Ark+ & Community", featured: true },
   { key: "circle", label: "Community" },
@@ -94,20 +96,36 @@ function Mark({ on }: { on: boolean }) {
   );
 }
 
-// Feature-comparison table for the /pricing page — the primary buying surface
-// there (the card grid was removed). A shared Monthly/Annual toggle sets the
-// billing period; each column's "Choose" button opens checkout for that tier at
-// that period. Amount (pay-what-you-choose) and the exact price are set inside
-// the checkout modal, which sources them live from Stripe.
-export function PricingComparison() {
+// Feature-comparison table. A shared Monthly/Annual toggle sets the billing
+// period, and picking a column opens checkout for that tier at that period.
+// Amount (pay-what-you-choose) and the exact price are set inside the checkout
+// modal, which sources them live from Stripe.
+//
+// Two presentations:
+//   "standalone" (/pricing) — the primary buying surface: a Monthly/Annual
+//     toggle, a "From <price>" floor per column, and a "Choose" button that
+//     opens checkout for that tier at that period.
+//   "reference" (/plus)     — sits below the card grid, which already owns the
+//     toggle, the prices, and the CTAs. Here the table is purely a read-only
+//     summary of what each tier includes: no toggle, no prices, no buttons, and
+//     nothing to click or hover.
+export function PricingComparison({
+  variant = "standalone",
+}: {
+  variant?: "standalone" | "reference";
+}) {
+  const reference = variant === "reference";
   const [plan, setPlan] = useState<Plan>("yearly");
   const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
 
   // "From $X" floor per column, sourced live from Stripe (never hardcoded) — the
   // same values the cards on /plus show. Price is secondary here: if it fails to
   // load, the column simply omits the line and the "Choose" CTA (which fetches
-  // its own price in the modal) still works.
+  // its own price in the modal) still works. The reference variant shows no
+  // prices, so it skips the request rather than duplicating the one the cards
+  // above already made.
   const pricing = useAsyncResource(async () => {
+    if (reference) return null;
     const res = await fetch("/api/pricing");
     if (!res.ok) throw new Error("pricing request failed");
     const data = (await res.json().catch(() => ({}))) as {
@@ -119,7 +137,7 @@ export function PricingComparison() {
     const currency = data.default_currency ?? "usd";
     const factor = data.minor_factors?.[currency] ?? 100;
     return { tiers: data.tiers, currency, factor };
-  }, []);
+  }, [reference]);
   const data = pricing.status === "ready" ? pricing.data : null;
   const tiers = data?.tiers ?? null;
   const currency = data?.currency ?? "usd";
@@ -134,8 +152,7 @@ export function PricingComparison() {
     return typeof minor === "number" ? formatMinor(minor, currency, factor) : null;
   };
 
-  const colClass = (featured?: boolean) =>
-    featured ? "bg-navy-800/50" : "";
+  const colClass = (c: Column) => (c.featured ? "bg-navy-800/50" : "");
 
   const selectPeriod = (p: Plan) => {
     setPlan(p);
@@ -160,9 +177,11 @@ export function PricingComparison() {
           <h2 className="mt-3 text-h2">What you get with each tier</h2>
         </div>
 
-        <div className="mt-8 flex justify-center">
-          <BillingPeriodToggle plan={plan} onChange={selectPeriod} />
-        </div>
+        {reference ? null : (
+          <div className="mt-8 flex justify-center">
+            <BillingPeriodToggle plan={plan} onChange={selectPeriod} />
+          </div>
+        )}
 
         <div className="mt-10 overflow-x-auto">
           <table className="w-full min-w-[36rem] border-collapse text-left">
@@ -176,7 +195,7 @@ export function PricingComparison() {
                   <th
                     key={c.key}
                     scope="col"
-                    className={`p-4 text-center align-bottom ${colClass(c.featured)} ${
+                    className={`p-4 text-center align-bottom ${colClass(c)} ${
                       c.featured ? "border-t-2 border-cyan" : ""
                     }`}
                   >
@@ -188,22 +207,24 @@ export function PricingComparison() {
                     <div className="text-h5 font-display font-bold text-fg-strong">
                       {c.label}
                     </div>
-                    <div className="mt-2 text-body-sm text-fg-muted">
-                      {floorFor(c.key) !== null ? (
-                        <>
-                          From{" "}
-                          <span className="text-fg-strong">
-                            {floorFor(c.key)}
-                          </span>
-                          <span className="whitespace-nowrap">
-                            {" "}
-                            / {plan === "yearly" ? "yr" : "mo"}
-                          </span>
-                        </>
-                      ) : pricing.status === "error" ? null : (
-                        <PriceSkeleton className="h-[1em] w-16" />
-                      )}
-                    </div>
+                    {reference ? null : (
+                      <div className="mt-2 text-body-sm text-fg-muted">
+                        {floorFor(c.key) !== null ? (
+                          <>
+                            From{" "}
+                            <span className="text-fg-strong">
+                              {floorFor(c.key)}
+                            </span>
+                            <span className="whitespace-nowrap">
+                              {" "}
+                              / {plan === "yearly" ? "yr" : "mo"}
+                            </span>
+                          </>
+                        ) : pricing.status === "error" ? null : (
+                          <PriceSkeleton className="h-[1em] w-16" />
+                        )}
+                      </div>
+                    )}
                   </th>
                 ))}
               </tr>
@@ -246,7 +267,7 @@ export function PricingComparison() {
                       {COLUMNS.map((c) => (
                         <td
                           key={c.key}
-                          className={`py-3.5 text-center align-top ${colClass(c.featured)}`}
+                          className={`py-3.5 text-center align-top ${colClass(c)}`}
                         >
                           <Mark on={row.tiers[c.key]} />
                         </td>
@@ -258,28 +279,32 @@ export function PricingComparison() {
             </tbody>
             <tfoot>
               <tr>
-                <td className="p-4" />
+                <td className={reference ? "p-2" : "p-4"} />
                 {COLUMNS.map((c) => (
                   <td
                     key={c.key}
-                    className={`p-4 text-center align-top ${colClass(c.featured)} ${
+                    className={`text-center align-top ${reference ? "p-2" : "p-4"} ${colClass(c)} ${
                       c.featured ? "border-b-2 border-cyan" : ""
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => openCheckout(c.key)}
-                      className={`group inline-flex min-h-11 w-full items-center justify-center gap-2 px-4 button-text font-display font-bold tracking-cta transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
-                        c.featured
-                          ? "bg-cyan text-navy hover:bg-fg-strong hover:text-navy-900"
-                          : "border border-cyan text-cyan hover:bg-cyan hover:text-navy"
-                      }`}
-                    >
-                      Choose
-                      <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
-                        →
-                      </span>
-                    </button>
+                    {/* In the reference variant this row is just the featured
+                        column's bottom cap — the CTAs live in the cards above. */}
+                    {reference ? null : (
+                      <button
+                        type="button"
+                        onClick={() => openCheckout(c.key)}
+                        className={`group inline-flex min-h-11 w-full items-center justify-center gap-2 px-4 button-text font-display font-bold tracking-cta transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+                          c.featured
+                            ? "bg-cyan text-navy hover:bg-fg-strong hover:text-navy-900"
+                            : "border border-cyan text-cyan hover:bg-cyan hover:text-navy"
+                        }`}
+                      >
+                        Choose
+                        <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+                          →
+                        </span>
+                      </button>
+                    )}
                   </td>
                 ))}
               </tr>
@@ -288,12 +313,14 @@ export function PricingComparison() {
         </div>
       </div>
 
-      <CheckoutModal
-        open={checkout !== null}
-        plan={plan}
-        tier={checkout?.tier ?? "bundle"}
-        onClose={() => setCheckout(null)}
-      />
+      {reference ? null : (
+        <CheckoutModal
+          open={checkout !== null}
+          plan={plan}
+          tier={checkout?.tier ?? "bundle"}
+          onClose={() => setCheckout(null)}
+        />
+      )}
     </section>
   );
 }

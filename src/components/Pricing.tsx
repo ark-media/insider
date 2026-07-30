@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
 import { PricingCards } from "./PricingCards";
+import { PricingComparison } from "./PricingComparison";
 import { trackEvent } from "../lib/analytics";
 
-// The pricing section on /plus: an editorial intro plus the three-card grid.
-// The cards, PWYC, and checkout all live in <PricingCards> so the same grid can
-// be reused on the dedicated /pricing page.
+// The pricing section on /plus: an editorial intro, the three-card grid, and the
+// full feature-comparison table inline below it (rather than linking out to
+// /pricing). The cards, PWYC, and checkout all live in <PricingCards> so the
+// same grid can be reused elsewhere.
 export function Pricing() {
   // Top of the revenue funnel: fire once when the pricing section scrolls into
   // view, not on mount.
@@ -43,10 +45,11 @@ export function Pricing() {
         </div>
 
         <div className="mt-12">
-          <PricingCards showCompareLink />
+          <PricingCards />
         </div>
-
       </div>
+
+      <PricingComparison variant="reference" />
     </section>
   );
 }

@@ -155,13 +155,7 @@ function PriceCard({
 // (the Bundle featured in the center), and the checkout modal. Prices come from
 // Stripe (the source of truth) via /api/pricing — never hardcoded, so the
 // displayed amount can't drift from what we charge.
-export function PricingCards({
-  id = "plans",
-  showCompareLink = false,
-}: {
-  id?: string;
-  showCompareLink?: boolean;
-}) {
+export function PricingCards({ id = "plans" }: { id?: string }) {
   const [plan, setPlanRaw] = useState<Plan>("yearly");
   const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
   const { state } = useSubscriberAuth();
@@ -284,20 +278,6 @@ export function PricingCards({
           />
         ))}
       </div>
-
-      {showCompareLink ? (
-        <div className="mt-10 text-center">
-          <Link
-            to="/pricing"
-            className="group inline-flex items-center gap-2 button-text font-display font-bold text-cyan transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Compare all plans
-            <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
-              →
-            </span>
-          </Link>
-        </div>
-      ) : null}
 
       <CheckoutModal
         open={checkout !== null}
