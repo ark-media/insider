@@ -30,7 +30,7 @@ type NavItem = {
   to: string;
   variant: NavVariant;
   matchPrefix?: string;
-  hideWhen?: "subscriber" | "nonSubscriber" | "fullMember";
+  hideWhen?: "subscriber" | "nonSubscriber" | "fullMember" | "nonFullMember";
   children?: NavChild[];
 };
 
@@ -57,20 +57,30 @@ const NAV_ITEMS: NavItem[] = [
   { variant: "text", label: "Community", to: "/community", matchPrefix: "/community" },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
   { variant: "text", label: "Book Club", to: "/book-club", matchPrefix: "/book-club" },
-  // One landing page to browse membership (/plus) — a plain link now, not a
-  // dropdown; the per-tier sub-menus were removed. On /plus the pricing grid
-  // shows only the tier(s) the visitor doesn't already own. Hidden from
-  // full-bundle members (they own Ark+ AND Community, so there's nothing left to
-  // buy) — they still reach gifting via the always-on "Gift" tab below.
+  // One landing page to browse membership (/plus); gifting lives in this
+  // dropdown rather than as its own tab. On /plus the pricing grid shows only
+  // the tier(s) the visitor doesn't already own. Hidden from full-bundle
+  // members (they own Ark+ AND Community, so there's nothing left to buy) —
+  // the full-member-only "Gift" tab below keeps gifting reachable for them.
   {
-    variant: "text",
+    variant: "menu",
     label: "Subscribe",
     to: "/plus",
     hideWhen: "fullMember",
+    children: [
+      { label: "Membership", to: "/plus" },
+      { label: "Gift", to: "/plus/gift" },
+    ],
   },
-  // Always visible — anyone (guest, member, or full member) can buy a gift.
-  // This is what surfaces gifting in the main nav even when you're signed in.
-  { variant: "text", label: "Gift", to: "/plus/gift" },
+  // Anyone (guest, member, or full member) can buy a gift, but full-bundle
+  // members lose the Subscribe menu above — surface Gift as its own tab for
+  // them only, so gifting stays in the main nav at every tier.
+  {
+    variant: "text",
+    label: "Gift",
+    to: "/plus/gift",
+    hideWhen: "nonFullMember",
+  },
   {
     variant: "menu",
     label: "About",
@@ -81,7 +91,8 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Get in touch", to: "/contact" },
     ],
   },
-  { variant: "text", label: "Israel Votes", to: "/israel-votes" },
+  // Hidden for now — page still lives at /israel-votes; restore when ready.
+  // { variant: "text", label: "Israel Votes", to: "/israel-votes" },
 ];
 
 // Appended to the nav only for admins (see useSubscriberAuth().isAdmin).
@@ -116,6 +127,7 @@ function visibleNavItems(flags: {
     if (item.hideWhen === "subscriber") return !flags.isSubscriber;
     if (item.hideWhen === "nonSubscriber") return flags.isSubscriber;
     if (item.hideWhen === "fullMember") return !flags.isFullMember;
+    if (item.hideWhen === "nonFullMember") return flags.isFullMember;
     return true;
   });
 }
@@ -134,7 +146,7 @@ export function PublicMasthead() {
   // the "Set up your feed" account link).
   const isSubscriber = state.kind === "member" && state.me.tier !== "free";
   // Owns both axes (Ark+ AND Community) — nothing left to buy, so the
-  // "Subscribe" tab is hidden (they still get the always-on "Gift" tab).
+  // "Subscribe" menu is hidden (a standalone "Gift" tab replaces it for them).
   const isFullMember =
     state.kind === "member" &&
     state.me.entitlements.arkPlus &&
@@ -527,6 +539,7 @@ export function PublicMasthead() {
                       item={item}
                       active={active}
                       pathname={location.pathname}
+                      drawerOpen={mobileOpen}
                       onNavigate={() => setMobileOpen(false)}
                     />
                   );
@@ -699,36 +712,71 @@ function MobileNavSection({
   item,
   active,
   pathname,
+  drawerOpen,
   onNavigate,
 }: {
   item: NavItem;
   active: boolean;
   pathname: string;
+  drawerOpen: boolean;
   onNavigate: () => void;
 }) {
+  // Submenus start collapsed — the chevron button discloses them; the label
+  // itself still navigates to the section's landing page. State resets on
+  // every drawer toggle (render-time sync, mirroring NavMenu) so reopening
+  // the drawer never restores a stale expansion.
+  const [open, setOpen] = useState(false);
+  const [syncedDrawerOpen, setSyncedDrawerOpen] = useState(drawerOpen);
+  const listId = useId();
+  if (syncedDrawerOpen !== drawerOpen) {
+    setSyncedDrawerOpen(drawerOpen);
+    setOpen(false);
+  }
   const children = item.children ?? [];
   return (
     <div className="border-b border-rule-soft py-1 last:border-b-0">
-      <Link
-        to={item.to}
-        aria-current={active ? "page" : undefined}
-        onClick={onNavigate}
-        className={`flex min-h-11 items-center justify-between py-3 text-[14px] transition ${
-          active ? "text-cyan" : "text-fg hover:text-fg-strong"
-        }`}
-      >
-        <span>{item.label}</span>
-        <span
-          aria-hidden="true"
-          className={`text-[12px] tracking-eyebrow ${
-            active ? "text-cyan" : "text-fg-faint"
+      <div className="flex items-center justify-between">
+        <Link
+          to={item.to}
+          aria-current={active ? "page" : undefined}
+          onClick={onNavigate}
+          className={`flex min-h-11 flex-1 items-center py-3 text-[14px] transition ${
+            active ? "text-cyan" : "text-fg hover:text-fg-strong"
           }`}
         >
-          →
-        </span>
-      </Link>
-      {children.length > 0 ? (
-        <ul className="mb-2 ml-3 border-l border-rule-soft pl-3">
+          {item.label}
+        </Link>
+        {children.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-label={`${open ? "Hide" : "Show"} ${item.label} links`}
+            className={`inline-flex min-h-11 min-w-11 items-center justify-center transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+              active ? "text-cyan" : "text-fg-faint"
+            }`}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="square"
+              className={`transition-transform duration-200 motion-reduce:transition-none ${
+                open ? "rotate-180" : ""
+              }`}
+            >
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+      {open && children.length > 0 ? (
+        <ul id={listId} className="mb-2 ml-3 border-l border-rule-soft pl-3">
           {children.map((child) => {
             const childActive =
               pathname === child.to || pathname.startsWith(`${child.to}/`);

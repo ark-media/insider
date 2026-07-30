@@ -207,10 +207,10 @@ function ShowHero({ show }: { show: Show }) {
 }
 
 // Ark+ pitch shown on every free show's hero. The benefits named here are the
-// membership-wide ones (see <Benefits/> on /plus) — not per-show extras, since
-// only Call Me Back has a paid feed. Members already have all of it, so they
-// never see this; the root blocks rendering while /api/me is in flight, so the
-// tier is settled by the time this runs and no upsell flashes at a member.
+// membership-wide ones — not per-show extras, since only Call Me Back has a
+// paid feed. Members already have all of it, so they never see this; the root
+// blocks rendering while /api/me is in flight, so the tier is settled by the
+// time this runs and no upsell flashes at a member.
 function ShowUpsell() {
   const { state } = useSubscriberAuth();
   if (isArkPlusMember(state)) return null;

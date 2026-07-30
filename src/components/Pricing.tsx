@@ -46,19 +46,6 @@ export function Pricing() {
           <PricingCards showCompareLink />
         </div>
 
-        <ul className="mt-12 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-body-sm">
-          {[
-            "Cancel anytime",
-            "Gift Ark+ available",
-            "Secure checkout",
-            "Pay in your local currency",
-          ].map((f) => (
-            <li key={f} className="flex items-center gap-2">
-              <span className="inline-block size-1.5 rounded-full bg-cyan" />
-              {f}
-            </li>
-          ))}
-        </ul>
       </div>
     </section>
   );

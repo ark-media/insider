@@ -1,8 +1,8 @@
-// Per-entitlement copy for the /plus Hero and Benefits sections. The page is a
-// single landing page (see [Subscribe nav IA]); its content personalizes to what
-// the viewer doesn't already own so a member sees an upsell for the missing
-// piece rather than the generic guest pitch. Copy only — kept out of the
-// components (like pricingTiers.ts) so both sections read from one place.
+// Per-entitlement copy for the /plus Hero. The page is a single landing page
+// (see [Subscribe nav IA]); its content personalizes to what the viewer doesn't
+// already own so a member sees an upsell for the missing piece rather than the
+// generic guest pitch. Copy only — kept out of the component (like
+// pricingTiers.ts) so the section reads from one place.
 
 import type { SubscriberAuthState } from "../lib/subscriberAuth";
 
@@ -134,111 +134,5 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
     badgeLabel: "Full Member",
     badgeValue: "No. 00214",
     giftLabel: "Gift a membership",
-  },
-};
-
-export type BenefitItem = { no: string; title: string; body: string };
-
-export type BenefitsContent = {
-  head: Heading;
-  intro: string;
-  items: BenefitItem[];
-};
-
-// The three things Ark+ + Community grant, shown to guests and (as "what you
-// have") to full members.
-const ALL_THREE: BenefitItem[] = [
-  {
-    no: "01",
-    title: "Call Me Back Ark+ Feed",
-    body: "Extra weekly episode, ad-free episodes, and members-only Q&As — delivered as a private feed in the podcast app you already use.",
-  },
-  {
-    no: "02",
-    title: "Members-only newsletter",
-    body: "A weekly Ark+ members newsletter with our full analysis, source notes, and more, delivered straight to your inbox.",
-  },
-  {
-    no: "03",
-    title: "The Ark Community",
-    body: "Full access to the Ark community app, exclusive members-only spaces, and opportunities to connect with fellow members — plus access to Inside Call Me Back Q&A sessions.",
-  },
-];
-
-export const BENEFITS_CONTENT: Record<PlusAudience, BenefitsContent> = {
-  guest: {
-    head: {
-      line1: "Three things,",
-      line2Pre: "",
-      line2Accent: "one",
-      line2Post: " membership.",
-    },
-    intro:
-      "The private feed, the newsletters, and the community — all in one place. The Ark+ & Community bundle covers all three below.",
-    items: ALL_THREE,
-  },
-  "add-community": {
-    head: {
-      line1: "What the",
-      line2Pre: "community ",
-      line2Accent: "adds.",
-      line2Post: "",
-    },
-    intro:
-      "You already have the private feed and the members-only newsletters. Here's what joining the Ark community adds.",
-    items: [
-      {
-        no: "01",
-        title: "Conversations",
-        body: "The Ark community app — talk with the hosts and fellow members in exclusive, members-only spaces.",
-      },
-      {
-        no: "02",
-        title: "Live events & Q&As",
-        body: "Member-only events and live Q&A sessions, including Inside Call Me Back.",
-      },
-      {
-        no: "03",
-        title: "Dan's book club",
-        body: "Read along with Dan and the community, with member discussion and guest authors.",
-      },
-    ],
-  },
-  "add-arkplus": {
-    head: {
-      line1: "What",
-      line2Pre: "Ark+ ",
-      line2Accent: "adds.",
-      line2Post: "",
-    },
-    intro:
-      "You're already in the Ark community. Here's what adding Ark+ gives you.",
-    items: [
-      {
-        no: "01",
-        title: "The private feed",
-        body: "Inside Call Me Back as a private, ad-free feed in the podcast app you already use — with an extra weekly episode and members-only Q&As.",
-      },
-      {
-        no: "02",
-        title: "The network, ad-free",
-        body: "Every Ark Media show, ad-free.",
-      },
-      {
-        no: "03",
-        title: "Members-only newsletter",
-        body: "A weekly Ark+ members newsletter with our full analysis, source notes, and more, delivered straight to your inbox.",
-      },
-    ],
-  },
-  full: {
-    head: {
-      line1: "Everything",
-      line2Pre: "you ",
-      line2Accent: "have.",
-      line2Post: "",
-    },
-    intro: "Your membership covers all three — here's what's included.",
-    items: ALL_THREE,
   },
 };

@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Hero } from "../../components/Hero";
-import { Benefits } from "../../components/Benefits";
 import { Pricing } from "../../components/Pricing";
-import { CircleCommunity } from "../../components/CircleCommunity";
+import { WhySubscribe } from "../../components/WhySubscribe";
 import { FAQ } from "../../components/FAQ";
 import { fetchFaqs } from "../../lib/faqs";
 
@@ -17,9 +16,8 @@ function PlusPage() {
   return (
     <>
       <Hero />
-      <Benefits />
       <Pricing />
-      <CircleCommunity />
+      <WhySubscribe />
       <FAQ faqs={faqs} />
     </>
   );
