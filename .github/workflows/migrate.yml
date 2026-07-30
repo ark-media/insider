@@ -44,13 +44,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Bun runs the migration scripts; pnpm owns installs (see packageManager
+      # in package.json).
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       # Show approvers exactly what will run before they merged-then-approve.
       # Pending entries from this output should match the diff that triggered
