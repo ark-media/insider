@@ -306,7 +306,7 @@ export function PublicMasthead() {
           aria-label="Ark Media — home"
           className="group flex items-center gap-3 text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
         >
-          <ArkLogo height={56} />
+          <ArkLogo className="h-[22px] sm:h-[30px]" />
         </Link>
 
         <nav

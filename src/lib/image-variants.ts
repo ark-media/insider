@@ -3,7 +3,7 @@
 // Consumed by srcSet() in src/lib/images.ts.
 
 export const imageVariants: Record<string, [number, string][]> = {
-  "/shows/ark-news-daily.jpg": [[400, "/shows/ark-news-daily-400.jpg"], [800, "/shows/ark-news-daily.jpg"]],
+  "/shows/ark-news-daily.jpg": [[400, "/shows/ark-news-daily-400.jpg"], [800, "/shows/ark-news-daily-800.jpg"], [1200, "/shows/ark-news-daily.jpg"]],
   "/shows/call-me-back.jpg": [[400, "/shows/call-me-back-400.jpg"], [800, "/shows/call-me-back-800.jpg"], [1200, "/shows/call-me-back.jpg"]],
   "/shows/for-heavens-sake.jpg": [[400, "/shows/for-heavens-sake-400.jpg"], [800, "/shows/for-heavens-sake-800.jpg"], [1200, "/shows/for-heavens-sake.jpg"]],
   "/shows/whats-your-number.jpg": [[400, "/shows/whats-your-number-400.jpg"], [800, "/shows/whats-your-number-800.jpg"], [1200, "/shows/whats-your-number.jpg"]],

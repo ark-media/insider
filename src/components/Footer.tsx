@@ -53,7 +53,7 @@ export function Footer() {
       <div className="page-section">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <ArkLogo height={48} />
+            <ArkLogo className="h-[26px]" />
             <p className="mt-6 max-w-lg text-fg-strong">
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
                 Connecting Jewish{" "}
