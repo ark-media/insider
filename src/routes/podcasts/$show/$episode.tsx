@@ -263,7 +263,7 @@ function PaidEpisodeBlock({ episode }: { episode: Episode }) {
           swapped out for this card, the card has to name the episode itself. */}
       <div className="mt-4 max-w-2xl text-h3 text-fg-strong">{episode.title}</div>
       <p className="mt-4 max-w-2xl text-body-sm text-fg">
-        This episode is part of Inside Call Me Back. Join Ark+ to listen.
+        This episode is part of Call Me Back AMA. Join Ark+ to listen.
       </p>
       <Link
         to="/plus"

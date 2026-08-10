@@ -176,7 +176,7 @@ function MarketingShowcase() {
         <div className="page-gutter flex flex-col gap-12 py-12 sm:py-16">
           <FeatureBlock
             no="01"
-            title="Inside Call Me Back"
+            title="Call Me Back AMA"
             kicker="Weekly Q&As with your favorite Ark Media hosts."
             body="Ask questions. Get actual answers - not a comments section, not a bot. Bring what's on your mind to the people making the show."
             mockup={<QAScreen />}

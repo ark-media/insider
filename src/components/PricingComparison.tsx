@@ -50,7 +50,7 @@ const GROUPS: Group[] = [
         label: "Subscriber-exclusive content",
         summary: "Episodes only members hear.",
         detail: [
-          "Inside Call Me Back (in your Call Me Back feed)",
+          "Call Me Back AMA (in your Call Me Back feed)",
           "Chosen People Problems AMA",
           "Ark News Daily 6th episode",
         ],

@@ -269,7 +269,7 @@
 
 ### Ark+ members-only gate (paid episodes, replaces the player)
 - **LABEL**: Ark+ members only
-- **BODY**: This episode is part of Inside Call Me Back. Join Ark+ to listen.
+- **BODY**: This episode is part of Call Me Back AMA. Join Ark+ to listen.
 - **CTA**: Become an Ark+ member →
 
 ### Show notes
@@ -315,9 +315,9 @@
 - **HOSTS**: Ark Media newsroom
 - **CADENCE**: Weekdays
 
-### Inside Call Me Back (currently commented out in code — not live)
-- **TITLE**: Inside Call Me Back
-- **SHORT TITLE**: Inside CMB
+### Call Me Back AMA (currently commented out in code — not live)
+- **TITLE**: Call Me Back AMA
+- **SHORT TITLE**: CMB AMA
 - **TAGLINE**: Presenting the challenges and dilemmas facing Israelis to a global audience.
 - **DESCRIPTION**: Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.
 - **HOSTS**: Dan Senor
@@ -355,7 +355,7 @@
 - **EYEBROW**: Ark+
 - **HEADLINE**: The full Ark Media experience. ("experience." in the cyan accent)
 - **LEAD**: Ark+ is our premium membership, offering ad-free podcasts, unlimited access to all written content, and full access to the Ark community.
-- **BULLET**: Inside Call Me Back — extended interviews, ad-free
+- **BULLET**: Call Me Back AMA — extended interviews, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
 - **BULLET**: The Ark+ community — join the hosts and other members in the room
 - **BULLET**: Live events and Q&As
@@ -369,7 +369,7 @@
 ### Hero — Ark+ member without Community ("add Community")
 - **EYEBROW**: The Ark Community
 - **HEADLINE**: You have the feed. Now join the community. ("community." in the cyan accent)
-- **LEAD**: You already get Inside Call Me Back ad-free and the members-only newsletters. Add the Ark community — conversations with the hosts, live member events, and Dan's book club.
+- **LEAD**: You already get Call Me Back AMA ad-free and the members-only newsletters. Add the Ark community — conversations with the hosts, live member events, and Dan's book club.
 - **BULLET**: The Ark community app — talk with the hosts and fellow members
 - **BULLET**: Live member events and Q&As
 - **BULLET**: Dan's book club
@@ -383,8 +383,8 @@
 ### Hero — Community member without Ark+ ("add Ark+")
 - **EYEBROW**: Ark+
 - **HEADLINE**: You're in the room. Now go ad-free. ("ad-free." in the cyan accent)
-- **LEAD**: You're already part of the Ark community. Add Ark+ — Inside Call Me Back as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
-- **BULLET**: Inside Call Me Back — private, ad-free feed
+- **LEAD**: You're already part of the Ark community. Add Ark+ — Call Me Back AMA as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
+- **BULLET**: Call Me Back AMA — private, ad-free feed
 - **BULLET**: The full Ark Media network, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
 - **BULLET**: Early access to new shows
@@ -398,7 +398,7 @@
 - **EYEBROW**: Membership
 - **HEADLINE**: You have the full Ark Media experience. ("experience." in the cyan accent)
 - **LEAD**: You have Ark+ and the Ark community — the private, ad-free feed, the members-only newsletters, and the full community. Thank you for being a member.
-- **BULLET**: Inside Call Me Back — private, ad-free feed
+- **BULLET**: Call Me Back AMA — private, ad-free feed
 - **BULLET**: Members-only newsletters
 - **BULLET**: The Ark community, live events, and Dan's book club
 - **PRIMARY CTA**: Manage your membership
@@ -434,10 +434,10 @@
 ### Tier copy (shared by cards and comparison table)
 - **TIER NAME (ARK+)**: Ark+
 - **TIER BLURB (ARK+)**: Every Ark Media podcast, ad-free, plus the members-only newsletters.
-- **TIER FEATURES (ARK+)**: Inside Call Me Back — private, ad-free feed / The full network, ad-free / Members-only newsletters
+- **TIER FEATURES (ARK+)**: Call Me Back AMA — private, ad-free feed / The full network, ad-free / Members-only newsletters
 - **TIER NAME (BUNDLE, FEATURED)**: Ark+ & Community
 - **TIER BLURB (BUNDLE)**: Both — the private feed and the community, one membership.
-- **TIER FEATURES (BUNDLE)**: Inside Call Me Back — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Ark Media community / Live member events & Q&As
+- **TIER FEATURES (BUNDLE)**: Call Me Back AMA — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Ark Media community / Live member events & Q&As
 - **TIER NAME (COMMUNITY)**: Community
 - **TIER BLURB (COMMUNITY)**: The Ark Media community app — conversations, member events, and Dan's book club.
 - **TIER FEATURES (COMMUNITY)**: The Ark Media community / Live member events & Q&As / Dan's book club
@@ -482,7 +482,7 @@
 - **ENTRY BULLETS**: Call Me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
 - **ENTRY**: Subscriber-exclusive content
 - **ENTRY SUMMARY**: Episodes only members hear.
-- **ENTRY BULLETS**: Inside Call Me Back — in your Call Me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
+- **ENTRY BULLETS**: Call Me Back AMA — in your Call Me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
 - **ENTRY**: Early access
 - **ENTRY SUMMARY**: Hear it before everyone else.
 - **ENTRY BULLETS**: Mid-week Call Me Back episode — Wednesdays, not Fridays / History show
@@ -682,13 +682,13 @@
 ### Properties cards
 - **SECTION HEADING**: Properties
 - **CARD 1 EYEBROW / TITLE**: Podcast network — Ark Media podcasts
-- **CARD 1 BODY**: Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, What's Your Number, Ark News Daily, and Inside Call Me Back.
+- **CARD 1 BODY**: Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, What's Your Number, Ark News Daily, and Call Me Back AMA.
 - **CARD 2 EYEBROW / TITLE**: Newsroom — Newsletters
 - **CARD 2 BODY**: Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to Ark+ subscribers.
 - **CARD 3 EYEBROW / TITLE**: Community — The community
 - **CARD 3 BODY**: The Ark+ community lives in the Community app. Episode threads, live audio rooms, member meetups, and long-form posts.
 - **CARD 4 EYEBROW / TITLE**: Membership — Ark+ membership
-- **CARD 4 BODY**: Inside Call Me Back and members-only newsletters with Ark+; the community and live events with Circle. Get both in the bundle.
+- **CARD 4 BODY**: Call Me Back AMA and members-only newsletters with Ark+; the community and live events with Circle. Get both in the bundle.
 - **CARD CTA (ALL CARDS)**: Visit →
 
 ### Shows by name
@@ -717,7 +717,7 @@
 ### Dan Senor
 - **ROLE**: Host, Call Me Back
 - **SHORT BIO**: Author of The Genius of Israel and Start-Up Nation. Former foreign policy advisor.
-- **LONG BIO**: Dan Senor is the host of Call Me Back and Inside Call Me Back. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.
+- **LONG BIO**: Dan Senor is the host of Call Me Back and Call Me Back AMA. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.
 
 ### Donniel Hartman
 - **ROLE**: Host, For Heaven's Sake
@@ -923,7 +923,7 @@
 - **LEDE**: Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web.
 
 ### Feature block 01
-- **TITLE**: Inside Call Me Back
+- **TITLE**: Call Me Back AMA
 - **KICKER**: Weekly Q&As with your favorite Ark Media hosts.
 - **BODY**: Ask questions. Get actual answers - not a comments section, not a bot. Bring what's on your mind to the people making the show.
 
@@ -1153,7 +1153,7 @@
 - **LEDE**: Signed in as {email}. Manage what lands in your inbox, or join Ark+ for the private feed and community.
 - **UPSELL CARD EYEBROW**: Become an Ark+ member
 - **UPSELL CARD HEADING**: Go deeper with Ark+.
-- **UPSELL LIST ITEM**: — Inside Call Me Back, the members-only show
+- **UPSELL LIST ITEM**: — Call Me Back AMA, the members-only show
 - **UPSELL LIST ITEM**: — Private podcast feed, ad-free
 - **UPSELL LIST ITEM**: — Members-only newsletter
 - **UPSELL LIST ITEM**: — The Ark+ community in the app

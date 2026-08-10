@@ -38,7 +38,7 @@ export const hosts: Host[] = [
     shortBio:
       "Author of The Genius of Israel and Start-Up Nation. Former foreign policy advisor.",
     longBio:
-      "Dan Senor is the host of Call Me Back and Inside Call Me Back. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.",
+      "Dan Senor is the host of Call Me Back and Call Me Back AMA. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.",
     shows: ["call-me-back", "inside-call-me-back"],
     initials: "DS",
     headshot: "/hosts/dan-senor.jpg",

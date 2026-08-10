@@ -57,7 +57,7 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
     },
     lead: "Ark+ is our premium membership, offering ad-free podcasts, unlimited access to all written content, and full access to the Ark community.",
     bullets: [
-      "Inside Call Me Back — extended interviews, ad-free",
+      "Call Me Back AMA — extended interviews, ad-free",
       "Members-only newsletters — sharper analysis, weekly",
       "The Ark+ community — join the hosts and other members in the room",
       "Live events and Q&As",
@@ -78,7 +78,7 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       line2Accent: "community.",
       line2Post: "",
     },
-    lead: "You already get Inside Call Me Back ad-free and the members-only newsletters. Add the Ark community — conversations with the hosts, live member events, and Dan's book club.",
+    lead: "You already get Call Me Back AMA ad-free and the members-only newsletters. Add the Ark community — conversations with the hosts, live member events, and Dan's book club.",
     bullets: [
       "The Ark community app — talk with the hosts and fellow members",
       "Live member events and Q&As",
@@ -100,9 +100,9 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       line2Accent: "ad-free.",
       line2Post: "",
     },
-    lead: "You're already part of the Ark community. Add Ark+ — Inside Call Me Back as a private, ad-free feed, the full network ad-free, and the members-only newsletters.",
+    lead: "You're already part of the Ark community. Add Ark+ — Call Me Back AMA as a private, ad-free feed, the full network ad-free, and the members-only newsletters.",
     bullets: [
-      "Inside Call Me Back — private, ad-free feed",
+      "Call Me Back AMA — private, ad-free feed",
       "The full Ark Media network, ad-free",
       "Members-only newsletters — sharper analysis, weekly",
       "Early access to new shows",
@@ -124,7 +124,7 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
     },
     lead: "You have Ark+ and the Ark community — the private, ad-free feed, the members-only newsletters, and the full community. Thank you for being a member.",
     bullets: [
-      "Inside Call Me Back — private, ad-free feed",
+      "Call Me Back AMA — private, ad-free feed",
       "Members-only newsletters",
       "The Ark community, live events, and Dan's book club",
     ],

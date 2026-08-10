@@ -60,8 +60,8 @@ export const shows: Show[] = [
   // {
   //   slug: "inside-call-me-back",
   //   route: "/plus/inside-call-me-back",
-  //   title: "Inside Call Me Back",
-  //   shortTitle: "Inside CMB",
+  //   title: "Call Me Back AMA",
+  //   shortTitle: "CMB AMA",
   //   tagline:
   //     "Presenting the challenges and dilemmas facing Israelis to a global audience.",
   //   description:

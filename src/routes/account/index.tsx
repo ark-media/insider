@@ -201,7 +201,7 @@ function FreeDashboard({
                   Go deeper with Ark+.
                 </h2>
                 <ul className="mt-6 space-y-2 text-body-sm text-fg">
-                  <li>— Inside Call Me Back, the members-only show</li>
+                  <li>— Call Me Back AMA, the members-only show</li>
                   <li>— Private podcast feed, ad-free</li>
                   <li>— Members-only newsletter</li>
                   <li>— The Ark+ community in the app</li>

@@ -49,7 +49,7 @@ const SHOW_LABEL: Record<Track["show"], string> = {
   CMB: "Call Me Back",
   FHS: "For Heaven's Sake",
   WYN: "What's Your Number?",
-  ICMB: "Inside Call Me Back",
+  ICMB: "Call Me Back AMA",
 };
 
 const PLAYLIST: Track[] = [

@@ -19,7 +19,7 @@ const properties: NetworkProperty[] = [
     title: "Ark Media podcasts",
     kind: "Podcast network",
     description:
-      "Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, What's Your Number, Ark News Daily, and Inside Call Me Back.",
+      "Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, What's Your Number, Ark News Daily, and Call Me Back AMA.",
     to: "/podcasts",
   },
   {
@@ -40,7 +40,7 @@ const properties: NetworkProperty[] = [
     title: "Ark+ membership",
     kind: "Membership",
     description:
-      "Inside Call Me Back and members-only newsletters with Ark+; the community and live events with Circle. Get both in the bundle.",
+      "Call Me Back AMA and members-only newsletters with Ark+; the community and live events with Circle. Get both in the bundle.",
     to: "/plus",
   },
 ];
