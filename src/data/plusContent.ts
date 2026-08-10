@@ -35,7 +35,8 @@ export type HeroContent = {
   eyebrow: string;
   head: Heading;
   lead: string;
-  bullets: string[];
+  // Optional: the guest hero leads with the pricing grid instead of a list.
+  bullets?: string[];
   // `href` renders an in-page anchor (to #pricing); `to` renders a router Link
   // (full members have nothing to buy, so they get a link to /account instead).
   cta: { label: string; href?: string; to?: string };
@@ -46,19 +47,12 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
   guest: {
     eyebrow: "Ark+",
     head: {
-      line1: "The full",
-      line2Pre: "Ark Media ",
-      line2Accent: "experience.",
+      line1: "Support coverage you can trust.",
+      line2Pre: "",
+      line2Accent: "Get more in return.",
       line2Post: "",
     },
     lead: "Ark+ is our premium membership, offering ad-free podcasts, unlimited access to all written content, and full access to the Ark community.",
-    bullets: [
-      "Call Me Back AMA — extended interviews, ad-free",
-      "Members-only newsletters — sharper analysis, weekly",
-      "The Ark+ community — join the hosts and other members in the room",
-      "Live events and Q&As",
-      "Early access to new shows",
-    ],
     cta: { label: "Become a member", href: "#pricing" },
     giftLabel: "Gift Ark+",
   },

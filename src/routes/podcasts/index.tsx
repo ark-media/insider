@@ -20,8 +20,8 @@ function ShowsHub() {
   const descriptions = useShowDescriptions(shows.map((s) => s.slug));
   return (
     <PageShell
-      title="Four shows. One newsroom."
-      lede="Long-form interviews, fast briefs, and ongoing conversations on the questions that matter."
+      title="News, debate, history, and everything in between."
+      lede="Honest conversations about Jewish life, both big and small."
     >
       <section>
         <div className="page-section">

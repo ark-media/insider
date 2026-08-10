@@ -431,8 +431,8 @@ function AlsoFromArkMedia() {
       />
       <FeatureBand
         eyebrow="Community"
-        title="In the room."
-        body="Nadav, Amit and Tal in conversation with members — in the Community app."
+        title="Real People, Real Conversations, Real Connection"
+        body="The conversation about this week's episodes is already happening in EmbArk. Thoughtful people are weighing in on Israel, Jewish life, and the issues shaping the Jewish world. Come see what they're saying."
         visual={<CommunityVisual />}
         action={
           <div className="flex flex-col gap-5">
@@ -449,10 +449,10 @@ function AlsoFromArkMedia() {
       />
       <FeatureBand
         eyebrow="Ark+"
-        title="All in."
-        body="The paid feed and members-only newsletters. Add the community, or get both in the bundle."
+        title="Coverage you can trust."
+        body="Ark+ subscribers fund honest coverage of Israel and Jewish life."
         visual={<PlusVisual />}
-        cta="Explore Ark+"
+        cta="Become a subscriber"
         to="/plus"
       />
     </>

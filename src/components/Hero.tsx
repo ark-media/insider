@@ -34,14 +34,16 @@ export function Hero() {
 
           <p className="rise rise-3 mt-6 max-w-lg text-body-lg">{content.lead}</p>
 
-          <ul className="rise rise-4 mt-6 space-y-2 text-body-sm text-fg">
-            {content.bullets.map((line) => (
-              <li key={line} className="flex items-start gap-3">
-                <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
-                {line}
-              </li>
-            ))}
-          </ul>
+          {content.bullets ? (
+            <ul className="rise rise-4 mt-6 space-y-2 text-body-sm text-fg">
+              {content.bullets.map((line) => (
+                <li key={line} className="flex items-start gap-3">
+                  <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           <div className="rise rise-5 mt-8 flex flex-wrap items-center gap-6">
             {content.cta.to ? (
