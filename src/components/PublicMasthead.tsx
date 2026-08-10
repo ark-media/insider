@@ -53,10 +53,20 @@ const NAV_ITEMS: NavItem[] = [
     children: podcastChildren,
   },
   // Visible to everyone — the page itself shows a "Join Ark+" CTA to
-  // non-subscribers in place of the members-only Community app links.
-  { variant: "text", label: "Community", to: "/community", matchPrefix: "/community" },
+  // non-subscribers in place of the members-only Community app links. Book Club
+  // hangs off this menu rather than owning a top-level tab: it's a community
+  // activity, and the parent still links straight to /community.
+  {
+    variant: "menu",
+    label: "Community",
+    to: "/community",
+    matchPrefix: "/community",
+    children: [
+      { label: "Overview", to: "/community" },
+      { label: "Book Club", to: "/book-club" },
+    ],
+  },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
-  { variant: "text", label: "Book Club", to: "/book-club", matchPrefix: "/book-club" },
   // One landing page to browse membership (/plus); gifting lives in this
   // dropdown rather than as its own tab. On /plus the pricing grid shows only
   // the tier(s) the visitor doesn't already own. Hidden from full-bundle
