@@ -467,17 +467,33 @@
 - **PRICE LINE (MONTHLY)**: From {price} / mo
 - **GROUP HEADING**: Podcasts & video
 - **ROW**: Ad-free podcasts
-- **ROW DETAILS**: Call Me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
 - **ROW**: Subscriber-exclusive content
-- **ROW DETAILS**: Inside Call Me Back — in your Call Me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
 - **ROW**: Early access
-- **ROW DETAILS**: Mid-week Call Me Back episode — Wednesdays, not Fridays / History show
 - **ROW**: Ad-free video episodes
 - **GROUP HEADING**: Community & newsletters
 - **ROW**: Premium access to the Community app
 - **ROW**: Full access to Ark Media newsletters
-- **ROW DETAILS**: Weekly roundup / Ark+ paid newsletter with Nadav's column
 - **COLUMN CTA**: Choose →
+
+### Details (below the comparison table — expands each row)
+- **EYEBROW**: Details
+- **ENTRY**: Ad-free podcasts
+- **ENTRY SUMMARY**: Every Ark Media show in a private feed, with the ads cut.
+- **ENTRY BULLETS**: Call Me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
+- **ENTRY**: Subscriber-exclusive content
+- **ENTRY SUMMARY**: Episodes only members hear.
+- **ENTRY BULLETS**: Inside Call Me Back — in your Call Me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
+- **ENTRY**: Early access
+- **ENTRY SUMMARY**: Hear it before everyone else.
+- **ENTRY BULLETS**: Mid-week Call Me Back episode — Wednesdays, not Fridays / History show
+- **ENTRY**: Ad-free video episodes
+- **ENTRY SUMMARY**: The video editions of the shows, without the ad breaks.
+- **ENTRY**: Premium access to the Community app
+- **ENTRY SUMMARY**: The Ark Media community app, in full.
+- **ENTRY BULLETS**: Conversations with the hosts and fellow members / Live member events & Q&As / Dan's book club / Members-only spaces
+- **ENTRY**: Full access to Ark Media newsletters
+- **ENTRY SUMMARY**: Both member newsletters, in your inbox.
+- **ENTRY BULLETS**: Weekly roundup / Ark+ paid newsletter with Nadav's column
 
 ## Checkout modal
 ### Modal chrome

@@ -18,7 +18,14 @@ const COLUMNS: Column[] = [
   { key: "circle", label: "Community" },
 ];
 
-type Row = { label: string; detail?: string[]; tiers: Record<Tier, boolean> };
+// `summary` and `detail` never render inside the table — the rows stay to their
+// bare labels so the grid reads cleanly — they feed the Details block below it.
+type Row = {
+  label: string;
+  summary?: string;
+  detail?: string[];
+  tiers: Record<Tier, boolean>;
+};
 type Group = { heading: string; rows: Row[] };
 
 // The truthful grant per tier, and the specific shows/items behind each
@@ -30,6 +37,7 @@ const GROUPS: Group[] = [
     rows: [
       {
         label: "Ad-free podcasts",
+        summary: "Every Ark Media show in a private feed, with the ads cut.",
         detail: [
           "Call Me Back",
           "Ark News Daily",
@@ -40,6 +48,7 @@ const GROUPS: Group[] = [
       },
       {
         label: "Subscriber-exclusive content",
+        summary: "Episodes only members hear.",
         detail: [
           "Inside Call Me Back — in your Call Me Back feed",
           "Chosen People Problems AMA",
@@ -49,6 +58,7 @@ const GROUPS: Group[] = [
       },
       {
         label: "Early access",
+        summary: "Hear it before everyone else.",
         detail: [
           "Mid-week Call Me Back episode — Wednesdays, not Fridays",
           "History show",
@@ -57,6 +67,7 @@ const GROUPS: Group[] = [
       },
       {
         label: "Ad-free video episodes",
+        summary: "The video editions of the shows, without the ad breaks.",
         tiers: { "ark-plus": true, bundle: true, circle: false },
       },
     ],
@@ -66,16 +77,30 @@ const GROUPS: Group[] = [
     rows: [
       {
         label: "Premium access to the Community app",
+        summary: "The Ark Media community app, in full.",
+        detail: [
+          "Conversations with the hosts and fellow members",
+          "Live member events & Q&As",
+          "Dan's book club",
+          "Members-only spaces",
+        ],
         tiers: { "ark-plus": false, bundle: true, circle: true },
       },
       {
         label: "Full access to Ark Media newsletters",
+        summary: "Both member newsletters, in your inbox.",
         detail: ["Weekly roundup", "Ark+ paid newsletter with Nadav's column"],
         tiers: { "ark-plus": true, bundle: true, circle: true },
       },
     ],
   },
 ];
+
+// Every row that has something to expand on, flattened out of its group — the
+// Details block reads as one list, not a repeat of the table's grouping.
+const DETAILS = GROUPS.flatMap((g) => g.rows).filter(
+  (r) => r.summary || r.detail,
+);
 
 function Mark({ on }: { on: boolean }) {
   return on ? (
@@ -245,29 +270,16 @@ export function PricingComparison({
                     <tr key={row.label} className="border-t border-rule-soft">
                       <th
                         scope="row"
-                        className="py-3.5 pr-4 align-top font-normal"
+                        className="py-4 pr-4 align-middle font-normal"
                       >
                         <span className="block text-body-sm text-fg">
                           {row.label}
                         </span>
-                        {row.detail ? (
-                          <ul className="mt-1.5 space-y-1 text-xs leading-snug text-fg-faint">
-                            {row.detail.map((item) => (
-                              <li key={item} className="flex gap-1.5">
-                                <span
-                                  aria-hidden="true"
-                                  className="mt-1.5 size-1 shrink-0 rounded-full bg-rule-strong"
-                                />
-                                <span>{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : null}
                       </th>
                       {COLUMNS.map((c) => (
                         <td
                           key={c.key}
-                          className={`py-3.5 text-center align-top ${colClass(c)}`}
+                          className={`py-4 text-center align-middle ${colClass(c)}`}
                         >
                           <Mark on={row.tiers[c.key]} />
                         </td>
@@ -310,6 +322,39 @@ export function PricingComparison({
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        {/* What each row in the table actually gets you. Kept out of the table
+            so the grid stays scannable, and read as one flat list — the table's
+            grouping does the categorising. */}
+        <div className="mt- border-t border-rule pt-5">
+          <dl className="mt-6 grid gap-x-12 gap-y-8 sm:grid-cols-2">
+            {DETAILS.map((row) => (
+              <div key={row.label}>
+                <dt className="text-h5 font-display font-bold text-fg-strong">
+                  {row.label}
+                </dt>
+                <dd className="mt-1.5">
+                  {row.summary ? (
+                    <p className="text-body-sm">{row.summary}</p>
+                  ) : null}
+                  {row.detail ? (
+                    <ul className="mt-2 space-y-1.5 text-body-sm">
+                      {row.detail.map((item) => (
+                        <li key={item} className="flex gap-2.5">
+                          <span
+                            aria-hidden="true"
+                            className="mt-2 size-1.5 shrink-0 rounded-full bg-cyan"
+                          />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </div>
 
