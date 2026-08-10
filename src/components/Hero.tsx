@@ -13,7 +13,7 @@ export function Hero() {
 
   return (
     <section className="section-hero ark-bg grain-overlay relative overflow-hidden">
-      <div className="page-gutter relative grid grid-cols-1 gap-8 pt-10 pb-12 sm:pt-12 lg:grid-cols-12 lg:gap-8 lg:pt-16 lg:pb-16">
+      <div className="page-gutter relative grid grid-cols-1 gap-8 pt-8 pb-10 sm:pt-10 lg:grid-cols-12 lg:gap-8 lg:pt-12 lg:pb-12">
         {/* Left — headline */}
         <div className="relative z-10 lg:col-span-7">
           <div className="rise rise-1 flex items-center gap-3 eyebrow">
@@ -21,20 +21,20 @@ export function Hero() {
             {content.eyebrow}
           </div>
 
-          <h1 className="rise rise-2 mt-8 text-fg-strong">
-            <span className="display-upright block text-[clamp(2.2rem,5.2vw,4.6rem)]">
+          <h1 className="rise rise-2 mt-5 text-fg-strong">
+            <span className="display-upright block text-[clamp(2rem,4.4vw,3.6rem)]">
               {content.head.line1}
             </span>
-            <span className="display-upright block text-[clamp(2.2rem,5.2vw,4.6rem)]">
+            <span className="display-upright block text-[clamp(2rem,4.4vw,3.6rem)]">
               {content.head.line2Pre}
               <span className="display text-cyan">{content.head.line2Accent}</span>
               {content.head.line2Post}
             </span>
           </h1>
 
-          <p className="rise rise-3 mt-8 max-w-lg text-body-lg">{content.lead}</p>
+          <p className="rise rise-3 mt-6 max-w-lg text-body-lg">{content.lead}</p>
 
-          <ul className="rise rise-4 mt-8 space-y-2 text-body-sm text-fg">
+          <ul className="rise rise-4 mt-6 space-y-2 text-body-sm text-fg">
             {content.bullets.map((line) => (
               <li key={line} className="flex items-start gap-3">
                 <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
@@ -43,7 +43,7 @@ export function Hero() {
             ))}
           </ul>
 
-          <div className="rise rise-5 mt-10 flex flex-wrap items-center gap-6">
+          <div className="rise rise-5 mt-8 flex flex-wrap items-center gap-6">
             {content.cta.to ? (
               <Link
                 to={content.cta.to}
@@ -76,7 +76,7 @@ export function Hero() {
 
         {/* Right — the host ensemble */}
         <div className="relative lg:col-span-5">
-          <div className="rise rise-2 relative mx-auto max-w-[380px]">
+          <div className="rise rise-2 relative mx-auto max-w-[320px]">
             <HeroArtwork variant="plus" />
           </div>
         </div>
