@@ -35,8 +35,6 @@ export type HeroContent = {
   eyebrow: string;
   head: Heading;
   lead: string;
-  // Optional: the guest hero leads with the pricing grid instead of a list.
-  bullets?: string[];
   // `href` renders an in-page anchor (to #pricing); `to` renders a router Link
   // (full members have nothing to buy, so they get a link to /account instead).
   cta: { label: string; href?: string; to?: string };
@@ -77,12 +75,6 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       line2Post: "",
     },
     lead: "You're already part of the Ark community. Add Ark+ — Call Me Back AMA as a private, ad-free feed, the full network ad-free, and the members-only newsletters.",
-    bullets: [
-      "Call Me Back AMA — private, ad-free feed",
-      "The full Ark Media network, ad-free",
-      "Members-only newsletters — sharper analysis, weekly",
-      "Early access to new shows",
-    ],
     cta: { label: "Add Ark+", href: "#pricing" },
     giftLabel: "Gift a membership",
   },
@@ -95,11 +87,6 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       line2Post: "",
     },
     lead: "You have Ark+ and the Ark community — the private, ad-free feed, the members-only newsletters, and the full community. Thank you for being a member.",
-    bullets: [
-      "Call Me Back AMA — private, ad-free feed",
-      "Members-only newsletters",
-      "The Ark community, live events, and Dan's book club",
-    ],
     cta: { label: "Manage your membership", to: "/account" },
     giftLabel: "Gift a membership",
   },
