@@ -61,6 +61,10 @@ export type Me = {
   email: string;
   tier: Tier;
   entitlements: Entitlements;
+  // The name to greet by, or null when we hold none they gave us — a name we
+  // manufactured from their email never reaches here (shared/profile-name.ts).
+  // Never fall back to the email for a greeting; drop the greeting instead.
+  firstName?: string | null;
   // Present on every /api/me response (computed server-side). Optional-typed only
   // to stay resilient to a stale cached response; the UI guards for it.
   axes?: { arkPlus: AxisAccess; circle: AxisAccess };

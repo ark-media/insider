@@ -23,6 +23,7 @@ import { adminMemberRoutes } from './routes/admin-members.js'
 import { adminFeedActivationRoutes } from './routes/admin-feed-activations.js'
 import { adminFeedReminderRoutes } from './routes/admin-feed-reminders.js'
 import { announcementRoutes } from './routes/announcements.js'
+import { accountRoutes } from './routes/account.js'
 import { authRoutes } from './routes/auth.js'
 import { beehiivRoutes } from './routes/beehiiv.js'
 import { careerRoutes } from './routes/careers.js'
@@ -65,6 +66,7 @@ function buildApi(env: Env): Api {
     ...stripeRoutes(deps),
     ...giftRoutes(deps),
     ...authRoutes(deps),
+    ...accountRoutes(deps),
     ...announcementRoutes(deps),
     ...careerRoutes(deps),
     ...faqRoutes(deps),

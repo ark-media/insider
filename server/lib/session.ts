@@ -11,8 +11,11 @@ import { AUTH0_DOMAIN, getManagementClient } from '../auth0.js'
 import {
   AUTH0_AUDIENCE,
   AUTH0_EMAIL_CLAIM,
+  AUTH0_FAMILY_NAME_CLAIM,
+  AUTH0_GIVEN_NAME_CLAIM,
   AUTH0_ROLES_CLAIM,
 } from '../../shared/auth0-claims.js'
+import { displayName, greetingFirstName } from '../../shared/profile-name.js'
 import {
   AUTH_TXN_TTL_SEC,
   CHECKOUT_COOKIE_NAME,
@@ -55,7 +58,11 @@ export async function verifyAuth0Bearer(token: string): Promise<string | null> {
 
 export type Auth0Profile = {
   email: string
+  // Derived from givenName/familyName below, and undefined whenever the stored
+  // name is one we manufactured from the email — see shared/profile-name.ts.
   name?: string
+  givenName?: string
+  familyName?: string
   // The Auth0 `sub` (user_id) — the standard JWT subject. After the post-login
   // account-linking Action runs setPrimaryUser, this is the post-merge *primary*
   // user_id, which is exactly the key the Neon membership row is stored under
@@ -99,10 +106,18 @@ export async function verifyAuth0BearerProfile(
     const email = payload[AUTH0_EMAIL_CLAIM] as string | undefined
     if (!email) return null
     const verifiedClaim = payload[`${AUTH0_EMAIL_CLAIM}_verified`]
+    // Namespaced claims emitted by the Login Action. A bare `name` was read here
+    // previously and was always undefined — Auth0 drops non-namespaced custom
+    // claims — so nothing downstream ever saw a name.
+    const givenName = (payload[AUTH0_GIVEN_NAME_CLAIM] as string | undefined) ?? undefined
+    const familyName =
+      (payload[AUTH0_FAMILY_NAME_CLAIM] as string | undefined) ?? undefined
     return {
       email,
       sub: typeof payload.sub === 'string' ? payload.sub : undefined,
-      name: (payload['name'] as string | undefined) ?? undefined,
+      givenName,
+      familyName,
+      name: displayName({ givenName, familyName, email }),
       emailVerified:
         verifiedClaim === true || verifiedClaim === false ? verifiedClaim : undefined,
       roles: extractRoles(payload as Record<string, unknown>),
@@ -213,7 +228,12 @@ export async function signCheckoutToken(
 export type SessionProfile = {
   email: string
   roles: string[]
-  name?: string
+  // Carried so /api/me can greet by first name without a Management API read.
+  // Only refreshed at login, so PUT /api/account/profile re-mints this cookie —
+  // otherwise an edit wouldn't show until the next sign-in. The full display
+  // name is derived (sessionName) rather than stored a third time.
+  givenName?: string
+  familyName?: string
   // The Auth0 `sub` (post-merge primary user_id) carried from the verified
   // access token at callback time — the key every Neon entitlement read uses
   // (§3). Stored in the cookie so a gate never needs a Management API round-trip
@@ -228,7 +248,8 @@ export async function signSessionToken(profile: SessionProfile, env: Env): Promi
     {
       email: profile.email,
       roles: profile.roles,
-      ...(profile.name ? { name: profile.name } : {}),
+      ...(profile.givenName ? { given_name: profile.givenName } : {}),
+      ...(profile.familyName ? { family_name: profile.familyName } : {}),
       ...(profile.sub ? { sub: profile.sub } : {}),
     },
     {
@@ -250,9 +271,21 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
   return {
     email: payload.email as string,
     roles: extractStrings(payload.roles),
-    name: (payload.name as string | undefined) ?? undefined,
+    givenName: (payload.given_name as string | undefined) ?? undefined,
+    familyName: (payload.family_name as string | undefined) ?? undefined,
     sub: (payload.sub as string | undefined) ?? undefined,
   }
+}
+
+// The session's full display name, or undefined when no real name is held.
+// Derived rather than carried in the cookie so there is exactly one
+// representation of a member's name and it can't drift from its parts.
+export function sessionName(session: SessionProfile): string | undefined {
+  return displayName({
+    givenName: session.givenName,
+    familyName: session.familyName,
+    email: session.email,
+  })
 }
 
 // --- gift-claim magic link -----------------------------------------------
@@ -368,6 +401,10 @@ export type RequestIdentity = {
   email: string
   sub: string | null
   source: 'auth0' | 'checkout'
+  // The name to greet this person by, or null whenever we hold no name a human
+  // gave us — including for the checkout token, which carries no name at all.
+  // Callers greet by this or fall back; they must never substitute the email.
+  firstName: string | null
 }
 
 // Resolve who is making this request, checking every accepted credential in one
@@ -375,6 +412,21 @@ export type RequestIdentity = {
 // ark_session cookie, then the checkout cookie. Null when unauthenticated. The
 // single source of request identity — the entitlement resolver and every gate
 // resolve through this, and `getSessionEmail` is just its `.email`.
+// The greeting name for a RequestIdentity, derived once so the bearer and cookie
+// paths can't drift. Runs through shared/profile-name, so a name we manufactured
+// from the email resolves to null rather than leaking into a greeting. The
+// checkout token carries no name at all, hence NO_NAME.
+const NO_NAME = { firstName: null } as const
+
+function identityName(profile: {
+  email: string
+  givenName?: string
+  familyName?: string
+}): Pick<RequestIdentity, 'firstName'> {
+  const { email, givenName, familyName } = profile
+  return { firstName: greetingFirstName(givenName, email, familyName) ?? null }
+}
+
 export async function resolveRequestIdentity(
   req: IncomingMessage,
   env: Env,
@@ -384,19 +436,33 @@ export async function resolveRequestIdentity(
     const token = authHeader.slice(7)
     const profile = await verifyAuth0BearerProfile(token)
     if (profile?.email) {
-      return { email: profile.email, sub: profile.sub ?? null, source: 'auth0' }
+      return {
+        email: profile.email,
+        sub: profile.sub ?? null,
+        source: 'auth0',
+        ...identityName(profile),
+      }
     }
     const checkout = await verifyCheckoutProfile(token, env)
-    if (checkout) return { email: checkout.email, sub: checkout.sub, source: 'checkout' }
+    if (checkout) {
+      return { email: checkout.email, sub: checkout.sub, source: 'checkout', ...NO_NAME }
+    }
   }
   const session = await getSessionProfile(req, env)
   if (session) {
-    return { email: session.email, sub: session.sub ?? null, source: 'auth0' }
+    return {
+      email: session.email,
+      sub: session.sub ?? null,
+      source: 'auth0',
+      ...identityName(session),
+    }
   }
   const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
   if (cookieToken) {
     const checkout = await verifyCheckoutProfile(cookieToken, env)
-    if (checkout) return { email: checkout.email, sub: checkout.sub, source: 'checkout' }
+    if (checkout) {
+      return { email: checkout.email, sub: checkout.sub, source: 'checkout', ...NO_NAME }
+    }
   }
   return null
 }
@@ -485,7 +551,7 @@ export async function requireAdmin(
     return {
       email: session.email,
       sub: session.sub,
-      name: session.name,
+      name: sessionName(session),
       roles: session.roles,
     }
   }

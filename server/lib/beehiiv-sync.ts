@@ -170,10 +170,21 @@ async function createSubscription(
   return unwrapData((await res.json()) as BeehiivApiResponse, 'create')
 }
 
+// Beehiiv has no native name field — a subscriber's name is a *custom field*,
+// and the definition must already exist on the publication or the API silently
+// discards the value ("Any new custom fields here will be discarded"). Provision
+// them once with scripts/beehiiv-provision-custom-fields.ts; these two strings
+// are the contract between that script and every write below.
+export const FIELD_FIRST_NAME = 'First Name'
+export const FIELD_LAST_NAME = 'Last Name'
+
+type CustomFieldWrite = { name: string; value?: string; delete?: boolean }
+
 type UpdateBody = {
   tier?: 'free' | 'premium'
   premium_tier_ids?: string[]
   unsubscribe?: boolean
+  custom_fields?: CustomFieldWrite[]
 }
 
 async function updateSubscription(
@@ -380,6 +391,36 @@ export async function ensureSubscribedWithPremium(
     result = existing
   }
   await persistFromBeehiiv(deps.sql, cfg.pubId, result)
+}
+
+// Push a member's name onto their Beehiiv subscriber record so campaigns can
+// personalize. Deliberately does NOT create a subscription: a name is not a
+// reason to add someone to the list, so a reader with no Beehiiv record is a
+// no-op. Only populated parts are written, so a first-name-only save can't blank
+// an existing surname.
+export async function syncSubscriberName(
+  deps: PushDeps,
+  email: string,
+  name: { first?: string | null; last?: string | null },
+): Promise<void> {
+  const cfg = beehiivConfigured(deps.env)
+  if (!cfg) return
+
+  const fields: CustomFieldWrite[] = []
+  const first = (name.first ?? '').trim()
+  const last = (name.last ?? '').trim()
+  if (first) fields.push({ name: FIELD_FIRST_NAME, value: first })
+  if (last) fields.push({ name: FIELD_LAST_NAME, value: last })
+  if (fields.length === 0) return
+
+  const normalized = email.toLowerCase()
+  const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+  if (!existing) return
+
+  const updated = await updateSubscription(cfg.pubId, cfg.token, existing.id, {
+    custom_fields: fields,
+  })
+  await persistFromBeehiiv(deps.sql, cfg.pubId, updated)
 }
 
 // Downgrade a reader to free (keep them on the list, just drop premium).

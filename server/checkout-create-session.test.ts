@@ -349,9 +349,11 @@ describe('POST /api/stripe/create-checkout-session — session shape', () => {
     // automatic_tax on the session also turns on tax for the subscription
     // Checkout creates — we never call subscriptions.create ourselves.
     expect(args.automatic_tax).toEqual({ enabled: true })
-    // Required so the address entered via BillingAddressElement saves back to
-    // the pre-set Customer (and feeds the tax jurisdiction).
-    expect(args.customer_update).toEqual({ address: 'auto' })
+    // Required so what the buyer enters via BillingAddressElement saves back to
+    // the pre-set Customer: the address feeds the tax jurisdiction, and `name`
+    // is the only capture point for a new subscriber's name (it defaults to
+    // 'never', which is what left customer.name null).
+    expect(args.customer_update).toEqual({ address: 'auto', name: 'auto' })
   })
 
   test('exact-floor amount uses the catalog price (no inline price_data)', async () => {

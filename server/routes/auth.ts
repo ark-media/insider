@@ -37,6 +37,7 @@ import { createRateLimiter } from '../lib/rate-limit.js'
 import { getOidcConfig, OidcNotConfiguredError } from '../lib/oidc.js'
 import {
   getSessionProfile,
+  sessionName,
   signAuthTxnToken,
   signCheckoutToken,
   signSessionToken,
@@ -344,7 +345,8 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         const session: SessionProfile = {
           email: profile.email,
           roles: profile.roles,
-          name: profile.name,
+          givenName: profile.givenName,
+          familyName: profile.familyName,
           sub: profile.sub,
         }
         setSessionCookies(res, await signSessionToken(session, env), env)
@@ -406,7 +408,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         // (never creates — the caller is already logged in).
         let sub = session.sub ?? null
         if (!sub) {
-          const auth0 = await findOrCreateAuth0User(session.email, session.name, env, {
+          const auth0 = await findOrCreateAuth0User(session.email, sessionName(session), env, {
             emailPasswordReset: false,
           })
           sub = auth0?.userId ?? null

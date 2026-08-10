@@ -15,6 +15,7 @@ import {
 } from './sc-client.js'
 import { getActivatedFeeds, normalizeEmail } from './feed-activations.js'
 import { renderFeedReminderEmail } from './feed-reminder-email.js'
+import { greetingFirstName } from '../../shared/profile-name.js'
 import { sendEmail } from './email.js'
 import {
   DEFAULT_REMINDER_CONFIG,
@@ -129,7 +130,10 @@ export function evaluateReminder(
   if (config.onlyIfNoneSetUp && doneCount > 0) return null
   return {
     email: normalizeEmail(member.email),
-    firstName: member.first_name?.trim() || undefined,
+    // Supporting Cast's first_name is manufactured from the email local part
+    // whenever we created the user without a name (findOrCreateScUser), so it
+    // can't be greeted with directly — that's how "Hi hannah.waxman8," ships.
+    firstName: greetingFirstName(member.first_name, member.email, member.last_name),
     doneCount,
     total,
   }

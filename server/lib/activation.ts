@@ -24,7 +24,11 @@ import {
   createAuth0PasswordChangeTicket,
   findOrCreateAuth0User,
 } from './auth0-user.js'
-import { ensureSubscribedWithPremium, tryPush } from './beehiiv-sync.js'
+import {
+  ensureSubscribedWithPremium,
+  syncSubscriberName,
+  tryPush,
+} from './beehiiv-sync.js'
 import { getDb } from './db.js'
 import { sendEmail } from './email.js'
 import {
@@ -32,7 +36,8 @@ import {
   renderSubscriberWelcomeEmail,
 } from './welcome-email.js'
 import { createScClient, findOrCreateScUser } from './sc-client.js'
-import { redactEmail } from "../../shared/validation.js"
+import { redactEmail } from '../../shared/validation.js'
+import { splitFullName } from '../../shared/profile-name.js'
 
 type Env = Record<string, string>
 type Plan = 'monthly' | 'yearly'
@@ -327,6 +332,16 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       if (entitlements.arkPlus && env.DATABASE_URL) {
         await tryPush('ensure premium (sub)', () =>
           ensureSubscribedWithPremium({ env, sql: getDb(env) }, email),
+        )
+      }
+
+      // Carry the name the buyer entered at checkout onto their Beehiiv record
+      // so campaigns can personalize from the first send. Soft-fail, and a no-op
+      // when Stripe gave us no name.
+      if (name && env.DATABASE_URL) {
+        const { first, last } = splitFullName(name)
+        await tryPush('sync subscriber name', () =>
+          syncSubscriberName({ env, sql: getDb(env) }, email, { first, last }),
         )
       }
     }

@@ -242,9 +242,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // subscription Checkout creates. Requires Stripe Tax active with
           // registrations in the Dashboard, or session creation errors.
           automatic_tax: { enabled: true },
-          // Persist the billing address the buyer enters (BillingAddressElement)
-          // back onto the pre-set Customer. Stripe Tax needs it for jurisdiction.
-          customer_update: { address: 'auto' },
+          // Persist what the buyer enters (BillingAddressElement) back onto the
+          // pre-set Customer. Stripe Tax needs the address for jurisdiction;
+          // `name` defaults to 'never', which is why customer.name was null for
+          // every direct subscriber — and since activation reads the name off
+          // the Customer, that null was what made Auth0, Supporting Cast, Circle
+          // and every welcome email fall back to the email local part.
+          customer_update: { address: 'auto', name: 'auto' },
           ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
           // Stamp the subscription so the webhook (task 9) derives the tier and
           // records the amount/plan/currency for the membership row. The webhook

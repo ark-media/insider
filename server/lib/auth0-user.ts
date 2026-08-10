@@ -6,6 +6,10 @@
 
 import crypto from 'node:crypto'
 import { getAuthenticationClient, getManagementClient } from '../auth0.js'
+import {
+  MAX_NAME_PART_LEN,
+  splitFullName,
+} from '../../shared/profile-name.js'
 
 type Env = Record<string, string>
 
@@ -48,9 +52,12 @@ export async function findOrCreateAuth0User(
 
   // Create Auth0 user with a random temporary password — the password-change
   // email below is how they'll actually log in for the first time.
-  const spaceIdx = (nameHint ?? '').indexOf(' ')
-  const givenName = spaceIdx > -1 ? nameHint!.slice(0, spaceIdx) : (nameHint ?? '')
-  const familyName = spaceIdx > -1 ? nameHint!.slice(spaceIdx + 1) : ''
+  // Only write a name we were actually given. This used to fall back to
+  // `email.split('@')[0]`, which is why the migrated roster is full of members
+  // called "hannah.waxman8" — a value indistinguishable from a real name at
+  // every downstream read. Auth0 doesn't require given_name, so leaving it
+  // unset is both honest and what lets `hasRealName` spot the gap.
+  const { first: givenName, last: familyName } = splitFullName(nameHint)
   const tempPassword = `Tmp-${crypto.randomBytes(16).toString('hex')}`
 
   let userId: string | undefined
@@ -59,8 +66,8 @@ export async function findOrCreateAuth0User(
       connection: 'Username-Password-Authentication',
       email,
       password: tempPassword,
-      given_name: (givenName || email.split('@')[0]).slice(0, 40),
-      ...(familyName ? { family_name: familyName.slice(0, 40) } : {}),
+      ...(givenName ? { given_name: givenName.slice(0, MAX_NAME_PART_LEN) } : {}),
+      ...(familyName ? { family_name: familyName.slice(0, MAX_NAME_PART_LEN) } : {}),
       email_verified: opts.emailVerified ?? false,
     })
     userId = created.user_id
@@ -97,23 +104,77 @@ export async function findOrCreateAuth0User(
   return { userId, created: true, passwordResetSent }
 }
 
-// Look up a user's email by their Auth0 `sub`/user_id via the Management API.
-// Membership rows store only the opaque sub (no PII), so the gift-expiry
-// reminder cron (T7.5) resolves the recipient's email here at send time.
-// Returns null on any failure or a user without an email (caller soft-fails and
-// counts it as a miss rather than throwing the whole run).
-export async function getAuth0UserEmail(
+// Look up a user's email and name by their Auth0 `sub`/user_id via the
+// Management API. Membership rows store only the opaque sub (no PII), so the
+// gift-expiry reminder cron resolves both the recipient's address and their
+// name here at send time — one lookup, which is what that cron already spent.
+//
+// (Supersedes an email-only helper; the cron was its sole caller and it needs
+// the name too, so returning both keeps the call count unchanged.)
+export type Auth0NameProfile = {
+  email: string | null
+  givenName: string | null
+  familyName: string | null
+}
+
+// One Management read of a user's name + email. Returns null on any failure so
+// callers keep their soft-fail branches.
+export async function getAuth0NameProfile(
   env: Env,
   userId: string,
-): Promise<string | null> {
+): Promise<Auth0NameProfile | null> {
   const mgmt = getManagementClient(env)
   if (!mgmt) return null
   try {
     const user = await mgmt.users.get(userId)
-    return user.email?.trim() || null
+    return {
+      email: user.email?.trim() || null,
+      givenName: user.given_name?.trim() || null,
+      familyName: user.family_name?.trim() || null,
+    }
   } catch (err) {
-    console.error('[auth0] user email lookup failed:', err)
+    console.error('[auth0] name profile lookup failed:', err)
     return null
+  }
+}
+
+// Writes the member's name onto their Auth0 user. Root `name` is set alongside
+// given/family so the dashboard, the Login Action's claim source, and any
+// future name-consumer can't disagree.
+//
+// The target is always the primary Database-connection user: the Login Action
+// calls setPrimaryUser on the record carrying the DB identity, and denies social
+// self-signup outright, so a session `sub` is an `auth0|…` id. Root attributes
+// are read-only on social identities, so if that invariant ever slips Auth0
+// answers 400 — surfaced as `false` rather than a silent no-op, because the
+// caller must not tell the member their name was saved when it wasn't.
+export async function updateAuth0Name(
+  env: Env,
+  userId: string,
+  name: { givenName: string; familyName?: string },
+): Promise<boolean> {
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return false
+
+  if (!userId.startsWith('auth0|')) {
+    console.warn(
+      `[auth0] name write targeting a non-database primary (${userId.split('|')[0]}); root attributes may be provider-controlled`,
+    )
+  }
+
+  const givenName = name.givenName.trim().slice(0, MAX_NAME_PART_LEN)
+  const familyName = (name.familyName ?? '').trim().slice(0, MAX_NAME_PART_LEN)
+
+  try {
+    await mgmt.users.update(userId, {
+      given_name: givenName,
+      family_name: familyName,
+      name: [givenName, familyName].filter(Boolean).join(' '),
+    })
+    return true
+  } catch (err) {
+    console.error('[auth0] name update failed:', err)
+    return false
   }
 }
 

@@ -6,6 +6,7 @@ import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { CommunityAppLinks } from "../../components/CommunityAppLinks";
 import { EntitlementAccess } from "../../components/account/EntitlementAccess";
+import { ProfileNameCard } from "../../components/account/ProfileNameCard";
 import {
   HeadphonesIcon,
   MailIcon,
@@ -55,7 +56,7 @@ function AccountDashboard() {
   const { me } = state;
 
   if (me.tier === "free") {
-    return <FreeDashboard email={me.email} onSignOut={signOut} />;
+    return <FreeDashboard me={me} onSignOut={signOut} onRefresh={refresh} />;
   }
   return <SubscriberDashboard me={me} onSignOut={signOut} onRefresh={refresh} />;
 }
@@ -72,11 +73,12 @@ function SubscriberDashboard({
   const email = me.email;
   return (
     <PageShell
-      title="Welcome back."
+      title={me.firstName ? `Welcome back, ${me.firstName}.` : "Welcome back."}
       lede={`Signed in as ${email}. Everything in your membership, in one place.`}
     >
       <section>
         <div className="page-section">
+          <ProfileNameCard onSaved={onRefresh} />
           <EntitlementAccess me={me} onRefresh={onRefresh} />
           <div className="divide-y divide-rule">
             <SurfaceRow
@@ -180,19 +182,23 @@ function SurfaceRow({
 }
 
 function FreeDashboard({
-  email,
+  me,
   onSignOut,
+  onRefresh,
 }: {
-  email: string;
+  me: Me;
   onSignOut: () => void;
+  onRefresh: () => void;
 }) {
+  const email = me.email;
   return (
     <PageShell
-      title="You're signed in."
+      title={me.firstName ? `You're signed in, ${me.firstName}.` : "You're signed in."}
       lede={`Signed in as ${email}. Manage what lands in your inbox, or join Ark+ for the private feed and community.`}
     >
       <section>
         <div className="page-section">
+          <ProfileNameCard onSaved={onRefresh} />
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <div className="border border-cyan/40 bg-navy-800/40 p-8">

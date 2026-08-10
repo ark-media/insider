@@ -139,6 +139,18 @@ exports.onExecutePostLogin = async (event, api) => {
   // roles claim ride the token.
   api.accessToken.setCustomClaim(`${NS}/email`, resolved.email);
 
+  // Name rides the token so the app never spends a Management API read to greet
+  // someone. Read from `resolved`, not `event.user` — on the social-linking path
+  // above, event.user is still the secondary social record for the rest of this
+  // run, which is why the email claim resolves the same way. Claims must be
+  // namespaced; Auth0 silently drops a bare `name`.
+  if (resolved.given_name) {
+    api.accessToken.setCustomClaim(`${NS}/given_name`, resolved.given_name);
+  }
+  if (resolved.family_name) {
+    api.accessToken.setCustomClaim(`${NS}/family_name`, resolved.family_name);
+  }
+
   if (roles.length > 0) {
     api.accessToken.setCustomClaim(`${NS}/roles`, roles);
     api.idToken.setCustomClaim(`${NS}/roles`, roles);

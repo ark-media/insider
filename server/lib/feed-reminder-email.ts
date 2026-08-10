@@ -18,7 +18,9 @@ export function renderFeedReminderEmail(p: FeedReminderEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim().split(' ')[0] || undefined
+  // Already a clean first name — callers resolve it through greetingFirstName,
+  // which is what rejects a name manufactured from the member's email.
+  const first = p.firstName?.trim() || undefined
   const remaining = Math.max(0, p.total - p.doneCount)
   const showWord = remaining === 1 ? 'show' : 'shows'
   const started = p.doneCount > 0

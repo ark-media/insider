@@ -159,6 +159,11 @@ const SUB_ARKPLUS_AXIS = {
 const FREE_AXES = { arkPlus: FREE_AXIS, circle: FREE_AXIS }
 const ARKPLUS_AXES = { arkPlus: SUB_ARKPLUS_AXIS, circle: FREE_AXIS }
 
+// None of the tokens minted below carry the Login Action's name claims, so
+// every response resolves to "no name held". Spread into the shape assertions
+// rather than repeating the pair twelve times.
+const NO_NAME = { firstName: null }
+
 // ===========================================================================
 // Auth + transport
 // ===========================================================================
@@ -194,6 +199,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'free@x.com',
       tier: 'free',
+      ...NO_NAME,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -213,6 +219,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'paid@x.com',
       tier: 'ark-plus',
+      ...NO_NAME,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [
@@ -235,6 +242,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'upgraded@x.com',
       tier: 'ark-plus',
+      ...NO_NAME,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -253,6 +261,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'gone@x.com',
       tier: 'free',
+      ...NO_NAME,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -268,6 +277,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'unknown-tier@x.com',
       tier: 'free',
+      ...NO_NAME,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -285,6 +295,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'newpaid@x.com',
       tier: 'ark-plus',
+      ...NO_NAME,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -304,6 +315,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.__json()).toEqual({
       email: 'oops@x.com',
       tier: 'free',
+      ...NO_NAME,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -331,6 +343,7 @@ describe('GET /api/me with checkout-cookie session', () => {
     expect(res.__json()).toEqual({
       email: 'fresh@x.com',
       tier: 'ark-plus',
+      ...NO_NAME,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -347,6 +360,7 @@ describe('GET /api/me with checkout-cookie session', () => {
     expect(res.__json()).toEqual({
       email: 'member@x.com',
       tier: 'ark-plus',
+      ...NO_NAME,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -361,10 +375,42 @@ describe('GET /api/me with checkout-cookie session', () => {
     expect(res.__json()).toEqual({
       email: 'freebie@x.com',
       tier: 'free',
+      ...NO_NAME,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
     })
+  })
+
+  test('session cookie carrying a name → 200 with name + firstName', async () => {
+    const token = await signSessionToken(
+      {
+        email: 'named@x.com',
+        roles: [],
+        givenName: 'Hannah',
+        familyName: 'Waxman',
+      },
+      BASE_ENV,
+    )
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as { firstName: string | null }
+    expect(body.firstName).toBe('Hannah')
+  })
+
+  test('a name manufactured from the email never reaches the client', async () => {
+    // The shape findOrCreateAuth0User used to write. It must resolve to "no
+    // name", or the greeting reads "Hi hannah.waxman8,".
+    const token = await signSessionToken(
+      { email: 'hannah.waxman8@x.com', roles: [], givenName: 'hannah.waxman8' },
+      BASE_ENV,
+    )
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as { firstName: string | null }
+    expect(body.firstName).toBeNull()
   })
 
   test('checkout cookie + SC user missing → 401 (provisioning gap, NOT free fallback)', async () => {
@@ -464,6 +510,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
     expect(res.__json()).toEqual({
       email: 'newfree@x.com',
       tier: 'free',
+      ...NO_NAME,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -516,6 +563,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
     expect(res.__json()).toEqual({
       email: 'unlucky@x.com',
       tier: 'free',
+      ...NO_NAME,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],

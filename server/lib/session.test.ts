@@ -10,6 +10,7 @@ import {
   getSessionEmail,
   getSessionProfile,
   requireAdmin,
+  sessionName,
   signAuthTxnToken,
   signCheckoutToken,
   signSessionToken,
@@ -102,11 +103,12 @@ describe('getSessionEmail', () => {
 })
 
 describe('session token', () => {
-  test('round-trips email, roles, name, sub', async () => {
+  test('round-trips email, roles, name parts, sub', async () => {
     const profile = {
       email: 'a@x.com',
       roles: ['admin'],
-      name: 'Ada',
+      givenName: 'Ada',
+      familyName: 'Lovelace',
       sub: 'auth0|abc',
     }
     const token = await signSessionToken(profile, SENV)
@@ -118,9 +120,26 @@ describe('session token', () => {
     expect(await verifySessionToken(token, SENV)).toEqual({
       email: 'b@x.com',
       roles: [],
-      name: undefined,
+      givenName: undefined,
+      familyName: undefined,
       sub: undefined,
     })
+  })
+
+  test('the display name is derived from its parts, never stored separately', async () => {
+    const token = await signSessionToken(
+      { email: 'a@x.com', roles: [], givenName: 'Ada', familyName: 'Lovelace' },
+      SENV,
+    )
+    const session = await verifySessionToken(token, SENV)
+    expect(sessionName(session!)).toBe('Ada Lovelace')
+    // A name manufactured from the email resolves to nothing, so callers that
+    // pass it on (Auth0 create, gift activation) don't propagate the junk.
+    const junk = await signSessionToken(
+      { email: 'ada.l9@x.com', roles: [], givenName: 'ada.l9' },
+      SENV,
+    )
+    expect(sessionName((await verifySessionToken(junk, SENV))!)).toBeUndefined()
   })
 
   test('rejects a wrong secret and a checkout token (audience mismatch)', async () => {

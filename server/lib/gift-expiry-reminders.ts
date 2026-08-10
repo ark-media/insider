@@ -104,13 +104,16 @@ export async function runGiftExpiryReminders(deps: {
   withinDays: number
   nowMs: number
   // Injected so tests don't touch Auth0. In production this is
-  // getAuth0UserEmail(env, sub) — membership stores no PII, so the recipient's
-  // address is resolved from their Auth0 sub at send time.
-  resolveEmail: (sub: string) => Promise<string | null>
+  // getAuth0NameProfile(env, sub) — membership stores no PII, so both the
+  // recipient's address and their name are resolved from their Auth0 sub at send
+  // time, in the one lookup this always had to make.
+  resolveRecipient: (
+    sub: string,
+  ) => Promise<{ email: string | null; firstName?: string } | null>
   // Injectable for tests; defaults to the real Resend sender.
   send?: (env: Env, msg: { to: string; subject: string; html: string }) => Promise<boolean>
 }): Promise<GiftExpiryReminderSummary> {
-  const { env, sql, appBaseUrl, withinDays, nowMs, resolveEmail } = deps
+  const { env, sql, appBaseUrl, withinDays, nowMs, resolveRecipient } = deps
   const send = deps.send ?? sendEmail
   const rows = await getGiftAxesExpiringWithin(sql, withinDays)
   const accountUrl = `${appBaseUrl}/account`
@@ -124,7 +127,8 @@ export async function runGiftExpiryReminders(deps: {
       if (await giftExpiryReminderSent(sql, c.auth0_sub, c.axis, c.expiresAt)) continue
       eligible++
 
-      const email = await resolveEmail(c.auth0_sub)
+      const recipient = await resolveRecipient(c.auth0_sub)
+      const email = recipient?.email ?? null
       if (!email) {
         // Can't reach the recipient — leave the ledger untouched so a later run
         // (once Auth0 is reachable) retries rather than silently dropping them.
@@ -133,6 +137,7 @@ export async function runGiftExpiryReminders(deps: {
       }
 
       const { subject, html } = renderGiftExpiryEmail({
+        firstName: recipient?.firstName,
         axisLabel: c.axisLabel,
         expiresOn: fmtDate(c.expiresAt),
         accountUrl,

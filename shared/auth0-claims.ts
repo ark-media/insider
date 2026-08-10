@@ -13,3 +13,11 @@ export const AUTH0_EMAIL_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/email`
 // Emitted by the Auth0 Login Action from the user's assigned RBAC roles
 // (event.authorization.roles). Absent for non-admins. Gates the back office.
 export const AUTH0_ROLES_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/roles`
+// The member's name, mirrored from the Auth0 user's root profile by the Login
+// Action so the session carries it without a Management API read on every
+// request. Namespaced like the rest: Auth0 silently drops custom claims that
+// aren't URL-shaped, which is why a bare `name` read never worked here.
+// Refreshed only at login — the profile save re-mints the session cookie so an
+// edit shows immediately, and a backfilled name self-heals on next sign-in.
+export const AUTH0_GIVEN_NAME_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/given_name`
+export const AUTH0_FAMILY_NAME_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/family_name`

@@ -8,6 +8,7 @@
 // SC welcome email and Auth0's own password-reset email.
 
 import type { GiftTerm } from './activation.js'
+import { greetingFirstName, splitFullName } from '../../shared/profile-name.js'
 
 const GIFT_LABEL: Record<GiftTerm, string> = {
   '6mo': '6 months',
@@ -112,8 +113,13 @@ const FEED_INCLUDED =
   'extended interviews, ad-free episodes, members-only Q&amp;As, and the full archive — delivered as a private feed in the podcast app you already use'
 const WHATS_INCLUDED = `${FEED_INCLUDED}, plus the Ark+ community`
 
+// The greeting name, or undefined so the caller's "Hi there," stands. Routed
+// through the shared helper rather than a bare split so a value that is really
+// an email address — the gift form's recipient_name is free text a giver types —
+// can't end up rendered as "Hi someone@example.com,".
 function firstName(name?: string): string | undefined {
-  return name?.trim().split(' ')[0] || undefined
+  const { first, last } = splitFullName(name)
+  return greetingFirstName(first, undefined, last)
 }
 
 // Both emails share the same CTA logic: a brand-new account gets a

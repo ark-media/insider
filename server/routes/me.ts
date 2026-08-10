@@ -182,7 +182,16 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           await ensureFreeSubscription({ env, sql: getDb(env) }, email)
         }
 
-        return json(200, { email, tier, entitlements, axes, feeds: enriched })
+        return json(200, {
+          email,
+          // Null whenever no real name is held — the client greets by this or
+          // falls back, and must never show the email as a name.
+          firstName: identity.firstName,
+          tier,
+          entitlements,
+          axes,
+          feeds: enriched,
+        })
       },
     }),
     defineRoute({

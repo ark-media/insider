@@ -1120,8 +1120,11 @@ function CheckoutForm({
         </div>
         <PaymentElement />
         {/* Billing address powers Stripe Tax: the calculated tax updates the
-            totals below as soon as a usable address is entered. */}
-        <BillingAddressElement />
+            totals below as soon as a usable address is entered. `name: "split"`
+            collects first and last separately and, with customer_update.name on
+            the Session, saves them to customer.name — the only point in the
+            funnel where a new subscriber's name is captured. */}
+        <BillingAddressElement options={{ display: { name: "split" } }} />
         <div className="space-y-2 border-t border-rule pt-3 text-sm">
           <div className="flex items-baseline justify-between">
             <span className="text-fg-muted">Subtotal</span>

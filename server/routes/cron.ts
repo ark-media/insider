@@ -14,7 +14,8 @@ import {
   GIFT_EXPIRY_REMINDER_DAYS,
   runGiftExpiryReminders,
 } from '../lib/gift-expiry-reminders.js'
-import { getAuth0UserEmail } from '../lib/auth0-user.js'
+import { getAuth0NameProfile } from '../lib/auth0-user.js'
+import { greetingFirstName } from '../../shared/profile-name.js'
 import { createScV1Client } from '../lib/sc-client.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import type { IncomingMessage } from 'node:http'
@@ -117,7 +118,18 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             appBaseUrl,
             withinDays: GIFT_EXPIRY_REMINDER_DAYS,
             nowMs: Date.now(),
-            resolveEmail: (sub) => getAuth0UserEmail(env, sub),
+            resolveRecipient: async (sub) => {
+              const profile = await getAuth0NameProfile(env, sub)
+              if (!profile) return null
+              return {
+                email: profile.email,
+                firstName: greetingFirstName(
+                  profile.givenName,
+                  profile.email,
+                  profile.familyName,
+                ),
+              }
+            },
           })
           json(200, summary)
         } catch (err) {

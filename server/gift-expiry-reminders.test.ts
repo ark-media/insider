@@ -135,7 +135,7 @@ describe('runGiftExpiryReminders', () => {
       appBaseUrl: 'https://ark.test',
       withinDays: GIFT_EXPIRY_REMINDER_DAYS,
       nowMs: NOW,
-      resolveEmail: async () => 'recipient@example.com',
+      resolveRecipient: async () => ({ email: 'recipient@example.com', firstName: 'Hannah' }),
       send,
     })
     expect(summary).toEqual({ scanned: 1, eligible: 1, sent: 1, failed: 0 })
@@ -154,7 +154,7 @@ describe('runGiftExpiryReminders', () => {
       appBaseUrl: 'https://ark.test',
       withinDays: GIFT_EXPIRY_REMINDER_DAYS,
       nowMs: NOW,
-      resolveEmail: async () => 'recipient@example.com',
+      resolveRecipient: async () => ({ email: 'recipient@example.com', firstName: 'Hannah' }),
       send,
     }
     await runGiftExpiryReminders(deps)
@@ -173,13 +173,53 @@ describe('runGiftExpiryReminders', () => {
       appBaseUrl: 'https://ark.test',
       withinDays: GIFT_EXPIRY_REMINDER_DAYS,
       nowMs: NOW,
-      resolveEmail: async () => null,
+      resolveRecipient: async () => null,
       send,
     })
     expect(summary.failed).toBe(1)
     expect(summary.sent).toBe(0)
     expect(sends).toHaveLength(0)
     expect(sent.size).toBe(0)
+  })
+
+  test('greets the recipient by name — the reminder used to always say "Hi there,"', async () => {
+    const { sent } = baseDeps()
+    const htmls: string[] = []
+    const rows = [row({ auth0_sub: 'auth0|a', ark_plus_gift_expires_at: inDays(5) })]
+    await runGiftExpiryReminders({
+      env: {},
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sql: makeSql(rows, sent) as any,
+      appBaseUrl: 'https://ark.test',
+      withinDays: GIFT_EXPIRY_REMINDER_DAYS,
+      nowMs: NOW,
+      resolveRecipient: async () => ({ email: 'r@example.com', firstName: 'Hannah' }),
+      send: async (_env, m) => {
+        htmls.push(m.html)
+        return true
+      },
+    })
+    expect(htmls[0]).toContain('Hi Hannah,')
+  })
+
+  test('falls back to "Hi there," when no real name is held', async () => {
+    const { sent } = baseDeps()
+    const htmls: string[] = []
+    const rows = [row({ auth0_sub: 'auth0|a', ark_plus_gift_expires_at: inDays(5) })]
+    await runGiftExpiryReminders({
+      env: {},
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sql: makeSql(rows, sent) as any,
+      appBaseUrl: 'https://ark.test',
+      withinDays: GIFT_EXPIRY_REMINDER_DAYS,
+      nowMs: NOW,
+      resolveRecipient: async () => ({ email: 'r@example.com' }),
+      send: async (_env, m) => {
+        htmls.push(m.html)
+        return true
+      },
+    })
+    expect(htmls[0]).toContain('Hi there,')
   })
 })
 

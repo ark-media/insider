@@ -24,7 +24,9 @@ export function renderGiftExpiryEmail(p: GiftExpiryEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim().split(' ')[0] || undefined
+  // Already a clean first name — callers resolve it through greetingFirstName,
+  // which is what rejects a name manufactured from the member's email.
+  const first = p.firstName?.trim() || undefined
   const axis = esc(p.axisLabel)
 
   const subject = `Your gifted ${p.axisLabel} access ends ${p.expiresOn}`

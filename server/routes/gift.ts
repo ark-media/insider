@@ -26,6 +26,7 @@ import { findOrCreateAuth0User } from '../lib/auth0-user.js'
 import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
 import { sanitizeAttribution } from '../../shared/attribution.js'
+import { splitFullName } from '../../shared/profile-name.js'
 import { captureServerEvent, emailDistinctId } from '../lib/analytics-server.js'
 import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
 import {
@@ -41,6 +42,7 @@ import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import {
   getSessionProfile,
+  sessionName,
   signSessionToken,
   verifyGiftClaimToken,
 } from '../lib/session.js'
@@ -291,7 +293,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // Resolve the recipient's primary Auth0 sub. They're signed in, so this
         // finds the existing account (never creates one here); the membership row
         // keys on it.
-        const auth0 = await findOrCreateAuth0User(session.email, session.name, env, {
+        const auth0 = await findOrCreateAuth0User(session.email, sessionName(session), env, {
           emailPasswordReset: false,
         })
         const auth0Sub = auth0?.userId ?? null
@@ -300,7 +302,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const result = await redeemGiftForRecipient(
           { sql, stripe, env, activator },
           gift,
-          { email: session.email, name: session.name, auth0Sub },
+          { email: session.email, name: sessionName(session), auth0Sub },
         )
         if (!result.ok) return json(409, { error: result.error })
         return json(200, {
@@ -367,8 +369,18 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // Log them straight in — mint the same ark_session the OAuth callback
         // would, so they land on /welcome already authenticated. Roles are empty:
         // a gift recipient is never an admin.
+        // The claim token carries the single name the giver typed for the
+        // recipient; split it so the session speaks the same first/last shape as
+        // every other login path.
+        const claimName = splitFullName(claim.name)
         const sessionToken = await signSessionToken(
-          { email: claim.email, roles: [], name: claim.name, sub: auth0Sub },
+          {
+            email: claim.email,
+            roles: [],
+            givenName: claimName.first,
+            familyName: claimName.last,
+            sub: auth0Sub,
+          },
           env,
         )
         setSessionCookies(res, sessionToken, env)
