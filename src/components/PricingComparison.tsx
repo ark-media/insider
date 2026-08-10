@@ -50,7 +50,7 @@ const GROUPS: Group[] = [
         label: "Subscriber-exclusive content",
         summary: "Episodes only members hear.",
         detail: [
-          "Inside Call Me Back — in your Call Me Back feed",
+          "Inside Call Me Back (in your Call Me Back feed)",
           "Chosen People Problems AMA",
           "Ark News Daily 6th episode",
         ],
@@ -60,7 +60,7 @@ const GROUPS: Group[] = [
         label: "Early access",
         summary: "Hear it before everyone else.",
         detail: [
-          "Mid-week Call Me Back episode — Wednesdays, not Fridays",
+          "Mid-week Call Me Back episode (releases on Wednesday instead of Friday)",
           "History show",
         ],
         tiers: { "ark-plus": true, bundle: true, circle: false },
