@@ -19,8 +19,11 @@ have to be resolved against the same (primary) user, so they live together:
    is then made primary for the session.
 2. **Signup gate** — a social login with no matching Database account is a
    self-signup: it's rejected and the JIT-provisioned orphan is deleted.
-3. **Claims** — sets `…/email`, `…/roles`, `…/tier` (namespace from
-   `shared/auth0-claims.ts`), resolved from the primary user.
+3. **Claims** — sets `…/email`, `…/given_name`, `…/family_name`,
+   `…/name_set_by_member`, `…/roles` (namespace and names from
+   `shared/auth0-claims.ts`), resolved from the primary user. There is **no**
+   `…/tier` claim: Auth0 carries no entitlement, and access is a live Neon read
+   on the sub.
 
 ### Why members are always found on the Database connection
 
@@ -63,8 +66,11 @@ on every login.
    | `MGMT_CLIENT_SECRET` | Ark Plus M2M client secret |
 
 5. **M2M scopes** (Applications → Ark Plus M2M → APIs → Auth0 Management API):
-   `read:users`, `update:users`, `delete:users`, `read:roles`. (`update:users`
-   is required for linking — `update:users_app_metadata` alone is not enough.)
+   `read:users`, `update:users`, `delete:users`, `read:roles`,
+   `read:users_app_metadata`. (`update:users` is required for linking —
+   `update:users_app_metadata` alone is not enough. `read:users_app_metadata`
+   is what makes `users-by-email` return `app_metadata`, which the
+   `name_set_by_member` claim reads on the social-linking login.)
 
 ## Behavior notes / gotchas
 
@@ -85,6 +91,16 @@ on every login.
   them from `event.authorization` with no extra call.
 - **Database and already-linked logins cost nothing.** They skip the linking
   block entirely; claims are set straight from `event`.
+- **`name_set_by_member` degrades quietly, and only for one shape of name.** If
+  the claim is absent (action not yet deployed, or the M2M client is missing
+  `read:users_app_metadata`), the app falls back to its manufactured-name
+  heuristic. That is correct for nearly everyone — a surname, or a first name
+  that isn't their lowercase email local part, is judged real on sight. The one
+  member it affects is someone like `sarah@gmail.com` who saved "sarah" with no
+  surname: after a re-login `/api/me` stops returning her `firstName`, so the
+  greeting reverts to "Welcome back." `/account` is unaffected either way — it
+  reads Auth0 through the Management API and sees the flag directly. So there is
+  no deploy ordering constraint between the app and this action.
 - **Fails closed.** A missing verified email, an unresolvable management token,
   or a failed link all `deny()` rather than letting an unverified/ orphan
   session through.

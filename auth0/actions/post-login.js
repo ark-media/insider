@@ -17,11 +17,12 @@
  *      Database account is a self-signup: reject it and delete the orphan
  *      record Auth0 created before this action ran.
  *
- *   3. Claims. Set the email / roles custom claims the app reads. These MUST be
- *      resolved from the primary (Database) user: after
- *      api.authentication.setPrimaryUser(), event.user / event.authorization
- *      still reference the secondary social user for the rest of this run, so
- *      reading roles off `event` would be wrong on the linking login.
+ *   3. Claims. Set the email / name / name-provenance / roles custom claims the
+ *      app reads. These MUST be resolved from the primary (Database) user:
+ *      after api.authentication.setPrimaryUser(), event.user /
+ *      event.authorization still reference the secondary social user for the
+ *      rest of this run, so reading roles off `event` would be wrong on the
+ *      linking login.
  *      Auth0 carries NO entitlement (task 5): there is no tier claim — access is
  *      a live Neon read on the sub, so nothing here reflects membership.
  *
@@ -42,7 +43,9 @@
  *   MGMT_CLIENT_ID        Ark Plus M2M client id.
  *   MGMT_CLIENT_SECRET    Ark Plus M2M client secret.
  *
- * M2M scopes required: read:users, update:users, delete:users, read:roles.
+ * M2M scopes required: read:users, update:users, delete:users, read:roles, and
+ * read:users_app_metadata (users-by-email omits app_metadata without it, which
+ * silently costs the name_set_by_member claim on the social-linking login only).
  *
  * Claim namespace must match AUTH0_CLAIM_NAMESPACE in shared/auth0-claims.ts.
  * ---------------------------------------------------------------------------
@@ -150,6 +153,32 @@ exports.onExecutePostLogin = async (event, api) => {
   if (resolved.family_name) {
     api.accessToken.setCustomClaim(`${NS}/family_name`, resolved.family_name);
   }
+
+  // Provenance for the name above (shared/profile-name.ts). For most of this
+  // site's life we *manufactured* a name when we had none — given_name was set
+  // to the email's local part — so the app can't trust a stored name on sight:
+  // it judges one real only if a surname sits beside it, or it differs from the
+  // local part, or it carries a capital that value could never have had. That
+  // heuristic has exactly one blind spot, and it is not hypothetical: "sarah",
+  // typed by sarah@gmail.com, is character-for-character what we would have
+  // manufactured for her. This flag — written to app_metadata by
+  // PUT /api/account/profile when a member types their name — is the only thing
+  // that settles it. Without the claim, her name reverts to being read as junk
+  // on her next login and /api/me stops greeting her by it.
+  //
+  // Set unconditionally, unlike the two names above: the app reads `=== true`,
+  // so an absent claim and `false` mean the same thing to it, and an explicit
+  // false makes a decoded token say which of the two it is.
+  //
+  // `resolved`, not `event.user`, for the usual reason — but note this one is
+  // the reverse of the others: the flag lives on the DATABASE account (the sub
+  // the profile save targets), so on the social-linking login it is only ever
+  // on `primary`. users-by-email returns app_metadata, provided the M2M client
+  // holds read:users_app_metadata (see the scope list above).
+  api.accessToken.setCustomClaim(
+    `${NS}/name_set_by_member`,
+    resolved.app_metadata?.name_set_by_member === true,
+  );
 
   if (roles.length > 0) {
     api.accessToken.setCustomClaim(`${NS}/roles`, roles);
