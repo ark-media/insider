@@ -1,0 +1,378 @@
+{
+  "project": "Ark Media Insider",
+  "branchName": "compound/gift-tiers",
+  "description": "Let users gift Ark+, Community, or Bundle priced per-currency via Stripe currency_options (matching subscription checkout)",
+  "sourcePrd": "tasks/prd-gift-tiers.md",
+  "qualityGate": {
+    "typecheck": "bunx tsc -b",
+    "lint": "bun run lint",
+    "test": "bun test",
+    "browser": "Chrome DevTools MCP + auth bridge (see reference_browser_test_auth_bridge); Google blocks the automated login, so paste a session token + initScript fetch patch"
+  },
+  "openDecisions": {
+    "D1_giftPricesPerTier": "RESOLVED. USD anchors: Ark+ 6mo=$48/1yr=$80; Community 6mo=$48/1yr=$80; Bundle 6mo=$75/1yr=$130. currency_options for the rest.",
+    "D2_lookupKeyNaming": "Confirm gift_<tier>_6mo / gift_<tier>_1yr lookup-key convention.",
+    "D3_bundleGiftEntitlement": "A gifted Bundle grants both ark_plus and circle on redemption.",
+    "D4_stackingModel": "Stack per entitlement axis. Replace single gift_expires_at with ark_plus_gift_expires_at + circle_gift_expires_at; derive tier from live axes. Each gift extends only the axes it covers; same-axis term extends expiry (fromMs), no axis yet starts a term.",
+    "D5_paidSubOverlap": "RESOLVED (C2, time-based, no dollar credit). When recipient already holds an axis via a live PAID subscription, apply the gift to that axis as subscription TIME: push the sub's paid-through date out by the gift term via `stripe.subscriptions.update(subId, { trial_end: current_period_end + GIFT_TERM_DAYS, proration_behavior: 'none' })`. Effects: (1) current period untouched; at next renewal the card is NOT charged - the gifted window covers it until trial_end, then normal billing resumes; (2) stacking a further gift ADDS to the existing trial_end; (3) on cancel, cancel_at = trial_end (end of gifted coverage), NOT current_period_end, so the gift is not wasted; (4) non-overlapping axes (e.g. Circle in a Bundle gift) still activate as immediate Neon gift terms. Basis B and all dollar-credit math are dropped. Requires `trialing` to be treated as live/entitled everywhere.",
+    "D5a_crossBranchCancel": "RESOLVED - cancellation-flows is now MERGED into the current branch. CancelFlow (src/components/account/CancelFlow.tsx), retention (server/lib/retention.ts), and cancellation (server/lib/cancellation.ts) are in-branch. The cancel-anchors-to-trial_end change lands here directly (T-020), no cross-branch coordination.",
+    "D5b_trialingStatus": "trial_end push flips the sub to Stripe status `trialing`. LIVE_MEMBERSHIP_STATUSES, the webhook, and the entitlement resolver must all treat `trialing` as active - audited in T-019.",
+    "D6_accountLayout": "RESOLVED. Account settings render per-axis entitlement ROWS (one per axis: Ark+, Community), not a single plan card. Each row shows access, source (gift|subscription), and expiry/renewal.",
+    "D7_missingAxisCta": "RESOLVED. Missing-axis CTA sells the STANDALONE axis subscription (Community-only / Ark+-only) via the existing per-currency CheckoutModal. Only offer axes the user does NOT hold by any source; never offer Bundle while a live gift covers an axis (would double-pay the gifted axis).",
+    "D8_expiryConversion": "RESOLVED. In-app banner + reminder email via the existing reminder cron (server/lib/feed-reminders.ts / feed-reminder-email.ts, Resend).",
+    "D9_bundleConsolidation": "RESOLVED (lightweight, folded into expiry flow). No standalone feature. At gift expiry, if the recipient already holds the OTHER axis via a live paid sub, the conversion banner (T-024) and reminder email (T-025) offer a one-click switch-to-Bundle via the in-branch change-tier path (server/routes/stripe/routes.ts) instead of a standalone sub. Otherwise they get the standard standalone conversion CTA."
+  },
+  "giftPricesCents": {
+    "ark-plus": { "6mo": 4800, "1yr": 8000 },
+    "circle": { "6mo": 4800, "1yr": 8000 },
+    "bundle": { "6mo": 7500, "1yr": 13000 }
+  },
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Capture baseline of current gift flow config",
+      "description": "Record the current inline-price/adaptive-pricing gift model and hardcoded tier so later diffs are verifiable.",
+      "acceptanceCriteria": [
+        "File `server/routes/gift.ts` contains `adaptive_pricing`",
+        "File `server/routes/stripe/webhook.ts` contains `tier: 'ark-plus'` in the gift handler (log surrounding line to notes)",
+        "File `server/lib/activation.ts` contains `GIFT_PRICES_CENTS`",
+        "Log to notes: current gift term amounts and whether create-checkout accepts a `tier` param"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-002",
+      "title": "Confirm subscription catalog resolver shape for reuse",
+      "description": "Verify the currency_options to floors resolver used by subscriptions, to mirror it for gifts.",
+      "acceptanceCriteria": [
+        "File `server/lib/pricing.ts` contains `resolveCatalogPrice`",
+        "Log to notes: return shape `{ priceId, productId, floors }` and how `floors` is built from `currency_options`",
+        "Log to notes: `SUPPORTED_CURRENCIES` length and the `priceLookupKey` format"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-003",
+      "title": "Add gift products + one-time prices to catalog script",
+      "description": "Provision 3 one-time gift products (Ark+ $48/$80, Community $48/$80, Bundle $75/$130) with gift_<tier>_6mo/1yr lookup keys and currency_options for all currencies.",
+      "acceptanceCriteria": [
+        "File `scripts/stripe-catalog.ts` defines gift products with `metadata.kind = 'gift'` and `metadata.entitlements` per tier (`ark_plus`, `circle`, `ark_plus,circle`)",
+        "Each gift price uses a lookup key matching `gift_<catalog_key>_(6mo|1yr)`, has `recurring` undefined, and sets `currency_options` for every entry in `CURRENCIES`",
+        "Run `bunx tsc -b` - exits with code 0",
+        "Log to notes: the 3 product names and 6 lookup keys created"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-004",
+      "title": "Add gift price resolver to pricing.ts",
+      "description": "Resolve a gift price per (tier, term, currency) returning priceId + per-currency floors, mirroring resolveCatalogPrice.",
+      "acceptanceCriteria": [
+        "File `server/lib/pricing.ts` exports a `giftPriceLookupKey(tier, term)` helper returning `gift_<prefix>_<term>`",
+        "File `server/lib/pricing.ts` exports a gift resolver returning `{ priceId, productId, floors }` with a floor per supported currency",
+        "Resolver throws when a supported currency is missing from `currency_options` (parity with subscription resolver)",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-005",
+      "title": "Accept and validate tier in create-checkout",
+      "description": "Thread a tier param through POST /api/gift/create-checkout with a safe default guard.",
+      "acceptanceCriteria": [
+        "File `server/routes/gift.ts` reads `tier` from the request body and coerces to one of `ark-plus|circle|bundle` (defaults to `ark-plus`)",
+        "An invalid `tier` value does not throw - it falls back to the default",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-006",
+      "title": "Charge resolved per-currency gift price and drop adaptive_pricing",
+      "description": "Replace the fixed-USD inline price_data with the resolved gift floor for (tier, term, currency); set session currency; remove adaptive_pricing.",
+      "acceptanceCriteria": [
+        "File `server/routes/gift.ts` no longer contains `adaptive_pricing`",
+        "The session `currency` is set to the validated selected currency (falls back to `usd` when unsupported)",
+        "The line-item amount comes from the gift resolver `floors[currency]`, not `GIFT_PRICES_CENTS`",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-007",
+      "title": "Stamp tier/term/currency into PaymentIntent metadata",
+      "description": "Add tier, term, and currency to the PI metadata so the webhook can persist the real tier.",
+      "acceptanceCriteria": [
+        "File `server/routes/gift.ts` sets PaymentIntent metadata with `kind:'gift'`, `tier`, `term`, `currency`",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-008",
+      "title": "Persist tier from metadata in gift webhook",
+      "description": "Read tier from PI metadata in handleGiftPaymentIntent instead of hardcoding ark-plus.",
+      "acceptanceCriteria": [
+        "File `server/routes/stripe/webhook.ts` no longer hardcodes `tier: 'ark-plus'` in `handleGiftPaymentIntent`; it reads `tier` from PI metadata",
+        "A missing/invalid metadata tier defaults to `ark-plus` (no throw)",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-009",
+      "title": "Migrate membership schema to per-axis gift expiry",
+      "description": "Replace single gift_expires_at with ark_plus_gift_expires_at + circle_gift_expires_at so mixed-axis stacking is representable (D4). Builds on the merged 0010_membership; next migration id is 0015. Greenfield - no backfill.",
+      "acceptanceCriteria": [
+        "New migration `0015_*.sql` adds `ark_plus_gift_expires_at` and `circle_gift_expires_at` columns and drops/retires `gift_expires_at`",
+        "Membership read/type (`MembershipRow` in `server/lib/membership.ts`) and `upsertMembership` reference the two new columns; effective `tier` is derived from which axes are live (both -> bundle)",
+        "Migration applies cleanly against the dev DB (ark-insider-dev) (log applied migration id to notes)",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-016",
+      "title": "Rewrite redemption to stack per entitlement axis",
+      "description": "Rewrite redeemGiftForRecipient so each gift extends only the axes it covers; same-axis gift term extends expiry (fromMs), missing axis starts a term. Bundle applies to both.",
+      "acceptanceCriteria": [
+        "File `server/routes/gift.ts` `redeemGiftForRecipient` computes per-axis expiry from `deriveEntitlements(gift.tier)` and extends each covered axis independently",
+        "A same-tier repeat gift still stacks duration on that axis (fromMs preserved)",
+        "A cross-axis redemption (existing Ark+ gift + incoming Community gift) leaves BOTH axes live with independent expiries (no tier overwrite)",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-017",
+      "title": "Paid-sub overlap: push billing date by gift term (C2)",
+      "description": "Replace the whole-gift canCredit divert with per-axis handling (D5): for an axis held via a live paid sub, push the sub's paid-through date out by GIFT_TERM_DAYS; for axes they lack, grant a Neon term. No dollar credit.",
+      "acceptanceCriteria": [
+        "File `server/routes/gift.ts` no longer diverts the gift to `applyGiftAsCredit`; the overlapping-axis path calls `stripe.subscriptions.update(subId, { trial_end, proration_behavior: 'none' })` with trial_end = current_period_end + GIFT_TERM_DAYS[term]",
+        "Current period is untouched (trial_end is anchored to current_period_end, not now) - log computed trial_end to notes",
+        "A second overlapping gift ADDS its term to the existing trial_end rather than overwriting it",
+        "The extend call is guarded by the claim-first atomic flip (non-idempotent, like the old credit path) so a retry cannot double-extend",
+        "Non-overlapping axes (e.g. Circle in a Bundle gift to an Ark+ subscriber) still activate as immediate Neon gift terms",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-019",
+      "title": "Treat Stripe `trialing` status as live/entitled",
+      "description": "The trial_end push flips the sub to `trialing`; audit every path that gates entitlement so a gifted sub is not read as inactive (D5b).",
+      "acceptanceCriteria": [
+        "`LIVE_MEMBERSHIP_STATUSES` includes `trialing`",
+        "File `server/routes/stripe/webhook.ts` maps a `trialing` subscription to an active membership + entitlement (no downgrade)",
+        "The entitlement resolver / `/api/me` path treats `trialing` as a live paid signal (log the code paths checked to notes)",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-020",
+      "title": "Cancel anchors to gifted coverage end",
+      "description": "When a recipient with gifted time cancels, cancel_at must be trial_end (end of gifted coverage), not current_period_end, so the gift is not wasted (D5). Lands in-branch: CancelFlow + the cancel path.",
+      "acceptanceCriteria": [
+        "The cancel path (`src/components/account/CancelFlow.tsx` + `server/routes/stripe/routes.ts` cancel handler) sets `cancel_at = trial_end` when the sub has a future trial_end from a gift",
+        "Cancelling a gifted sub retains access through trial_end, then cancels (log the resulting cancel_at to notes)",
+        "Existing (non-gifted) cancellation behavior in CancelFlow is unchanged",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-018",
+      "title": "Verify entitlement sync fires per axis for all tiers",
+      "description": "Confirm redeem/claim provision the correct axes for Community (circle) and Bundle (ark_plus,circle), not just Ark+.",
+      "acceptanceCriteria": [
+        "Log to notes: which provisioning calls fire per tier (SC feed for ark_plus/bundle; Circle for circle/bundle; Beehiiv premium on arkPlus axis)",
+        "`syncEntitlement` is invoked with the derived effective tier after stacking",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-010",
+      "title": "Add tier selector to GiftCheckoutModal",
+      "description": "Let the giver pick Ark+, Community, or Bundle alongside the existing term selector.",
+      "acceptanceCriteria": [
+        "File `src/components/GiftCheckoutModal.tsx` renders a tier selector with Ark+, Community, and Bundle options",
+        "Selected tier is held in component state and defaults to a sensible tier",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-011",
+      "title": "Thread tier through client gift request",
+      "description": "Send the selected tier from src/lib/gift.ts into the create-checkout call.",
+      "acceptanceCriteria": [
+        "File `src/lib/gift.ts` includes `tier` in the create-checkout request payload",
+        "File `src/components/GiftCheckoutModal.tsx` passes the selected tier into the gift request",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-012",
+      "title": "Show per-currency gift pricing in the modal",
+      "description": "Reuse the subscription currency detection/selector so the gift price displays in the buyer's currency.",
+      "acceptanceCriteria": [
+        "File `src/components/GiftCheckoutModal.tsx` displays the gift price in the selected/detected currency for the chosen tier and term",
+        "Changing tier or term updates the displayed price",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-013",
+      "title": "Provision gift catalog against Stripe",
+      "description": "Run the catalog script so the gift products and currency_options prices exist in Stripe.",
+      "acceptanceCriteria": [
+        "Run the stripe-catalog provisioning script - exits with code 0",
+        "Log to notes: the created/updated gift price IDs and lookup keys reported by the script",
+        "Re-running the script is idempotent (no duplicate products) - log confirmation to notes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-014",
+      "title": "Browser-test a non-USD Bundle gift end-to-end",
+      "description": "Verify a full gift purchase charges the currency_options amount (not USD) and stores the right tier.",
+      "acceptanceCriteria": [
+        "Chrome DevTools MCP: open the gift page - modal opens and page loads without console errors",
+        "Chrome DevTools MCP: select Bundle tier and a non-USD currency - displayed price matches the catalog currency_options amount",
+        "Chrome DevTools MCP: complete checkout with a Stripe test card - payment succeeds",
+        "The resulting gift row / PI metadata has `tier: bundle` and the selected currency (log to notes)",
+        "Chrome DevTools MCP: console shows no errors"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-021",
+      "title": "Return per-axis entitlement from /api/me",
+      "description": "Extend /api/me and the entitlement resolver to expose per-axis entitlement so account settings can render gift details.",
+      "acceptanceCriteria": [
+        "File `server/lib/entitlement-resolver.ts` / `server/routes/me.ts` returns a per-axis structure `{ arkPlus: {active, source, expiresAt}, circle: {active, source, expiresAt} }`",
+        "`source` is `gift` when the axis comes from a gift term (per-axis expiry column) and `subscription` when from a Stripe sub; `expiresAt` reflects the gift expiry or the sub period/trial end",
+        "Existing /api/me consumers still get the derived top-level tier (no breaking change to current fields)",
+        "Run `bun test` for the me handler - exits with code 0"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-022",
+      "title": "Render per-axis entitlement rows in account settings",
+      "description": "Show one row per axis (Ark+, Community) with access, source badge, and expiry/renewal date (D6).",
+      "acceptanceCriteria": [
+        "`src/routes/account/billing.tsx` renders a row per axis reading the per-axis /api/me payload (alongside the existing CancelFlow/subscription UI)",
+        "A gifted axis shows a Gift badge and its expiry date; a subscribed axis shows renewal; an unheld axis shows a not-active state",
+        "A gifted-Ark+-only user sees an active Ark+ row and an inactive Community row",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-023",
+      "title": "Gift-aware missing-axis CTA (standalone sub)",
+      "description": "On an unheld axis, offer a CTA that opens the existing per-currency CheckoutModal for that standalone tier; suppress Bundle while a gift covers an axis (D7).",
+      "acceptanceCriteria": [
+        "The CTA appears only for axes the user does NOT hold by any source (gift or subscription)",
+        "Clicking 'Get Community' / 'Get Ark+' opens the standalone-tier `CheckoutModal` (circle or ark-plus), not Bundle",
+        "No Bundle upsell is shown while a live gift covers either axis (assert in the gifted-Ark+ case)",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-024",
+      "title": "Near-expiry banner for gifted axes",
+      "description": "Show an in-app banner in account settings when a gifted axis is approaching expiry (D8).",
+      "acceptanceCriteria": [
+        "A banner renders when a gifted axis's `expiresAt` is within the reminder window",
+        "The banner links to the conversion path (subscribe to keep that axis)",
+        "D9 consolidation: if the recipient already holds the OTHER axis via a live paid sub, the banner CTA offers switch-to-Bundle via change-tier instead of a standalone sub; otherwise it offers the standalone sub",
+        "No banner shows for axes held via an active subscription or not near expiry",
+        "Run `bunx tsc -b` - exits with code 0"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-025",
+      "title": "Gift-expiry reminder email via existing cron",
+      "description": "Send a gift-expiry reminder email through the existing reminder cron + Resend (D8).",
+      "acceptanceCriteria": [
+        "A reminder job (extending `server/lib/feed-reminders.ts` pattern) selects memberships whose gift axis expires within the window and have not been reminded",
+        "The email renders via a Resend template (mirroring `feed-reminder-email.ts`) with the axis and expiry date",
+        "D9 consolidation: when the recipient already holds the OTHER axis via a live paid sub, the email CTA points at switch-to-Bundle (change-tier); otherwise the standalone-sub conversion link",
+        "Re-running the cron does not double-send (idempotency flag/column) - log the guard to notes",
+        "Run `bun test` for the reminder job - exits with code 0"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "T-015",
+      "title": "Regression-check Ark+ gifting and quality gate",
+      "description": "Confirm Ark+ gifting still works and shared pricing/catalog code did not break subscriptions.",
+      "acceptanceCriteria": [
+        "Run `bunx tsc -b` - exits with code 0",
+        "Run `bun run lint` - exits with code 0",
+        "Run `bun test` - exits with code 0",
+        "Chrome DevTools MCP: complete an Ark+ gift purchase - succeeds with correct amount",
+        "Log to notes: subscription checkout still resolves a price (smoke check unaffected)"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
