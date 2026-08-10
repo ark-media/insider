@@ -65,12 +65,6 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       line2Post: "",
     },
     lead: "You already get Call Me Back AMA ad-free and the members-only newsletters. Add the Ark community — conversations with the hosts, live member events, and Dan's book club.",
-    bullets: [
-      "The Ark community app — talk with the hosts and fellow members",
-      "Live member events and Q&As",
-      "Dan's book club",
-      "Exclusive members-only spaces",
-    ],
     cta: { label: "Add Community", href: "#pricing" },
     giftLabel: "Gift a membership",
   },
