@@ -555,10 +555,12 @@ export async function applyPreferences(
 
 // Soft-fail wrapper for activation / webhook paths. Logs and swallows so an
 // SC provisioning success / Stripe webhook ack isn't blocked by a Beehiiv
-// hiccup. Return value indicates whether the call landed cleanly.
+// hiccup. Return value indicates whether the call threw, not what it returned —
+// pushes like syncSubscriberName answer false for a legitimate no-op, so `fn`
+// is typed loosely and its result deliberately discarded.
 export async function tryPush(
   label: string,
-  fn: () => Promise<void>,
+  fn: () => Promise<unknown>,
 ): Promise<boolean> {
   try {
     await fn()
