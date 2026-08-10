@@ -495,6 +495,7 @@ async function handleGiftPaymentIntent(
   // the recipient can never claim. The marker is stamped only after success.
   const { subject, html } = renderGiftRedemptionEmail({
     recipientName,
+    recipientEmail,
     giverName: pi.metadata?.giver_name || undefined,
     term,
     message: pi.metadata?.message || undefined,

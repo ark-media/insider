@@ -304,12 +304,14 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       const { subject, html } = entitlements.arkPlus
         ? renderSubscriberWelcomeEmail({
             name,
+            email,
             welcomeUrl: `${baseUrl}/welcome`,
             passwordSetupUrl,
             tier: entitlements.circle ? 'bundle' : 'ark-plus',
           })
         : renderCircleWelcomeEmail({
             name,
+            email,
             welcomeUrl: `${baseUrl}/welcome`,
             passwordSetupUrl,
           })

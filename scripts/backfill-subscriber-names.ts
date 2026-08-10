@@ -126,6 +126,10 @@ async function main(): Promise<void> {
   if (onlyEmail) console.log(`  Only:    ${onlyEmail}`)
   console.log('')
 
+  // Passes that errored rather than legitimately having nothing to offer. A run
+  // that lost a whole source is not a clean run, and the exit code says so.
+  const passFailures: string[] = []
+
   // email → best candidate found so far.
   const found = new Map<string, Candidate>()
   const offer = (email: string | null | undefined, c: Candidate | null): void => {
@@ -143,12 +147,22 @@ async function main(): Promise<void> {
     let hits = 0
     for (const m of members) {
       const before = found.size
-      offer(m.email, candidateFrom(m.email, m.first_name, m.last_name, 'supporting-cast'))
+      // SC's first_name held the whole name whenever the user was created from a
+      // single hint, so split it when nothing sits in last_name — otherwise
+      // "Hannah Waxman" lands in Auth0's given_name and every greeting in the
+      // system reads "Hi Hannah Waxman,". Pass B already splits Stripe's name;
+      // this is the higher-precedence pass, so it decides the whole roster.
+      const { first, last } = (m.last_name ?? '').trim()
+        ? { first: m.first_name, last: m.last_name }
+        : splitFullName(m.first_name)
+      offer(m.email, candidateFrom(m.email, first, last, 'supporting-cast'))
       if (found.size > before) hits += 1
     }
     console.log(`  scanned ${members.length}, usable names ${hits}`)
   } catch (err) {
-    console.log(`  (skipped — ${err instanceof Error ? err.message : String(err)})`)
+    console.log(`  ! FAILED — ${err instanceof Error ? err.message : String(err)}`)
+    console.log('    Pass A contributed nothing; this is the highest-yield source.')
+    passFailures.push('supporting-cast')
   }
 
   // --- Pass B: Stripe customers ----------------------------------------------
@@ -171,9 +185,13 @@ async function main(): Promise<void> {
 
   // --- Pass C: Circle community members --------------------------------------
   console.log('\nPass C — Circle community members')
-  const circleToken = env.CIRCLE_ADMIN_API_TOKEN
+  // CIRCLE_API_TOKEN, not CIRCLE_ADMIN_API_TOKEN: the two are distinct by design
+  // (docs/production-launch.md) and every working caller of
+  // /api/admin/v2/community_members — server/entitlement.ts — authenticates with
+  // this one. CIRCLE_ADMIN_API_TOKEN reads the /community feed instead.
+  const circleToken = env.CIRCLE_API_TOKEN
   if (!circleToken) {
-    console.log('  (CIRCLE_ADMIN_API_TOKEN unset — skipped)')
+    console.log('  (CIRCLE_API_TOKEN unset — skipped)')
   } else {
     let scanned = 0
     let hits = 0
@@ -205,7 +223,12 @@ async function main(): Promise<void> {
       }
       console.log(`  scanned ${scanned}, usable names ${hits}`)
     } catch (err) {
-      console.log(`  (skipped — ${err instanceof Error ? err.message : String(err)})`)
+      // Loud, and flagged in the summary. A 401 here used to print as "skipped"
+      // and exit 0, which is indistinguishable from "Circle had nothing to add"
+      // — an operator would read a silently empty pass as a clean run.
+      console.log(`  ! FAILED — ${err instanceof Error ? err.message : String(err)}`)
+      console.log('    Pass C contributed nothing; names from Circle are missing.')
+      passFailures.push('circle')
     }
   }
 
@@ -284,13 +307,20 @@ async function main(): Promise<void> {
     // Campaign personalization is the point of the exercise, but a Beehiiv
     // failure must not lose the Auth0 write we just made.
     try {
-      await withRetry('beehiiv-name', () =>
+      // Counts the writes that actually happened. syncSubscriberName is a no-op
+      // when Beehiiv isn't configured or the member has no subscription, and
+      // neither throws — so incrementing unconditionally reported "synced to
+      // Beehiiv: 2,847" for a run that wrote nothing, contradicting the
+      // "(not configured)" banner printed above it.
+      const synced = await withRetry('beehiiv-name', () =>
         syncSubscriberName({ env: env as Record<string, string>, sql }, email, {
           first: candidate.first,
-          last: candidate.last,
+          // undefined, not null: a harvested mononym means we never learned a
+          // surname, which is not a licence to delete one Beehiiv already has.
+          last: candidate.last || undefined,
         }),
       )
-      summary.beehiivSynced += 1
+      if (synced) summary.beehiivSynced += 1
     } catch (err) {
       console.log(`  ~ ${email}: Beehiiv sync failed — ${err instanceof Error ? err.message : err}`)
     }
@@ -315,6 +345,12 @@ async function main(): Promise<void> {
       ? '\nDone. Members still without a name will be prompted on /account.'
       : `\nPreview only — ${writes} name(s) would be written. Re-run with --apply.`,
   )
+  if (passFailures.length > 0) {
+    console.error(
+      `\nINCOMPLETE: ${passFailures.join(', ')} failed — re-run once fixed, or those names stay missing.`,
+    )
+    process.exit(1)
+  }
 }
 
 main().catch((err) => {

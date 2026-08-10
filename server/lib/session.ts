@@ -13,6 +13,7 @@ import {
   AUTH0_EMAIL_CLAIM,
   AUTH0_FAMILY_NAME_CLAIM,
   AUTH0_GIVEN_NAME_CLAIM,
+  AUTH0_NAME_SET_BY_MEMBER_CLAIM,
   AUTH0_ROLES_CLAIM,
 } from '../../shared/auth0-claims.js'
 import { displayName, greetingFirstName } from '../../shared/profile-name.js'
@@ -63,6 +64,8 @@ export type Auth0Profile = {
   name?: string
   givenName?: string
   familyName?: string
+  // Provenance for the name above — see AUTH0_NAME_SET_BY_MEMBER_CLAIM.
+  nameSetByMember?: boolean
   // The Auth0 `sub` (user_id) — the standard JWT subject. After the post-login
   // account-linking Action runs setPrimaryUser, this is the post-merge *primary*
   // user_id, which is exactly the key the Neon membership row is stored under
@@ -112,12 +115,14 @@ export async function verifyAuth0BearerProfile(
     const givenName = (payload[AUTH0_GIVEN_NAME_CLAIM] as string | undefined) ?? undefined
     const familyName =
       (payload[AUTH0_FAMILY_NAME_CLAIM] as string | undefined) ?? undefined
+    const nameSetByMember = payload[AUTH0_NAME_SET_BY_MEMBER_CLAIM] === true
     return {
       email,
       sub: typeof payload.sub === 'string' ? payload.sub : undefined,
       givenName,
       familyName,
-      name: displayName({ givenName, familyName, email }),
+      nameSetByMember,
+      name: displayName({ givenName, familyName, email, setByMember: nameSetByMember }),
       emailVerified:
         verifiedClaim === true || verifiedClaim === false ? verifiedClaim : undefined,
       roles: extractRoles(payload as Record<string, unknown>),
@@ -234,6 +239,12 @@ export type SessionProfile = {
   // name is derived (sessionName) rather than stored a third time.
   givenName?: string
   familyName?: string
+  // Provenance for the name above (shared/profile-name): true when the member
+  // typed it, which is the only thing that lets us greet by a lowercase first
+  // name that happens to match their email local part. Mirrored from Auth0
+  // app_metadata — immediately by the profile save's cookie re-mint, and at
+  // login by the Login Action's claim.
+  nameSetByMember?: boolean
   // The Auth0 `sub` (post-merge primary user_id) carried from the verified
   // access token at callback time — the key every Neon entitlement read uses
   // (§3). Stored in the cookie so a gate never needs a Management API round-trip
@@ -250,6 +261,7 @@ export async function signSessionToken(profile: SessionProfile, env: Env): Promi
       roles: profile.roles,
       ...(profile.givenName ? { given_name: profile.givenName } : {}),
       ...(profile.familyName ? { family_name: profile.familyName } : {}),
+      ...(profile.nameSetByMember ? { name_set_by_member: true } : {}),
       ...(profile.sub ? { sub: profile.sub } : {}),
     },
     {
@@ -273,6 +285,7 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     roles: extractStrings(payload.roles),
     givenName: (payload.given_name as string | undefined) ?? undefined,
     familyName: (payload.family_name as string | undefined) ?? undefined,
+    nameSetByMember: payload.name_set_by_member === true,
     sub: (payload.sub as string | undefined) ?? undefined,
   }
 }
@@ -285,6 +298,7 @@ export function sessionName(session: SessionProfile): string | undefined {
     givenName: session.givenName,
     familyName: session.familyName,
     email: session.email,
+    setByMember: session.nameSetByMember,
   })
 }
 
@@ -405,6 +419,12 @@ export type RequestIdentity = {
   // gave us — including for the checkout token, which carries no name at all.
   // Callers greet by this or fall back; they must never substitute the email.
   firstName: string | null
+  // The verified ark_session, present only when that cookie is how this request
+  // authenticated. Carried because resolving the identity already parsed and
+  // HMAC-verified it: a caller that needs the rest of the session (the profile
+  // save re-mints the cookie, which needs `roles`) would otherwise do the whole
+  // verification a second time.
+  session?: SessionProfile
 }
 
 // Resolve who is making this request, checking every accepted credential in one
@@ -422,9 +442,13 @@ function identityName(profile: {
   email: string
   givenName?: string
   familyName?: string
+  nameSetByMember?: boolean
 }): Pick<RequestIdentity, 'firstName'> {
-  const { email, givenName, familyName } = profile
-  return { firstName: greetingFirstName(givenName, email, familyName) ?? null }
+  const { email, givenName, familyName, nameSetByMember } = profile
+  return {
+    firstName:
+      greetingFirstName(givenName, email, familyName, nameSetByMember) ?? null,
+  }
 }
 
 export async function resolveRequestIdentity(
@@ -455,6 +479,7 @@ export async function resolveRequestIdentity(
       sub: session.sub ?? null,
       source: 'auth0',
       ...identityName(session),
+      session,
     }
   }
   const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)

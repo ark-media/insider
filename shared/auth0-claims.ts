@@ -21,3 +21,12 @@ export const AUTH0_ROLES_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/roles`
 // edit shows immediately, and a backfilled name self-heals on next sign-in.
 export const AUTH0_GIVEN_NAME_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/given_name`
 export const AUTH0_FAMILY_NAME_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/family_name`
+// Boolean claim mirroring app_metadata.name_set_by_member — true when the member
+// typed the name above rather than it being harvested or manufactured from their
+// email. shared/profile-name explains why the name's characters alone can't
+// answer that. The Login Action must emit it (`event.user.app_metadata
+// ?.name_set_by_member === true`); until it does, this reads false at login and
+// the heuristic decides, which is the pre-existing behaviour. The profile save
+// re-mints the session cookie with it set, so an edit is never waiting on a
+// login for its own greeting.
+export const AUTH0_NAME_SET_BY_MEMBER_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/name_set_by_member`

@@ -117,9 +117,14 @@ const WHATS_INCLUDED = `${FEED_INCLUDED}, plus the Ark+ community`
 // through the shared helper rather than a bare split so a value that is really
 // an email address — the gift form's recipient_name is free text a giver types —
 // can't end up rendered as "Hi someone@example.com,".
-function firstName(name?: string): string | undefined {
+//
+// `email` is the recipient's address, and it is what makes the check work at
+// all: without it `hasRealName` has nothing to compare against and accepts any
+// non-empty string, so the manufactured value the migrated roster is full of
+// ("hannah.waxman8") renders as a greeting. Every caller has it in hand.
+function firstName(name?: string, email?: string): string | undefined {
   const { first, last } = splitFullName(name)
-  return greetingFirstName(first, undefined, last)
+  return greetingFirstName(first, email, last)
 }
 
 // Both emails share the same CTA logic: a brand-new account gets a
@@ -154,6 +159,8 @@ function ctaFor(
 
 export type GiftWelcomeEmailParams = {
   recipientName?: string
+  // The recipient's address — required for the name check, see firstName().
+  recipientEmail?: string
   giverName?: string
   term: GiftTerm
   message?: string
@@ -168,7 +175,7 @@ export function renderGiftWelcomeEmail(p: GiftWelcomeEmailParams): {
 } {
   const termLabel = GIFT_LABEL[p.term]
   const giver = p.giverName?.trim()
-  const first = firstName(p.recipientName)
+  const first = firstName(p.recipientName, p.recipientEmail)
 
   const subject = giver ? `${giver} sent you Ark+` : `You've been gifted Ark+`
   const headlineHtml = giver
@@ -211,6 +218,8 @@ export function renderGiftWelcomeEmail(p: GiftWelcomeEmailParams): {
 
 export type SubscriberWelcomeEmailParams = {
   name?: string
+  // The member's address — required for the name check, see firstName().
+  email?: string
   welcomeUrl: string
   // Present only for brand-new accounts: an Auth0 password-change ticket URL.
   passwordSetupUrl?: string
@@ -223,7 +232,7 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
   subject: string
   html: string
 } {
-  const first = firstName(p.name)
+  const first = firstName(p.name, p.email)
   const includesCommunity = p.tier === 'bundle'
   const html = renderShell({
     preheader: includesCommunity
@@ -251,6 +260,8 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
 
 export type GiftRedemptionEmailParams = {
   recipientName?: string
+  // The recipient's address — required for the name check, see firstName().
+  recipientEmail?: string
   giverName?: string
   term: GiftTerm
   message?: string
@@ -269,7 +280,7 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
 } {
   const termLabel = GIFT_LABEL[p.term]
   const giver = p.giverName?.trim()
-  const first = firstName(p.recipientName)
+  const first = firstName(p.recipientName, p.recipientEmail)
 
   const subject = giver ? `${giver} sent you Ark+` : `You've been gifted Ark+`
   const headlineHtml = giver
@@ -314,6 +325,8 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
 
 export type CircleWelcomeEmailParams = {
   name?: string
+  // The member's address — required for the name check, see firstName().
+  email?: string
   welcomeUrl: string
   // Present only for brand-new accounts: an Auth0 password-change ticket URL.
   passwordSetupUrl?: string
@@ -326,7 +339,7 @@ export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
   subject: string
   html: string
 } {
-  const first = firstName(p.name)
+  const first = firstName(p.name, p.email)
   const isNewAccount = Boolean(p.passwordSetupUrl)
   const html = renderShell({
     preheader: 'Your Ark community membership is active.',

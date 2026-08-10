@@ -109,6 +109,7 @@ describe('session token', () => {
       roles: ['admin'],
       givenName: 'Ada',
       familyName: 'Lovelace',
+      nameSetByMember: true,
       sub: 'auth0|abc',
     }
     const token = await signSessionToken(profile, SENV)
@@ -122,8 +123,21 @@ describe('session token', () => {
       roles: [],
       givenName: undefined,
       familyName: undefined,
+      // Provenance defaults to false: an unflagged name still faces the
+      // manufactured-name heuristic, which is the pre-existing behaviour.
+      nameSetByMember: false,
       sub: undefined,
     })
+  })
+
+  test('a member-typed name survives the round-trip and is greetable', async () => {
+    // "sarah" from sarah@x.com is exactly the shape we used to manufacture, so
+    // without the flag the cookie re-mint after a save would greet nobody.
+    const token = await signSessionToken(
+      { email: 'sarah@x.com', roles: [], givenName: 'sarah', nameSetByMember: true },
+      SENV,
+    )
+    expect(sessionName((await verifySessionToken(token, SENV))!)).toBe('sarah')
   })
 
   test('the display name is derived from its parts, never stored separately', async () => {

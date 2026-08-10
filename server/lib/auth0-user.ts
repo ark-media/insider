@@ -8,8 +8,25 @@ import crypto from 'node:crypto'
 import { getAuthenticationClient, getManagementClient } from '../auth0.js'
 import {
   MAX_NAME_PART_LEN,
+  hasRealName,
   splitFullName,
 } from '../../shared/profile-name.js'
+
+// app_metadata key recording that a name came from the member, not from a
+// backfill, a billing form, or the old email-local-part fallback. Auth0 is
+// already the name's home, so its provenance lives beside it rather than in a
+// new Neon column (membership stores no PII). shared/profile-name explains why
+// the shape of a name alone can't answer the question.
+export const NAME_SET_BY_MEMBER_KEY = 'name_set_by_member'
+
+// Reads that flag off a Management API user record.
+function nameSetByMember(user: { app_metadata?: unknown }): boolean {
+  return (
+    (user.app_metadata as Record<string, unknown> | undefined)?.[
+      NAME_SET_BY_MEMBER_KEY
+    ] === true
+  )
+}
 
 type Env = Record<string, string>
 
@@ -44,20 +61,45 @@ export async function findOrCreateAuth0User(
   const mgmt = getManagementClient(env)
   if (!mgmt) return null
 
-  // Return early if Auth0 user already exists.
-  const existing = await mgmt.users.listUsersByEmail({ email })
-  if (existing.length > 0 && existing[0].user_id) {
-    return { userId: existing[0].user_id, created: false, passwordResetSent: false }
-  }
-
-  // Create Auth0 user with a random temporary password — the password-change
-  // email below is how they'll actually log in for the first time.
   // Only write a name we were actually given. This used to fall back to
   // `email.split('@')[0]`, which is why the migrated roster is full of members
   // called "hannah.waxman8" — a value indistinguishable from a real name at
   // every downstream read. Auth0 doesn't require given_name, so leaving it
   // unset is both honest and what lets `hasRealName` spot the gap.
   const { first: givenName, last: familyName } = splitFullName(nameHint)
+  const hintIsReal = hasRealName({ givenName, familyName, email })
+
+  // Return early if Auth0 user already exists — but not before filling an empty
+  // name from the hint. The hint used to be read only on the create branch
+  // below, so a reader who already had a login (a free newsletter subscriber,
+  // say) kept whatever Auth0 held when they later paid, even though they typed
+  // a real name into Stripe checkout: it reached Beehiiv and their welcome email
+  // and stopped there, while /account went on asking them for a name they had
+  // already given us.
+  //
+  // Strictly gap-filling. Any real name already on the record wins — including
+  // one the member typed, which `hasRealName` honours via app_metadata — and the
+  // write is deliberately NOT flagged setByMember, because a name harvested from
+  // a billing form is still a guess and should stay subject to the heuristic.
+  const existing = await mgmt.users.listUsersByEmail({ email })
+  const found = existing[0]
+  if (found?.user_id) {
+    const storedIsReal = hasRealName({
+      givenName: found.given_name,
+      familyName: found.family_name,
+      email,
+      setByMember: nameSetByMember(found),
+    })
+    if (!storedIsReal && hintIsReal && givenName) {
+      // Soft-fail by design: updateAuth0Name logs and returns false rather than
+      // throwing. A name is not worth failing provisioning over.
+      await updateAuth0Name(env, found.user_id, { givenName, familyName })
+    }
+    return { userId: found.user_id, created: false, passwordResetSent: false }
+  }
+
+  // Create Auth0 user with a random temporary password — the password-change
+  // email below is how they'll actually log in for the first time.
   const tempPassword = `Tmp-${crypto.randomBytes(16).toString('hex')}`
 
   let userId: string | undefined
@@ -115,6 +157,8 @@ export type Auth0NameProfile = {
   email: string | null
   givenName: string | null
   familyName: string | null
+  // Whether the member typed this name themselves — see NAME_SET_BY_MEMBER_KEY.
+  setByMember: boolean
 }
 
 // One Management read of a user's name + email. Returns null on any failure so
@@ -131,6 +175,7 @@ export async function getAuth0NameProfile(
       email: user.email?.trim() || null,
       givenName: user.given_name?.trim() || null,
       familyName: user.family_name?.trim() || null,
+      setByMember: nameSetByMember(user),
     }
   } catch (err) {
     console.error('[auth0] name profile lookup failed:', err)
@@ -152,6 +197,11 @@ export async function updateAuth0Name(
   env: Env,
   userId: string,
   name: { givenName: string; familyName?: string },
+  // Set only when the member typed this name into the account form. Records
+  // provenance in app_metadata so a later read can't re-judge it manufactured.
+  // The backfill deliberately leaves it off: a harvested name is still a guess,
+  // and should stay subject to the heuristic.
+  opts: { setByMember?: boolean } = {},
 ): Promise<boolean> {
   const mgmt = getManagementClient(env)
   if (!mgmt) return false
@@ -168,8 +218,20 @@ export async function updateAuth0Name(
   try {
     await mgmt.users.update(userId, {
       given_name: givenName,
-      family_name: familyName,
+      // Auth0 validates the root name attributes as minLength 1, so sending
+      // `family_name: ''` 400s the entire write — which would fail every mononym
+      // save, not just the surname. Omit the key instead, exactly as the create
+      // path above does. (The API offers no way to *clear* a surname once set:
+      // '' is rejected and the SDK types don't admit null. A member deleting
+      // theirs keeps it in Auth0, which is a stale field rather than a blocked
+      // save — the lesser of the two.)
+      ...(familyName ? { family_name: familyName } : {}),
       name: [givenName, familyName].filter(Boolean).join(' '),
+      // Auth0 merges app_metadata at the top level, so writing this one key
+      // leaves the tier mirror sitting beside it untouched.
+      ...(opts.setByMember
+        ? { app_metadata: { [NAME_SET_BY_MEMBER_KEY]: true } }
+        : {}),
     })
     return true
   } catch (err) {

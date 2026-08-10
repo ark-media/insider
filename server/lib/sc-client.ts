@@ -5,6 +5,7 @@
 type Env = Record<string, string>
 
 import { fetchWithTimeout } from './http.js'
+import { splitFullName } from '../../shared/profile-name.js'
 
 export type ScError = Error & { status?: number; data?: unknown }
 
@@ -204,6 +205,27 @@ export async function findScUserByEmail(
   return res.users?.[0] ?? null
 }
 
+// Write a member's name onto their SC user record. The feed-setup reminder cron
+// greets from SC's `first_name` (it pages the roster from v1, where no Auth0
+// name is in reach), so a name fixed on /account has to land here too — Auth0
+// and Beehiiv alone leave that email greeting them by the manufactured value.
+//
+// Returns false when there is no SC user for the address, which is an ordinary
+// outcome: a Circle-only member has no feed.
+export async function updateScUserName(
+  sc: ScClient,
+  email: string,
+  name: { first: string; last?: string },
+): Promise<boolean> {
+  const user = await findScUserByEmail(sc, email)
+  if (!user) return false
+  await sc.call('PATCH', `/users/${user.id}`, {
+    first_name: name.first.slice(0, 40),
+    last_name: (name.last ?? '').slice(0, 40),
+  })
+  return true
+}
+
 export async function findOrCreateScUser(
   sc: ScClient,
   email: string,
@@ -211,12 +233,16 @@ export async function findOrCreateScUser(
 ): Promise<ScUser> {
   const existing = await findScUserByEmail(sc, email)
   if (existing) return existing
-  const first = (nameHint || email.split('@')[0] || 'Member').slice(0, 40)
+  // The hint is a full name (Stripe's customer.name), so split it rather than
+  // dropping "Hannah Waxman" whole into first_name — that field is what the
+  // feed-reminder cron greets from, and it would open "Hi Hannah Waxman,".
+  const hint = splitFullName(nameHint)
+  const first = (hint.first || email.split('@')[0] || 'Member').slice(0, 40)
   try {
     const created = await sc.call<{ user: ScUser }>('POST', '/users', {
       email,
       first_name: first,
-      last_name: '',
+      last_name: hint.last ?? '',
     })
     return created.user
   } catch (err) {

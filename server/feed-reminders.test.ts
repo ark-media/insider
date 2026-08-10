@@ -170,6 +170,20 @@ describe('evaluateReminder', () => {
     const c = evaluateReminder(member({ first_name: '   ' }), new Set(), false, cfg, NOW)
     expect(c?.firstName).toBeUndefined()
   })
+
+  test('a whole name in SC first_name greets by the leading token only', () => {
+    // findOrCreateScUser used to drop the entire name hint into first_name, so
+    // the migrated roster has records shaped like this. Greeting verbatim ships
+    // "Hi Ada Lovelace," to every one of them.
+    const c = evaluateReminder(
+      member({ first_name: 'Ada Lovelace' }),
+      new Set(),
+      false,
+      cfg,
+      NOW,
+    )
+    expect(c?.firstName).toBe('Ada')
+  })
 })
 
 // ===========================================================================

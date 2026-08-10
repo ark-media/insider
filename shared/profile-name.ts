@@ -19,6 +19,13 @@
 // capital ("Hannah" for hannah@…) is treated as real, which keeps the
 // legitimately-named-like-your-email case out of the prompt loop. A value with a
 // surname beside it is always real, since we never manufactured a family name.
+//
+// The heuristic has one blind spot it cannot close on its own: "sarah", typed by
+// sarah@gmail.com, is character-for-character what we would have manufactured
+// for her. Provenance settles that case — `setByMember` says a human typed this
+// into the account form, and nothing about its shape can overrule that. Without
+// it her save reads as manufactured on the very next request: the prompt returns
+// with the form seeded blank and /api/me stops greeting her by name.
 
 // Auth0 root attributes are capped in practice and the create path already
 // truncated to 40; keep every writer agreeing on one bound.
@@ -30,6 +37,12 @@ export type NameInput = {
   givenName?: string | null
   familyName?: string | null
   email?: string | null
+  // True when the member typed this name themselves. Written to the Auth0 user's
+  // app_metadata by PUT /api/account/profile, read back by every authoritative
+  // read, and mirrored into the session cookie so the greeting doesn't wait for
+  // a Management call. Absent everywhere a name was harvested or manufactured,
+  // which is exactly where the heuristic below still has to do the work.
+  setByMember?: boolean | null
 }
 
 /**
@@ -91,18 +104,28 @@ export function looksLikeEmailLocalPart(
 /**
  * True when we hold a name a human actually gave us.
  *
- * A surname is proof on its own — we never manufactured one. Otherwise a lone
- * first name is real unless it's the email local part verbatim *and* lowercase,
- * which is exactly the auto-filled shape.
+ * `setByMember` is proof outright: they typed it. A surname is proof too — we
+ * never manufactured one. Otherwise a lone first name is real unless it's the
+ * email local part verbatim *and* lowercase, which is exactly the auto-filled
+ * shape.
  */
 export function hasRealName({
   givenName,
   familyName,
   email,
+  setByMember,
 }: NameInput): boolean {
   const given = (givenName ?? '').trim()
   if (!given) return false
-  if ((familyName ?? '').trim()) return true
+  // An address is never a name, whoever supplied it and however it is
+  // capitalized. This has to precede both the provenance and the capitalization
+  // rules below, or "Hannah@example.com" — free text a giver can type into the
+  // gift form's recipient_name — reads as real and renders as a greeting.
+  if (given.includes('@')) return false
+  // Recorded provenance beats any inference drawn from the characters.
+  if (setByMember) return true
+  const family = (familyName ?? '').trim()
+  if (family && !family.includes('@')) return true
   if (!looksLikeEmailLocalPart(given, email)) return true
   // Matches the local part — real only if it was typed, which we infer from a
   // capital the auto-filled value could never have.
@@ -118,9 +141,16 @@ export function greetingFirstName(
   givenName: string | null | undefined,
   email: string | null | undefined,
   familyName?: string | null,
+  setByMember?: boolean | null,
 ): string | undefined {
-  if (!hasRealName({ givenName, familyName, email })) return undefined
-  return (givenName ?? '').trim() || undefined
+  if (!hasRealName({ givenName, familyName, email, setByMember })) return undefined
+  // Take the leading token rather than the field verbatim: a "first name" field
+  // does not reliably hold one. Supporting Cast's `first_name` carries whatever
+  // single hint created the user, so a member provisioned from a Stripe customer
+  // called "Hannah Waxman" has that whole string in it — and the tell is a
+  // reminder email that opens "Hi Hannah Waxman,".
+  const [first] = (givenName ?? '').trim().split(' ')
+  return first || undefined
 }
 
 /**
@@ -131,8 +161,9 @@ export function displayName({
   givenName,
   familyName,
   email,
+  setByMember,
 }: NameInput): string | undefined {
-  if (!hasRealName({ givenName, familyName, email })) return undefined
+  if (!hasRealName({ givenName, familyName, email, setByMember })) return undefined
   const joined = [(givenName ?? '').trim(), (familyName ?? '').trim()]
     .filter(Boolean)
     .join(' ')

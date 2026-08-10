@@ -396,31 +396,47 @@ export async function ensureSubscribedWithPremium(
 // Push a member's name onto their Beehiiv subscriber record so campaigns can
 // personalize. Deliberately does NOT create a subscription: a name is not a
 // reason to add someone to the list, so a reader with no Beehiiv record is a
-// no-op. Only populated parts are written, so a first-name-only save can't blank
-// an existing surname.
+// no-op.
+//
+// A part passed as `null` is *cleared* on the record; `undefined` (or '') leaves
+// whatever is there alone. Only the account save can express a deliberate clear
+// — a name harvested by the backfill or read off a Stripe customer simply
+// doesn't know the surname, which is not the same as knowing there isn't one.
+// Without the distinction, a member who deletes their surname keeps it in
+// Beehiiv forever and every {{first}} {{last}} merge re-sends it.
+//
+// Returns whether a write actually reached Beehiiv, so callers reporting counts
+// don't tally the no-ops.
 export async function syncSubscriberName(
   deps: PushDeps,
   email: string,
   name: { first?: string | null; last?: string | null },
-): Promise<void> {
+): Promise<boolean> {
   const cfg = beehiivConfigured(deps.env)
-  if (!cfg) return
+  if (!cfg) return false
 
   const fields: CustomFieldWrite[] = []
   const first = (name.first ?? '').trim()
-  const last = (name.last ?? '').trim()
   if (first) fields.push({ name: FIELD_FIRST_NAME, value: first })
+  const last = (name.last ?? '').trim()
   if (last) fields.push({ name: FIELD_LAST_NAME, value: last })
-  if (fields.length === 0) return
+  else if (name.last === null) fields.push({ name: FIELD_LAST_NAME, delete: true })
+  if (fields.length === 0) return false
 
   const normalized = email.toLowerCase()
   const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
-  if (!existing) return
+  if (!existing) return false
 
-  const updated = await updateSubscription(cfg.pubId, cfg.token, existing.id, {
+  await updateSubscription(cfg.pubId, cfg.token, existing.id, {
     custom_fields: fields,
   })
-  await persistFromBeehiiv(deps.sql, cfg.pubId, updated)
+  // Mirror the by_email read, not the update response. This PUT carries only
+  // custom_fields, and a response that omits the tier fields makes
+  // inferHasPremium answer false — which would write has_premium=false over a
+  // paying member and light up the reconciler. Nothing about the subscription
+  // itself changed here, so `existing` is still the authoritative picture.
+  await persistFromBeehiiv(deps.sql, cfg.pubId, existing)
+  return true
 }
 
 // Downgrade a reader to free (keep them on the list, just drop premium).

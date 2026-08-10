@@ -13,6 +13,7 @@ import {
   ensureSubscribedWithPremium,
   isReceivingEmails,
   refreshSubscriptionFromBeehiiv,
+  syncSubscriberName,
   tryPush,
 } from './lib/beehiiv-sync'
 import type { Sql } from './lib/db'
@@ -294,6 +295,94 @@ describe('downgradeToFree', () => {
     await downgradeToFree({ env: BASE_ENV, sql }, 'a@x.com')
     const put = fetchCalls.find((c) => c.method === 'PUT')
     expect(put?.body).toEqual({ tier: 'free' })
+  })
+})
+
+// ============================================================================
+// syncSubscriberName
+// ============================================================================
+
+describe('syncSubscriberName', () => {
+  test('writes both parts and reports that it wrote', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = ({ method }) => {
+      if (method === 'GET') return jsonRes(200, beehiivSub({ id: 'sub_1' }))
+      return jsonRes(200, beehiivSub({ id: 'sub_1' }))
+    }
+    const wrote = await syncSubscriberName({ env: BASE_ENV, sql }, 'a@x.com', {
+      first: 'Hannah',
+      last: 'Waxman',
+    })
+    expect(wrote).toBe(true)
+    expect(fetchCalls.find((c) => c.method === 'PUT')?.body).toEqual({
+      custom_fields: [
+        { name: 'First Name', value: 'Hannah' },
+        { name: 'Last Name', value: 'Waxman' },
+      ],
+    })
+  })
+
+  test('null clears the surname; undefined leaves it alone', async () => {
+    // Only the account save can express a deliberate clear. A harvested name
+    // that simply lacks a surname must not delete one Beehiiv already holds.
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = () => jsonRes(200, beehiivSub({ id: 'sub_1' }))
+
+    await syncSubscriberName({ env: BASE_ENV, sql }, 'a@x.com', {
+      first: 'Hannah',
+      last: null,
+    })
+    expect(fetchCalls.find((c) => c.method === 'PUT')?.body).toEqual({
+      custom_fields: [
+        { name: 'First Name', value: 'Hannah' },
+        { name: 'Last Name', delete: true },
+      ],
+    })
+
+    fetchCalls = []
+    await syncSubscriberName({ env: BASE_ENV, sql }, 'a@x.com', {
+      first: 'Hannah',
+      last: undefined,
+    })
+    expect(fetchCalls.find((c) => c.method === 'PUT')?.body).toEqual({
+      custom_fields: [{ name: 'First Name', value: 'Hannah' }],
+    })
+  })
+
+  test('a no-op reports false so callers do not tally it', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = () => jsonRes(404, {})
+    // No Beehiiv record for this reader.
+    expect(
+      await syncSubscriberName({ env: BASE_ENV, sql }, 'a@x.com', { first: 'Hannah' }),
+    ).toBe(false)
+    // Nothing worth writing.
+    expect(await syncSubscriberName({ env: BASE_ENV, sql }, 'a@x.com', {})).toBe(false)
+    // Beehiiv not configured at all.
+    expect(
+      await syncSubscriberName({ env: {}, sql }, 'a@x.com', { first: 'Hannah' }),
+    ).toBe(false)
+  })
+
+  test('mirrors the by_email read, not the custom-fields response', async () => {
+    // The PUT carries only custom_fields, so a response that omits the tier
+    // fields infers has_premium=false — persisting it would downgrade a paying
+    // member in the mirror and light up the reconciler.
+    const { sql, calls: sqlCalls } = makeSqlStub(emptyRows)
+    fetchHandler = ({ method }) => {
+      if (method === 'GET') {
+        return jsonRes(
+          200,
+          beehiivSub({ id: 'sub_paid', tier: 'premium', premiumTierNames: ['Premium'] }),
+        )
+      }
+      // Beehiiv echoes the record without the tier fields.
+      return jsonRes(200, { data: { id: 'sub_paid', email: 'a@x.com', status: 'active' } })
+    }
+    await syncSubscriberName({ env: BASE_ENV, sql }, 'a@x.com', { first: 'Hannah' })
+    const upsert = sqlCalls.find((c) => c.sql.includes('insert into'))
+    expect(upsert).toBeDefined()
+    expect(upsert!.values).toContain(true)
   })
 })
 

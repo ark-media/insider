@@ -131,6 +131,53 @@ describe('hasRealName', () => {
     expect(hasRealName({ givenName: 'Hannah' })).toBe(true)
     expect(hasRealName({ givenName: 'hannah.waxman8' })).toBe(true)
   })
+
+  test('a name the member typed beats the heuristic that would reject it', () => {
+    // The one case the shape can't decide: "sarah" typed by sarah@gmail.com is
+    // identical to what we manufactured. Provenance settles it, or her save
+    // reads as junk on the next request and the prompt returns.
+    expect(
+      hasRealName({ givenName: 'sarah', email: 'sarah@gmail.com' }),
+    ).toBe(false)
+    expect(
+      hasRealName({
+        givenName: 'sarah',
+        email: 'sarah@gmail.com',
+        setByMember: true,
+      }),
+    ).toBe(true)
+  })
+
+  test('provenance cannot conjure a name out of nothing', () => {
+    expect(hasRealName({ givenName: '', setByMember: true })).toBe(false)
+  })
+
+  test('a whole address is never a name, however it is capitalized or supplied', () => {
+    // The gift form's recipient_name is free text a giver types, and the
+    // capitalization rule used to rescue anything with an uppercase letter in
+    // it — rendering "Hi Hannah@example.com," in the welcome email.
+    expect(hasRealName({ givenName: 'Hannah@example.com', email: 'h@x.com' })).toBe(
+      false,
+    )
+    expect(hasRealName({ givenName: 'hannah@example.com', email: 'h@x.com' })).toBe(
+      false,
+    )
+    // Not even a surname beside it, or provenance, makes an address a name.
+    expect(
+      hasRealName({ givenName: 'Hannah@example.com', familyName: 'Waxman' }),
+    ).toBe(false)
+    expect(
+      hasRealName({ givenName: 'Hannah@example.com', setByMember: true }),
+    ).toBe(false)
+    // A junk-looking first name isn't rescued by an address in the surname.
+    expect(
+      hasRealName({
+        givenName: 'hannah.waxman8',
+        familyName: 'someone@else.com',
+        email: 'hannah.waxman8@gmail.com',
+      }),
+    ).toBe(false)
+  })
 })
 
 describe('greetingFirstName', () => {
@@ -148,6 +195,18 @@ describe('greetingFirstName', () => {
     expect(
       greetingFirstName('hannah.waxman8', 'hannah.waxman8@gmail.com', 'Waxman'),
     ).toBe('hannah.waxman8')
+  })
+
+  test('greets by the leading token when the field holds a whole name', () => {
+    // Supporting Cast's first_name carries whatever single hint created the
+    // user, so this is the shape that ships "Hi Hannah Waxman," in a reminder.
+    expect(greetingFirstName('Hannah Waxman', 'hw@example.com')).toBe('Hannah')
+  })
+
+  test('greets a member-typed name the heuristic would have rejected', () => {
+    expect(
+      greetingFirstName('sarah', 'sarah@gmail.com', undefined, true),
+    ).toBe('sarah')
   })
 })
 

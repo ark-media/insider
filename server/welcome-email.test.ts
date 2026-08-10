@@ -45,6 +45,18 @@ describe('renderGiftWelcomeEmail', () => {
     expect(html).toContain('https://app.test/welcome')
   })
 
+  test('an address typed into recipient_name is never greeted', () => {
+    // Free text a giver types. The capitalization rule used to accept this,
+    // rendering "Hi Alice@example.com," at the top of the welcome email.
+    const { html } = renderGiftWelcomeEmail({
+      recipientName: 'Alice@example.com',
+      term: '1yr',
+      welcomeUrl: 'https://app.test/welcome',
+    })
+    expect(html).toContain('Hi there,')
+    expect(html).not.toContain('Alice@example.com')
+  })
+
   test('existing account: log-in CTA, no ticket', () => {
     const { subject, html } = renderGiftWelcomeEmail({
       giverName: 'Bob',
@@ -95,6 +107,19 @@ describe('renderSubscriberWelcomeEmail', () => {
     expect(html).toContain('Set your password')
     expect(html).toContain('https://auth.test/u/reset?ticket=xyz')
     expect(html).toContain('https://app.test/welcome')
+  })
+
+  test('a name manufactured from the address falls back to "Hi there,"', () => {
+    // The migrated roster is full of these, and without the email passed
+    // alongside there is nothing to compare the name against — so it renders.
+    const { html } = renderSubscriberWelcomeEmail({
+      name: 'hannah.waxman8',
+      email: 'hannah.waxman8@gmail.com',
+      welcomeUrl: 'https://app.test/welcome',
+      tier: 'ark-plus',
+    })
+    expect(html).toContain('Hi there,')
+    expect(html).not.toContain('hannah.waxman8')
   })
 
   test('existing account: log-in CTA, no ticket', () => {

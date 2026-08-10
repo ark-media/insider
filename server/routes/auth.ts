@@ -347,6 +347,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           roles: profile.roles,
           givenName: profile.givenName,
           familyName: profile.familyName,
+          nameSetByMember: profile.nameSetByMember,
           sub: profile.sub,
         }
         setSessionCookies(res, await signSessionToken(session, env), env)

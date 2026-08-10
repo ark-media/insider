@@ -13,19 +13,16 @@
 // account page reads through to Auth0 here, where the traffic is low and being
 // authoritative is worth one Management call. /api/me stays claim-only.
 
-import { getSessionProfile, resolveRequestIdentity, signSessionToken } from '../lib/session.js'
+import { resolveRequestIdentity, signSessionToken } from '../lib/session.js'
 import { getAuth0NameProfile, updateAuth0Name } from '../lib/auth0-user.js'
 import { setSessionCookies } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
 import { syncSubscriberName, tryPush } from '../lib/beehiiv-sync.js'
+import { createScClient, updateScUserName } from '../lib/sc-client.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
-import {
-  MAX_NAME_PART_LEN,
-  displayName,
-  hasRealName,
-} from '../../shared/profile-name.js'
+import { MAX_NAME_PART_LEN, hasRealName } from '../../shared/profile-name.js'
 
 // Reads hit the Management API, so bound them per member. 30 with a 1-per-2s
 // refill is far above a human opening the account page and well under Auth0's
@@ -36,9 +33,17 @@ const profileReadLimiter = createRateLimiter({ capacity: 30, refillPerSec: 1 / 2
 // will click, matching the newsletter-preferences bucket.
 const profileWriteLimiter = createRateLimiter({ capacity: 10, refillPerSec: 1 / 6 })
 
-// Control characters (and newlines) have no place in a name and would corrupt
-// an email header or a CSV export downstream.
-const CONTROL_CHARS = /[\p{Cc}\p{Cf}]/u
+// Characters that have no place in a name and would corrupt an email header or
+// a CSV export downstream: the C0/C1 controls, the Unicode line and paragraph
+// separators, and the bidi marks/embeddings/overrides/isolates that can make one
+// string display as another.
+//
+// Deliberately NOT the whole \p{Cf} category, which was the first cut: it also
+// contains ZWNJ (U+200C) and ZWJ (U+200D), which are orthographically required
+// in Persian, Hindi, Bengali and Malayalam names. Rejecting those hands a real
+// member a flat 400 with nothing to correct.
+const CONTROL_CHARS =
+  /[\p{Cc}\u2028\u2029\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/u
 
 type NameError = 'invalid_name'
 
@@ -49,7 +54,11 @@ function cleanNamePart(raw: unknown): string | NameError | null {
   // newline into a space, turning a header-injection attempt into a plausible
   // name we'd then store. Reject it outright instead.
   if (CONTROL_CHARS.test(raw)) return 'invalid_name'
-  const value = raw.trim().replace(/ +/g, ' ')
+  // Fold every Unicode space separator to a plain one before collapsing — a name
+  // pasted out of a word processor arrives with U+00A0, which is neither a
+  // control character nor an ASCII space, and would otherwise be stored as-is
+  // and then render inconsistently against the same name typed by hand.
+  const value = raw.replace(/\p{Zs}/gu, ' ').trim().replace(/ +/g, ' ')
   if (!value) return null
   if (value.length > MAX_NAME_PART_LEN) return 'invalid_name'
   return value
@@ -68,7 +77,13 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
 
         const identity = await resolveRequestIdentity(req, env)
-        // A checkout-token session has no Auth0 user to read or write yet.
+        // Needs an Auth0 user to read or write. A post-checkout token usually
+        // carries one — signCheckoutToken stamps the sub as soon as provisioning
+        // resolves it — so a buyer can set their name from /welcome before their
+        // first login. They have no ark_session to re-mint below, so /api/me
+        // keeps answering from the checkout token (which carries no name) until
+        // they sign in; the account page reads Auth0 directly and is correct
+        // immediately.
         if (!identity?.sub) return json(401, { error: 'unauthenticated' })
         const sub = identity.sub
 
@@ -103,37 +118,56 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
         const familyName = family === null ? '' : family
 
-        const saved = await updateAuth0Name(env, sub, {
-          givenName: given,
-          familyName,
-        })
+        // setByMember records that a human typed this. Without it a lowercase
+        // first name matching the email local part ("sarah" for sarah@…) is
+        // re-judged manufactured on the very next read, and the prompt they just
+        // answered comes straight back — see shared/profile-name.
+        const saved = await updateAuth0Name(
+          env,
+          sub,
+          { givenName: given, familyName },
+          { setByMember: true },
+        )
         // Auth0 rejects root-attribute writes on a provider-controlled identity.
         // Say so rather than reporting a save that didn't happen.
         if (!saved) return json(502, { error: 'profile_not_writable' })
 
         // The name claim only refreshes at login, so re-mint the cookie or the
         // member's own greeting would lag their edit by up to the session TTL.
-        // Bearer-authenticated callers have no cookie to re-mint.
-        const session = await getSessionProfile(req, env)
+        // Present only for the ark_session credential — a bearer or checkout
+        // caller has no cookie to re-mint. Already verified by
+        // resolveRequestIdentity, so this doesn't re-parse it.
+        const session = identity.session
         if (session) {
           const next = {
             ...session,
             givenName: given,
             familyName: familyName || undefined,
-            name: displayName({
-              givenName: given,
-              familyName,
-              email: identity.email,
-            }),
+            nameSetByMember: true,
           }
           setSessionCookies(res, await signSessionToken(next, env), env)
         }
 
-        // Campaign personalization is the whole point, but a Beehiiv hiccup must
-        // not fail a save the member can see succeeded in Auth0.
+        // Every store that greets this member by name has to hear about the
+        // edit, or the one left behind keeps sending the old value: Beehiiv
+        // personalizes campaigns from its custom fields, and Supporting Cast's
+        // first_name is what the feed-setup reminder cron greets from. Each is
+        // soft-failed — neither may sink a save the member can see succeeded in
+        // Auth0 — and both are fire-and-forget for the same reason.
         if (env.DATABASE_URL) {
           await tryPush('profile name sync', () =>
             syncSubscriberName({ env, sql: getDb(env) }, identity.email, {
+              // null, not '': the member deleting their surname is a deliberate
+              // clear, and Beehiiv has to drop the field rather than keep
+              // merging the old one into every campaign.
+              first: given,
+              last: familyName || null,
+            }),
+          )
+        }
+        if (env.SC_API_KEY && env.SC_NETWORK_ID) {
+          await tryPush('profile name sync (sc)', () =>
+            updateScUserName(createScClient(env), identity.email, {
               first: given,
               last: familyName,
             }),
