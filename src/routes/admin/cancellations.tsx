@@ -21,6 +21,7 @@ import {
 import { formatCouponDiscount } from "../../lib/currency";
 import { errMessage } from "../../lib/errMessage";
 import { useCrudResource } from "../../lib/useCrudResource";
+import { formatTimestamp } from "../../../shared/format-date";
 import {
   COUPON_SLOT_LABEL,
   COUPON_SLOTS,
@@ -422,7 +423,7 @@ function RetentionOffers() {
                     ) : null}
                     {p.redeemBy ? (
                       <AdminTag>
-                        expires {new Date(p.redeemBy).toLocaleDateString()}
+                        expires {formatTimestamp(p.redeemBy)}
                       </AdminTag>
                     ) : null}
                   </div>
@@ -664,7 +665,7 @@ function CancellationsBody({
                 {data.recent.map((row, i) => (
                   <tr key={i} className="border-b border-rule/50 align-top">
                     <td className="py-2 pr-4 whitespace-nowrap text-fg-muted">
-                      {new Date(row.createdAt).toLocaleDateString()}
+                      {formatTimestamp(row.createdAt)}
                     </td>
                     <td className="py-2 pr-4 text-fg">{row.email}</td>
                     <td className="py-2 pr-4 text-fg">

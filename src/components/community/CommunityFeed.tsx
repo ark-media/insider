@@ -3,18 +3,14 @@ import {
   type CommunityFeedItem,
   type SuggestedSpace,
 } from "../../lib/circle";
+import { formatCalendarDate } from "../../../shared/format-date";
 import { FeedEmptyState } from "./FeedEmptyState";
 import { OutboundLink } from "../OutboundLink";
 
+// Circle serializes `publishedAt` as 'YYYY-MM-DD', so this is a calendar date:
+// format it timezone-free, or US readers see every post dated a day early.
 function formatPostDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
+  return formatCalendarDate(iso);
 }
 
 /**

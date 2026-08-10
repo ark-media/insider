@@ -16,6 +16,7 @@ import {
   recordGiftExpiryReminderSent,
   type GiftExpiryRow,
 } from './membership.js'
+import { EMAIL_TIME_ZONE, formatTimestampInZone } from '../../shared/format-date.js'
 import { renderGiftExpiryEmail } from './gift-expiry-email.js'
 import { sendEmail } from './email.js'
 
@@ -82,12 +83,11 @@ export function candidatesForRow(
   return out
 }
 
+// Rendered on the server, where there is no viewer whose timezone we could use
+// and the host clock is UTC — which would date the line a day ahead for a US
+// member. Pin the zone explicitly instead of inheriting the host's.
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
+  return formatTimestampInZone(iso, EMAIL_TIME_ZONE, 'long')
 }
 
 export type GiftExpiryReminderSummary = {

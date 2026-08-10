@@ -1,3 +1,4 @@
+import { formatCalendarDate } from "../../shared/format-date";
 import type { Show, ShowSlug } from "./shows";
 
 /**
@@ -45,22 +46,15 @@ export function episodeImage(episode: Episode, show: Show): string | null {
   return episode.imageUrl || show.coverArt || null;
 }
 
+// A drop date is a calendar date, not an instant — Simplecast's `published_at`
+// is truncated to 'YYYY-MM-DD' on the server, so it must be formatted without a
+// timezone or it renders a day early everywhere west of UTC.
 export function formatEpisodeDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatCalendarDate(iso);
 }
 
 export function formatEpisodeDateLong(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "2-digit",
-    year: "numeric",
-  });
+  return formatCalendarDate(iso, "longPadded");
 }
 
 export function formatDuration(minutes: number): string {

@@ -11,6 +11,7 @@ import {
   isNewsletterPublicationSlug,
   newsletterSlugForReader,
 } from "../../data/newsletters";
+import { calendarDateParts } from "../../../shared/format-date";
 import { fetchMe } from "../../lib/auth";
 import { hasAnySession } from "../../lib/tokenStore";
 import { getPublication } from "../../lib/beehiiv";
@@ -96,15 +97,16 @@ function PostPage() {
   const gated = found.tier === "ark-plus" && !isArkPlusSubscriber;
   const post = found;
 
-  const issueDate = new Date(post.publishedAt);
-  const issueMonthDay = isNaN(issueDate.valueOf())
-    ? null
-    : `${String(issueDate.getMonth() + 1).padStart(2, "0")}.${String(
-        issueDate.getDate(),
-      ).padStart(2, "0")}`;
-  const issueYear = isNaN(issueDate.valueOf())
-    ? null
-    : String(issueDate.getFullYear());
+  // `publishedAt` is a calendar date ('YYYY-MM-DD'). Read its components
+  // directly instead of going through Date, whose local-time getters dated the
+  // stamp a day early for every reader west of UTC.
+  const issueDate = calendarDateParts(post.publishedAt);
+  const issueMonthDay = issueDate
+    ? `${String(issueDate.month).padStart(2, "0")}.${String(
+        issueDate.day,
+      ).padStart(2, "0")}`
+    : null;
+  const issueYear = issueDate ? String(issueDate.year) : null;
 
   return (
     <main className="relative">

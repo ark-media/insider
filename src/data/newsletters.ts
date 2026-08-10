@@ -1,3 +1,4 @@
+import { formatCalendarDate } from "../../shared/format-date";
 import type { SanitizedHtml } from "../../shared/sanitized-html";
 
 export type NewsletterSlug = "ark-daily" | "members-letter";
@@ -82,11 +83,8 @@ export function newsletterSlugForReader(isArkPlusSubscriber: boolean): Newslette
   return isArkPlusSubscriber ? "members-letter" : "ark-daily";
 }
 
+// Beehiiv issue dates arrive as 'YYYY-MM-DD' — a calendar date, so format it
+// timezone-free rather than letting local time slide it back a day.
 export function formatPostDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatCalendarDate(iso, "long");
 }

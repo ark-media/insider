@@ -19,6 +19,7 @@ import {
   adminPrimaryButton,
 } from "../../lib/admin-styles";
 import { errMessage } from "../../lib/errMessage";
+import { formatTimestampWithTime } from "../../../shared/format-date";
 
 export const Route = createFileRoute("/admin/discuss-threads")({
   component: DiscussThreadsAdmin,
@@ -327,7 +328,7 @@ function DiscussThreadsAdmin() {
                     {t.circleThreadUrl}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
-                    <span>Created {new Date(t.createdAt).toLocaleString()}</span>
+                    <span>Created {formatTimestampWithTime(t.createdAt)}</span>
                     {t.beehiivBodyPatched ? (
                       <span className="text-cyan">Beehiiv body patched</span>
                     ) : (

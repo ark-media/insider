@@ -20,6 +20,7 @@ import {
 } from "../../lib/admin-styles";
 import { formatCouponDiscount } from "../../lib/currency";
 import { useCrudResource } from "../../lib/useCrudResource";
+import { formatTimestamp } from "../../../shared/format-date";
 
 export const Route = createFileRoute("/admin/promos")({
   component: PromosAdmin,
@@ -379,7 +380,7 @@ function PromosAdmin() {
                 ) : null}
                 {p.redeemBy ? (
                   <AdminTag>
-                    expires {new Date(p.redeemBy).toLocaleDateString()}
+                    expires {formatTimestamp(p.redeemBy)}
                   </AdminTag>
                 ) : null}
               </div>

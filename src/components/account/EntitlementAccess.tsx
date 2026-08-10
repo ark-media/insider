@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AxisAccess, Me } from "../../lib/auth";
 import { changeTier, getMySubscription } from "../../lib/auth";
+import { formatTimestamp } from "../../../shared/format-date";
 import { CheckoutModal } from "../CheckoutModal";
 import { HeadphonesIcon, ChatIcon } from "./SurfaceIcons";
 
@@ -24,15 +25,10 @@ const AXIS: Record<
   circle: { tier: "circle", other: "arkPlus", label: "Community", noun: "the Ark community" },
 };
 
+// Null rather than "" so callers can drop the whole clause; the dates here are
+// Stripe instants, so they stay in the member's own timezone.
 function fmtDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return null;
-  return new Date(ms).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatTimestamp(iso, "long") || null;
 }
 
 function daysUntil(iso: string | null, now: number): number | null {

@@ -22,6 +22,7 @@ import {
 import type { Announcement } from "../../lib/announcements";
 import { sanitizeRichPreview } from "../../lib/richTextPreview";
 import { useCrudResource } from "../../lib/useCrudResource";
+import { formatTimestampWithTime } from "../../../shared/format-date";
 import {
   COMMON_TIME_ZONES,
   DEFAULT_TIME_ZONE,
@@ -181,8 +182,8 @@ function AnnouncementsAdmin() {
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
                   <span>
-                    {new Date(a.startsAt).toLocaleString()} →{" "}
-                    {new Date(a.endsAt).toLocaleString()}
+                    {formatTimestampWithTime(a.startsAt)} →{" "}
+                    {formatTimestampWithTime(a.endsAt)}
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <span

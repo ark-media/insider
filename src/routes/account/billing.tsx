@@ -9,6 +9,7 @@ import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { trackEvent } from "../../lib/analytics";
+import { formatTimestamp } from "../../../shared/format-date";
 import { CancelFlow } from "../../components/account/CancelFlow";
 
 export const Route = createFileRoute("/account/billing")({
@@ -125,9 +126,7 @@ function BillingPage() {
   const cancelTier = me.tier as "ark-plus" | "circle" | "bundle";
   // The billing-period-end date, localized, or null when we don't have it — used
   // to turn "the end of your current billing period" into a concrete date.
-  const periodEndLabel = periodEnd
-    ? new Date(periodEnd).toLocaleDateString()
-    : null;
+  const periodEndLabel = formatTimestamp(periodEnd) || null;
 
   // A human noun phrase for a tier, so the pending-change banner can name the
   // change ("from the Ark+ & Community bundle to Ark+").
@@ -238,7 +237,7 @@ function BillingPage() {
               >
                 Cancellation confirmed.{" "}
                 {status.until
-                  ? `Access continues until ${new Date(status.until).toLocaleDateString()}.`
+                  ? `Access continues until ${formatTimestamp(status.until)}.`
                   : ""}
               </p>
             ) : status.kind === "debundled" ? (
@@ -262,7 +261,7 @@ function BillingPage() {
               >
                 Your membership is back on.{" "}
                 {status.nextChargeAt
-                  ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
+                  ? `It renews on ${formatTimestamp(status.nextChargeAt)}.`
                   : ""}
               </p>
             ) : status.kind === "reverted" ? (
@@ -275,13 +274,12 @@ function BillingPage() {
                 The scheduled change was cancelled — your membership continues
                 unchanged.{" "}
                 {status.nextChargeAt
-                  ? `It renews on ${new Date(status.nextChargeAt).toLocaleDateString()}.`
+                  ? `It renews on ${formatTimestamp(status.nextChargeAt)}.`
                   : ""}
               </p>
             ) : scheduledCancelAt ? (
               <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
-                You'll keep access until{" "}
-                {new Date(scheduledCancelAt).toLocaleDateString()}.
+                You'll keep access until {formatTimestamp(scheduledCancelAt)}.
               </p>
             ) : null}
 

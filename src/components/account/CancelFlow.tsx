@@ -8,6 +8,7 @@ import {
   CANCELLATION_REASONS,
   OTHER_REASON_SLUG,
 } from "../../../shared/cancellation";
+import { formatTimestamp } from "../../../shared/format-date";
 import {
   acceptSaveOffer,
   cancelSubscription,
@@ -88,17 +89,10 @@ function RowPrice({
 }
 
 // A readable next-payment date for the success screen; "" for a missing/invalid
-// ISO string so the caller can omit the line.
+// ISO string so the caller can omit the line. A Stripe instant, so it renders
+// in the member's own timezone.
 function formatDate(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+  return formatTimestamp(iso, "long");
 }
 
 // A human headline for a coupon-backed offer, e.g. "20% off for 6 months".

@@ -7,6 +7,7 @@ import {
   type MemberDirectoryFilter,
 } from "../../lib/admin";
 import { adminField, adminFieldLabel } from "../../lib/admin-styles";
+import { formatTimestamp } from "../../../shared/format-date";
 
 export const Route = createFileRoute("/admin/members")({
   component: MembersAdmin,
@@ -33,7 +34,7 @@ function tierLabel(tier: MemberDirectoryEntry["tier"]): string {
 }
 
 function fmtDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString() : "—";
+  return formatTimestamp(iso) || "—";
 }
 
 function MembersAdmin() {
