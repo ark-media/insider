@@ -39,10 +39,6 @@ export type HeroContent = {
   // `href` renders an in-page anchor (to #pricing); `to` renders a router Link
   // (full members have nothing to buy, so they get a link to /account instead).
   cta: { label: string; href?: string; to?: string };
-  mark: "arkplus" | "community";
-  markSub: string;
-  badgeLabel: string;
-  badgeValue: string;
   giftLabel: string;
 };
 
@@ -64,10 +60,6 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       "Early access to new shows",
     ],
     cta: { label: "Become a member", href: "#pricing" },
-    mark: "arkplus",
-    markSub: "Membership",
-    badgeLabel: "Ark+ Member",
-    badgeValue: "No. 00214",
     giftLabel: "Gift Ark+",
   },
   "add-community": {
@@ -86,10 +78,6 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       "Exclusive members-only spaces",
     ],
     cta: { label: "Add Community", href: "#pricing" },
-    mark: "community",
-    markSub: "Community",
-    badgeLabel: "Ark+ Member",
-    badgeValue: "Add Community",
     giftLabel: "Gift a membership",
   },
   "add-arkplus": {
@@ -108,10 +96,6 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       "Early access to new shows",
     ],
     cta: { label: "Add Ark+", href: "#pricing" },
-    mark: "arkplus",
-    markSub: "Membership",
-    badgeLabel: "Community Member",
-    badgeValue: "Add Ark+",
     giftLabel: "Gift a membership",
   },
   full: {
@@ -129,10 +113,6 @@ export const HERO_CONTENT: Record<PlusAudience, HeroContent> = {
       "The Ark community, live events, and Dan's book club",
     ],
     cta: { label: "Manage your membership", to: "/account" },
-    mark: "arkplus",
-    markSub: "Full member",
-    badgeLabel: "Full Member",
-    badgeValue: "No. 00214",
     giftLabel: "Gift a membership",
   },
 };

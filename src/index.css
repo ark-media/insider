@@ -654,6 +654,29 @@ body {
 }
 .drift { animation: drift 9s ease-in-out infinite; }
 
+/* Level-meter bars — the playing row of the Ark+ hero artwork */
+@keyframes level {
+  0%, 100% { transform: scaleY(0.3); }
+  50%      { transform: scaleY(1); }
+}
+.level-bar {
+  transform-origin: center;
+  animation: level 1.1s ease-in-out infinite;
+}
+
+/* Marquee ticker — the track holds two identical copies of its contents, so
+   travelling exactly -50% lands copy two where copy one started and the loop is
+   seamless. Direction and speed are set per row by the caller. */
+@keyframes marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+.marquee-track {
+  animation: marquee linear infinite;
+  will-change: transform;
+}
+.marquee-rev { animation-direction: reverse; }
+
 /* SVG checkmark stroke draw-in */
 @keyframes draw-check {
   from { stroke-dashoffset: 32; }
@@ -666,7 +689,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rise, .live-dot, .draw-rule, .drift, .draw-check,
+  .rise, .live-dot, .draw-rule, .drift, .draw-check, .level-bar, .marquee-track,
   .animate-spin {
     animation: none !important;
   }

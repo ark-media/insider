@@ -43,6 +43,7 @@ import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
 import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as PlusIndexRouteImport } from './routes/plus/index'
+import { Route as PlusArtPreviewRouteImport } from './routes/plus/art-preview'
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
 import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
@@ -226,6 +227,11 @@ const PlusIndexRoute = PlusIndexRouteImport.update({
   path: '/plus/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlusArtPreviewRoute = PlusArtPreviewRouteImport.update({
+  id: '/plus/art-preview',
+  path: '/plus/art-preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlusGiftRoute = PlusGiftRouteImport.update({
   id: '/plus/gift',
   path: '/plus/gift',
@@ -316,6 +322,7 @@ export interface FileRoutesByFullPath {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
+  '/plus/art-preview': typeof PlusArtPreviewRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -363,6 +370,7 @@ export interface FileRoutesByTo {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
+  '/plus/art-preview': typeof PlusArtPreviewRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -412,6 +420,7 @@ export interface FileRoutesById {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
+  '/plus/art-preview': typeof PlusArtPreviewRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -462,6 +471,7 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
+    | '/plus/art-preview'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -509,6 +519,7 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
+    | '/plus/art-preview'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -557,6 +568,7 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
+    | '/plus/art-preview'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -602,6 +614,7 @@ export interface RootRouteChildren {
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
+  PlusArtPreviewRoute: typeof PlusArtPreviewRoute
   PlusGiftRoute: typeof PlusGiftRoute
   PlusInsideCallMeBackRoute: typeof PlusInsideCallMeBackRoute
   PodcastsArkNewsDailyRoute: typeof PodcastsArkNewsDailyRoute
@@ -860,6 +873,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlusIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/plus/art-preview': {
+      id: '/plus/art-preview'
+      path: '/plus/art-preview'
+      fullPath: '/plus/art-preview'
+      preLoaderRoute: typeof PlusArtPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/plus/gift': {
       id: '/plus/gift'
       path: '/plus/gift'
@@ -1012,6 +1032,7 @@ const rootRouteChildren: RootRouteChildren = {
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,
+  PlusArtPreviewRoute: PlusArtPreviewRoute,
   PlusGiftRoute: PlusGiftRoute,
   PlusInsideCallMeBackRoute: PlusInsideCallMeBackRoute,
   PodcastsArkNewsDailyRoute: PodcastsArkNewsDailyRoute,

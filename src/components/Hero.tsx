@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { plusAudience, HERO_CONTENT } from "../data/plusContent";
+import { HeroArtwork } from "./HeroArtwork";
 
 export function Hero() {
   // Personalize the pitch to what the viewer doesn't already own. While auth is
@@ -73,42 +74,10 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Right — membership mark placeholder */}
+        {/* Right — the host ensemble */}
         <div className="relative lg:col-span-5">
           <div className="rise rise-2 relative mx-auto max-w-[380px]">
-            <div
-              className="relative flex aspect-square items-center justify-center overflow-hidden border border-rule-strong bg-navy-900/60 shadow-cover"
-              style={{ transform: "rotate(-1.5deg)" }}
-            >
-              {/* Placeholder mark — final artwork TBD */}
-              <div className="text-center">
-                {content.mark === "community" ? (
-                  <>
-                    <div className="eyebrow text-fg-muted">The Ark</div>
-                    <div className="display-upright mt-2 text-[clamp(2.2rem,7vw,3.6rem)] leading-none text-fg-strong">
-                      Commun<span className="display text-cyan">ity</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="display-upright text-[clamp(3rem,9vw,5rem)] leading-none text-fg-strong">
-                      Ark<span className="display text-cyan">+</span>
-                    </div>
-                    <div className="mt-3 eyebrow text-fg-muted">
-                      {content.markSub}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Floating member badge */}
-            <div className="absolute -bottom-6 -left-4 rotate-[4deg] bg-navy-900 px-5 py-3 text-fg-strong shadow-float ring-1 ring-cyan/40">
-              <div className="eyebrow">{content.badgeLabel}</div>
-              <div className="display-upright mt-1 text-[22px]">
-                {content.badgeValue}
-              </div>
-            </div>
+            <HeroArtwork variant="plus" />
           </div>
         </div>
       </div>
