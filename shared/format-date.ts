@@ -60,6 +60,45 @@ function formatter(
   return f
 }
 
+// Zone labels come from a second formatter and get appended by hand: asking for
+// `timeZoneName` alongside date components makes ICU join them with " at "
+// ("August 20, 2026 at ET"), which is not a sentence anyone wants to read.
+// 'shortGeneric' yields the DST-stable form ("ET", not "EDT"/"EST") — the right
+// precision when only a date is shown.
+const labelFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zoneLabel(ms: number, timeZone: string): string {
+  let f = labelFormatters.get(timeZone)
+  if (!f) {
+    f = new Intl.DateTimeFormat(LOCALE, {
+      timeZone,
+      timeZoneName: 'shortGeneric',
+      year: 'numeric',
+    })
+    labelFormatters.set(timeZone, f)
+  }
+  return f.formatToParts(ms).find((p) => p.type === 'timeZoneName')?.value ?? ''
+}
+
+// The calendar date an instant lands on, as seen in a given zone.
+const zonedPartFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zonedCalendarParts(ms: number, timeZone: string): CalendarParts {
+  let f = zonedPartFormatters.get(timeZone)
+  if (!f) {
+    f = new Intl.DateTimeFormat(LOCALE, {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    zonedPartFormatters.set(timeZone, f)
+  }
+  const parts = f.formatToParts(ms)
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
+  return { year: get('year'), month: get('month'), day: get('day') }
+}
+
 const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})/
 
 export type CalendarParts = { year: number; month: number; day: number }
@@ -137,13 +176,49 @@ export function formatTimestampWithTime(iso: string | null | undefined): string 
  * A real instant rendered in an explicit zone. For server-side output (email,
  * crons) where there is no viewer whose zone we could use, and inheriting the
  * host's UTC would misdate the line.
+ *
+ * Pass `withZoneLabel` to append which zone the date is stated in
+ * ("August 20, 2026 ET") — worth doing whenever the reader can't be assumed to
+ * share it, since a bare date read from another zone is silently ambiguous.
  */
 export function formatTimestampInZone(
   iso: string | null | undefined,
   timeZone: string,
   style: DateStyle = 'short',
+  options: { withZoneLabel?: boolean } = {},
 ): string {
   const ms = iso ? Date.parse(iso) : NaN
   if (Number.isNaN(ms)) return ''
-  return formatter(style, timeZone, false).format(ms)
+  const date = formatter(style, timeZone, false).format(ms)
+  if (!options.withZoneLabel) return date
+  const label = zoneLabel(ms, timeZone)
+  return label ? `${date} ${label}` : date
+}
+
+/**
+ * Whole calendar days from `fromMs` until `iso`, counted in `timeZone` — so it
+ * agrees with a date formatted for that same zone. Negative when `iso` is past.
+ *
+ * Counting calendar days rather than elapsed milliseconds is the point: a gift
+ * term is an instant that inherits the time of day it was redeemed at, so
+ * `(expiry - now) / 86400000` yields things like 6.3. Rounding that
+ * independently of the displayed date is how copy ends up saying "ends in 7
+ * days, on August 20" to someone whose calendar says August 20 is 6 days out.
+ *
+ * Returns null when `iso` doesn't parse.
+ */
+export function calendarDaysUntilInZone(
+  iso: string | null | undefined,
+  fromMs: number,
+  timeZone: string,
+): number | null {
+  const ms = iso ? Date.parse(iso) : NaN
+  if (Number.isNaN(ms)) return null
+  const target = zonedCalendarParts(ms, timeZone)
+  const from = zonedCalendarParts(fromMs, timeZone)
+  // Both sides are anchored to UTC midnight of their zoned calendar date, so the
+  // subtraction is exact whole days with no DST offset leaking in.
+  const a = Date.UTC(target.year, target.month - 1, target.day)
+  const b = Date.UTC(from.year, from.month - 1, from.day)
+  return Math.round((a - b) / 86_400_000)
 }

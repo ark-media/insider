@@ -16,7 +16,11 @@ import {
   recordGiftExpiryReminderSent,
   type GiftExpiryRow,
 } from './membership.js'
-import { EMAIL_TIME_ZONE, formatTimestampInZone } from '../../shared/format-date.js'
+import {
+  EMAIL_TIME_ZONE,
+  calendarDaysUntilInZone,
+  formatTimestampInZone,
+} from '../../shared/format-date.js'
 import { renderGiftExpiryEmail } from './gift-expiry-email.js'
 import { sendEmail } from './email.js'
 
@@ -85,9 +89,10 @@ export function candidatesForRow(
 
 // Rendered on the server, where there is no viewer whose timezone we could use
 // and the host clock is UTC — which would date the line a day ahead for a US
-// member. Pin the zone explicitly instead of inheriting the host's.
+// member. Pin the zone explicitly instead of inheriting the host's, and name it
+// in the output so a member reading from elsewhere isn't left guessing.
 function fmtDate(iso: string): string {
-  return formatTimestampInZone(iso, EMAIL_TIME_ZONE, 'long')
+  return formatTimestampInZone(iso, EMAIL_TIME_ZONE, 'long', { withZoneLabel: true })
 }
 
 export type GiftExpiryReminderSummary = {
@@ -140,6 +145,9 @@ export async function runGiftExpiryReminders(deps: {
         firstName: recipient?.firstName,
         axisLabel: c.axisLabel,
         expiresOn: fmtDate(c.expiresAt),
+        // Counted in the same zone the date is stated in, so "in 7 days" and
+        // the date can't contradict each other.
+        daysRemaining: calendarDaysUntilInZone(c.expiresAt, nowMs, EMAIL_TIME_ZONE) ?? 0,
         accountUrl,
         otherAxisSubscribed: c.otherAxisSubscribed,
       })

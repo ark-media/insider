@@ -13,6 +13,7 @@ import { describe, test, expect } from 'bun:test'
 import {
   EMAIL_TIME_ZONE,
   calendarDateParts,
+  calendarDaysUntilInZone,
   formatCalendarDate,
   formatTimestamp,
   formatTimestampInZone,
@@ -138,5 +139,73 @@ describe('formatTimestampInZone', () => {
   test('returns an empty string for a missing or bad value', () => {
     expect(formatTimestampInZone(null, EMAIL_TIME_ZONE)).toBe('')
     expect(formatTimestampInZone('nonsense', EMAIL_TIME_ZONE)).toBe('')
+  })
+
+  test('appends the zone label on request, without an " at " separator', () => {
+    const out = formatTimestampInZone('2026-08-20T16:00:00Z', EMAIL_TIME_ZONE, 'long', {
+      withZoneLabel: true,
+    })
+    expect(out).toBe('August 20, 2026 ET')
+    expect(out).not.toContain(' at ')
+  })
+
+  test('uses the DST-stable generic label, so summer and winter read alike', () => {
+    const opts = { withZoneLabel: true } as const
+    // 'short' would give EDT here and EST in January; only the date is shown, so
+    // that extra precision would be noise the reader has to decode.
+    expect(
+      formatTimestampInZone('2026-08-20T16:00:00Z', EMAIL_TIME_ZONE, 'long', opts),
+    ).toContain('ET')
+    expect(
+      formatTimestampInZone('2026-01-20T16:00:00Z', EMAIL_TIME_ZONE, 'long', opts),
+    ).toContain('ET')
+  })
+
+  test('omits the label by default', () => {
+    expect(formatTimestampInZone('2026-08-20T16:00:00Z', EMAIL_TIME_ZONE, 'long')).toBe(
+      'August 20, 2026',
+    )
+  })
+})
+
+describe('calendarDaysUntilInZone', () => {
+  const TZ = 'America/New_York'
+  // 2026-08-13 12:00 ET. Every case below is measured from here.
+  const NOW = Date.parse('2026-08-13T16:00:00Z')
+
+  test('counts whole calendar days in the given zone', () => {
+    expect(calendarDaysUntilInZone('2026-08-20T16:00:00Z', NOW, TZ)).toBe(7)
+    expect(calendarDaysUntilInZone('2026-08-14T16:00:00Z', NOW, TZ)).toBe(1)
+    expect(calendarDaysUntilInZone('2026-08-13T20:00:00Z', NOW, TZ)).toBe(0)
+  })
+
+  test('counts the calendar date, not elapsed 24h blocks', () => {
+    // 6.5 elapsed days, but 03:00 UTC is still Aug 19 in ET — so the date shown
+    // is Aug 19 and the count must say 6, not round 6.5 up to 7.
+    const iso = '2026-08-20T03:00:00Z'
+    expect(formatTimestampInZone(iso, TZ, 'long')).toBe('August 19, 2026')
+    expect(calendarDaysUntilInZone(iso, NOW, TZ)).toBe(6)
+  })
+
+  test('is measured in the target zone, not the host zone', () => {
+    // Same instant, two zones, two different calendar dates → two counts.
+    const iso = '2026-08-20T03:00:00Z'
+    expect(calendarDaysUntilInZone(iso, NOW, 'America/New_York')).toBe(6)
+    expect(calendarDaysUntilInZone(iso, NOW, 'UTC')).toBe(7)
+  })
+
+  test('stays exact across a DST transition', () => {
+    // US DST ends 2026-11-01. Spanning it must not drift by the extra hour.
+    const from = Date.parse('2026-10-28T16:00:00Z')
+    expect(calendarDaysUntilInZone('2026-11-04T17:00:00Z', from, TZ)).toBe(7)
+  })
+
+  test('goes negative for a past instant', () => {
+    expect(calendarDaysUntilInZone('2026-08-10T16:00:00Z', NOW, TZ)).toBe(-3)
+  })
+
+  test('returns null for a missing or bad value', () => {
+    expect(calendarDaysUntilInZone(null, NOW, TZ)).toBeNull()
+    expect(calendarDaysUntilInZone('nonsense', NOW, TZ)).toBeNull()
   })
 })

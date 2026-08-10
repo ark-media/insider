@@ -144,6 +144,35 @@ describe('runGiftExpiryReminders', () => {
     expect(sent.has('auth0|a|ark_plus|' + inDays(5))).toBe(true)
   })
 
+  test('the countdown agrees with the dated deadline, and names the zone', async () => {
+    // End-to-end through the real formatter: the two halves of the sentence are
+    // derived independently (day count vs formatted date), so this is what
+    // catches them drifting apart. Host-zone independent — both are pinned to ET.
+    const { sent } = baseDeps()
+    const captured: { subject: string; html: string }[] = []
+    const rows = [row({ auth0_sub: 'auth0|a', ark_plus_gift_expires_at: inDays(5) })]
+    await runGiftExpiryReminders({
+      env: {},
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sql: makeSql(rows, sent) as any,
+      appBaseUrl: 'https://ark.test',
+      withinDays: GIFT_EXPIRY_REMINDER_DAYS,
+      nowMs: NOW,
+      resolveRecipient: async () => ({ email: 'recipient@example.com' }),
+      send: async (
+        _env: Record<string, string>,
+        m: { to: string; subject: string; html: string },
+      ) => {
+        captured.push({ subject: m.subject, html: m.html })
+        return true
+      },
+    })
+    expect(captured[0].subject).toBe('Your gifted Ark+ access ends in 5 days')
+    expect(captured[0].html).toContain(
+      'Your gifted Ark+ access ends in 5 days, on <strong>November 19, 2023 ET</strong>.',
+    )
+  })
+
   test('a second run for the same term does not re-send (ledger dedup)', async () => {
     const { sent, sends, send } = baseDeps()
     const rows = [row({ auth0_sub: 'auth0|a', ark_plus_gift_expires_at: inDays(5) })]
@@ -227,23 +256,59 @@ describe('renderGiftExpiryEmail', () => {
   test('standalone copy when the recipient has no other subscription', () => {
     const { subject, html } = renderGiftExpiryEmail({
       axisLabel: 'Ark+',
-      expiresOn: 'August 3, 2026',
+      expiresOn: 'August 20, 2026 ET',
+      daysRemaining: 7,
       accountUrl: 'https://ark.test/account',
       otherAxisSubscribed: false,
     })
     expect(subject).toContain('Ark+')
-    expect(subject).toContain('August 3, 2026')
+    // The countdown carries the subject; the date lives in the preheader/body so
+    // the subject doesn't get truncated in the inbox list.
+    expect(subject).toContain('in 7 days')
+    expect(html).toContain('August 20, 2026 ET')
     expect(html).toContain('subscribe from')
     expect(html).toContain('https://ark.test/account')
+  })
+
+  test('states the countdown and the dated deadline in one sentence', () => {
+    const { html } = renderGiftExpiryEmail({
+      axisLabel: 'Ark+',
+      expiresOn: 'August 20, 2026 ET',
+      daysRemaining: 7,
+      accountUrl: 'https://ark.test/account',
+      otherAxisSubscribed: false,
+    })
+    expect(html).toContain(
+      'Your gifted Ark+ access ends in 7 days, on <strong>August 20, 2026 ET</strong>.',
+    )
+  })
+
+  test('reads naturally at the edges of the window', () => {
+    const render = (daysRemaining: number) =>
+      renderGiftExpiryEmail({
+        axisLabel: 'Ark+',
+        expiresOn: 'August 20, 2026 ET',
+        daysRemaining,
+        accountUrl: 'https://ark.test/account',
+        otherAxisSubscribed: false,
+      })
+    expect(render(1).subject).toContain('ends tomorrow')
+    expect(render(1).html).toContain('ends tomorrow, on')
+    expect(render(0).subject).toContain('ends today')
+    // Never "in 0 days" or a negative count if a run straddles the boundary.
+    expect(render(-1).subject).toContain('ends today')
+    expect(render(2).subject).toContain('in 2 days')
   })
 
   test('bundle-switch copy when the recipient already subscribes to the other axis', () => {
     const { html } = renderGiftExpiryEmail({
       axisLabel: 'Community',
-      expiresOn: 'August 3, 2026',
+      expiresOn: 'August 20, 2026 ET',
+      daysRemaining: 7,
       accountUrl: 'https://ark.test/account',
       otherAxisSubscribed: true,
     })
     expect(html).toContain('bundle')
+    expect(html).toContain('ends in 7 days, on')
   })
 })

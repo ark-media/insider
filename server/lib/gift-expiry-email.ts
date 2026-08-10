@@ -9,8 +9,13 @@ export type GiftExpiryEmailParams = {
   firstName?: string
   // The human label of the expiring axis — 'Ark+' or 'Community'.
   axisLabel: string
-  // The term-end date, already formatted for display (e.g. "August 3, 2026").
+  // The term-end date, already formatted for display and carrying the zone it's
+  // stated in (e.g. "August 3, 2026 ET") — a gift term ends at an absolute
+  // instant, so a bare date is ambiguous to a reader in another zone.
   expiresOn: string
+  // Whole calendar days until the term ends, counted in the same zone as
+  // `expiresOn` so the relative and absolute halves of the sentence agree.
+  daysRemaining: number
   // Where the CTA lands — the account page, whose per-axis rows carry the actual
   // keep-access / switch-to-bundle actions (T7.3/T7.4/D9).
   accountUrl: string
@@ -18,6 +23,14 @@ export type GiftExpiryEmailParams = {
   // the nudge is "add this to your plan (the bundle)" rather than a standalone
   // subscribe. Copy-only — the account page owns the mechanic.
   otherAxisSubscribed: boolean
+}
+
+// "in 7 days" reads as urgency; the exact date reads as fact. The nudge wants
+// both, so the copy states the countdown and then pins it to a dated deadline.
+function endsWhen(daysRemaining: number): string {
+  if (daysRemaining <= 0) return 'today'
+  if (daysRemaining === 1) return 'tomorrow'
+  return `in ${daysRemaining} days`
 }
 
 export function renderGiftExpiryEmail(p: GiftExpiryEmailParams): {
@@ -28,16 +41,22 @@ export function renderGiftExpiryEmail(p: GiftExpiryEmailParams): {
   // which is what rejects a name manufactured from the member's email.
   const first = p.firstName?.trim() || undefined
   const axis = esc(p.axisLabel)
+  const when = endsWhen(p.daysRemaining)
 
-  const subject = `Your gifted ${p.axisLabel} access ends ${p.expiresOn}`
+  // Subject carries the countdown alone — it's read at a glance, and the date
+  // would push it past where most clients truncate. The preheader states the
+  // date, so the two together give the whole picture in the inbox list.
+  const subject = `Your gifted ${p.axisLabel} access ends ${when}`
   const headlineHtml = `Your ${axis} gift is ending.`
 
+  const endsSentence = `Your gifted ${axis} access ends ${when}, on <strong>${esc(p.expiresOn)}</strong>.`
+
   const bodyHtml = p.otherAxisSubscribed
-    ? `Your gifted ${axis} access ends on <strong>${esc(p.expiresOn)}</strong>. Because you already subscribe, you can keep it by adding ${axis} to your plan — that moves you to the Ark+ &amp; Community bundle, so both live on one subscription. Manage it from <a href="${p.accountUrl}" style="color:${BRAND_CYAN};">your account</a>.`
-    : `Your gifted ${axis} access ends on <strong>${esc(p.expiresOn)}</strong>. To keep it going without a gap, subscribe from <a href="${p.accountUrl}" style="color:${BRAND_CYAN};">your account</a> — you'll pick up right where the gift leaves off.`
+    ? `${endsSentence} Because you already subscribe, you can keep it by adding ${axis} to your plan — that moves you to the Ark+ &amp; Community bundle, so both live on one subscription. Manage it from <a href="${p.accountUrl}" style="color:${BRAND_CYAN};">your account</a>.`
+    : `${endsSentence} To keep it going without a gap, subscribe from <a href="${p.accountUrl}" style="color:${BRAND_CYAN};">your account</a> — you'll pick up right where the gift leaves off.`
 
   const html = renderShell({
-    preheader: `Your ${p.axisLabel} access ends ${p.expiresOn}. Keep it going.`,
+    preheader: `Ends ${p.expiresOn}. Keep it going.`,
     eyebrow: 'Your gift is ending',
     headlineHtml,
     greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
