@@ -274,43 +274,48 @@ export function PricingComparison({
             <tfoot>
               <tr>
                 <td className={reference ? "p-2" : "p-4"} />
-                {COLUMNS.map((c) => (
-                  <td
-                    key={c.key}
-                    className={`text-center align-top ${reference ? "p-2" : "p-4"} ${colClass(c)} ${
-                      c.featured ? "border-b-2 border-cyan" : ""
-                    }`}
-                  >
-                    {/* In the reference variant this row is just the featured
-                        column's bottom cap — the CTAs live in the cards above. */}
-                    {reference ? null : c.key === "apple" ? (
-                      // Apple sells this one, so the CTA hands off to them
-                      // rather than opening our checkout.
-                      <OutboundLink
-                        href={socialUrls.applePodcasts}
-                        platform="apple_podcasts"
-                        placement="pricing_table"
-                        className={`${CTA_CLASS} border border-cyan text-cyan hover:bg-cyan hover:text-navy`}
-                      >
-                        Subscribe
-                        <span className={CTA_ARROW_CLASS}>→</span>
-                      </OutboundLink>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => openCheckout(c.key)}
-                        className={`${CTA_CLASS} ${
-                          c.featured
-                            ? "bg-cyan text-navy hover:bg-fg-strong hover:text-navy-900"
-                            : "border border-cyan text-cyan hover:bg-cyan hover:text-navy"
-                        }`}
-                      >
-                        Choose
-                        <span className={CTA_ARROW_CLASS}>→</span>
-                      </button>
-                    )}
-                  </td>
-                ))}
+                {COLUMNS.map((c) => {
+                  // Bound to a const so the "apple" check still narrows inside
+                  // the button's onClick — a property access wouldn't.
+                  const key = c.key;
+                  return (
+                    <td
+                      key={key}
+                      className={`text-center align-top ${reference ? "p-2" : "p-4"} ${colClass(c)} ${
+                        c.featured ? "border-b-2 border-cyan" : ""
+                      }`}
+                    >
+                      {/* In the reference variant this row is just the featured
+                          column's bottom cap — the CTAs live in the cards above. */}
+                      {reference ? null : key === "apple" ? (
+                        // Apple sells this one, so the CTA hands off to them
+                        // rather than opening our checkout.
+                        <OutboundLink
+                          href={socialUrls.applePodcasts}
+                          platform="apple_podcasts"
+                          placement="pricing_table"
+                          className={`${CTA_CLASS} border border-cyan text-cyan hover:bg-cyan hover:text-navy`}
+                        >
+                          Subscribe
+                          <span className={CTA_ARROW_CLASS}>→</span>
+                        </OutboundLink>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openCheckout(key)}
+                          className={`${CTA_CLASS} ${
+                            c.featured
+                              ? "bg-cyan text-navy hover:bg-fg-strong hover:text-navy-900"
+                              : "border border-cyan text-cyan hover:bg-cyan hover:text-navy"
+                          }`}
+                        >
+                          Choose
+                          <span className={CTA_ARROW_CLASS}>→</span>
+                        </button>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             </tfoot>
           </table>
