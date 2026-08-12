@@ -92,8 +92,7 @@ function ArkPlusCallout() {
         <div className="lg:col-span-8">
           <div className="label text-cyan">Ark+</div>
           <p className="mt-3 max-w-2xl text-body-lg">
-            Ad-free episodes, extended interviews, members-only Q&amp;As, and
-            the members letter — across every show above.
+            Ark+ subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
           </p>
         </div>
         <div className="lg:col-span-4 lg:text-right">

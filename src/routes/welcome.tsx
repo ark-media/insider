@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
+import { ProfileNameCard } from "../components/account/ProfileNameCard";
 import {
   isArkPlusMember,
   isCircleMember,
@@ -125,6 +126,21 @@ function WelcomePage() {
             now — provisioning happens in the background and may take a minute
             or two to land in every place.
           </p>
+        </div>
+      </section>
+
+      {/* The best moment we get to ask for a name: they're already working a
+          setup list, so it reads as part of finishing rather than a form we
+          sprang on them. Deliberately not a numbered step — the steps are
+          entitlement-driven and settle before the profile fetch lands, and
+          renumbering them mid-load would be worse than sitting outside the
+          count. Renders nothing for the members we already have a name for.
+          Most of the migrated Supporting Cast roster is not one of them: their
+          stored name is the email local part we manufactured for them, which
+          the server judges as no name at all (shared/profile-name.ts). */}
+      <section>
+        <div className="page-gutter pt-2">
+          <ProfileNameCard promptOnly />
         </div>
       </section>
 
