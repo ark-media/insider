@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Exo", "Arial Narrow", system-ui, sans-serif;
-  --font-sans: "Lato", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
 
   /* Brandbook primaries — fixed across themes */
   --color-navy: #0b153c;
@@ -175,7 +175,7 @@
   line-height: 1;
 }
 
-/* Headings — Exo display */
+/* Headings — Helvetica Neue display */
 @utility text-h1 {
   font-family: var(--font-display);
   font-size: clamp(2rem, 5vw, 3.6rem);
@@ -223,7 +223,7 @@
   color: var(--color-fg-strong);
 }
 
-/* Body copy — Lato */
+/* Body copy — Helvetica Neue */
 @utility text-body-lg {
   font-size: var(--text-lg);
   line-height: 1.6;
@@ -337,7 +337,7 @@ body {
   color: var(--color-navy);
 }
 
-/* Exo display utilities */
+/* Display utilities */
 .display {
   font-family: var(--font-display);
   font-weight: 900;
