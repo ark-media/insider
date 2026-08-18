@@ -23,7 +23,7 @@ export const TIERS: TierMeta[] = [
     blurb:
       "Every Ark Media podcast, ad-free, plus the members-only newsletters.",
     includes: [
-      "Call Me Back AMA — private, ad-free feed",
+      "Exclusive Ark+ Member's only content.",
       "The full network, ad-free",
       "Members-only newsletters",
     ],
@@ -34,7 +34,7 @@ export const TIERS: TierMeta[] = [
     blurb: "Both — the private feed and the community, one membership.",
     featured: true,
     includes: [
-      "Call Me Back AMA — private, ad-free feed",
+      "Exclusive Ark+ Member's only content.",
       "The full network, ad-free",
       "Members-only newsletters",
       "The Ark Media community",

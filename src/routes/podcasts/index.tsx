@@ -92,7 +92,8 @@ function ArkPlusCallout() {
         <div className="lg:col-span-8">
           <div className="label text-cyan">Ark+</div>
           <p className="mt-3 max-w-2xl text-body-lg">
-            Ark+ subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
+            Ark+ subscribers fund honest coverage of Israel and Jewish life. Get
+            ad-free listening and exclusive content across every show.
           </p>
         </div>
         <div className="lg:col-span-4 lg:text-right">
@@ -100,7 +101,7 @@ function ArkPlusCallout() {
             to="/plus"
             className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
-            Become an Ark+ member →
+            Subscribe →
           </Link>
         </div>
       </div>

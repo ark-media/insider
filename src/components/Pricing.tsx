@@ -38,10 +38,10 @@ export function Pricing() {
               Pick your own <span className="display text-cyan">terms.</span>
             </span>
           </h2>
-          <p className="mx-auto mt-6 max-w-xl text-body-sm text-fg">
+          {/* <p className="mx-auto mt-6 max-w-xl text-body-sm text-fg">
             Every plan is pay-what-you-choose — name the suggested amount or give
             more to help sustain independent Jewish media.
-          </p>
+          </p> */}
         </div>
 
         <div className="mt-12">

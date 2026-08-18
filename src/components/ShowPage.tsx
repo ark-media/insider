@@ -120,14 +120,13 @@ function PaidShowJoinCta({ show }: { show: Show }) {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <div className="label text-cyan">
-              Ark+ members only
+              This episode is exclusively available to Ark+ members
             </div>
             <h2 className="mt-6 max-w-2xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
               Join Ark+ to listen to {show.title}.
             </h2>
             <p className="mt-4 max-w-2xl text-body-lg">
-              Members get extended interviews, ad-free episodes, members-only
-              Q&amp;As, the Ark+ newsletter, and the community.
+            Ark+ subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
             </p>
           </div>
           <div className="lg:col-span-5">
@@ -221,9 +220,7 @@ function ShowUpsell() {
         Want more?
       </div>
       <p className="mt-3 max-w-xl text-body-lg">
-        <span className="font-display text-[18px]">Ark+</span> members get the
-        members-only newsletter and the ad-free Call Me Back Ark+ feed — add the
-        community, or get both in the bundle.
+        <span className="font-display text-[18px]">Ark+</span> subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
       </p>
       <Link
         to="/plus"

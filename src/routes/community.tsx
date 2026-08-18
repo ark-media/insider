@@ -125,7 +125,7 @@ function SubscriberCommunity() {
 
   return (
     <PageShell
-      title="Welcome back to the room."
+      title="Real People, Real Conversations, Real Connection"
       lede="What's live, what's happening, and what the community is talking about right now. Jump in — every conversation continues in the app."
       aside={<CommunityAppLinks />}
     >
@@ -168,8 +168,8 @@ function SubscriberCommunity() {
 function MarketingShowcase() {
   return (
     <PageShell
-      title="The room behind the show — in the app."
-      lede="Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web."
+      title="Real People, Real Conversations, Real Connection"
+      lede="Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and members talking through the day's news. On iOS, Android, and the web."
       aside={<CommunityAppLinks />}
     >
       <section>
@@ -177,16 +177,16 @@ function MarketingShowcase() {
           <FeatureBlock
             no="01"
             title="Call Me Back AMA"
-            kicker="Weekly Q&As with your favorite Ark Media hosts."
-            body="Ask questions. Get actual answers - not a comments section, not a bot. Bring what's on your mind to the people making the show."
+            kicker="Your questions, answered weekly by the Call Me Back team."
+            body="Submit what's on your mind. Every week, the people behind Call Me Back pick a handful of questions from the community and give you a real answer."
             mockup={<QAScreen />}
           />
           <FeatureBlock
             no="02"
             flip
             title="Community Connection"
-            kicker="Join conversations with thousands of other members."
-            body="The room keeps going between episodes - members debating the news, sharing what they're reading, and starting meetups in their own cities."
+            kicker="Join conversations with other members."
+            body="A private community for thoughtful people who want to go deeper on Jewish life, Israel, politics, culture, and the questions shaping the Jewish world. It's a place for honest conversation, real connection, and learning from people who may see things differently, all in a space built to be constructive, welcoming, and respectful."
             mockup={<FeedScreen />}
           />
           {/* Placeholders — the feature lineup isn't settled yet. Swap the title,

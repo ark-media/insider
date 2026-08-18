@@ -20,20 +20,7 @@ export function WhySubscribe() {
           </h2>
 
           <p className="mt-8 text-body-sm text-fg">
-            Ark Media is a dedicated place for curious minds to follow hard
-            questions about Jewish life, Israel, and a rapidly changing world —
-            and to fund the journalism that asks them. Your membership keeps the
-            work free from the pressures that reshape most newsrooms:
-            advertisers chasing clicks, platforms optimizing for outrage, owners
-            with agendas.
-          </p>
-
-          <p className="mt-5 text-body-sm text-fg">
-            This isn’t another media brand built for the algorithm. It’s a small
-            independent network — podcasts, writing, and community — organized
-            around shared curiosity and the assumption that serious conversation
-            still matters. Subscribe to get the full Ark+ experience, and to
-            keep that work answering to its audience.
+            There's never been more coverage of Israel and the Jewish world. And yet, there's never been less of it worth trusting. But because our Members fund most of what we do here at Ark Media, we're free to cover the stories that need to be told, honestly and without compromise. When you become a paid member you support that mission and keep these conversations going.
           </p>
         </div>
       </div>

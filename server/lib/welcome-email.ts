@@ -110,7 +110,7 @@ export function renderShell(p: ShellParams): string {
 // The private-feed benefits every Ark+ (feed) tier gets. Bundle/gift append the
 // community on top; a feed-only Ark+ membership stops here.
 const FEED_INCLUDED =
-  'extended interviews, ad-free episodes, members-only Q&amp;As, and the full archive — delivered as a private feed in the podcast app you already use'
+'Exclusive content, Early Access to new episodes, and ad-free listening'
 const WHATS_INCLUDED = `${FEED_INCLUDED}, plus the Ark+ community`
 
 // The greeting name, or undefined so the caller's "Hi there," stands. Routed

@@ -253,9 +253,10 @@ function CommunityVisual() {
 // A small framed tile for the Ark+ "what's included" checklist. Uses theme
 // tokens so it adapts to light and dark.
 const plusIncludes = [
-  "The ad-free paid feed",
+  "Exclusive episodes",
+  "Early access",
+  "Add-free listening",
   "Members-only newsletters",
-  "The full network, ad-free",
 ];
 
 function PlusVisual() {
@@ -500,7 +501,7 @@ function HomePage() {
                   to={isSubscriber ? "/community" : "/plus"}
                   className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
-                  {isSubscriber ? "Explore community" : "Become an Ark+ member"}{" "}
+                  {isSubscriber ? "Subscriber Benefits" : "Subscribe"}{" "}
                   →
                 </Link>
               </div>

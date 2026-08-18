@@ -13,7 +13,7 @@ function CareersPage() {
   return (
     <PageShell
       title="Build Ark Media."
-      lede="We're a small team building independent journalism for an audience that wants more than a hot take. Roles below; speculative notes welcome."
+      lede="We're a independent Jewish media company for people who want the whole story, not just a headline. Open roles and speculative notes welcome."
     >
       <section>
         <div className="page-gutter py-6">
