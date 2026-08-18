@@ -2,9 +2,12 @@ import { Fragment, useState } from "react";
 import { BillingPeriodToggle } from "./BillingPeriodToggle";
 import { CheckoutModal } from "./CheckoutModal";
 import { OutboundLink } from "./OutboundLink";
+import { PriceSkeleton } from "./PriceSkeleton";
 import { ApplePodcastsIcon } from "./PlatformIcons";
 import { trackEvent } from "../lib/analytics";
 import { socialUrls } from "../config/urls";
+import { formatMinor, type TierAmounts } from "../lib/currency";
+import { usePricing, annualSavingsPct } from "../lib/usePricing";
 import type { Tier } from "../data/pricingTiers";
 
 type Plan = "monthly" | "yearly";
@@ -25,8 +28,8 @@ type Column = {
 // Column order mirrors the card grid — Ark+, the Bundle (featured, second),
 // Community — with the Apple Podcasts flavour of Ark+ slotted in before it.
 const COLUMNS: Column[] = [
-  { key: "ark-plus", label: "Ark+", sublabel: "Website" },
   { key: "bundle", label: "Ark+ & Community", featured: true },
+  { key: "ark-plus", label: "Ark+", sublabel: "Website" },
   { key: "apple", label: "Ark+", sublabel: "Apple Podcasts" },
   { key: "circle", label: "Community" },
 ];
@@ -39,7 +42,7 @@ type Row = {
   detail?: string[];
   tiers: Record<ColumnKey, boolean>;
 };
-type Group = { heading: string; rows: Row[] };
+type Group = { rows: Row[] };
 
 // The truthful grant per tier, and the specific shows/items behind each
 // benefit. Entitlements themselves are derived server-side from each tier's
@@ -48,7 +51,6 @@ type Group = { heading: string; rows: Row[] };
 // audio feed — so the video, community, and newsletter rows are blank there.
 const GROUPS: Group[] = [
   {
-    heading: "Podcasts & video",
     rows: [
       {
         label: "Ad-free podcasts",
@@ -64,16 +66,13 @@ const GROUPS: Group[] = [
       {
         label: "Subscriber-exclusive content",
         summary: "Episodes only members hear.",
-        detail: [
-         
-        ],
+        detail: [],
         tiers: { "ark-plus": true, apple: true, bundle: true, circle: false },
       },
       {
         label: "Early access",
         summary: "Hear it before everyone else.",
-        detail: [
-        ],
+        detail: [],
         tiers: { "ark-plus": true, apple: true, bundle: true, circle: false },
       },
       {
@@ -84,7 +83,6 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    heading: "Community & newsletters",
     rows: [
       {
         label: "Premium access to the Community app",
@@ -135,26 +133,32 @@ function Mark({ on }: { on: boolean }) {
       <path d="m4 10.5 4 4 8-9" />
     </svg>
   ) : (
-    <span className="mx-auto block h-px w-4 bg-rule-strong" aria-hidden="true" />
+    <span
+      className="mx-auto block h-px w-4 bg-rule-strong"
+      aria-hidden="true"
+    />
   );
 }
 
 // Feature-comparison table. A shared Monthly/Annual toggle sets the billing
 // period, and picking a column opens checkout for that tier at that period.
-// Amount (pay-what-you-choose) and the exact price are set inside the checkout
-// modal, which sources them live from Stripe.
 //
-// No prices appear in the table itself — it compares what each plan includes,
-// and the amount is chosen in checkout (or, for Apple, in Apple Podcasts).
+// Prices sit above the CTA rather than in the column head — the one place the
+// table quotes a number, at the moment of the decision. For the three tiers we
+// sell they are a FLOOR ("From $X"): every tier is pay-what-you-choose, so the
+// final amount — and the currency — are settled in the checkout modal, which
+// sources them live from Stripe. Apple sells the same Ark+ membership at the
+// same price but with no pay-more option, so that column quotes the Ark+
+// amounts under a "Fixed" label.
 //
 // Two presentations:
-//   "standalone" (/pricing) — the primary buying surface: a Monthly/Annual
-//     toggle and a "Choose" button per column that opens checkout for that tier
-//     at that period.
+//   "standalone" (/pricing) — the primary buying surface, and the only place
+//     these prices appear: a Monthly/Annual toggle, and per column a price and
+//     a "Choose" button that opens checkout for that tier at that period.
 //   "reference" (/plus)     — sits below the card grid, which already owns the
 //     toggle, the prices, and the CTAs. Here the table is purely a read-only
-//     summary of what each tier includes: no toggle, no buttons, and nothing to
-//     click or hover.
+//     summary of what each tier includes: no toggle, no prices, no buttons, and
+//     nothing to click or hover.
 export function PricingComparison({
   variant = "standalone",
 }: {
@@ -163,6 +167,30 @@ export function PricingComparison({
   const reference = variant === "reference";
   const [plan, setPlan] = useState<Plan>("yearly");
   const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
+
+  const pricing = usePricing();
+  const tiers = pricing.data?.tiers ?? null;
+  const currency = pricing.data?.currency ?? "usd";
+  const factor = pricing.data?.factor ?? 100;
+  // A failed price fetch must not take the comparison down with it: the columns
+  // just lose their price line, and checkout — which fetches its own prices —
+  // still works. While it loads, the prices are skeletons.
+  const showPrices = !reference && pricing.status !== "error";
+  const toggleSavings = tiers ? annualSavingsPct(tiers.bundle) : null;
+
+  // Apple sells the same Ark+ membership at the same price, so that column
+  // quotes the Ark+ amounts — the difference is that Apple has no pay-more
+  // option, which the "Fixed" / "From" label carries.
+  const amountsFor = (key: ColumnKey): TierAmounts | null =>
+    tiers ? tiers[key === "apple" ? "ark-plus" : key] : null;
+
+  const priceMinor = (key: ColumnKey): number | null => {
+    const amounts = amountsFor(key);
+    if (!amounts) return null;
+    return (
+      (plan === "yearly" ? amounts.yearly : amounts.monthly)[currency] ?? null
+    );
+  };
 
   const colClass = (c: Column) => (c.featured ? "bg-navy-800/50" : "");
 
@@ -191,7 +219,11 @@ export function PricingComparison({
 
         {reference ? null : (
           <div className="mt-8 flex justify-center">
-            <BillingPeriodToggle plan={plan} onChange={selectPeriod} />
+            <BillingPeriodToggle
+              plan={plan}
+              onChange={selectPeriod}
+              savingsPct={toggleSavings}
+            />
           </div>
         )}
 
@@ -203,7 +235,7 @@ export function PricingComparison({
             </caption>
             <thead>
               <tr>
-                <th scope="col" className="w-2/5 p-4 align-bottom" />
+                <th scope="col" className="w-1/3 p-4 align-bottom" />
                 {COLUMNS.map((c) => (
                   <th
                     key={c.key}
@@ -220,9 +252,11 @@ export function PricingComparison({
                     <div className="text-h5 font-display font-bold text-fg-strong">
                       {c.label}
                     </div>
-                    {/* Always rendered, empty or not: the reserved line keeps
-                        the four column names on one baseline. */}
-                    <div className="mt-1.5 flex min-h-[1.5em] items-center justify-center gap-1.5 text-body-sm text-fg-muted">
+                    {/* Always rendered, empty or not, and at a FIXED height
+                        rather than a minimum: text, the Apple icon, and nothing
+                        at all each measure slightly differently, which would
+                        stagger the four column names off their baseline. */}
+                    <div className="mt-1.5 flex h-6 items-center justify-center gap-1.5 text-body-sm text-fg-muted">
                       {c.key === "apple" ? (
                         <ApplePodcastsIcon className="size-4 shrink-0" />
                       ) : null}
@@ -233,22 +267,13 @@ export function PricingComparison({
               </tr>
             </thead>
             <tbody>
-              {GROUPS.map((group) => (
-                <Fragment key={group.heading}>
-                  <tr>
-                    <th
-                      scope="colgroup"
-                      colSpan={COLUMNS.length + 1}
-                      className="border-t border-rule pt-6 pb-2 eyebrow text-fg-muted"
-                    >
-                      {group.heading}
-                    </th>
-                  </tr>
+              {GROUPS.map((group, index) => (
+                <Fragment key={index}>
                   {group.rows.map((row) => (
                     <tr key={row.label} className="border-t border-rule-soft">
                       <th
                         scope="row"
-                        className="py-4 pr-4 align-middle font-normal"
+                        className="py-2.5 pr-4 align-middle font-normal"
                       >
                         <span className="block text-body-sm text-fg">
                           {row.label}
@@ -257,7 +282,7 @@ export function PricingComparison({
                       {COLUMNS.map((c) => (
                         <td
                           key={c.key}
-                          className={`py-4 text-center align-middle ${colClass(c)}`}
+                          className={`py-2.5 text-center align-middle ${colClass(c)}`}
                         >
                           <Mark on={row.tiers[c.key]} />
                         </td>
@@ -269,11 +294,17 @@ export function PricingComparison({
             </tbody>
             <tfoot>
               <tr>
-                <td className={reference ? "p-2" : "p-4"} />
+                <td />
                 {COLUMNS.map((c) => {
                   // Bound to a const so the "apple" check still narrows inside
                   // the button's onClick — a property access wouldn't.
                   const key = c.key;
+                  const amounts = amountsFor(key);
+                  const minor = priceMinor(key);
+                  const savings =
+                    plan === "yearly" && amounts
+                      ? annualSavingsPct(amounts)
+                      : null;
                   return (
                     <td
                       key={key}
@@ -281,6 +312,37 @@ export function PricingComparison({
                         c.featured ? "border-b-2 border-cyan" : ""
                       }`}
                     >
+                      {/* The price for the selected period, sat directly above
+                          the CTA — the one place the table quotes a price, at
+                          the moment of the decision. "From" vs "Fixed" is the
+                          real difference between buying here and buying in
+                          Apple Podcasts: same amount, but Apple has no
+                          pay-more. The height floor keeps the four blocks equal
+                          so the buttons share a baseline. */}
+                      {showPrices ? (
+                        <div className="mb-4 flex min-h-[5.5rem] flex-col items-center justify-end">
+                          <span className="meta">
+                            {key === "apple" ? "" : "From"}
+                          </span>
+                          <span className="display-upright mt-1 whitespace-nowrap text-[clamp(1.5rem,2.4vw,2rem)] tabular-nums text-fg-strong">
+                            {minor !== null ? (
+                              formatMinor(minor, currency, factor)
+                            ) : (
+                              <PriceSkeleton className="h-[0.8em] w-16" />
+                            )}
+                          </span>
+                          <span className="mt-1.5 text-body-sm">
+                            per {plan === "yearly" ? "year" : "month"}
+                            {savings !== null ? (
+                              <span className="text-cyan">
+                                {" "}
+                                · Save {savings}%
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                      ) : null}
+
                       {/* In the reference variant this row is just the featured
                           column's bottom cap — the CTAs live in the cards above. */}
                       {reference ? null : key === "apple" ? (
@@ -320,19 +382,19 @@ export function PricingComparison({
         {/* What each row in the table actually gets you. Kept out of the table
             so the grid stays scannable, and read as one flat list — the table's
             grouping does the categorising. */}
-        <div className="mt- border-t border-rule pt-5">
-          <dl className="mt-6 grid gap-x-12 gap-y-8 sm:grid-cols-2">
+        <div className="border-t border-rule pt-5">
+          <dl className="mt-5 grid gap-x-10 gap-y-6 sm:grid-cols-2">
             {DETAILS.map((row) => (
               <div key={row.label}>
                 <dt className="text-h5 font-display font-bold text-fg-strong">
                   {row.label}
                 </dt>
-                <dd className="mt-1.5">
+                <dd className="mt-1">
                   {row.summary ? (
                     <p className="text-body-sm">{row.summary}</p>
                   ) : null}
                   {row.detail ? (
-                    <ul className="mt-2 space-y-1.5 text-body-sm">
+                    <ul className="mt-1.5 space-y-1 text-body-sm">
                       {row.detail.map((item) => (
                         <li key={item} className="flex gap-2.5">
                           <span

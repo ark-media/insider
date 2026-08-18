@@ -4,10 +4,10 @@ import { BillingPeriodToggle } from "./BillingPeriodToggle";
 import { CheckoutModal } from "./CheckoutModal";
 import { ContentError } from "./ContentError";
 import { PriceSkeleton } from "./PriceSkeleton";
-import { useAsyncResource } from "../lib/useAsyncResource";
 import { trackEvent } from "../lib/analytics";
 import { TIERS, type Tier, type TierMeta } from "../data/pricingTiers";
 import { type TierAmounts, formatMinor, toMajor } from "../lib/currency";
+import { usePricing, annualSavingsPct } from "../lib/usePricing";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Plan = "monthly" | "yearly";
@@ -63,11 +63,7 @@ function PriceCard({
   const priceMinor = pricing
     ? ((plan === "yearly" ? pricing.yearly : pricing.monthly)[currency] ?? null)
     : null;
-  // The annual-savings ratio is currency-invariant, so compute it off the USD
-  // amounts (always present).
-  const savingsPct = pricing
-    ? Math.round((1 - pricing.yearly_cents / (pricing.monthly_cents * 12)) * 100)
-    : null;
+  const savingsPct = pricing ? annualSavingsPct(pricing) : null;
 
   return (
     <div
@@ -102,14 +98,15 @@ function PriceCard({
           </span>
         </div>
         <div className="mt-2 flex items-center gap-2 text-body-sm">
-          <span>{plan === "yearly" ? "Billed annually" : "Billed monthly"}</span>
-          {plan === "yearly" && savingsPct && savingsPct > 0 ? (
+          <span>
+            {plan === "yearly" ? "Billed annually" : "Billed monthly"}
+          </span>
+          {plan === "yearly" && savingsPct !== null ? (
             <span className="text-cyan">· Save {savingsPct}%</span>
           ) : null}
         </div>
         <p className="mt-2 text-body-sm text-fg-muted">
-          Pay what you choose at checkout — give more to sustain independent
-          Jewish media.
+          Give more to sustain independent Jewish media.
         </p>
       </div>
 
@@ -183,43 +180,16 @@ export function PricingCards({ id = "plans" }: { id?: string }) {
     trackEvent("plan_selected", { plan: p });
   };
 
-  const pricing = useAsyncResource(async () => {
-    const res = await fetch("/api/pricing");
-    if (!res.ok) throw new Error("pricing request failed");
-    const data = (await res.json().catch(() => ({}))) as {
-      tiers?: Record<string, TierAmounts>;
-      default_currency?: string;
-      minor_factors?: Record<string, number>;
-    };
-    const tiers = data.tiers;
-    if (
-      !tiers ||
-      !TIERS.every(
-        (t) =>
-          typeof tiers[t.key]?.monthly_cents === "number" &&
-          typeof tiers[t.key]?.yearly_cents === "number",
-      )
-    ) {
-      throw new Error("pricing response malformed");
-    }
-    // Geo-detected default currency for the cards (no selector here — the
-    // checkout modal owns currency choice); USD fallback.
-    const currency = data.default_currency ?? "usd";
-    const factor = data.minor_factors?.[currency] ?? 100;
-    return { tiers, currency, factor };
-  }, []);
+  // Shared with the comparison table below the grid — one request, one currency.
+  // (No selector here; the checkout modal owns currency choice.)
+  const pricing = usePricing();
   const data = pricing.status === "ready" ? pricing.data : null;
   const tiers = data?.tiers ?? null;
   const currency = data?.currency ?? "usd";
   const factor = data?.factor ?? 100;
 
   // Representative savings for the toggle badge — the Bundle's annual discount.
-  const toggleSavings = tiers
-    ? Math.round(
-        (1 - tiers.bundle.yearly_cents / (tiers.bundle.monthly_cents * 12)) *
-          100,
-      )
-    : null;
+  const toggleSavings = tiers ? annualSavingsPct(tiers.bundle) : null;
 
   // Owns both axes already — nothing left to sell. Reachable only by deep link
   // (the nav hides "Subscribe" for full members), so keep it simple.

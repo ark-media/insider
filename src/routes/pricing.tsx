@@ -20,8 +20,7 @@ function PricingPage() {
             Choose your <span className="display text-cyan">plan.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-body-lg text-fg">
-            Three ways in — the private feed, the community, or both. Every plan
-            is pay-what-you-choose, and you can cancel anytime.
+            Three ways in — the private feed, the community, or both.
           </p>
         </div>
       </section>
