@@ -255,7 +255,7 @@ function CommunityVisual() {
 const plusIncludes = [
   "Exclusive episodes",
   "Early access",
-  "Add-free listening",
+  "Ad-free listening",
   "Members-only newsletters",
 ];
 
