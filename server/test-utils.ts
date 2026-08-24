@@ -225,13 +225,13 @@ export function silenceExpectedConsole() {
 // Every test file that signs Auth0 tokens hits the same URL, so if two files
 // each generated their own keypair the first to run would seed the cache and
 // the second file's tokens would fail to verify. One shared keypair avoids it.
-export const AUTH0_TEST_DOMAIN = 'https://auth.ark-plus.xyz'
+const AUTH0_TEST_DOMAIN = 'https://auth.ark-plus.xyz'
 export const AUTH0_TEST_JWKS_URL = `${AUTH0_TEST_DOMAIN}/.well-known/jwks.json`
-export const AUTH0_TEST_KID = 'shared-test-key'
+const AUTH0_TEST_KID = 'shared-test-key'
 
 let cached: { privateKey: CryptoKey; publicJwk: JWK } | null = null
 
-export async function getAuth0TestKeys(): Promise<{
+async function getAuth0TestKeys(): Promise<{
   privateKey: CryptoKey
   publicJwk: JWK
 }> {

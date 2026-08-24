@@ -11,7 +11,7 @@ export const DRAFT = true;
 /** Shown as "Last updated {LAST_UPDATED}". A calendar date (YYYY-MM-DD). */
 export const LAST_UPDATED = "2026-08-24";
 
-export type LegalSection = { heading: string; body: string[] };
+type LegalSection = { heading: string; body: string[] };
 
 export type LegalDoc = {
   title: string;

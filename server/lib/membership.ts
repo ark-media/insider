@@ -7,8 +7,6 @@
 import type { Tier } from '../entitlement.js'
 import type { Sql } from './db.js'
 
-export type Plan = 'monthly' | 'yearly'
-
 export type MembershipRow = {
   auth0_sub: string
   stripe_customer_id: string | null

@@ -29,7 +29,7 @@ import { defineRoute, type Deps, type Route } from '../lib/route.js'
 // cancel) date. Recipients are members with an expiry, not subscribers, so the
 // UI must say what they hold and until when, per axis.
 type AxisSource = 'subscription' | 'gift'
-export type AxisAccess = {
+type AxisAccess = {
   active: boolean
   source: AxisSource | null
   expiresAt: string | null // gift term end, or a canceling subscription's cancel_at

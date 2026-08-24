@@ -21,11 +21,6 @@ function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
   return new Promise((r) => setTimeout(r, ms + Math.random() * 40));
 }
 
-export async function listPublications(): Promise<Newsletter[]> {
-  await jitter();
-  return newsletters;
-}
-
 export async function getPublication(
   slug: NewsletterSlug,
 ): Promise<Newsletter | null> {

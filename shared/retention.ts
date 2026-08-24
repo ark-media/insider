@@ -47,7 +47,7 @@ export function isCouponSlot(v: unknown): v is CouponSlot {
 export const DEBUNDLE_INTRO_SLOT = 'debundle_intro'
 
 // The subset of slots that back a save card, i.e. the coupon-valued OfferKinds.
-export const COUPON_OFFER_KINDS = ['supporter_coupon', 'affordability_coupon'] as const
+const COUPON_OFFER_KINDS = ['supporter_coupon', 'affordability_coupon'] as const
 
 export type CouponOfferKind = (typeof COUPON_OFFER_KINDS)[number]
 

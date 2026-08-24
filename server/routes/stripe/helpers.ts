@@ -42,7 +42,7 @@ export async function findOrCreateSubscriber(
 // Statuses that count as a live membership for the single-active-subscription
 // guard (§8 risk 1). `incomplete`/`incomplete_expired` are excluded: those are a
 // buyer's own not-yet-paid attempt, which must not block them from retrying.
-export const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
+const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
   'active',
   'trialing',
   'past_due',
@@ -84,7 +84,7 @@ export function coerceTier(raw: unknown): PricedTier {
 
 // Minor units → a human currency string for the floor error message
 // (800, 'usd' → "$8.00"). Falls back to a bare number if Intl rejects the code.
-export function formatMinor(amount: number, currency: string): string {
+function formatMinor(amount: number, currency: string): string {
   // Divide by the currency's minor-unit factor, not a hardcoded 100: zero-
   // decimal currencies (¥, ₩, ₫, CLP) store the whole-unit figure already, so
   // /100 would under-report them 100×.
@@ -103,7 +103,7 @@ export function formatMinor(amount: number, currency: string): string {
 // flat cap can't serve 40 currencies — a high-denomination floor (e.g. IDR
 // 12,900,000) would exceed any USD-scaled constant and reject every valid
 // amount. Scale off the floor, but never below the original ~$10k USD cap.
-export function pwycMaxAmount(floor: number): number {
+function pwycMaxAmount(floor: number): number {
   return Math.max(1_000_000, floor * 1000)
 }
 

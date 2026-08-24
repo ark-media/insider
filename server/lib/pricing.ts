@@ -17,14 +17,7 @@ const LOOKUP_PREFIX: Record<PricedTier, string> = {
   bundle: 'bundle',
 }
 
-// Pay at least this multiple of the plan's base price and the membership is a
-// Founding one. Founding Member is cut for launch (§5) — the multiple is kept
-// here (and as inert catalog metadata) so a later revival is config-only. Still
-// served to the client so the checkout promise and the honoured threshold can't
-// drift; task 13 removes the promise.
-export const FOUNDING_MULTIPLE = 2
-
-export function priceLookupKey(tier: PricedTier, plan: Plan): string {
+function priceLookupKey(tier: PricedTier, plan: Plan): string {
   return `${LOOKUP_PREFIX[tier]}_${plan}`
 }
 
@@ -34,7 +27,7 @@ export function priceLookupKey(tier: PricedTier, plan: Plan): string {
 // $75/$130 (Bundle), each with the same 40-currency `currency_options`.
 export type GiftTerm = '6mo' | '1yr'
 
-export function giftPriceLookupKey(tier: PricedTier, term: GiftTerm): string {
+function giftPriceLookupKey(tier: PricedTier, term: GiftTerm): string {
   return `gift_${LOOKUP_PREFIX[tier]}_${term}`
 }
 
@@ -59,9 +52,9 @@ export function isSupportedCurrency(c: string): c is SupportedCurrency {
 // the Stripe zero-decimal list intersected with SUPPORTED_CURRENCIES; HUF/TWD
 // are 2-decimal (charge-safe as-is) so they are NOT here. Anything not selling
 // in these currencies must never divide their amounts by 100.
-export const ZERO_DECIMAL_CURRENCIES = ['jpy', 'krw', 'vnd', 'clp'] as const
+const ZERO_DECIMAL_CURRENCIES = ['jpy', 'krw', 'vnd', 'clp'] as const
 
-export function isZeroDecimal(currency: string): boolean {
+function isZeroDecimal(currency: string): boolean {
   return (ZERO_DECIMAL_CURRENCIES as readonly string[]).includes(currency.toLowerCase())
 }
 
@@ -164,26 +157,6 @@ export async function getPlanPriceCents(
   plan: Plan,
 ): Promise<number> {
   return (await resolveCatalogPrice(stripe, tier, plan)).floors.usd
-}
-
-export type TierPricing = { monthly_cents: number; yearly_cents: number }
-
-// All sellable tiers, each with both plan amounts (USD cents). Used by
-// /api/pricing for the back-compat USD summary.
-export async function getAllTierPricing(
-  stripe: Stripe,
-): Promise<Record<PricedTier, TierPricing>> {
-  const tiers = Object.keys(LOOKUP_PREFIX) as PricedTier[]
-  const entries = await Promise.all(
-    tiers.map(async (tier) => {
-      const [monthly_cents, yearly_cents] = await Promise.all([
-        getPlanPriceCents(stripe, tier, 'monthly'),
-        getPlanPriceCents(stripe, tier, 'yearly'),
-      ])
-      return [tier, { monthly_cents, yearly_cents }] as const
-    }),
-  )
-  return Object.fromEntries(entries) as Record<PricedTier, TierPricing>
 }
 
 // Per-currency floors (minor units) for every tier+plan — the data the

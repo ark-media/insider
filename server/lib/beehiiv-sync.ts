@@ -42,11 +42,7 @@ const refreshCache = makeTTLCache<string, RefreshCacheEntry>(
   REFRESH_CACHE_TTL_MS,
 )
 
-export function invalidateNewsletterRefreshCache(email: string): void {
-  refreshCache.delete(email.toLowerCase())
-}
-
-export function setNewsletterRefreshCache(
+function setNewsletterRefreshCache(
   email: string,
   row: LocalSubscriptionRow | null,
 ): void {
@@ -278,7 +274,7 @@ export async function getLocalSubscription(
   return rows[0] ? mapRow(rows[0]) : null
 }
 
-export async function upsertLocalSubscription(
+async function upsertLocalSubscription(
   sql: Sql,
   input: Omit<LocalSubscriptionRow, 'updatedAt'>,
 ): Promise<void> {

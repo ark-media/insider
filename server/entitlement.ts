@@ -83,7 +83,7 @@ export function tierFromEntitlementString(raw: string | null | undefined): Tier 
   return 'free'
 }
 
-export type CircleStatus = 'ok' | 'no-member' | 'skipped' | 'error'
+type CircleStatus = 'ok' | 'no-member' | 'skipped' | 'error'
 
 // The result of syncing the Circle axis for one member. Auth0 is no longer a
 // sync target (§2), so this carries only the circle status.
@@ -208,7 +208,7 @@ async function setCircleAccessGroup(
 // (sso_provider_user_id is still NULL pre-SSO), so the two must name the same
 // field. Overridable via env for whatever the field is actually keyed as in the
 // Circle admin. See tasks/entitlement-tiers.md §3 + §7 #9 (verify once wired).
-export function circleAuth0SubField(env: Env): string {
+function circleAuth0SubField(env: Env): string {
   return env.CIRCLE_AUTH0_SUB_FIELD_KEY || 'auth0_sub'
 }
 

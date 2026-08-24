@@ -8,7 +8,7 @@ export type ShowSlug =
   | "ark-news-daily"
   | "chosen-people-problems";
 
-export type ShowRoute =
+type ShowRoute =
   | `/podcasts/${Exclude<ShowSlug, "inside-call-me-back">}`
   | "/plus/inside-call-me-back";
 
@@ -177,89 +177,3 @@ export function showAtmosphere(slug: ShowSlug): string {
   }
 }
 
-/**
- * Editorial schedule — used by the masthead live-status strip.
- * Days are 0 = Sun … 6 = Sat (in America/New_York). Hour is ET.
- */
-type DropSchedule = { showSlug: ShowSlug; days: number[]; hour: number };
-
-const schedule: DropSchedule[] = [
-  { showSlug: "call-me-back", days: [1, 4], hour: 6 },
-  { showSlug: "inside-call-me-back", days: [2], hour: 6 },
-  { showSlug: "ark-news-daily", days: [1, 2, 3, 4, 5], hour: 7 },
-  { showSlug: "for-heavens-sake", days: [3], hour: 6 },
-  { showSlug: "whats-your-number", days: [1], hour: 6 },
-];
-
-export type NextDrop = {
-  show: Show;
-  when: Date;
-  /** Pretty label like "Tomorrow" or "Thursday" or "In 2 hours" */
-  relative: string;
-};
-
-function partsInZone(d: Date, timeZone: string) {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const parts = Object.fromEntries(
-    fmt.formatToParts(d).map((p) => [p.type, p.value]),
-  );
-  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return {
-    weekday: dayMap[parts.weekday as string] ?? 0,
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-  };
-}
-
-/**
- * Returns the next scheduled drop across all shows, given a "now" timestamp.
- * Optimized for clarity over precision — minutes are not exact across DST,
- * but the relative label is honest within ±1h.
- */
-export function nextDrop(now: Date = new Date()): NextDrop | null {
-  const zone = "America/New_York";
-  const nowParts = partsInZone(now, zone);
-
-  let best: { showSlug: ShowSlug; daysAhead: number; hour: number } | null = null;
-  for (const s of schedule) {
-    for (const d of s.days) {
-      let daysAhead = (d - nowParts.weekday + 7) % 7;
-      if (daysAhead === 0 && nowParts.hour >= s.hour) daysAhead = 7;
-      if (!best || daysAhead < best.daysAhead || (daysAhead === best.daysAhead && s.hour < best.hour)) {
-        best = { showSlug: s.showSlug, daysAhead, hour: s.hour };
-      }
-    }
-  }
-  if (!best) return null;
-
-  const show = getShow(best.showSlug);
-  if (!show) return null;
-
-  const when = new Date(now);
-  when.setDate(when.getDate() + best.daysAhead);
-  when.setHours(best.hour, 0, 0, 0);
-
-  let relative: string;
-  if (best.daysAhead === 0) {
-    const hoursOut = best.hour - nowParts.hour;
-    relative = hoursOut <= 1 ? "Today" : `Today · ${best.hour}am ET`;
-  } else if (best.daysAhead === 1) {
-    relative = "Tomorrow";
-  } else {
-    const weekdayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
-      (nowParts.weekday + best.daysAhead) % 7
-    ];
-    relative = weekdayName;
-  }
-
-  return { show, when, relative };
-}

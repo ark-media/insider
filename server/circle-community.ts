@@ -16,7 +16,7 @@
 // Auth0 and lands on the destination. (The old `/circle-sso` JWT bridge pointed
 // at a non-existent Circle `/sso` endpoint and 404'd — removed.)
 
-import { stripHtml } from './circle-broadcasts.js'
+import { stripHtml } from './show-notes.js'
 import { toIsoDate } from './lib/dates.js'
 import type { ArkEvent, EventFormat } from '../src/data/events.js'
 import type { CommunityFeedItem, SuggestedSpace } from '../shared/community.js'

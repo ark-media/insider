@@ -1,4 +1,4 @@
-export type EventAccess = "ark-plus" | "public";
+type EventAccess = "ark-plus" | "public";
 
 export type EventFormat = "audio-room" | "video-ama" | "watch-party" | "in-person";
 
@@ -40,7 +40,7 @@ function offsetIso(days: number, hour = 18, minute = 0): string {
   return d.toISOString();
 }
 
-export const events: ArkEvent[] = [
+const events: ArkEvent[] = [
   {
     id: "evt-2026-05-04-cmb-live",
     title: "Call Me Back Live — Coalition Roundtable",
@@ -104,7 +104,7 @@ export const events: ArkEvent[] = [
   },
 ];
 
-export type EventStatus = "live" | "upcoming";
+type EventStatus = "live" | "upcoming";
 
 export type EventWithStatus = { event: ArkEvent; status: EventStatus };
 

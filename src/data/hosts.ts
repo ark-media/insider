@@ -1,6 +1,6 @@
 import type { ShowSlug } from "./shows";
 
-export type HostSlug =
+type HostSlug =
   | "dan-senor"
   | "donniel-hartman"
   | "yossi-klein-halevi"
@@ -11,7 +11,7 @@ export type HostSlug =
   | "yael-wissner-levy"
   | "deborah-pardes";
 
-export type HostKind = "host" | "contributor";
+type HostKind = "host" | "contributor";
 
 export type Host = {
   slug: HostSlug;

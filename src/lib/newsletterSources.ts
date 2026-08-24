@@ -13,7 +13,7 @@ import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
 import { makeTTLCache } from "../../shared/ttl-cache";
 import { beehiivSource } from "./beehiiv";
 
-export type FetchPostResult =
+type FetchPostResult =
   | { kind: "ok"; post: NewsletterPost }
   | { kind: "gated"; preview: NewsletterPost; reason: "ark-plus-required" }
   | { kind: "not-found" };
@@ -44,7 +44,7 @@ export interface ResolvedNewsletterSource extends NewsletterSource {
  * with empty `content.free.web`). Used to render the "members-only" paywall
  * card.
  */
-export function buildGatedPreview(post: NewsletterPost): NewsletterPost {
+function buildGatedPreview(post: NewsletterPost): NewsletterPost {
   const previewText =
     post.body.split(/(?<=\.|!|\?)\s+/).slice(0, 2).join(" ") || post.excerpt;
   return { ...post, body: previewText, bodyHtml: undefined };

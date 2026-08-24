@@ -91,7 +91,7 @@ const BULLET_MARKER =
 // usually means an attribution, not a list item.
 const LEADING_BULLET = /^\s*[-•*]\s+/;
 
-export const showNotesParserOptions: HTMLReactParserOptions = {
+const showNotesParserOptions: HTMLReactParserOptions = {
   replace: (node) => {
     if (!isTagNode(node)) return undefined;
 

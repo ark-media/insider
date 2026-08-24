@@ -19,7 +19,7 @@ import type { ListenLink, ShowSlug } from "../data/shows";
  */
 
 /** The apex domain, for building addresses without retyping it. */
-export const ARK_DOMAIN = "ark-plus.xyz";
+const ARK_DOMAIN = "ark-plus.xyz";
 
 // ---------------------------------------------------------------------------
 // Social profiles

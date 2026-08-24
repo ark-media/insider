@@ -58,7 +58,7 @@ export const GIFT_TERM_DAYS: Record<GiftTerm, number> = {
 // join key, `plan`/`tier` describe the SKU. Any field is null when its axis
 // wasn't granted or its provisioning soft-failed (Auth0 down, no SC feed for a
 // Circle-only tier) — the caller must not write a row without an `auth0Sub`.
-export type MembershipProvisionResult = {
+type MembershipProvisionResult = {
   email: string
   name?: string
   tier: Tier

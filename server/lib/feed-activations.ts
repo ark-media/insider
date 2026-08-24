@@ -113,8 +113,6 @@ export async function recordFeedsPending(
       updated_at = now()`
 }
 
-export type FeedActivation = { feedId: number; activatedAt: string | null }
-
 // Per-feed setup state for the setup hub: `activated` = confirmed by the
 // webhook; `pending` = the member took a setup action but the webhook hasn't
 // landed yet. A revoked feed reports neither.

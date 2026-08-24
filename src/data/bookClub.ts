@@ -15,7 +15,7 @@
 
 /** Amazon Associates tracking tag. Placeholder — replace with the real tag
  *  once the Associates account is approved, before launch. */
-export const ARK_ASSOC_TAG = "arkmedia-20";
+const ARK_ASSOC_TAG = "arkmedia-20";
 
 export type BookClubPick = {
   slug: string;
@@ -52,7 +52,7 @@ export function formatPickMonth(month: string): string {
 
 // Placeholder catalogue — real titles, so the page reads honestly, but Dan's
 // notes and the featured selection are stand-ins to be swapped before launch.
-export const bookClubPicks: BookClubPick[] = [
+const bookClubPicks: BookClubPick[] = [
   {
     slug: "the-power-broker",
     title: "The Power Broker",

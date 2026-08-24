@@ -35,7 +35,7 @@ export function sanitizeCareerDescription(html: string): string {
 }
 
 // A short, plain-text blurb for the list card — strip all markup.
-export function sanitizeSummary(text: string): string {
+function sanitizeSummary(text: string): string {
   return sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} }).trim()
 }
 

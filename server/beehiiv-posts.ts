@@ -21,7 +21,7 @@ import type { SanitizedHtml } from '../shared/sanitized-html.js'
 // posts return their gated body in `content.premium.web`; we deliberately
 // ignore that here so premium content never leaves the server even if the
 // caller asks for it without authentication.
-export type BeehiivPostContentVariant = {
+type BeehiivPostContentVariant = {
   web?: string
   email?: string
   rss?: string
@@ -47,7 +47,7 @@ export type BeehiivPost = {
   content_html?: string
 }
 
-export function stripHtml(html: string): string {
+function stripHtml(html: string): string {
   // Drop <style>/<script> block *contents* before tag-stripping. Beehiiv's
   // web HTML ships with a dozen+ theme `<style>` blocks; if we only strip
   // the tags, the CSS body survives as raw text and leaks into the excerpt.

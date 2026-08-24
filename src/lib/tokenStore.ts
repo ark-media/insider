@@ -11,11 +11,11 @@ function hasCookie(name: string): boolean {
     .some((c) => c.trim().startsWith(`${name}=`));
 }
 
-export function hasCheckoutCookie(): boolean {
+function hasCheckoutCookie(): boolean {
   return hasCookie("ark_checkout_present");
 }
 
-export function hasSessionCookie(): boolean {
+function hasSessionCookie(): boolean {
   return hasCookie("ark_session_present");
 }
 

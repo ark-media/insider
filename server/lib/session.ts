@@ -52,11 +52,6 @@ const jwks = createRemoteJWKSet(
   new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`),
 )
 
-export async function verifyAuth0Bearer(token: string): Promise<string | null> {
-  const profile = await verifyAuth0BearerProfile(token)
-  return profile?.email ?? null
-}
-
 export type Auth0Profile = {
   email: string
   // Derived from givenName/familyName below, and undefined whenever the stored
@@ -187,9 +182,9 @@ export async function verifyCheckoutToken(token: string, env: Env): Promise<stri
 // has no `ark_session` yet) resolve their Neon membership row directly, instead
 // of relying only on the SC-by-email arkPlus fallback (§3). Absent when Auth0
 // provisioning soft-failed — the SC fallback still covers the arkPlus feed.
-export type CheckoutProfile = { email: string; sub: string | null }
+type CheckoutProfile = { email: string; sub: string | null }
 
-export async function verifyCheckoutProfile(
+async function verifyCheckoutProfile(
   token: string,
   env: Env,
 ): Promise<CheckoutProfile | null> {

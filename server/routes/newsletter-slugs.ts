@@ -17,7 +17,7 @@ export function isNewsletterSlug(s: string): s is NewsletterSlug {
 // The Beehiiv publication env key for a newsletter slug, e.g.
 // `BEEHIIV_PUBLICATION_ID_ARK_DAILY`. The slug is from the closed NewsletterSlug
 // union, so the derived key can't be attacker-controlled.
-export function beehiivPublicationEnvKey(slug: NewsletterSlug): string {
+function beehiivPublicationEnvKey(slug: NewsletterSlug): string {
   return `BEEHIIV_PUBLICATION_ID_${slug.toUpperCase().replace(/-/g, '_')}`
 }
 

@@ -1,4 +1,4 @@
-export type FeedApp = {
+type FeedApp = {
   app: string;
   name: string;
   url: string;
@@ -38,12 +38,12 @@ import type {
 // The two independent access axes: arkPlus → the private feed, circle → the
 // community. Derived server-side from the tier; every gate checks an entitlement,
 // never the tier (tasks/entitlement-tiers.md §2).
-export type Entitlements = { arkPlus: boolean; circle: boolean };
+type Entitlements = { arkPlus: boolean; circle: boolean };
 
 // The SKU the member holds (billing/copy). 'free' = logged-in via Auth0 with no
 // membership. Kept apart from `entitlements` — a bundle and an ark-plus member
 // both have arkPlus, but they're different SKUs.
-export type Tier = "ark-plus" | "circle" | "bundle" | "free";
+type Tier = "ark-plus" | "circle" | "bundle" | "free";
 
 // Per-axis access for account settings (T7.1): what the member holds on each
 // entitlement axis and from what source. A gifted axis shows its term-end date

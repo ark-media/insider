@@ -25,7 +25,7 @@ const DISCUSS_SPACE_BINDINGS: Record<NewsletterSlug, string> = {
   'members-letter': 'inside-call-me-back',
 }
 
-export function discussSpaceSlugFor(slug: NewsletterSlug): string {
+function discussSpaceSlugFor(slug: NewsletterSlug): string {
   return DISCUSS_SPACE_BINDINGS[slug]
 }
 
@@ -82,7 +82,7 @@ export async function listDiscussThreadsByNewsletter(
   return rows.map(mapRow)
 }
 
-export async function getDiscussThreadByBeehiivId(
+async function getDiscussThreadByBeehiivId(
   sql: Sql,
   beehiivPostId: string,
 ): Promise<DiscussThread | null> {
@@ -513,9 +513,3 @@ export async function createCompanionThread(
   return { ok: true, thread, alreadyExisted: false }
 }
 
-// Exposed for tests so they can target the splice without hitting the network.
-export const __testing = {
-  buildDiscussLinkHtml,
-  spliceDiscussLink,
-  DISCUSS_LINK_MARKER,
-}

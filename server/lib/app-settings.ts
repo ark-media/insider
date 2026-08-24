@@ -4,7 +4,6 @@
 
 import type { Sql } from './db.js'
 import {
-  DEFAULT_REMINDER_CONFIG,
   validateReminderConfig,
   type ReminderConfig,
 } from '../../shared/feed-reminder.js'
@@ -61,4 +60,3 @@ export async function setReminderConfig(
   await setSetting(sql, REMINDER_CONFIG_KEY, JSON.stringify(config))
 }
 
-export { DEFAULT_REMINDER_CONFIG }

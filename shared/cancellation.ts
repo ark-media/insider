@@ -69,7 +69,7 @@ export function isCancelOfferOutcome(v: unknown): v is 'declined' | 'not_offered
 
 // Human labels for the stored offer_outcome values. Shared so the admin table,
 // the filter controls, and the server-rendered CSV all read the same way.
-export const OFFER_OUTCOME_LABEL: Record<OfferOutcome, string> = {
+const OFFER_OUTCOME_LABEL: Record<OfferOutcome, string> = {
   accepted: 'Kept (offer accepted)',
   declined: 'Cancelled (offer declined)',
   not_offered: 'Cancelled (no offer)',
@@ -121,7 +121,7 @@ export function isRetainedProduct(v: unknown): v is RetainedProduct {
   return typeof v === 'string' && RETAINED_PRODUCTS.has(v)
 }
 
-export const RETAINED_PRODUCT_LABEL: Record<RetainedProduct, string> = {
+const RETAINED_PRODUCT_LABEL: Record<RetainedProduct, string> = {
   'full-exit': 'Full cancel',
   'kept-circle': 'Debundled — kept Community',
   'kept-ark-plus': 'Debundled — kept Ark+',

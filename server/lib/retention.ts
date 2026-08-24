@@ -262,7 +262,7 @@ export async function bundleBreakdown(stripe: Stripe, plan: Plan): Promise<Bundl
 //   circle       → [affordability_coupon]
 // Bundle is driven by the debundle flows (C/D/E), which compose these — the
 // deriver returns [] for it.
-export async function deriveEligibleOffers(
+async function deriveEligibleOffers(
   stripe: Stripe,
   tier: PricedTier,
   plan: Plan,

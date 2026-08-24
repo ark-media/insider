@@ -125,7 +125,7 @@ function registerSuperProperties() {
 }
 
 // SHA-256 hex digest. PostHog gets the hash, never the plaintext email.
-export async function hashEmail(email: string): Promise<string> {
+async function hashEmail(email: string): Promise<string> {
   const bytes = new TextEncoder().encode(email.trim().toLowerCase())
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   return Array.from(new Uint8Array(digest))

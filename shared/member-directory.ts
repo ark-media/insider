@@ -7,10 +7,10 @@
 
 // A member's tier. `free` (no membership row) only appears via email search,
 // where a Stripe customer may exist without being a paying member.
-export type MemberTier = "ark-plus" | "circle" | "bundle" | "free";
+type MemberTier = "ark-plus" | "circle" | "bundle" | "free";
 
 // The tiers an admin can filter by (the three paid SKUs).
-export type MemberTierFilter = "ark-plus" | "circle" | "bundle";
+type MemberTierFilter = "ark-plus" | "circle" | "bundle";
 
 export type MemberDirectoryEntry = {
   auth0Sub: string | null; // null for a Stripe customer with no membership row

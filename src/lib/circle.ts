@@ -1,15 +1,10 @@
-import {
-  communityBroadcasts,
-  type CommunityBroadcast,
-} from "../data/communityBroadcasts";
-import type { NewsletterPost, NewsletterSlug } from "../data/newsletters";
+import type { NewsletterSlug } from "../data/newsletters";
 import {
   classifyLiveUpcoming,
   type ArkEvent,
   type EventWithStatus,
 } from "../data/events";
 import { circleUrls, newsletterCircleSpaces } from "../config/urls";
-import type { NewsletterSource } from "./newsletterSources";
 
 /**
  * Circle headless client.
@@ -17,9 +12,9 @@ import type { NewsletterSource } from "./newsletterSources";
  * The /community subscriber feed reads `fetchEventStrip` / `fetchCommunityFeed`
  * / `fetchSuggestedSpaces`, which proxy the `/api/circle/community-*` server
  * routes (real Circle Admin v2 reads, projected to the stable client shapes)
- * and fall back to local mock data when the server has no Admin API token —
- * the same pattern the newsletter `circleSource` uses. The mock keeps local
- * dev and unit tests working without a token and preserves the v1→v2 contract:
+ * and fall back to local mock data when the server has no Admin API token.
+ * The mock keeps local dev and unit tests working without a token and
+ * preserves the v1→v2 contract:
  * only the data source behind these functions changes, never their shapes.
  */
 
@@ -52,11 +47,6 @@ async function getJsonAuthed<T>(url: string): Promise<T> {
   });
   if (!res.ok) throw new Error(`${url} failed (${res.status})`);
   return (await res.json()) as T;
-}
-
-export async function fetchPublicBroadcasts(): Promise<CommunityBroadcast[]> {
-  await jitter();
-  return communityBroadcasts;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,38 +152,3 @@ export const CIRCLE_OPEN_LINKS = {
 export function newsletterCommentUrl(slug: NewsletterSlug): string {
   return newsletterCircleSpaces[slug];
 }
-
-// ---------------------------------------------------------------------------
-// Newsletter sources — Circle Broadcasts and Circle space posts
-//
-// Both endpoints answer with the same `{ posts: NewsletterPost[] }` shape, so
-// one fetcher serves both. The only thing that varies is which endpoint to
-// hit; gating semantics are identical (free unless the upstream projection
-// already marked it ark-plus).
-// ---------------------------------------------------------------------------
-
-type PostsResponse = { posts?: NewsletterPost[] };
-
-async function fetchCirclePosts(
-  endpoint: "broadcasts" | "space-posts",
-  slug: NewsletterSlug,
-): Promise<NewsletterPost[]> {
-  try {
-    const res = await fetch(
-      `/api/circle/${endpoint}?newsletter=${encodeURIComponent(slug)}`,
-      { credentials: "same-origin" },
-    );
-    if (!res.ok) return [];
-    const body = (await res.json()) as PostsResponse;
-    return body.posts ?? [];
-  } catch {
-    return [];
-  }
-}
-
-export const circleSource: NewsletterSource = {
-  listPosts: (slug) => fetchCirclePosts("broadcasts", slug),
-};
-export const circleSpaceSource: NewsletterSource = {
-  listPosts: (slug) => fetchCirclePosts("space-posts", slug),
-};

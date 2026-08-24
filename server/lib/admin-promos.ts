@@ -12,7 +12,7 @@ import type Stripe from 'stripe'
 import type { Promo } from '../../shared/promo.js'
 import { isCouponSlot } from '../../shared/retention.js'
 
-export type BuiltPromo = {
+type BuiltPromo = {
   coupon: Stripe.CouponCreateParams
   // Promotion-code string to create against the new coupon, or null for none.
   code: string | null

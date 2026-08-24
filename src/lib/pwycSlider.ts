@@ -7,7 +7,7 @@
 // (fine control where it matters) while the top stays reachable. Snapping keeps
 // the chosen figure clean.
 export const SLIDER_STEPS = 1000;
-export const SLIDER_CURVE = 2.4;
+const SLIDER_CURVE = 2.4;
 
 // A "nice" increment (1/2/5 × 10ⁿ) near `x`, so snap steps read cleanly across
 // magnitudes: ~$5 for a $130 floor, ~¥1,000 for a ¥21k floor, ~₪20 for ₪486.

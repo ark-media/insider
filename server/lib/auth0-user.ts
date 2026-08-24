@@ -17,7 +17,7 @@ import {
 // already the name's home, so its provenance lives beside it rather than in a
 // new Neon column (membership stores no PII). shared/profile-name explains why
 // the shape of a name alone can't answer the question.
-export const NAME_SET_BY_MEMBER_KEY = 'name_set_by_member'
+const NAME_SET_BY_MEMBER_KEY = 'name_set_by_member'
 
 // Reads that flag off a Management API user record.
 function nameSetByMember(user: { app_metadata?: unknown }): boolean {

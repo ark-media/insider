@@ -8,6 +8,5 @@
     "**/*.test.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "server/**/*.ts", "shared/**/*.ts", "api/**/*.ts"],
-  "ignore": ["src/routeTree.gen.ts"],
   "ignoreDependencies": ["playwright", "tailwindcss"]
 }

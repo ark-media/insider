@@ -4,7 +4,7 @@
 // the claim namespace usually stays put so older tokens stay decodable.
 // Update this single constant to roll over all derived strings.
 
-export const AUTH0_CLAIM_NAMESPACE = 'https://ark-plus.xyz'
+const AUTH0_CLAIM_NAMESPACE = 'https://ark-plus.xyz'
 export const AUTH0_AUDIENCE = `${AUTH0_CLAIM_NAMESPACE}/api`
 export const AUTH0_EMAIL_CLAIM = `${AUTH0_CLAIM_NAMESPACE}/email`
 // No tier claim: Auth0 carries no entitlement (tasks/entitlement-tiers.md §2).
