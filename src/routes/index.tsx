@@ -11,6 +11,7 @@ import { formatEventStart, type ArkEvent } from "../data/events";
 import { LatestEpisodes } from "../components/LatestEpisodes";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
+import { ArkPlusMark } from "../components/ArkPlusMark";
 import { Toast } from "../components/Toast";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { useNewsletterSubscription } from "../lib/useNewsletterSubscription";
@@ -264,7 +265,10 @@ function PlusVisual() {
     <div className="relative isolate mx-auto w-full max-w-sm">
       <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-cyan/10 blur-2xl" />
       <div className="overflow-hidden rounded-2xl border border-rule bg-navy-800/40 p-6 shadow-xl">
-        <div className="eyebrow text-[10px] text-cyan">Ark+ membership</div>
+        <div className="flex items-center gap-3">
+          <ArkPlusMark className="h-10 w-10" />
+          <div className="eyebrow text-[10px] text-cyan">Ark+ membership</div>
+        </div>
         <div className="mt-2 font-display text-[20px] font-bold text-fg-strong">
           Everything, included.
         </div>
@@ -475,7 +479,7 @@ function HomePage() {
               <h1 className="max-w-4xl text-fg-strong">
                 <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
                   Connecting Jewish{" "}
-                  <span className="display text-cyan">Voices</span>,
+                  <span className="display-upright text-cyan">Voices</span>,
                 </span>
                 <span className="rise rise-3 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
                   Near and Far.
@@ -521,11 +525,6 @@ function HomePage() {
           <div className="flex items-end justify-between">
             <div>
               <div className="eyebrow text-[18px] sm:text-[22px]">Podcasts</div>
-              <h2 className="mt-3 text-fg-strong">
-                <span className="display-upright block text-[clamp(1.8rem,3.5vw,2.6rem)]">
-                  Four shows.
-                </span>
-              </h2>
             </div>
             <Link
               to="/podcasts"

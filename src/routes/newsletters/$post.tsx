@@ -19,6 +19,7 @@ import { sourceFor } from "../../lib/newsletterSources";
 import { newsletterCommentUrl } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
+import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { NewsletterArticle } from "../../lib/newsletter-renderer";
 
@@ -201,8 +202,11 @@ function PostPage() {
       {gated ? (
         <section className="border-t border-cyan/30">
           <div className="mx-auto max-w-[1040px] px-6 py-16 sm:px-10">
-            <div className="label text-cyan">
-              Members only
+            <div className="flex items-center gap-4">
+              <ArkPlusMark className="h-14 w-14" alt="Ark+" />
+              <div className="label text-cyan">
+                Members only
+              </div>
             </div>
             <h2 className="mt-6 font-display text-[28px] leading-[1.1] text-fg-strong">
               The rest of this post is for Ark+ members.

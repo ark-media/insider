@@ -21,6 +21,7 @@ import { HostArtwork } from "./HostArtwork";
 import { ShowCover } from "./ShowCover";
 import { PORTRAIT_SIZES } from "../lib/images";
 import { ListenLinks } from "./ListenLinks";
+import { ArkPlusMark } from "./ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
 
@@ -119,8 +120,11 @@ function PaidShowJoinCta({ show }: { show: Show }) {
       <div className="page-section">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <div className="label text-cyan">
-              This episode is exclusively available to Ark+ members
+            <div className="flex items-center gap-4">
+              <ArkPlusMark className="h-14 w-14" />
+              <div className="label text-cyan">
+                This episode is exclusively available to Ark+ members
+              </div>
             </div>
             <h2 className="mt-6 max-w-2xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
               Join Ark+ to listen to {show.title}.
@@ -216,8 +220,11 @@ function ShowUpsell() {
 
   return (
     <div className="rise rise-4 mt-10 border-t border-fg-strong/10 pt-8">
-      <div className="label text-cyan">
-        Want more?
+      <div className="flex items-center gap-4">
+        <ArkPlusMark className="h-12 w-12" alt="Ark+" />
+        <div className="label text-cyan">
+          Want more?
+        </div>
       </div>
       <p className="mt-3 max-w-xl text-body-lg">
         <span className="font-display text-[18px]">Ark+</span> subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.

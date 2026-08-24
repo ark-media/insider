@@ -28,6 +28,7 @@ import { authRoutes } from './routes/auth.js'
 import { beehiivRoutes } from './routes/beehiiv.js'
 import { careerRoutes } from './routes/careers.js'
 import { circleRoutes } from './routes/circle.js'
+import { circleGateRoutes } from './routes/circle-gate.js'
 import { contactRoutes } from './routes/contact.js'
 import { cronRoutes } from './routes/cron.js'
 import { discussThreadsRoutes } from './routes/discuss-threads.js'
@@ -58,6 +59,7 @@ function buildApi(env: Env): Api {
     ...simplecastRoutes(deps),
     ...beehiivRoutes(deps),
     ...circleRoutes(deps),
+    ...circleGateRoutes(deps),
     ...meRoutes(deps),
     ...pricingRoutes(deps),
     ...promoRoutes(deps),

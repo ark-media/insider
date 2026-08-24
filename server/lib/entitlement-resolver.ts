@@ -179,3 +179,35 @@ export async function resolveMembership(
   if (!identity) return null
   return resolveMembershipForIdentity(identity, env, opts)
 }
+
+// Resolve entitlements from an Auth0 `sub` alone — no request, no session, no
+// email. The Circle SSO login gate (server/routes/circle-gate.ts) is the only
+// caller: the Auth0 post-login Action asks about a user *mid-login*, so there is
+// no request here to resolve an identity from, and none of the by-email cutover
+// nets above apply — the Action's own signup gate has already proved a Database
+// account exists for this person, so a missing row means "free", not "unknown".
+//
+// Deliberately routed through liveAxes / tierFromEntitlements rather than
+// re-deriving: the tier -> entitlement map lives in exactly one place
+// (entitlement.ts GRANTS), so the login gate can never disagree with the content
+// gates about what a tier grants. That is the whole reason the Action calls this
+// service instead of reading Neon itself.
+//
+// Throws when Neon is unconfigured rather than answering 'free': the caller maps
+// that to a 500, which the Action treats as "couldn't check" (retry) rather than
+// "not entitled" (upsell). Answering 'free' here would silently lock the whole
+// community out of SSO the moment DATABASE_URL went missing.
+export async function resolveEntitlementsForSub(
+  sub: string,
+  env: Env,
+): Promise<{ tier: Tier; entitlements: Entitlements }> {
+  if (!env.DATABASE_URL) {
+    throw new Error('resolveEntitlementsForSub requires DATABASE_URL')
+  }
+  const row = await getMembershipByAuth0Sub(getDb(env), sub)
+  if (!row || !membershipIsLive(row)) {
+    return { tier: 'free', entitlements: deriveEntitlements('free') }
+  }
+  const axes = liveAxes(row)
+  return { tier: tierFromEntitlements(axes), entitlements: axes }
+}

@@ -1,7 +1,7 @@
 /**
  * Auth0 Post-Login Action — Ark Plus.
  *
- * This is the SINGLE Post-Login action in the Login flow. It does three things:
+ * This is the SINGLE Post-Login action in the Login flow. It does four things:
  *
  *   1. Account linking. When a member logs in with a social connection (Google)
  *      for the first time, link that identity into the canonical Database
@@ -17,7 +17,17 @@
  *      Database account is a self-signup: reject it and delete the orphan
  *      record Auth0 created before this action ran.
  *
- *   3. Claims. Set the email / name / name-provenance / roles custom claims the
+ *   3. Community (Circle) login gate. Circle's Custom SSO points at its own
+ *      Auth0 Application; when the login is for THAT client, refuse it unless
+ *      the member holds the `circle` entitlement. Circle cannot do this itself —
+ *      it reads no roles or claims to decide access, and it auto-provisions a
+ *      community member for anyone who completes the handshake — so an
+ *      Ark+-only subscriber would otherwise walk into the community silently,
+ *      the website's live Auth0 session carrying them straight through. The
+ *      entitlement is a live read against the site (see circleAccess below);
+ *      this action still stores none of it.
+ *
+ *   4. Claims. Set the email / name / name-provenance / roles custom claims the
  *      app reads. These MUST be resolved from the primary (Database) user:
  *      after api.authentication.setPrimaryUser(), event.user /
  *      event.authorization still reference the secondary social user for the
@@ -42,6 +52,20 @@
  *                         API lives on the native domain.
  *   MGMT_CLIENT_ID        Ark Plus M2M client id.
  *   MGMT_CLIENT_SECRET    Ark Plus M2M client secret.
+ *   CIRCLE_CLIENT_ID      client_id of the Auth0 Application Circle's Custom SSO
+ *                         authorizes against. MUST be a DIFFERENT application
+ *                         from the website's (AUTH0_WEB_CLIENT_ID) — they shared
+ *                         one until this gate landed, and with a shared id the
+ *                         gate below would turn away website logins too. If this
+ *                         secret is unset the gate silently does nothing (there
+ *                         is no way to recognise Circle's transaction without
+ *                         it), so the action logs a warning; treat that line in
+ *                         the Auth0 logs as "the community is currently open".
+ *   APP_BASE_URL          origin of the marketing site, e.g. https://arkmedia.org
+ *                         (scheme optional). Used both to call the entitlement
+ *                         gate and to send an unentitled member to the upsell.
+ *   CIRCLE_GATE_SECRET    shared secret for POST /api/internal/circle-access;
+ *                         must equal the site's CIRCLE_GATE_SECRET env var.
  *
  * M2M scopes required: read:users, update:users, delete:users, read:roles, and
  * read:users_app_metadata (users-by-email omits app_metadata without it, which
@@ -54,11 +78,27 @@
 const NS = 'https://ark-plus.xyz';
 const DB_CONNECTION = 'Username-Password-Authentication';
 
+// Budget for the entitlement lookup. Generous on purpose: the gate fails CLOSED,
+// so a timeout turns a paying member away, and the site's function can be cold.
+// An action gets ~20s in total, and this call is the only network hop on a
+// community login beyond the (cached) management token, so 5s costs nothing on
+// the happy path and removes cold-start false negatives.
+const CIRCLE_GATE_TIMEOUT_MS = 5000;
+
 // The AUTH0_TENANT_DOMAIN secret may be set with or without a scheme/trailing
 // slash — the app's own env (server/auth0.ts) includes the scheme, so accept
 // either rather than assuming a bare host. Returns e.g. https://foo.us.auth0.com.
 function tenantBase(event) {
   const raw = (event.secrets.AUTH0_TENANT_DOMAIN || '').trim().replace(/\/+$/, '');
+  return /^https?:\/\//.test(raw) ? raw : `https://${raw}`;
+}
+
+// Origin of the marketing site, normalized the same way tenantBase normalizes
+// the tenant domain — the two secrets are set by hand in the Auth0 dashboard and
+// there is no reason for one to be fussier about a scheme than the other.
+function appBase(event) {
+  const raw = (event.secrets.APP_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
   return /^https?:\/\//.test(raw) ? raw : `https://${raw}`;
 }
 
@@ -134,6 +174,41 @@ exports.onExecutePostLogin = async (event, api) => {
     resolved = primary;
     const primaryRoles = await userRoles(event, token, primary.user_id).catch(() => null);
     if (primaryRoles) roles = primaryRoles;
+  }
+
+  // --- Community (Circle) login gate ---------------------------------------
+  // Keyed strictly on the client id so a website login can never reach it: this
+  // is the one branch that can turn away a member who is otherwise perfectly
+  // authenticated, and the two applications were a single Auth0 client until
+  // this shipped. `resolved.user_id` — not event.user.user_id — is the key: the
+  // membership row is keyed on the DATABASE account's sub, which on the
+  // social-linking path above is `primary`, and reading the secondary social
+  // sub here would find no row and turn a paying member away.
+  const circleClientId = event.secrets.CIRCLE_CLIENT_ID;
+  if (!circleClientId) {
+    console.warn('[circle-gate] CIRCLE_CLIENT_ID unset — community SSO is ungated');
+  } else if (event.client.client_id === circleClientId) {
+    const verdict = await circleAccess(event, resolved.user_id);
+    if (verdict === 'error') {
+      // "We could not check" is NOT "you are not entitled" — say so, and let
+      // them retry, rather than sending a paying member to a sales page.
+      return api.access.deny(
+        'We could not verify your community access just now. Please try again.',
+      );
+    }
+    if (verdict === 'deny') {
+      // Someone who bought the podcasts and clicked a community link. Auth0's
+      // own denial screen is a dead end; send them to the page that sells them
+      // the thing they just tried to open. This abandons the login transaction
+      // by design — they never return to /continue, so Circle never gets a
+      // callback and never auto-provisions them a member.
+      //
+      // appBase() is guaranteed non-empty here: circleAccess returns 'error'
+      // when APP_BASE_URL is unset, so this line is unreachable without it.
+      // Keep that invariant if either function is edited — a relative URL here
+      // would throw inside the action instead of redirecting.
+      return api.redirect.sendUserTo(`${appBase(event)}/plus?from=community`);
+    }
   }
 
   // --- Claims (set on every login, from the resolved user) ------------------
@@ -252,4 +327,62 @@ async function deleteUser(event, token, userId) {
     `${tenantBase(event)}/api/v2/users/${encodeURIComponent(userId)}`,
     { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
   );
+}
+
+// --- Community entitlement --------------------------------------------------
+
+// Ask the site whether this member holds the `circle` entitlement. Three-valued
+// on purpose: 'allow' / 'deny' / 'error', because the caller must treat "not
+// entitled" and "could not check" differently — one is a sales page, the other
+// is a retry.
+//
+// The lookup is a service call rather than a claim or an app_metadata read
+// because Auth0 deliberately carries no entitlement: membership lives in Neon
+// and is read live, so a member who upgraded a minute ago is let in and one who
+// cancelled is not. It is a service call rather than a direct database read
+// because the tier -> entitlement map (GRANTS) must exist in exactly one place;
+// re-deriving "which tiers include the community" here is how a login gate ends
+// up disagreeing with the content gates.
+//
+// Not cached. api.cache is a small tenant-wide store and a per-member key would
+// both crowd it and let a cancelled member back in for the life of the entry —
+// poor value when a community login is a rare event and the call is one hop.
+async function circleAccess(event, sub) {
+  const base = appBase(event);
+  const secret = event.secrets.CIRCLE_GATE_SECRET;
+  if (!base || !secret) {
+    console.error('[circle-gate] APP_BASE_URL or CIRCLE_GATE_SECRET unset');
+    return 'error';
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CIRCLE_GATE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${base}/api/internal/circle-access`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sub }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.error(`[circle-gate] lookup ${res.status}`);
+      return 'error';
+    }
+    const body = await res.json();
+    // Require the boolean. A 200 carrying an unexpected shape is a bug on our
+    // side, and reading it as `deny` would send a paying member to the upsell.
+    if (typeof body?.allow !== 'boolean') {
+      console.error('[circle-gate] unexpected response shape');
+      return 'error';
+    }
+    return body.allow ? 'allow' : 'deny';
+  } catch (err) {
+    console.error('[circle-gate] lookup failed:', err);
+    return 'error';
+  } finally {
+    clearTimeout(timer);
+  }
 }

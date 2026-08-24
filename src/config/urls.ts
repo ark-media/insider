@@ -45,8 +45,9 @@ export const contactEmails = {
   press: `press@${ARK_DOMAIN}`,
   /** Sponsorships and partnerships. */
   partnerships: `partners@${ARK_DOMAIN}`,
-  /** Ark+ membership support. */
-  support: `support@${ARK_DOMAIN}`,
+  /** Membership and technical support. Deliberately on arkmedia.org, not
+      ARK_DOMAIN — this is the desk the team actually staffs. */
+  support: "support@arkmedia.org",
   /** Inside Call Me Back subscription/billing support, handled by SupportingCast
       (the podcast subscription platform) — not a brand-domain inbox. */
   podcastSupport: "help@supportingcast.fm",
@@ -82,7 +83,7 @@ export const contactTopics = [
   },
   {
     value: "support",
-    label: "Ark+ membership support",
+    label: "Membership and technical support",
     email: contactEmails.support,
   },
 ] as const;
@@ -144,5 +145,12 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
   "ark-news-daily": [
     { platform: "apple", url: "https://podcasts.apple.com/us/podcast/ark-news-daily/id1885015768" },
     { platform: "spotify", url: "https://open.spotify.com/show/1O5ohSo8vLhudPTdSpXSwZ" },
+  ],
+  // PLACEHOLDER: these point at Ask a Jew, standing in until Chosen People
+  // Problems has its own feeds. See the show entry in src/data/shows.ts.
+  "chosen-people-problems": [
+    { platform: "apple", url: "https://podcasts.apple.com/us/podcast/ask-a-jew/id1597767151" },
+    { platform: "spotify", url: "https://open.spotify.com/show/1kJ4K907e9FuRcJQU4Pdjf" },
+    { platform: "youtube", url: "https://www.youtube.com/@AskAJew" },
   ],
 };

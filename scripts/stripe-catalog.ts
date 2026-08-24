@@ -54,7 +54,8 @@ const ZERO_DECIMAL = new Set<Currency>(['jpy', 'krw', 'vnd', 'clp'])
 // Column 1 of the localized price table (Stripe purchasing-power presets) for
 // the $8/mo Ark+ · Circle base, in MINOR units — 2-decimal currencies ×100 of
 // the table figure, zero-decimal currencies the whole figure. This is the ONE
-// place amounts are edited; Bundle scales off it (×13/8) and yearly is ×10.
+// place amounts are edited; each tier scales off it by its own USD anchor
+// (Ark+ $8, Community $19, Bundle $25) and yearly is ×10.
 const BASE_MONTHLY_MINOR: Amounts = {
   usd: 800, gbp: 800, eur: 900, cad: 1000, czk: 19900,
   dkk: 6900, huf: 349000, nok: 9900, pln: 3999, ron: 3999,
@@ -72,12 +73,12 @@ const BASE_MONTHLY_MINOR: Amounts = {
 const FOUNDING_MULTIPLE = '2'
 
 // Every currency's amount for a tier+plan, derived from the base table:
-//   monthly = base × (usdMonthlyMinor / base.usd)  — 1× for the $8 tiers, 13/8
-//                                                     for Bundle ($13)
+//   monthly = base × (usdMonthlyMinor / base.usd)  — 1× for Ark+ ($8), 19/8 for
+//                                                     Community, 25/8 for Bundle
 //   yearly  = monthly × 10                          — matches the USD 10:1 ratio
-// Rounded to an integer minor-unit amount (valid for every currency). Bundle's
-// non-USD rows are mechanically derived, not hand-tuned charm prices — swap in a
-// dedicated Bundle table here if that changes.
+// Rounded to an integer minor-unit amount (valid for every currency). Only Ark+
+// sits on the hand-tuned charm-price table; Community and Bundle non-USD rows are
+// mechanically derived — swap in dedicated tables here if that changes.
 function amountsFor(usdMonthlyMinor: number, interval: 'month' | 'year'): Amounts {
   const monthScale = usdMonthlyMinor / BASE_MONTHLY_MINOR.usd
   const yearFactor = interval === 'year' ? 10 : 1
@@ -129,7 +130,7 @@ const CATALOG: ProductDef[] = [
     description: 'Access to the Ark community (Circle).',
     entitlements: 'circle',
     scPlan: false,
-    usdMonthlyMinor: 800,
+    usdMonthlyMinor: 1900,
   },
   {
     catalogKey: 'bundle',
@@ -137,7 +138,7 @@ const CATALOG: ProductDef[] = [
     description: 'Private ad-free feed and community access.',
     entitlements: 'ark_plus,circle',
     scPlan: true,
-    usdMonthlyMinor: 1300,
+    usdMonthlyMinor: 2500,
   },
 ]
 

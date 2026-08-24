@@ -5,7 +5,8 @@ export type ShowSlug =
   | "inside-call-me-back"
   | "for-heavens-sake"
   | "whats-your-number"
-  | "ark-news-daily";
+  | "ark-news-daily"
+  | "chosen-people-problems";
 
 export type ShowRoute =
   | `/podcasts/${Exclude<ShowSlug, "inside-call-me-back">}`
@@ -52,7 +53,7 @@ export const shows: Show[] = [
     description:
       "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     hosts: ["Dan Senor"],
-    cadence: "New episodes Sundays and Thursdays",
+    cadence: "New episodes Mondays and Thursdays",
     coverArt: "/shows/call-me-back.jpg",
     paid: false,
     listen: showListenLinks["call-me-back"],
@@ -117,6 +118,27 @@ export const shows: Show[] = [
     paid: false,
     listen: showListenLinks["ark-news-daily"],
   },
+  // PLACEHOLDER CONTENT. Chosen People Problems has no assets of its own yet, so
+  // it stands up on Ask a Jew's cover art, description, hosts, and listen links
+  // (Ava's call — "use Ask a Jew materials for now"). Every field below except
+  // `slug`, `route`, `title`, and `shortTitle` is Ask a Jew's and needs
+  // replacing. It is also absent from `schedule` below: we don't know when it
+  // drops, and a guess would put a wrong show in the masthead's next-drop strip.
+  {
+    slug: "chosen-people-problems",
+    route: "/podcasts/chosen-people-problems",
+    title: "Chosen People Problems",
+    shortTitle: "Chosen People Problems",
+    tagline:
+      "Yael Bar tur, secular sinner, and Chaya Leah Sufrin, pious Haredi, ask each other the hard questions, from Torah to Tinder.",
+    description:
+      "Yael Bar tur, secular sinner, and Chaya Leah Sufrin, pious Haredi, ask each other the hard questions, from Torah to Tinder.",
+    hosts: ["Yael Bar tur", "Chaya Leah Sufrin"],
+    cadence: "Weekly",
+    coverArt: "/shows/chosen-people-problems.jpg",
+    paid: false,
+    listen: showListenLinks["chosen-people-problems"],
+  },
 ];
 
 export function getShow(slug: string): Show | undefined {
@@ -162,7 +184,7 @@ export function showAtmosphere(slug: ShowSlug): string {
 type DropSchedule = { showSlug: ShowSlug; days: number[]; hour: number };
 
 const schedule: DropSchedule[] = [
-  { showSlug: "call-me-back", days: [0, 4], hour: 6 },
+  { showSlug: "call-me-back", days: [1, 4], hour: 6 },
   { showSlug: "inside-call-me-back", days: [2], hour: 6 },
   { showSlug: "ark-news-daily", days: [1, 2, 3, 4, 5], hour: 7 },
   { showSlug: "for-heavens-sake", days: [3], hour: 6 },

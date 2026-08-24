@@ -5,6 +5,7 @@ import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { CommunityAppLinks } from "../../components/CommunityAppLinks";
+import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { EntitlementAccess } from "../../components/account/EntitlementAccess";
 import { ProfileNameCard } from "../../components/account/ProfileNameCard";
 import {
@@ -202,7 +203,10 @@ function FreeDashboard({
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <div className="border border-cyan/40 bg-navy-800/40 p-8">
-                <div className="eyebrow">Become an Ark+ member</div>
+                <div className="flex items-center gap-4">
+                  <ArkPlusMark className="h-14 w-14" />
+                  <div className="eyebrow">Become an Ark+ member</div>
+                </div>
                 <h2 className="mt-4 font-display text-[clamp(1.6rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
                   Go deeper with Ark+.
                 </h2>

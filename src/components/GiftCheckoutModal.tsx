@@ -7,6 +7,7 @@ import {
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
 import { useNavigate } from "@tanstack/react-router";
+import { CheckoutTerms } from "./CheckoutTerms";
 import { Modal } from "./Modal";
 import { LoadingRow } from "./Spinner";
 import { CurrencySelect } from "./CurrencySelect";
@@ -441,6 +442,7 @@ function GiftPaymentForm({
             <span className="font-semibold text-fg-strong">{total}</span>
           </div>
         </div>
+        <CheckoutTerms action="buying a gift" />
         <button
           type="submit"
           disabled={submitting}

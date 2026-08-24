@@ -5,6 +5,7 @@
 export const imageVariants: Record<string, [number, string][]> = {
   "/shows/ark-news-daily.jpg": [[400, "/shows/ark-news-daily-400.jpg"], [800, "/shows/ark-news-daily-800.jpg"], [1200, "/shows/ark-news-daily.jpg"]],
   "/shows/call-me-back.jpg": [[400, "/shows/call-me-back-400.jpg"], [800, "/shows/call-me-back-800.jpg"], [1200, "/shows/call-me-back.jpg"]],
+  "/shows/chosen-people-problems.jpg": [[400, "/shows/chosen-people-problems-400.jpg"], [800, "/shows/chosen-people-problems-800.jpg"], [1200, "/shows/chosen-people-problems.jpg"]],
   "/shows/for-heavens-sake.jpg": [[400, "/shows/for-heavens-sake-400.jpg"], [800, "/shows/for-heavens-sake-800.jpg"], [1200, "/shows/for-heavens-sake.jpg"]],
   "/shows/whats-your-number.jpg": [[400, "/shows/whats-your-number-400.jpg"], [800, "/shows/whats-your-number-800.jpg"], [1200, "/shows/whats-your-number.jpg"]],
   "/hosts/amit-segal.jpg": [[400, "/hosts/amit-segal-400.jpg"], [793, "/hosts/amit-segal.jpg"]],
@@ -16,4 +17,5 @@ export const imageVariants: Record<string, [number, string][]> = {
   "/hosts/yonatan-adiri.jpg": [[400, "/hosts/yonatan-adiri-400.jpg"], [500, "/hosts/yonatan-adiri.jpg"]],
   "/hosts/yossi-klein-halevi.jpg": [[400, "/hosts/yossi-klein-halevi-400.jpg"], [800, "/hosts/yossi-klein-halevi-800.jpg"], [1000, "/hosts/yossi-klein-halevi.jpg"]],
   "/inside-cmb.jpg": [[400, "/inside-cmb-400.jpg"], [800, "/inside-cmb-800.jpg"], [1200, "/inside-cmb.jpg"]],
+  "/ark-plus-hero.jpg": [[400, "/ark-plus-hero-400.jpg"], [800, "/ark-plus-hero-800.jpg"], [1200, "/ark-plus-hero.jpg"]],
 };

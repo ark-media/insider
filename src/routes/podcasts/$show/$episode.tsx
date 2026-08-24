@@ -17,6 +17,7 @@ import { isArkPlusMember, useSubscriberAuth } from "../../../lib/subscriberAuth"
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
 import { ShowCover } from "../../../components/ShowCover";
 import { ListenLinks } from "../../../components/ListenLinks";
+import { ArkPlusMark } from "../../../components/ArkPlusMark";
 
 export const Route = createFileRoute("/podcasts/$show/$episode")({
   loader: ({ params }) => {
@@ -256,8 +257,11 @@ function PaidEpisodeBlock({ episode }: { episode: Episode }) {
 
   return (
     <div className="border border-cyan/40 bg-navy-800/40 p-8">
-      <div className="label text-cyan">
-        Ark+ members only
+      <div className="flex items-center gap-4">
+        <ArkPlusMark className="h-12 w-12" />
+        <div className="label text-cyan">
+          Ark+ members only
+        </div>
       </div>
       {/* The player carries the episode title on unlocked episodes; when it's
           swapped out for this card, the card has to name the episode itself. */}

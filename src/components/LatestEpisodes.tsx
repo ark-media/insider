@@ -10,7 +10,7 @@ import { useAsyncResource } from "../lib/useAsyncResource";
 import { ContentError } from "./ContentError";
 import { PlayGlyph } from "./PlayGlyph";
 
-const DISPLAY_LIMIT = 3;
+const DISPLAY_LIMIT = 4;
 
 function LatestEpisodeCard({
   show,
@@ -148,7 +148,7 @@ export function LatestEpisodes() {
 
         <div className="relative mt-10">
           <NewRowBadge />
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {episodes.map(({ show, ...episode }) => (
               <LatestEpisodeCard
                 key={`${show.slug}-${episode.slug}`}

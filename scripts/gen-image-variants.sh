@@ -23,7 +23,7 @@ Q=80
 # has no importers), so variants for them would be dead files. Add the glob back when
 # an About team section actually ships — srcSet() already degrades to the plain `src`
 # for any image the manifest doesn't know.
-for f in public/shows/*.jpg public/hosts/*.jpg public/inside-cmb.jpg; do
+for f in public/shows/*.jpg public/hosts/*.jpg public/inside-cmb.jpg public/ark-plus-hero.jpg; do
   [ -e "$f" ] || continue
   case "$f" in *-400.jpg|*-800.jpg) continue ;; esac
 
@@ -54,7 +54,7 @@ MANIFEST=src/lib/image-variants.ts
   echo "// Consumed by srcSet() in src/lib/images.ts."
   echo
   echo "export const imageVariants: Record<string, [number, string][]> = {"
-  for f in public/shows/*.jpg public/hosts/*.jpg public/inside-cmb.jpg; do
+  for f in public/shows/*.jpg public/hosts/*.jpg public/inside-cmb.jpg public/ark-plus-hero.jpg; do
     [ -e "$f" ] || continue
     case "$f" in *-400.jpg|*-800.jpg) continue ;; esac
     native=$(sips -g pixelWidth "$f" | awk '/pixelWidth/{print $2}')

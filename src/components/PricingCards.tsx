@@ -23,6 +23,16 @@ const TIER_GRANTS: Record<Tier, ("arkPlus" | "circle")[]> = {
   bundle: ["arkPlus", "circle"],
 };
 
+// Stacked on a phone there's no "center" to feature, so the Bundle leads and the
+// two single-axis tiers follow. From `lg` the grid takes over and the DOM order
+// (Ark+ · Bundle · Community) puts the featured card back in the middle. Static
+// class strings so Tailwind can see them.
+const MOBILE_ORDER: Record<Tier, string> = {
+  bundle: "max-lg:order-1",
+  "ark-plus": "max-lg:order-2",
+  circle: "max-lg:order-3",
+};
+
 function CheckIcon() {
   return (
     <svg
@@ -67,7 +77,7 @@ function PriceCard({
 
   return (
     <div
-      className={`relative flex flex-col p-7 sm:p-8 ${
+      className={`relative flex flex-col p-7 sm:p-8 ${MOBILE_ORDER[meta.key]} ${
         featured
           ? "border-2 border-cyan bg-navy-800/60 lg:-my-3 lg:pt-11"
           : "border border-rule bg-navy-800/40"

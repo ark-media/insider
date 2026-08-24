@@ -356,6 +356,15 @@ describe('POST /api/stripe/create-checkout-session — session shape', () => {
     expect(args.customer_update).toEqual({ address: 'auto', name: 'auto' })
   })
 
+  test('requires active consent to the Terms of Service', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
+    const args = lastSessionCreateArgs()
+    // Stripe won't confirm until the buyer ticks the box, and stamps
+    // consent.terms_of_service = 'accepted' on the Session as dispute evidence.
+    expect(args.consent_collection).toEqual({ terms_of_service: 'required' })
+  })
+
   test('exact-floor amount uses the catalog price (no inline price_data)', async () => {
     const res = await post({ email: 'a@b.co', plan: 'monthly' })
     expect(res.statusCode).toBe(200)

@@ -1,26 +1,17 @@
 import { Link } from "@tanstack/react-router";
-import { useSubscriberAuth } from "../lib/subscriberAuth";
-import { plusAudience, HERO_CONTENT } from "../data/plusContent";
-import { HeroArtwork } from "./HeroArtwork";
+import { HERO_CONTENT } from "../data/plusContent";
+import { srcSet } from "../lib/images";
 
 export function Hero() {
-  // Personalize the pitch to what the viewer doesn't already own. While auth is
-  // still resolving, `plusAudience` returns "guest" — the right default for this
-  // conversion page (a returning member briefly sees the guest copy, then it
-  // swaps once /api/me resolves).
-  const { state } = useSubscriberAuth();
-  const content = HERO_CONTENT[plusAudience(state)];
+  // Static by design — see data/plusContent.ts. /plus reads the same whether or
+  // not you're signed in; the pricing grid below is what adapts to entitlements.
+  const content = HERO_CONTENT;
 
   return (
     <section className="section-hero ark-bg grain-overlay relative overflow-hidden">
       <div className="page-gutter relative grid grid-cols-1 gap-8 pt-8 pb-10 sm:pt-10 lg:grid-cols-12 lg:gap-8 lg:pt-12 lg:pb-12">
         {/* Left — headline */}
         <div className="relative z-10 lg:col-span-7">
-          <div className="rise rise-1 flex items-center gap-3 eyebrow">
-            <span className="h-px w-10 bg-cyan" />
-            {content.eyebrow}
-          </div>
-
           <h1 className="rise rise-2 mt-5 text-fg-strong">
             <span className="display-upright block text-[clamp(2rem,4.4vw,3.6rem)]">
               {content.head.line1}
@@ -65,10 +56,19 @@ export function Hero() {
           </div>
         </div>
 
-        {/* Right — the host ensemble */}
+        {/* Right — the Ark+ mark */}
         <div className="relative lg:col-span-5">
           <div className="rise rise-2 relative mx-auto max-w-[320px]">
-            <HeroArtwork variant="plus" />
+            <img
+              src={content.art.src}
+              srcSet={srcSet(content.art.src)}
+              sizes="320px"
+              width={1200}
+              height={1200}
+              alt={content.art.alt}
+              className="block w-full border border-rule-strong shadow-cover"
+              style={{ transform: "rotate(-1.5deg)" }}
+            />
           </div>
         </div>
       </div>

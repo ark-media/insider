@@ -83,18 +83,19 @@ export function EntitlementAccess({
   // the rest of the dashboard still works.
   if (!axes) return null;
 
-  // Upgrade the member's existing single-axis subscription to the bundle so the
-  // expiring gifted axis becomes subscription-backed — D9's "switch to Bundle
-  // via change-tier" rather than a second standalone sub. Needs the sub's plan,
-  // fetched on demand; falls back to a standalone checkout if it can't be read.
-  const switchToBundle = async () => {
+  // Move the member's existing single-axis subscription onto the bundle so the
+  // axis they're adding rides that same subscription — D9's "switch to Bundle
+  // via change-tier" rather than a second standalone sub billed alongside it.
+  // Needs the sub's plan, fetched on demand; `fallbackTier` is the axis being
+  // added, checked out standalone if the cadence can't be read.
+  const switchToBundle = async (fallbackTier: StandaloneTier) => {
     setBundle({ kind: "working" });
     const sub = await getMySubscription();
     const plan = sub.plan ?? null;
     if (!plan) {
       // Can't safely change-tier without the cadence — fall back to standalone.
       setBundle({ kind: "idle" });
-      setCheckout({ tier: "ark-plus", plan: "monthly" });
+      setCheckout({ tier: fallbackTier, plan: "monthly" });
       return;
     }
     const r = await changeTier({ tier: "bundle", plan });
@@ -138,7 +139,7 @@ export function EntitlementAccess({
           {otherIsSub ? (
             <button
               type="button"
-              onClick={switchToBundle}
+              onClick={() => switchToBundle(meta.tier)}
               disabled={bundle.kind === "working"}
               className="inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
             >
@@ -179,6 +180,15 @@ export function EntitlementAccess({
         {(["arkPlus", "circle"] as AxisKey[]).map((key) => {
           const a = axes[key];
           const meta = AXIS[key];
+          // When the OTHER axis is already a live subscription, adding this one
+          // means moving that subscription onto the Bundle (D9) — not buying a
+          // second standalone sub beside it, which would bill the member twice
+          // for a plan that already contains what they're adding. A GIFT on the
+          // other axis doesn't qualify: it expires, so this axis has to be able
+          // to stand on its own (D7).
+          const upgradeToBundle =
+            axes[meta.other].active &&
+            axes[meta.other].source === "subscription";
           return (
             <div
               key={key}
@@ -200,18 +210,35 @@ export function EntitlementAccess({
                     ) : null}
                   </div>
                   <p className="mt-1 text-body-sm text-fg-muted">
-                    {a.active ? accessLine(a) : `You don't have ${meta.label} yet.`}
+                    {a.active
+                      ? accessLine(a)
+                      : upgradeToBundle
+                        ? `You don't have ${meta.label} yet — adding it moves your subscription to the Bundle.`
+                        : `You don't have ${meta.label} yet.`}
                   </p>
                 </div>
               </div>
               {!a.active ? (
-                <button
-                  type="button"
-                  onClick={() => setCheckout({ tier: meta.tier, plan: "monthly" })}
-                  className="inline-flex shrink-0 items-center gap-2 self-start border border-cyan px-4 py-2 button-text font-display font-bold text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:self-auto"
-                >
-                  Get {meta.label} →
-                </button>
+                upgradeToBundle ? (
+                  <button
+                    type="button"
+                    onClick={() => switchToBundle(meta.tier)}
+                    disabled={bundle.kind === "working"}
+                    className="inline-flex shrink-0 items-center gap-2 self-start border border-cyan px-4 py-2 button-text font-display font-bold text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60 sm:self-auto"
+                  >
+                    {bundle.kind === "working"
+                      ? "Switching…"
+                      : `Add ${meta.label} →`}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCheckout({ tier: meta.tier, plan: "monthly" })}
+                    className="inline-flex shrink-0 items-center gap-2 self-start border border-cyan px-4 py-2 button-text font-display font-bold text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:self-auto"
+                  >
+                    Get {meta.label} →
+                  </button>
+                )
               ) : null}
             </div>
           );

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
+import { ArkPlusMark } from "../../components/ArkPlusMark";
 import {
   formatPostDate,
   newsletterSlugForReader,
@@ -173,7 +174,10 @@ function NewslettersPage() {
 function JoinPlusCard() {
   return (
     <div className="mt-6 border border-cyan/40 bg-navy-800/40 p-7">
-      <div className="label text-cyan">Ark+</div>
+      <div className="flex items-center gap-4">
+        <ArkPlusMark className="h-12 w-12" />
+        <div className="label text-cyan">Ark+</div>
+      </div>
       <p className="mt-4 max-w-md text-body-sm text-fg">
         Get the members-only newsletter, ad-free episodes, and the full
         archive when you join Ark+.

@@ -379,16 +379,17 @@ export function PublicMasthead() {
               </>
             ) : (
               <div className="hidden items-center gap-2 sm:flex">
-                {/* <button
-                  type="button"
-                  onClick={() => signIn(undefined, { signup: true })}
-                  className="inline-flex min-h-11 items-center border border-cyan bg-cyan px-4 font-display text-[12px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Sign up
-                </button> */}
+                {/* Sign in is the only auth action here: signing up happens
+                    through checkout, so a separate "Sign up" button was a
+                    second door to the same place (Ava, Aug 2026).
+
+                    Signing in from the masthead is a "go to my stuff" intent,
+                    so it lands on /account rather than returning to the page
+                    they happened to be reading. Contextual sign-ins (checkout,
+                    /redeem, /welcome) still return to themselves. */}
                 <button
                   type="button"
-                  onClick={() => signIn()}
+                  onClick={() => signIn("/account")}
                   className="inline-flex min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   Sign in
@@ -406,7 +407,7 @@ export function PublicMasthead() {
               hash="pricing"
               className="inline-flex min-h-11 items-center whitespace-nowrap border border-cyan bg-cyan px-3 font-display text-[11px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
             >
-              Join Ark+
+              Subscribe
             </Link>
           ) : null}
 
@@ -488,7 +489,7 @@ export function PublicMasthead() {
           >
             {/* Subscribe is the primary action in the pulldown — full-width and
                 first, above account/auth, so it's unmissable once the menu is
-                open. Sign up/in below are styled as secondary so they don't
+                open. Sign in below is styled as secondary so it doesn't
                 compete. */}
             {showSubscribe ? (
               <Link
@@ -497,7 +498,7 @@ export function PublicMasthead() {
                 onClick={() => setMobileOpen(false)}
                 className="mb-3 inline-flex min-h-12 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[14px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
-                Join Ark+
+                Subscribe
               </Link>
             ) : null}
             {/* Account button is hidden in the top bar on mobile (Israel Votes
@@ -511,30 +512,19 @@ export function PublicMasthead() {
                 Account
               </Link>
             ) : (
-              <div className="mb-3 grid grid-cols-2 gap-2">
-                {/* Subscribe is the primary CTA above the fold of this menu, so
-                    sign up and sign in render as secondary here. */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileOpen(false);
-                    signIn(undefined, { signup: true });
-                  }}
-                  className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
-                >
-                  Sign up
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileOpen(false);
-                    signIn();
-                  }}
-                  className="inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
-                >
-                  Sign in
-                </button>
-              </div>
+              // Subscribe (above) is the primary CTA in this menu; Sign in is
+              // the only secondary action — signing up happens through checkout,
+              // so a separate "Sign up" button was a second door to the same place.
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  signIn("/account");
+                }}
+                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              >
+                Sign in
+              </button>
             )}
             {navItems
               // Pills already render in the top bar at every breakpoint;

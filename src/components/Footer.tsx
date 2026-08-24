@@ -12,11 +12,10 @@ const sections: FooterSection[] = [
   {
     title: "Podcasts",
     links: [
-      { label: "All podcasts", to: "/podcasts" },
       { label: "Call Me Back", to: "/podcasts/call-me-back" },
-      { label: "What's Your Number", to: "/podcasts/whats-your-number" },
-      { label: "For Heaven's Sake", to: "/podcasts/for-heavens-sake" },
       { label: "Ark News Daily", to: "/podcasts/ark-news-daily" },
+      { label: "For Heaven's Sake", to: "/podcasts/for-heavens-sake" },
+      { label: "All podcasts", to: "/podcasts" },
     ],
   },
   {
@@ -47,6 +46,11 @@ const sections: FooterSection[] = [
   },
 ];
 
+const legalLinks: FooterLink[] = [
+  { label: "Privacy", to: "/privacy" },
+  { label: "Terms", to: "/terms" },
+];
+
 export function Footer() {
   return (
     <footer className="relative border-t border-rule bg-navy-900">
@@ -57,7 +61,7 @@ export function Footer() {
             <p className="mt-6 max-w-lg text-fg-strong">
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
                 Connecting Jewish{" "}
-                <span className="display text-cyan">Voices</span>,
+                <span className="display-upright text-cyan">Voices</span>,
               </span>
               <span className="display-upright block text-[clamp(1.6rem,2.8vw,2.2rem)] leading-[1.05]">
                 Near and Far.
@@ -74,9 +78,23 @@ export function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col gap-4 border-t border-rule-soft pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
-            © {new Date().getFullYear()} Ark Media LLC
-          </span>
+          {/* Legal sits on the copyright line rather than in a column — it's
+              reference material, not navigation, and this is where readers look
+              for it. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted">
+              © {new Date().getFullYear()} Ark Media LLC
+            </span>
+            {legalLinks.map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className="inline-flex min-h-11 items-center text-[11px] font-semibold uppercase tracking-[0.22em] text-fg-muted transition hover:text-cyan"
+              >
+                {l.label}
+              </Link>
+            ))}
+          </div>
           {/* Amazon Associates Operating Agreement §5 — site-wide disclosure
               covering the affiliate buy links on the Book Club page. */}
           <span className="text-[11px] leading-snug text-fg-faint sm:max-w-md sm:text-right">

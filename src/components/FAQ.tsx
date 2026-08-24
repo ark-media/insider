@@ -97,7 +97,7 @@ export function FAQ({ faqs, as: Heading = "h2" }: { faqs: Faq[]; as?: "h1" | "h2
             >
               <div className="overflow-hidden">
                 <div
-                  className={`max-w-2xl -mt-2 space-y-3 pb-5 pl-4 text-body-sm transition-opacity duration-300 [&_a]:underline [&_a]:decoration-current [&_a]:underline-offset-[6px] [&_a]:transition hover:[&_a]:text-cyan hover:[&_a]:decoration-cyan [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_strong]:text-fg-strong [&_h2]:mt-3 [&_h2]:font-display [&_h2]:text-[16px] [&_h2]:text-fg-strong [&_h3]:mt-2 [&_h3]:font-semibold [&_h3]:text-fg-strong [&_h4]:font-semibold [&_h4]:text-fg-strong [&_blockquote]:border-l-2 [&_blockquote]:border-rule-strong [&_blockquote]:pl-4 [&_blockquote]:text-fg-muted motion-reduce:transition-none ${
+                  className={`max-w-2xl space-y-3 pb-5 pl-4 text-body-sm transition-opacity duration-300 [&_a]:underline [&_a]:decoration-current [&_a]:underline-offset-[6px] [&_a]:transition hover:[&_a]:text-cyan hover:[&_a]:decoration-cyan [&_li]:ml-1 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_strong]:text-fg-strong [&_h2]:mt-3 [&_h2]:font-display [&_h2]:text-[16px] [&_h2]:text-fg-strong [&_h3]:mt-2 [&_h3]:font-semibold [&_h3]:text-fg-strong [&_h4]:font-semibold [&_h4]:text-fg-strong [&_blockquote]:border-l-2 [&_blockquote]:border-rule-strong [&_blockquote]:pl-4 [&_blockquote]:text-fg-muted motion-reduce:transition-none ${
                     isOpen ? "opacity-100" : "opacity-0"
                   }`}
                 >

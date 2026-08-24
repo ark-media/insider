@@ -5,7 +5,7 @@
 
 export function WhySubscribe() {
   return (
-    <section id="why-subscribe" className="relative border-t border-rule-soft">
+    <section id="why-subscribe" className="relative">
       <div className="page-gutter pt-12 pb-16">
         <div className="mx-auto max-w-2xl">
           <div className="eyebrow text-cyan">Why subscribe</div>

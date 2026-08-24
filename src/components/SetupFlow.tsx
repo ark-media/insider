@@ -352,11 +352,12 @@ export function SetupFlow({
           </div>
         </Section>
 
-        <div className="mt-12 hairline" />
+        <div className="mt-12 hairline hidden md:block" />
 
         {/* Step 2 — App */}
         <Section
           number={2}
+          mobileNumber={1}
           title="Choose where you listen to your podcasts"
           subtitle={
             device === "computer"
@@ -406,6 +407,7 @@ export function SetupFlow({
         {/* Step 3 — Instructions */}
         <Section
           number={3}
+          mobileNumber={2}
           title="Start listening"
           subtitle={
             selectedApp
@@ -519,6 +521,7 @@ export function SetupFlow({
 
 function Section({
   number,
+  mobileNumber,
   title,
   subtitle,
   active,
@@ -528,6 +531,11 @@ function Section({
   children,
 }: {
   number: number;
+  /** Step number shown below `md`, where the device step is hidden and the
+   *  sequence would otherwise start at 2. Both render; CSS picks one, so the
+   *  numbering can't disagree with `hiddenOnMobile` the way a JS breakpoint
+   *  check would before the media query resolves. */
+  mobileNumber?: number;
   title: string;
   subtitle: string;
   active?: boolean;
@@ -548,7 +556,15 @@ function Section({
             done ? "text-cyan/70" : active ? "text-cyan" : "text-fg-faint"
           }`}
         >
-          Step {number}
+          Step{" "}
+          {mobileNumber !== undefined ? (
+            <>
+              <span className="md:hidden">{mobileNumber}</span>
+              <span className="hidden md:inline">{number}</span>
+            </>
+          ) : (
+            number
+          )}
           {done ? " ✓" : ""}
         </span>
         <h2 className="text-fg-strong">

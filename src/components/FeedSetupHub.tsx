@@ -59,11 +59,7 @@ export function FeedSetupHub({
         {/* Masthead + progress */}
         <div className="rise rise-1 flex flex-col gap-10 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <div className="label flex items-center gap-3 text-cyan">
-              <span className="h-px w-10 bg-cyan" />
-              Your private feeds
-            </div>
-            <h1 className="mt-5 text-fg-strong">
+            <h1 className="text-fg-strong">
               <span className="display-upright block text-[clamp(1.9rem,4.2vw,3.4rem)]">
                 Now let's get you
               </span>

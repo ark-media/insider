@@ -19,8 +19,10 @@ import { Route as FaqRouteImport } from './routes/faq'
 import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as RedeemRouteImport } from './routes/redeem'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as AboutNetworkRouteImport } from './routes/about/network'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
@@ -43,12 +45,12 @@ import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
 import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as PlusIndexRouteImport } from './routes/plus/index'
-import { Route as PlusArtPreviewRouteImport } from './routes/plus/art-preview'
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
 import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
 import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-news-daily'
 import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-me-back'
+import { Route as PodcastsChosenPeopleProblemsRouteImport } from './routes/podcasts/chosen-people-problems'
 import { Route as PodcastsForHeavensSakeRouteImport } from './routes/podcasts/for-heavens-sake'
 import { Route as PodcastsWhatsYourNumberRouteImport } from './routes/podcasts/whats-your-number'
 import { Route as ShowsIndexRouteImport } from './routes/shows/index'
@@ -107,6 +109,11 @@ const PricingRoute = PricingRouteImport.update({
   path: '/pricing',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RedeemRoute = RedeemRouteImport.update({
   id: '/redeem',
   path: '/redeem',
@@ -115,6 +122,11 @@ const RedeemRoute = RedeemRouteImport.update({
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WelcomeRoute = WelcomeRouteImport.update({
@@ -227,11 +239,6 @@ const PlusIndexRoute = PlusIndexRouteImport.update({
   path: '/plus/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlusArtPreviewRoute = PlusArtPreviewRouteImport.update({
-  id: '/plus/art-preview',
-  path: '/plus/art-preview',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PlusGiftRoute = PlusGiftRouteImport.update({
   id: '/plus/gift',
   path: '/plus/gift',
@@ -257,6 +264,12 @@ const PodcastsCallMeBackRoute = PodcastsCallMeBackRouteImport.update({
   path: '/podcasts/call-me-back',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PodcastsChosenPeopleProblemsRoute =
+  PodcastsChosenPeopleProblemsRouteImport.update({
+    id: '/podcasts/chosen-people-problems',
+    path: '/podcasts/chosen-people-problems',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const PodcastsForHeavensSakeRoute = PodcastsForHeavensSakeRouteImport.update({
   id: '/podcasts/for-heavens-sake',
   path: '/podcasts/for-heavens-sake',
@@ -304,8 +317,10 @@ export interface FileRoutesByFullPath {
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
   '/redeem': typeof RedeemRoute
   '/setup': typeof SetupRoute
+  '/terms': typeof TermsRoute
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
@@ -322,11 +337,11 @@ export interface FileRoutesByFullPath {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/art-preview': typeof PlusArtPreviewRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
+  '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
@@ -352,8 +367,10 @@ export interface FileRoutesByTo {
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
   '/redeem': typeof RedeemRoute
   '/setup': typeof SetupRoute
+  '/terms': typeof TermsRoute
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
@@ -370,11 +387,11 @@ export interface FileRoutesByTo {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/art-preview': typeof PlusArtPreviewRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
+  '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
@@ -402,8 +419,10 @@ export interface FileRoutesById {
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
   '/redeem': typeof RedeemRoute
   '/setup': typeof SetupRoute
+  '/terms': typeof TermsRoute
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
@@ -420,11 +439,11 @@ export interface FileRoutesById {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/art-preview': typeof PlusArtPreviewRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
+  '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
@@ -453,8 +472,10 @@ export interface FileRouteTypes {
     | '/israel-votes'
     | '/logout'
     | '/pricing'
+    | '/privacy'
     | '/redeem'
     | '/setup'
+    | '/terms'
     | '/welcome'
     | '/about/network'
     | '/account/billing'
@@ -471,11 +492,11 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/art-preview'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
+    | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/podcasts/whats-your-number'
     | '/shows/$show'
@@ -501,8 +522,10 @@ export interface FileRouteTypes {
     | '/israel-votes'
     | '/logout'
     | '/pricing'
+    | '/privacy'
     | '/redeem'
     | '/setup'
+    | '/terms'
     | '/welcome'
     | '/about/network'
     | '/account/billing'
@@ -519,11 +542,11 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/art-preview'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
+    | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/podcasts/whats-your-number'
     | '/shows/$show'
@@ -550,8 +573,10 @@ export interface FileRouteTypes {
     | '/israel-votes'
     | '/logout'
     | '/pricing'
+    | '/privacy'
     | '/redeem'
     | '/setup'
+    | '/terms'
     | '/welcome'
     | '/about/network'
     | '/account/billing'
@@ -568,11 +593,11 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/art-preview'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
+    | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/podcasts/whats-your-number'
     | '/shows/$show'
@@ -600,8 +625,10 @@ export interface RootRouteChildren {
   IsraelVotesRoute: typeof IsraelVotesRoute
   LogoutRoute: typeof LogoutRoute
   PricingRoute: typeof PricingRoute
+  PrivacyRoute: typeof PrivacyRoute
   RedeemRoute: typeof RedeemRoute
   SetupRoute: typeof SetupRoute
+  TermsRoute: typeof TermsRoute
   WelcomeRoute: typeof WelcomeRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
   AdminCancellationsRoute: typeof AdminCancellationsRoute
@@ -614,11 +641,11 @@ export interface RootRouteChildren {
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
-  PlusArtPreviewRoute: typeof PlusArtPreviewRoute
   PlusGiftRoute: typeof PlusGiftRoute
   PlusInsideCallMeBackRoute: typeof PlusInsideCallMeBackRoute
   PodcastsArkNewsDailyRoute: typeof PodcastsArkNewsDailyRoute
   PodcastsCallMeBackRoute: typeof PodcastsCallMeBackRoute
+  PodcastsChosenPeopleProblemsRoute: typeof PodcastsChosenPeopleProblemsRoute
   PodcastsForHeavensSakeRoute: typeof PodcastsForHeavensSakeRoute
   PodcastsWhatsYourNumberRoute: typeof PodcastsWhatsYourNumberRoute
   ShowsShowRoute: typeof ShowsShowRouteWithChildren
@@ -705,6 +732,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/redeem': {
       id: '/redeem'
       path: '/redeem'
@@ -717,6 +751,13 @@ declare module '@tanstack/react-router' {
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/welcome': {
@@ -873,13 +914,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlusIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plus/art-preview': {
-      id: '/plus/art-preview'
-      path: '/plus/art-preview'
-      fullPath: '/plus/art-preview'
-      preLoaderRoute: typeof PlusArtPreviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/plus/gift': {
       id: '/plus/gift'
       path: '/plus/gift'
@@ -913,6 +947,13 @@ declare module '@tanstack/react-router' {
       path: '/podcasts/call-me-back'
       fullPath: '/podcasts/call-me-back'
       preLoaderRoute: typeof PodcastsCallMeBackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/podcasts/chosen-people-problems': {
+      id: '/podcasts/chosen-people-problems'
+      path: '/podcasts/chosen-people-problems'
+      fullPath: '/podcasts/chosen-people-problems'
+      preLoaderRoute: typeof PodcastsChosenPeopleProblemsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/podcasts/for-heavens-sake': {
@@ -1018,8 +1059,10 @@ const rootRouteChildren: RootRouteChildren = {
   IsraelVotesRoute: IsraelVotesRoute,
   LogoutRoute: LogoutRoute,
   PricingRoute: PricingRoute,
+  PrivacyRoute: PrivacyRoute,
   RedeemRoute: RedeemRoute,
   SetupRoute: SetupRoute,
+  TermsRoute: TermsRoute,
   WelcomeRoute: WelcomeRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
   AdminCancellationsRoute: AdminCancellationsRoute,
@@ -1032,11 +1075,11 @@ const rootRouteChildren: RootRouteChildren = {
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,
-  PlusArtPreviewRoute: PlusArtPreviewRoute,
   PlusGiftRoute: PlusGiftRoute,
   PlusInsideCallMeBackRoute: PlusInsideCallMeBackRoute,
   PodcastsArkNewsDailyRoute: PodcastsArkNewsDailyRoute,
   PodcastsCallMeBackRoute: PodcastsCallMeBackRoute,
+  PodcastsChosenPeopleProblemsRoute: PodcastsChosenPeopleProblemsRoute,
   PodcastsForHeavensSakeRoute: PodcastsForHeavensSakeRoute,
   PodcastsWhatsYourNumberRoute: PodcastsWhatsYourNumberRoute,
   ShowsShowRoute: ShowsShowRouteWithChildren,

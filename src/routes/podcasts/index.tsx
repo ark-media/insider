@@ -3,6 +3,7 @@ import { shows } from "../../data/shows";
 import { PageShell } from "../../components/PageShell";
 import { ShowCover } from "../../components/ShowCover";
 import { ClampedText } from "../../components/ClampedText";
+import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { useShowDescriptions } from "../../lib/useShowDescription";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 
@@ -90,7 +91,10 @@ function ArkPlusCallout() {
     <div className="mt-12 border border-rule bg-navy-800/40 p-6 sm:mt-16 sm:p-8">
       <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-12">
         <div className="lg:col-span-8">
-          <div className="label text-cyan">Ark+</div>
+          <div className="flex items-center gap-4">
+            <ArkPlusMark className="h-12 w-12" />
+            <div className="label text-cyan">Ark+</div>
+          </div>
           <p className="mt-3 max-w-2xl text-body-lg">
             Ark+ subscribers fund honest coverage of Israel and Jewish life. Get
             ad-free listening and exclusive content across every show.

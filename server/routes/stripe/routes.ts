@@ -242,6 +242,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // subscription Checkout creates. Requires Stripe Tax active with
           // registrations in the Dashboard, or session creation errors.
           automatic_tax: { enabled: true },
+          // Active consent to the Terms of Service: Stripe blocks confirm until
+          // the buyer ticks the box and stamps consent.terms_of_service =
+          // 'accepted' on the Session, which is the evidence we can produce in a
+          // dispute (a passive "by subscribing you agree" line leaves none).
+          // Requires a Terms of service URL under Public business details in the
+          // Dashboard — without one, session creation errors outright.
+          consent_collection: { terms_of_service: 'required' },
           // Persist what the buyer enters (BillingAddressElement) back onto the
           // pre-set Customer. Stripe Tax needs the address for jurisdiction;
           // `name` defaults to 'never', which is why customer.name was null for

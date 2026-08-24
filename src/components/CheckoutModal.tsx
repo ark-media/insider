@@ -7,6 +7,8 @@ import {
   PaymentElement,
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
+import { CheckoutLegal } from "./CheckoutLegal";
+import { CheckoutTerms } from "./CheckoutTerms";
 import { Modal } from "./Modal";
 import { CurrencySelect } from "./CurrencySelect";
 import { LoadingRow } from "./Spinner";
@@ -901,6 +903,7 @@ export function EmailForm({
             {error}
           </p>
         ) : null}
+        <CheckoutLegal action="continuing" />
         <button
           type="submit"
           disabled={working}
@@ -1152,6 +1155,7 @@ function CheckoutForm({
             {payError}
           </p>
         ) : null}
+        <CheckoutTerms action="subscribing" />
         <button
           type="submit"
           disabled={working}

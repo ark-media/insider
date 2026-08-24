@@ -29,23 +29,29 @@ export function Pricing() {
     return () => observer.disconnect();
   }, []);
 
+  // A fragment, not a wrapper: the page zebra striping in index.css only bands
+  // sections that are direct children of #main-content, so nesting the
+  // comparison table inside this section would merge the two into one stripe
+  // (and band it differently here than on /pricing, where it stands alone).
   return (
-    <section id="pricing" ref={sectionRef} className="relative">
-      <div className="page-gutter pt-12 pb-16">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-fg-strong">
-            <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
-              Pick your own <span className="display text-cyan">terms.</span>
-            </span>
-          </h2>
-        </div>
+    <>
+      <section id="pricing" ref={sectionRef} className="relative">
+        <div className="page-gutter pt-12 pb-16">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-fg-strong">
+              <span className="display-upright block text-[clamp(1.9rem,4vw,3.2rem)]">
+                Pick your own <span className="display text-cyan">terms.</span>
+              </span>
+            </h2>
+          </div>
 
-        <div className="mt-12">
-          <PricingCards />
+          <div className="mt-12">
+            <PricingCards />
+          </div>
         </div>
-      </div>
+      </section>
 
       <PricingComparison variant="reference" />
-    </section>
+    </>
   );
 }
