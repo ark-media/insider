@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
+  FEED_INCLUDED,
   renderGiftRedemptionEmail,
   renderGiftWelcomeEmail,
   renderSubscriberWelcomeEmail,
@@ -140,7 +141,9 @@ describe('renderSubscriberWelcomeEmail', () => {
     })
     expect(subject).toBe('Welcome to Ark+')
     expect(html).toContain('Welcome to Ark+.')
-    expect(html).toContain('private feed')
+    // The feed blurb, asserted through the constant rather than a copy literal:
+    // what matters is that this tier gets the feed benefits and stops there.
+    expect(html).toContain(FEED_INCLUDED)
     // A feed-only membership must not advertise community access it lacks.
     expect(html).not.toContain('community')
   })
@@ -152,7 +155,9 @@ describe('renderSubscriberWelcomeEmail', () => {
     })
     expect(subject).toBe('Welcome to Ark+ Bundle')
     expect(html).toContain('Welcome to Ark+ Bundle.')
-    expect(html).toContain('private feed')
+    // Same feed blurb as ark-plus, with the community appended — the two
+    // assertions together are what "on top of the feed" means.
+    expect(html).toContain(FEED_INCLUDED)
     expect(html).toContain('community')
   })
 })
