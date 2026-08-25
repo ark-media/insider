@@ -38,6 +38,12 @@ const COLUMNS: Column[] = [
 // bare labels so the grid reads cleanly — they feed the Details block below it.
 type Row = {
   label: string;
+  /**
+   * Heads the row below `md`, where the label column is only ~a third of a
+   * phone's width. The full label still heads this row's Details entry, so
+   * nothing is lost — only the grid gets the abbreviation.
+   */
+  shortLabel?: string;
   summary?: string;
   detail?: string[];
   tiers: Record<ColumnKey, boolean>;
@@ -65,6 +71,7 @@ const GROUPS: Group[] = [
       },
       {
         label: "Subscriber-exclusive content",
+        shortLabel: "Exclusive episodes",
         summary: "Episodes only members hear.",
         detail: [],
         tiers: { "ark-plus": true, apple: true, bundle: true, circle: false },
@@ -77,6 +84,7 @@ const GROUPS: Group[] = [
       },
       {
         label: "Ad-free video episodes",
+        shortLabel: "Ad-free video",
         summary: "The video editions of the shows, without the ad breaks.",
         tiers: { "ark-plus": true, apple: false, bundle: true, circle: false },
       },
@@ -86,6 +94,7 @@ const GROUPS: Group[] = [
     rows: [
       {
         label: "Premium access to the Community app",
+        shortLabel: "Community app",
         summary: "The Ark Media community app, in full.",
         detail: [
           "Conversations with the hosts and fellow members",
@@ -97,6 +106,7 @@ const GROUPS: Group[] = [
       },
       {
         label: "Full access to Ark Media newsletters",
+        shortLabel: "Newsletters",
         summary: "Both member newsletters, in your inbox.",
         detail: ["Weekly roundup", "Ark+ paid newsletter with Nadav's column"],
         tiers: { "ark-plus": true, apple: false, bundle: true, circle: true },
@@ -105,10 +115,20 @@ const GROUPS: Group[] = [
   },
 ];
 
+const ALL_ROWS = GROUPS.flatMap((g) => g.rows);
+
 // Every row that has something to expand on, flattened out of its group — the
 // Details block reads as one list, not a repeat of the table's grouping.
-const DETAILS = GROUPS.flatMap((g) => g.rows).filter(
-  (r) => r.summary || r.detail,
+const DETAILS = ALL_ROWS.filter((r) => r.summary || r.detail);
+
+// Below `md` the priced footer is dropped, so the featured column's cyan box
+// has no bottom edge — it gets capped on the last body row instead.
+const LAST_ROW_LABEL = ALL_ROWS[ALL_ROWS.length - 1].label;
+
+// The three tiers we actually sell, in column order (the Bundle leads). Backs
+// the stacked buy blocks that replace the table's footer below `md`.
+const BUY_COLUMNS = COLUMNS.filter(
+  (c): c is Column & { key: Tier } => c.key !== "apple",
 );
 
 // Shared by the "Choose" buttons and the Apple Podcasts link so a tier you buy
@@ -194,6 +214,12 @@ export function PricingComparison({
 
   const colClass = (c: Column) => (c.featured ? "bg-navy-800/50" : "");
 
+  // Apple is desktop-only. Four columns is what forced the grid off-screen on
+  // a phone, and Apple was never a fourth plan — it's Ark+ bought elsewhere,
+  // so below `md` it steps out of the table and into the note beneath it.
+  const mobileHidden = (c: Column) =>
+    c.key === "apple" ? "hidden md:table-cell" : "";
+
   const selectPeriod = (p: Plan) => {
     setPlan(p);
     trackEvent("plan_selected", { plan: p });
@@ -227,36 +253,55 @@ export function PricingComparison({
           </div>
         )}
 
-        <div className="mt-10 overflow-x-auto">
-          <table className="w-full min-w-[44rem] border-collapse text-left">
+        {/* Only wide enough to need scrolling from `md` up, where the Apple
+            column and the priced footer come back. The region/tabIndex pair
+            keeps that scroll reachable from the keyboard (WCAG 2.1.1). */}
+        <div
+          className="mt-10 overflow-x-auto"
+          role="region"
+          aria-label="Plan comparison"
+          tabIndex={0}
+        >
+          <table className="w-full border-collapse text-left md:min-w-[44rem]">
             <caption className="sr-only">
-              Feature comparison across Ark+ on the website, Ark+ in Apple
-              Podcasts, Ark+ &amp; Community, and Community
+              Which benefits are included in each plan
             </caption>
             <thead>
               <tr>
-                <th scope="col" className="w-1/3 p-4 align-bottom" />
+                <th
+                  scope="col"
+                  className="w-1/3 py-3 pr-2 align-bottom md:p-4"
+                />
                 {COLUMNS.map((c) => (
                   <th
                     key={c.key}
                     scope="col"
-                    className={`p-4 text-center align-bottom ${colClass(c)} ${
+                    // `max-md:w-[22%]` only: below `md` the auto layout sizes
+                    // each column to its heading, which hands "Ark+ &
+                    // Community" three times the width of "Ark+". From `md`
+                    // the fixed table width makes that moot.
+                    className={`px-1 py-3 text-center align-bottom max-md:w-[22%] md:p-4 ${colClass(c)} ${mobileHidden(c)} ${
                       c.featured ? "border-t-2 border-cyan" : ""
                     }`}
                   >
+                    {/* On mobile the stacked buy blocks below carry this flag —
+                        it will not fit in a column an inch wide. */}
                     {c.featured ? (
-                      <div className="mb-1 button-text font-display font-bold text-cyan">
+                      <div className="mb-1 hidden button-text font-display font-bold text-cyan md:block">
                         Best value
                       </div>
                     ) : null}
-                    <div className="text-h5 font-display font-bold text-fg-strong">
+                    <div className="font-display text-xs leading-tight font-bold text-fg-strong md:text-base">
                       {c.label}
                     </div>
-                    {/* Always rendered, empty or not, and at a FIXED height
-                        rather than a minimum: text, the Apple icon, and nothing
-                        at all each measure slightly differently, which would
-                        stagger the four column names off their baseline. */}
-                    <div className="mt-1.5 flex h-6 items-center justify-center gap-1.5 text-body-sm text-fg-muted">
+                    {/* Only from `md`, where the Apple column exists and the
+                        "Website" sublabel has something to disambiguate from.
+                        There, always rendered, empty or not, and at a FIXED
+                        height rather than a minimum: text, the Apple icon, and
+                        nothing at all each measure slightly differently, which
+                        would stagger the four column names off their
+                        baseline. */}
+                    <div className="mt-1.5 hidden h-6 items-center justify-center gap-1.5 text-body-sm text-fg-muted md:flex">
                       {c.key === "apple" ? (
                         <ApplePodcastsIcon className="size-4 shrink-0" />
                       ) : null}
@@ -273,16 +318,31 @@ export function PricingComparison({
                     <tr key={row.label} className="border-t border-rule-soft">
                       <th
                         scope="row"
-                        className="py-2.5 pr-4 align-middle font-normal"
+                        className="py-2.5 pr-2 align-middle font-normal md:pr-4"
                       >
                         <span className="block text-body-sm text-fg">
-                          {row.label}
+                          {row.shortLabel ? (
+                            <>
+                              <span className="md:hidden">
+                                {row.shortLabel}
+                              </span>
+                              <span className="hidden md:inline">
+                                {row.label}
+                              </span>
+                            </>
+                          ) : (
+                            row.label
+                          )}
                         </span>
                       </th>
                       {COLUMNS.map((c) => (
                         <td
                           key={c.key}
-                          className={`py-2.5 text-center align-middle ${colClass(c)}`}
+                          className={`py-2.5 text-center align-middle ${colClass(c)} ${mobileHidden(c)} ${
+                            c.featured && row.label === LAST_ROW_LABEL
+                              ? "border-b-2 border-cyan md:border-b-0"
+                              : ""
+                          }`}
                         >
                           <Mark on={row.tiers[c.key]} />
                         </td>
@@ -292,7 +352,11 @@ export function PricingComparison({
                 </Fragment>
               ))}
             </tbody>
-            <tfoot>
+            {/* Prices and CTAs live in the table only from `md`. Below that
+                they would sit at the far end of both axes — a horizontal
+                scroll away from the row they belong to — so they become the
+                stacked buy blocks under the table instead. */}
+            <tfoot className="hidden md:table-footer-group">
               <tr>
                 <td />
                 {COLUMNS.map((c) => {
@@ -378,6 +442,91 @@ export function PricingComparison({
             </tfoot>
           </table>
         </div>
+
+        {/* The mobile buying surface, standing in for the table's footer: one
+            full-width block per tier, Bundle first, each with the price for
+            the selected period and its own tap target. Same prices, same
+            checkout — only the layout differs. */}
+        {reference ? null : (
+          <div className="mt-8 space-y-4 md:hidden">
+            {BUY_COLUMNS.map((c) => {
+              const amounts = amountsFor(c.key);
+              const minor = priceMinor(c.key);
+              const savings =
+                plan === "yearly" && amounts ? annualSavingsPct(amounts) : null;
+              return (
+                <div
+                  key={c.key}
+                  className={`border p-5 ${
+                    c.featured
+                      ? "border-cyan bg-navy-800/50"
+                      : "border-rule-soft"
+                  }`}
+                >
+                  {c.featured ? (
+                    <div className="button-text font-display font-bold text-cyan">
+                      Best value
+                    </div>
+                  ) : null}
+                  <div className="text-h5 font-display font-bold text-fg-strong">
+                    {c.label}
+                  </div>
+                  {showPrices ? (
+                    <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
+                      <span className="meta">From</span>
+                      <span className="display-upright whitespace-nowrap text-2xl tabular-nums text-fg-strong">
+                        {minor !== null ? (
+                          formatMinor(minor, currency, factor)
+                        ) : (
+                          <PriceSkeleton className="h-[0.8em] w-16" />
+                        )}
+                      </span>
+                      <span className="text-body-sm">
+                        per {plan === "yearly" ? "year" : "month"}
+                        {savings !== null ? (
+                          <span className="text-cyan"> · Save {savings}%</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => openCheckout(c.key)}
+                    className={`${CTA_CLASS} mt-4 ${
+                      c.featured
+                        ? "bg-cyan text-navy hover:bg-fg-strong hover:text-navy-900"
+                        : "border border-cyan text-cyan hover:bg-cyan hover:text-navy"
+                    }`}
+                  >
+                    Choose
+                    <span className={CTA_ARROW_CLASS}>→</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* What the dropped Apple column said, in a sentence. The reference
+            variant keeps the fact but not the link — that page's CTAs all live
+            in the card grid above. */}
+        <p className="mt-6 mb-10 text-body-sm md:hidden">
+          Ark+ is also available inside Apple Podcasts — audio only, at a fixed
+          price.
+          {reference ? null : (
+            <>
+              {" "}
+              <OutboundLink
+                href={socialUrls.applePodcasts}
+                platform="apple_podcasts"
+                placement="pricing_table"
+                className="text-cyan underline underline-offset-4 transition hover:text-fg-strong"
+              >
+                Subscribe in Apple Podcasts →
+              </OutboundLink>
+            </>
+          )}
+        </p>
 
         {/* What each row in the table actually gets you. Kept out of the table
             so the grid stays scannable, and read as one flat list — the table's
