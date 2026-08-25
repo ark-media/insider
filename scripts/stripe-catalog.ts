@@ -428,8 +428,12 @@ const DEBUNDLE_INTRO_MONTHS = 6
 // hardcoded, so it stays correct if Ryan retunes either number — and it's the
 // same percentage for both cadences, since the yearly prices scale together.
 //
-//   $8.00 standalone → 18.75% off → $6.50   (half of the $13 bundle)
-//   $80.00 standalone → 18.75% off → $65.00 (half of the $130 bundle)
+// One percentage only fits while half the bundle is below BOTH standalone
+// prices. It no longer is: at Ark+ $8 and bundle $25, half the bundle is $12.50,
+// so a debundler keeping Ark+ already lands cheaper and this goes negative —
+// see the skip in upsertIntroCoupon. Softening the Community side ($19, i.e.
+// $6.50/mo above the in-bundle half) would need a per-axis coupon, which is a
+// change to server/lib/retention.ts, not to this script.
 //
 // Rounded to Stripe's 2-decimal limit on percent_off.
 function introPercentOff(): number {
@@ -452,6 +456,20 @@ function introCouponId(percentOff: number): string {
 // existing means the rate is unchanged.
 async function upsertIntroCoupon(stripe: Stripe, apply: boolean): Promise<void> {
   const percentOff = introPercentOff()
+
+  // Non-positive means there is no discount to mint: half the bundle already
+  // costs more than the standalone price, so the debundler lands cheaper
+  // unaided. Stripe rejects percent_off <= 0 outright, and the server reads a
+  // missing coupon as "settle at the standalone catalog price" (retention.ts
+  // debundlePricePreview) — which is exactly the right landing here.
+  if (percentOff <= 0) {
+    console.log(
+      `  coupon: SKIP — half the bundle is already dearer than the standalone ` +
+        `price (${percentOff}%), so a debundler needs no intro rate.`,
+    )
+    return
+  }
+
   const id = introCouponId(percentOff)
 
   const existing = await stripe.coupons.retrieve(id).catch(() => null)
