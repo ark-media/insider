@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { PageShell } from "../components/PageShell";
 
 export const Route = createFileRoute("/about")({
   component: AboutPage,
@@ -32,13 +31,7 @@ const aboutLinks: AboutLink[] = [
 
 function AboutPage() {
   return (
-    <PageShell
-      // The masthead logo already says "Ark Media" — an h1 repeating it is
-      // redundant on screen, so it stays only in the document.
-      title="Ark Media."
-      titleSrOnly
-      lede="Ark Media is a podcast network focused on spirited debate and learning about Jewish life,
-Israel, the Middle East, and our larger geopolitics."
+    <
     >
       <section>
         <div className="page-section">
@@ -91,6 +84,6 @@ Israel, the Middle East, and our larger geopolitics."
           </div>
         </div>
       </section>
-    </PageShell>
+    </>
   );
 }
