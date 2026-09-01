@@ -1,4 +1,4 @@
-import { showListenLinks } from "../config/urls";
+import { showListenLinks } from "../config/urls.js";
 
 export type ShowSlug =
   | "call-me-back"

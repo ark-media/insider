@@ -1,5 +1,5 @@
-import { formatCalendarDate } from "../../shared/format-date";
-import type { SanitizedHtml } from "../../shared/sanitized-html";
+import { formatCalendarDate } from "../../shared/format-date.js";
+import type { SanitizedHtml } from "../../shared/sanitized-html.js";
 
 export type NewsletterSlug = "ark-daily" | "members-letter";
 

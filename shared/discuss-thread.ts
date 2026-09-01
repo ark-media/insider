@@ -2,7 +2,7 @@
 // a companion Circle thread. The Beehiiv post id is the natural key — the
 // thread is the conversation venue, the post is the article.
 
-import type { NewsletterSlug } from '../src/data/newsletters'
+import type { NewsletterSlug } from '../src/data/newsletters.js'
 
 export type DiscussThread = {
   id: string

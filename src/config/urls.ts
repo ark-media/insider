@@ -1,5 +1,5 @@
-import type { NewsletterSlug } from "../data/newsletters";
-import type { ListenLink, ShowSlug } from "../data/shows";
+import type { NewsletterSlug } from "../data/newsletters.js";
+import type { ListenLink, ShowSlug } from "../data/shows.js";
 
 /**
  * Single source of truth for every brand-owned and external URL the site
