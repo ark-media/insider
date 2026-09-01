@@ -5,7 +5,7 @@ import {
   type Episode,
 } from "../data/episodes";
 import type { Show } from "../data/shows";
-import { listLatestEpisodes } from "../lib/simplecast";
+import { listLatestEpisodes } from "../lib/podcasts";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { ContentError } from "./ContentError";
 import { PlayGlyph } from "./PlayGlyph";

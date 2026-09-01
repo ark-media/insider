@@ -3,7 +3,7 @@
 //
 // Backend for the marketing site, run as Vite middleware in dev and as a
 // single Vercel Node Function (`api/handler.ts`) in production. The actual
-// route implementations live in server/routes/{simplecast,beehiiv,circle,me,
+// route implementations live in server/routes/{podcasts,beehiiv,circle,me,
 // sms,stripe,gift,auth,cron}.ts; this file is the assembler that wires them
 // to a per-instance dependency bundle.
 //
@@ -38,7 +38,7 @@ import { meRoutes } from './routes/me.js'
 import { pricingRoutes } from './routes/pricing.js'
 import { promoRoutes } from './routes/promo.js'
 import { scWebhookRoutes } from './routes/sc-webhook.js'
-import { simplecastRoutes } from './routes/simplecast.js'
+import { podcastRoutes } from './routes/podcasts.js'
 import { smsRoutes } from './routes/sms.js'
 import { stripeRoutes } from './routes/stripe/routes.js'
 
@@ -56,7 +56,7 @@ function buildApi(env: Env): Api {
   const deps: Deps = { env, stripe, appBaseUrl, activator }
 
   const routes: Route[] = [
-    ...simplecastRoutes(deps),
+    ...podcastRoutes(deps),
     ...beehiivRoutes(deps),
     ...circleRoutes(deps),
     ...circleGateRoutes(deps),

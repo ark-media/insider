@@ -9,11 +9,10 @@ import type { ListenLink, ShowSlug } from "../data/shows";
  * Intentionally NOT here (they're infra/SDK bases, env-driven or framework
  * config, and change per environment rather than per brand):
  *   - PostHog host            → VITE_POSTHOG_HOST (src/lib/observability.ts)
- *   - Simplecast player base  → src/lib/simplecast.ts
  *   - YouTube embed base      → src/routes/israel-votes.tsx
  *   - Google Fonts            → index.html
  * Per-episode media URLs (audio, thumbnails) also stay with their data,
- * since episode data is fetched from Simplecast at runtime.
+ * since episode data is fetched from Beehiiv at runtime.
  *
  * TODO(ark): values marked PLACEHOLDER need a real Ark Media URL before launch.
  */

@@ -2,20 +2,20 @@ import type { Episode } from "../data/episodes";
 import { shows, type Show, type ShowSlug } from "../data/shows";
 
 /**
- * Simplecast client. Fetches episodes from /api/simplecast/episodes, which
- * proxies the Simplecast API server-side (the API token can't ride along
- * with the client). Simplecast is the single source of truth for episode
- * data — there is no local catalog. A successful empty response is a genuine
- * empty state (paid show with no Simplecast podcast, or dev without a token);
- * a network/non-2xx failure THROWS so callers can distinguish "failed to load"
- * from "no episodes" and render an error+retry instead of spinning forever.
+ * Podcast client. Fetches episodes from /api/podcasts/episodes, which proxies
+ * the Beehiiv Podcasts API server-side (the API key can't ride along with the
+ * client). Beehiiv is the single source of truth for episode data — there is
+ * no local catalog. A successful empty response is a genuine empty state (paid
+ * show with no Beehiiv podcast, or dev without credentials); a network/non-2xx
+ * failure THROWS so callers can distinguish "failed to load" from "no episodes"
+ * and render an error+retry instead of spinning forever.
  */
 
 type ApiResponse = { episodes?: Episode[] };
 
 async function fetchEpisodesFromApi(showSlug: ShowSlug): Promise<Episode[]> {
   const res = await fetch(
-    `/api/simplecast/episodes?show=${encodeURIComponent(showSlug)}`,
+    `/api/podcasts/episodes?show=${encodeURIComponent(showSlug)}`,
     { credentials: "same-origin" },
   );
   if (!res.ok) throw new Error(`episodes request failed (${res.status})`);
@@ -64,18 +64,21 @@ export async function getEpisode(
 }
 
 /**
- * Fetches show notes + description for a single Simplecast episode by id.
- * The list endpoint returns slim episode summaries (no description /
- * long_description), so the episode page calls this with the id from the
- * list response to fill in the show notes section. Returns null on failure
- * — the page falls back to whatever the list / mock supplied.
+ * Fetches show notes + description for a single Beehiiv episode.
+ *
+ * Beehiiv returns `show_notes` on the list endpoint, so unlike Simplecast this
+ * is no longer required to render show notes — the episode page already has
+ * them from the list. It stays as a refresh for episodes whose notes were
+ * corrected after the list cache warmed. Returns null on failure; the page
+ * falls back to what the list supplied.
  */
 export async function fetchEpisodeNotes(
+  showSlug: ShowSlug,
   episodeId: string,
 ): Promise<{ showNotesHtml: string; description: string } | null> {
   try {
     const res = await fetch(
-      `/api/simplecast/episode?id=${encodeURIComponent(episodeId)}`,
+      `/api/podcasts/episode?show=${encodeURIComponent(showSlug)}&id=${encodeURIComponent(episodeId)}`,
       { credentials: "same-origin" },
     );
     if (!res.ok) return null;
@@ -93,15 +96,15 @@ export async function fetchEpisodeNotes(
 }
 
 /**
- * Fetches the show-level description from Simplecast for a show. Returns an
- * empty string when the show has no Simplecast podcast configured, the server
- * has no token, or the request fails — callers fall back to the hand-written
+ * Fetches the show-level description from Beehiiv for a show. Returns an empty
+ * string when the show has no Beehiiv podcast configured, the server has no
+ * credentials, or the request fails — callers fall back to the hand-written
  * tagline in that case.
  */
 export async function fetchShowDescription(showSlug: ShowSlug): Promise<string> {
   try {
     const res = await fetch(
-      `/api/simplecast/podcast?show=${encodeURIComponent(showSlug)}`,
+      `/api/podcasts/show?show=${encodeURIComponent(showSlug)}`,
       { credentials: "same-origin" },
     );
     if (!res.ok) return "";
@@ -110,12 +113,4 @@ export async function fetchShowDescription(showSlug: ShowSlug): Promise<string> 
   } catch {
     return "";
   }
-}
-
-/**
- * Per-episode Simplecast player. Takes the Simplecast episode UUID
- * (Episode.id from the API). Dark theme to match the rest of the site.
- */
-export function simplecastEpisodeSrc(episodeId: string): string {
-  return `https://player.simplecast.com/${encodeURIComponent(episodeId)}?dark=true`;
 }

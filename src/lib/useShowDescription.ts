@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import type { ShowSlug } from "../data/shows";
-import { fetchShowDescription } from "./simplecast";
+import { fetchShowDescription } from "./podcasts";
 
 /**
- * Loads the live Simplecast show description for a single show. Returns an
- * empty string while loading, when the show has no Simplecast podcast, or on
- * failure — callers fall back to the hand-written tagline in that case.
+ * Loads the live Beehiiv show description for a single show. Returns an empty
+ * string while loading, when the show has no Beehiiv podcast, or on failure —
+ * callers fall back to the hand-written tagline in that case.
  */
 export function useShowDescription(slug: ShowSlug): string {
   const [description, setDescription] = useState("");

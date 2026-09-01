@@ -5,9 +5,9 @@ import type { Show, ShowSlug } from "./shows";
  * Episode types + formatting helpers.
  *
  * There is no local episode catalog: episode data is ALWAYS fetched from
- * Simplecast at runtime (see `src/lib/simplecast.ts`). When Simplecast has
- * nothing for a show — or the API token isn't configured — the UI shows an
- * empty state rather than falling back to hardcoded data.
+ * Beehiiv at runtime (see `src/lib/podcasts.ts`). When Beehiiv has nothing for
+ * a show — or the API credentials aren't configured — the UI shows an empty
+ * state rather than falling back to hardcoded data.
  */
 
 export type Episode = {
@@ -20,21 +20,24 @@ export type Episode = {
   description: string;
   /** Optional list of guest names. */
   guests?: string[];
-  /**
-   * Simplecast episode UUID. Drives the embedded Simplecast player on the
-   * episode page.
-   */
+  /** Beehiiv episode id. Stable across renames — our cache and React key. */
   id?: string;
   /**
-   * Per-episode artwork URL from Simplecast. Absent until a producer uploads
+   * Per-episode artwork URL from Beehiiv. Absent until a producer uploads
    * episode art — callers fall back to the show cover.
    */
   imageUrl?: string;
   /**
-   * Sanitized HTML show notes from Simplecast. Allowlisted on the server
-   * before it reaches the client.
+   * Sanitized HTML show notes from Beehiiv. Allowlisted on the server before
+   * it reaches the client.
    */
   showNotesHtml?: string;
+  /**
+   * Direct audio URL from Beehiiv. Beehiiv has no embeddable player, so this
+   * is what <AudioPlayer> plays. Absent when the episode has no audio yet —
+   * callers must render a "listen in your app" fallback rather than a player.
+   */
+  audioUrl?: string;
 };
 
 /**
@@ -46,8 +49,8 @@ export function episodeImage(episode: Episode, show: Show): string | null {
   return episode.imageUrl || show.coverArt || null;
 }
 
-// A drop date is a calendar date, not an instant — Simplecast's `published_at`
-// is truncated to 'YYYY-MM-DD' on the server, so it must be formatted without a
+// A drop date is a calendar date, not an instant — Beehiiv's `displayed_date`
+// is converted to 'YYYY-MM-DD' on the server, so it must be formatted without a
 // timezone or it renders a day early everywhere west of UTC.
 export function formatEpisodeDate(iso: string): string {
   return formatCalendarDate(iso);

@@ -9,12 +9,13 @@ import {
 import { episodeImage, type Episode } from "../data/episodes";
 import { contributorsForShow, hostsForShow } from "../data/hosts";
 import type { Host } from "../data/hosts";
-import { listEpisodes, simplecastEpisodeSrc } from "../lib/simplecast";
+import { listEpisodes } from "../lib/podcasts";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { ContentError } from "./ContentError";
 import { useShowDescription } from "../lib/useShowDescription";
 import { EpisodeMeta } from "./EpisodeMeta";
 import { PlayGlyph } from "./PlayGlyph";
+import { AudioPlayer } from "./AudioPlayer";
 import { PageShell, PlaceholderSection } from "./PageShell";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { HostArtwork } from "./HostArtwork";
@@ -157,8 +158,8 @@ function PaidShowJoinCta({ show }: { show: Show }) {
 }
 
 function ShowHero({ show }: { show: Show }) {
-  // Prefer the live Simplecast show description; fall back to the hand-written
-  // tagline while loading, when the show has no Simplecast podcast, or on
+  // Prefer the live Beehiiv show description; fall back to the hand-written
+  // tagline while loading, when the show has no Beehiiv podcast, or on
   // failure.
   const description = useShowDescription(show.slug) || show.tagline;
 
@@ -287,7 +288,7 @@ function EpisodeBrowser({
   const [query, setQuery] = useState("");
   const playerRef = useRef<HTMLDivElement>(null);
 
-  const featuredEpisode = episodes?.find((ep) => Boolean(ep.id)) ?? null;
+  const featuredEpisode = episodes?.find((ep) => Boolean(ep.audioUrl)) ?? null;
   const remaining = (episodes ?? []).filter(
     (ep) => ep.slug !== featuredEpisode?.slug,
   );
@@ -301,7 +302,8 @@ function EpisodeBrowser({
   const isLatest = selectedEpisode?.slug === featuredEpisode?.slug;
 
   function play(ep: Episode) {
-    if (!ep.id) return;
+    // Needs audio to play at all, and an id to be the selected episode.
+    if (!ep.audioUrl || !ep.id) return;
     // Single chokepoint for every Play button (grid, archive, upsell row).
     trackEvent("episode_play_clicked", { show: show.slug, episode: ep.slug });
     setSelected({ slug: show.slug, id: ep.id });
@@ -537,7 +539,7 @@ function EpisodeRow({
         isActive ? "text-cyan" : "text-fg"
       }`}
     >
-      {episode.id ? (
+      {episode.audioUrl ? (
         <button
           type="button"
           onClick={() => onPlay(episode)}
@@ -651,7 +653,7 @@ function EpisodeCard({
         {episode.description}
       </p>
       <div className="mt-auto flex items-center gap-4 pt-6">
-        {episode.id ? (
+        {episode.audioUrl ? (
           <button
             type="button"
             onClick={onPlay}
@@ -709,19 +711,13 @@ function ShowPlayer({
         >
           View episode →
         </Link>
-        <div className="mt-8 border border-rule bg-navy-800/40">
-          <iframe
-            key={episode.id}
-            title={`${episode.title} — player`}
-            src={simplecastEpisodeSrc(episode.id!)}
-            height={200}
-            width="100%"
-            scrolling="no"
-            allow="clipboard-write"
-            loading="lazy"
-            className="block w-full border-0"
-          />
-        </div>
+        <AudioPlayer
+          key={episode.id}
+          className="mt-8"
+          src={episode.audioUrl!}
+          title={episode.title}
+          fallbackDurationMinutes={episode.durationMinutes}
+        />
       </div>
     </section>
   );

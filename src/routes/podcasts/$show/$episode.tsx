@@ -7,17 +7,15 @@ import {
   type Show,
   type ShowSlug,
 } from "../../../data/shows";
-import {
-  fetchEpisodeNotes,
-  getEpisode,
-  simplecastEpisodeSrc,
-} from "../../../lib/simplecast";
+import { fetchEpisodeNotes, getEpisode } from "../../../lib/podcasts";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
 import { isArkPlusMember, useSubscriberAuth } from "../../../lib/subscriberAuth";
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
+import { EpisodeMeta } from "../../../components/EpisodeMeta";
 import { ShowCover } from "../../../components/ShowCover";
 import { ListenLinks } from "../../../components/ListenLinks";
 import { ArkPlusMark } from "../../../components/ArkPlusMark";
+import { AudioPlayer } from "../../../components/AudioPlayer";
 
 export const Route = createFileRoute("/podcasts/$show/$episode")({
   loader: ({ params }) => {
@@ -51,14 +49,14 @@ function EpisodePage() {
   useEffect(() => {
     if (!episodeId) return;
     let live = true;
-    void fetchEpisodeNotes(episodeId).then((notes) => {
+    void fetchEpisodeNotes(show.slug as ShowSlug, episodeId).then((notes) => {
       if (!live || !notes) return;
       setEnriched(notes);
     });
     return () => {
       live = false;
     };
-  }, [episodeId]);
+  }, [show.slug, episodeId]);
 
   if (episode === "loading") {
     return <EpisodeSkeleton show={show} />;
@@ -82,12 +80,17 @@ function EpisodePage() {
           />
           <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
-              {/* The Simplecast embed is the album header: it already renders the
-                  episode art and title at full size. A visible <h1> above it just
-                  said the same thing twice, so the heading stays for screen
-                  readers and search engines only. */}
-              <h1 className="sr-only">{episode.title}</h1>
-              <div className="rise rise-2">
+              {/* The Simplecast embed used to be the album header — it rendered
+                  the episode art and title itself, so this <h1> was sr-only to
+                  avoid saying the same thing twice. Our own player renders
+                  controls only, so the title has to be visible again. */}
+              <h1 className="max-w-3xl font-display text-[clamp(1.6rem,3.2vw,2.35rem)] leading-[1.15] text-fg-strong">
+                {episode.title}
+              </h1>
+              <div className="episode-meta mt-3">
+                <EpisodeMeta episode={episode} />
+              </div>
+              <div className="rise rise-2 mt-6">
                 {isPaid ? (
                   <PaidEpisodeBlock episode={episode} />
                 ) : (
@@ -216,7 +219,7 @@ function ShowNotes({ html }: { html: string | undefined }) {
 }
 
 function PlayerBlock({ episode }: { episode: Episode }) {
-  if (!episode.id) {
+  if (!episode.audioUrl) {
     return (
       <div className="border border-rule bg-navy-800/40 p-6">
         <div className="label text-cyan">
@@ -224,33 +227,26 @@ function PlayerBlock({ episode }: { episode: Episode }) {
         </div>
         <div className="mt-3 text-h3 text-fg-strong">{episode.title}</div>
         <p className="mt-3 text-body-sm">
-          This episode isn't available in our embedded player yet. Listen
-          through your podcast app of choice.
+          This episode isn't available in our player yet. Listen through your
+          podcast app of choice.
         </p>
       </div>
     );
   }
   return (
-    <div className="border border-rule bg-navy-800/40">
-      <iframe
-        title={`${episode.title} — player`}
-        src={simplecastEpisodeSrc(episode.id)}
-        height={200}
-        width="100%"
-        scrolling="no"
-        allow="clipboard-write"
-        loading="lazy"
-        className="block w-full border-0"
-      />
-    </div>
+    <AudioPlayer
+      src={episode.audioUrl}
+      title={episode.title}
+      fallbackDurationMinutes={episode.durationMinutes}
+    />
   );
 }
 
 function PaidEpisodeBlock({ episode }: { episode: Episode }) {
   const { state } = useSubscriberAuth();
   // Gate on the paid tier, not just a signed-in session: a free user is still
-  // `kind: "member"`, and the Simplecast embed URL carries no auth, so this
-  // check is the only app-level gate on paid audio.
+  // `kind: "member"`, and a Beehiiv audio URL carries no auth of its own, so
+  // this check is the only app-level gate on paid audio.
   if (isArkPlusMember(state)) {
     return <PlayerBlock episode={episode} />;
   }
