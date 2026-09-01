@@ -288,6 +288,11 @@ function EpisodeBrowser({
   const [query, setQuery] = useState("");
   const playerRef = useRef<HTMLDivElement>(null);
 
+  // The newest episode and the one the player opens on are not always the same
+  // episode: the player needs audio, and the newest drop can be sitting there
+  // without an `audioUrl` for a while after it's announced. Keep them apart —
+  // `newest` is what "Latest episode / New" is allowed to describe.
+  const newest = episodes?.[0] ?? null;
   const featuredEpisode = episodes?.find((ep) => Boolean(ep.audioUrl)) ?? null;
   const remaining = (episodes ?? []).filter(
     (ep) => ep.slug !== featuredEpisode?.slug,
@@ -299,7 +304,11 @@ function EpisodeBrowser({
     (selected.id ? episodes?.find((ep) => ep.id === selected.id) : null) ??
     featuredEpisode;
   const activeId = selectedEpisode?.id ?? null;
-  const isLatest = selectedEpisode?.slug === featuredEpisode?.slug;
+  // Against `newest`, not `featuredEpisode`: when the newest episode has no
+  // audio yet, the player opens on the one below it, and calling that "Latest
+  // episode" with a "New" badge puts the label on the wrong episode while the
+  // real newest sits in the grid underneath.
+  const isLatest = Boolean(newest) && selectedEpisode?.slug === newest?.slug;
 
   function play(ep: Episode) {
     // Needs audio to play at all, and an id to be the selected episode.

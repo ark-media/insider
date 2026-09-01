@@ -116,12 +116,6 @@ you get the value; "Scope" = server-only vs shipped to browser.
 | `SC_SUBSCRIPTION_PRICE_ID_MONTHLY` / `_YEARLY` / `_GIFT_6MO` / `_GIFT_1YR` | server | Admin Console → Subscription Plans → Prices. |
 | `SC_WEBHOOK_SECRET` | server | `openssl rand -hex 32`; register SC webhook → `/api/sc/webhook?key=…` for `feed.activated` + `feed.access_revoked`. |
 
-#### Simplecast
-| Var | Scope | Prod source / action |
-|---|---|---|
-| `SIMPLECAST_API_TOKEN` | server | Account → Settings → API. Without it the API serves the mock catalog. |
-| `VITE_SIMPLECAST_PODCAST_ID_*` (5 shows) | **browser** | Per-show UUIDs (Distribution → Embeds). |
-
 #### Resend (email)
 | Var | Scope | Prod source / action |
 |---|---|---|
@@ -131,10 +125,21 @@ you get the value; "Scope" = server-only vs shipped to browser.
 #### Beehiiv
 | Var | Scope | Prod source / action |
 |---|---|---|
-| `BEEHIIV_API_KEY` | server | Beehiiv API key. |
+| `BEEHIIV_API_KEY` | server | Beehiiv API key. Also the podcast catalog's credential. |
 | `BEEHIIV_PUBLICATION_ID_ARK_DAILY` / `_MEMBERS_LETTER` | server | Publication ids (may be the same pub with audience tiers). |
 | `BEEHIIV_PREMIUM_TIER_ID` | server | `GET /v2/publications/<id>/tiers`. |
 | `BEEHIIV_WEBHOOK_SECRET` | server | `openssl rand -hex 32`; register `/api/beehiiv/webhook?key=…` for the subscription.* events. |
+
+##### Podcasts
+Every episode on the site is fetched from Beehiiv at runtime — there is no local
+catalog and no fallback. A show whose id is missing renders "No episodes yet"
+and logs nothing, so **check each show's page after deploy** rather than trusting
+a green build.
+
+| Var | Scope | Prod source / action |
+|---|---|---|
+| `BEEHIIV_PUBLICATION_ID_PODCASTS` | server | Publication the podcasts live under. Falls back to `BEEHIIV_PUBLICATION_ID_ARK_DAILY` if unset — set it explicitly if the shows sit in their own publication. |
+| `BEEHIIV_PODCAST_ID_<SLUG>` (5 shows) | server | One per show, slug upper-cased with `-`→`_`: `_CALL_ME_BACK`, `_FOR_HEAVENS_SAKE`, `_WHATS_YOUR_NUMBER`, `_ARK_NEWS_DAILY`, `_CHOSEN_PEOPLE_PROBLEMS`. Beehiiv's own `pod_…` id; the bare UUID is accepted and normalised. |
 
 #### Circle
 | Var | Scope | Prod source / action |

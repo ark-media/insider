@@ -5,14 +5,21 @@
 import sanitizeHtml from 'sanitize-html'
 import { toIsoDate } from './lib/dates.js'
 
-export type ProjectedEpisode = {
+/**
+ * An episode without its show notes — what the list endpoint serves.
+ *
+ * Notes are by far the largest field (Beehiiv's own list page runs ~250KB at
+ * 50 episodes, nearly all of it notes) and only the episode page ever renders
+ * them, so the list omits them entirely: an order of magnitude off the wire
+ * and one `sanitize-html` pass saved per episode.
+ */
+export type EpisodeSummary = {
   showSlug: string
   slug: string
   title: string
   publishedAt: string
   durationMinutes: number
   description: string
-  showNotesHtml: string
   id: string
   /** Per-episode artwork from Beehiiv. Empty string when unset. */
   imageUrl: string
@@ -20,10 +27,14 @@ export type ProjectedEpisode = {
    * Direct audio URL. Beehiiv has no embeddable player, so this is what our
    * own player element plays. Empty string when the episode has no audio yet
    * — callers must treat it as "not playable" rather than rendering a player
-   * pointed at nothing.
+   * pointed at nothing. Also empty when a paid show's audio is withheld from
+   * a caller who hasn't proved membership (see server/routes/podcasts.ts).
    */
   audioUrl: string
 }
+
+/** A summary plus the sanitized show notes — what the single-episode route serves. */
+export type ProjectedEpisode = EpisodeSummary & { showNotesHtml: string }
 
 // The Beehiiv podcast episode object. Every field is optional here on purpose:
 // this is the shape at the trust boundary, so the projection below is
@@ -102,15 +113,10 @@ export function sanitizeShowNotes(html: string): string {
   })
 }
 
-// Unlike Simplecast's list endpoint — which returned slim summaries and forced
-// a second call per episode for notes — Beehiiv returns `show_notes` on both
-// list and get. Prefer it for the rich HTML field, falling back to
-// `description` for episodes where a producer only filled the short field.
-export function projectBeehiivEpisode(
+export function projectBeehiivEpisodeSummary(
   e: BeehiivEpisode,
   showSlug: string,
-): ProjectedEpisode {
-  const rawShowNotes = e.show_notes ?? e.description ?? ''
+): EpisodeSummary {
   return {
     showSlug,
     id: e.id ?? '',
@@ -119,9 +125,24 @@ export function projectBeehiivEpisode(
     publishedAt: toIsoDate(e.displayed_date ?? e.publish_date) ?? '',
     durationMinutes: Math.max(0, Math.round((e.duration ?? 0) / 60)),
     description: stripHtml(e.description ?? ''),
-    showNotesHtml: sanitizeShowNotes(rawShowNotes),
     imageUrl: e.artwork_url ?? '',
     audioUrl: e.audio_url ?? '',
+  }
+}
+
+// Beehiiv returns `show_notes` on both list and get. Prefer it for the rich
+// HTML field, falling back to `description` for episodes where a producer only
+// filled the short field. Only the single-episode route calls this — the list
+// stops at the summary above rather than sanitizing 50 sets of notes nobody
+// asked for.
+export function projectBeehiivEpisode(
+  e: BeehiivEpisode,
+  showSlug: string,
+): ProjectedEpisode {
+  const rawShowNotes = e.show_notes ?? e.description ?? ''
+  return {
+    ...projectBeehiivEpisodeSummary(e, showSlug),
+    showNotesHtml: sanitizeShowNotes(rawShowNotes),
   }
 }
 

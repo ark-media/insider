@@ -19,6 +19,27 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 const SKIP_SECONDS = 15;
 const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 0.75] as const;
 
+/**
+ * The keys that move an `<input type="range">`. A scrub must start on these and
+ * nothing else: `keydown` for a key that doesn't change the value (Tab above
+ * all, which moves focus before `keyup` fires) would open a scrub that never
+ * closes.
+ */
+const SEEK_KEYS = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+]);
+
+function isSeekKey(key: string): boolean {
+  return SEEK_KEYS.has(key);
+}
+
 /** mm:ss, widening to h:mm:ss only once an hour is on the clock. */
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -95,6 +116,15 @@ export function AudioPlayer({
   // While the user drags, the thumb follows the pointer rather than the
   // element's timeupdate events — otherwise the two fight and the thumb snaps back.
   const [scrubbing, setScrubbing] = useState(false);
+  // The same flag as a ref, because `onChange` fires in the same event batch as
+  // the `pointerdown`/`keydown` that starts a scrub: the state value is still
+  // the old one there, the ref is already current.
+  const scrubbingRef = useRef(false);
+  // Where the user has dragged to but not yet let go. The media element is only
+  // told once, on release — assigning `currentTime` on every `input` event
+  // aborts the in-flight media fetch and issues a fresh byte-range request, so
+  // a single drag across a 40MB episode can stall playback for its duration.
+  const pendingSeekRef = useRef<number | null>(null);
 
   const speed = SPEEDS[speedIndex]!;
   const effectiveDuration =
@@ -118,6 +148,14 @@ export function AudioPlayer({
     if (el) el.playbackRate = speed;
   }, [speed, src]);
 
+  // A drag in flight when the episode changes must not commit its position to
+  // the new track. Refs can't be cleared in the render-time reset above, so
+  // they're cleared here.
+  useEffect(() => {
+    scrubbingRef.current = false;
+    pendingSeekRef.current = null;
+  }, [src]);
+
   const togglePlay = useCallback(() => {
     const el = audioRef.current;
     if (!el) return;
@@ -134,18 +172,53 @@ export function AudioPlayer({
     (delta: number) => {
       const el = audioRef.current;
       if (!el) return;
+      // `el.duration` is NaN before `loadedmetadata`, and `fallbackDurationMinutes`
+      // is optional — so the upper bound can legitimately be unknown here.
+      // Clamping to it anyway would send `currentTime` to 0, turning the
+      // forward-15 button into a rewind-to-start. Only clamp when we have a
+      // real length; otherwise let the element clamp itself at the true end.
       const max = el.duration || effectiveDuration;
-      const next = Math.min(Math.max(0, el.currentTime + delta), max || 0);
+      const raw = Math.max(0, el.currentTime + delta);
+      const next = max > 0 ? Math.min(raw, max) : raw;
       el.currentTime = next;
       setCurrentTime(next);
     },
     [effectiveDuration],
   );
 
-  const seek = useCallback((to: number) => {
+  // Starts a scrub. Only called for interactions that actually move the thumb —
+  // see `isSeekKey` for why the keyboard case is filtered.
+  const beginScrub = useCallback(() => {
+    scrubbingRef.current = true;
+    setScrubbing(true);
+  }, []);
+
+  // Ends a scrub and commits the dragged-to position. Idempotent: several of
+  // the handlers wired to it can fire for one gesture, and `pointercancel` /
+  // `blur` are there precisely because the matching `pointerup` / `keyup`
+  // sometimes never arrives.
+  const endScrub = useCallback(() => {
+    if (!scrubbingRef.current) return;
+    scrubbingRef.current = false;
+    setScrubbing(false);
+    const to = pendingSeekRef.current;
+    pendingSeekRef.current = null;
+    const el = audioRef.current;
+    if (el && to !== null) el.currentTime = to;
+  }, []);
+
+  // The thumb always tracks the input; the media element only follows when the
+  // gesture ends (pointerup / keyup / blur), which is what keeps one drag to
+  // one seek. The fallback branch covers a value change that arrives without a
+  // scrub having been opened — a browser that synthesises `input` on its own.
+  const onScrubChange = useCallback((to: number) => {
+    setCurrentTime(to);
+    if (scrubbingRef.current) {
+      pendingSeekRef.current = to;
+      return;
+    }
     const el = audioRef.current;
     if (el) el.currentTime = to;
-    setCurrentTime(to);
   }, []);
 
   const bars = useMemo(() => waveformFor(src), [src]);
@@ -231,11 +304,21 @@ export function AudioPlayer({
                   disabled={!seekable}
                   aria-label={`Seek within ${title}`}
                   aria-valuetext={`${elapsed} of ${total}`}
-                  onPointerDown={() => setScrubbing(true)}
-                  onPointerUp={() => setScrubbing(false)}
-                  onKeyDown={() => setScrubbing(true)}
-                  onKeyUp={() => setScrubbing(false)}
-                  onChange={(e) => seek(Number(e.currentTarget.value))}
+                  onPointerDown={beginScrub}
+                  onPointerUp={endScrub}
+                  // A touch gesture that turns into a page scroll ends in
+                  // `pointercancel`, not `pointerup`.
+                  onPointerCancel={endScrub}
+                  onKeyDown={(e) => {
+                    if (isSeekKey(e.key)) beginScrub();
+                  }}
+                  onKeyUp={endScrub}
+                  // Last resort. Tab moves focus on keydown, so the matching
+                  // keyup lands on the next element and never reaches this
+                  // handler — without this the scrub would never end and the
+                  // progress bar would sit frozen for the rest of the episode.
+                  onBlur={endScrub}
+                  onChange={(e) => onScrubChange(Number(e.currentTarget.value))}
                 />
               </div>
 

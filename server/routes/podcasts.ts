@@ -3,12 +3,14 @@
 // Proxies the Beehiiv Podcasts API and projects the response down to our
 // Episode shape. Three routes:
 //
-//   GET /api/podcasts/episodes — list. Full summaries, including show notes.
-//   GET /api/podcasts/episode  — single episode with show notes html.
+//   GET /api/podcasts/episodes — list. Summaries only, no show notes.
+//   GET /api/podcasts/episode  — one episode, with show notes html.
 //   GET /api/podcasts/show     — show-level metadata (description).
 //
-// All three are cached in-process. The cache resets on each serverless cold
-// start, which is fine — Beehiiv updates on the order of days, not seconds.
+// All three are cached in-process AND behind an edge cache-control header.
+// The in-process layer only deduplicates concurrent calls on one warm
+// instance (see shared/ttl-cache.ts); the header is what stops every cold
+// start from paying for the slowest upstream in the app.
 //
 // The API token can't ride along with the client, so every one of these is a
 // server-side proxy. Beehiiv nests podcasts under a publication:
@@ -17,25 +19,28 @@
 import {
   isPublishedEpisode,
   projectBeehiivEpisode,
-  sanitizeShowNotes,
+  projectBeehiivEpisodeSummary,
   stripHtml,
   type BeehiivEpisode,
   type BeehiivPodcast,
+  type EpisodeSummary,
   type ProjectedEpisode,
 } from '../show-notes.js'
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { fetchWithTimeout } from '../lib/http.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { resolveMembership } from '../lib/entitlement-resolver.js'
+import { getShow } from '../../src/data/shows.js'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const BEEHIIV_API_BASE = 'https://api.beehiiv.com/v2'
 
 // Beehiiv caps `limit` at 100, but its list endpoint is slow and its cost
-// scales with the payload: every episode carries full `show_notes` HTML plus a
-// copy of the whole nested show object, so 100 episodes is ~600KB and measured
-// 7-16s. 50 keeps it to ~250KB / 4.5-7.6s and matches the page size Simplecast
-// served. We take one page rather than walking `next_cursor` — these routes sit
-// on the critical path for rendering a show page, so a second round-trip costs
-// more than the tail of the back catalogue is worth.
+// scales with the payload, so 100 episodes measured 7-16s. 50 keeps it to
+// 4.5-7.6s and matches the page size Simplecast served. We take one page
+// rather than walking `next_cursor` — these routes sit on the critical path
+// for rendering a show page, so a second round-trip costs more than the tail
+// of the back catalogue is worth.
 const EPISODE_PAGE_LIMIT = 50
 
 // Even at limit=50 the list endpoint runs to ~7.6s on our largest show, so the
@@ -43,20 +48,27 @@ const EPISODE_PAGE_LIMIT = 50
 // generous rather than unbounded: the in-process cache means a warm instance
 // hits it once per show per 5 minutes, and the single-episode and show-metadata
 // calls below are small, so they keep the default budget.
+//
+// The platform budget has to stay clear of this one or the timeout can never
+// fire: Vercel would kill the invocation first and the caller would get an
+// opaque 504 instead of the deliberate 502 below. `vercel.json` pins
+// `functions["api/handler.ts"].maxDuration` above this for exactly that reason
+// — move one and move the other.
 const EPISODE_LIST_TIMEOUT_MS = 20_000
 
 const EPISODES_CACHE_TTL_MS = 5 * 60 * 1000
-const episodesCache = makeTTLCache<string, ProjectedEpisode[]>(
+const episodesCache = makeTTLCache<string, EpisodeSummary[]>(
   EPISODES_CACHE_TTL_MS,
 )
 
-// Show notes change rarely, so the per-episode fetch is cached longer than the
-// list. Beehiiv returns `show_notes` on the list endpoint too, so this is now
-// only a fallback for episodes outside the first page — Simplecast's slim list
-// used to make it mandatory.
+// Show notes change rarely and nothing else holds a second copy of them — the
+// list deliberately drops the field — so this TTL answers only to how quickly
+// a corrected set of notes should appear, not to any other cache it could
+// disagree with.
 const EPISODE_CACHE_TTL_MS = 30 * 60 * 1000
-type EpisodeNotes = { showNotesHtml: string; description: string }
-const episodeCache = makeTTLCache<string, EpisodeNotes>(EPISODE_CACHE_TTL_MS)
+const episodeCache = makeTTLCache<string, ProjectedEpisode>(
+  EPISODE_CACHE_TTL_MS,
+)
 
 // Show-level metadata (title, description) changes very rarely — on the order
 // of months — so it gets a much longer TTL than episodes or show notes. The
@@ -91,7 +103,12 @@ function resolvePodcastId(env: Env, showSlug: string): string | undefined {
   // bare UUID with a 400. The dashboard and several of their own surfaces show
   // the id unprefixed, so accept both and normalise rather than making every
   // future config edit a guess about which form is wanted.
-  return value.startsWith('pod_') ? value : `pod_${value}`
+  const normalized = value.startsWith('pod_') ? value : `pod_${value}`
+  // Same check the publication id gets. A malformed value here (a pasted
+  // dashboard URL, an id with a stray space) would otherwise be sent upstream,
+  // 400, and surface as a 502 outage — where an unconfigured show gets a clean
+  // empty state. A config typo should look like the latter, not the former.
+  return BEEHIIV_ID.test(normalized) ? normalized : undefined
 }
 
 // The podcasts live in one Beehiiv publication. `BEEHIIV_PUBLICATION_ID_PODCASTS`
@@ -118,6 +135,57 @@ function resolveConfig(env: Env): BeehiivConfig | null {
   return { publicationId, token }
 }
 
+// --- Paid-audio gate -------------------------------------------------------
+//
+// A Beehiiv `audio_url` is a plain, unauthenticated MP3 link: whoever holds it
+// can play the episode. So for a paid show these routes are the gate — the
+// client-side Ark+ check on the episode page decides what to *render*, not who
+// can *listen*. Metadata (title, date, description) stays public either way;
+// only the audio url is withheld.
+//
+// Same shape as /api/beehiiv/posts: resolve entitlement from Neon, and mark
+// the response `private, no-store` whenever it carries member-only content so
+// a shared edge can never hand it to the next caller.
+
+type AudioAccess = { paid: boolean; allowed: boolean }
+
+async function resolveAudioAccess(
+  req: IncomingMessage,
+  env: Env,
+  showSlug: string,
+): Promise<AudioAccess> {
+  // Fail closed on a slug we don't know: an id configured for a show that
+  // isn't in the catalog gets treated as gated rather than published.
+  const paid = getShow(showSlug)?.paid ?? true
+  if (!paid) return { paid: false, allowed: true }
+  const resolved = await resolveMembership(req, env)
+  return { paid: true, allowed: resolved?.entitlements.arkPlus ?? false }
+}
+
+/** Public read cache. Skipped entirely when the body carries gated audio. */
+function setReadCache(
+  res: ServerResponse,
+  access: AudioAccess,
+  maxAgeSec: number,
+): void {
+  if (access.paid && access.allowed) {
+    res.setHeader('cache-control', 'private, no-store')
+    return
+  }
+  res.setHeader(
+    'cache-control',
+    `public, s-maxage=${maxAgeSec}, stale-while-revalidate=${maxAgeSec * 6}`,
+  )
+}
+
+function withAudioAccess<T extends { audioUrl: string }>(
+  episode: T,
+  access: AudioAccess,
+): T {
+  if (access.allowed) return episode
+  return { ...episode, audioUrl: '' }
+}
+
 async function beehiivGet<T>(
   path: string,
   token: string,
@@ -138,8 +206,14 @@ async function fetchEpisodes(
   { publicationId, token }: BeehiivConfig,
   podcastId: string,
   showSlug: string,
-): Promise<ProjectedEpisode[]> {
-  const cached = episodesCache.get(podcastId)
+): Promise<EpisodeSummary[]> {
+  // Every part of the cached value is derived from all three of these — the
+  // fetch url from the first two, and `showSlug` from the projection, where it
+  // becomes the episode links' route params. Keying on the podcast id alone
+  // would serve one slug's episode links to another slug pointed at the same
+  // Beehiiv show.
+  const cacheKey = `${publicationId}:${podcastId}:${showSlug}`
+  const cached = episodesCache.get(cacheKey)
   if (cached) return cached
 
   // `status=published` filters upstream, but isPublishedEpisode still runs so
@@ -155,21 +229,30 @@ async function fetchEpisodes(
     token,
     EPISODE_LIST_TIMEOUT_MS,
   )
-  const episodes: ProjectedEpisode[] = (body.data ?? [])
+  const episodes: EpisodeSummary[] = (body.data ?? [])
     .filter(isPublishedEpisode)
-    .map((e) => projectBeehiivEpisode(e, showSlug))
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+    .map((e) => projectBeehiivEpisodeSummary(e, showSlug))
+    // `publishedAt` is a calendar date, so a show that drops twice in one day
+    // ties — and a comparator that never returns 0 leaves the tied pair in
+    // whatever order the sort happens to produce, which can differ between the
+    // cached and freshly-fetched copies of the same list. Break the tie on the
+    // (stable, unique) episode id so the order is the same every time.
+    .sort(
+      (a, b) =>
+        b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id),
+    )
 
-  episodesCache.set(podcastId, episodes)
+  episodesCache.set(cacheKey, episodes)
   return episodes
 }
 
-async function fetchEpisodeNotes(
+async function fetchEpisode(
   { publicationId, token }: BeehiivConfig,
   podcastId: string,
+  showSlug: string,
   episodeId: string,
-): Promise<EpisodeNotes> {
-  const cacheKey = `${podcastId}:${episodeId}`
+): Promise<ProjectedEpisode> {
+  const cacheKey = `${publicationId}:${podcastId}:${showSlug}:${episodeId}`
   const cached = episodeCache.get(cacheKey)
   if (cached) return cached
 
@@ -177,14 +260,9 @@ async function fetchEpisodeNotes(
     `/publications/${encodeURIComponent(publicationId)}/podcasts/${encodeURIComponent(podcastId)}/episodes/${encodeURIComponent(episodeId)}`,
     token,
   )
-  const episode = body.data ?? {}
-  const rawNotes = episode.show_notes ?? episode.description ?? ''
-  const notes: EpisodeNotes = {
-    showNotesHtml: sanitizeShowNotes(rawNotes),
-    description: stripHtml(episode.description ?? ''),
-  }
-  episodeCache.set(cacheKey, notes)
-  return notes
+  const episode = projectBeehiivEpisode(body.data ?? {}, showSlug)
+  episodeCache.set(cacheKey, episode)
+  return episode
 }
 
 async function fetchShowDescription(
@@ -208,7 +286,7 @@ export function podcastRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/podcasts/episodes',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const show = url.searchParams.get('show')
         if (!show) return json(400, { error: 'missing `show`' })
@@ -218,13 +296,21 @@ export function podcastRoutes({ env }: Deps): Route[] {
         if (!podcastId || !config) {
           // Show has no Beehiiv podcast configured, or the server has no
           // credentials. Return an empty list — the client renders an empty
-          // state rather than an error.
+          // state rather than an error. Answered before the entitlement lookup
+          // below: there is no audio in an empty list to gate, so an unknown
+          // `show` can't make an anonymous request do membership work.
+          setReadCache(res, { paid: false, allowed: true }, 300)
           return json(200, { episodes: [] })
         }
 
+        const access = await resolveAudioAccess(req, env, show)
+        setReadCache(res, access, 300)
+
         try {
           const episodes = await fetchEpisodes(config, podcastId, show)
-          json(200, { episodes })
+          json(200, {
+            episodes: episodes.map((e) => withAudioAccess(e, access)),
+          })
         } catch (err) {
           console.error('[beehiiv] episodes fetch failed:', err)
           json(502, { error: 'podcasts_unavailable' })
@@ -232,9 +318,12 @@ export function podcastRoutes({ env }: Deps): Route[] {
       },
     }),
     defineRoute({
+      // The only source of show notes, and the only route that will hand out a
+      // paid show's audio url. The episode page reads both from here; the
+      // israel-votes playlist resolves its curated audio here too.
       path: '/api/podcasts/episode',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const show = url.searchParams.get('show')
         const id = url.searchParams.get('id')
@@ -245,12 +334,16 @@ export function podcastRoutes({ env }: Deps): Route[] {
         const podcastId = resolvePodcastId(env, show)
         const config = resolveConfig(env)
         if (!podcastId || !config) {
-          return json(200, { showNotesHtml: '', description: '' })
+          setReadCache(res, { paid: false, allowed: true }, 900)
+          return json(200, { episode: null })
         }
 
+        const access = await resolveAudioAccess(req, env, show)
+        setReadCache(res, access, 900)
+
         try {
-          const notes = await fetchEpisodeNotes(config, podcastId, id)
-          json(200, notes)
+          const episode = await fetchEpisode(config, podcastId, show, id)
+          json(200, { episode: withAudioAccess(episode, access) })
         } catch (err) {
           console.error('[beehiiv] episode fetch failed:', err)
           json(502, { error: 'podcasts_unavailable' })
@@ -260,10 +353,17 @@ export function podcastRoutes({ env }: Deps): Route[] {
     defineRoute({
       path: '/api/podcasts/show',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '', 'http://x')
         const show = url.searchParams.get('show')
         if (!show) return json(400, { error: 'missing `show`' })
+
+        // Show metadata carries no audio, so it is share-cacheable for every
+        // caller regardless of membership.
+        res.setHeader(
+          'cache-control',
+          'public, s-maxage=3600, stale-while-revalidate=86400',
+        )
 
         const podcastId = resolvePodcastId(env, show)
         const config = resolveConfig(env)

@@ -210,11 +210,13 @@ describe('createCatchAllHandler — dispatch via _path query param', () => {
     await handler(req, res)
 
     expect(res.statusCode).toBe(200)
-    const body = res.__json() as { showNotesHtml: string; description: string }
-    expect(body.showNotesHtml).toContain('Full notes')
-    expect(body.showNotesHtml).toContain('href="https://example.com"')
-    expect(body.showNotesHtml).not.toContain('<script')
-    expect(body.description).toBe('Short blurb.')
+    const body = res.__json() as {
+      episode: { showNotesHtml: string; description: string }
+    }
+    expect(body.episode.showNotesHtml).toContain('Full notes')
+    expect(body.episode.showNotesHtml).toContain('href="https://example.com"')
+    expect(body.episode.showNotesHtml).not.toContain('<script')
+    expect(body.episode.description).toBe('Short blurb.')
   })
 
   test('/api/podcasts/episode rejects path-traversal ids without hitting Beehiiv', async () => {
@@ -337,6 +339,175 @@ describe('createCatchAllHandler — dispatch via _path query param', () => {
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({ description: '' })
     expect(fetchCalls.some((c) => c.url.includes('beehiiv.com'))).toBe(false)
+  })
+
+  test('/api/podcasts/episodes omits show notes from the list payload', async () => {
+    // The list is fetched five-at-a-time to render the home page's four cards,
+    // and nothing on it renders notes. Shipping them would be ~250KB per show
+    // of HTML plus a sanitize pass per episode, for a field no caller reads.
+    fetchImpl = async (url) => {
+      if (url.startsWith(EPISODES_URL)) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'ep-1',
+                slug: 'episode-one',
+                title: 'Episode One',
+                description: 'desc',
+                show_notes: '<p>A very long set of notes.</p>',
+                duration: 1800,
+                displayed_date: 1777899600,
+                status: 'published',
+              },
+            ],
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }
+
+    const handler = buildHandler()
+    const res = makeRes()
+    await handler(
+      makeReq({ url: '/api/handler?_path=podcasts/episodes&show=call-me-back' }),
+      res,
+    )
+
+    const body = res.__json() as { episodes: Array<Record<string, unknown>> }
+    expect(body.episodes).toHaveLength(1)
+    expect(body.episodes[0]).not.toHaveProperty('showNotesHtml')
+    expect(res.__body()).not.toContain('A very long set of notes')
+  })
+
+  test('/api/podcasts/episodes orders same-day episodes deterministically', async () => {
+    // `publishedAt` is a calendar date, so a show that drops twice in one day
+    // ties. A comparator that never returns 0 leaves the tie to the sort's
+    // discretion, and the order could then differ between the cached and
+    // freshly-fetched copies of the same list.
+    const sameDay = (id: string) => ({
+      id,
+      slug: id,
+      title: id,
+      duration: 60,
+      displayed_date: 1777899600,
+      status: 'published',
+    })
+    fetchImpl = async (url) =>
+      url.startsWith(EPISODES_URL)
+        ? new Response(
+            JSON.stringify({ data: [sameDay('ep-b'), sameDay('ep-a')] }),
+            { status: 200 },
+          )
+        : new Response('{}', { status: 200 })
+
+    const order = async () => {
+      clearPodcastCaches()
+      const res = makeRes()
+      await handler(
+        makeReq({
+          url: '/api/handler?_path=podcasts/episodes&show=call-me-back',
+        }),
+        res,
+      )
+      return (res.__json() as { episodes: Array<{ id: string }> }).episodes.map(
+        (e) => e.id,
+      )
+    }
+    const handler = buildHandler()
+
+    expect(await order()).toEqual(['ep-a', 'ep-b'])
+    expect(await order()).toEqual(['ep-a', 'ep-b'])
+  })
+
+  test('/api/podcasts/episodes withholds audio for a show outside the public catalog', async () => {
+    // A Beehiiv audio_url is an unauthenticated mp3 link, so this route is the
+    // gate on paid audio — the client-side Ark+ check decides what to render,
+    // not who can listen. Fails closed: a show id configured for a slug that
+    // isn't in src/data/shows.ts is treated as gated, and an anonymous caller
+    // gets metadata without the url.
+    fetchImpl = async (url) =>
+      url.includes('/podcasts/pod_icmb/')
+        ? new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'ep-1',
+                  slug: 'members-only',
+                  title: 'Members only',
+                  duration: 600,
+                  displayed_date: 1777899600,
+                  status: 'published',
+                  audio_url: 'https://podcasts.beehiiv.test/paid.mp3',
+                },
+              ],
+            }),
+            { status: 200 },
+          )
+        : new Response('{}', { status: 200 })
+
+    const handler = createCatchAllHandler({
+      APP_BASE_URL: 'http://localhost:5173',
+      BEEHIIV_API_KEY: 'test-token',
+      BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
+      BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: 'pod_icmb',
+    })
+    const res = makeRes()
+    await handler(
+      makeReq({
+        url: '/api/handler?_path=podcasts/episodes&show=inside-call-me-back',
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as { episodes: Array<{ audioUrl: string }> }
+    expect(body.episodes).toHaveLength(1)
+    expect(body.episodes[0].audioUrl).toBe('')
+    expect(res.__body()).not.toContain('paid.mp3')
+  })
+
+  test('podcast reads carry an edge cache header', async () => {
+    // The in-process TTL cache only dedupes concurrent calls on one warm
+    // instance (shared/ttl-cache.ts). Without a header, every cold start pays
+    // the full 4.5-7.6s Beehiiv list call.
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ data: [] }), { status: 200 })
+
+    const handler = buildHandler()
+    for (const path of ['podcasts/episodes', 'podcasts/show']) {
+      const res = makeRes()
+      await handler(
+        makeReq({ url: `/api/handler?_path=${path}&show=call-me-back` }),
+        res,
+      )
+      expect(res.__headers()['cache-control']).toMatch(
+        /public, s-maxage=\d+, stale-while-revalidate=\d+/,
+      )
+    }
+  })
+
+  test('a malformed BEEHIIV_PODCAST_ID_* reads as unconfigured, not as an outage', async () => {
+    // The id is interpolated into the upstream path. Sending a pasted dashboard
+    // URL upstream earns a 400 that surfaces as a 502 — a config typo should
+    // look like the empty state an unconfigured show gets, not like downtime.
+    const handler = createCatchAllHandler({
+      APP_BASE_URL: 'http://localhost:5173',
+      BEEHIIV_API_KEY: 'test-token',
+      BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
+      BEEHIIV_PODCAST_ID_CALL_ME_BACK:
+        'https://app.beehiiv.com/podcasts/pod_01a0599f',
+    })
+    const res = makeRes()
+    await handler(
+      makeReq({ url: '/api/handler?_path=podcasts/episodes&show=call-me-back' }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ episodes: [] })
+    expect(fetchCalls.some((c) => c.url.includes('beehiiv.com/v2'))).toBe(false)
   })
 
   test('unknown _path returns the catch-all JSON 404', async () => {

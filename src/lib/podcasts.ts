@@ -64,32 +64,31 @@ export async function getEpisode(
 }
 
 /**
- * Fetches show notes + description for a single Beehiiv episode.
+ * Fetches one episode by its Beehiiv id.
  *
- * Beehiiv returns `show_notes` on the list endpoint, so unlike Simplecast this
- * is no longer required to render show notes — the episode page already has
- * them from the list. It stays as a refresh for episodes whose notes were
- * corrected after the list cache warmed. Returns null on failure; the page
- * falls back to what the list supplied.
+ * This is the ONLY source of two things, and both are why it exists:
+ *
+ *   - Show notes. The list endpoint deliberately omits them (they dwarf every
+ *     other field), so the episode page reads them from here.
+ *   - A paid show's `audioUrl`. The list withholds it from callers who haven't
+ *     proved Ark+ membership; this route serves it to those who have.
+ *
+ * Returns null when the show has no Beehiiv podcast configured, the episode is
+ * gone, or the request fails — callers render the page without notes rather
+ * than treating it as a hard error.
  */
-export async function fetchEpisodeNotes(
+export async function fetchEpisodeById(
   showSlug: ShowSlug,
   episodeId: string,
-): Promise<{ showNotesHtml: string; description: string } | null> {
+): Promise<Episode | null> {
   try {
     const res = await fetch(
       `/api/podcasts/episode?show=${encodeURIComponent(showSlug)}&id=${encodeURIComponent(episodeId)}`,
       { credentials: "same-origin" },
     );
     if (!res.ok) return null;
-    const body = (await res.json()) as {
-      showNotesHtml?: string;
-      description?: string;
-    };
-    return {
-      showNotesHtml: body.showNotesHtml ?? "",
-      description: body.description ?? "",
-    };
+    const body = (await res.json()) as { episode?: Episode | null };
+    return body.episode ?? null;
   } catch {
     return null;
   }

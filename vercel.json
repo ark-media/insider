@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/handler.ts": {
-      "includeFiles": "{server,shared}/**"
+      "includeFiles": "{server,shared}/**",
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -14,7 +15,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'sha256-Y7eLfIaiXmAbpKFja2p7/Aact57c95slZVu3auP0MCE=' https://js.stripe.com https://*.js.stripe.com https://pay.google.com https://us-assets.i.posthog.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' https://cdn.simplecast.com https://podcasts.beehiiv.com; connect-src 'self' https://api.stripe.com https://m.stripe.network https://r.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network https://pay.google.com https://www.youtube-nocookie.com https://open.spotify.com; worker-src 'self' blob:; upgrade-insecure-requests"
+          "value": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'sha256-Y7eLfIaiXmAbpKFja2p7/Aact57c95slZVu3auP0MCE=' https://js.stripe.com https://*.js.stripe.com https://pay.google.com https://us-assets.i.posthog.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' https://podcasts.beehiiv.com; connect-src 'self' https://api.stripe.com https://m.stripe.network https://r.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network https://pay.google.com https://www.youtube-nocookie.com https://open.spotify.com; worker-src 'self' blob:; upgrade-insecure-requests"
         },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },

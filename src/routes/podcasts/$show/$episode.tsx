@@ -11,7 +11,7 @@ import {
   type Show,
   type ShowSlug,
 } from "../../../data/shows";
-import { fetchEpisodeNotes, getEpisode } from "../../../lib/podcasts";
+import { fetchEpisodeById, getEpisode } from "../../../lib/podcasts";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
 import { isArkPlusMember, useSubscriberAuth } from "../../../lib/subscriberAuth";
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
@@ -34,9 +34,16 @@ function EpisodePage() {
   const { show } = Route.useLoaderData();
   const { episode: episodeSlug } = Route.useParams();
   const [episode, setEpisode] = useState<Episode | null | "loading">("loading");
-  const [enriched, setEnriched] = useState<
-    { showNotesHtml: string; description: string } | null
-  >(null);
+  // The episode list omits show notes — they dwarf every other field and only
+  // this page renders them — so they come from a second, per-episode request.
+  // The result is stamped with the id it answers, which lets "still loading"
+  // be derived below instead of reset in an effect. The distinction matters:
+  // loading shows placeholder lines, loaded-and-empty shows the "not published
+  // yet" copy.
+  const [detail, setDetail] = useState<{
+    id: string;
+    value: Episode | null;
+  } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -51,11 +58,13 @@ function EpisodePage() {
   const episodeId =
     typeof episode === "object" && episode ? episode.id : undefined;
   useEffect(() => {
+    // No id means the episode isn't in the catalog — there is nothing to fetch,
+    // and `notesPending` below stays false so the page settles rather than
+    // spinning on placeholder lines forever.
     if (!episodeId) return;
     let live = true;
-    void fetchEpisodeNotes(show.slug as ShowSlug, episodeId).then((notes) => {
-      if (!live || !notes) return;
-      setEnriched(notes);
+    void fetchEpisodeById(show.slug as ShowSlug, episodeId).then((full) => {
+      if (live) setDetail({ id: episodeId, value: full });
     });
     return () => {
       live = false;
@@ -71,7 +80,9 @@ function EpisodePage() {
   }
 
   const isPaid = show.paid;
-  const description = enriched?.description || episode.description;
+  const detailed = detail && detail.id === episodeId ? detail.value : null;
+  const notesPending = Boolean(episodeId) && detail?.id !== episodeId;
+  const description = detailed?.description || episode.description;
 
   return (
     <main className="relative">
@@ -111,7 +122,10 @@ function EpisodePage() {
               <h2 className="mt-14 label text-cyan">
                 Show notes
               </h2>
-              <ShowNotes html={enriched?.showNotesHtml || episode.showNotesHtml} />
+              <ShowNotes
+                html={detailed?.showNotesHtml}
+                pending={notesPending}
+              />
             </div>
 
             <aside className="lg:col-span-4">
@@ -209,7 +223,23 @@ const SHOW_NOTES_CLASS = [
   "[&_strong]:text-fg-strong [&_b]:text-fg-strong",
 ].join(" ");
 
-function ShowNotes({ html }: { html: string | undefined }) {
+function ShowNotes({
+  html,
+  pending,
+}: {
+  html: string | undefined;
+  pending: boolean;
+}) {
+  if (pending) {
+    return (
+      <div className="mt-6 max-w-2xl space-y-2.5" aria-hidden="true">
+        <div className="h-3 w-full animate-pulse rounded bg-fg-strong/8" />
+        <div className="h-3 w-11/12 animate-pulse rounded bg-fg-strong/8" />
+        <div className="h-3 w-10/12 animate-pulse rounded bg-fg-strong/8" />
+        <div className="h-3 w-9/12 animate-pulse rounded bg-fg-strong/8" />
+      </div>
+    );
+  }
   if (!html || !html.trim()) {
     return (
       <p className="mt-6 max-w-2xl text-body-sm">
@@ -314,11 +344,20 @@ function EpisodeSkeleton({ show }: { show: Show }) {
       <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
         <div className="page-gutter pt-8 pb-14 sm:pt-12">
           <EpisodeBreadcrumbs show={show} />
-          {/* Mirrors the loaded page's player-first shape so it doesn't reflow
-              when the episode arrives. */}
+          {/* Mirrors the loaded page's shape block for block — title, meta row,
+              player, notes — so the column doesn't jump when the episode
+              arrives. The heights below track the real elements: the h1's
+              clamped line-height, EpisodeMeta's single line, and AudioPlayer's
+              padding + artwork (size-16 / sm:size-28). Change one, change the
+              other. */}
           <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
-              <div className="h-[200px] w-full animate-pulse border border-rule bg-navy-800/40" />
+              <div className="max-w-3xl space-y-2">
+                <div className="h-7 w-11/12 animate-pulse rounded bg-fg-strong/8 sm:h-9" />
+                <div className="h-7 w-2/3 animate-pulse rounded bg-fg-strong/8 sm:h-9" />
+              </div>
+              <div className="mt-3 h-4 w-64 max-w-full animate-pulse rounded bg-fg-strong/8" />
+              <div className="mt-6 h-[134px] w-full animate-pulse border border-rule bg-navy-800/40 sm:h-[154px]" />
               <div className="mt-14 label text-cyan">
                 Show notes
               </div>

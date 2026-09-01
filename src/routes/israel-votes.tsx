@@ -1,131 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell } from "../components/PageShell";
+import {
+  EXPLAINERS,
+  PLAYLIST,
+  type CuratedEpisode,
+  type Explainer,
+} from "../data/israelVotes";
+import { getShow } from "../data/shows";
+import { useEpisodeAudio, type EpisodeAudio } from "../lib/useEpisodeAudio";
 
 export const Route = createFileRoute("/israel-votes")({
   component: IsraelVotesPage,
 });
 
 const FEATURED_VIDEO_ID = "1ngquxQAMmY";
-
-type Explainer = {
-  title: string;
-  show: string;
-  videoId: string;
-  audioUrl: string;
-};
-
-const EXPLAINERS: Explainer[] = [
-  {
-    title: "The State of the Israeli Right",
-    show: "For Heaven's Sake",
-    videoId: "LzEUuRnBXwM",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/73e4172a-7831-48cf-a6a9-390097bd76d3/episodes/1ca38b66-26ce-4908-beef-891eb86a696a/audio/3f83cec4-1185-4b6f-a392-61251271773a/default_tc.mp3",
-  },
-  {
-    title: "The Only-Bibi Camp vs Never-Bibi Camp",
-    show: "Call Me Back · with Ari Shavit",
-    videoId: "aPqv68qM9a4",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/95ea4d0c-35c7-4ac7-a410-7d9f02ee3ded/episodes/f88f8164-86a1-45fd-9d8d-d77a9b8a8cdb/audio/c20e999c-1f49-47ca-8c97-cb88951763e7/default_tc.mp3",
-  },
-  {
-    title: "The State of the Israeli Center",
-    show: "For Heaven's Sake",
-    videoId: "Hjfr3G5DuwE",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/73e4172a-7831-48cf-a6a9-390097bd76d3/episodes/06080d81-fbb6-4b97-92ae-ed7985d20af6/audio/8655d052-c5f4-4e7f-a6a6-af767983a809/default_tc.mp3",
-  },
-];
-
-type Track = {
-  show: "CMB" | "FHS" | "WYN" | "ICMB";
-  title: string;
-  audioUrl: string;
-};
-
-const SHOW_LABEL: Record<Track["show"], string> = {
-  CMB: "Call Me Back",
-  FHS: "For Heaven's Sake",
-  WYN: "What's Your Number?",
-  ICMB: "Call Me Back AMA",
-};
-
-const PLAYLIST: Track[] = [
-  {
-    show: "CMB",
-    title: "A Political Shakeup in Israel? — with Amit Segal and Nadav Eyal",
-    audioUrl:
-      "https://cdn.simplecast.com/media/audio/transcoded/e9010e3f-7aa0-43d4-a1f5-6e638d5a744e/95ea4d0c-35c7-4ac7-a410-7d9f02ee3ded/episodes/audio/group/88fe4c13-5bcf-4128-a754-de77c8d04cfd/group-item/c32587f8-a9a6-47a3-8aa2-c3fc475120df/128_default_tc.mp3",
-  },
-  {
-    show: "CMB",
-    title: "The Political Landscape — with Nadav Eyal and Amit Segal",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/95ea4d0c-35c7-4ac7-a410-7d9f02ee3ded/episodes/ac9dd7e1-0001-498c-af25-d2064865d8ee/audio/96aad3de-7d4f-410d-bcce-93efd2c70275/default_tc.mp3",
-  },
-  {
-    show: "FHS",
-    title: "Election Currents",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/73e4172a-7831-48cf-a6a9-390097bd76d3/episodes/929b7154-fde5-4b9b-944a-ce0922bd7c03/audio/c9d1e359-993d-490a-b8c8-e04b06147ec0/default_tc.mp3",
-  },
-  {
-    show: "WYN",
-    title: "From War Economy to Election Economy",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/0f41eccf-6011-4668-9afc-32b71bc38e7b/episodes/b7cd3497-3063-4ba3-84ae-56819e9be45a/audio/f9465660-ad76-4b8d-9c2a-c9516c68508d/default_tc.mp3",
-  },
-  {
-    show: "FHS",
-    title: "Bennett 2026",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/73e4172a-7831-48cf-a6a9-390097bd76d3/episodes/45e310f2-a641-4068-979e-0ba2b7ced288/audio/7e9d64fb-6f6c-48ea-b4d6-c0b7200ad76e/default_tc.mp3",
-  },
-  {
-    show: "ICMB",
-    title: "Sneak Peek: Live with Tal Becker and Nadav Eyal",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/95ea4d0c-35c7-4ac7-a410-7d9f02ee3ded/episodes/7afd9409-9c7e-4789-80be-effb6ca827a5/audio/b3f42247-94b4-48e4-a832-1b94061debd6/default_tc.mp3",
-  },
-  {
-    show: "FHS",
-    title: "The State of the Israeli Center",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/73e4172a-7831-48cf-a6a9-390097bd76d3/episodes/06080d81-fbb6-4b97-92ae-ed7985d20af6/audio/8655d052-c5f4-4e7f-a6a6-af767983a809/default_tc.mp3",
-  },
-  {
-    show: "WYN",
-    title: "Is Israel's 2026 Budget a Red Flag?",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/0f41eccf-6011-4668-9afc-32b71bc38e7b/episodes/1a480d3c-85c0-4930-b9ff-070a9cd7558e/audio/77704ec9-9dd7-43a1-8836-e16d093e23a7/default_tc.mp3",
-  },
-  {
-    show: "CMB",
-    title: "The Only-Bibi Camp vs Never-Bibi Camp",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/95ea4d0c-35c7-4ac7-a410-7d9f02ee3ded/episodes/f88f8164-86a1-45fd-9d8d-d77a9b8a8cdb/audio/c20e999c-1f49-47ca-8c97-cb88951763e7/default_tc.mp3",
-  },
-  {
-    show: "FHS",
-    title: "The State of the Israeli Right",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/73e4172a-7831-48cf-a6a9-390097bd76d3/episodes/1ca38b66-26ce-4908-beef-891eb86a696a/audio/3f83cec4-1185-4b6f-a392-61251271773a/default_tc.mp3",
-  },
-  {
-    show: "CMB",
-    title: "Netanyahu Seeks Pardon",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/95ea4d0c-35c7-4ac7-a410-7d9f02ee3ded/episodes/bc0ea99c-85e2-4a52-a1a4-6a421525ecbf/audio/d677d9c9-1056-46df-9410-7bbf953bbfd6/default_tc.mp3",
-  },
-  {
-    show: "FHS",
-    title: "Coming Apart",
-    audioUrl:
-      "https://cdn.simplecast.com/audio/73e4172a-7831-48cf-a6a9-390097bd76d3/episodes/99690807-3cae-4bd7-88d3-96934787ac4e/audio/f8cfdbca-f7d7-4817-9705-3b615f77955f/default_tc.mp3",
-  },
-];
 
 function IsraelVotesPage() {
   return (
@@ -168,28 +57,7 @@ function Explainers() {
         </p>
         <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-3">
           {EXPLAINERS.map((e) => (
-            <article
-              key={e.videoId}
-              className="flex flex-col border border-rule bg-navy-800/40"
-            >
-              <YouTubeEmbed videoId={e.videoId} title={e.title} />
-              <div className="flex flex-1 flex-col p-6">
-                <div className="label text-cyan">
-                  {e.show}
-                </div>
-                <h3 className="mt-3 text-h3">
-                  {e.title}
-                </h3>
-                <div className="mt-6">
-                  <audio
-                    controls
-                    preload="none"
-                    src={e.audioUrl}
-                    className="h-10 w-full"
-                  />
-                </div>
-              </div>
-            </article>
+            <ExplainerCard key={e.videoId} explainer={e} />
           ))}
         </div>
       </div>
@@ -222,52 +90,133 @@ function PlaylistSection() {
         </div>
 
         <ul className="mt-10 divide-y divide-rule border-y border-rule">
-          {PLAYLIST.map((track, idx) => {
-            const isActive = activeIdx === idx;
-            return (
-              <li key={track.audioUrl}>
-                <button
-                  type="button"
-                  onClick={() => setActiveIdx(isActive ? null : idx)}
-                  aria-expanded={isActive}
-                  className="group flex w-full items-baseline gap-4 py-4 text-left transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:gap-6"
-                >
-                  <span className="w-8 shrink-0 text-body-sm font-display tabular-nums text-fg-faint">
-                    {String(idx + 1).padStart(2, "0")}
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center border border-rule-strong button-text transition group-hover:border-cyan ${
-                      isActive ? "border-cyan bg-cyan/10 text-cyan" : "text-fg"
-                    }`}
-                  >
-                    {isActive ? "▮▮" : "▶"}
-                  </span>
-                  <span className="flex-1 text-body-sm text-fg">
-                    <span className="font-display tracking-[-0.005em]">
-                      {track.title}
-                    </span>
-                  </span>
-                  <span className="hidden label text-fg-muted sm:inline">
-                    {SHOW_LABEL[track.show]}
-                  </span>
-                </button>
-                {isActive ? (
-                  <div className="pb-5 pl-12 pr-2 sm:pl-[72px]">
-                    <audio
-                      controls
-                      preload="metadata"
-                      src={track.audioUrl}
-                      className="h-10 w-full"
-                    />
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
+          {PLAYLIST.map((track, idx) => (
+            <PlaylistRow
+              key={track.episodeId}
+              track={track}
+              index={idx}
+              isActive={activeIdx === idx}
+              onToggle={() =>
+                setActiveIdx(activeIdx === idx ? null : idx)
+              }
+            />
+          ))}
         </ul>
       </div>
     </section>
+  );
+}
+
+function ExplainerCard({ explainer }: { explainer: Explainer }) {
+  const audio = useEpisodeAudio(explainer);
+  const credit =
+    explainer.credit ?? getShow(explainer.show)?.shortTitle ?? "Ark Media";
+
+  return (
+    <article className="flex flex-col border border-rule bg-navy-800/40">
+      <YouTubeEmbed videoId={explainer.videoId} title={explainer.title} />
+      <div className="flex flex-1 flex-col p-6">
+        <div className="label text-cyan">{credit}</div>
+        <h3 className="mt-3 text-h3">{explainer.title}</h3>
+        <div className="mt-6">
+          <CuratedAudio audio={audio} title={explainer.title} preload="none" />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PlaylistRow({
+  track,
+  index,
+  isActive,
+  onToggle,
+}: {
+  track: CuratedEpisode;
+  index: number;
+  isActive: boolean;
+  onToggle: () => void;
+}) {
+  // The reference is only handed to the hook once the row opens, so a visit
+  // that browses the list without playing anything makes no requests at all.
+  const audio = useEpisodeAudio(isActive ? track : null);
+  const showLabel = getShow(track.show)?.shortTitle ?? "";
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isActive}
+        className="group flex w-full items-baseline gap-4 py-4 text-left transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:gap-6"
+      >
+        <span className="w-8 shrink-0 text-body-sm font-display tabular-nums text-fg-faint">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <span
+          aria-hidden="true"
+          className={`flex h-7 w-7 shrink-0 items-center justify-center border border-rule-strong button-text transition group-hover:border-cyan ${
+            isActive ? "border-cyan bg-cyan/10 text-cyan" : "text-fg"
+          }`}
+        >
+          {isActive ? "▮▮" : "▶"}
+        </span>
+        <span className="flex-1 text-body-sm text-fg">
+          <span className="font-display tracking-[-0.005em]">
+            {track.title}
+          </span>
+        </span>
+        <span className="hidden label text-fg-muted sm:inline">
+          {showLabel}
+        </span>
+      </button>
+      {isActive ? (
+        <div className="pb-5 pl-12 pr-2 sm:pl-[72px]">
+          <CuratedAudio audio={audio} title={track.title} preload="metadata" />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The player for one curated episode. The url arrives from the podcast host a
+ * beat after the row opens, so this owns the three states that implies —
+ * resolving, playable, and "the host has nothing for this one".
+ */
+function CuratedAudio({
+  audio,
+  title,
+  preload,
+}: {
+  audio: EpisodeAudio;
+  title: string;
+  preload: "none" | "metadata";
+}) {
+  if (audio.status === "ready") {
+    return (
+      <audio
+        controls
+        preload={preload}
+        src={audio.url}
+        aria-label={title}
+        className="h-10 w-full"
+      />
+    );
+  }
+  if (audio.status === "unavailable") {
+    return (
+      <p className="text-body-sm text-fg-muted">
+        This episode isn't available in our player right now — find it in your
+        podcast app.
+      </p>
+    );
+  }
+  return (
+    <div
+      className="h-10 w-full animate-pulse rounded bg-fg-strong/8"
+      aria-hidden="true"
+    />
   );
 }
 
