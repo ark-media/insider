@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 /**
  * The house audio player.
@@ -9,8 +9,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * means the controls inherit the site's own tokens instead of an iframe's
  * chrome, and the page keeps working with the browser's media keys.
  *
- * The visible controls are real buttons and a real `<input type="range">`, so
- * keyboard and screen-reader support is the platform's rather than ours.
+ * The layout follows the Megaphone-style podcast bar: cover art at the left, a
+ * large round play button, and a waveform whose ends carry the elapsed and
+ * total time. The waveform is decoration over a real `<input type="range">`,
+ * and the buttons are real buttons, so keyboard and screen-reader support is
+ * the platform's rather than ours.
  */
 
 const SKIP_SECONDS = 15;
@@ -27,9 +30,50 @@ function formatTime(seconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+const BAR_COUNT = 140;
+
+/**
+ * Bar heights for the waveform, in 0..1.
+ *
+ * We never decode the audio — that would mean downloading the whole episode
+ * before the player could paint — so the shape is generated from the source
+ * URL instead. Same episode, same waveform, every visit; different episodes
+ * look different from each other, which is the only thing the shape has to do.
+ */
+function waveformFor(src: string): number[] {
+  let seed = 2166136261;
+  for (let i = 0; i < src.length; i++) {
+    seed ^= src.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  // mulberry32 — small, deterministic, and good enough for decoration.
+  const rand = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const phase = rand() * Math.PI * 2;
+  const bars: number[] = [];
+  for (let i = 0; i < BAR_COUNT; i++) {
+    // A slow swell across the clip plus per-bar noise: speech-shaped rather
+    // than a flat comb, and never so short that a bar disappears.
+    const swell =
+      0.66 + 0.34 * Math.sin((i / BAR_COUNT) * Math.PI * 3.4 + phase);
+    // A second, faster octave gives the bursts a real waveform has between the
+    // steady stretches of speech.
+    const detail = 0.34 + 0.66 * rand() * (0.55 + 0.45 * rand());
+    bars.push(Math.min(1, Math.max(0.14, swell * detail * 1.35)));
+  }
+  return bars;
+}
+
 export function AudioPlayer({
   src,
   title,
+  /** Cover art — the episode's own image, else the show cover. */
+  artworkUrl,
   /**
    * Duration in minutes from the episode record. Shown as the total until the
    * browser has metadata, so the control doesn't flash "0:00" on first paint.
@@ -39,6 +83,7 @@ export function AudioPlayer({
 }: {
   src: string;
   title: string;
+  artworkUrl?: string | null;
   fallbackDurationMinutes?: number;
   className?: string;
 }) {
@@ -103,15 +148,17 @@ export function AudioPlayer({
     setCurrentTime(to);
   }, []);
 
-  const pct =
-    effectiveDuration > 0
-      ? Math.min(100, (currentTime / effectiveDuration) * 100)
-      : 0;
+  const bars = useMemo(() => waveformFor(src), [src]);
+  const seekable = effectiveDuration > 0;
+  const pct = seekable
+    ? Math.min(100, (currentTime / effectiveDuration) * 100)
+    : 0;
+
+  const elapsed = formatTime(currentTime);
+  const total = formatTime(effectiveDuration);
 
   return (
-    <div
-      className={`border border-rule bg-navy-800/40 p-4 sm:p-5 ${className}`}
-    >
+    <div className={`border border-rule bg-navy-800/40 p-4 sm:p-5 ${className}`}>
       <audio
         ref={audioRef}
         src={src}
@@ -131,65 +178,155 @@ export function AudioPlayer({
         <track kind="captions" />
       </audio>
 
-      <div className="flex items-center gap-3 sm:gap-4">
-        <button
-          type="button"
-          onClick={togglePlay}
-          aria-label={playing ? `Pause ${title}` : `Play ${title}`}
-          className="grid size-12 shrink-0 place-items-center rounded-full bg-cyan text-navy-900 transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          {playing ? <PauseIcon /> : <PlayIcon />}
-        </button>
+      <div className="flex items-center gap-4 sm:gap-5">
+        {artworkUrl ? (
+          <img
+            src={artworkUrl}
+            alt=""
+            loading="lazy"
+            className="size-16 shrink-0 border-2 border-cyan object-cover sm:size-28"
+          />
+        ) : null}
 
         <div className="min-w-0 flex-1">
-          <input
-            type="range"
-            className="audio-scrub"
-            style={{ "--pct": `${pct}%` } as React.CSSProperties}
-            min={0}
-            max={effectiveDuration || 0}
-            step={1}
-            value={Math.min(currentTime, effectiveDuration || 0)}
-            disabled={effectiveDuration <= 0}
-            aria-label={`Seek within ${title}`}
-            aria-valuetext={`${formatTime(currentTime)} of ${formatTime(effectiveDuration)}`}
-            onPointerDown={() => setScrubbing(true)}
-            onPointerUp={() => setScrubbing(false)}
-            onKeyDown={() => setScrubbing(true)}
-            onKeyUp={() => setScrubbing(false)}
-            onChange={(e) => seek(Number(e.currentTarget.value))}
-          />
-          <div className="mt-1 flex items-center justify-between text-[0.8125rem] tabular-nums text-fg-muted">
-            <span>{formatTime(currentTime)}</span>
-            <span>{formatTime(effectiveDuration)}</span>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={playing ? `Pause ${title}` : `Play ${title}`}
+              className="grid size-12 shrink-0 place-items-center rounded-full bg-cyan text-navy transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:size-14"
+            >
+              {playing ? <PauseIcon /> : <PlayIcon />}
+            </button>
+
+            <div className="min-w-0 flex-1">
+              <div className="relative h-11 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-cyan sm:h-16">
+                <Waveform bars={bars} pct={pct} />
+
+                {/* The chips ride the ends of the waveform the way the reference
+                    player does. Below sm there isn't room, so the same two
+                    readings drop to a row underneath instead. */}
+                <TimeChip className="left-1.5 hidden bg-cyan text-navy sm:block">
+                  {elapsed}
+                </TimeChip>
+                <TimeChip className="right-1.5 hidden bg-navy-600 text-fg-strong sm:block">
+                  {total}
+                </TimeChip>
+
+                {seekable ? (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-cyan"
+                    style={{ left: `${pct}%` }}
+                  />
+                ) : null}
+
+                <input
+                  type="range"
+                  className="audio-scrub"
+                  min={0}
+                  max={effectiveDuration || 0}
+                  step={1}
+                  value={Math.min(currentTime, effectiveDuration || 0)}
+                  disabled={!seekable}
+                  aria-label={`Seek within ${title}`}
+                  aria-valuetext={`${elapsed} of ${total}`}
+                  onPointerDown={() => setScrubbing(true)}
+                  onPointerUp={() => setScrubbing(false)}
+                  onKeyDown={() => setScrubbing(true)}
+                  onKeyUp={() => setScrubbing(false)}
+                  onChange={(e) => seek(Number(e.currentTarget.value))}
+                />
+              </div>
+
+              <div className="mt-1 flex items-center justify-between text-xs tabular-nums text-fg-muted sm:hidden">
+                <span>{elapsed}</span>
+                <span>{total}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-3 sm:mt-4">
+            <ControlButton
+              onClick={() => setSpeedIndex((i) => (i + 1) % SPEEDS.length)}
+              label={`Playback speed: ${speed}×. Change speed`}
+              className="border border-rule-strong px-2 py-1 text-xs tabular-nums"
+            >
+              {speed}×
+            </ControlButton>
+            <ControlButton
+              onClick={() => skip(-SKIP_SECONDS)}
+              label={`Rewind ${SKIP_SECONDS} seconds`}
+            >
+              <SkipIcon seconds={SKIP_SECONDS} direction="back" />
+            </ControlButton>
+            <ControlButton
+              onClick={() => skip(SKIP_SECONDS)}
+              label={`Forward ${SKIP_SECONDS} seconds`}
+            >
+              <SkipIcon seconds={SKIP_SECONDS} direction="forward" />
+            </ControlButton>
           </div>
         </div>
       </div>
-
-      <div className="mt-3 flex items-center gap-2">
-        <ControlButton
-          onClick={() => skip(-SKIP_SECONDS)}
-          label={`Rewind ${SKIP_SECONDS} seconds`}
-        >
-          <RewindIcon />
-          {SKIP_SECONDS}
-        </ControlButton>
-        <ControlButton
-          onClick={() => skip(SKIP_SECONDS)}
-          label={`Forward ${SKIP_SECONDS} seconds`}
-        >
-          {SKIP_SECONDS}
-          <ForwardIcon />
-        </ControlButton>
-        <ControlButton
-          className="ml-auto"
-          onClick={() => setSpeedIndex((i) => (i + 1) % SPEEDS.length)}
-          label={`Playback speed: ${speed}×. Change speed`}
-        >
-          {speed}×
-        </ControlButton>
-      </div>
     </div>
+  );
+}
+
+/**
+ * The bars, drawn twice: once dim for the whole clip, once in cyan clipped to
+ * the played fraction. `preserveAspectRatio="none"` lets one fixed viewBox
+ * stretch to whatever width the column ends up with.
+ */
+function Waveform({ bars, pct }: { bars: number[]; pct: number }) {
+  const clipId = useId();
+  const width = bars.length * 3;
+  const rects = bars.map((h, i) => (
+    <rect
+      // Bars are positional decoration — index is the identity.
+      key={i}
+      x={i * 3}
+      y={50 - h * 50}
+      width={2}
+      height={h * 100}
+    />
+  ));
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} 100`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      className="h-full w-full"
+    >
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={0} y={0} width={(width * pct) / 100} height={100} />
+        </clipPath>
+      </defs>
+      <g className="text-rule-strong" fill="currentColor">
+        {rects}
+      </g>
+      <g className="text-cyan" fill="currentColor" clipPath={`url(#${clipId})`}>
+        {rects}
+      </g>
+    </svg>
+  );
+}
+
+function TimeChip({
+  className = "",
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={`pointer-events-none absolute top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-xs font-bold tabular-nums ${className}`}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -209,7 +346,7 @@ function ControlButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={`inline-flex items-center gap-1 border border-rule px-2.5 py-1.5 text-[0.8125rem] tabular-nums text-fg-muted transition hover:border-rule-strong hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${className}`}
+      className={`inline-flex items-center justify-center text-fg-muted transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${className}`}
     >
       {children}
     </button>
@@ -218,7 +355,7 @@ function ControlButton({
 
 function PlayIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
       <path d="M4.5 2.3v11.4a.6.6 0 0 0 .92.51l9-5.7a.6.6 0 0 0 0-1.02l-9-5.7a.6.6 0 0 0-.92.51Z" />
     </svg>
   );
@@ -226,27 +363,48 @@ function PlayIcon() {
 
 function PauseIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
       <rect x="3.5" y="2.5" width="3.5" height="11" rx="1" />
       <rect x="9" y="2.5" width="3.5" height="11" rx="1" />
     </svg>
   );
 }
 
-function RewindIcon() {
+/** A looping arrow with the skip length set inside it, as on the reference bar. */
+function SkipIcon({
+  seconds,
+  direction,
+}: {
+  seconds: number;
+  direction: "back" | "forward";
+}) {
   return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M8 3.2a4.8 4.8 0 1 1-4.8 4.8" />
-      <path d="M5.6 1.2 3.2 3.2l2.4 2" />
-    </svg>
-  );
-}
-
-function ForwardIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M8 3.2a4.8 4.8 0 1 0 4.8 4.8" />
-      <path d="M10.4 1.2l2.4 2-2.4 2" />
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <g transform={direction === "forward" ? "translate(16 0) scale(-1 1)" : ""}>
+        <path d="M8 2.6a5.4 5.4 0 1 1-5.4 5.4" />
+        <path d="M5.5 0.5 3 2.6l2.5 2.1" />
+      </g>
+      <text
+        x="8"
+        y="10.6"
+        textAnchor="middle"
+        fontSize="6.4"
+        fontWeight="700"
+        fill="currentColor"
+        stroke="none"
+      >
+        {seconds}
+      </text>
     </svg>
   );
 }

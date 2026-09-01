@@ -324,7 +324,11 @@ function EpisodeBrowser({
     <>
       <div ref={playerRef}>
         {selectedEpisode ? (
-          <ShowPlayer episode={selectedEpisode} isLatest={isLatest} />
+          <ShowPlayer
+            episode={selectedEpisode}
+            show={show}
+            isLatest={isLatest}
+          />
         ) : null}
       </div>
 
@@ -677,9 +681,11 @@ function EpisodeCard({
 
 function ShowPlayer({
   episode,
+  show,
   isLatest,
 }: {
   episode: Episode;
+  show: Show;
   isLatest: boolean;
 }) {
   return (
@@ -716,6 +722,7 @@ function ShowPlayer({
           className="mt-8"
           src={episode.audioUrl!}
           title={episode.title}
+          artworkUrl={episodeImage(episode, show)}
           fallbackDurationMinutes={episode.durationMinutes}
         />
       </div>

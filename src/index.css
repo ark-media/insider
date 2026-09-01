@@ -790,87 +790,53 @@ body {
 }
 
 /* --- Episode audio scrubber -------------------------------------------------
-   Same construction as .pwyc-slider (cyan fill sized by --pct over a faint
-   groove) but slimmer: this sits under a play button as a progress readout you
-   can grab, not a value you're asked to choose. Vendor pseudo-elements can't be
-   grouped, so each engine's rules are written out. */
+   Unlike .pwyc-slider this input draws nothing: it is stretched invisibly over
+   the waveform in <AudioPlayer>, which paints the played/unplayed bars and the
+   playhead itself. Keeping a real range underneath means native pointer drag,
+   arrow keys and screen-reader value announcements come for free. Vendor
+   pseudo-elements can't be grouped, so each engine's rules are written out. */
 .audio-scrub {
-  --track-h: 0.25rem; /* 4px */
-  --thumb-d: 0.875rem; /* 14px */
   -webkit-appearance: none;
   appearance: none;
+  position: absolute;
+  inset: 0;
   width: 100%;
-  min-width: 0;
-  height: var(--thumb-d);
+  height: 100%;
+  margin: 0;
+  padding: 0;
   background: transparent;
   cursor: pointer;
   outline: none;
 }
 
 .audio-scrub::-webkit-slider-runnable-track {
-  height: var(--track-h);
-  border-radius: 999px;
-  background:
-    linear-gradient(var(--color-cyan), var(--color-cyan)) left center /
-      var(--pct, 0%) 100% no-repeat,
-    var(--color-rule-strong);
+  height: 100%;
+  background: transparent;
+  border: 0;
 }
-
 .audio-scrub::-moz-range-track {
-  height: var(--track-h);
-  border-radius: 999px;
-  background: var(--color-rule-strong);
-}
-.audio-scrub::-moz-range-progress {
-  height: var(--track-h);
-  border-radius: 999px;
-  background: var(--color-cyan);
+  height: 100%;
+  background: transparent;
+  border: 0;
 }
 
+/* The thumb is the grab target, not a visual — the cyan playhead is a sibling
+   div. It still needs a non-zero width or Firefox won't drag. */
 .audio-scrub::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: var(--thumb-d);
-  height: var(--thumb-d);
-  margin-top: calc((var(--track-h) - var(--thumb-d)) / 2);
-  border-radius: 999px;
-  border: 2px solid var(--color-navy-800);
-  background: var(--color-cyan);
-  box-shadow: 0 2px 5px -1px rgb(0 0 0 / 0.4);
-  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  width: 2px;
+  height: 100%;
+  border: 0;
+  background: transparent;
 }
 .audio-scrub::-moz-range-thumb {
-  width: var(--thumb-d);
-  height: var(--thumb-d);
-  border-radius: 999px;
-  border: 2px solid var(--color-navy-800);
-  background: var(--color-cyan);
-  box-shadow: 0 2px 5px -1px rgb(0 0 0 / 0.4);
-  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.audio-scrub:hover::-webkit-slider-thumb,
-.audio-scrub:active::-webkit-slider-thumb { transform: scale(1.12); }
-.audio-scrub:hover::-moz-range-thumb,
-.audio-scrub:active::-moz-range-thumb { transform: scale(1.12); }
-
-.audio-scrub:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 2px 5px -1px rgb(0 0 0 / 0.4),
-    0 0 0 3px color-mix(in srgb, var(--color-cyan) 55%, transparent);
-}
-.audio-scrub:focus-visible::-moz-range-thumb {
-  box-shadow: 0 2px 5px -1px rgb(0 0 0 / 0.4),
-    0 0 0 3px color-mix(in srgb, var(--color-cyan) 55%, transparent);
+  width: 2px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 /* Disabled = metadata hasn't loaded yet, so there's nothing to seek within. */
-.audio-scrub:disabled { cursor: default; opacity: 0.45; }
-.audio-scrub:disabled::-webkit-slider-thumb { box-shadow: none; }
-.audio-scrub:disabled::-moz-range-thumb { box-shadow: none; }
-
-@media (prefers-reduced-motion: reduce) {
-  .audio-scrub::-webkit-slider-thumb,
-  .audio-scrub::-moz-range-thumb {
-    transition: none;
-  }
-}
+.audio-scrub:disabled { cursor: default; }

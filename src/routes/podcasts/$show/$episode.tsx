@@ -1,6 +1,10 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { formatEpisodeDate, type Episode } from "../../../data/episodes";
+import {
+  episodeImage,
+  formatEpisodeDate,
+  type Episode,
+} from "../../../data/episodes";
 import {
   getShow,
   showAtmosphere,
@@ -92,9 +96,9 @@ function EpisodePage() {
               </div>
               <div className="rise rise-2 mt-6">
                 {isPaid ? (
-                  <PaidEpisodeBlock episode={episode} />
+                  <PaidEpisodeBlock episode={episode} show={show} />
                 ) : (
-                  <PlayerBlock episode={episode} />
+                  <PlayerBlock episode={episode} show={show} />
                 )}
               </div>
 
@@ -218,7 +222,7 @@ function ShowNotes({ html }: { html: string | undefined }) {
   return <div className={SHOW_NOTES_CLASS}>{renderShowNotes(html)}</div>;
 }
 
-function PlayerBlock({ episode }: { episode: Episode }) {
+function PlayerBlock({ episode, show }: { episode: Episode; show: Show }) {
   if (!episode.audioUrl) {
     return (
       <div className="border border-rule bg-navy-800/40 p-6">
@@ -237,18 +241,25 @@ function PlayerBlock({ episode }: { episode: Episode }) {
     <AudioPlayer
       src={episode.audioUrl}
       title={episode.title}
+      artworkUrl={episodeImage(episode, show)}
       fallbackDurationMinutes={episode.durationMinutes}
     />
   );
 }
 
-function PaidEpisodeBlock({ episode }: { episode: Episode }) {
+function PaidEpisodeBlock({
+  episode,
+  show,
+}: {
+  episode: Episode;
+  show: Show;
+}) {
   const { state } = useSubscriberAuth();
   // Gate on the paid tier, not just a signed-in session: a free user is still
   // `kind: "member"`, and a Beehiiv audio URL carries no auth of its own, so
   // this check is the only app-level gate on paid audio.
   if (isArkPlusMember(state)) {
-    return <PlayerBlock episode={episode} />;
+    return <PlayerBlock episode={episode} show={show} />;
   }
 
   return (
