@@ -562,3 +562,286 @@ describe('createCatchAllHandler — fallback to url.pathname', () => {
     expect(res.__json()).toEqual({ error: 'not_found', path: '/api/bogus' })
   })
 })
+
+// ===========================================================================
+// Episode list paging + the cross-show "latest" route
+// ===========================================================================
+
+// Beehiiv's list endpoint costs time per episode, not per request, so the list
+// is bought as several short pages at once rather than one long one. These
+// tests pin the two things that makes load-bearing: that the pages are actually
+// requested in parallel and merged, and that a duplicate across a page boundary
+// can't reach the client.
+
+function makeEpisode(n: number, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `ep-${n}`,
+    slug: `episode-${n}`,
+    title: `Episode ${n}`,
+    duration: 1800,
+    // Descending dates, one day apart, so episode 1 is the newest.
+    displayed_date: 1777899600 - n * 86_400,
+    status: 'published',
+    ...overrides,
+  }
+}
+
+/** Serves distinct episodes per `page`, the way Beehiiv does. */
+function servePages(perPage: Record<number, unknown[]>): FetchImpl {
+  return async (url) => {
+    if (!url.startsWith(EPISODES_URL)) return new Response('{}', { status: 200 })
+    const page = Number(new URL(url).searchParams.get('page') ?? '1')
+    return new Response(JSON.stringify({ data: perPage[page] ?? [] }), {
+      status: 200,
+    })
+  }
+}
+
+describe('/api/podcasts/episodes — parallel paging', () => {
+  test('requests every page at once and merges them into one list', async () => {
+    // Ten distinct episodes per page across five pages.
+    const perPage: Record<number, unknown[]> = {}
+    for (let page = 1; page <= 5; page++) {
+      perPage[page] = Array.from({ length: 10 }, (_, i) =>
+        makeEpisode((page - 1) * 10 + i + 1),
+      )
+    }
+    fetchImpl = servePages(perPage)
+
+    const res = makeRes()
+    await buildHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/episodes&show=call-me-back' }),
+      res,
+    )
+
+    const listCalls = fetchCalls.filter((c) => c.url.startsWith(EPISODES_URL))
+    expect(listCalls).toHaveLength(5)
+    expect(
+      listCalls.map((c) => new URL(c.url).searchParams.get('page')).sort(),
+    ).toEqual(['1', '2', '3', '4', '5'])
+    // Each page is short — asking for all 50 at once is the slow thing we are
+    // avoiding, so a regression to one big request should fail here.
+    for (const call of listCalls) {
+      expect(new URL(call.url).searchParams.get('limit')).toBe('10')
+    }
+
+    const body = res.__json() as { episodes: Array<{ slug: string }> }
+    expect(body.episodes).toHaveLength(50)
+    expect(body.episodes[0].slug).toBe('episode-1')
+    expect(body.episodes[49].slug).toBe('episode-50')
+  })
+
+  test('drops an episode that offset paging served on two pages', async () => {
+    // What a publish landing mid-fetch looks like: everything shifts down one,
+    // so the last episode of page 1 shows up again at the top of page 2.
+    fetchImpl = servePages({
+      1: [makeEpisode(1), makeEpisode(2)],
+      2: [makeEpisode(2), makeEpisode(3)],
+    })
+
+    const res = makeRes()
+    await buildHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/episodes&show=call-me-back' }),
+      res,
+    )
+
+    const body = res.__json() as { episodes: Array<{ slug: string }> }
+    expect(body.episodes.map((e) => e.slug)).toEqual([
+      'episode-1',
+      'episode-2',
+      'episode-3',
+    ])
+  })
+
+  test('one failed page fails the whole list rather than serving a partial one', async () => {
+    // A short list would otherwise be cached and served as if it were complete.
+    fetchImpl = async (url) => {
+      if (!url.startsWith(EPISODES_URL)) return new Response('{}', { status: 200 })
+      const page = Number(new URL(url).searchParams.get('page') ?? '1')
+      if (page === 3) return new Response('upstream boom', { status: 500 })
+      return new Response(JSON.stringify({ data: [makeEpisode(page)] }), {
+        status: 200,
+      })
+    }
+
+    const res = makeRes()
+    await buildHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/episodes&show=call-me-back' }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(502)
+    expect((res.__json() as { error: string }).error).toBe('podcasts_unavailable')
+  })
+})
+
+describe('/api/podcasts/latest', () => {
+  const POD_FHS = 'pod_fhs'
+  const FHS_URL = `https://api.beehiiv.com/v2/publications/pub_test/podcasts/${POD_FHS}/episodes`
+
+  function buildMultiShowHandler() {
+    return createCatchAllHandler({
+      APP_BASE_URL: 'http://localhost:5173',
+      BEEHIIV_API_KEY: 'test-token',
+      BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
+      BEEHIIV_PODCAST_ID_CALL_ME_BACK: 'pod_cmb',
+      BEEHIIV_PODCAST_ID_FOR_HEAVENS_SAKE: POD_FHS,
+    })
+  }
+
+  test('merges the newest episodes across shows, newest first', async () => {
+    fetchImpl = async (url) => {
+      if (url.startsWith(EPISODES_URL)) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              { ...makeEpisode(1), displayed_date: 1777899600 }, // newest
+              { ...makeEpisode(3), displayed_date: 1777726800 },
+            ],
+          }),
+          { status: 200 },
+        )
+      }
+      if (url.startsWith(FHS_URL)) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              { ...makeEpisode(2, { id: 'fhs-2' }), displayed_date: 1777813200 },
+            ],
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }
+
+    const res = makeRes()
+    await buildMultiShowHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/latest&limit=3' }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as {
+      episodes: Array<{ id: string; showSlug: string }>
+    }
+    expect(body.episodes.map((e) => e.id)).toEqual(['ep-1', 'fhs-2', 'ep-3'])
+    expect(body.episodes.map((e) => e.showSlug)).toEqual([
+      'call-me-back',
+      'for-heavens-sake',
+      'call-me-back',
+    ])
+  })
+
+  test('asks each show for only `limit` episodes, on one page', async () => {
+    // The whole point of the route: the homepage used to pull five full
+    // 50-episode lists to render four cards.
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ data: [] }), { status: 200 })
+
+    await buildMultiShowHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/latest&limit=4' }),
+      makeRes(),
+    )
+
+    const calls = fetchCalls.filter((c) => c.url.includes('/episodes?'))
+    expect(calls).toHaveLength(2)
+    for (const call of calls) {
+      const params = new URL(call.url).searchParams
+      expect(params.get('limit')).toBe('4')
+      expect(params.get('page')).toBe('1')
+      expect(params.get('status')).toBe('published')
+    }
+  })
+
+  test('clamps an absurd limit instead of fetching every episode', async () => {
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ data: [] }), { status: 200 })
+
+    await buildMultiShowHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/latest&limit=9999' }),
+      makeRes(),
+    )
+
+    const call = fetchCalls.find((c) => c.url.includes('/episodes?'))!
+    expect(new URL(call.url).searchParams.get('limit')).toBe('12')
+  })
+
+  test('still renders the strip when one show is unavailable', async () => {
+    fetchImpl = async (url) => {
+      if (url.startsWith(EPISODES_URL)) {
+        return new Response('upstream boom', { status: 500 })
+      }
+      if (url.startsWith(FHS_URL)) {
+        return new Response(JSON.stringify({ data: [makeEpisode(1)] }), {
+          status: 200,
+        })
+      }
+      return new Response('{}', { status: 200 })
+    }
+
+    const res = makeRes()
+    await buildMultiShowHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/latest' }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as { episodes: Array<{ showSlug: string }> }
+    expect(body.episodes.map((e) => e.showSlug)).toEqual(['for-heavens-sake'])
+  })
+
+  test('502s when every show fails, so the UI can offer a retry', async () => {
+    fetchImpl = async () => new Response('upstream boom', { status: 500 })
+
+    const res = makeRes()
+    await buildMultiShowHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/latest' }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(502)
+    expect((res.__json() as { error: string }).error).toBe('podcasts_unavailable')
+  })
+
+  test('is cacheable by a shared edge — it never carries gated audio', async () => {
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ data: [] }), { status: 200 })
+
+    const res = makeRes()
+    await buildMultiShowHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/latest' }),
+      res,
+    )
+
+    expect(res.getHeader('cache-control')).toContain('public')
+    expect(res.getHeader('cache-control')).not.toContain('no-store')
+  })
+
+  test('returns an empty strip when credentials exist but no show is configured', async () => {
+    // `[].every(...)` is true, so the "every show failed" check has to look at
+    // the candidate count or this configuration 502s instead of rendering.
+    const res = makeRes()
+    await createCatchAllHandler({
+      APP_BASE_URL: 'http://localhost:5173',
+      BEEHIIV_API_KEY: 'test-token',
+      BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
+    })(makeReq({ url: '/api/handler?_path=podcasts/latest' }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ episodes: [] })
+    expect(fetchCalls).toHaveLength(0)
+  })
+
+  test('returns an empty strip without credentials rather than an error', async () => {
+    const res = makeRes()
+    await createCatchAllHandler({ APP_BASE_URL: 'http://localhost:5173' })(
+      makeReq({ url: '/api/handler?_path=podcasts/latest' }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ episodes: [] })
+    expect(fetchCalls).toHaveLength(0)
+  })
+})

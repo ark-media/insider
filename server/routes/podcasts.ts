@@ -30,31 +30,51 @@ import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { fetchWithTimeout } from '../lib/http.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
-import { getShow } from '../../src/data/shows.js'
+import { getShow, shows } from '../../src/data/shows.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const BEEHIIV_API_BASE = 'https://api.beehiiv.com/v2'
 
-// Beehiiv caps `limit` at 100, but its list endpoint is slow and its cost
-// scales with the payload, so 100 episodes measured 7-16s. 50 keeps it to
-// 4.5-7.6s and matches the page size Simplecast served. We take one page
-// rather than walking `next_cursor` — these routes sit on the critical path
-// for rendering a show page, so a second round-trip costs more than the tail
-// of the back catalogue is worth.
-const EPISODE_PAGE_LIMIT = 50
+// How many episodes a show page starts with. Matches the page size Simplecast
+// served, and `EpisodeBrowser` reveals them a screen at a time from there.
+const EPISODE_LIST_SIZE = 50
 
-// Even at limit=50 the list endpoint runs to ~7.6s on our largest show, so the
-// 8s default in fetchWithTimeout is not enough headroom. This is deliberately
-// generous rather than unbounded: the in-process cache means a warm instance
-// hits it once per show per 5 minutes, and the single-episode and show-metadata
-// calls below are small, so they keep the default budget.
+// Beehiiv's list endpoint does its work per episode, not per request: measured
+// against our own shows it runs ~80-160ms per episode almost perfectly linearly
+// (call-me-back: 0.32s at limit=1, 1.02s at 10, 4.16s at 50, 8.92s at 100), and
+// it caches nothing — three identical limit=50 calls came back in 4.37/4.42/4.16s.
+// Requesting a smaller page is the ONLY thing that makes it faster; there is no
+// field selection (`fields`, `exclude` and `hide` are all accepted and silently
+// ignored) and compression is beside the point (gzip takes 68KB to 11KB with no
+// change in wall time, because the time is spent upstream, not on the wire).
 //
-// The platform budget has to stay clear of this one or the timeout can never
-// fire: Vercel would kill the invocation first and the caller would get an
-// opaque 504 instead of the deliberate 502 below. `vercel.json` pins
-// `functions["api/handler.ts"].maxDuration` above this for exactly that reason
-// — move one and move the other.
-const EPISODE_LIST_TIMEOUT_MS = 20_000
+// So we buy the whole list as several small pages at once instead of one big
+// one. Measured end-to-end, same 50 episodes:
+//
+//   chosen-people-problems   7.79s one-shot  ->  2.14s paged   (3.6x)
+//   call-me-back             4.16s one-shot  ->  1.50s paged   (2.8x)
+//
+// `page` is a real offset — pages carry distinct episodes, out-of-range pages
+// come back empty rather than repeating — and the flattened result was verified
+// identical, in the same order, to the one-shot response.
+const EPISODE_PAGE_SIZE = 10
+const EPISODE_PAGE_COUNT = Math.ceil(EPISODE_LIST_SIZE / EPISODE_PAGE_SIZE)
+
+// Offset pagination is only consistent against a list that isn't moving. An
+// episode published between page 1 and page 4 landing shifts everything down by
+// one, which shows up as the same episode appearing on two pages. Cheap to
+// tolerate (dedupe on the way through) and impossible to prevent, so we tolerate
+// it rather than reaching for the cursor API, which can't be walked in parallel
+// and would put us back to one slow round-trip per page.
+function dedupeById(episodes: BeehiivEpisode[]): BeehiivEpisode[] {
+  const seen = new Set<string>()
+  return episodes.filter((e) => {
+    const id = e.id ?? ''
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+}
 
 const EPISODES_CACHE_TTL_MS = 5 * 60 * 1000
 const episodesCache = makeTTLCache<string, EpisodeSummary[]>(
@@ -76,6 +96,17 @@ const episodeCache = makeTTLCache<string, ProjectedEpisode>(
 const SHOW_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const showCache = makeTTLCache<string, string>(SHOW_CACHE_TTL_MS)
 
+// The cross-show "latest episodes" strip. Separate from `episodesCache` because
+// it holds a different thing — a handful of episodes merged across every public
+// show, not one show's list — and shares its 5 minute TTL because a new episode
+// should surface on the homepage as promptly as on the show page.
+const latestCache = makeTTLCache<string, EpisodeSummary[]>(EPISODES_CACHE_TTL_MS)
+
+// Upper bound on `?limit`. The homepage asks for 4; the cap only exists so the
+// parameter can't be turned into a request for every episode of every show.
+const LATEST_MAX = 12
+const LATEST_DEFAULT = 4
+
 type BeehiivListResponse = { data?: BeehiivEpisode[] }
 type BeehiivShowResponse = { data?: BeehiivPodcast }
 
@@ -84,6 +115,7 @@ export function clearPodcastCaches(): void {
   episodesCache.clear()
   episodeCache.clear()
   showCache.clear()
+  latestCache.clear()
 }
 
 // Beehiiv ids are opaque and may carry a type prefix (`pod_`, `pub_`). Accept
@@ -186,20 +218,46 @@ function withAudioAccess<T extends { audioUrl: string }>(
   return { ...episode, audioUrl: '' }
 }
 
-async function beehiivGet<T>(
-  path: string,
-  token: string,
-  timeoutMs?: number,
-): Promise<T> {
+// Every Beehiiv call these routes make is now a small one — a single short
+// page, one episode, or one show — so they all sit comfortably inside the
+// default fetch budget. That is the point of paging the list: before it, the
+// list alone needed 20s of headroom and the timeout had to be kept clear of
+// `functions["api/handler.ts"].maxDuration` in vercel.json or it could never
+// fire. Nothing here needs an override any more.
+async function beehiivGet<T>(path: string, token: string): Promise<T> {
   const res = await fetchWithTimeout(
     `${BEEHIIV_API_BASE}${path}`,
     { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
-    timeoutMs,
   )
   if (!res.ok) {
     throw new Error(`Beehiiv ${res.status}: ${await res.text()}`)
   }
   return (await res.json()) as T
+}
+
+// One page of the list. Kept separate from the cache/merge logic above so the
+// "latest across shows" route can ask for a single short page of its own.
+async function fetchEpisodePage(
+  { publicationId, token }: BeehiivConfig,
+  podcastId: string,
+  page: number,
+  pageSize: number = EPISODE_PAGE_SIZE,
+): Promise<BeehiivEpisode[]> {
+  // `status=published` filters upstream, but isPublishedEpisode still runs on
+  // the merged result so the public site fails closed if the filter is ever
+  // ignored.
+  const query = new URLSearchParams({
+    limit: String(pageSize),
+    page: String(page),
+    status: 'published',
+    order_by: 'displayed_date',
+    direction: 'desc',
+  })
+  const body = await beehiivGet<BeehiivListResponse>(
+    `/publications/${encodeURIComponent(publicationId)}/podcasts/${encodeURIComponent(podcastId)}/episodes?${query}`,
+    token,
+  )
+  return body.data ?? []
 }
 
 async function fetchEpisodes(
@@ -216,20 +274,17 @@ async function fetchEpisodes(
   const cached = episodesCache.get(cacheKey)
   if (cached) return cached
 
-  // `status=published` filters upstream, but isPublishedEpisode still runs so
-  // the public site fails closed if the filter is ever ignored.
-  const query = new URLSearchParams({
-    limit: String(EPISODE_PAGE_LIMIT),
-    status: 'published',
-    order_by: 'displayed_date',
-    direction: 'desc',
-  })
-  const body = await beehiivGet<BeehiivListResponse>(
-    `/publications/${encodeURIComponent(publicationId)}/podcasts/${encodeURIComponent(podcastId)}/episodes?${query}`,
-    token,
-    EPISODE_LIST_TIMEOUT_MS,
+  // Every page is its own request, so they all go out at once and the list
+  // costs one page's latency rather than the whole catalogue's. A rejected page
+  // rejects the lot — a partial list is worse than a retryable error, because
+  // it would be cached and served as if it were complete.
+  const pages = await Promise.all(
+    Array.from({ length: EPISODE_PAGE_COUNT }, (_, i) =>
+      fetchEpisodePage({ publicationId, token }, podcastId, i + 1),
+    ),
   )
-  const episodes: EpisodeSummary[] = (body.data ?? [])
+
+  const episodes: EpisodeSummary[] = dedupeById(pages.flat())
     .filter(isPublishedEpisode)
     .map((e) => projectBeehiivEpisodeSummary(e, showSlug))
     // `publishedAt` is a calendar date, so a show that drops twice in one day
@@ -263,6 +318,80 @@ async function fetchEpisode(
   const episode = projectBeehiivEpisode(body.data ?? {}, showSlug)
   episodeCache.set(cacheKey, episode)
   return episode
+}
+
+// The homepage's "latest episodes" strip.
+//
+// This used to be assembled on the client: fetch every public show's FULL list
+// through /api/podcasts/episodes, merge, then throw away all but the newest
+// four. That is 250 episodes of upstream work for four cards, and because the
+// client awaited all five shows it was gated on the slowest one — measured at
+// 8.21s wall against our real catalogue. Asking each show for only the episodes
+// that could actually place brings the same five parallel requests to 1.07s.
+//
+// `limit` per show is the correct bound, not `limit / shows.length`: the top
+// four overall can all come from one show, so each show has to offer four
+// candidates for the merge to be right.
+async function fetchLatestEpisodes(
+  config: BeehiivConfig,
+  env: Env,
+  limit: number,
+): Promise<EpisodeSummary[]> {
+  const cacheKey = `${config.publicationId}:${limit}`
+  const cached = latestCache.get(cacheKey)
+  if (cached) return cached
+
+  // Public shows only. A paid show's audio is withheld from anyone who hasn't
+  // proved membership, and this response is deliberately cacheable by a shared
+  // edge for every caller — so the two must not meet. Filtering here (rather
+  // than stripping audio later) also means an anonymous homepage request never
+  // does an entitlement lookup.
+  const candidates = shows
+    .filter((show) => !show.paid)
+    .map((show) => ({ show, podcastId: resolvePodcastId(env, show.slug) }))
+    .filter(
+      (c): c is { show: (typeof shows)[number]; podcastId: string } =>
+        c.podcastId !== undefined,
+    )
+
+  const perShow = await Promise.all(
+    candidates.map(async ({ show, podcastId }) => {
+      try {
+        const page = await fetchEpisodePage(config, podcastId, 1, limit)
+        return page
+          .filter(isPublishedEpisode)
+          .map((e) => projectBeehiivEpisodeSummary(e, show.slug))
+      } catch (err) {
+        // One show being unavailable shouldn't blank the homepage strip — the
+        // other four still have episodes worth showing. Only a total failure
+        // (handled by the caller, below) is worth an error state.
+        console.error(`[beehiiv] latest fetch failed for ${show.slug}:`, err)
+        return null
+      }
+    }),
+  )
+
+  // `every` is true for an empty array, so the length check matters: a server
+  // with credentials but no BEEHIIV_PODCAST_ID_* set has nothing to fetch, and
+  // that is an empty strip — the same clean empty state /api/podcasts/episodes
+  // gives an unconfigured show — not an outage.
+  if (candidates.length > 0 && perShow.every((r) => r === null)) {
+    throw new Error('every show failed')
+  }
+
+  const episodes = perShow
+    .flat()
+    .filter((e): e is EpisodeSummary => e !== null)
+    // Same tie-break as the per-show list: `publishedAt` is a calendar date, so
+    // two shows dropping on the same day tie and need a stable second key.
+    .sort(
+      (a, b) =>
+        b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id),
+    )
+    .slice(0, limit)
+
+  latestCache.set(cacheKey, episodes)
+  return episodes
 }
 
 async function fetchShowDescription(
@@ -313,6 +442,38 @@ export function podcastRoutes({ env }: Deps): Route[] {
           })
         } catch (err) {
           console.error('[beehiiv] episodes fetch failed:', err)
+          json(502, { error: 'podcasts_unavailable' })
+        }
+      },
+    }),
+    defineRoute({
+      path: '/api/podcasts/latest',
+      method: 'GET',
+      handler: async (req, res, json) => {
+        const url = new URL(req.url ?? '', 'http://x')
+        const raw = Number(url.searchParams.get('limit'))
+        const limit = Number.isFinite(raw)
+          ? Math.min(Math.max(Math.trunc(raw), 1), LATEST_MAX)
+          : LATEST_DEFAULT
+
+        // Public shows only, so the body is identical for every caller and a
+        // shared edge can hold it. No entitlement lookup, no `Vary`.
+        res.setHeader(
+          'cache-control',
+          'public, s-maxage=300, stale-while-revalidate=1800',
+        )
+
+        const config = resolveConfig(env)
+        if (!config) {
+          // No credentials (dev without a key). An empty strip renders as
+          // nothing at all, which is the right homepage in that case.
+          return json(200, { episodes: [] })
+        }
+
+        try {
+          json(200, { episodes: await fetchLatestEpisodes(config, env, limit) })
+        } catch (err) {
+          console.error('[beehiiv] latest fetch failed:', err)
           json(502, { error: 'podcasts_unavailable' })
         }
       },
