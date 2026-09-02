@@ -2,7 +2,7 @@ import type Stripe from 'stripe'
 import { getDb } from '../../lib/db.js'
 import { clearMembershipPending } from '../../lib/membership.js'
 import {
-  minorUnitDivisor,
+  formatMinorUnits,
   type Plan,
   type PricedTier,
 } from '../../lib/pricing.js'
@@ -82,23 +82,6 @@ export function coerceTier(raw: unknown): PricedTier {
   return raw === 'circle' || raw === 'bundle' || raw === 'ark-plus' ? raw : 'ark-plus'
 }
 
-// Minor units → a human currency string for the floor error message
-// (800, 'usd' → "$8.00"). Falls back to a bare number if Intl rejects the code.
-function formatMinor(amount: number, currency: string): string {
-  // Divide by the currency's minor-unit factor, not a hardcoded 100: zero-
-  // decimal currencies (¥, ₩, ₫, CLP) store the whole-unit figure already, so
-  // /100 would under-report them 100×.
-  const value = amount / minorUnitDivisor(currency)
-  try {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: currency.toUpperCase(),
-    }).format(value)
-  } catch {
-    return `${value} ${currency.toUpperCase()}`
-  }
-}
-
 // Upper sanity bound on a PWYC custom amount, in the floor's own minor units. A
 // flat cap can't serve 40 currencies — a high-denomination floor (e.g. IDR
 // 12,900,000) would exceed any USD-scaled constant and reject every valid
@@ -121,7 +104,7 @@ export function validatePwycAmount(
     Number.isFinite(customAmountCents)
   ) {
     if (customAmountCents < floor) {
-      return { error: `Amount must be at least ${formatMinor(floor, currency)}.` }
+      return { error: `Amount must be at least ${formatMinorUnits(floor, currency)}.` }
     }
     if (customAmountCents > pwycMaxAmount(floor)) {
       return { error: 'Custom amount too large.' }

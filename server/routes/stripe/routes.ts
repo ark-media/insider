@@ -12,6 +12,9 @@
 //     PaymentIntent confirm (the client races the webhook).
 //   GET  /api/stripe/my-subscription       — the signed-in member's cancel
 //     schedule, so the account page can persist a "set to cancel" state.
+//   GET  /api/stripe/bundle-upgrade-preview — what a single-axis member's
+//     subscription becomes when they add the other axis: the Bundle price that
+//     REPLACES their current one, and the renewal date that doesn't move.
 //   POST /api/stripe/webhook               — server-to-server signal from
 //     Stripe; the source of truth for SC + entitlement state.
 
@@ -49,6 +52,7 @@ import {
 import { listActiveCoupons, pickBestCoupon } from '../../lib/stripe-promos.js'
 import {
   isSupportedCurrency,
+  minorUnitFactors,
   resolveCatalogPrice,
 } from '../../lib/pricing.js'
 import { sanitizeAttribution } from '../../../shared/attribution.js'
@@ -776,6 +780,67 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           console.error('[stripe] bundle-breakdown failed:', err)
           return json(200, { breakdown: null })
         }
+      },
+    }),
+
+    defineRoute({
+      // The mirror of bundle-breakdown, for the other direction: what happens
+      // to a single-axis member's subscription when they add the axis they
+      // don't have. The account page needs it to say the switch out loud before
+      // it bills — the Bundle price REPLACES what they pay now, it is not a
+      // second charge beside it — and to name the date they'll still renew on.
+      // Amounts come back in the SUBSCRIPTION's currency, which is the one that
+      // will actually be charged (change-tier bills in sub.currency, not the
+      // page's geo-detected one).
+      //
+      // Fails soft: `preview: null` only when there's no live sub to change; a
+      // price-lookup hiccup leaves `bundleCents: null` so the confirm step can
+      // still render (and still let the member proceed) without price lines.
+      path: '/api/stripe/bundle-upgrade-preview',
+      method: 'GET',
+      handler: async (req, _res, json) => {
+        if (!stripe) return json(500, { error: 'not_configured' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const sub = await findLiveSubscription(stripe, email)
+        const plan = sub ? planFromSubscription(sub) : null
+        if (!sub || !plan) return json(200, { preview: null })
+
+        const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
+        // `unit_amount` is stated in the PRICE's own currency. A catalog price
+        // billed through currency_options reports the USD base here while the
+        // subscription charges the localized amount — quoting that as "what you
+        // pay now" would be wrong money, so only trust it when the currencies
+        // agree and drop the line otherwise.
+        const price = sub.items.data[0]?.price
+        const currentCents =
+          price && price.currency === sub.currency && typeof price.unit_amount === 'number'
+            ? price.unit_amount
+            : null
+
+        let bundleCents: number | null = null
+        try {
+          const catalog = await resolveCatalogPrice(stripe, 'bundle', plan)
+          bundleCents = catalog.floors[currency] ?? catalog.floors.usd
+        } catch (err) {
+          console.error('[stripe] bundle-upgrade-preview price lookup failed:', err)
+        }
+
+        return json(200, {
+          preview: {
+            plan,
+            currency,
+            minorFactor: minorUnitFactors()[currency] ?? 100,
+            currentCents,
+            bundleCents,
+            // Unchanged by the switch: gaining an entitlement updates the item
+            // in place and only re-anchors the cycle on a cadence change, so
+            // this is still the member's renewal date afterwards.
+            renewsAt: periodEndIso(sub),
+          },
+        })
       },
     }),
 

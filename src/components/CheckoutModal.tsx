@@ -428,7 +428,12 @@ export function CheckoutModal({
       describedBy="checkout-desc"
       scrollBody
     >
-      <p id="checkout-desc" className="eyebrow">
+      {/* Clears the Modal's close button, which overlays the panel's top-right
+          corner (44px wide, inset 8px) rather than taking part in the layout.
+          Without the padding this line runs underneath it on a phone, where
+          the longest tier label and the period barely fit the width as it is —
+          it wraps to two lines instead, which is the harmless outcome. */}
+      <p id="checkout-desc" className="eyebrow pr-10">
         {TIER_LABEL[tier]} · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
 
@@ -505,7 +510,10 @@ export function CheckoutModal({
             <p role="alert">{step.message}</p>
             <button
               type="button"
-              onClick={() => signIn(undefined, { loginHint: step.email })}
+              // They already have a membership, so this is a "take me to my
+              // stuff" sign-in, not a contextual one — land on /account rather
+              // than returning to whatever page the modal was opened over.
+              onClick={() => signIn("/account", { loginHint: step.email })}
               className={ctaClass}
             >
               Sign in

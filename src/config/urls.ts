@@ -104,6 +104,15 @@ export const circleUrls = {
    * itself rather than a fabricated per-event permalink.
    */
   eventsSpace: "https://app.arkmedia.org/c/events-71d23b",
+  /**
+   * Where a member edits their own community profile — photo, headline, the
+   * name other members see. Confirmed against the live community rather than
+   * assumed: `/settings/profile` answers 302 (bounce to auth) while an unknown
+   * path under `/settings` answers 404. Circle's API also hands back a
+   * `profile_url` per member, but that is the PUBLIC `/u/<public_uid>` view
+   * page — per-member, and not somewhere they can edit anything.
+   */
+  profileSettings: "https://app.arkmedia.org/settings/profile",
   /** The Ark Media Community app in the App Store. */
   appStoreIos:
     "https://apps.apple.com/us/app/the-ark-media-community/id6775856136",

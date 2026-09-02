@@ -9,6 +9,7 @@
 
 import type { GiftTerm } from './activation.js'
 import { greetingFirstName, splitFullName } from '../../shared/profile-name.js'
+import { circleUrls } from '../../src/config/urls.js'
 
 const GIFT_LABEL: Record<GiftTerm, string> = {
   '6mo': '6 months',
@@ -48,6 +49,10 @@ type ShellParams = {
   headlineHtml: string // caller pre-escapes any user content
   greetingHtml: string
   bodyHtml: string
+  // An optional second body paragraph, for an email that carries two distinct
+  // things to say (e.g. what you gained, then what it costs). Rendered with the
+  // same styling as bodyHtml so callers never hand-roll the markup.
+  bodySecondHtml?: string
   messageBlockHtml?: string
   ctaHref: string
   ctaLabel: string
@@ -57,6 +62,9 @@ type ShellParams = {
 
 export function renderShell(p: ShellParams): string {
   const messageBlock = p.messageBlockHtml ?? ''
+  const bodySecond = p.bodySecondHtml
+    ? `\n                <p style="margin:0 0 28px;font:400 15px/1.65 ${FONT};color:${FG};">${p.bodySecondHtml}</p>`
+    : ''
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:${NAVY_900};">
@@ -75,7 +83,7 @@ export function renderShell(p: ShellParams): string {
                 <p style="margin:0 0 8px;font:600 11px ${FONT};letter-spacing:0.18em;text-transform:uppercase;color:${CYAN};">${p.eyebrow}</p>
                 <h1 style="margin:0 0 20px;font:700 26px/1.2 ${FONT};color:#ffffff;">${p.headlineHtml}</h1>
                 <p style="margin:0 0 20px;font:400 15px/1.65 ${FONT};color:${FG};">${p.greetingHtml}</p>
-                <p style="margin:0 0 28px;font:400 15px/1.65 ${FONT};color:${FG};">${p.bodyHtml}</p>
+                <p style="margin:0 0 28px;font:400 15px/1.65 ${FONT};color:${FG};">${p.bodyHtml}</p>${bodySecond}
               </td>
             </tr>${messageBlock}
             <tr>
@@ -359,4 +367,117 @@ export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
       : `You already have an Ark login — sign in to enter the community from <a href="${p.welcomeUrl}" style="color:${BRAND_CYAN};">your welcome page</a>.`,
   })
   return { subject: 'Welcome to the Ark community', html }
+}
+
+// ---------------------------------------------------------------------------
+// Existing member who added an axis (Ark+ ⇄ Community → Bundle)
+// ---------------------------------------------------------------------------
+
+export type AxisAddedEmailParams = {
+  name?: string
+  // The member's address — required for the name check, see firstName().
+  email?: string
+  // The axis they just gained. The other one they already had, so this decides
+  // both the headline and which setup step the CTA points at.
+  axis: 'ark-plus' | 'circle'
+  welcomeUrl: string
+  // The new price, pre-formatted in the currency the subscription actually
+  // bills in (see formatMinorUnits) — e.g. "$25". Omitted when the amount can't
+  // be read, and the sentence then says what the membership covers without
+  // naming a figure rather than guessing at one.
+  price?: string
+  plan: 'monthly' | 'yearly'
+  // The next billing date, pre-formatted by the caller (the caller owns the
+  // timezone — see EMAIL_TIME_ZONE). Omitted when unreadable.
+  renewsOn?: string
+}
+
+// The member already had one axis on a live subscription and just added the
+// other, so their membership now covers both. This is NOT a welcome email:
+// they have a login, they've been provisioned before, and `wasUnprovisioned` in
+// activation.ts is exactly what keeps the welcome copy away from them.
+//
+// It doubles as the billing-change notice, which is why the price is here at
+// all. Two rules hold that half of the copy together:
+//
+//   1. State the new price as what the membership costs, full stop. The fear
+//      it defuses — "is this on top of what I already pay?" — is better killed
+//      by "that covers everything" than by arguing the negative.
+//   2. Answer "what am I charged right now?" out loud, because the answer is
+//      NOTHING and nobody guesses that. The change is prorated onto the next
+//      invoice, so a member watching their card sees no charge and no
+//      explanation unless we give them one.
+//
+// The next-bill sentence stays direction-neutral ("covers the rest of this
+// month at the new price"): a pay-what-you-can member who was paying MORE than
+// the bundle ends up owed a credit rather than charged a difference, and this
+// renderer isn't told which way it went.
+export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
+  subject: string
+  html: string
+} {
+  const first = firstName(p.name, p.email)
+  const addedCircle = p.axis === 'circle'
+  const per = p.plan === 'yearly' ? 'a year' : 'a month'
+  const restOfPeriod = p.plan === 'yearly' ? 'the rest of this year' : 'the rest of this month'
+
+  // Split so the em-dash clause lands at the END of the sentence: "added X —
+  // detail" reads, "added X — detail to your membership" does not.
+  const gained = addedCircle ? 'the Ark+ community' : 'the private podcast feed'
+  const gainedDetail = addedCircle
+    ? 'conversations, member Q&amp;As, and events'
+    : FEED_INCLUDED
+
+  const coversEverything = 'the private feed and the community'
+  const priceSentence = p.price
+    ? `Your membership is now <strong>${esc(p.price)} ${per}</strong>, and that covers everything: ${coversEverything}.`
+    : `Your membership now covers everything: ${coversEverything}.`
+  const billSentence = p.renewsOn
+    ? ` Nothing to pay today. Your next bill is ${esc(p.renewsOn)}, and it covers ${restOfPeriod} at the new price.`
+    : ` Nothing to pay today. Your next bill covers ${restOfPeriod} at the new price.`
+
+  // The app links live in the email itself, not only behind the CTA. A new
+  // community member meets these on /welcome; someone who upgrades from their
+  // account page never passes through it, and "download the app" is the one
+  // step that actually gets them into the community. Plain text links, not the
+  // store badge lockups: SVG doesn't render in most mail clients, and image
+  // blocking would leave the row empty in the rest.
+  const link = (href: string, label: string) =>
+    `<a href="${href}" style="color:${CYAN};">${label}</a>`
+  const communityFollowup =
+    `Get the app for ${link(circleUrls.appStoreIos, 'iPhone')} or ` +
+    `${link(circleUrls.appStoreAndroid, 'Android')}, or ` +
+    `${link(circleUrls.webApp, 'open it in your browser')} — you're already signed in, ` +
+    `so it'll know you. Then ${link(circleUrls.profileSettings, 'set up your profile')} — ` +
+    `a photo and a line about yourself — so people know who they're talking to.`
+  const feedFollowup =
+    `Add the feed to the podcast app you already use from ` +
+    `${link(p.welcomeUrl, 'your welcome page')}.`
+
+  const html = renderShell({
+    preheader: addedCircle
+      ? "You're in — your membership covers everything now."
+      : 'Your private feed is ready — your membership covers everything now.',
+    eyebrow: 'Added to your membership',
+    headlineHtml: addedCircle
+      ? 'The community is yours now.'
+      : 'Your private feed is ready.',
+    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    bodyHtml: `You just added ${gained} — ${gainedDetail}.`,
+    bodySecondHtml: `${priceSentence}${billSentence}`,
+    footerHtml:
+      'Manage your membership anytime from your account. Need help? Just reply to this email.',
+    ctaHref: p.welcomeUrl,
+    ctaLabel: addedCircle ? 'Enter the community' : 'Set up your feed',
+    // No set-password branch: by construction this member already has a login —
+    // it's what made the change an upgrade instead of a first purchase.
+    ctaFollowupHtml: addedCircle ? communityFollowup : feedFollowup,
+  })
+
+  return {
+    subject: addedCircle
+      ? "You're in the Ark+ community"
+      : 'Your Ark+ private feed is ready',
+    html,
+  }
 }

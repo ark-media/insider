@@ -32,9 +32,12 @@ import {
 import { getDb } from './db.js'
 import { sendEmail } from './email.js'
 import {
+  renderAxisAddedEmail,
   renderCircleWelcomeEmail,
   renderSubscriberWelcomeEmail,
 } from './welcome-email.js'
+import { formatMinorUnits } from './pricing.js'
+import { EMAIL_TIME_ZONE, formatTimestampInZone } from '../../shared/format-date.js'
 import { createScClient, findOrCreateScUser } from './sc-client.js'
 import { redactEmail } from '../../shared/validation.js'
 import { splitFullName } from '../../shared/profile-name.js'
@@ -51,6 +54,54 @@ export type GiftTerm = '6mo' | '1yr'
 export const GIFT_TERM_DAYS: Record<GiftTerm, number> = {
   '6mo': 182,
   '1yr': 365,
+}
+
+// The billing facts an axis-added email states, read off the subscription the
+// change has already landed on.
+//
+// The price is DROPPED rather than guessed when it can't be read in the
+// currency the member is actually charged in: `unit_amount` is stated in the
+// PRICE's own currency, which for a catalog price billed through
+// `currency_options` is the USD base, not what they pay. change-tier stamps
+// `amount_cents` + `currency` alongside the item it writes, so the metadata
+// covers exactly that case.
+function billingFactsFor(sub: Stripe.Subscription): {
+  price?: string
+  plan: Plan
+  renewsOn?: string
+} {
+  const item = sub.items?.data?.[0]
+  const interval = item?.price?.recurring?.interval
+  const plan: Plan =
+    interval === 'month'
+      ? 'monthly'
+      : interval === 'year'
+        ? 'yearly'
+        : ((sub.metadata?.plan as Plan | undefined) ?? 'yearly')
+
+  const live = item?.price
+  const rawAmount = sub.metadata?.amount_cents
+  const metaAmount = rawAmount ? Number(rawAmount) : Number.NaN
+  let price: string | undefined
+  if (live && live.currency === sub.currency && typeof live.unit_amount === 'number') {
+    price = formatMinorUnits(live.unit_amount, sub.currency)
+  } else if (sub.metadata?.currency === sub.currency && Number.isFinite(metaAmount)) {
+    price = formatMinorUnits(metaAmount, sub.currency)
+  }
+
+  // A member who added an axis while a cancel is already pending doesn't renew
+  // on that date — they lose access on it. Say nothing rather than the opposite.
+  const periodEnd = item?.current_period_end
+  const renewsOn =
+    !sub.cancel_at_period_end && typeof periodEnd === 'number' && Number.isFinite(periodEnd)
+      ? formatTimestampInZone(
+          new Date(periodEnd * 1000).toISOString(),
+          EMAIL_TIME_ZONE,
+          'long',
+        )
+      : ''
+
+  return { price, plan, renewsOn: renewsOn || undefined }
 }
 
 // What a paid-tier activation resolved to. The webhook (task 9) reads this to
@@ -257,7 +308,13 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
 
     // SC (arkPlus) first, so a later Auth0/Circle outage can never block feed
     // access — the paid product (§3 "the ordering trap").
-    if (entitlements.arkPlus && scSubscriptionId == null) {
+    // `addingArkPlus` records that THIS call is what grants the axis, which is
+    // what separates an upgrade from a redelivery; the axis markers are stamped
+    // below, so a later fan-out sees the axis already provisioned and reports
+    // false. Paired with the success check at the send site, the axis-added
+    // email fires only on the transition into the entitlement.
+    const addingArkPlus = entitlements.arkPlus && scSubscriptionId == null
+    if (addingArkPlus) {
       const provisioned = await provisionSc(subId, email, name, plan)
       scUserId = provisioned.scUserId
       scSubscriptionId = provisioned.scSubscriptionId
@@ -275,7 +332,8 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     // Circle (circle axis): create the member pre-SSO, stamp auth0_sub, add to
     // the access group. Soft — a Circle hiccup must not fail the whole webhook.
     let circleProvisioned = fresh.metadata?.circle_provisioned === 'true'
-    if (entitlements.circle && !circleProvisioned) {
+    const addingCircle = entitlements.circle && !circleProvisioned
+    if (addingCircle) {
       const status = await provisionCircleMember(env, email, name, auth0Sub)
       circleProvisioned = status === 'ok'
     }
@@ -344,6 +402,51 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         const { first, last } = splitFullName(name)
         await tryPush('sync subscriber name', () =>
           syncSubscriberName({ env, sql: getDb(env) }, email, { first, last }),
+        )
+      }
+    } else if (
+      // An already-provisioned member who just gained an axis — an Ark+ member
+      // adding Community (or the reverse), which moves their subscription onto
+      // the Bundle. `wasUnprovisioned` deliberately keeps the welcome copy away
+      // from them, which until now left the upgrade completely silent: no
+      // branded email, no pointer to the thing they just bought, and no notice
+      // of the new recurring price (Stripe's receipt doesn't arrive until the
+      // next invoice, since the change is prorated onto it).
+      //
+      // Gated on the provisioning having SUCCEEDED, not merely been attempted:
+      // "the community is yours now" must not go out while the Circle add is
+      // still failing. A retry that finally succeeds sends it then.
+      (addingCircle && circleProvisioned) ||
+      (addingArkPlus && scSubscriptionId != null)
+    ) {
+      // Circle wins when both landed at once (a repaired half-provisioned
+      // member): its copy is the one that names the community, and the price
+      // sentence covers the whole Bundle either way.
+      const axis = addingCircle && circleProvisioned ? 'circle' : 'ark-plus'
+      const { subject, html } = renderAxisAddedEmail({
+        name,
+        email,
+        axis,
+        welcomeUrl: `${baseUrl}/welcome`,
+        ...billingFactsFor(fresh),
+      })
+      // Keyed on the subscription AND the axis so a webhook retry collapses,
+      // while a member who later adds the other axis still hears about it.
+      const sent = await sendEmail(env, {
+        to: email,
+        subject,
+        html,
+        idempotencyKey: `axis_added_${fresh.id}_${axis}`,
+      })
+      if (!sent) {
+        console.error('[email] axis-added email did not send:', redactEmail(email))
+      }
+
+      // The premium letter gates on the arkPlus axis, so a Circle-only member
+      // who just added Ark+ needs the same push the first-time path does.
+      if (addingArkPlus && entitlements.arkPlus && env.DATABASE_URL) {
+        await tryPush('ensure premium (axis added)', () =>
+          ensureSubscribedWithPremium({ env, sql: getDb(env) }, email),
         )
       }
     }

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import type { AxisAccess, Me } from "../../lib/auth";
-import { changeTier, getMySubscription } from "../../lib/auth";
+import type { AxisAccess, BundleUpgradePreview, Me } from "../../lib/auth";
+import { changeTier, getBundleUpgradePreview } from "../../lib/auth";
+import { formatMinor } from "../../lib/currency";
 import { formatTimestamp } from "../../../shared/format-date";
 import { CheckoutModal } from "../CheckoutModal";
 import { HeadphonesIcon, ChatIcon } from "./SurfaceIcons";
@@ -55,6 +56,145 @@ function accessLine(a: AxisAccess): string {
   return renews ? `Renews ${renews}` : "Active";
 }
 
+// The state of a D9 "switch to the bundle" action. The switch is a real,
+// immediate price change, so it goes through a confirm step that states what
+// the new price is before anything is billed — never straight off the row CTA.
+type BundleState =
+  | { kind: "idle" }
+  | { kind: "loading"; axis: AxisKey }
+  | { kind: "confirm"; axis: AxisKey; preview: BundleUpgradePreview }
+  | { kind: "working"; axis: AxisKey; preview: BundleUpgradePreview }
+  | { kind: "ok"; immediate: boolean; effectiveAt?: string }
+  | { kind: "error"; message: string };
+
+// "a month" / "a year" — the confirm panel quotes a price per billing period,
+// and the member's cadence is whatever their existing subscription bills on.
+function perPeriod(plan: "monthly" | "yearly"): string {
+  return plan === "yearly" ? "a year" : "a month";
+}
+
+// The confirm step for D9. Every line answers a question a member asks at
+// exactly this moment, in the order they ask it: what does it cost, when do I
+// get it, and what comes off my card right now?
+//
+// Three rules keep it out of our own vocabulary:
+//
+//   1. Show the move as "$8 → $25", not as a price plus an argument. The fear
+//      here is that the new price is charged ON TOP of the old one, and an
+//      arrow between two numbers settles that faster than a sentence can.
+//   2. Say "nothing to pay today" out loud. It's the true answer and nobody
+//      guesses it, because the change is settled on the next bill instead.
+//   3. No "prorated", no "invoice", no "billing period". Members have bills and
+//      months; proration is our word for our machinery.
+function BundleConfirm({
+  axis,
+  alreadyActive,
+  preview,
+  working,
+  onConfirm,
+  onCancel,
+}: {
+  axis: AxisKey;
+  // True on the near-expiry banner's entry point, where the member already has
+  // this axis on a gift: the switch secures it rather than unlocking it.
+  alreadyActive: boolean;
+  preview: BundleUpgradePreview;
+  working: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const meta = AXIS[axis];
+  const { currency, minorFactor, plan } = preview;
+  const bundle =
+    preview.bundleCents === null
+      ? null
+      : formatMinor(preview.bundleCents, currency, minorFactor);
+  const current =
+    preview.currentCents === null
+      ? null
+      : formatMinor(preview.currentCents, currency, minorFactor);
+  const renews = fmtDate(preview.renewsAt);
+  const restOfPeriod =
+    plan === "yearly" ? "the rest of this year" : "the rest of this month";
+  // A pay-what-you-can member paying above the bundle price is owed the unused
+  // remainder rather than charged a difference — same "nothing today", opposite
+  // direction on the next bill.
+  const owedCredit =
+    preview.currentCents !== null &&
+    preview.bundleCents !== null &&
+    preview.currentCents > preview.bundleCents;
+  // Built whole rather than glued from fragments: without a readable date the
+  // clause-by-clause version ran together into "Your next bill with the
+  // difference…".
+  const nextBillLine = owedCredit
+    ? renews
+      ? `Your next bill is ${renews}, with credit for what you've already paid.`
+      : `Your next bill comes with credit for what you've already paid.`
+    : renews
+      ? `Your next bill is ${renews}, with the difference for ${restOfPeriod} added on.`
+      : `Your next bill picks up the difference for ${restOfPeriod}.`;
+
+  return (
+    <div className="mb-6 border border-cyan/50 bg-cyan/5 px-4 py-4">
+      <h3 className="font-display text-[18px] leading-tight text-fg-strong">
+        Add {meta.label} to your membership
+      </h3>
+      <ul className="mt-3 space-y-2 text-body-sm text-fg">
+        <li>
+          {bundle ? (
+            <>
+              {current ? (
+                <span className="font-semibold text-fg-strong">
+                  {current} → {bundle} {perPeriod(plan)}.
+                </span>
+              ) : (
+                <span className="font-semibold text-fg-strong">
+                  {bundle} {perPeriod(plan)}.
+                </span>
+              )}{" "}
+              One price for everything.
+            </>
+          ) : (
+            <>One price for everything, not a second subscription.</>
+          )}
+        </li>
+        <li>
+          {alreadyActive
+            ? `${meta.label} is yours to keep — no gap when the gift runs out.`
+            : axis === "circle"
+              ? "You're in right away."
+              : "Your private feed is ready right away."}
+        </li>
+        <li>
+          Nothing to pay today. {nextBillLine}
+        </li>
+      </ul>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={working}
+          className="inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+        >
+          {working
+            ? "Switching…"
+            : bundle
+              ? `Switch to ${bundle} ${perPeriod(plan)}`
+              : `Add ${meta.label}`}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={working}
+          className="inline-flex items-center px-2 py-2 text-body-sm text-fg-muted underline-offset-4 transition hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+        >
+          Not now
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function EntitlementAccess({
   me,
   onRefresh,
@@ -68,13 +208,7 @@ export function EntitlementAccess({
     tier: StandaloneTier;
     plan: "monthly" | "yearly";
   } | null>(null);
-  // The in-flight / result state of a D9 "switch to the bundle" action.
-  const [bundle, setBundle] = useState<
-    | { kind: "idle" }
-    | { kind: "working" }
-    | { kind: "ok"; effectiveAt?: string }
-    | { kind: "error"; message: string }
-  >({ kind: "idle" });
+  const [bundle, setBundle] = useState<BundleState>({ kind: "idle" });
   // Captured once (render must stay pure) — a stable "now" for the near-expiry
   // window is fine; the page reloads/refetches on any real state change.
   const [now] = useState(() => Date.now());
@@ -83,24 +217,36 @@ export function EntitlementAccess({
   // the rest of the dashboard still works.
   if (!axes) return null;
 
-  // Move the member's existing single-axis subscription onto the bundle so the
-  // axis they're adding rides that same subscription — D9's "switch to Bundle
-  // via change-tier" rather than a second standalone sub billed alongside it.
-  // Needs the sub's plan, fetched on demand; `fallbackTier` is the axis being
-  // added, checked out standalone if the cadence can't be read.
-  const switchToBundle = async (fallbackTier: StandaloneTier) => {
-    setBundle({ kind: "working" });
-    const sub = await getMySubscription();
-    const plan = sub.plan ?? null;
-    if (!plan) {
-      // Can't safely change-tier without the cadence — fall back to standalone.
+  // Step 1 of the bundle switch: read what the change will cost and when, so
+  // the confirm panel can state it. A member without a readable live
+  // subscription (or cadence) can't be change-tiered at all — they fall back to
+  // buying the missing axis standalone, as before.
+  const openBundleConfirm = async (axis: AxisKey) => {
+    setBundle({ kind: "loading", axis });
+    const preview = await getBundleUpgradePreview();
+    if (!preview) {
       setBundle({ kind: "idle" });
-      setCheckout({ tier: fallbackTier, plan: "monthly" });
+      setCheckout({ tier: AXIS[axis].tier, plan: "monthly" });
       return;
     }
-    const r = await changeTier({ tier: "bundle", plan });
+    setBundle({ kind: "confirm", axis, preview });
+  };
+
+  // Step 2: move the member's existing single-axis subscription onto the bundle
+  // so the axis they're adding rides that same subscription — D9's "switch to
+  // Bundle via change-tier" rather than a second standalone sub billed
+  // alongside it. Gaining an entitlement is immediate + prorated server-side.
+  const confirmBundle = async () => {
+    if (bundle.kind !== "confirm") return;
+    const { axis, preview } = bundle;
+    setBundle({ kind: "working", axis, preview });
+    const r = await changeTier({ tier: "bundle", plan: preview.plan });
     if (r.ok) {
-      setBundle({ kind: "ok", effectiveAt: r.effective_at });
+      setBundle({
+        kind: "ok",
+        immediate: r.timing !== "period_end",
+        effectiveAt: r.effective_at,
+      });
       onRefresh();
     } else {
       setBundle({
@@ -109,6 +255,11 @@ export function EntitlementAccess({
       });
     }
   };
+
+  // Any in-flight step of the switch disables both entry points, so a member
+  // can't start a second one from the banner while the row's is resolving.
+  const bundleBusy = bundle.kind === "loading" || bundle.kind === "working";
+  const bundleCta = bundle.kind === "loading" ? "Checking…" : null;
 
   // Near-expiry banners: one per gifted axis inside the window (T7.4). When the
   // OTHER axis is a live subscription, offer the bundle switch (D9); otherwise a
@@ -139,11 +290,11 @@ export function EntitlementAccess({
           {otherIsSub ? (
             <button
               type="button"
-              onClick={() => switchToBundle(meta.tier)}
-              disabled={bundle.kind === "working"}
+              onClick={() => openBundleConfirm(key)}
+              disabled={bundleBusy}
               className="inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
             >
-              {bundle.kind === "working" ? "Switching…" : "Add it to your plan →"}
+              {bundleCta ?? "Add it to your plan →"}
             </button>
           ) : (
             <button
@@ -163,11 +314,26 @@ export function EntitlementAccess({
     <div className="mb-10">
       {banners}
 
+      {bundle.kind === "confirm" || bundle.kind === "working" ? (
+        // `working` carries the same preview so the panel stays on screen,
+        // numbers intact, while the switch runs.
+        <BundleConfirm
+          axis={bundle.axis}
+          alreadyActive={axes[bundle.axis].active}
+          preview={bundle.preview}
+          working={bundle.kind === "working"}
+          onConfirm={confirmBundle}
+          onCancel={() => setBundle({ kind: "idle" })}
+        />
+      ) : null}
+
       {bundle.kind === "ok" ? (
         <p className="mb-6 border border-cyan/50 bg-cyan/10 px-4 py-3 text-body-sm text-cyan" aria-live="polite">
-          You're on the bundle now — both Ark+ and the Community are on your
-          subscription
-          {bundle.effectiveAt ? `, effective ${fmtDate(bundle.effectiveAt)}` : ""}.
+          {bundle.immediate
+            ? "You're in — your membership covers Ark+ and the Community now. Nothing to pay today; your next bill picks up the rest of this month."
+            : bundle.effectiveAt
+              ? `Your membership covers Ark+ and the Community from ${fmtDate(bundle.effectiveAt)}.`
+              : "Your membership covers Ark+ and the Community now."}
         </p>
       ) : bundle.kind === "error" ? (
         <p className="mb-6 text-body-sm text-danger" aria-live="polite">
@@ -213,7 +379,10 @@ export function EntitlementAccess({
                     {a.active
                       ? accessLine(a)
                       : upgradeToBundle
-                        ? `You don't have ${meta.label} yet — adding it moves your subscription to the Bundle.`
+                        ? // Deliberately no price here: a number on this line,
+                          // next to what they already pay, reads as an add-on.
+                          // The confirm panel is where the money is spelled out.
+                          `You don't have ${meta.label} yet — add it and your membership covers both, at one price.`
                         : `You don't have ${meta.label} yet.`}
                   </p>
                 </div>
@@ -222,13 +391,11 @@ export function EntitlementAccess({
                 upgradeToBundle ? (
                   <button
                     type="button"
-                    onClick={() => switchToBundle(meta.tier)}
-                    disabled={bundle.kind === "working"}
+                    onClick={() => openBundleConfirm(key)}
+                    disabled={bundleBusy}
                     className="inline-flex shrink-0 items-center gap-2 self-start border border-cyan px-4 py-2 button-text font-display font-bold text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60 sm:self-auto"
                   >
-                    {bundle.kind === "working"
-                      ? "Switching…"
-                      : `Add ${meta.label} →`}
+                    {bundleCta ?? `Add ${meta.label} →`}
                   </button>
                 ) : (
                   <button

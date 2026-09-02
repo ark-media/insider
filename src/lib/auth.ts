@@ -229,6 +229,34 @@ export async function getBundleBreakdown(): Promise<BundleBreakdown | null> {
   }
 }
 
+// What adding the missing axis does to a single-axis member's subscription:
+// the Bundle price that REPLACES their current one (never a second charge
+// beside it), in the currency their subscription actually bills in, plus the
+// renewal date the switch leaves untouched. Null when there's no live
+// subscription to change; `bundleCents` alone is null when Stripe's price
+// lookup failed, and the confirm step then renders without price lines.
+export type BundleUpgradePreview = {
+  plan: "monthly" | "yearly";
+  currency: string;
+  minorFactor: number;
+  currentCents: number | null;
+  bundleCents: number | null;
+  renewsAt: string | null;
+};
+
+export async function getBundleUpgradePreview(): Promise<BundleUpgradePreview | null> {
+  try {
+    const res = await fetch("/api/stripe/bundle-upgrade-preview", {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { preview: BundleUpgradePreview | null };
+    return json.preview;
+  } catch {
+    return null;
+  }
+}
+
 // The ordered save offers for a tier-aware cancel/debundle flow. The server
 // resolves cadence + amounts from Stripe and window-suppresses coupons. Any
 // failure degrades to no offers so the flow proceeds to reason/confirm. The two

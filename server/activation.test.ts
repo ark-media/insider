@@ -19,14 +19,40 @@ const ENV = {
   APP_BASE_URL: 'https://app.test',
 }
 
+// The same env with Resend configured, for the cases that assert on the email
+// that goes out. ENV deliberately leaves it unset so every other case stays
+// send-free.
+const EMAIL_ENV = { ...ENV, RESEND_API_KEY: 'resend_key' }
+
 // --- Fake Stripe ------------------------------------------------------------
 // A single mutable metadata bag; subscriptions.update merges into it so the
 // activator's re-reads see the just-stamped markers.
-function makeFakeStripe(initialMeta: Record<string, string> = {}) {
+function makeFakeStripe(
+  initialMeta: Record<string, string> = {},
+  subOverrides: Record<string, unknown> = {},
+) {
   const meta: Record<string, string> = { plan: 'yearly', ...initialMeta }
   const sub = {
     id: 'sub_1',
     customer: 'cus_1',
+    // A realistic money shape: the axis-added email reads the item price and
+    // the sub's currency to state what the member now pays.
+    currency: 'usd',
+    items: {
+      data: [
+        {
+          id: 'si_1',
+          price: {
+            id: 'price_bundle_monthly',
+            currency: 'usd',
+            unit_amount: 2500,
+            recurring: { interval: 'month' },
+          },
+          current_period_end: 1_789_000_000,
+        },
+      ],
+    },
+    ...subOverrides,
     get metadata() {
       return { ...meta }
     },
@@ -48,6 +74,8 @@ function makeFakeStripe(initialMeta: Record<string, string> = {}) {
 
 // --- fetch mock -------------------------------------------------------------
 let fetchUrls: Array<{ method: string; url: string }> = []
+// Resend sends, captured by body so a test can assert WHICH email went out.
+let sentEmails: Array<{ subject: string; html: string }> = []
 const realFetch = globalThis.fetch
 
 function installFetch() {
@@ -55,6 +83,14 @@ function installFetch() {
     const url = String(input)
     const method = (init?.method ?? 'GET').toUpperCase()
     fetchUrls.push({ method, url })
+    if (url.includes('api.resend.com')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { subject: string; html: string }
+      sentEmails.push({ subject: body.subject, html: body.html })
+      return new Response(JSON.stringify({ id: 'email_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), {
         status,
@@ -79,6 +115,7 @@ silenceExpectedConsole()
 
 beforeEach(() => {
   fetchUrls = []
+  sentEmails = []
   installFetch()
 })
 
@@ -134,6 +171,78 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
     expect(scSubPost()).toBe(true)
     expect(circleGroupPost()).toBe(true)
     expect(result.scSubscriptionId).toBe(555)
+  })
+
+  test('adding an axis emails the upgrade, not the welcome — with the new price', async () => {
+    // An Ark+ member adding Community: they were provisioned long ago, so
+    // `wasUnprovisioned` is false and the welcome email is (correctly) skipped.
+    // Until this email existed that left the upgrade entirely silent — no
+    // pointer to the community, and no notice of the new recurring price, which
+    // Stripe's own receipt doesn't carry until the next invoice.
+    const { stripe, sub } = makeFakeStripe({
+      sc_subscription_id: '555',
+      sc_user_id: '999',
+      auth0_user_id: 'auth0|abc',
+      amount_cents: '2500',
+      currency: 'usd',
+      plan: 'monthly',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(circleGroupPost()).toBe(true)
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].subject).toContain('community')
+    expect(sentEmails[0].subject).not.toContain('Welcome')
+    // The price is read off the metadata change-tier stamps, in the currency
+    // the subscription actually bills in.
+    expect(sentEmails[0].html).toContain('$25')
+  })
+
+  test('a non-USD sub is priced from the metadata, not the USD base', async () => {
+    // A EUR subscription on a catalog price whose `unit_amount` is the USD
+    // base: quoting that as euros would be wrong money, so the amount comes
+    // from the `amount_cents`/`currency` pair change-tier stamps.
+    const { stripe, sub } = makeFakeStripe(
+      {
+        sc_subscription_id: '555',
+        sc_user_id: '999',
+        auth0_user_id: 'auth0|abc',
+        amount_cents: '2300',
+        currency: 'eur',
+      },
+      { currency: 'eur' },
+    )
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].html).toContain('€23')
+    expect(sentEmails[0].html).not.toContain('$25')
+  })
+
+  test('a first purchase still gets the welcome email, not the upgrade one', async () => {
+    const { stripe, sub } = makeFakeStripe()
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].subject).toContain('Welcome')
+  })
+
+  test('a redelivery that adds no axis sends nothing', async () => {
+    // Both axes already carry their markers, so the fan-out is a no-op — and a
+    // no-op must not re-announce an upgrade the member made weeks ago.
+    const { stripe, sub } = makeFakeStripe({
+      sc_subscription_id: '555',
+      sc_user_id: '999',
+      auth0_user_id: 'auth0|abc',
+      circle_provisioned: 'true',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(0)
   })
 
   test('idempotent: a sub already marked provisioned makes no SC/Circle calls', async () => {

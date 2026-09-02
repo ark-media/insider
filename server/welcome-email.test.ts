@@ -1,10 +1,12 @@
 import { describe, test, expect } from 'bun:test'
 import {
   FEED_INCLUDED,
+  renderAxisAddedEmail,
   renderGiftRedemptionEmail,
   renderGiftWelcomeEmail,
   renderSubscriberWelcomeEmail,
 } from './lib/welcome-email'
+import { circleUrls } from '../src/config/urls'
 
 describe('renderGiftRedemptionEmail', () => {
   test('single magic link: one CTA points at the claim link, no set-password step', () => {
@@ -159,5 +161,115 @@ describe('renderSubscriberWelcomeEmail', () => {
     // assertions together are what "on top of the feed" means.
     expect(html).toContain(FEED_INCLUDED)
     expect(html).toContain('community')
+  })
+})
+
+describe('renderAxisAddedEmail', () => {
+  test('states the new price as the whole cost, and that nothing is due today', () => {
+    // The two things this email exists to say. "Covers everything" is what
+    // defuses the fear the price is charged ON TOP of the old one, and
+    // "nothing to pay today" is the answer to the question a member actually
+    // has — the change is settled on the next bill, so their card shows
+    // nothing and no one guesses why.
+    const { subject, html } = renderAxisAddedEmail({
+      name: 'Alice Smith',
+      email: 'alice@example.com',
+      axis: 'circle',
+      welcomeUrl: 'https://app.test/welcome',
+      price: '$25',
+      plan: 'monthly',
+      renewsOn: 'September 14, 2026',
+    })
+    expect(subject).toContain('community')
+    expect(html).toContain('Hi Alice,')
+    expect(html).toContain('$25 a month')
+    expect(html).toContain('covers everything')
+    expect(html).toContain('Nothing to pay today')
+    expect(html).toContain('September 14, 2026')
+    expect(html).toContain('Enter the community')
+    // Not a first-purchase welcome, and never a set-password email: this member
+    // has had a login since the day they first subscribed.
+    expect(html).not.toContain('Welcome to Ark+')
+    expect(html).not.toContain('Set your password')
+  })
+
+  test('speaks in bills and months, never in our billing vocabulary', () => {
+    // The words this copy was workshopped OUT of. Members have bills and
+    // months; "prorated", "invoice" and "billing period" are our machinery,
+    // and they read as a company talking to itself.
+    const { html } = renderAxisAddedEmail({
+      axis: 'circle',
+      welcomeUrl: 'https://app.test/welcome',
+      price: '$25',
+      plan: 'monthly',
+      renewsOn: 'September 14, 2026',
+    })
+    for (const jargon of ['prorat', 'invoice', 'billing period', 'subscription']) {
+      expect(html.toLowerCase()).not.toContain(jargon)
+    }
+  })
+
+  test('yearly cadence is stated as a year, not a month', () => {
+    const { html } = renderAxisAddedEmail({
+      axis: 'circle',
+      welcomeUrl: 'https://app.test/welcome',
+      price: '$250',
+      plan: 'yearly',
+    })
+    expect(html).toContain('$250 a year')
+    expect(html).toContain('the rest of this year')
+    expect(html).not.toContain('a month')
+  })
+
+  test('an unreadable price drops the figure rather than guessing one', () => {
+    // The price is omitted when it can't be read in the currency the member is
+    // actually charged in. The email still has to say what their membership
+    // covers, and still owes them the "nothing today" answer.
+    const { html } = renderAxisAddedEmail({
+      axis: 'circle',
+      welcomeUrl: 'https://app.test/welcome',
+      plan: 'monthly',
+    })
+    expect(html).toContain('covers everything')
+    expect(html).toContain('Nothing to pay today')
+    expect(html).not.toContain('$')
+    // No date given → no promise about which day the bill lands.
+    expect(html).not.toContain('Your next bill is')
+  })
+
+  test('adding Community: carries the app links and the profile setup link', () => {
+    // A new community member meets the download step on /welcome. Someone who
+    // upgrades from their account page never passes through it, so the links
+    // have to travel in the email itself — getting the app IS the step that
+    // puts them in the community, and the profile is what makes them a person
+    // in it rather than an email address.
+    const { html } = renderAxisAddedEmail({
+      axis: 'circle',
+      welcomeUrl: 'https://app.test/welcome',
+      price: '$25',
+      plan: 'monthly',
+    })
+    expect(html).toContain(circleUrls.appStoreIos)
+    expect(html).toContain(circleUrls.appStoreAndroid)
+    expect(html).toContain(circleUrls.webApp)
+    expect(html).toContain(circleUrls.profileSettings)
+    // Text links, not the store badge lockups: SVG doesn't render in most mail
+    // clients, and image blocking would leave the row empty in the rest.
+    expect(html).not.toContain('<img')
+  })
+
+  test('adding Ark+: feed copy and the feed setup CTA', () => {
+    const { subject, html } = renderAxisAddedEmail({
+      axis: 'ark-plus',
+      welcomeUrl: 'https://app.test/welcome',
+      price: '$25',
+      plan: 'monthly',
+    })
+    expect(subject).toContain('feed')
+    expect(html).toContain(FEED_INCLUDED)
+    expect(html).toContain('Set up your feed')
+    expect(html).not.toContain('Enter the community')
+    // The community app links belong to the axis that grants the community.
+    expect(html).not.toContain(circleUrls.appStoreIos)
   })
 })
