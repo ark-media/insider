@@ -120,6 +120,7 @@ import { devApiPlugin } from './dev-api'
 import { signSessionToken } from './lib/session'
 import { SESSION_COOKIE_NAME } from './lib/cookies'
 import { SUPPORTED_CURRENCIES } from './lib/pricing'
+import { AGE_METADATA_KEY } from '../shared/age-gate'
 
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
@@ -302,16 +303,118 @@ describe('POST /api/stripe/change-tier', () => {
   })
 
   test('immediate upgrade (gains an axis) updates the sub in place, no schedule', async () => {
-    // Ark+ → Bundle gains circle → immediate, prorated.
+    // Ark+ → Bundle gains circle → immediate, prorated. Gaining circle is also
+    // what the 18+ gate keys on, so the confirmation rides along.
     withSub({ tier: 'ark-plus', amountCents: 800 })
     const res = await post(
-      { tier: 'bundle', plan: 'monthly' },
+      { tier: 'bundle', plan: 'monthly', age_confirmed: true },
       await sessionCookie('member@example.com'),
     )
     expect(res.statusCode).toBe(200)
     expect(res.__json().timing).toBe('immediate')
     expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(true)
     expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.update')).toBe(false)
+  })
+
+  // The upgrade path is the second door onto the community axis: it never
+  // passes through the gated checkout, and it writes the attestation by MERGING
+  // into existing subscription metadata rather than creating it fresh.
+  describe('community 18+ gate', () => {
+    const metadataOfLastSubUpdate = (): Record<string, unknown> => {
+      const call = [...stripeCalls]
+        .reverse()
+        .find((c) => c.method === 'subscriptions.update')
+      if (!call) throw new Error('no subscriptions.update call recorded')
+      return (call.args[1] as { metadata?: Record<string, unknown> }).metadata ?? {}
+    }
+
+    test('ark-plus → bundle without the confirmation is refused', async () => {
+      withSub({ tier: 'ark-plus', amountCents: 800 })
+      const res = await post(
+        { tier: 'bundle', plan: 'monthly' },
+        await sessionCookie('member@example.com'),
+      )
+      expect(res.statusCode).toBe(400)
+      expect(res.__json().code).toBe('age_confirmation_required')
+      // Refused before anything was written to Stripe.
+      expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    })
+
+    test('ark-plus → bundle with it stamps the subscription (immediate branch)', async () => {
+      withSub({ tier: 'ark-plus', amountCents: 800 })
+      const res = await post(
+        { tier: 'bundle', plan: 'monthly', age_confirmed: true },
+        await sessionCookie('member@example.com'),
+      )
+      expect(res.statusCode).toBe(200)
+      expect(res.__json().timing).toBe('immediate')
+      expect(metadataOfLastSubUpdate()[AGE_METADATA_KEY]).toBe('true')
+    })
+
+    test('the period-end branch stamps the SUBSCRIPTION, not only the phase', async () => {
+      // Ark+ → Community swaps the axes: it gains circle AND loses arkPlus, so
+      // it lands at period end via a schedule. The scheduled phase is a
+      // separate write with its own lifetime, so an attestation left only there
+      // would mean an upgrade that lands at renewal has no record behind it.
+      withSub({ tier: 'ark-plus', amountCents: 800 })
+      schedulePhases = [
+        {
+          start_date: NOW_SEC - 100,
+          end_date: NOW_SEC + 1000,
+          items: [{ price: 'price_ark_plus_monthly', quantity: 1 }],
+        },
+      ]
+      const res = await post(
+        { tier: 'circle', plan: 'monthly', age_confirmed: true },
+        await sessionCookie('member@example.com'),
+      )
+      expect(res.statusCode).toBe(200)
+      expect(res.__json().timing).toBe('period_end')
+      expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.update')).toBe(
+        true,
+      )
+      expect(metadataOfLastSubUpdate()[AGE_METADATA_KEY]).toBe('true')
+    })
+
+    test('ark-plus → circle without the confirmation is refused too', async () => {
+      withSub({ tier: 'ark-plus', amountCents: 800 })
+      const res = await post(
+        { tier: 'circle', plan: 'monthly' },
+        await sessionCookie('member@example.com'),
+      )
+      expect(res.statusCode).toBe(400)
+    })
+
+    test('a PWYC change by someone who already holds circle is not gated', async () => {
+      // The gate is on ACQUISITION of the axis, not per transaction — a bundle
+      // member raising their amount already attested when they bought it.
+      withSub({ tier: 'bundle', amountCents: 2000 })
+      const res = await post(
+        { tier: 'bundle', plan: 'monthly', custom_amount_cents: 2500 },
+        await sessionCookie('member@example.com'),
+      )
+      expect(res.statusCode).toBe(200)
+      // ...and nothing new is written: the record already lives on this sub.
+      expect(AGE_METADATA_KEY in metadataOfLastSubUpdate()).toBe(false)
+    })
+
+    test('a debundle away from bundle is not gated', async () => {
+      withSub({ tier: 'bundle', amountCents: 2000 })
+      schedulePhases = [
+        {
+          start_date: NOW_SEC - 100,
+          end_date: NOW_SEC + 1000,
+          items: [{ price: 'price_bundle_monthly', quantity: 1 }],
+        },
+      ]
+      const res = await post(
+        { tier: 'ark-plus', plan: 'monthly' },
+        await sessionCookie('member@example.com'),
+      )
+      expect(res.statusCode).toBe(200)
+      // No axis gained → no subscription metadata write on this branch at all.
+      expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    })
   })
 
   test('below-floor custom amount is rejected', async () => {

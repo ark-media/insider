@@ -23,6 +23,7 @@ import {
   type Middleware,
 } from './test-utils'
 import { SUPPORTED_CURRENCIES } from './lib/pricing'
+import { AGE_METADATA_KEY } from '../shared/age-gate'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -421,7 +422,14 @@ describe('POST /api/stripe/create-checkout-session — tier + currency', () => {
   })
 
   test('tier=bundle resolves the bundle price', async () => {
-    const res = await post({ email: 'bundle@b.co', plan: 'yearly', tier: 'bundle' })
+    // Bundle grants community, so it can't be created without the 18+
+    // confirmation — see the age-gate block above.
+    const res = await post({
+      email: 'bundle@b.co',
+      plan: 'yearly',
+      tier: 'bundle',
+      age_confirmed: true,
+    })
     expect(res.statusCode).toBe(200)
     const lineItems = lastSessionCreateArgs().line_items as Array<Record<string, unknown>>
     expect(lineItems[0].price).toBe('price_bundle_yearly')
@@ -456,6 +464,91 @@ describe('POST /api/stripe/create-checkout-session — tier + currency', () => {
     expect(res.statusCode).toBe(200)
     expect(lastSessionCreateArgs().currency).toBe('usd')
     expect((res.__json() as Record<string, unknown>).currency).toBe('usd')
+  })
+})
+
+function lastSubscriptionMetadata(): Record<string, unknown> {
+  const args = lastSessionCreateArgs()
+  const subData = args.subscription_data as { metadata?: Record<string, unknown> }
+  return subData.metadata ?? {}
+}
+
+describe('POST /api/stripe/create-checkout-session — community 18+ gate', () => {
+  // The refusal is the load-bearing half: with no path to a `circle`
+  // entitlement that skipped the gate, the stamp below means what it says.
+  for (const tier of ['circle', 'bundle'] as const) {
+    test(`400 for ${tier} without the confirmation`, async () => {
+      const res = await post({ email: 'a@b.co', plan: 'monthly', tier })
+      expect(res.statusCode).toBe(400)
+      expect((res.__json() as Record<string, unknown>).code).toBe(
+        'age_confirmation_required',
+      )
+      // Refused before Stripe was touched at all.
+      expect(
+        stripeCalls.find((c) => c.method === 'checkout.sessions.create'),
+      ).toBeUndefined()
+    })
+
+    test(`${tier} with the confirmation is stamped on the subscription`, async () => {
+      const res = await post({
+        email: 'a@b.co',
+        plan: 'monthly',
+        tier,
+        age_confirmed: true,
+      })
+      expect(res.statusCode).toBe(200)
+      // Stripe stringifies metadata: the record reads back as the STRING
+      // 'true', never a boolean.
+      expect(lastSubscriptionMetadata()[AGE_METADATA_KEY]).toBe('true')
+    })
+  }
+
+  test('a non-true confirmation is not a confirmation', async () => {
+    // A truthy-but-wrong value (the shape a sloppy client sends) must not pass.
+    const res = await post({
+      email: 'a@b.co',
+      plan: 'monthly',
+      tier: 'bundle',
+      age_confirmed: 'yes',
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('ark-plus needs no confirmation and carries no key at all', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'monthly', tier: 'ark-plus' })
+    expect(res.statusCode).toBe(200)
+    // Absence is the record that this buyer never attested — not 'false'.
+    expect(AGE_METADATA_KEY in lastSubscriptionMetadata()).toBe(false)
+  })
+
+  test('ark-plus does not get stamped even if the client sends the flag', async () => {
+    const res = await post({
+      email: 'a@b.co',
+      plan: 'monthly',
+      tier: 'ark-plus',
+      age_confirmed: true,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(AGE_METADATA_KEY in lastSubscriptionMetadata()).toBe(false)
+  })
+
+  test('the 400 does not consume a rate-limit token', async () => {
+    // The gate sits above the limiter for exactly this reason: six refusals
+    // would otherwise empty the 5-token per-email bucket and 429 the buyer's
+    // first correct attempt.
+    const handler = getHandler(PATH)
+    const email = 'gated@example.com'
+    for (let i = 0; i < 6; i += 1) {
+      const blocked = await postWith(handler, { email, plan: 'monthly', tier: 'bundle' })
+      expect(blocked.statusCode).toBe(400)
+    }
+    const ok = await postWith(handler, {
+      email,
+      plan: 'monthly',
+      tier: 'bundle',
+      age_confirmed: true,
+    })
+    expect(ok.statusCode).toBe(200)
   })
 })
 

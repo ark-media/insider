@@ -34,6 +34,13 @@ type Flow = 'A' | 'B' | 'C' | 'D' | 'E'
 // the three-tier split still compiles and just omits it.
 type Tier = 'ark-plus' | 'circle' | 'bundle'
 
+// Where the community 18+ gate was shown. Three distinct doors onto the same
+// entitlement axis — the purchase modal, the in-account upgrade that moves an
+// existing Ark+ subscription onto the Bundle, and the gift form — so the
+// drop-off each one causes has to be separable. 'gift' is also the one where
+// the person ticking is not the person the statement is about.
+type AgeGateSurface = 'checkout' | 'upgrade' | 'gift'
+
 // Where a checkout attempt died, so `checkout_failed` is one event you can
 // break down by stage in PostHog instead of three near-duplicate events.
 type CheckoutFailureStage =
@@ -66,6 +73,17 @@ interface EventMap {
     tier?: Tier
     stage: CheckoutFailureStage
     reason?: string
+  }
+  // Community 18+ attestation. Measured because the gate is friction we
+  // deliberately added to the community funnel: without these three the
+  // drop-off it causes is invisible.
+  age_gate_viewed: { tier: Tier; surface: AgeGateSurface }
+  age_gate_confirmed: { tier: Tier; surface: AgeGateSurface }
+  age_gate_declined: {
+    tier: Tier
+    surface: AgeGateSurface
+    // Bundle offers Ark+ instead of dead-ending; standalone Community closes.
+    outcome: 'continued_ark_plus' | 'closed'
   }
 
   // --- Tier 2: churn / retention (tier-aware flows A–E) ---

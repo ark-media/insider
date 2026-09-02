@@ -330,6 +330,11 @@ export async function changeTier(input: {
   // On a debundle, whether a save offer was shown-and-declined first, so the
   // win-back record reads 'declined' vs 'not_offered' like the full-cancel path.
   offerOutcome?: "declined" | "not_offered";
+  // The 18+ attestation, required by the server whenever the change GAINS the
+  // community axis (Ark+ → Bundle, Ark+ → Community). Omitted on every change
+  // that doesn't — a plan switch, a PWYC change, a debundle — where the server
+  // doesn't ask for it and nothing is recorded.
+  ageConfirmed?: boolean;
 }): Promise<{
   ok: boolean;
   changed?: boolean;
@@ -348,6 +353,7 @@ export async function changeTier(input: {
         custom_amount_cents: input.customAmountCents,
         retained_product: input.retainedProduct,
         offer_outcome: input.offerOutcome,
+        age_confirmed: input.ageConfirmed,
       }),
     });
     return (await res.json()) as {

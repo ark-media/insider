@@ -16,6 +16,10 @@ export type GiftInput = {
   // unsupported. Chosen in the modal before the Session is created.
   currency?: string;
   message?: string;
+  // The giver's 18+ attestation about the RECIPIENT. Required by the server on
+  // a gift that grants community (circle / bundle); absent and unrecorded on an
+  // Ark+ gift.
+  ageConfirmed?: boolean;
 };
 
 export type CreateGiftResponse = {
@@ -67,6 +71,7 @@ export async function createGiftCheckout(
         term: input.term,
         currency: input.currency,
         message: input.message,
+        age_confirmed: input.ageConfirmed,
         // Attribution rides onto the gift PaymentIntent's metadata the same way
         // it does for subscriptions, so `gift_purchased_confirmed` is
         // channel-attributed too (BI plan §4.1). Allowlisted server-side.

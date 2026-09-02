@@ -17,6 +17,7 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
 import { getAttribution } from "../lib/attribution";
+import { AGE_STATEMENT, requiresAgeGate } from "../../shared/age-gate";
 import {
   type PricingResponse,
   browserCountry,
@@ -62,6 +63,12 @@ type PromoInfo = {
 };
 
 type Step =
+  // The 18+ attestation on a tier that grants community access, ahead of
+  // everything else — the buyer must not reach a card field without it.
+  | { kind: "age-gate" }
+  // They said they're under 18 on a standalone Community purchase, which has
+  // nowhere else to go. (On the Bundle the decline downgrades to Ark+ instead.)
+  | { kind: "age-declined" }
   // Email is collected before the Checkout Session is created so the server
   // can pre-create the Stripe Customer with it — see the matching note in
   // server/routes/stripe.ts. The localized price (Adaptive Pricing) renders
@@ -97,6 +104,22 @@ const ctaClass = modalPrimaryCta;
 
 const titleClass =
   "display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong";
+
+// The screen a fresh modal opens on. Both inputs are known before the first
+// paint — the publishable key is a module-level build-time value, and the gate
+// is a pure function of the tier — so the first step is decided synchronously
+// here rather than in an effect. An effect would paint the email form and then
+// swap it for the gate, which is exactly the flash we don't want on the screen
+// that has to come BEFORE anything else.
+function initialStep(tier: Tier): Step {
+  if (!publishableKey) {
+    return {
+      kind: "error",
+      message: "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+    };
+  }
+  return requiresAgeGate(tier) ? { kind: "age-gate" } : { kind: "email" };
+}
 
 const MAX_POLL_ATTEMPTS = 15;
 
@@ -181,31 +204,37 @@ async function pollForCheckoutSession(
   return { kind: "timeout" };
 }
 
+// `tier` is required, not defaulted. It used to default to "ark-plus", which
+// was harmless when the tier only picked a price — and became a hole the day it
+// also decided whether the 18+ gate runs: a community entry point that forgot
+// the prop would have opened straight on the email form and skipped the gate
+// silently. The type system is the only thing that catches that, so let it.
 export function CheckoutModal({
   open,
   plan,
-  tier = "ark-plus",
+  tier,
   onClose,
 }: {
   open: boolean;
   plan: Plan;
-  tier?: Tier;
+  tier: Tier;
   onClose: () => void;
 }) {
-  // Stripe.js is required before we can render Elements. Surface a clear error
-  // up front if the publishable key isn't configured — it's a module-level
-  // build-time value, so we can decide the initial step synchronously rather
-  // than from an effect. Otherwise nothing else to do until the buyer submits
-  // their email, which triggers session creation.
-  const [step, setStep] = useState<Step>(() =>
-    publishableKey
-      ? { kind: "email" }
-      : {
-          kind: "error",
-          message:
-            "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-        },
-  );
+  // Stripe.js is required before we can render Elements, and a community tier
+  // has to clear the 18+ gate before a card field exists — both decided
+  // synchronously (see initialStep). Otherwise nothing else to do until the
+  // buyer submits their email, which triggers session creation.
+  const [step, setStep] = useState<Step>(() => initialStep(tier));
+  // A buyer who declines the gate on the Bundle is offered Ark+ instead of
+  // being dead-ended, so the tier the rest of the modal transacts on is the
+  // prop until that swap happens. Everything downstream — the label, the floor,
+  // the POST body, the analytics — reads activeTier, never the prop.
+  const [tierOverride, setTierOverride] = useState<Tier | null>(null);
+  const activeTier = tierOverride ?? tier;
+  // Whether the gate was actually cleared on this attempt. Only ever set by the
+  // confirm action, and sent as-is: the server refuses a community purchase
+  // without it, so a false here is a 400, never a recorded "false" (D4).
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   // Last submitted email — persists across retries so the form repopulates
   // after an error rather than asking the buyer to retype it.
   const [lastEmail, setLastEmail] = useState("");
@@ -224,28 +253,24 @@ export function CheckoutModal({
 
   // The tier+plan floor in the selected currency (minor units) and that
   // currency's minor-unit factor — everything the slider/hero needs.
-  const tierAmounts = pricing?.tiers[tier];
+  const tierAmounts = pricing?.tiers[activeTier];
   const floorMinor =
     tierAmounts?.[plan === "yearly" ? "yearly" : "monthly"]?.[currency] ?? null;
   const factor = pricing?.minor_factors[currency] ?? 100;
 
   const handleClose = useCallback(() => {
-    setStep(
-      publishableKey
-        ? { kind: "email" }
-        : {
-            kind: "error",
-            message:
-              "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-          },
-    );
+    setStep(initialStep(tier));
     setLastEmail("");
     setPromo(null);
     setPricing(null);
     setCurrency("usd");
     customAmountRef.current = null;
+    // A reopened modal re-asks: the attestation belongs to one purchase, and
+    // the Ark+ fallback shouldn't outlive the session that chose it.
+    setTierOverride(null);
+    setAgeConfirmed(false);
     onClose();
-  }, [onClose]);
+  }, [onClose, tier]);
 
   // Auto-apply the active promo (if any) for this plan when the modal opens.
   // Display-only (the coupon Stripe actually charges is attached server-side at
@@ -319,6 +344,44 @@ export function CheckoutModal({
     };
   }, [open]);
 
+  // The gate is the first screen, so it's shown before any effect could report
+  // it. Fire on entry into the step (and only while the modal is actually open
+  // — these are always-mounted in the pricing grids) so the funnel has a
+  // denominator for the two outcomes below.
+  useEffect(() => {
+    if (!open || step.kind !== "age-gate") return;
+    trackEvent("age_gate_viewed", { tier: activeTier, surface: "checkout" });
+  }, [open, step.kind, activeTier]);
+
+  const confirmAge = useCallback(() => {
+    trackEvent("age_gate_confirmed", { tier: activeTier, surface: "checkout" });
+    setAgeConfirmed(true);
+    setStep({ kind: "email" });
+  }, [activeTier]);
+
+  // Declining the Bundle drops the community half and continues as Ark+ — a
+  // real product, minus the part with the age requirement — rather than ending
+  // the purchase. A standalone Community purchase has no such remainder, so it
+  // stops with an explanation.
+  const declineAge = useCallback(() => {
+    if (activeTier === "bundle") {
+      trackEvent("age_gate_declined", {
+        tier: activeTier,
+        surface: "checkout",
+        outcome: "continued_ark_plus",
+      });
+      setTierOverride("ark-plus");
+      setStep({ kind: "email" });
+      return;
+    }
+    trackEvent("age_gate_declined", {
+      tier: activeTier,
+      surface: "checkout",
+      outcome: "closed",
+    });
+    setStep({ kind: "age-declined" });
+  }, [activeTier]);
+
   const submitEmail = useCallback(
     // customAmountMinor is already in the selected currency's minor units (the
     // slider/field converts via the currency factor), or null to charge the
@@ -332,7 +395,7 @@ export function CheckoutModal({
       customAmountRef.current = customAmountMinor;
       trackEvent("checkout_email_submitted", {
         plan,
-        tier,
+        tier: activeTier,
         is_custom_amount: customAmountMinor !== null,
       });
       setStep({ kind: "creating" });
@@ -343,9 +406,13 @@ export function CheckoutModal({
           body: JSON.stringify({
             email,
             plan,
-            tier,
+            tier: activeTier,
             currency: selectedCurrency,
             custom_amount_cents: customAmountMinor ?? undefined,
+            // The 18+ attestation, only ever true because the gate was cleared
+            // on this screen. The server re-checks it against the tier's
+            // entitlements and refuses the community tiers without it.
+            age_confirmed: ageConfirmed,
             // Ride the acquisition channel into Stripe's subscription metadata
             // so the webhook's server-side revenue events carry attribution
             // without having to rejoin to this browser session (BI plan §4.1).
@@ -388,7 +455,7 @@ export function CheckoutModal({
         });
       }
     },
-    [plan, tier],
+    [plan, activeTier, ageConfirmed],
   );
 
   const handleActivated = useCallback(
@@ -397,7 +464,7 @@ export function CheckoutModal({
       // subscription — the true bottom of the funnel.
       trackEvent("checkout_succeeded", {
         plan,
-        tier,
+        tier: activeTier,
         is_custom_amount: customAmountRef.current !== null,
       });
       try {
@@ -414,7 +481,7 @@ export function CheckoutModal({
         setStep({ kind: "processing", email });
       }
     },
-    [onClose, refresh, plan, tier],
+    [onClose, refresh, plan, activeTier],
   );
 
   const stripePromiseValue = getStripe();
@@ -434,8 +501,48 @@ export function CheckoutModal({
           the longest tier label and the period barely fit the width as it is —
           it wraps to two lines instead, which is the harmless outcome. */}
       <p id="checkout-desc" className="eyebrow pr-10">
-        {TIER_LABEL[tier]} · {plan === "yearly" ? "Annual" : "Monthly"}
+        {TIER_LABEL[activeTier]} · {plan === "yearly" ? "Annual" : "Monthly"}
       </p>
+
+      {step.kind === "age-gate" ? (
+        <AgeGate tier={activeTier} onConfirm={confirmAge} onDecline={declineAge} />
+      ) : null}
+
+      {step.kind === "age-declined" ? (
+        <>
+          <h2 id="checkout-title" className={titleClass}>
+            Community access is 18+
+          </h2>
+          <div className="mt-6 space-y-4 text-sm text-fg">
+            <p>
+              We can't sell community access to anyone under 18. Ark+ — the
+              private feed and the members-only show — has no age requirement,
+              and it's yours whenever you want it.
+            </p>
+            <button
+              type="button"
+              onClick={handleClose}
+              className={modalSecondaryCta}
+            >
+              Close
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      {step.kind === "email" && tierOverride === "ark-plus" ? (
+        // The decline changed what's being bought and therefore what it costs.
+        // The button they pressed said so, but the price on the next screen is
+        // different from the one they arrived with, so say it again here rather
+        // than let them find out from the number.
+        <p
+          role="status"
+          className="mt-4 border border-rule-strong px-3 py-2.5 text-body-sm text-fg-muted"
+        >
+          Community access is 18+, so this is Ark+ on its own — the private feed
+          and the members-only show.
+        </p>
+      ) : null}
 
       {step.kind === "email" ? (
         <EmailForm
@@ -605,6 +712,66 @@ function Field({
       <span className="eyebrow text-fg-muted">{label}</span>
       <div className="mt-2">{children}</div>
     </label>
+  );
+}
+
+// The community 18+ gate — the screen a Circle or Bundle purchase opens on,
+// before the email form and long before a card field exists.
+//
+// It is deliberately its own step on its own screen. Stripe's Terms of Service
+// consent (CheckoutTerms) lives down on the payment screen and is collected by
+// Stripe's own element; keeping the two apart, one decision per screen, is what
+// stops them being argued afterwards as a single bundled click.
+//
+// The box is never pre-ticked and the continue action stays disabled until it
+// is: a pre-ticked box records nothing anyone asserted, which is the whole
+// value of the record.
+function AgeGate({
+  tier,
+  onConfirm,
+  onDecline,
+}: {
+  tier: Tier;
+  onConfirm: () => void;
+  onDecline: () => void;
+}) {
+  const [checked, setChecked] = useState(false);
+  return (
+    <>
+      <h2 id="checkout-title" className={titleClass}>
+        Confirm your age
+      </h2>
+      <div className="mt-6 space-y-5 text-sm text-fg">
+        <p>
+          The Ark community is an adults-only space, so membership that includes
+          it is limited to people aged 18 and over.
+        </p>
+        <label className="flex cursor-pointer items-start gap-3 border border-rule-strong px-4 py-3 text-fg-strong transition hover:border-cyan">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => setChecked(e.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-cyan"
+          />
+          <span>{AGE_STATEMENT}</span>
+        </label>
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!checked}
+            className={ctaClass}
+          >
+            Continue
+          </button>
+          <button type="button" onClick={onDecline} className={modalSecondaryCta}>
+            {tier === "bundle"
+              ? "I'm under 18 — continue with Ark+ only"
+              : "I'm under 18"}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 

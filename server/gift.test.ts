@@ -513,6 +513,9 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
         recipient_email: 'r@x.com',
         tier: 'bundle',
         term: '1yr',
+        // A Bundle gift carries community, so it can't be created without the
+        // giver's 18+ confirmation — see the age-gate block below.
+        age_confirmed: true,
       },
     })
     const res = makeRes()
@@ -600,6 +603,71 @@ async function postGift1yr(): Promise<FakeRes> {
   await runHandler(h, req, res)
   return res
 }
+
+describe('POST /api/gift/create-checkout — community 18+ gate', () => {
+  const post = async (body: Record<string, unknown>, handler?: Middleware) => {
+    const h = handler ?? getHandler(CREATE_PATH)
+    const res = makeRes()
+    await runHandler(h, makeReq({ body }), res)
+    return res
+  }
+  const base = { giver_email: 'g@x.com', recipient_email: 'r@x.com', term: '1yr' }
+
+  for (const tier of ['circle', 'bundle'] as const) {
+    test(`400 for a ${tier} gift without the giver's confirmation`, async () => {
+      const res = await post({ ...base, tier })
+      expect(res.statusCode).toBe(400)
+      expect((res.__json() as { code?: string }).code).toBe('age_confirmation_required')
+      // Refused before Stripe was touched at all.
+      expect(stripeCalls.some((c) => c.method === 'checkout.sessions.create')).toBe(false)
+    })
+
+    test(`a ${tier} gift with it stamps the PaymentIntent`, async () => {
+      const res = await post({ ...base, tier, age_confirmed: true })
+      expect(res.statusCode).toBe(200)
+      // A gift has no Subscription, so the durable record is the PaymentIntent.
+      // Stripe stringifies metadata: it reads back as the STRING 'true'.
+      expect(sessionCreateArgs().payment_intent_data.metadata.confirmed_age_18).toBe(
+        'true',
+      )
+    })
+  }
+
+  test('a non-true confirmation is not a confirmation', async () => {
+    const res = await post({ ...base, tier: 'bundle', age_confirmed: 'yes' })
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('an Ark+ gift needs no confirmation and carries no key at all', async () => {
+    const res = await post({ ...base, tier: 'ark-plus' })
+    expect(res.statusCode).toBe(200)
+    // Absence is the record that nobody attested here — not 'false'.
+    expect(
+      'confirmed_age_18' in sessionCreateArgs().payment_intent_data.metadata,
+    ).toBe(false)
+  })
+
+  test('an Ark+ gift is not stamped even if the client sends the flag', async () => {
+    const res = await post({ ...base, tier: 'ark-plus', age_confirmed: true })
+    expect(res.statusCode).toBe(200)
+    expect(
+      'confirmed_age_18' in sessionCreateArgs().payment_intent_data.metadata,
+    ).toBe(false)
+  })
+
+  test('the 400 does not consume a rate-limit token', async () => {
+    // The gate sits above the limiter for exactly this reason: six refusals
+    // would otherwise empty the 5-token bucket and 429 the giver's first
+    // correct attempt.
+    const h = getHandler(CREATE_PATH)
+    for (let i = 0; i < 6; i += 1) {
+      const blocked = await post({ ...base, tier: 'bundle' }, h)
+      expect(blocked.statusCode).toBe(400)
+    }
+    const ok = await post({ ...base, tier: 'bundle', age_confirmed: true }, h)
+    expect(ok.statusCode).toBe(200)
+  })
+})
 
 describe('POST /api/gift/create-checkout — promo auto-apply', () => {
   test('applies the best auto-apply coupon to the session', async () => {
