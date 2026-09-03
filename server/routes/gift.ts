@@ -25,12 +25,6 @@ import { coerceTier, releaseScheduleIfAny } from './stripe/helpers.js'
 import { findOrCreateAuth0User } from '../lib/auth0-user.js'
 import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
-import {
-  AGE_GATE_ERROR_CODE,
-  AGE_GATE_ERROR_GIFT,
-  AGE_METADATA_KEY,
-  AGE_METADATA_VALUE,
-} from '../../shared/age-gate.js'
 import { sanitizeAttribution } from '../../shared/attribution.js'
 import { splitFullName } from '../../shared/profile-name.js'
 import { captureServerEvent, emailDistinctId } from '../lib/analytics-server.js'
@@ -102,7 +96,6 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
             currency?: string
             message?: string
             attribution?: unknown
-            age_confirmed?: boolean
           }>(req)) ?? {}
 
         const giverEmail = body.giver_email?.trim().toLowerCase()
@@ -123,21 +116,6 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const tier = coerceTier(body.tier)
         const requestedCurrency = (body.currency ?? '').toLowerCase()
         const currency = isSupportedCurrency(requestedCurrency) ? requestedCurrency : 'usd'
-
-        // 18+ gate on a gift that grants community access. Same predicate and
-        // same refusal as the subscription funnel, but note what is (and isn't)
-        // being recorded: the GIVER is attesting about the RECIPIENT, someone
-        // they may not be able to speak for. This closes the purchase half of
-        // the hole D9 left open; the redemption half — where the recipient
-        // actually receives the axis, having asserted nothing themselves —
-        // is still open.
-        //
-        // Above the rate limiter, matching the subscription route, so a request
-        // a correct client would never have sent can't burn a real retry's token.
-        const grantsCircle = deriveEntitlements(tier).circle
-        if (grantsCircle && body.age_confirmed !== true) {
-          return json(400, { error: AGE_GATE_ERROR_GIFT, code: AGE_GATE_ERROR_CODE })
-        }
 
         const clientIp = getClientIp(req)
         const wait =
@@ -231,13 +209,6 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
               // (BI plan §4.1) so `gift_purchased_confirmed` is attributable.
               // Allowlisted + length-capped — the client is untrusted.
               ...sanitizeAttribution(body.attribution),
-              // The giver's 18+ attestation about the recipient, on gifts that
-              // grant community only (an Ark+ gift carries no key at all, so
-              // absence reads as "never attested"). It rides the PaymentIntent
-              // rather than a Subscription because a gift has no subscription —
-              // Stripe keeps PaymentIntents indefinitely just the same. Spread
-              // last so no other contributor to this bag can shadow it.
-              ...(grantsCircle ? { [AGE_METADATA_KEY]: AGE_METADATA_VALUE } : {}),
             },
           },
           // Lightweight Session-level metadata for the ownership check in

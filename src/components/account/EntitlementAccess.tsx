@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { AxisAccess, BundleUpgradePreview, Me } from "../../lib/auth";
 import { changeTier, getBundleUpgradePreview } from "../../lib/auth";
 import { formatMinor } from "../../lib/currency";
 import { formatTimestamp } from "../../../shared/format-date";
 import { CheckoutModal } from "../CheckoutModal";
-import { trackEvent } from "../../lib/analytics";
-import { AGE_STATEMENT } from "../../../shared/age-gate";
 import { HeadphonesIcon, ChatIcon } from "./SurfaceIcons";
 
 // Per-axis entitlement rows for account settings (T7.2/T7.3/T7.4, decisions
@@ -102,20 +100,10 @@ function BundleConfirm({
   alreadyActive: boolean;
   preview: BundleUpgradePreview;
   working: boolean;
-  onConfirm: (ageConfirmed: boolean) => void;
+  onConfirm: () => void;
   onCancel: () => void;
 }) {
   const meta = AXIS[axis];
-  // Adding the community axis is an ACQUISITION of `circle`, so it needs the
-  // same 18+ attestation the checkout modal collects — this path grants
-  // community without ever touching checkout, and the server refuses it
-  // without one. Adding Ark+ to an existing community subscription isn't
-  // gated: that member already holds the axis.
-  const needsAge = axis === "circle";
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
-  useEffect(() => {
-    if (needsAge) trackEvent("age_gate_viewed", { tier: "bundle", surface: "upgrade" });
-  }, [needsAge]);
   const { currency, minorFactor, plan } = preview;
   const bundle =
     preview.bundleCents === null
@@ -181,30 +169,11 @@ function BundleConfirm({
           Nothing to pay today. {nextBillLine}
         </li>
       </ul>
-      {needsAge ? (
-        // Kept out of the price list above and off the button itself: the
-        // attestation is its own decision, not a footnote on the purchase.
-        <label className="mt-4 flex cursor-pointer items-start gap-3 border border-rule-strong px-3 py-2.5 text-body-sm text-fg-strong transition hover:border-cyan">
-          <input
-            type="checkbox"
-            checked={ageConfirmed}
-            onChange={(e) => setAgeConfirmed(e.target.checked)}
-            disabled={working}
-            className="mt-0.5 size-4 shrink-0 accent-cyan"
-          />
-          <span>{AGE_STATEMENT}</span>
-        </label>
-      ) : null}
       <div className="mt-4 flex flex-wrap gap-3">
         <button
           type="button"
-          onClick={() => {
-            if (needsAge) {
-              trackEvent("age_gate_confirmed", { tier: "bundle", surface: "upgrade" });
-            }
-            onConfirm(ageConfirmed);
-          }}
-          disabled={working || (needsAge && !ageConfirmed)}
+          onClick={onConfirm}
+          disabled={working}
           className="inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
         >
           {working
@@ -267,15 +236,11 @@ export function EntitlementAccess({
   // so the axis they're adding rides that same subscription — D9's "switch to
   // Bundle via change-tier" rather than a second standalone sub billed
   // alongside it. Gaining an entitlement is immediate + prorated server-side.
-  const confirmBundle = async (ageConfirmed: boolean) => {
+  const confirmBundle = async () => {
     if (bundle.kind !== "confirm") return;
     const { axis, preview } = bundle;
     setBundle({ kind: "working", axis, preview });
-    const r = await changeTier({
-      tier: "bundle",
-      plan: preview.plan,
-      ageConfirmed,
-    });
+    const r = await changeTier({ tier: "bundle", plan: preview.plan });
     if (r.ok) {
       setBundle({
         kind: "ok",

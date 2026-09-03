@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { GiftCheckoutModal } from "../../components/GiftCheckoutModal";
 import {
@@ -11,7 +11,6 @@ import {
   type GiftTier,
 } from "../../lib/gift";
 import { trackEvent } from "../../lib/analytics";
-import { AGE_STATEMENT_RECIPIENT, requiresAgeGate } from "../../../shared/age-gate";
 
 export const Route = createFileRoute("/plus/gift")({
   component: GiftPage,
@@ -42,26 +41,15 @@ function GiftPage() {
   const [recipientName, setRecipientName] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [message, setMessage] = useState("");
-  // The giver's 18+ attestation about the recipient, required only on a gift
-  // that carries community access.
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [submitted, setSubmitted] = useState<GiftInput | null>(null);
   const tierRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const termRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  // Changing the tier clears the attestation. It is a statement about the
-  // thing being bought, so a box ticked for the Bundle must not carry over to
-  // a later Bundle selection the giver reached by way of Ark+.
-  const selectTier = (next: GiftTier) => {
-    setTier(next);
-    setAgeConfirmed(false);
-  };
 
   const onTierKeyDown = (e: React.KeyboardEvent, index: number) => {
     const next = nextRovingIndex(e.key, index, GIFT_TIERS.length);
     if (next === null) return;
     e.preventDefault();
-    selectTier(GIFT_TIERS[next]);
+    setTier(GIFT_TIERS[next]);
     tierRefs.current[next]?.focus();
   };
   const onTermKeyDown = (e: React.KeyboardEvent, index: number) => {
@@ -72,21 +60,14 @@ function GiftPage() {
     termRefs.current[next]?.focus();
   };
 
-  const needsAge = requiresAgeGate(tier);
-  useEffect(() => {
-    if (needsAge) trackEvent("age_gate_viewed", { tier, surface: "gift" });
-  }, [needsAge, tier]);
-
   const canSubmit =
     giverEmail.trim().length > 0 &&
     recipientEmail.trim().length > 0 &&
-    (term === "6mo" || term === "1yr") &&
-    (!needsAge || ageConfirmed);
+    (term === "6mo" || term === "1yr");
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
-    if (needsAge) trackEvent("age_gate_confirmed", { tier, surface: "gift" });
     trackEvent("gift_checkout_opened", { tier, term });
     setSubmitted({
       giverEmail: giverEmail.trim(),
@@ -96,9 +77,6 @@ function GiftPage() {
       tier,
       term,
       message: message.trim() || undefined,
-      // Only ever sent on a gift that grants community; the server ignores it
-      // otherwise and records nothing.
-      ageConfirmed: needsAge ? ageConfirmed : undefined,
     });
   };
 
@@ -170,7 +148,7 @@ function GiftPage() {
                         role="radio"
                         aria-checked={selected}
                         tabIndex={selected ? 0 : -1}
-                        onClick={() => selectTier(t)}
+                        onClick={() => setTier(t)}
                         onKeyDown={(e) => onTierKeyDown(e, i)}
                         className={`group flex flex-col items-start gap-1 border px-4 py-4 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
                           selected
@@ -314,33 +292,10 @@ function GiftPage() {
                   </div>
                 </div>
 
-                {needsAge ? (
-                  // Its own block above the button, never folded into the
-                  // "continue" click: the giver is asserting something about
-                  // another person, and that has to be a deliberate act rather
-                  // than a consequence of buying. Never pre-ticked.
-                  <label className="mt-8 flex cursor-pointer items-start gap-3 border border-rule-strong px-4 py-3 text-body-sm text-fg-strong transition hover:border-cyan">
-                    <input
-                      type="checkbox"
-                      checked={ageConfirmed}
-                      onChange={(e) => setAgeConfirmed(e.target.checked)}
-                      className="mt-0.5 size-4 shrink-0 accent-cyan"
-                    />
-                    <span>
-                      {AGE_STATEMENT_RECIPIENT}{" "}
-                      <span className="text-fg-muted">
-                        The Ark community is an adults-only space.
-                      </span>
-                    </span>
-                  </label>
-                ) : null}
-
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className={`group inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60 ${
-                    needsAge ? "mt-4" : "mt-8"
-                  }`}
+                  className="group mt-8 inline-flex min-h-12 w-full items-center justify-between bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   Continue to payment · ${GIFT_PRICE_DOLLARS[tier][term]}
                   <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">

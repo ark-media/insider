@@ -30,13 +30,10 @@ mock.module('@neondatabase/serverless', () => ({
 
 // Imports AFTER mock.module so getDb picks up the fake neon.
 import {
-  deriveEntitlements,
   emailForStripeCustomer,
   reconcileEntitlements,
   syncEntitlement,
 } from './entitlement'
-import { requiresAgeGate } from '../shared/age-gate'
-import type { Tier } from './entitlement'
 
 const BASE_ENV = {
   CIRCLE_API_TOKEN: 'circle-tok',
@@ -182,20 +179,6 @@ describe('syncEntitlement', () => {
 })
 
 // --- emailForStripeCustomer -------------------------------------------------
-
-// The server gates on deriveEntitlements(tier).circle so a future tier that
-// carries community is covered the moment it exists. The client has no
-// entitlement module and mirrors that in a hardcoded list, which is only safe
-// while the two agree — so make the day they stop agreeing a red test rather
-// than a purchase that skips the gate.
-describe('requiresAgeGate mirrors the circle entitlement', () => {
-  const ALL_TIERS: Tier[] = ['ark-plus', 'circle', 'bundle', 'free']
-  for (const tier of ALL_TIERS) {
-    test(`${tier}`, () => {
-      expect(requiresAgeGate(tier)).toBe(deriveEntitlements(tier).circle)
-    })
-  }
-})
 
 describe('emailForStripeCustomer', () => {
   test('returns email from an expanded Customer object', async () => {

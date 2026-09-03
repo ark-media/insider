@@ -55,12 +55,6 @@ import {
   minorUnitFactors,
   resolveCatalogPrice,
 } from '../../lib/pricing.js'
-import {
-  AGE_GATE_ERROR,
-  AGE_GATE_ERROR_CODE,
-  AGE_METADATA_KEY,
-  AGE_METADATA_VALUE,
-} from '../../../shared/age-gate.js'
 import { sanitizeAttribution } from '../../../shared/attribution.js'
 import { getClientIp, isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
@@ -119,7 +113,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             currency?: string
             custom_amount_cents?: number
             attribution?: unknown
-            age_confirmed?: boolean
           }>(req)) ?? {}
 
         // Email is required up front so we can pre-create the Stripe Customer
@@ -139,23 +132,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
         }
 
-        const plan = body.plan
-        const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
-        const tier = coerceTier(body.tier)
-
-        // 18+ gate on any purchase that grants community access. Keyed on the
-        // ENTITLEMENT rather than the tier name, so a future tier carrying
-        // community is gated by construction. Refusing here (rather than
-        // recording a 'false') is what makes the stamp below load-bearing:
-        // there is no path to a `circle` entitlement that skipped the gate.
-        // Sits with the other input validation, ABOVE the rate limiter, so a
-        // request a correct client would never have sent can't burn a token a
-        // legitimate retry needs.
-        const grantsCircle = deriveEntitlements(tier).circle
-        if (grantsCircle && body.age_confirmed !== true) {
-          return json(400, { error: AGE_GATE_ERROR, code: AGE_GATE_ERROR_CODE })
-        }
-
         // Rate-limit after input validation so a clearly-malformed request
         // doesn't consume a token from a legitimate retry.
         const clientIp = getClientIp(req)
@@ -167,6 +143,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             error: 'Too many checkout attempts. Please wait a moment and try again.',
           })
         }
+
+        const plan = body.plan
+        const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
+        const tier = coerceTier(body.tier)
 
         // Explicit charge currency (per-currency floors replaced Adaptive
         // Pricing, which currency_options disables). The client selects/detects
@@ -298,13 +278,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               // that produced the member, with no browser session to rejoin.
               // Allowlisted + length-capped: the client is untrusted.
               ...sanitizeAttribution(body.attribution),
-              // The 18+ attestation, written only on a purchase that grants
-              // community (an Ark+ subscription carries no key at all, so
-              // absence reads as "never attested"). Stripe keeps cancelled
-              // Subscription objects indefinitely, so the record outlives the
-              // membership it was collected for. Spread last so no other
-              // contributor to this bag can shadow it.
-              ...(grantsCircle ? { [AGE_METADATA_KEY]: AGE_METADATA_VALUE } : {}),
             },
           },
           // Required for ui_mode 'elements'; only used when a payment method
@@ -898,7 +871,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             custom_amount_cents?: number
             retained_product?: unknown
             offer_outcome?: unknown
-            age_confirmed?: boolean
           }>(req)) ?? {}
         if (body.plan !== 'monthly' && body.plan !== 'yearly') {
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
@@ -974,15 +946,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         const prevEnt = deriveEntitlements(currentTier)
         const nextEnt = deriveEntitlements(newTier)
-        // 18+ gate on ACQUISITION of the community axis, not per transaction:
-        // required when this change GAINS `circle`, never on a renewal, a plan
-        // switch or a PWYC change by someone who already holds it. This is the
-        // second door to that axis — Ark+ → Bundle grants community without
-        // ever passing through the gated checkout.
-        const gainsCircle = !prevEnt.circle && nextEnt.circle
-        if (gainsCircle && body.age_confirmed !== true) {
-          return json(400, { error: AGE_GATE_ERROR, code: AGE_GATE_ERROR_CODE })
-        }
         const item = sub.items.data[0]
         if (!item) return json(409, { error: 'Subscription has no item to change.' })
         const prevAmount = item.price?.unit_amount ?? null
@@ -1061,7 +1024,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 plan,
                 amount_cents: String(amountCents),
                 currency,
-                ...(gainsCircle ? { [AGE_METADATA_KEY]: AGE_METADATA_VALUE } : {}),
               },
             })
             if (env.DATABASE_URL) {
@@ -1073,19 +1035,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
           // Period-end: schedule the destination price to start at the current
           // period end; entitlement isn't revoked until it lands.
-          //
-          // The attestation goes on the SUBSCRIPTION, not on the phase carrying
-          // the new price. A phase is a separate write with its own lifetime,
-          // and a change that gains community at renewal (Ark+ → Community
-          // swaps the axes, so it lands here rather than immediately) would
-          // otherwise leave no record at all. Written before the schedule so a
-          // failure fails the whole change — never a granted axis with nothing
-          // behind it.
-          if (gainsCircle) {
-            await stripe.subscriptions.update(sub.id, {
-              metadata: { ...sub.metadata, [AGE_METADATA_KEY]: AGE_METADATA_VALUE },
-            })
-          }
           let scheduleId = scheduleIdOf(sub)
           if (!scheduleId) {
             const created = await stripe.subscriptionSchedules.create({
