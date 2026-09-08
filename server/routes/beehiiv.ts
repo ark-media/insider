@@ -27,7 +27,13 @@ import { getDb, type Sql } from '../lib/db.js'
 import { fetchAuth0EmailVerified } from '../entitlement.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
-import { fetchWithTimeout, getClientIp, readBody, readJson } from '../lib/http.js'
+import {
+  fetchWithTimeout,
+  getClientIp,
+  readBody,
+  readJson,
+  setReadCacheControl,
+} from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
@@ -230,18 +236,20 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         const resolved = await resolveMembership(req, env)
         const isMember = resolved?.entitlements.arkPlus ?? false
 
-        // Member responses include the gated body, so they must NOT be
-        // cached on a shared edge — `private, no-store` keeps that content
-        // tied to the requesting reader. Anonymous responses are safe to
-        // share-cache with the existing SWR window.
-        if (isMember) {
-          res.setHeader('cache-control', 'private, no-store')
-        } else {
-          res.setHeader(
-            'cache-control',
-            'public, s-maxage=300, stale-while-revalidate=3600',
-          )
-        }
+        // Both surfaces project a membership-dependent body — `view` is
+        // 'premium' for a member and 'free' for everyone else, and `both`
+        // -audience posts appear on ark-daily as well as members-letter — so
+        // neither slug may enter a shared cache under this url.
+        //
+        // This used to be decided per caller: member responses were `private`
+        // and anonymous ones were share-cached. That reads as safe and isn't.
+        // The anonymous response is the PREVIEW, and once the edge held it, the
+        // next member to open the newsletter was served the preview of the
+        // thing they pay for. Gating on the resource costs anonymous readers
+        // the edge hit; `beehiivRawCache` still spares Beehiiv the round-trip,
+        // and an anonymous request resolves no identity so it never reaches
+        // Neon either.
+        setReadCacheControl(res, { gated: true, maxAgeSec: 300 })
 
         const token = env.BEEHIIV_API_KEY
         if (!token) return json(200, { posts: [] })

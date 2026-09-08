@@ -384,3 +384,43 @@ describe('POST /api/beehiiv/subscribe — rate limiting', () => {
     expect(res.__status()).toBe(429)
   })
 })
+
+// ===========================================================================
+// /api/beehiiv/posts — shared-cache safety
+// ===========================================================================
+
+describe('/api/beehiiv/posts is never shared-cacheable', () => {
+  const POSTS_ENV = {
+    BEEHIIV_API_KEY: 'test-key',
+    BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test-1234',
+    BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: 'pub_test-5678',
+  }
+
+  for (const newsletter of ['ark-daily', 'members-letter']) {
+    test(`${newsletter} is private even for an anonymous reader`, async () => {
+      // The regression, and this one was live. An anonymous reader gets the
+      // PREVIEW body (`view: 'free'`), and that response used to be marked
+      // `public, s-maxage=300`. Once the edge held it, the next member to open
+      // the same url was served the preview of the newsletter they pay for.
+      //
+      // ark-daily is included on purpose: `both`-audience posts surface there
+      // too and are projected through the same membership-dependent `view`, so
+      // the free newsletter's url is no safer to share-cache than the paid one.
+      fetchImpl = async () =>
+        new Response(JSON.stringify({ data: [] }), { status: 200 })
+
+      const handler = findHandler(buildDeps(POSTS_ENV), '/api/beehiiv/posts')
+      const res = makeRes()
+      await handler(
+        makeReq(`/api/beehiiv/posts?newsletter=${newsletter}`, undefined, {
+          method: 'GET',
+        }),
+        res,
+      )
+
+      expect(res.__status()).toBe(200)
+      expect(res.__header('cache-control')).toBe('private, no-store')
+      expect(res.__header('cache-control')).not.toContain('s-maxage')
+    })
+  }
+})

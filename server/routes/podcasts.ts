@@ -27,7 +27,7 @@ import {
   type ProjectedEpisode,
 } from '../show-notes.js'
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
-import { fetchWithTimeout } from '../lib/http.js'
+import { fetchWithTimeout, setReadCacheControl } from '../lib/http.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { getShow, shows } from '../../src/data/shows.js'
@@ -175,9 +175,10 @@ function resolveConfig(env: Env): BeehiivConfig | null {
 // can *listen*. Metadata (title, date, description) stays public either way;
 // only the audio url is withheld.
 //
-// Same shape as /api/beehiiv/posts: resolve entitlement from Neon, and mark
-// the response `private, no-store` whenever it carries member-only content so
-// a shared edge can never hand it to the next caller.
+// Same shape as /api/beehiiv/posts: resolve entitlement from Neon, and keep a
+// paid show's responses out of every shared cache — both the member body that
+// carries the audio and the stripped body that doesn't, because they share a
+// url and a shared cache cannot tell them apart.
 
 type AudioAccess = { paid: boolean; allowed: boolean }
 
@@ -194,20 +195,23 @@ async function resolveAudioAccess(
   return { paid: true, allowed: resolved?.entitlements.arkPlus ?? false }
 }
 
-/** Public read cache. Skipped entirely when the body carries gated audio. */
+/**
+ * Read cache for the episode routes.
+ *
+ * Keyed on whether the SHOW is paid, not on whether this particular caller got
+ * the audio. A paid show's url answers members and non-members with different
+ * bodies, so no shared cache may hold either of them; a public show's url
+ * answers everyone identically, so the edge is welcome to it.
+ *
+ * The `allowed` half of `access` deliberately plays no part here — see
+ * setReadCacheControl for why reading it would reintroduce the bug.
+ */
 function setReadCache(
   res: ServerResponse,
   access: AudioAccess,
   maxAgeSec: number,
 ): void {
-  if (access.paid && access.allowed) {
-    res.setHeader('cache-control', 'private, no-store')
-    return
-  }
-  res.setHeader(
-    'cache-control',
-    `public, s-maxage=${maxAgeSec}, stale-while-revalidate=${maxAgeSec * 6}`,
-  )
+  setReadCacheControl(res, { gated: access.paid, maxAgeSec })
 }
 
 function withAudioAccess<T extends { audioUrl: string }>(

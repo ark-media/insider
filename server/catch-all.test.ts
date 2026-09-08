@@ -845,3 +845,77 @@ describe('/api/podcasts/latest', () => {
     expect(fetchCalls).toHaveLength(0)
   })
 })
+
+// ===========================================================================
+// Shared-cache safety on the gated episode routes
+// ===========================================================================
+
+describe('paid shows never enter a shared cache', () => {
+  // A paid show has no entry in src/data/shows.ts right now (inside-call-me-back
+  // is commented out), and resolveAudioAccess fails closed on a slug it doesn't
+  // recognise — so an env-configured slug that isn't in the catalog is exactly
+  // the gated path, and the one we can exercise today.
+  function buildPaidShowHandler() {
+    return createCatchAllHandler({
+      APP_BASE_URL: 'http://localhost:5173',
+      BEEHIIV_API_KEY: 'test-token',
+      BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
+      BEEHIIV_PODCAST_ID_SECRET_SHOW: 'pod_secret',
+    })
+  }
+
+  for (const path of ['podcasts/episodes', 'podcasts/episode']) {
+    test(`${path} is private for a paid show even when the caller gets no audio`, async () => {
+      // The regression. This response is the STRIPPED one — the reader proved
+      // no membership, so the audio url was withheld. It used to be marked
+      // `public, s-maxage=300`, which let the edge keep it and hand it to the
+      // next reader who asked for the same url, member or not. Whether a body
+      // is shared-cacheable is a property of the url, not of who fetched it.
+      fetchImpl = async () =>
+        new Response(JSON.stringify({ data: [] }), { status: 200 })
+
+      const res = makeRes()
+      await buildPaidShowHandler()(
+        makeReq({
+          url: `/api/handler?_path=${path}&show=secret-show&id=pod_ep_1`,
+        }),
+        res,
+      )
+
+      const cacheControl = res.__headers()['cache-control']
+      expect(cacheControl).toBe('private, no-store')
+      expect(cacheControl).not.toContain('public')
+      expect(cacheControl).not.toContain('s-maxage')
+    })
+  }
+
+  test('a public show stays shared-cacheable', async () => {
+    // The other half of the rule: a public show answers every reader with the
+    // same body, so the edge should still absorb it.
+    fetchImpl = async () =>
+      new Response(JSON.stringify({ data: [] }), { status: 200 })
+
+    const res = makeRes()
+    await buildHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/episodes&show=call-me-back' }),
+      res,
+    )
+
+    expect(res.__headers()['cache-control']).toMatch(
+      /public, s-maxage=\d+, stale-while-revalidate=\d+/,
+    )
+  })
+
+  test('an unconfigured show short-circuits without leaking a private header', async () => {
+    // The early return runs before the entitlement lookup, so it reports the
+    // show as public — there is no audio in an empty list to gate.
+    const res = makeRes()
+    await buildHandler()(
+      makeReq({ url: '/api/handler?_path=podcasts/episodes&show=unknown-show' }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__headers()['cache-control']).toContain('public')
+  })
+})
