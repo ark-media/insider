@@ -94,6 +94,19 @@ const ctaClass = modalPrimaryCta;
 const titleClass =
   "display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong";
 
+// The screen a fresh modal opens on. The publishable key is a module-level
+// build-time value, so this is decided synchronously here rather than in an
+// effect that would paint the email form and then swap it for the error.
+function initialStep(): Step {
+  if (!publishableKey) {
+    return {
+      kind: "error",
+      message: "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
+    };
+  }
+  return { kind: "email" };
+}
+
 const MAX_POLL_ATTEMPTS = 15;
 
 type CheckoutSessionResult =
@@ -177,31 +190,24 @@ async function pollForCheckoutSession(
   return { kind: "timeout" };
 }
 
+// `tier` is required, not defaulted. It used to default to "ark-plus", so an
+// entry point that forgot the prop silently sold — and priced — the wrong thing
+// instead of failing. The type system is the only thing that catches that.
 export function CheckoutModal({
   open,
   plan,
-  tier = "ark-plus",
+  tier,
   onClose,
 }: {
   open: boolean;
   plan: Plan;
-  tier?: Tier;
+  tier: Tier;
   onClose: () => void;
 }) {
-  // Stripe.js is required before we can render Elements. Surface a clear error
-  // up front if the publishable key isn't configured — it's a module-level
-  // build-time value, so we can decide the initial step synchronously rather
-  // than from an effect. Otherwise nothing else to do until the buyer submits
+  // Stripe.js is required before we can render Elements, decided synchronously
+  // (see initialStep). Otherwise nothing else to do until the buyer submits
   // their email, which triggers session creation.
-  const [step, setStep] = useState<Step>(() =>
-    publishableKey
-      ? { kind: "email" }
-      : {
-          kind: "error",
-          message:
-            "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-        },
-  );
+  const [step, setStep] = useState<Step>(() => initialStep());
   // Last submitted email — persists across retries so the form repopulates
   // after an error rather than asking the buyer to retype it.
   const [lastEmail, setLastEmail] = useState("");
@@ -218,6 +224,28 @@ export function CheckoutModal({
   const { refresh, signIn } = useSubscriberAuth();
   const { theme } = useTheme();
 
+  // The pricing grids keep ONE modal mounted behind every card and swap `tier`
+  // as cards are clicked, so per-purchase state cannot be settled once at
+  // mount — a modal left on the previous visit's tier would carry that visit's
+  // email, promo and pricing into this one.
+  //
+  // So it is re-derived whenever the purchase changes — during render rather
+  // than in an effect, which would paint the stale screen for a frame first,
+  // and inside the component rather than as a `key` at the call sites, which
+  // would hand every future entry point the same hole.
+  const [purchase, setPurchase] = useState({ open, tier });
+  if (purchase.open !== open || purchase.tier !== tier) {
+    setPurchase({ open, tier });
+    setStep(initialStep());
+    setLastEmail("");
+    setPromo(null);
+    setPricing(null);
+    setCurrency("usd");
+    // customAmountRef is deliberately not cleared here: it is written on every
+    // submit and read only after one, so it cannot carry across a purchase —
+    // and writing a ref during render is exactly what refs are not for.
+  }
+
   // The tier+plan floor in the selected currency (minor units) and that
   // currency's minor-unit factor — everything the slider/hero needs.
   const tierAmounts = pricing?.tiers[tier];
@@ -225,23 +253,11 @@ export function CheckoutModal({
     tierAmounts?.[plan === "yearly" ? "yearly" : "monthly"]?.[currency] ?? null;
   const factor = pricing?.minor_factors[currency] ?? 100;
 
-  const handleClose = useCallback(() => {
-    setStep(
-      publishableKey
-        ? { kind: "email" }
-        : {
-            kind: "error",
-            message:
-              "Stripe is not configured (VITE_STRIPE_PUBLISHABLE_KEY missing).",
-          },
-    );
-    setLastEmail("");
-    setPromo(null);
-    setPricing(null);
-    setCurrency("usd");
-    customAmountRef.current = null;
-    onClose();
-  }, [onClose]);
+  // Closing only tells the parent. Resetting is the block above's job, which
+  // runs on the `open` flip every close produces — so a modal closed by the
+  // overlay, by Escape, or by a caller that never routes through here can't
+  // reopen carrying the last purchase's answers.
+  const handleClose = onClose;
 
   // The house sale for this purchase, and the code that applies it — the
   // payment step needs the code, because the Session allows promotion codes
@@ -309,7 +325,7 @@ export function CheckoutModal({
       customAmountRef.current = customAmountMinor;
       trackEvent("checkout_email_submitted", {
         plan,
-        tier,
+        tier: tier,
         is_custom_amount: customAmountMinor !== null,
       });
       setStep({ kind: "creating" });
@@ -320,7 +336,7 @@ export function CheckoutModal({
           body: JSON.stringify({
             email,
             plan,
-            tier,
+            tier: tier,
             currency: selectedCurrency,
             custom_amount_cents: customAmountMinor ?? undefined,
             // Ride the acquisition channel into Stripe's subscription metadata
@@ -374,7 +390,7 @@ export function CheckoutModal({
       // subscription — the true bottom of the funnel.
       trackEvent("checkout_succeeded", {
         plan,
-        tier,
+        tier: tier,
         is_custom_amount: customAmountRef.current !== null,
       });
       try {
@@ -1142,26 +1158,26 @@ function CheckoutForm({
               }
             >
               <ExpressCheckoutElement
-            options={{
-              buttonHeight: 48,
-              // Contrast the button against the modal surface.
-              buttonTheme:
-                theme === "light"
-                  ? { applePay: "black", googlePay: "black" }
-                  : { applePay: "white", googlePay: "white" },
-              buttonType: undefined,
-              layout: undefined,
-              paymentMethodOrder: undefined,
-              paymentMethods: undefined,
-            }}
-            onReady={(event) =>
-              setWalletState(
-                event.availablePaymentMethods ? "available" : "none",
-              )
-            }
-            onConfirm={confirmWallet}
-            onLoadError={() => setWalletState("none")}
-          />
+                options={{
+                  buttonHeight: 48,
+                  // Contrast the button against the modal surface.
+                  buttonTheme:
+                    theme === "light"
+                      ? { applePay: "black", googlePay: "black" }
+                      : { applePay: "white", googlePay: "white" },
+                  buttonType: undefined,
+                  layout: undefined,
+                  paymentMethodOrder: undefined,
+                  paymentMethods: undefined,
+                }}
+                onReady={(event) =>
+                  setWalletState(
+                    event.availablePaymentMethods ? "available" : "none",
+                  )
+                }
+                onConfirm={confirmWallet}
+                onLoadError={() => setWalletState("none")}
+              />
             </div>
           </div>
           {walletState === "available" && !consent.complete ? (
