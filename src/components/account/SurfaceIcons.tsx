@@ -1,7 +1,7 @@
-// Single-color line glyphs for the three member surfaces (Podcast, Newsletter,
-// the Fold). Stroked in currentColor — unlike the multi-color brand marks in
-// PlatformIcons — so they inherit the cyan/fg color of whatever wraps them.
-// Used by the account dashboard's three member surface rows.
+// Single-color line glyphs for the two entitlement axes (Ark+ and the Fold).
+// Stroked in currentColor — unlike the multi-color brand marks in PlatformIcons
+// — so they inherit the cyan/fg color of whatever wraps them.
+// Used by the account page's per-axis access rows.
 const DEFAULT_ICON_CLASS = "h-6 w-6 shrink-0";
 
 type IconProps = { className?: string };
@@ -23,16 +23,6 @@ export function HeadphonesIcon({ className = DEFAULT_ICON_CLASS }: IconProps) {
       <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
       <rect x="2.5" y="13.5" width="4" height="6.5" rx="1.5" />
       <rect x="17.5" y="13.5" width="4" height="6.5" rx="1.5" />
-    </svg>
-  );
-}
-
-// Envelope — newsletter preferences.
-export function MailIcon({ className = DEFAULT_ICON_CLASS }: IconProps) {
-  return (
-    <svg className={className} {...baseProps}>
-      <rect x="2.5" y="5" width="19" height="14" rx="1.5" />
-      <path d="m3 6.5 9 6 9-6" />
     </svg>
   );
 }

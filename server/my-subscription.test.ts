@@ -41,7 +41,22 @@ let subsByCustomer: Record<
     current_period_end: number | null
     cancel_at_period_end?: boolean
     cancel_at?: number | null
+    // The money on the sub. Left off by default so the schedule tests stay
+    // about the schedule; the price/card tests set them.
+    currency?: string
+    unit_amount?: number
+    // The currency the PRICE is quoted in, which is not always the one the
+    // subscription bills in (currency_options).
+    price_currency?: string
+    interval?: 'month' | 'year'
+    default_payment_method?: string | null
   }>
+> = {}
+
+// Payment methods the fake Stripe will return from paymentMethods.retrieve.
+let paymentMethods: Record<
+  string,
+  { card?: { brand: string; last4: string; exp_month: number; exp_year: number } }
 > = {}
 
 class FakeStripe {
@@ -51,22 +66,53 @@ class FakeStripe {
       stripeCalls.push({ method: 'customers.list', args: [args] })
       return { data: existingCustomers.filter((c) => c.email === args.email) }
     },
+    retrieve: async (id: string) => {
+      stripeCalls.push({ method: 'customers.retrieve', args: [id] })
+      // No invoice-level default in these fixtures: the card, when there is
+      // one, hangs off the subscription.
+      return { id, invoice_settings: { default_payment_method: null } }
+    },
+  }
+  paymentMethods = {
+    retrieve: async (id: string) => {
+      stripeCalls.push({ method: 'paymentMethods.retrieve', args: [id] })
+      const pm = paymentMethods[id]
+      if (!pm) throw new Error('no such payment method')
+      return { id, ...pm }
+    },
   }
   subscriptions = {
     list: async (args: { customer: string; status?: string; limit?: number }) => {
       stripeCalls.push({ method: 'subscriptions.list', args: [args] })
       const subs = (subsByCustomer[args.customer] ?? []).map((s) => ({
         id: s.id,
+        customer: args.customer,
         // The account page reads the member's live subscription; default to
         // 'active' so the (status-filtered) live-subscription lookup matches it.
         status: 'active',
+        currency: s.currency,
         cancel_at_period_end: s.cancel_at_period_end ?? false,
         cancel_at: s.cancel_at ?? null,
+        default_payment_method: s.default_payment_method ?? null,
         items: {
           data:
             s.current_period_end == null
               ? []
-              : [{ current_period_end: s.current_period_end }],
+              : [
+                  {
+                    current_period_end: s.current_period_end,
+                    price:
+                      s.unit_amount == null
+                        ? undefined
+                        : {
+                            unit_amount: s.unit_amount,
+                            currency: s.price_currency ?? s.currency,
+                            recurring: s.interval
+                              ? { interval: s.interval }
+                              : undefined,
+                          },
+                  },
+                ],
         },
       }))
       return { data: subs }
@@ -112,6 +158,7 @@ beforeEach(() => {
   stripeCalls.length = 0
   existingCustomers = []
   subsByCustomer = {}
+  paymentMethods = {}
 })
 
 // A signed ark_session cookie for `email`, so getSessionEmail authenticates.
@@ -153,7 +200,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const cookie = await sessionCookie('member@example.com')
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, periodEnd: null, plan: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null })
   })
 
   test('normally renewing subscription → no pending cancel', async () => {
@@ -169,6 +216,10 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       scheduledTier: null,
       periodEnd: new Date(PERIOD_END * 1000).toISOString(),
       plan: null,
+      amountCents: null,
+      currency: undefined,
+      minorFactor: 100,
+      card: null,
     })
   })
 
@@ -194,6 +245,10 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       scheduledTier: null,
       periodEnd: new Date(PERIOD_END * 1000).toISOString(),
       plan: null,
+      amountCents: null,
+      currency: undefined,
+      minorFactor: 100,
+      card: null,
     })
   })
 
@@ -219,6 +274,10 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       scheduledTier: null,
       periodEnd: new Date(PERIOD_END * 1000).toISOString(),
       plan: null,
+      amountCents: null,
+      currency: undefined,
+      minorFactor: 100,
+      card: null,
     })
   })
 
@@ -237,7 +296,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const cookie = await sessionCookie('member@example.com')
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: true, cancelAt: null, pendingChange: false, scheduledTier: null, periodEnd: null, plan: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: true, cancelAt: null, pendingChange: false, scheduledTier: null, periodEnd: null, plan: null, amountCents: null, currency: undefined, minorFactor: 100, card: null })
   })
 
   test('only the session email is consulted — never a client-supplied one', async () => {
@@ -259,10 +318,138 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
     // member@ has no sub of their own, so other@'s pending cancel must not leak.
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, periodEnd: null, plan: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null })
     const customerList = stripeCalls.find((c) => c.method === 'customers.list')
     expect((customerList!.args[0] as { email: string }).email).toBe(
       'member@example.com',
     )
+  })
+})
+
+// ===========================================================================
+// The plan card's money and card-on-file. Every one of these can be absent for
+// an honest reason, so what matters is that an absence lands as null rather
+// than as a wrong number.
+// ===========================================================================
+describe('GET /api/stripe/my-subscription — price + card on file', () => {
+  test('quotes the amount and cadence when the price bills in its own currency', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        {
+          id: 'sub_1',
+          current_period_end: PERIOD_END,
+          currency: 'usd',
+          unit_amount: 800,
+          interval: 'month',
+        },
+      ],
+    }
+    const cookie = await sessionCookie('member@example.com')
+    const res = await get({ cookie })
+    const body = res.__json() as Record<string, unknown>
+    expect(body.amountCents).toBe(800)
+    expect(body.currency).toBe('usd')
+    expect(body.minorFactor).toBe(100)
+    expect(body.plan).toBe('monthly')
+  })
+
+  test('zero-decimal currency reports its own minor-unit factor', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        {
+          id: 'sub_1',
+          current_period_end: PERIOD_END,
+          currency: 'jpy',
+          unit_amount: 1300,
+          interval: 'year',
+        },
+      ],
+    }
+    const cookie = await sessionCookie('member@example.com')
+    const res = await get({ cookie })
+    const body = res.__json() as Record<string, unknown>
+    expect(body.amountCents).toBe(1300)
+    expect(body.currency).toBe('jpy')
+    // ¥1300 is 1300, not 130000 — quoting it at ×100 would be a 100× error on
+    // the one number a member checks.
+    expect(body.minorFactor).toBe(1)
+    expect(body.plan).toBe('yearly')
+  })
+
+  test('drops the amount when the price is quoted in a currency it does not bill in', async () => {
+    // A catalog price billed through currency_options reports the USD base
+    // while the subscription charges the localized amount. Showing the base as
+    // "your next charge" would be the wrong money.
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        {
+          id: 'sub_1',
+          current_period_end: PERIOD_END,
+          currency: 'gbp',
+          unit_amount: 800,
+          price_currency: 'usd',
+          interval: 'month',
+        },
+      ],
+    }
+    const cookie = await sessionCookie('member@example.com')
+    const res = await get({ cookie })
+    const body = res.__json() as Record<string, unknown>
+    expect(body.amountCents).toBeNull()
+    expect(body.currency).toBe('gbp')
+  })
+
+  test("reports the subscription's own default payment method", async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        {
+          id: 'sub_1',
+          current_period_end: PERIOD_END,
+          currency: 'usd',
+          unit_amount: 800,
+          interval: 'month',
+          default_payment_method: 'pm_1',
+        },
+      ],
+    }
+    paymentMethods = {
+      pm_1: { card: { brand: 'visa', last4: '4242', exp_month: 4, exp_year: 2028 } },
+    }
+    const cookie = await sessionCookie('member@example.com')
+    const res = await get({ cookie })
+    expect((res.__json() as Record<string, unknown>).card).toEqual({
+      brand: 'visa',
+      last4: '4242',
+      expMonth: 4,
+      expYear: 2028,
+    })
+  })
+
+  test('an unreadable payment method drops the card rather than failing the request', async () => {
+    // The renewal date is what this endpoint exists for. A deleted or
+    // non-card payment method must not take it down with it.
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        {
+          id: 'sub_1',
+          current_period_end: PERIOD_END,
+          currency: 'usd',
+          unit_amount: 800,
+          interval: 'month',
+          default_payment_method: 'pm_missing',
+        },
+      ],
+    }
+    const cookie = await sessionCookie('member@example.com')
+    const res = await get({ cookie })
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as Record<string, unknown>
+    expect(body.card).toBeNull()
+    expect(body.periodEnd).toBe(new Date(PERIOD_END * 1000).toISOString())
   })
 })

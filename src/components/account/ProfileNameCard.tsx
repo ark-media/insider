@@ -47,10 +47,17 @@ function readDismissed(): boolean {
 export function ProfileNameCard({
   onSaved,
   promptOnly = false,
+  rowClassName = "mb-10 border-b border-rule pb-6",
 }: {
   onSaved?: () => void;
   /** Render only the ask — no quiet "Your name · Edit" row. See the note above. */
   promptOnly?: boolean;
+  /**
+   * Wrapper classes for the quiet row, so it can sit as one row inside the
+   * Settings tab's bordered "Profile & sign-in" list instead of carrying its
+   * own trailing rule. Only the frame changes; the row itself is identical.
+   */
+  rowClassName?: string;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [failed, setFailed] = useState(false);
@@ -81,7 +88,7 @@ export function ProfileNameCard({
   // No skeleton in promptOnly: the space is only ever claimed by members who
   // need the ask, so a placeholder that resolves to nothing would be a worse
   // flash than the card arriving a beat late.
-  if (!profile) return promptOnly ? null : <NameSkeleton />;
+  if (!profile) return promptOnly ? null : <NameSkeleton className={rowClassName} />;
 
   const dismiss = () => {
     try {
@@ -149,7 +156,7 @@ export function ProfileNameCard({
 
   // The quiet row: the permanent, always-available editable field.
   return (
-    <div className="mb-10 border-b border-rule pb-6">
+    <div className={rowClassName}>
       {editing ? (
         <>
           <div className="eyebrow text-fg-muted">Your name</div>
@@ -274,9 +281,9 @@ function NameForm({
   );
 }
 
-function NameSkeleton() {
+function NameSkeleton({ className }: { className: string }) {
   return (
-    <div className="mb-10 animate-pulse border-b border-rule pb-6 motion-reduce:animate-none">
+    <div className={`animate-pulse motion-reduce:animate-none ${className}`}>
       <div className="h-3 w-24 rounded-sm bg-rule-soft" />
       <div className="mt-4 h-6 w-44 rounded-sm bg-rule-soft" />
     </div>

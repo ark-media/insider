@@ -11,11 +11,14 @@ export function PodcastFeedSetup({
   feedParam,
   onSelectFeed,
   onClearFeed,
+  embedded = false,
 }: {
   me: Me;
   feedParam: number | undefined;
   onSelectFeed: (feedId: number) => void;
   onClearFeed: () => void;
+  /** Rendered inside the /account shell rather than as a page of its own. */
+  embedded?: boolean;
 }) {
   const feeds = me.feeds;
   const selected = feedParam
@@ -23,8 +26,10 @@ export function PodcastFeedSetup({
     : undefined;
 
   if (!selected) {
-    return <FeedSetupHub feeds={feeds} onSelect={onSelectFeed} />;
+    return (
+      <FeedSetupHub feeds={feeds} onSelect={onSelectFeed} embedded={embedded} />
+    );
   }
 
-  return <SetupFlow feed={selected} onBack={onClearFeed} />;
+  return <SetupFlow feed={selected} onBack={onClearFeed} embedded={embedded} />;
 }

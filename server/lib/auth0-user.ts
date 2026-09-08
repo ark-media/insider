@@ -266,3 +266,28 @@ export async function createAuth0PasswordChangeTicket(
     return null
   }
 }
+
+// Send Auth0's own branded "reset your password" email to a member who asked
+// for one from the account page. Distinct from createAuth0PasswordChangeTicket
+// above: that one mints a URL for us to put inside our own email, which is
+// right when we're already sending one (the gift welcome). Here the member is
+// sitting on the account page and nothing else is going out, so Auth0's email
+// — whose template is configured on the login client — is the whole delivery.
+//
+// Returns false on any failure so the caller can say so, rather than claiming
+// an email is on its way when nothing was sent.
+export async function sendAuth0PasswordResetEmail(
+  email: string,
+  env: Env,
+): Promise<boolean> {
+  try {
+    await getAuthenticationClient(env).database.changePassword({
+      email,
+      connection: 'Username-Password-Authentication',
+    })
+    return true
+  } catch (err) {
+    console.error('[auth0] password reset email failed:', err)
+    return false
+  }
+}

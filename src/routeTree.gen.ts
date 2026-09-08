@@ -27,8 +27,9 @@ import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as AboutNetworkRouteImport } from './routes/about/network'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as AccountBillingRouteImport } from './routes/account/billing'
-import { Route as AccountNewslettersRouteImport } from './routes/account/newsletters'
+import { Route as AccountFoldRouteImport } from './routes/account/fold'
 import { Route as AccountPodcastFeedRouteImport } from './routes/account/podcast-feed'
+import { Route as AccountSettingsRouteImport } from './routes/account/settings'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAnnouncementsRouteImport } from './routes/admin/announcements'
 import { Route as AdminCancellationsRouteImport } from './routes/admin/cancellations'
@@ -149,14 +150,19 @@ const AccountBillingRoute = AccountBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AccountRouteRoute,
 } as any)
-const AccountNewslettersRoute = AccountNewslettersRouteImport.update({
-  id: '/newsletters',
-  path: '/newsletters',
+const AccountFoldRoute = AccountFoldRouteImport.update({
+  id: '/fold',
+  path: '/fold',
   getParentRoute: () => AccountRouteRoute,
 } as any)
 const AccountPodcastFeedRoute = AccountPodcastFeedRouteImport.update({
   id: '/podcast-feed',
   path: '/podcast-feed',
+  getParentRoute: () => AccountRouteRoute,
+} as any)
+const AccountSettingsRoute = AccountSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AccountRouteRoute,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -324,8 +330,9 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
-  '/account/newsletters': typeof AccountNewslettersRoute
+  '/account/fold': typeof AccountFoldRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
+  '/account/settings': typeof AccountSettingsRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/cancellations': typeof AdminCancellationsRoute
   '/admin/careers': typeof AdminCareersRoute
@@ -374,8 +381,9 @@ export interface FileRoutesByTo {
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
-  '/account/newsletters': typeof AccountNewslettersRoute
+  '/account/fold': typeof AccountFoldRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
+  '/account/settings': typeof AccountSettingsRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/cancellations': typeof AdminCancellationsRoute
   '/admin/careers': typeof AdminCareersRoute
@@ -426,8 +434,9 @@ export interface FileRoutesById {
   '/welcome': typeof WelcomeRoute
   '/about/network': typeof AboutNetworkRoute
   '/account/billing': typeof AccountBillingRoute
-  '/account/newsletters': typeof AccountNewslettersRoute
+  '/account/fold': typeof AccountFoldRoute
   '/account/podcast-feed': typeof AccountPodcastFeedRoute
+  '/account/settings': typeof AccountSettingsRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/cancellations': typeof AdminCancellationsRoute
   '/admin/careers': typeof AdminCareersRoute
@@ -479,8 +488,9 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/about/network'
     | '/account/billing'
-    | '/account/newsletters'
+    | '/account/fold'
     | '/account/podcast-feed'
+    | '/account/settings'
     | '/admin/announcements'
     | '/admin/cancellations'
     | '/admin/careers'
@@ -529,8 +539,9 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/about/network'
     | '/account/billing'
-    | '/account/newsletters'
+    | '/account/fold'
     | '/account/podcast-feed'
+    | '/account/settings'
     | '/admin/announcements'
     | '/admin/cancellations'
     | '/admin/careers'
@@ -580,8 +591,9 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/about/network'
     | '/account/billing'
-    | '/account/newsletters'
+    | '/account/fold'
     | '/account/podcast-feed'
+    | '/account/settings'
     | '/admin/announcements'
     | '/admin/cancellations'
     | '/admin/careers'
@@ -788,11 +800,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountBillingRouteImport
       parentRoute: typeof AccountRouteRoute
     }
-    '/account/newsletters': {
-      id: '/account/newsletters'
-      path: '/newsletters'
-      fullPath: '/account/newsletters'
-      preLoaderRoute: typeof AccountNewslettersRouteImport
+    '/account/fold': {
+      id: '/account/fold'
+      path: '/fold'
+      fullPath: '/account/fold'
+      preLoaderRoute: typeof AccountFoldRouteImport
       parentRoute: typeof AccountRouteRoute
     }
     '/account/podcast-feed': {
@@ -800,6 +812,13 @@ declare module '@tanstack/react-router' {
       path: '/podcast-feed'
       fullPath: '/account/podcast-feed'
       preLoaderRoute: typeof AccountPodcastFeedRouteImport
+      parentRoute: typeof AccountRouteRoute
+    }
+    '/account/settings': {
+      id: '/account/settings'
+      path: '/settings'
+      fullPath: '/account/settings'
+      preLoaderRoute: typeof AccountSettingsRouteImport
       parentRoute: typeof AccountRouteRoute
     }
     '/admin/': {
@@ -1010,15 +1029,17 @@ declare module '@tanstack/react-router' {
 
 interface AccountRouteRouteChildren {
   AccountBillingRoute: typeof AccountBillingRoute
-  AccountNewslettersRoute: typeof AccountNewslettersRoute
+  AccountFoldRoute: typeof AccountFoldRoute
   AccountPodcastFeedRoute: typeof AccountPodcastFeedRoute
+  AccountSettingsRoute: typeof AccountSettingsRoute
   AccountIndexRoute: typeof AccountIndexRoute
 }
 
 const AccountRouteRouteChildren: AccountRouteRouteChildren = {
   AccountBillingRoute: AccountBillingRoute,
-  AccountNewslettersRoute: AccountNewslettersRoute,
+  AccountFoldRoute: AccountFoldRoute,
   AccountPodcastFeedRoute: AccountPodcastFeedRoute,
+  AccountSettingsRoute: AccountSettingsRoute,
   AccountIndexRoute: AccountIndexRoute,
 }
 

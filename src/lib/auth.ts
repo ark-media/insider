@@ -68,6 +68,10 @@ export type Me = {
   // Present on every /api/me response (computed server-side). Optional-typed only
   // to stay resilient to a stale cached response; the UI guards for it.
   axes?: { arkPlus: AxisAccess; circle: AxisAccess };
+  // True only for accounts that actually hold a password (the Auth0 database
+  // connection). Settings hides the password row entirely otherwise — a member
+  // who signs in with Google has nothing to reset.
+  passwordResettable?: boolean;
   feeds: UserFeed[];
 };
 
@@ -174,34 +178,74 @@ export async function reactivateSubscription(): Promise<{
   }
 }
 
-// The signed-in member's cancel schedule, from GET /api/stripe/my-subscription.
-// Drives a persistent "set to cancel" state on the billing page, so a member
-// who already cancelled doesn't see the cancel option again after a reload.
-// Any failure degrades to "no pending cancel" so the page still renders
-// normally.
-export async function getMySubscription(): Promise<{
+// The card the next bill will be charged to. Null whenever we can't read one —
+// the plan card then omits the payment-method line rather than guessing.
+export type CardOnFile = {
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+};
+
+export type MySubscription = {
   cancelAtPeriodEnd: boolean;
   cancelAt: string | null;
   pendingChange?: boolean;
   scheduledTier?: "ark-plus" | "circle" | "bundle" | "free" | null;
   periodEnd?: string | null;
   plan?: "monthly" | "yearly" | null;
-}> {
+  // What the next bill is. `amountCents` is null when the subscription's price
+  // is quoted in a different currency than it bills in (currency_options), so
+  // the account page shows the renewal date without inventing a figure.
+  amountCents?: number | null;
+  currency?: string | null;
+  minorFactor?: number;
+  card?: CardOnFile | null;
+};
+
+// The signed-in member's plan, cancel schedule, price and card on file, from
+// GET /api/stripe/my-subscription. Drives the account page's plan card and its
+// persistent "set to cancel" state, so a member who already cancelled doesn't
+// see the cancel option again after a reload. Any failure degrades to "no
+// pending cancel" so the page still renders normally.
+export async function getMySubscription(): Promise<MySubscription> {
   try {
     const res = await fetch("/api/stripe/my-subscription", {
       credentials: "include",
     });
     if (!res.ok) return { cancelAtPeriodEnd: false, cancelAt: null };
-    return (await res.json()) as {
-      cancelAtPeriodEnd: boolean;
-      cancelAt: string | null;
-      pendingChange?: boolean;
-      scheduledTier?: "ark-plus" | "circle" | "bundle" | "free" | null;
-      periodEnd?: string | null;
-      plan?: "monthly" | "yearly" | null;
-    };
+    return (await res.json()) as MySubscription;
   } catch {
     return { cancelAtPeriodEnd: false, cancelAt: null };
+  }
+}
+
+// Open a Stripe Customer Portal session for updating the card on file. Returns
+// the URL to send the member to, or an error to show in place. Scoped to the
+// payment method on purpose — cancelling and changing plans stay in our own
+// flows, which the portal would otherwise route around.
+export async function createBillingPortalSession(): Promise<
+  { ok: true; url: string } | { ok: false; error: string }
+> {
+  try {
+    const res = await fetch("/api/stripe/billing-portal", {
+      method: "POST",
+      credentials: "include",
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      url?: string;
+      error?: string;
+    };
+    if (res.ok && body.url) return { ok: true, url: body.url };
+    return {
+      ok: false,
+      error:
+        body.error === "portal_unavailable"
+          ? "Card updates aren't available right now. Please contact us and we'll sort it out."
+          : "Could not open the card update page — please try again.",
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
   }
 }
 

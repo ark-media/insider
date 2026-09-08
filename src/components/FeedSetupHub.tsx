@@ -15,9 +15,17 @@ import { OutboundLink } from "./OutboundLink";
 export function FeedSetupHub({
   feeds,
   onSelect,
+  embedded = false,
 }: {
   feeds: UserFeed[];
   onSelect: (feedId: number) => void;
+  /**
+   * Rendered inside the /account shell (the Podcasts tab) rather than as a
+   * page of its own. The shell already supplies the <main> element, the page
+   * gutter and the section nav, so this drops its own frame and breadcrumbs
+   * and keeps only the setup content.
+   */
+  embedded?: boolean;
 }) {
   const { markFeedsSetUp } = useSubscriberAuth();
 
@@ -44,17 +52,27 @@ export function FeedSetupHub({
     markFeedsSetUp(feeds.map((f) => f.id));
   };
 
+  const Frame = embedded ? "section" : "main";
+
   return (
-    <main className="relative text-fg-strong">
-      <div className="mx-auto max-w-[1040px] px-6 pb-24 pt-8 sm:px-10 sm:pb-28">
-        <Breadcrumbs
-          items={[
-            { label: "Home", to: "/" },
-            { label: "Account", to: "/account" },
-            { label: "Podcast feed" },
-          ]}
-          className="mb-10"
-        />
+    <Frame className="relative text-fg-strong">
+      <div
+        className={
+          embedded
+            ? "mx-auto max-w-[1040px] px-6 pb-16 pt-10 sm:px-10"
+            : "mx-auto max-w-[1040px] px-6 pb-24 pt-8 sm:px-10 sm:pb-28"
+        }
+      >
+        {embedded ? null : (
+          <Breadcrumbs
+            items={[
+              { label: "Home", to: "/" },
+              { label: "Account", to: "/account" },
+              { label: "Podcast feed" },
+            ]}
+            className="mb-10"
+          />
+        )}
 
         {/* Masthead + progress */}
         <div className="rise rise-1 flex flex-col gap-10 sm:flex-row sm:items-end sm:justify-between">
@@ -126,7 +144,7 @@ export function FeedSetupHub({
           </>
         )}
       </div>
-    </main>
+    </Frame>
   );
 }
 

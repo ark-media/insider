@@ -127,6 +127,15 @@ async function enrichFeedsWithActivation(
   }
 }
 
+// True when the Auth0 primary identity is the database connection, i.e. the
+// account has a password at all. Social identities are `google-oauth2|…`,
+// `apple|…` and so on. A checkout-token session carries no sub, which is a
+// "we don't know" — treated as "no password row" so we never offer a reset we
+// can't stand behind.
+function isDatabaseIdentity(sub: string | null): boolean {
+  return typeof sub === 'string' && sub.startsWith('auth0|')
+}
+
 export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
   return [
     defineRoute({
@@ -190,6 +199,14 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           tier,
           entitlements,
           axes,
+          // Whether a "change your password" action means anything for this
+          // account. A member who signs in with Google has no password to
+          // change, and offering one sends them to a reset email for
+          // credentials they've never had. The primary `sub`'s connection
+          // prefix is the authority: `auth0|` is the database connection, and
+          // a merged identity whose primary is `auth0|` genuinely does hold a
+          // password even if they habitually click "Sign in with Google".
+          passwordResettable: isDatabaseIdentity(identity.sub),
           feeds: enriched,
         })
       },

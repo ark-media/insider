@@ -153,6 +153,60 @@ export function periodEndIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.items.data[0]?.current_period_end)
 }
 
+// The card the next bill will actually be charged to, for the account page's
+// plan card. Stripe charges the subscription's own default payment method when
+// it names one, and otherwise falls back to the customer's invoice default —
+// so this reads them in that order rather than assuming either.
+//
+// Entirely best-effort. This is one line of reassurance on a page whose real
+// job is elsewhere, so any hiccup (a deleted method, a non-card method, an
+// expand that doesn't come back) drops the line rather than failing the
+// request that carries the member's renewal date.
+export type CardOnFile = {
+  brand: string
+  last4: string
+  expMonth: number
+  expYear: number
+}
+
+export async function readCardOnFile(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+): Promise<CardOnFile | null> {
+  try {
+    const fromSub = sub.default_payment_method
+    let pm: Stripe.PaymentMethod | null =
+      fromSub && typeof fromSub !== 'string' ? fromSub : null
+    let pmId = typeof fromSub === 'string' ? fromSub : null
+
+    if (!pm && !pmId) {
+      // No method on the subscription — ask the customer for its invoice
+      // default. `sub.customer` is usually the bare id here, so retrieve it.
+      const customer =
+        typeof sub.customer === 'string'
+          ? await stripe.customers.retrieve(sub.customer)
+          : sub.customer
+      // A deleted customer carries no settings — nothing to read.
+      if (!customer || customer.deleted) return null
+      const invoiceDefault = customer.invoice_settings?.default_payment_method
+      if (invoiceDefault && typeof invoiceDefault !== 'string') pm = invoiceDefault
+      else if (typeof invoiceDefault === 'string') pmId = invoiceDefault
+    }
+
+    if (!pm && pmId) pm = await stripe.paymentMethods.retrieve(pmId)
+    const card = pm?.card
+    if (!card) return null
+    return {
+      brand: card.brand,
+      last4: card.last4,
+      expMonth: card.exp_month,
+      expYear: card.exp_year,
+    }
+  } catch {
+    return null
+  }
+}
+
 // The plan a subscription is *scheduled* to move to at period end, or null when
 // nothing is scheduled (or it can't be read). change-tier books a cadence switch
 // as a future schedule phase, so between that call and period end the live sub

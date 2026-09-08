@@ -14,7 +14,11 @@
 // authoritative is worth one Management call. /api/me stays claim-only.
 
 import { resolveRequestIdentity, signSessionToken } from '../lib/session.js'
-import { getAuth0NameProfile, updateAuth0Name } from '../lib/auth0-user.js'
+import {
+  getAuth0NameProfile,
+  sendAuth0PasswordResetEmail,
+  updateAuth0Name,
+} from '../lib/auth0-user.js'
 import { setSessionCookies } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
 import { syncSubscriberName, tryPush } from '../lib/beehiiv-sync.js'
@@ -33,6 +37,12 @@ const profileReadLimiter = createRateLimiter({ capacity: 30, refillPerSec: 1 / 2
 // Writes fan out to Auth0 and Beehiiv; 10 saves per minute is more than anyone
 // will click, matching the newsletter-preferences bucket.
 const profileWriteLimiter = createRateLimiter({ capacity: 10, refillPerSec: 1 / 6 })
+
+// Password-reset requests send a real email to a real inbox, so this is the
+// tightest bucket on the account routes: 3 with a 1-per-5-minute refill lets a
+// member who didn't see the first one try again without turning the button into
+// a way to flood their own mailbox.
+const passwordResetLimiter = createRateLimiter({ capacity: 3, refillPerSec: 1 / 300 })
 
 // Characters that have no place in a name and would corrupt an email header or
 // a CSV export downstream: the C0/C1 controls, the Unicode line and paragraph
@@ -196,6 +206,37 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
           familyName: familyName || null,
           needsName: false,
         })
+      },
+    }),
+
+    defineRoute({
+      // "Send me a reset link" from the account page's Settings tab. Auth0
+      // sends its own branded email; we never see or set the password.
+      //
+      // Only meaningful for a database identity — a Google-only account has no
+      // password, and Auth0 answers a change_password for one with a success it
+      // didn't earn. /api/me gates the button on the same `auth0|` prefix, and
+      // this re-checks it rather than trusting the client to have done so.
+      path: '/api/account/password-reset',
+      method: 'POST',
+      handler: async (req, res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+
+        const identity = await resolveRequestIdentity(req, env)
+        if (!identity?.sub) return json(401, { error: 'unauthenticated' })
+        if (!identity.sub.startsWith('auth0|')) {
+          return json(400, { error: 'not_password_account' })
+        }
+
+        const wait = passwordResetLimiter.take(identity.email.toLowerCase())
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'too_many_requests' })
+        }
+
+        const sent = await sendAuth0PasswordResetEmail(identity.email, env)
+        if (!sent) return json(502, { error: 'send_failed' })
+        return json(200, { ok: true })
       },
     }),
   ]

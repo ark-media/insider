@@ -1,13 +1,10 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   getMySubscription,
   reactivateSubscription,
 } from "../../lib/auth";
 import { isPaidMember, useSubscriberAuth } from "../../lib/subscriberAuth";
-import { PageShell } from "../../components/PageShell";
-import { ContentError } from "../../components/ContentError";
-import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { trackEvent } from "../../lib/analytics";
 import { formatTimestamp } from "../../../shared/format-date";
 import { CancelFlow } from "../../components/account/CancelFlow";
@@ -18,7 +15,7 @@ export const Route = createFileRoute("/account/billing")({
 
 function BillingPage() {
   const navigate = useNavigate();
-  const { state, authError, refresh } = useSubscriberAuth();
+  const { state, refresh } = useSubscriberAuth();
   const [status, setStatus] = useState<
     | { kind: "idle" }
     | { kind: "reactivating" }
@@ -56,16 +53,12 @@ function BillingPage() {
   const confirmationRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
-    // Skip the redirect when "guest" is just an unreachable /api/me.
-    if (authError) return;
-    if (state.kind === "guest") {
-      void navigate({ to: "/plus" });
-      return;
-    }
+    // The /account layout already handles the signed-out case; the only extra
+    // rule here is that a free reader has no billing to manage.
     if (state.kind === "member" && !isPaidMember(state)) {
-      void navigate({ to: "/plus" });
+      void navigate({ to: "/account" });
     }
-  }, [state, authError, navigate]);
+  }, [state, navigate]);
 
   // Load the pending cancel schedule + cadence once we know this is a paying
   // member. Degrades silently to "no pending cancel" on failure.
@@ -99,34 +92,15 @@ function BillingPage() {
     }
   }, [status.kind]);
 
-  if (authError) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-navy-900 p-6">
-        <div className="w-full max-w-md">
-          <ContentError
-            message="We couldn't load your billing details. Refresh to try again."
-            onRetry={refresh}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (state.kind === "loading") {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-navy-900">
-        <p className="text-fg-muted">Loading…</p>
-      </div>
-    );
-  }
-
-  if (state.kind === "guest" || state.me.tier === "free") return null;
+  if (state.kind !== "member" || state.me.tier === "free") return null;
 
   const me = state.me;
   const cancelTier = me.tier as "ark-plus" | "circle" | "bundle";
   // The billing-period-end date, localized, or null when we don't have it — used
   // to turn "the end of your current billing period" into a concrete date.
-  const periodEndLabel = formatTimestamp(periodEnd) || null;
+  // Long form throughout the account section — the plan card one click away
+  // states the same date that way, and two formats read as two dates.
+  const periodEndLabel = formatTimestamp(periodEnd, "long") || null;
 
   // A human noun phrase for a tier, so the pending-change banner can name the
   // change ("from the Ark+ & The Fold bundle to Ark+").
@@ -185,21 +159,16 @@ function BillingPage() {
   };
 
   return (
-    <PageShell
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { label: "Home", to: "/" },
-            { label: "Account", to: "/account" },
-            { label: "Billing" },
-          ]}
-        />
-      }
-      title="Your membership."
-      lede={`Signed in as ${me.email}.`}
-    >
+    <>
       <section>
         <div className="page-section">
+          <Link
+            to="/account"
+            className="group mb-8 inline-flex items-center gap-2 text-body-sm text-fg-muted transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            <span aria-hidden="true">←</span> Membership
+          </Link>
+          <h2 className="mb-8 text-h2">Billing</h2>
           {pendingChange ? (
             <p
               className="mb-6 border border-cyan/50 bg-cyan/10 px-4 py-3 text-body-sm text-fg-strong"
@@ -237,7 +206,7 @@ function BillingPage() {
               >
                 Cancellation confirmed.{" "}
                 {status.until
-                  ? `Access continues until ${formatTimestamp(status.until)}.`
+                  ? `Access continues until ${formatTimestamp(status.until, "long")}.`
                   : ""}
               </p>
             ) : status.kind === "debundled" ? (
@@ -261,7 +230,7 @@ function BillingPage() {
               >
                 Your membership is back on.{" "}
                 {status.nextChargeAt
-                  ? `It renews on ${formatTimestamp(status.nextChargeAt)}.`
+                  ? `It renews on ${formatTimestamp(status.nextChargeAt, "long")}.`
                   : ""}
               </p>
             ) : status.kind === "reverted" ? (
@@ -274,12 +243,12 @@ function BillingPage() {
                 The scheduled change was cancelled — your membership continues
                 unchanged.{" "}
                 {status.nextChargeAt
-                  ? `It renews on ${formatTimestamp(status.nextChargeAt)}.`
+                  ? `It renews on ${formatTimestamp(status.nextChargeAt, "long")}.`
                   : ""}
               </p>
             ) : scheduledCancelAt ? (
               <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
-                You'll keep access until {formatTimestamp(scheduledCancelAt)}.
+                You'll keep access until {formatTimestamp(scheduledCancelAt, "long")}.
               </p>
             ) : null}
 
@@ -392,6 +361,6 @@ function BillingPage() {
           }}
         />
       ) : null}
-    </PageShell>
+    </>
   );
 }

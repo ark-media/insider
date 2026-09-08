@@ -69,3 +69,28 @@ export async function saveProfile(input: {
     return { ok: false, error: "Could not save. Please try again." };
   }
 }
+
+// Ask Auth0 to email this member a password-reset link. Only offered to
+// accounts on the database connection (`me.passwordResettable`) — the server
+// re-checks that rather than trusting the caller.
+export async function requestPasswordReset(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  try {
+    const res = await fetch("/api/account/password-reset", {
+      method: "POST",
+      credentials: "include",
+    });
+    if (res.ok) return { ok: true };
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return {
+      ok: false,
+      error:
+        body.error === "too_many_requests"
+          ? "We've already sent a few — check your inbox, then try again in a little while."
+          : "Could not send the reset link — please try again.",
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
+  }
+}

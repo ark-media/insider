@@ -13,7 +13,9 @@
 //   GET  /api/stripe/subscription-status   — poll for activation after
 //     PaymentIntent confirm (the client races the webhook).
 //   GET  /api/stripe/my-subscription       — the signed-in member's cancel
-//     schedule, so the account page can persist a "set to cancel" state.
+//     schedule, price and card on file, for the account page's plan card.
+//   POST /api/stripe/billing-portal        — a Customer Portal session scoped
+//     to updating the card. Cancellation stays in our own flows.
 //   GET  /api/stripe/bundle-upgrade-preview — what a single-axis member's
 //     subscription becomes when they add the other axis: the Bundle price that
 //     REPLACES their current one, and the renewal date that doesn't move.
@@ -78,6 +80,7 @@ import {
   MAX_NAME_LEN,
   periodEndIso,
   planFromSubscription,
+  readCardOnFile,
   releaseScheduleIfAny,
   scheduledPlanOf,
   scheduleIdOf,
@@ -806,6 +809,27 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           cancelAt = tsToIso(sub.cancel_at) ?? periodEndIso(sub)
         }
         const hasSchedule = Boolean(sub && scheduleIdOf(sub))
+        // What the member actually pays, for the account page's plan card. Same
+        // caveat as bundle-upgrade-preview: `unit_amount` is stated in the
+        // PRICE's currency, and a catalog price billed through currency_options
+        // reports the USD base while the subscription charges the localized
+        // amount. Quoting that would be wrong money, so only trust it when the
+        // two currencies agree — the card drops the amount otherwise.
+        const price = sub?.items?.data?.[0]?.price
+        const amountCents =
+          sub && price && price.currency === sub.currency && typeof price.unit_amount === 'number'
+            ? price.unit_amount
+            : null
+        const currency = sub ? sub.currency : null
+        const minorFactor =
+          currency && isSupportedCurrency(currency) ? (minorUnitFactors()[currency] ?? 100) : 100
+
+        // The card on file, so the plan card can say "Visa ending 4242" rather
+        // than send the member to Stripe to find out. Read from the
+        // subscription's own default first, then the customer's invoice
+        // default, which is what Stripe charges when the sub names none.
+        // Best-effort: a failure here just drops the line.
+        const card = sub ? await readCardOnFile(stripe, sub) : null
         // The tier a pending period-end change lands on (e.g. a debundle's
         // bundle → ark-plus), read from the Neon row by the sub's customer, so the
         // account page can name the change rather than say "a plan change".
@@ -836,7 +860,54 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // Billing cadence, so the cancel flows can branch copy by monthly vs
           // annual (Flow A / Flow D). Null when there's no live sub.
           plan: sub ? planFromSubscription(sub) : null,
+          // What the next bill is, in its own currency + minor units, so the
+          // account page can render it without a second round trip. Null when
+          // there's no live sub or the amount can't be quoted honestly.
+          amountCents,
+          currency,
+          minorFactor,
+          // { brand, last4, expMonth, expYear } or null.
+          card,
         })
+      },
+    }),
+
+    defineRoute({
+      // A Stripe Customer Portal session, for the one job the account page
+      // can't do itself: updating the card on file. Deliberately NOT the
+      // portal's full surface — cancellation, plan changes and debundling all
+      // run through our own flows (retention offers, the mission reminder, the
+      // cancellation survey), and a portal cancel would route straight past
+      // them. `flow_data` pins the session to the payment-method update and
+      // returns the member here when they're done.
+      path: '/api/stripe/billing-portal',
+      method: 'POST',
+      handler: async (req, _res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'not_configured' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const sub = await findLiveSubscription(stripe, email)
+        if (!sub) return json(404, { error: 'No active subscription found' })
+
+        try {
+          const session = await stripe.billingPortal.sessions.create({
+            customer: customerIdOf(sub),
+            return_url: `${appBaseUrl}/account`,
+            flow_data: {
+              type: 'payment_method_update',
+            },
+          })
+          return json(200, { url: session.url })
+        } catch (err) {
+          // The commonest cause is a Stripe account with no portal
+          // configuration saved yet, which is a dashboard setting rather than
+          // anything the member did. Say so plainly instead of "try again".
+          console.error('[stripe] billing-portal session failed:', err)
+          return json(502, { error: 'portal_unavailable' })
+        }
       },
     }),
 

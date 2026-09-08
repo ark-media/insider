@@ -164,6 +164,13 @@ const ARKPLUS_AXES = { arkPlus: SUB_ARKPLUS_AXIS, circle: FREE_AXIS }
 // rather than repeating the pair twelve times.
 const NO_NAME = { firstName: null }
 
+// `passwordResettable` says whether the account holds a password at all, from
+// the primary Auth0 sub's connection prefix. signAuth0TestToken subjects every
+// bearer as `auth0|<email>` (the database connection), so bearer-authenticated
+// responses report true; a checkout token carries no sub and reports false.
+const DB_IDENTITY = { passwordResettable: true }
+const NO_PASSWORD = { passwordResettable: false }
+
 // ===========================================================================
 // Auth + transport
 // ===========================================================================
@@ -200,6 +207,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'free@x.com',
       tier: 'free',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -220,6 +228,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'paid@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [
@@ -243,6 +252,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'upgraded@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -262,6 +272,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'gone@x.com',
       tier: 'free',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -278,6 +289,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'unknown-tier@x.com',
       tier: 'free',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -296,6 +308,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'newpaid@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -316,6 +329,7 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'oops@x.com',
       tier: 'free',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -327,6 +341,10 @@ describe('GET /api/me with Auth0 bearer', () => {
 // Checkout-cookie session → never falls back to free
 // ===========================================================================
 
+// Neither cookie fixture below stamps an Auth0 `sub` on the session, so these
+// resolve to "we don't know which connection this is" — which reports false.
+// That is the safe direction: a missing sub never offers a password reset for
+// an account that may not have one.
 describe('GET /api/me with checkout-cookie session', () => {
   test('checkout cookie + SC user found → 200 subscriber', async () => {
     scUserByEmail.set('fresh@x.com', { id: 11, email: 'fresh@x.com' })
@@ -344,6 +362,7 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'fresh@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
+      ...NO_PASSWORD,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -361,6 +380,7 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'member@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
+      ...NO_PASSWORD,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -376,6 +396,7 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'freebie@x.com',
       tier: 'free',
       ...NO_NAME,
+      ...NO_PASSWORD,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -511,6 +532,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
       email: 'newfree@x.com',
       tier: 'free',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -564,6 +586,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
       email: 'unlucky@x.com',
       tier: 'free',
       ...NO_NAME,
+      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],

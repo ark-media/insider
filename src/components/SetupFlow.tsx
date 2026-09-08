@@ -143,11 +143,14 @@ function feedAppUrl(feed: UserFeed | null, scApp: string | undefined): string {
 export function SetupFlow({
   feed,
   onBack,
+  embedded = false,
 }: {
   feed: UserFeed | null;
   // When set, the member has more than one feed; render a link back to the
   // feed picker instead of the (too-subtle) inline switcher.
   onBack?: () => void;
+  /** Rendered inside the /account shell — see FeedSetupHub's note. */
+  embedded?: boolean;
 }) {
   const { markFeedsSetUp } = useSubscriberAuth();
   const feedUrl = feed?.url ?? "";
@@ -249,17 +252,27 @@ export function SetupFlow({
     ? `sms:?body=${encodeURIComponent(`Your ${showName} feed: ${feedUrl}`)}`
     : "";
 
+  const Frame = embedded ? "section" : "main";
+
   return (
-    <main className="relative text-fg-strong">
-      <div className="mx-auto max-w-[1040px] px-6 pb-24 pt-8 sm:px-10 sm:pb-28">
-        <Breadcrumbs
-          items={[
-            { label: "Home", to: "/" },
-            { label: "Account", to: "/account" },
-            { label: "Podcast feed" },
-          ]}
-          className="mb-10"
-        />
+    <Frame className="relative text-fg-strong">
+      <div
+        className={
+          embedded
+            ? "mx-auto max-w-[1040px] px-6 pb-16 pt-10 sm:px-10"
+            : "mx-auto max-w-[1040px] px-6 pb-24 pt-8 sm:px-10 sm:pb-28"
+        }
+      >
+        {embedded ? null : (
+          <Breadcrumbs
+            items={[
+              { label: "Home", to: "/" },
+              { label: "Account", to: "/account" },
+              { label: "Podcast feed" },
+            ]}
+            className="mb-10"
+          />
+        )}
         {/* When the member has more than one private feed, link back to the
             feed picker rather than switching shows inline. */}
         {onBack ? (
@@ -515,7 +528,7 @@ export function SetupFlow({
           ) : null}
         </Section>
       </div>
-    </main>
+    </Frame>
   );
 }
 
