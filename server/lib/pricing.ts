@@ -4,6 +4,7 @@
 // resolver never depends on a price id pinned in an env var.
 
 import type Stripe from 'stripe'
+import { formatCurrencyMajor } from '../../shared/currency-format.js'
 
 export type Plan = 'monthly' | 'yearly'
 
@@ -102,29 +103,16 @@ export async function resolveGiftPrice(
   return resolvePriceByLookupKey(stripe, giftPriceLookupKey(tier, term))
 }
 
-// Minor units → a human currency string (2500, 'usd' → "$25"). Falls back to a
-// bare number if Intl rejects the code. Divides by the currency's minor-unit
-// factor, not a hardcoded 100: zero-decimal currencies (¥, ₩, ₫, CLP) store the
-// whole-unit figure already, so /100 would under-report them 100×.
+// Minor units → a human currency string (2500, 'usd' → "$25"). Divides by the
+// currency's minor-unit factor, not a hardcoded 100: zero-decimal currencies
+// (¥, ₩, ₫, CLP) store the whole-unit figure already, so /100 would under-report
+// them 100×.
 //
-// A round amount drops its ".00" — cents on a whole number read as a receipt
-// rather than a sentence, and every reader here is prose (a member-facing email,
-// a validation message). Matches src/lib/currency.ts, which does the same for
-// the prices on the site.
-//
-// Pinned to 'en' rather than the host locale: the site is English-only (see
-// shared/format-date.ts for the same rule on dates).
+// The formatting itself is shared/currency-format.ts, which is also what the
+// site's prices go through — an email and the panel that promised it quote the
+// same subscription, so they cannot render it differently.
 export function formatMinorUnits(amount: number, currency: string): string {
-  const value = amount / minorUnitDivisor(currency)
-  try {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: currency.toUpperCase(),
-      ...(Number.isInteger(value) ? { minimumFractionDigits: 0 } : {}),
-    }).format(value)
-  } catch {
-    return `${value} ${currency.toUpperCase()}`
-  }
+  return formatCurrencyMajor(amount / minorUnitDivisor(currency), currency)
 }
 
 // Exported for tests: the cache is module-level and `bun test` shares one

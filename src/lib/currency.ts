@@ -1,8 +1,9 @@
+import { formatCurrencyMajor } from "../../shared/currency-format";
+
 // Client-side currency helpers. Every amount from /api/pricing is in MINOR
 // units (what Stripe charges); the minor-unit factor per currency comes from
 // the same response, so the client never duplicates Stripe's zero-decimal list.
-// Display uses Intl.NumberFormat, which places the symbol and picks the decimal
-// count correctly per locale + currency.
+// Display goes through shared/currency-format.ts, which the emails use too.
 
 export type TierAmounts = {
   monthly_cents: number; // USD, back-compat
@@ -46,30 +47,21 @@ export function decimalsForCurrency(currency: string, factor: number): number {
   return 2;
 }
 
-// Localized currency formatter. Uses the narrow symbol ("$", not "US$" — the
-// currency selector disambiguates) and drops a trailing ".00" on whole amounts
-// so the big hero reads cleanly ("$130", "₪485.88", "¥21,125").
-function fmt(currency: string, major: number): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: currency.toUpperCase(),
-    currencyDisplay: "narrowSymbol",
-    minimumFractionDigits: Number.isInteger(major) ? 0 : undefined,
-  }).format(major);
-}
-
-// A MINOR-unit amount as a localized currency string.
+// A MINOR-unit amount as a currency string. Formatting lives in shared/ because
+// the emails quote the same prices the site does, and the two used to render
+// them differently — see the header there for what a Canadian member was
+// reading.
 export function formatMinor(
   minor: number,
   currency: string,
   factor: number,
 ): string {
-  return fmt(currency, toMajor(minor, factor));
+  return formatCurrencyMajor(toMajor(minor, factor), currency);
 }
 
-// A MAJOR-unit amount as a localized currency string.
+// A MAJOR-unit amount as a currency string.
 export function formatMajor(major: number, currency: string): string {
-  return fmt(currency, major);
+  return formatCurrencyMajor(major, currency);
 }
 
 // The discount portion of a Stripe coupon as a localized string, e.g. "20% off"
@@ -107,7 +99,7 @@ export function applyCouponDiscount(
 // The currency symbol alone (for the edit-mode prefix), e.g. "£", "¥", "R$".
 // Falls back to the ISO code if the runtime can't resolve a narrow symbol.
 export function currencySymbol(currency: string): string {
-  const parts = new Intl.NumberFormat(undefined, {
+  const parts = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currency.toUpperCase(),
     currencyDisplay: "narrowSymbol",
