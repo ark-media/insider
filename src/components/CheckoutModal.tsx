@@ -6,9 +6,11 @@ import {
   ExpressCheckoutElement,
   PaymentElement,
   useCheckout,
+  type StripeCheckoutElementsValue,
 } from "@stripe/react-stripe-js/checkout";
-import { CheckoutLegal } from "./CheckoutLegal";
-import { CheckoutTerms } from "./CheckoutTerms";
+import { CheckoutConsent } from "./CheckoutConsent";
+import { useCheckoutConsent, type Renewal } from "../lib/checkoutConsent";
+import { billingPeriod } from "../../shared/checkout-consent";
 import { Modal } from "./Modal";
 import { CurrencySelect } from "./CurrencySelect";
 import { LoadingRow } from "./Spinner";
@@ -911,7 +913,6 @@ export function EmailForm({
             {error}
           </p>
         ) : null}
-        <CheckoutLegal action="continuing" />
         <button
           type="submit"
           disabled={working}
@@ -927,6 +928,30 @@ export function EmailForm({
       </form>
     </>
   );
+}
+
+// What the buyer is asked to accept as the recurring charge.
+// `recurring.dueNext.total` is what Stripe will actually take on the next
+// cycle — a first-period-only discount has already fallen away from it, and the
+// tax the billing address implies is already in it — so it is the number the
+// disclosure has to name, not today's total and not the pre-tax list price.
+// `plan` supplies the period if Stripe ever hands back a session without
+// `recurring`: a subscription must never lose the sentence, only its precision.
+function renewalDisclosure(
+  session: StripeCheckoutElementsValue | null,
+  plan: Plan,
+): Renewal | null {
+  if (!session) return null;
+  return {
+    amount:
+      session.recurring?.dueNext.total.amount ?? session.total.total.amount,
+    period: session.recurring
+      ? billingPeriod(
+          session.recurring.interval,
+          session.recurring.intervalCount,
+        )
+      : `per ${plan === "yearly" ? "year" : "month"}`,
+  };
 }
 
 // Lives inside CheckoutElementsProvider, so useCheckout() gives us the buyer's
@@ -964,6 +989,27 @@ function CheckoutForm({
   const [walletState, setWalletState] = useState<"pending" | "available" | "none">(
     "pending",
   );
+  // Every hook has to run before the loading/error returns below, so the
+  // renewal the buyer is asked to accept is derived from whatever session
+  // exists right now — null until Stripe has one, which is also the window in
+  // which no pay button is rendered.
+  const renewal = renewalDisclosure(
+    checkoutState.type === "success" ? checkoutState.checkout : null,
+    plan,
+  );
+  const consent = useCheckoutConsent(renewal);
+  const consentRef = useRef<HTMLDivElement>(null);
+
+  // Send an unaccepted buyer to the box that's still empty. Both pay paths use
+  // it, and the wallet path needs it most: its buttons sit at the top of the
+  // form, a screenful above the checkboxes that gate them.
+  const focusConsent = () => {
+    const box = consentRef.current?.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]:not(:checked)',
+    );
+    box?.focus();
+    box?.scrollIntoView?.({ block: "center" });
+  };
 
   if (checkoutState.type === "loading") {
     return <LoadingRow label="Loading secure checkout…" />;
@@ -1043,10 +1089,18 @@ function CheckoutForm({
   const pay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittedRef.current) return;
+    // Nothing is charged until both boxes are ticked. The button stays enabled
+    // so the refusal can say why — a disabled button that never explains itself
+    // is the version of this a buyer bounces off.
+    if (!consent.confirm()) {
+      focusConsent();
+      return;
+    }
     submittedRef.current = true;
     setWorking(true);
     setPayError(null);
     trackEvent("checkout_payment_submitted", { plan });
+    await consent.record(checkoutSessionId);
 
     // redirect: 'if_required' keeps card payments in the modal; methods that
     // need an off-site step (e.g. 3DS) use the session's return_url. Email is
@@ -1071,10 +1125,18 @@ function CheckoutForm({
     >[0],
   ) => {
     if (submittedRef.current) return;
+    // Belt and braces behind the click gate on the buttons themselves: a wallet
+    // sheet that has already authorized payment must not reach confirm() on an
+    // unaccepted consent.
+    if (!consent.confirm()) {
+      focusConsent();
+      return;
+    }
     submittedRef.current = true;
     setWorking(true);
     setPayError(null);
     trackEvent("checkout_payment_submitted", { plan });
+    await consent.record(checkoutSessionId);
     const result = await checkout.confirm({
       expressCheckoutConfirmEvent: event,
       redirect: "if_required",
@@ -1100,7 +1162,27 @@ function CheckoutForm({
             wallet supplies the billing address, so tax still resolves via the
             Session's automatic_tax — no BillingAddressElement on this path. */}
         <div className={walletState === "none" ? "hidden" : "space-y-4"}>
-          <ExpressCheckoutElement
+          {/* The wallet buttons confirm on their own, straight out of the
+              native sheet — the Checkout SDK's ExpressCheckoutElement has no
+              onClick to intercept — so an unaccepted consent has to stop the
+              click before the sheet opens. pointer-events-none on the inner
+              wrapper lets the click land on this one instead, which says why. */}
+          <div
+            onClick={
+              consent.complete
+                ? undefined
+                : () => {
+                    consent.confirm();
+                    focusConsent();
+                  }
+            }
+          >
+            <div
+              className={
+                consent.complete ? undefined : "pointer-events-none opacity-50"
+              }
+            >
+              <ExpressCheckoutElement
             options={{
               buttonHeight: 48,
               // Contrast the button against the modal surface.
@@ -1121,6 +1203,13 @@ function CheckoutForm({
             onConfirm={confirmWallet}
             onLoadError={() => setWalletState("none")}
           />
+            </div>
+          </div>
+          {walletState === "available" && !consent.complete ? (
+            <p className="text-body-sm text-fg-muted">
+              Tick the boxes at the bottom of this form to pay with a wallet.
+            </p>
+          ) : null}
           {walletState === "available" ? (
             <div className="flex items-center gap-3 text-xs uppercase tracking-button text-fg-faint">
               <span className="h-px flex-1 bg-rule" />
@@ -1163,7 +1252,9 @@ function CheckoutForm({
             {payError}
           </p>
         ) : null}
-        <CheckoutTerms action="subscribing" />
+        <div ref={consentRef}>
+          <CheckoutConsent renewal={renewal} consent={consent} />
+        </div>
         <button
           type="submit"
           disabled={working}

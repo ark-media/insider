@@ -356,13 +356,16 @@ describe('POST /api/stripe/create-checkout-session — session shape', () => {
     expect(args.customer_update).toEqual({ address: 'auto', name: 'auto' })
   })
 
-  test('requires active consent to the Terms of Service', async () => {
+  test('does not ask Stripe to collect consent — the checkboxes are ours', async () => {
     const res = await post({ email: 'a@b.co', plan: 'monthly' })
     expect(res.statusCode).toBe(200)
     const args = lastSessionCreateArgs()
-    // Stripe won't confirm until the buyer ticks the box, and stamps
-    // consent.terms_of_service = 'accepted' on the Session as dispute evidence.
-    expect(args.consent_collection).toEqual({ terms_of_service: 'required' })
+    // consent_collection can only ever collect Stripe's own single statement,
+    // via the beta-gated TermsElement. Counsel wants two, one of them naming
+    // the recurring charge, so the boxes moved into our payment form and the
+    // acceptance is recorded by POST /api/stripe/record-consent. Leaving this
+    // set would block confirm forever: nothing renders to satisfy it.
+    expect(args.consent_collection).toBeUndefined()
   })
 
   test('exact-floor amount uses the catalog price (no inline price_data)', async () => {

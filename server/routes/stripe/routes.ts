@@ -6,6 +6,8 @@
 //     an explicit currency from the catalog price's `currency_options` (which
 //     replaced Adaptive Pricing — the two are mutually exclusive). A single-
 //     active-subscription guard blocks a second, row-clobbering sub.
+//   POST /api/stripe/record-consent        — stamp the consent statements the
+//     buyer ticked onto their Checkout Session, just before it is confirmed.
 //   POST /api/stripe/cancel-subscription   — cancel at period end.
 //   POST /api/stripe/reactivate-subscription — undo a pending cancel.
 //   GET  /api/stripe/subscription-status   — poll for activation after
@@ -56,6 +58,12 @@ import {
   resolveCatalogPrice,
 } from '../../lib/pricing.js'
 import { sanitizeAttribution } from '../../../shared/attribution.js'
+import {
+  CONSENT_ACCEPTED_AT_KEY,
+  MAX_CONSENT_STATEMENTS,
+  MAX_CONSENT_STATEMENT_LEN,
+  consentStatementKey,
+} from '../../../shared/checkout-consent.js'
 import { getClientIp, isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
 import { getSessionEmail } from '../../lib/session.js'
@@ -95,6 +103,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   const subscribeIpLimiter = createRateLimiter({
     capacity: 15,
     refillPerSec: 15 / (60 * 60), // 15 per hour per source
+  })
+  // Per-IP cap on consent writes. One purchase needs one call, and a retried
+  // payment a handful; anything past that is a caller spending our Stripe
+  // request budget on an endpoint that answers nothing useful.
+  const consentLimiter = createRateLimiter({
+    capacity: 30,
+    refillPerSec: 30 / (60 * 60), // 30 per hour per source
   })
 
   return [
@@ -246,13 +261,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // subscription Checkout creates. Requires Stripe Tax active with
           // registrations in the Dashboard, or session creation errors.
           automatic_tax: { enabled: true },
-          // Active consent to the Terms of Service: Stripe blocks confirm until
-          // the buyer ticks the box and stamps consent.terms_of_service =
-          // 'accepted' on the Session, which is the evidence we can produce in a
-          // dispute (a passive "by subscribing you agree" line leaves none).
-          // Requires a Terms of service URL under Public business details in the
-          // Dashboard — without one, session creation errors outright.
-          consent_collection: { terms_of_service: 'required' },
           // Persist what the buyer enters (BillingAddressElement) back onto the
           // pre-set Customer. Stripe Tax needs the address for jurisdiction;
           // `name` defaults to 'never', which is why customer.name was null for
@@ -297,6 +305,82 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           tier,
           currency,
         })
+      },
+    }),
+
+    defineRoute({
+      // The record half of checkout consent. The browser gates the pay button
+      // on two ticked boxes (src/components/CheckoutConsent) and then posts the
+      // exact sentences here, which stamps them — and OUR clock, not the
+      // browser's — onto the Checkout Session's metadata. Stripe keeps it
+      // beside the charge it belongs to, which is what we produce in a dispute.
+      //
+      // This replaced consent_collection.terms_of_service, which recorded the
+      // same fact but could only ever collect one statement, needed a Dashboard
+      // terms URL, and needed the beta-gated TermsElement to render at all.
+      //
+      // Not authenticated, and it can't be: the buyer has no session yet. What
+      // it can do is refuse to write anywhere except an OPEN Checkout Session
+      // whose id the caller already had — Stripe rejects an update to any
+      // other, so a guessed id can't be used to scribble on a paid one.
+      path: '/api/stripe/record-consent',
+      method: 'POST',
+      handler: async (req, res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'not_configured' })
+
+        const body =
+          (await readJson<{
+            checkout_session_id?: unknown
+            statements?: unknown
+          }>(req)) ?? {}
+
+        const sessionId = body.checkout_session_id
+        if (typeof sessionId !== 'string' || !sessionId.startsWith('cs_')) {
+          return json(400, { error: 'checkout_session_id is required.' })
+        }
+        // The statements are copy the browser rendered, so they're recorded as
+        // sent — but bounded, because they're also a string an untrusted client
+        // chose the length of, and Stripe caps a metadata value at 500.
+        const statements = Array.isArray(body.statements)
+          ? body.statements.filter(
+              (line): line is string => typeof line === 'string' && line.trim() !== '',
+            )
+          : []
+        if (statements.length === 0 || statements.length > MAX_CONSENT_STATEMENTS) {
+          return json(400, { error: 'statements is required.' })
+        }
+
+        const wait = consentLimiter.take(getClientIp(req))
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'Too many requests.' })
+        }
+
+        // Merges into the Session's existing metadata rather than replacing it
+        // (Stripe unsets a key only when you post an empty value for it), so
+        // the gift funnel's own `kind`/`giver_email` survive this write.
+        try {
+          await stripe.checkout.sessions.update(sessionId, {
+            metadata: {
+              [CONSENT_ACCEPTED_AT_KEY]: new Date().toISOString(),
+              ...Object.fromEntries(
+                statements.map((line, i) => [
+                  consentStatementKey(i),
+                  line.slice(0, MAX_CONSENT_STATEMENT_LEN),
+                ]),
+              ),
+            },
+          })
+        } catch (err) {
+          // The client treats this as non-fatal and pays anyway — a ticked box
+          // is consent whether or not the bookkeeping landed — so the log is
+          // the only trace. Loud on purpose.
+          console.error('[stripe] consent not recorded for', sessionId, err)
+          return json(502, { error: 'Could not record consent.' })
+        }
+
+        json(200, { ok: true })
       },
     }),
 

@@ -179,11 +179,6 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           // Works for one-time payment-mode sessions too; the calculated tax
           // appears in Tax Reports. Requires Stripe Tax active in the Dashboard.
           automatic_tax: { enabled: true },
-          // Active consent to the Terms of Service, same as the subscription
-          // funnel: Stripe blocks confirm until the giver ticks the box and
-          // records consent.terms_of_service = 'accepted' on the Session.
-          // Requires the Dashboard's Terms of service URL to be set.
-          consent_collection: { terms_of_service: 'required' },
           // Persist the billing address the giver enters (BillingAddressElement)
           // back onto the pre-set Customer — required when a customer is
           // attached, and it feeds the tax jurisdiction.

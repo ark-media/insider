@@ -396,7 +396,7 @@ type SessionArgs = {
   currency: string
   adaptive_pricing?: { enabled: boolean }
   automatic_tax: { enabled: boolean }
-  consent_collection: { terms_of_service: string }
+  consent_collection?: { terms_of_service: string }
   customer_update: { address: string }
   line_items: Array<{ quantity: number; price: string }>
   payment_intent_data: {
@@ -462,8 +462,9 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     // Stripe Tax on the one-time gift session, with the address saved back to
     // the pre-set customer (feeds the tax jurisdiction).
     expect(args.automatic_tax).toEqual({ enabled: true })
-    // Active ToS consent, same as the subscription funnel.
-    expect(args.consent_collection).toEqual({ terms_of_service: 'required' })
+    // No Stripe-collected consent: the gift form carries its own Terms
+    // checkbox and records the acceptance via /api/stripe/record-consent.
+    expect(args.consent_collection).toBeUndefined()
     expect(args.customer_update).toEqual({ address: 'auto' })
     expect(args.line_items[0].quantity).toBe(1)
     // The persistent one-time gift Price, resolved by lookup_key (default tier

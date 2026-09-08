@@ -7,7 +7,8 @@ import {
   useCheckout,
 } from "@stripe/react-stripe-js/checkout";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckoutTerms } from "./CheckoutTerms";
+import { CheckoutConsent } from "./CheckoutConsent";
+import { useCheckoutConsent } from "../lib/checkoutConsent";
 import { Modal } from "./Modal";
 import { LoadingRow } from "./Spinner";
 import { CurrencySelect } from "./CurrencySelect";
@@ -339,6 +340,9 @@ function GiftPaymentForm({
   const checkoutState = useCheckout();
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
+  // A gift is charged once, so there is no renewal to disclose — only the
+  // Terms box. Hooks run ahead of the loading/error returns below.
+  const consent = useCheckoutConsent(null);
 
   if (checkoutState.type === "loading") {
     return <LoadingRow label="Loading secure checkout…" />;
@@ -373,9 +377,13 @@ function GiftPaymentForm({
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittedRef.current) return;
+    // Nothing is charged until the box is ticked. The button stays enabled so
+    // the refusal can say why.
+    if (!consent.confirm()) return;
     submittedRef.current = true;
     setSubmitting(true);
     trackEvent("gift_payment_submitted", { tier: input.tier, term: input.term });
+    await consent.record(checkoutSessionId);
 
     // redirect: 'if_required' keeps card payments in the modal; methods that
     // need an off-site step (e.g. 3DS) use the session's return_url.
@@ -442,7 +450,7 @@ function GiftPaymentForm({
             <span className="font-semibold text-fg-strong">{total}</span>
           </div>
         </div>
-        <CheckoutTerms action="buying a gift" />
+        <CheckoutConsent renewal={null} consent={consent} />
         <button
           type="submit"
           disabled={submitting}
