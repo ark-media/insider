@@ -20,7 +20,10 @@
 // unfiltered copy would just move junk from one store to another.
 //
 // Writes go to Auth0 (given_name/family_name — the name's home; Neon stores no
-// PII) and to Beehiiv custom fields (what campaigns actually personalize from).
+// PII), to Beehiiv custom fields (what campaigns actually personalize from), and
+// to Circle — the one store where a stale name is read by other MEMBERS rather
+// than by us, since a community record created without a name displays the whole
+// email address as its first_name.
 //
 // NOTE: unlike scripts/backfill-membership.ts, this deliberately does NOT refuse
 // to run against live Stripe — the whole point is to repair real migrated
@@ -38,6 +41,7 @@ import { neon } from '@neondatabase/serverless'
 import { getManagementClient } from '../server/auth0.js'
 import { updateAuth0Name } from '../server/lib/auth0-user.js'
 import { syncSubscriberName } from '../server/lib/beehiiv-sync.js'
+import { updateCircleMemberName } from '../server/entitlement.js'
 import { createScV1Client, loadAllMemberships } from '../server/lib/sc-client.js'
 import { hasRealName, splitFullName } from '../shared/profile-name.js'
 
@@ -245,6 +249,7 @@ async function main(): Promise<void> {
     alreadyNamed: 0,
     updated: 0,
     beehiivSynced: 0,
+    circleSynced: 0,
     failed: 0,
   }
   let writes = 0
@@ -324,6 +329,25 @@ async function main(): Promise<void> {
     } catch (err) {
       console.log(`  ~ ${email}: Beehiiv sync failed — ${err instanceof Error ? err.message : err}`)
     }
+
+    // Circle is where a stale name is read by other MEMBERS rather than by us:
+    // a community record we created without a name displays the whole email
+    // address as its first_name. Same soft handling as Beehiiv — already
+    // no-ops (returns false) for a member with no community record, which is
+    // most of the roster, so this is only counted when a write really landed.
+    try {
+      const synced = await withRetry('circle-name', () =>
+        updateCircleMemberName(env as Record<string, string>, email, {
+          first: candidate.first,
+          // undefined, not null: a harvested mononym means we never learned a
+          // surname, which is not a licence to delete one Circle already has.
+          last: candidate.last || undefined,
+        }),
+      )
+      if (synced) summary.circleSynced += 1
+    } catch (err) {
+      console.log(`  ~ ${email}: Circle sync failed — ${err instanceof Error ? err.message : err}`)
+    }
   })
 
   console.log('\n--- Summary ---')
@@ -336,6 +360,7 @@ async function main(): Promise<void> {
   console.log(`  already named:      ${summary.alreadyNamed}`)
   console.log(`  updated in Auth0:   ${summary.updated}`)
   console.log(`  synced to Beehiiv:  ${summary.beehiivSynced}`)
+  console.log(`  synced to Circle:   ${summary.circleSynced}`)
   console.log(`  failed:             ${summary.failed}`)
   if (skippedByLimit > 0) {
     console.log(`  NOTE: --limit ${limit} left ${skippedByLimit} candidate(s) unprocessed.`)

@@ -19,6 +19,7 @@ import { setSessionCookies } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
 import { syncSubscriberName, tryPush } from '../lib/beehiiv-sync.js'
 import { createScClient, updateScUserName } from '../lib/sc-client.js'
+import { updateCircleMemberName } from '../entitlement.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
@@ -173,6 +174,17 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
             }),
           )
         }
+        // Circle shows this name to every other member, which makes it the one
+        // store where a stale value is read by strangers rather than by us. It
+        // was the only greeting surface missing from this fan-out: a member
+        // could fix their name here and still appear in the community under the
+        // email address we created them with.
+        await tryPush('profile name sync (circle)', () =>
+          updateCircleMemberName(env, identity.email, {
+            first: given,
+            last: familyName || null,
+          }),
+        )
 
         return json(200, {
           givenName: given,

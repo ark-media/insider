@@ -101,6 +101,12 @@ let beehiivHasSubscriber = true
 let scCalls: BeehiivCall[] = []
 let scHasUser = true
 
+// Circle is the fourth, and the only one whose copy of the name is read by
+// other MEMBERS — a community record created without one shows the whole email
+// address instead.
+let circleCalls: BeehiivCall[] = []
+let circleHasMember = true
+
 const originalFetch = globalThis.fetch
 globalThis.fetch = (async (
   input: Parameters<typeof fetch>[0],
@@ -114,6 +120,15 @@ globalThis.fetch = (async (
         JSON.stringify(scHasUser ? { users: [{ id: 55, email: 'member@x.com' }] } : { users: [] }),
         { status: 200 },
       )
+    }
+    return new Response('{}', { status: 200 })
+  }
+  if (url.includes('circle.so')) {
+    circleCalls.push({ url, method: init?.method ?? 'GET', body: parseJsonInitBody(init) })
+    if (url.includes('/community_members/search')) {
+      return circleHasMember
+        ? new Response(JSON.stringify({ id: 42, email: 'member@x.com' }), { status: 200 })
+        : new Response('{}', { status: 404 })
     }
     return new Response('{}', { status: 200 })
   }
@@ -149,6 +164,8 @@ beforeEach(() => {
   beehiivHasSubscriber = true
   scCalls = []
   scHasUser = true
+  circleCalls = []
+  circleHasMember = true
   byEmail = []
   creates = []
   sqlCalls.length = 0
@@ -439,6 +456,45 @@ describe('PUT effects', () => {
     const res = await put({ given_name: 'Hannah' }, { env })
     expect(res.statusCode).toBe(200)
     expect(scCalls.some((c) => c.method === 'PATCH')).toBe(false)
+  })
+
+  test('pushes the name to Circle — it is what other members read', async () => {
+    // The gap this closes: a member fixes their name here, and the community
+    // still shows the one we created them with, which for anyone we held no
+    // name for is their email address.
+    const env = { ...BASE_ENV, CIRCLE_ADMIN_API_TOKEN: 'circle_admin_tok' }
+    const res = await put({ given_name: 'Hannah', family_name: 'Waxman' }, { env })
+    expect(res.statusCode).toBe(200)
+    const write = circleCalls.find((c) => c.method === 'PUT')
+    expect(write?.url).toContain('/community_members/42')
+    expect(write?.body).toEqual({ first_name: 'Hannah', last_name: 'Waxman' })
+  })
+
+  test('clearing a surname clears it in Circle too, rather than leaving the old one', async () => {
+    const env = { ...BASE_ENV, CIRCLE_ADMIN_API_TOKEN: 'circle_admin_tok' }
+    await put({ given_name: 'Hannah' }, { env })
+    const write = circleCalls.find((c) => c.method === 'PUT')
+    expect(write?.body).toEqual({ first_name: 'Hannah', last_name: null })
+  })
+
+  test('the Circle push is skipped entirely without the ADMIN token', async () => {
+    // Not interchangeable with CIRCLE_API_TOKEN: that one is an Admin v1 token,
+    // and Circle answers 401 when it is sent as a Bearer against the v2 base —
+    // which is what every other Circle call in entitlement.ts does today.
+    const env = { ...BASE_ENV, CIRCLE_API_TOKEN: 'circle_v1_tok' }
+    const res = await put({ given_name: 'Hannah' }, { env })
+    expect(res.statusCode).toBe(200)
+    expect(circleCalls.length).toBe(0)
+  })
+
+  test('a member with no community record is left alone, and the save still returns 200', async () => {
+    // An Ark+-only member has no Circle record at all. That is the normal case,
+    // not a failure — and it must not turn a successful save into an error.
+    const env = { ...BASE_ENV, CIRCLE_ADMIN_API_TOKEN: 'circle_admin_tok' }
+    circleHasMember = false
+    const res = await put({ given_name: 'Hannah' }, { env })
+    expect(res.statusCode).toBe(200)
+    expect(circleCalls.some((c) => c.method === 'PUT')).toBe(false)
   })
 
   test('a reader with no Beehiiv record is left alone — a name is not a reason to subscribe them', async () => {

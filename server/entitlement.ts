@@ -328,6 +328,73 @@ async function stampCircleAuth0Sub(
   }
 }
 
+// Push a member's name onto their Circle profile — the community's copy of the
+// one thing every other store already hears about.
+//
+// PUT /api/account/profile fans an edited name out to Auth0 (its home), Beehiiv
+// and Supporting Cast. Circle was missing from that list, so a member who fixed
+// their name with us still read as their old one in the community. That is not
+// a cosmetic gap for the migrated roster: where we hold no name at all, Circle
+// fills `first_name` with the whole email address, so those members appear to
+// everyone else as "someone@example.com".
+//
+// Soft by construction — returns false rather than throwing. Every caller is
+// downstream of a save the member has already seen succeed, so a Circle hiccup
+// must never surface as a failed save.
+// CIRCLE_ADMIN_API_TOKEN, deliberately unlike every other Circle call in this
+// file. They pass CIRCLE_API_TOKEN — an Admin **v1** token — as a Bearer
+// against the Admin **v2** base URL, and Circle answers 401 to all of them:
+//
+//   Bearer <v1 token>    → /api/admin/v2/community_members/search  401
+//   Bearer <admin token> → /api/admin/v2/community_members/search  200
+//   Token  <v1 token>    → /api/v1/community_members               200
+//
+// That is a real bug in the provisioning path, not a quirk to copy — but fixing
+// it there means re-verifying member create, the profile-field stamp and the
+// access-group add/remove against a live community, so it is called out rather
+// than swept into this change. This function uses the pairing that was actually
+// tested end to end (admin token + v2 search + v2 PUT).
+export async function updateCircleMemberName(
+  env: Env,
+  email: string,
+  name: { first: string; last?: string | null },
+): Promise<boolean> {
+  const apiToken = env.CIRCLE_ADMIN_API_TOKEN
+  if (!apiToken) return false
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    'Content-Type': 'application/json',
+  }
+  try {
+    const memberId = await findCircleMemberIdByEmail(headers, email)
+    // Not every member is in Circle — an Ark+-only member has no community
+    // record, and that is not a failure worth logging as one.
+    if (memberId == null) return false
+    const res = await fetchWithTimeout(`${CIRCLE_API}/community_members/${memberId}`, {
+      method: 'PUT',
+      headers,
+      // `last_name: null` clears a surname the member deleted, the same way the
+      // Beehiiv sync treats it — an empty string would leave the old one merged
+      // into their display name.
+      body: JSON.stringify({
+        first_name: name.first,
+        last_name: name.last ?? null,
+      }),
+    })
+    if (!res.ok) {
+      console.error(
+        `[circle] name PUT ${res.status} for ${redactEmail(email)}:`,
+        await res.text(),
+      )
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error(`[circle] name sync failed for ${redactEmail(email)}:`, err)
+    return false
+  }
+}
+
 // --- Stripe customer → email ------------------------------------------------
 
 export async function emailForStripeCustomer(
