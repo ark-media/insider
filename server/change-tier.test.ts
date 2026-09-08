@@ -32,6 +32,9 @@ let existingCustomers: Array<{ id: string; email: string }> = []
 let currentSub: Record<string, unknown> | null = null
 let schedulePhases: Phase[] = []
 let productEntitlements: Record<string, string> = {}
+// Makes the schedule write throw, so a test can watch what the handler leaves
+// behind when the change fails halfway.
+let scheduleUpdateFails = false
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -64,6 +67,7 @@ class FakeStripe {
     },
     update: async (id: string, args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptionSchedules.update', args: [id, args] })
+      if (scheduleUpdateFails) throw new Error('stripe is having a bad day')
       return { id }
     },
     release: async (id: string) => {
@@ -119,7 +123,7 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 import { devApiPlugin } from './dev-api'
 import { signSessionToken } from './lib/session'
 import { SESSION_COOKIE_NAME } from './lib/cookies'
-import { SUPPORTED_CURRENCIES } from './lib/pricing'
+import { SUPPORTED_CURRENCIES, __resetPriceCacheForTests } from './lib/pricing'
 
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
@@ -178,8 +182,10 @@ function makeRes() {
   }
 }
 
-async function post(body: unknown, cookie?: string) {
-  const handler = getHandler()
+async function post(body: unknown, cookie?: string, sharedHandler?: Middleware) {
+  // A fresh handler per call by default, so each test starts with its own rate
+  // limiter; the limiter's own test passes one in to keep the bucket.
+  const handler = sharedHandler ?? getHandler()
   const req = makeReq(body, cookie)
   const res = makeRes()
   await new Promise<void>((resolve, reject) => {
@@ -239,6 +245,12 @@ beforeEach(() => {
   currentSub = null
   schedulePhases = []
   productEntitlements = {}
+  scheduleUpdateFails = false
+  // The resolver's price cache is module-level and `bun test` shares one
+  // process. Clearing it keeps `prices.list` a reliable signal of whether the
+  // catalog was actually consulted — which is what the ordering case below
+  // asserts on.
+  __resetPriceCacheForTests()
 })
 
 describe('POST /api/stripe/change-tier', () => {
@@ -250,6 +262,22 @@ describe('POST /api/stripe/change-tier', () => {
   test('404 when the member has no live subscription', async () => {
     const res = await post({ tier: 'ark-plus', plan: 'monthly' }, await sessionCookie('member@example.com'))
     expect(res.statusCode).toBe(404)
+  })
+
+  test('an authenticated client cannot loop on this endpoint', async () => {
+    // Session-authenticated, so the risk isn't enumeration — it's cost. Every
+    // call fans out to several Stripe reads before it can decide anything,
+    // including the reads a refusal needs, so a client in a loop is expensive
+    // even when every answer is "no". Keyed on the session email, which a
+    // caller can't rotate by editing the body.
+    const handler = getHandler()
+    const cookie = await sessionCookie('looper@example.com')
+    for (let i = 0; i < 20; i++) {
+      const res = await post({ tier: 'bundle', plan: 'monthly' }, cookie, handler)
+      expect(res.statusCode).toBe(404)
+    }
+    const res = await post({ tier: 'bundle', plan: 'monthly' }, cookie, handler)
+    expect(res.statusCode).toBe(429)
   })
 
   test('period-end downgrade to an above-floor PWYC amount bills that amount (not the floor)', async () => {

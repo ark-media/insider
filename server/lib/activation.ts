@@ -18,6 +18,7 @@ import type Stripe from 'stripe'
 import {
   deriveEntitlements,
   provisionCircleMember,
+  type Entitlements,
   type Tier,
 } from '../entitlement.js'
 import {
@@ -54,6 +55,41 @@ export type GiftTerm = '6mo' | '1yr'
 export const GIFT_TERM_DAYS: Record<GiftTerm, number> = {
   '6mo': 182,
   '1yr': 365,
+}
+
+// The `welcomed_axes` stamp: which axes the welcome email covered, in the same
+// comma-separated vocabulary the catalog's product metadata uses. Stripe stores
+// metadata as strings, and an empty value would read back as an absent key, so
+// a member welcomed for nothing (which cannot happen — every paid tier grants
+// at least one axis) would be indistinguishable from an unstamped subscription.
+function axesMetadataValue(entitlements: Entitlements): string {
+  const axes: string[] = []
+  if (entitlements.arkPlus) axes.push('ark_plus')
+  if (entitlements.circle) axes.push('circle')
+  return axes.join(',')
+}
+
+// Whether an axis that just finished provisioning is one the member did NOT
+// already own when they were welcomed — i.e. a real upgrade, not the second
+// half of the purchase they already have an email about.
+//
+// A subscription with no stamp at all predates the stamp, so nothing is known
+// about what its welcome covered. Treated as "welcomed for nothing", which errs
+// toward sending: an upgrade that goes unannounced is the silence this branch
+// was added to fix, and a stray email is the cheaper mistake of the two.
+function gainedAxis(
+  welcomedAxes: string | undefined,
+  provisionedNow: { arkPlus: boolean; circle: boolean },
+): boolean {
+  const welcomed = new Set(
+    (welcomedAxes ?? '')
+      .split(',')
+      .map((a) => a.trim())
+      .filter(Boolean),
+  )
+  if (provisionedNow.circle && !welcomed.has('circle')) return true
+  if (provisionedNow.arkPlus && !welcomed.has('ark_plus')) return true
+  return false
 }
 
 // The billing facts an axis-added email states, read off the subscription the
@@ -338,6 +374,16 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       circleProvisioned = status === 'ok'
     }
 
+    // The axes the WELCOME email covered — recorded on the first activation, and
+    // the thing that separates a genuine upgrade from a first purchase whose
+    // provisioning had to be retried. Both look identical to `addingCircle` /
+    // `addingArkPlus`: a Bundle buyer whose Circle add failed and succeeded on a
+    // redelivery is "adding circle" on that second pass, even though they bought
+    // it minutes ago and were already welcomed for it. Comparing against what
+    // they were welcomed FOR is what tells the two apart. Vocabulary matches the
+    // catalog's `entitlements` metadata (see tierFromEntitlementString).
+    const welcomedAxes = axesMetadataValue(entitlements)
+
     // Stamp resolved ids + idempotency markers back onto the sub. The webhook
     // reads sc_user_id / auth0_user_id back off this for the membership row.
     await stripe!.subscriptions.update(fresh.id, {
@@ -349,6 +395,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
           : {}),
         ...(auth0Sub ? { auth0_user_id: auth0Sub } : {}),
         ...(circleProvisioned ? { circle_provisioned: 'true' } : {}),
+        ...(wasUnprovisioned ? { welcomed_axes: welcomedAxes } : {}),
       },
     })
 
@@ -416,12 +463,20 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       // Gated on the provisioning having SUCCEEDED, not merely been attempted:
       // "the community is yours now" must not go out while the Circle add is
       // still failing. A retry that finally succeeds sends it then.
-      (addingCircle && circleProvisioned) ||
-      (addingArkPlus && scSubscriptionId != null)
+      //
+      // And gated on the axis being one the member did NOT already buy. Without
+      // that, a Bundle purchase whose Circle add failed the first time and
+      // landed on a redelivery sent its brand-new buyer an upgrade email
+      // minutes after their welcome — "You just added the Ark+ community" and
+      // "Nothing to pay today", to someone who added nothing and paid in full
+      // that morning.
+      gainedAxis(fresh.metadata?.welcomed_axes, {
+        arkPlus: addingArkPlus && scSubscriptionId != null,
+        circle: addingCircle && circleProvisioned,
+      })
     ) {
-      // Circle wins when both landed at once (a repaired half-provisioned
-      // member): its copy is the one that names the community, and the price
-      // sentence covers the whole Bundle either way.
+      // Circle wins when both landed at once: its copy is the one that names the
+      // community, and the price sentence covers the whole Bundle either way.
       const axis = addingCircle && circleProvisioned ? 'circle' : 'ark-plus'
       const { subject, html } = renderAxisAddedEmail({
         name,

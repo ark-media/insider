@@ -230,6 +230,54 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
     expect(sentEmails[0].subject).toContain('Welcome')
   })
 
+  test('a first purchase records which axes its welcome covered', async () => {
+    const { stripe, sub, meta } = makeFakeStripe()
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    // The stamp is what a later delivery compares against to tell a genuine
+    // upgrade from the rest of this same purchase.
+    expect(meta.welcomed_axes).toBe('ark_plus,circle')
+  })
+
+  test('a repaired half-provisioned first purchase does not send the upgrade email', async () => {
+    // A Bundle buyer whose Circle add failed on the first delivery: SC and
+    // Auth0 were stamped and the welcome went out, so the redelivery that
+    // finally lands Circle is "adding circle" by every marker the activator
+    // has. It is not an upgrade — they bought community that morning and have
+    // already been welcomed for it — and an email saying "You just added the
+    // Ark+ community. Nothing to pay today" would be false twice over.
+    const { stripe, sub } = makeFakeStripe({
+      sc_subscription_id: '555',
+      sc_user_id: '999',
+      auth0_user_id: 'auth0|abc',
+      welcomed_axes: 'ark_plus,circle',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    // Circle really is provisioned by this pass — the silence is the point.
+    expect(circleGroupPost()).toBe(true)
+    expect(sentEmails.length).toBe(0)
+  })
+
+  test('a member welcomed for Ark+ alone still hears about gaining community', async () => {
+    const { stripe, sub } = makeFakeStripe({
+      sc_subscription_id: '555',
+      sc_user_id: '999',
+      auth0_user_id: 'auth0|abc',
+      welcomed_axes: 'ark_plus',
+      amount_cents: '2500',
+      currency: 'usd',
+      plan: 'monthly',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].subject).toContain('community')
+  })
+
   test('a redelivery that adds no axis sends nothing', async () => {
     // Both axes already carry their markers, so the fan-out is a no-op — and a
     // no-op must not re-announce an upgrade the member made weeks ago.

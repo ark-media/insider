@@ -104,6 +104,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     capacity: 15,
     refillPerSec: 15 / (60 * 60), // 15 per hour per source
   })
+  // Per-member cap on subscription changes. Unlike the checkout routes this one
+  // is session-authenticated, so the risk isn't enumeration — it's cost: every
+  // call fans out to several Stripe reads before it can decide anything, and a
+  // client looping on a request the server refuses still pays for them. Keyed on
+  // the session email, which a caller can't rotate by editing the body.
+  // Generous enough that a member walking a cancel/debundle flow, changing their
+  // mind and retrying a failed switch never meets it.
+  const changeTierLimiter = createRateLimiter({
+    capacity: 20,
+    refillPerSec: 20 / (60 * 60), // 20 per hour
+  })
   // Per-IP cap on consent writes. One purchase needs one call, and a retried
   // payment a handful; anything past that is a caller spending our Stripe
   // request budget on an endpoint that answers nothing useful.
@@ -147,6 +158,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
         }
 
+        const plan = body.plan
+        const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
+        const tier = coerceTier(body.tier)
+
         // Rate-limit after input validation so a clearly-malformed request
         // doesn't consume a token from a legitimate retry.
         const clientIp = getClientIp(req)
@@ -158,10 +173,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             error: 'Too many checkout attempts. Please wait a moment and try again.',
           })
         }
-
-        const plan = body.plan
-        const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
-        const tier = coerceTier(body.tier)
 
         // Explicit charge currency (per-currency floors replaced Adaptive
         // Pricing, which currency_options disables). The client selects/detects
@@ -930,7 +941,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // confirmed against a live test-mode sub before this is exposed.
       path: '/api/stripe/change-tier',
       method: 'POST',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
@@ -947,6 +958,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }>(req)) ?? {}
         if (body.plan !== 'monthly' && body.plan !== 'yearly') {
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
+        }
+
+        // After the free validation above, before the first Stripe call below.
+        const changeWait = changeTierLimiter.take(email)
+        if (changeWait !== null) {
+          res.setHeader('retry-after', String(changeWait))
+          return json(429, {
+            error: 'Too many changes in a row. Please wait a moment and try again.',
+          })
         }
         // A debundle (bundle → single product) passes retained_product so the
         // win-back record captures what was kept; a plain upgrade/PWYC omits it.
@@ -967,13 +987,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!sub) return json(404, { error: 'No active subscription found' })
         const customerId = customerIdOf(sub)
 
+        const currentTier = await tierFromSubscription(sub, stripe)
+
         // A EUR sub updated with USD price_data hard-fails (§6 point 1) — reuse
         // the subscription's own currency, and validate against ITS floor.
         const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
         const catalog = await resolveCatalogPrice(stripe, newTier, plan)
         const floor = catalog.floors[currency] ?? catalog.floors.usd
-
-        const currentTier = await tierFromSubscription(sub, stripe)
         // Unbundling settles at the kept product's own catalog price: the bundle
         // is a discount on two standalone prices, and splitting it forfeits that.
         // The softer landing is a bounded intro coupon on the scheduled phase
@@ -1017,6 +1037,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           if (!windowSpent) introCoupon = pickIntroCoupon(await listActiveCoupons(stripe))
         }
 
+        // Kept for the timing decision below: gaining an entitlement applies
+        // immediately, losing one lands at period end.
         const prevEnt = deriveEntitlements(currentTier)
         const nextEnt = deriveEntitlements(newTier)
         const item = sub.items.data[0]
