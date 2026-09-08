@@ -23,9 +23,9 @@ function tierLabel(tier: MemberDirectoryEntry["tier"]): string {
     case "ark-plus":
       return "Ark+";
     case "circle":
-      return "Community";
+      return "The Fold";
     case "bundle":
-      return "Ark+ & Community";
+      return "Ark+ & The Fold";
     case "free":
       return "Free";
     default:
@@ -154,8 +154,8 @@ function MembersAdmin() {
           >
             <option value="">All tiers</option>
             <option value="ark-plus">Ark+</option>
-            <option value="bundle">Ark+ &amp; Community</option>
-            <option value="circle">Community</option>
+            <option value="bundle">Ark+ &amp; The Fold</option>
+            <option value="circle">The Fold</option>
           </select>
         </div>
 

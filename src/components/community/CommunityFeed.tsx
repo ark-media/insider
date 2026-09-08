@@ -14,7 +14,7 @@ function formatPostDate(iso: string): string {
 }
 
 /**
- * The subscriber's community feed: read-only teasers of curated highlights.
+ * The subscriber's Fold feed: read-only teasers of curated highlights.
  * Every card deep-links into the app — there's no like/reply/post UI on
  * the web. `items === null` is loading; an empty list renders the onboarding
  * nudge instead of a blank panel.

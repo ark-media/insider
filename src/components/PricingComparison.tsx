@@ -26,12 +26,12 @@ type Column = {
 };
 
 // Column order mirrors the card grid — Ark+, the Bundle (featured, second),
-// Community — with the Apple Podcasts flavour of Ark+ slotted in before it.
+// the Fold — with the Apple Podcasts flavour of Ark+ slotted in before it.
 const COLUMNS: Column[] = [
-  { key: "bundle", label: "Ark+ & Community", featured: true },
+  { key: "bundle", label: "Ark+ & The Fold", featured: true },
   { key: "ark-plus", label: "Ark+", sublabel: "Website" },
   { key: "apple", label: "Ark+", sublabel: "Apple Podcasts" },
-  { key: "circle", label: "Community" },
+  { key: "circle", label: "The Fold" },
 ];
 
 // `summary` and `detail` never render inside the table — the rows stay to their
@@ -54,7 +54,7 @@ type Group = { rows: Row[] };
 // benefit. Entitlements themselves are derived server-side from each tier's
 // Stripe product; this table is the reader-facing summary. The Apple Podcasts
 // column carries only what Apple's own subscription can deliver — the private
-// audio feed — so the video, community, and newsletter rows are blank there.
+// audio feed — so the video, Fold, and newsletter rows are blank there.
 const GROUPS: Group[] = [
   {
     rows: [
@@ -93,9 +93,9 @@ const GROUPS: Group[] = [
   {
     rows: [
       {
-        label: "Premium access to the Community app",
-        shortLabel: "Community app",
-        summary: "The Ark Media community app, in full.",
+        label: "Premium access to the Fold",
+        shortLabel: "The Fold",
+        summary: "The Fold, Ark Media's members' app, in full.",
         detail: [
           "Conversations with the hosts and fellow members",
           "Live member events & Q&As",
@@ -277,8 +277,8 @@ export function PricingComparison({
                     key={c.key}
                     scope="col"
                     // `max-md:w-[22%]` only: below `md` the auto layout sizes
-                    // each column to its heading, which hands "Ark+ &
-                    // Community" three times the width of "Ark+". From `md`
+                    // each column to its heading, which hands "Ark+ & The
+                    // Fold" three times the width of "Ark+". From `md`
                     // the fixed table width makes that moot.
                     className={`px-1 py-3 text-center align-bottom max-md:w-[22%] md:p-4 ${colClass(c)} ${mobileHidden(c)} ${
                       c.featured ? "border-t-2 border-cyan" : ""

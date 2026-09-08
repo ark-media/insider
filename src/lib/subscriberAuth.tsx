@@ -25,8 +25,8 @@ export function isArkPlusMember(state: SubscriberAuthState): boolean {
   return state.kind === "member" && state.me.entitlements.arkPlus;
 }
 
-// True for a signed-in member who holds the circle axis (the community) — Circle
-// or Bundle. Community surfaces gate on THIS, not arkPlus: the two are
+// True for a signed-in member who holds the circle axis (the Fold) — Circle
+// or Bundle. Fold surfaces gate on THIS, not arkPlus: the two are
 // independent SKUs (§3 risk 5).
 export function isCircleMember(state: SubscriberAuthState): boolean {
   return state.kind === "member" && state.me.entitlements.circle;

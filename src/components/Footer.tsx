@@ -30,7 +30,7 @@ const sections: FooterSection[] = [
   {
     title: "Connect",
     links: [
-      { label: "Community", to: "/community" },
+      { label: "The Fold", to: "/fold" },
       { label: "Contact", to: "/contact" },
       { label: "Careers", to: "/careers" },
     ],

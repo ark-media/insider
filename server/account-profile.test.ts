@@ -102,7 +102,7 @@ let scCalls: BeehiivCall[] = []
 let scHasUser = true
 
 // Circle is the fourth, and the only one whose copy of the name is read by
-// other MEMBERS — a community record created without one shows the whole email
+// other MEMBERS — a Circle record created without one shows the whole email
 // address instead.
 let circleCalls: BeehiivCall[] = []
 let circleHasMember = true
@@ -459,7 +459,7 @@ describe('PUT effects', () => {
   })
 
   test('pushes the name to Circle — it is what other members read', async () => {
-    // The gap this closes: a member fixes their name here, and the community
+    // The gap this closes: a member fixes their name here, and the Fold
     // still shows the one we created them with, which for anyone we held no
     // name for is their email address.
     const env = { ...BASE_ENV, CIRCLE_ADMIN_API_TOKEN: 'circle_admin_tok' }

@@ -328,12 +328,12 @@ async function stampCircleAuth0Sub(
   }
 }
 
-// Push a member's name onto their Circle profile — the community's copy of the
+// Push a member's name onto their Circle profile — the Fold's copy of the
 // one thing every other store already hears about.
 //
 // PUT /api/account/profile fans an edited name out to Auth0 (its home), Beehiiv
 // and Supporting Cast. Circle was missing from that list, so a member who fixed
-// their name with us still read as their old one in the community. That is not
+// their name with us still read as their old one in the Fold. That is not
 // a cosmetic gap for the migrated roster: where we hold no name at all, Circle
 // fills `first_name` with the whole email address, so those members appear to
 // everyone else as "someone@example.com".
@@ -367,7 +367,7 @@ export async function updateCircleMemberName(
   }
   try {
     const memberId = await findCircleMemberIdByEmail(headers, email)
-    // Not every member is in Circle — an Ark+-only member has no community
+    // Not every member is in Circle — an Ark+-only member has no Fold
     // record, and that is not a failure worth logging as one.
     if (memberId == null) return false
     const res = await fetchWithTimeout(`${CIRCLE_API}/community_members/${memberId}`, {
@@ -453,7 +453,7 @@ export type ReconcileSummary = {
 
 // The tier a set of live axes adds up to — the inverse of deriveEntitlements.
 // Effective tier is DERIVED from which axes are live (gift stacking, D4), never
-// stored: an Ark+ sub plus a live Community gift is a bundle-equivalent member.
+// stored: an Ark+ sub plus a live Fold gift is a bundle-equivalent member.
 export function tierFromEntitlements(ent: Entitlements): Tier {
   if (ent.arkPlus && ent.circle) return 'bundle'
   if (ent.arkPlus) return 'ark-plus'

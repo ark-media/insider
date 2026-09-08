@@ -34,7 +34,7 @@ export type CouponSlot = (typeof COUPON_SLOTS)[number]
 // How each slot reads in the back office — where the member sees it.
 export const COUPON_SLOT_LABEL: Record<CouponSlot, string> = {
   supporter_coupon: 'Ark+ monthly — “keep your benefits” discount',
-  affordability_coupon: 'Community — “keep your benefits” discount',
+  affordability_coupon: 'The Fold — “keep your benefits” discount',
   debundle_intro: 'Debundle — intro rate on the product you keep',
 }
 
@@ -65,8 +65,8 @@ export function isPlanSwitchKind(kind: OfferKind): boolean {
 
 // The intent that opened the save flow, resolving which offers to derive.
 //   cancel-ark-plus          Flow A — cancel a standalone Ark+ sub
-//   cancel-circle            Flow B — cancel a standalone Community sub
-//   debundle-remove-ark-plus Flow C — bundle → keep Community (no card; intro rate)
+//   cancel-circle            Flow B — cancel a standalone Fold sub
+//   debundle-remove-ark-plus Flow C — bundle → keep the Fold (no card; intro rate)
 //   debundle-remove-circle   Flow D — bundle → keep Ark+ (no card; intro rate)
 // Neither debundle carries a save card: the offer is priced into the exit (the
 // kept product lands on a bounded intro rate), so the flow goes straight to the

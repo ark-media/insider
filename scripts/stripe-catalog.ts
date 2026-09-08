@@ -55,7 +55,7 @@ const ZERO_DECIMAL = new Set<Currency>(['jpy', 'krw', 'vnd', 'clp'])
 // the $8/mo Ark+ · Circle base, in MINOR units — 2-decimal currencies ×100 of
 // the table figure, zero-decimal currencies the whole figure. This is the ONE
 // place amounts are edited; each tier scales off it by its own USD anchor
-// (Ark+ $8, Community $19, Bundle $25) and yearly is ×10.
+// (Ark+ $8, the Fold $19, Bundle $25) and yearly is ×10.
 const BASE_MONTHLY_MINOR: Amounts = {
   usd: 800, gbp: 800, eur: 900, cad: 1000, czk: 19900,
   dkk: 6900, huf: 349000, nok: 9900, pln: 3999, ron: 3999,
@@ -74,10 +74,10 @@ const FOUNDING_MULTIPLE = '2'
 
 // Every currency's amount for a tier+plan, derived from the base table:
 //   monthly = base × (usdMonthlyMinor / base.usd)  — 1× for Ark+ ($8), 19/8 for
-//                                                     Community, 25/8 for Bundle
+//                                                     the Fold, 25/8 for Bundle
 //   yearly  = monthly × 10                          — matches the USD 10:1 ratio
 // Rounded to an integer minor-unit amount (valid for every currency). Only Ark+
-// sits on the hand-tuned charm-price table; Community and Bundle non-USD rows are
+// sits on the hand-tuned charm-price table; the Fold and Bundle non-USD rows are
 // mechanically derived — swap in dedicated tables here if that changes.
 function amountsFor(usdMonthlyMinor: number, interval: 'month' | 'year'): Amounts {
   const monthScale = usdMonthlyMinor / BASE_MONTHLY_MINOR.usd
@@ -126,16 +126,16 @@ const CATALOG: ProductDef[] = [
   },
   {
     catalogKey: 'circle',
-    name: 'Ark Community',
-    description: 'Access to the Ark community (Circle).',
+    name: 'The Fold',
+    description: 'Access to the Fold (Circle).',
     entitlements: 'circle',
     scPlan: false,
     usdMonthlyMinor: 1900,
   },
   {
     catalogKey: 'bundle',
-    name: 'Ark+ & Community',
-    description: 'Private ad-free feed and community access.',
+    name: 'Ark+ & The Fold',
+    description: 'Private ad-free feed and access to the Fold.',
     entitlements: 'ark_plus,circle',
     scPlan: true,
     usdMonthlyMinor: 2500,
@@ -151,7 +151,7 @@ const CATALOG: ProductDef[] = [
 // pricing without being derived from a subscription Price object at runtime.
 //   | Tier      | 6mo | 1yr  |
 //   | Ark+      | $48 | $80  |
-//   | Community | $48 | $80  |
+//   | The Fold  | $48 | $80  |
 //   | Bundle    | $75 | $130 |
 type GiftTerm = '6mo' | '1yr'
 const GIFT_TERMS = ['6mo', '1yr'] as const
@@ -197,16 +197,16 @@ const GIFT_CATALOG: GiftProductDef[] = [
   },
   {
     catalogKey: 'gift_circle',
-    name: 'Ark Community Gift',
-    description: 'Gift access to the Ark community (Circle).',
+    name: 'The Fold Gift',
+    description: 'Gift access to the Fold (Circle).',
     entitlements: 'circle',
     tierMonthlyUsdMinor: 800,
     anchors: { '6mo': 4800, '1yr': 8000 },
   },
   {
     catalogKey: 'gift_bundle',
-    name: 'Ark+ & Community Gift',
-    description: 'Gift the private ad-free feed and community access.',
+    name: 'Ark+ & The Fold Gift',
+    description: 'Gift the private ad-free feed and access to the Fold.',
     entitlements: 'ark_plus,circle',
     tierMonthlyUsdMinor: 1300,
     anchors: { '6mo': 7500, '1yr': 13000 },
@@ -431,7 +431,7 @@ const DEBUNDLE_INTRO_MONTHS = 6
 // One percentage only fits while half the bundle is below BOTH standalone
 // prices. It no longer is: at Ark+ $8 and bundle $25, half the bundle is $12.50,
 // so a debundler keeping Ark+ already lands cheaper and this goes negative —
-// see the skip in upsertIntroCoupon. Softening the Community side ($19, i.e.
+// see the skip in upsertIntroCoupon. Softening the Fold side ($19, i.e.
 // $6.50/mo above the in-bundle half) would need a per-axis coupon, which is a
 // change to server/lib/retention.ts, not to this script.
 //

@@ -1,5 +1,5 @@
 // Gift-expiry reminder cron logic (T7.5). Scans Neon membership rows for gifted
-// axes (Ark+ / Community) whose term ends inside the reminder window and emails
+// axes (Ark+ / the Fold) whose term ends inside the reminder window and emails
 // the recipient a one-time nudge to convert to a paid subscription before access
 // lapses. A per-(recipient, axis, term-end) ledger prevents double-nagging.
 //
@@ -39,7 +39,7 @@ const AXES: {
   label: string
 }[] = [
   { key: 'ark_plus', col: 'ark_plus_gift_expires_at', other: 'circle', label: 'Ark+' },
-  { key: 'circle', col: 'circle_gift_expires_at', other: 'ark_plus', label: 'Community' },
+  { key: 'circle', col: 'circle_gift_expires_at', other: 'ark_plus', label: 'the Fold' },
 ]
 
 // Is this axis backed by the row's LIVE subscription (not the gift)? If so its

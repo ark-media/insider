@@ -108,7 +108,7 @@ export async function resolveMembershipForIdentity(
     const row = await getMembershipByAuth0Sub(getDb(env), identity.sub)
     if (row && membershipIsLive(row)) {
       // Effective tier is the UNION of the subscription and any live gift axes
-      // (D4): an Ark+ subscriber with a live Community gift resolves to bundle.
+      // (D4): an Ark+ subscriber with a live Fold gift resolves to bundle.
       const axes = liveAxes(row)
       return {
         identity,
@@ -196,7 +196,7 @@ export async function resolveMembership(
 // Throws when Neon is unconfigured rather than answering 'free': the caller maps
 // that to a 500, which the Action treats as "couldn't check" (retry) rather than
 // "not entitled" (upsell). Answering 'free' here would silently lock the whole
-// community out of SSO the moment DATABASE_URL went missing.
+// the Fold out of SSO the moment DATABASE_URL went missing.
 export async function resolveEntitlementsForSub(
   sub: string,
   env: Env,

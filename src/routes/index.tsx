@@ -101,7 +101,7 @@ const FORMAT_LABEL: Record<ArkEvent["format"], string> = {
   "in-person": "In person",
 };
 
-// A phone shell mirroring the app mockups on /community — fixed dark colors so
+// A phone shell mirroring the app mockups on /fold — fixed dark colors so
 // it reads as a real screenshot in both themes. `bleed` top-anchors the device
 // in a capped window that fades out at the bottom, so it reads as "rising into
 // frame" instead of dominating the band with its full height.
@@ -147,7 +147,7 @@ function PhoneStatusBar() {
 }
 
 // ---------------------------------------------------------------------------
-// Community visual — the community app on a phone. Shows the next real
+// Fold visual — the Fold app on a phone. Shows the next real
 // live/upcoming event as an in-app card, with an evergreen fallback.
 // ---------------------------------------------------------------------------
 function CommunityVisual() {
@@ -175,7 +175,7 @@ function CommunityVisual() {
         <div className="flex items-center justify-between px-5 pt-4">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
-              Ark+ Community
+              The Fold
             </div>
             <div className="mt-0.5 text-[17px] font-bold">In the room</div>
           </div>
@@ -217,10 +217,10 @@ function CommunityVisual() {
           </div>
         </div>
 
-        {/* From-the-community snippet */}
+        {/* From-the-Fold snippet */}
         <div className="mt-4 flex-1 px-4">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-white/45">
-            From the community
+            From the Fold
           </div>
           <div className="mt-2 flex items-start gap-2.5">
             <img
@@ -435,15 +435,15 @@ function AlsoFromArkMedia() {
             : {})}
       />
       <FeatureBand
-        eyebrow="Community"
+        eyebrow="The Fold"
         title="Real People, Real Conversations, Real Connection"
-        body="The conversation about this week's episodes is already happening in EmbArk. Thoughtful people are weighing in on Israel, Jewish life, and the issues shaping the Jewish world. Come see what they're saying."
+        body="The conversation about this week's episodes is already happening in the Fold. Thoughtful people are weighing in on Israel, Jewish life, and the issues shaping the Jewish world. Come see what they're saying."
         visual={<CommunityVisual />}
         action={
           <div className="flex flex-col gap-5">
             <CommunityAppLinks />
             <Link
-              to="/community"
+              to="/fold"
               className="inline-flex min-h-11 w-fit items-center gap-2 button-text font-display font-bold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Learn more →
@@ -502,7 +502,7 @@ function HomePage() {
                 style={{ animationDelay: "0.78s" }}
               >
                 <Link
-                  to={isSubscriber ? "/community" : "/plus"}
+                  to={isSubscriber ? "/fold" : "/plus"}
                   className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   {isSubscriber ? "Subscriber Benefits" : "Subscribe"}{" "}
@@ -557,7 +557,7 @@ function HomePage() {
       </section>
 
       {/* Also from Ark Media — full-width feature bands giving the newsletter,
-          community, and Ark+ offerings equal weight beside the podcasts */}
+          Fold, and Ark+ offerings equal weight beside the podcasts */}
       <AlsoFromArkMedia />
 
       {gift === "complete" ? (

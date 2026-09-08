@@ -52,9 +52,9 @@ describe("introTerm", () => {
 
 describe("continuationCopy", () => {
   test("quotes the intro rate, its term, and the price it reverts to", () => {
-    const s = continuationCopy(monthly, "monthly", "The Community");
+    const s = continuationCopy(monthly, "monthly", "The Fold");
     expect(s).toBe(
-      "The Community continues on its own at $6.50/month for 6 months, then $8/month — starting at the end of your current billing period.",
+      "The Fold continues on its own at $6.50/month for 6 months, then $8/month — starting at the end of your current billing period.",
     );
   });
 
@@ -81,7 +81,7 @@ describe("continuationCopy", () => {
   });
 
   test("a null cadence falls back to monthly wording", () => {
-    expect(continuationCopy(monthly, null, "The Community")).toContain("$6.50/month");
+    expect(continuationCopy(monthly, null, "The Fold")).toContain("$6.50/month");
   });
 });
 

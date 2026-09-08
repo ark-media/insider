@@ -14,7 +14,7 @@ export type TierMeta = {
 };
 
 // The three SKUs, in card order: Ark+, then the Bundle (featured, center), then
-// Community. Community is NOT part of Ark+ — it's its own tier, and the Bundle
+// the Fold. The Fold is NOT part of Ark+ — it's its own tier, and the Bundle
 // is what buys both. `includes` is the exact, truthful grant per tier.
 export const TIERS: TierMeta[] = [
   {
@@ -30,24 +30,24 @@ export const TIERS: TierMeta[] = [
   },
   {
     key: "bundle",
-    label: "Ark+ & Community",
-    blurb: "Both — the private feed and the community, one membership.",
+    label: "Ark+ & The Fold",
+    blurb: "Both — the private feed and the Fold, one membership.",
     featured: true,
     includes: [
       "Exclusive Ark+ Member's only content.",
       "The full network, ad-free",
       "Members-only newsletters",
-      "The Ark Media community",
+      "The Fold",
       "Live member events & Q&As",
     ],
   },
   {
     key: "circle",
-    label: "Community",
+    label: "The Fold",
     blurb:
-      "The Ark Media community app — conversations, member events, and Dan's book club.",
+      "The Fold, Ark Media's members' app — conversations, member events, and Dan's book club.",
     includes: [
-      "The Ark Media community",
+      "The Fold",
       "Live member events & Q&As",
       "Dan's book club",
     ],

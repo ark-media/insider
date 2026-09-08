@@ -24,7 +24,7 @@ import { createScClient, type ScError, type ScUserFeed } from '../lib/sc-client.
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // Per-axis access for account settings (T7.1): what the member has on each
-// entitlement axis (Ark+ = arkPlus, Community = circle) and from what source —
+// entitlement axis (Ark+ = arkPlus, the Fold = circle) and from what source —
 // a live gift term shows its end date, a subscription shows its renewal (or
 // cancel) date. Recipients are members with an expiry, not subscribers, so the
 // UI must say what they hold and until when, per axis.

@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Dan's Book Club — content model. One pick a month, twelve a year, chosen by
-// Dan and read alongside the community. Follows the site's data-file convention
+// Dan and read alongside the Fold. Follows the site's data-file convention
 // (exported type + records array + accessor helpers), mirroring shows.ts.
 //
 // Buying is Amazon-affiliate only for v1: store the ASIN per book and build the
@@ -96,7 +96,7 @@ const bookClubPicks: BookClubPick[] = [
     author: "Yuval Noah Harari",
     month: "2026-03",
     danNote:
-      "PLACEHOLDER — a big, argumentative sweep of a book. The community had plenty to disagree with, which is exactly the point.",
+      "PLACEHOLDER — a big, argumentative sweep of a book. The Fold had plenty to disagree with, which is exactly the point.",
     amazonAsin: "0062316095",
   },
 ];

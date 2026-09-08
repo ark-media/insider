@@ -188,7 +188,7 @@ function DiscussThreadsAdmin() {
           </h2>
           <p className="mt-2 text-body-sm">
             Pick a Beehiiv draft and we&rsquo;ll mint a Circle thread in the matching
-            community space, then patch the draft body with a &ldquo;Discuss on
+            Fold space, then patch the draft body with a &ldquo;Discuss on
             forum&rdquo; link. The article&rsquo;s &ldquo;Discuss on forum &rarr;&rdquo;
             button on the site picks it up automatically once the post is published.
           </p>

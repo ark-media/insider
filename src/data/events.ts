@@ -50,7 +50,7 @@ const events: ArkEvent[] = [
     access: "ark-plus",
     hosts: ["Dan Senor", "Amit Segal", "Nadav Eyal"],
     description:
-      "An audio roundtable in the Ark+ community on the latest coalition geometry. Members can submit questions live.",
+      "An audio roundtable in the Fold on the latest coalition geometry. Members can submit questions live.",
     location: "circle-app",
   },
   {
@@ -74,7 +74,7 @@ const events: ArkEvent[] = [
     access: "ark-plus",
     hosts: ["Ark Media newsroom"],
     description:
-      "We watch the Knesset session together with live commentary in the Ark+ community.",
+      "We watch the Knesset session together with live commentary in the Fold.",
     location: "circle-app",
   },
   {
@@ -86,7 +86,7 @@ const events: ArkEvent[] = [
     access: "public",
     hosts: ["Dan Senor", "Donniel Hartman"],
     description:
-      "An open audio conversation marking a year of Ark Media. Open to everyone — RSVP in the Community app.",
+      "An open audio conversation marking a year of Ark Media. Open to everyone — RSVP in the Fold.",
     location: "circle-app",
   },
   {
@@ -109,7 +109,7 @@ type EventStatus = "live" | "upcoming";
 export type EventWithStatus = { event: ArkEvent; status: EventStatus };
 
 /**
- * Classify events for the community "live + upcoming" strip. An event is:
+ * Classify events for the Fold's "live + upcoming" strip. An event is:
  *   - `live`     when `now` falls within [startsAt, startsAt + duration)
  *   - `upcoming` when it starts in the future
  *   - excluded   once it has ended

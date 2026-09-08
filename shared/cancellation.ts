@@ -107,8 +107,8 @@ export function reasonLabel(slug: string | null): string | null {
 // cancellation row for win-back targeting (joined to beehiiv_subscription by
 // email). Independent of whether the membership row is later deleted.
 //   full-exit     → cancelled everything (Flows A / B / E full cancel)
-//   kept-circle   → debundled, kept Community, dropped Ark+ (Flow C)
-//   kept-ark-plus → debundled, kept Ark+, dropped Community (Flow D)
+//   kept-circle   → debundled, kept the Fold, dropped Ark+ (Flow C)
+//   kept-ark-plus → debundled, kept Ark+, dropped the Fold (Flow D)
 export type RetainedProduct = 'full-exit' | 'kept-circle' | 'kept-ark-plus'
 
 const RETAINED_PRODUCTS: ReadonlySet<string> = new Set([
@@ -123,7 +123,7 @@ export function isRetainedProduct(v: unknown): v is RetainedProduct {
 
 const RETAINED_PRODUCT_LABEL: Record<RetainedProduct, string> = {
   'full-exit': 'Full cancel',
-  'kept-circle': 'Debundled — kept Community',
+  'kept-circle': 'Debundled — kept the Fold',
   'kept-ark-plus': 'Debundled — kept Ark+',
 }
 

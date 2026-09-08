@@ -92,7 +92,7 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       },
     }),
     defineRoute({
-      // Nudge gift recipients whose gifted axis (Ark+ / Community) is nearing
+      // Nudge gift recipients whose gifted axis (Ark+ / the Fold) is nearing
       // its term end, so they can convert to a paid subscription before access
       // lapses. Scans Neon membership rows, resolves each recipient's email from
       // Auth0 (membership stores no PII), sends a one-time Resend reminder per

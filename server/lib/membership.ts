@@ -19,7 +19,7 @@ export type MembershipRow = {
   current_period_end: string | null
   cancel_at: string | null
   // Per-axis gift expiries (D4): a gift extends only the axis/axes it covers, so
-  // an Ark+ gift and a Community gift can run concurrently with independent end
+  // an Ark+ gift and a Fold gift can run concurrently with independent end
   // dates. Effective tier is derived from these + the subscription via liveAxes.
   ark_plus_gift_expires_at: string | null
   circle_gift_expires_at: string | null
@@ -258,7 +258,7 @@ export async function deleteMembershipByCustomer(
 // stacking check) misread it as live. Reads already treat elapsed gift expiries
 // as free, so this is pure housekeeping. A per-axis gift row is expired only when
 // EVERY axis it holds has lapsed — an Ark+ gift still running keeps the row even
-// though a shorter Community gift on the same row elapsed. Returns the count
+// though a shorter Fold gift on the same row elapsed. Returns the count
 // removed. Scoped tightly to customer-less rows so a real subscription is never
 // touched.
 export async function deleteExpiredGiftMemberships(sql: Sql): Promise<number> {
@@ -344,7 +344,7 @@ export type GiftExpiryRow = {
   circle_gift_expires_at: string | null
 }
 
-// Rows where an Ark+ or Community gift term ends in (now, now + withinDays]. The
+// Rows where an Ark+ or Fold gift term ends in (now, now + withinDays]. The
 // window is evaluated in SQL (make_interval binds the day count as a value).
 export async function getGiftAxesExpiringWithin(
   sql: Sql,

@@ -6,7 +6,7 @@ import { Spinner } from "./Spinner";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { shows } from "../data/shows";
 
-// Nav order per Figma IA spec: Podcasts | Community | Newsletters | Israel
+// Nav order per Figma IA spec: Podcasts | The Fold | Newsletters | Israel
 // Votes | Subscribe | About | Account. Israel Votes renders as a pill for
 // campaign emphasis; Account is its own dropdown.
 //
@@ -53,16 +53,16 @@ const NAV_ITEMS: NavItem[] = [
     children: podcastChildren,
   },
   // Visible to everyone — the page itself shows a "Join Ark+" CTA to
-  // non-subscribers in place of the members-only Community app links. Book Club
-  // hangs off this menu rather than owning a top-level tab: it's a community
-  // activity, and the parent still links straight to /community.
+  // non-subscribers in place of the members-only Fold app links. Book Club
+  // hangs off this menu rather than owning a top-level tab: it's a Fold
+  // activity, and the parent still links straight to /fold.
   {
     variant: "menu",
-    label: "Community",
-    to: "/community",
-    matchPrefix: "/community",
+    label: "The Fold",
+    to: "/fold",
+    matchPrefix: "/fold",
     children: [
-      { label: "Overview", to: "/community" },
+      { label: "Overview", to: "/fold" },
       { label: "Book Club", to: "/book-club" },
     ],
   },
@@ -70,7 +70,7 @@ const NAV_ITEMS: NavItem[] = [
   // One landing page to browse membership (/plus); gifting lives in this
   // dropdown rather than as its own tab. On /plus the pricing grid shows only
   // the tier(s) the visitor doesn't already own. Hidden from full-bundle
-  // members (they own Ark+ AND Community, so there's nothing left to buy) —
+  // members (they own Ark+ AND the Fold, so there's nothing left to buy) —
   // the full-member-only "Gift" tab below keeps gifting reachable for them.
   {
     variant: "menu",
@@ -127,7 +127,7 @@ function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "
 }
 
 // Nav visibility flags. `isSubscriber` = any paid member (Ark+, Circle, or
-// Bundle). `isFullMember` = owns both axes (Ark+ AND Community), so there's
+// Bundle). `isFullMember` = owns both axes (Ark+ AND the Fold), so there's
 // nothing left to subscribe to — the "Subscribe" tab is hidden for them.
 function visibleNavItems(flags: {
   isSubscriber: boolean;
@@ -155,7 +155,7 @@ export function PublicMasthead() {
   // Any paid tier counts as a subscriber for the nav (drives the mobile CTA and
   // the "Set up your feed" account link).
   const isSubscriber = state.kind === "member" && state.me.tier !== "free";
-  // Owns both axes (Ark+ AND Community) — nothing left to buy, so the
+  // Owns both axes (Ark+ AND the Fold) — nothing left to buy, so the
   // "Subscribe" menu is hidden (a standalone "Gift" tab replaces it for them).
   const isFullMember =
     state.kind === "member" &&

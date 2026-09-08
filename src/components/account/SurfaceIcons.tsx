@@ -1,5 +1,5 @@
 // Single-color line glyphs for the three member surfaces (Podcast, Newsletter,
-// Community). Stroked in currentColor — unlike the multi-color brand marks in
+// the Fold). Stroked in currentColor — unlike the multi-color brand marks in
 // PlatformIcons — so they inherit the cyan/fg color of whatever wraps them.
 // Used by the account dashboard's three member surface rows.
 const DEFAULT_ICON_CLASS = "h-6 w-6 shrink-0";
@@ -37,7 +37,7 @@ export function MailIcon({ className = DEFAULT_ICON_CLASS }: IconProps) {
   );
 }
 
-// Speech bubble — the Ark+ community.
+// Speech bubble — the Fold.
 export function ChatIcon({ className = DEFAULT_ICON_CLASS }: IconProps) {
   return (
     <svg className={className} {...baseProps}>

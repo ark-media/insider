@@ -11,7 +11,7 @@
 //   A. Supporting Cast — loadAllMemberships returns first_name/last_name for the
 //      whole roster. Highest quality: it IS the migrated roster.
 //   B. Stripe — customer.name, for anyone who ever checked out.
-//   C. Circle — community members, for community-first joiners. Lowest yield,
+//   C. Circle — community members, for Fold-first joiners. Lowest yield,
 //      since most Circle members were created from a then-null Stripe name.
 //
 // Every candidate is filtered through shared/profile-name: all three systems
@@ -22,7 +22,7 @@
 // Writes go to Auth0 (given_name/family_name — the name's home; Neon stores no
 // PII), to Beehiiv custom fields (what campaigns actually personalize from), and
 // to Circle — the one store where a stale name is read by other MEMBERS rather
-// than by us, since a community record created without a name displays the whole
+// than by us, since a Circle record created without a name displays the whole
 // email address as its first_name.
 //
 // NOTE: unlike scripts/backfill-membership.ts, this deliberately does NOT refuse
@@ -192,7 +192,7 @@ async function main(): Promise<void> {
   // CIRCLE_API_TOKEN, not CIRCLE_ADMIN_API_TOKEN: the two are distinct by design
   // (docs/production-launch.md) and every working caller of
   // /api/admin/v2/community_members — server/entitlement.ts — authenticates with
-  // this one. CIRCLE_ADMIN_API_TOKEN reads the /community feed instead.
+  // this one. CIRCLE_ADMIN_API_TOKEN reads the /fold feed instead.
   const circleToken = env.CIRCLE_API_TOKEN
   if (!circleToken) {
     console.log('  (CIRCLE_API_TOKEN unset — skipped)')
@@ -331,9 +331,9 @@ async function main(): Promise<void> {
     }
 
     // Circle is where a stale name is read by other MEMBERS rather than by us:
-    // a community record we created without a name displays the whole email
+    // a Circle record we created without a name displays the whole email
     // address as its first_name. Same soft handling as Beehiiv — already
-    // no-ops (returns false) for a member with no community record, which is
+    // no-ops (returns false) for a member with no Circle record, which is
     // most of the roster, so this is only counted when a write really landed.
     try {
       const synced = await withRetry('circle-name', () =>

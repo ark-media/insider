@@ -1,7 +1,7 @@
 import { CIRCLE_OPEN_LINKS } from "../lib/circle";
 import { OutboundLink } from "./OutboundLink";
 
-// The three ways into the Ark+ community (Circle) app: the official App Store
+// The three ways into the Fold (Circle) app: the official App Store
 // and Google Play download badges plus an "Open in browser" pill for the web
 // app. Apple's and Google's brand rules forbid recreating or recoloring the
 // store lockups, so we render their official SVGs unmodified (public/badges/*)
@@ -9,7 +9,7 @@ import { OutboundLink } from "./OutboundLink";
 // surface the iOS / Android / Web options so the treatment stays consistent.
 export function CommunityAppLinks({
   className,
-  // Which surface rendered the row (the community page, the welcome flow, the
+  // Which surface rendered the row (the Fold page, the welcome flow, the
   // setup hub), so `outbound_link_clicked` can show where hand-offs to Circle
   // actually happen.
   placement = "community_app_links",

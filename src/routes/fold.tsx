@@ -17,14 +17,14 @@ import { CommunityFeed } from "../components/community/CommunityFeed";
 import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
 
-export const Route = createFileRoute("/community")({
+export const Route = createFileRoute("/fold")({
   component: CommunityPage,
 });
 
 function CommunityPage() {
   const { state } = useSubscriberAuth();
 
-  // The community lives on the `circle` axis (Circle or Bundle) — NOT arkPlus.
+  // The Fold lives on the `circle` axis (Circle or Bundle) — NOT arkPlus.
   // Members with Circle access get the personalized read-only feed; everyone
   // else (including Ark+-only members) sees the marketing showcase + join CTA.
   if (state.kind === "loading") return null;
@@ -34,7 +34,7 @@ function CommunityPage() {
   return hasCommunity ? <SubscriberCommunity /> : <MarketingShowcase />;
 }
 
-/** Poll interval for live community data while the tab is visible. */
+/** Poll interval for live Fold data while the tab is visible. */
 const POLL_MS = 45_000;
 
 /**
@@ -126,14 +126,14 @@ function SubscriberCommunity() {
   return (
     <PageShell
       title="Real People, Real Conversations, Real Connection"
-      lede="What's live, what's happening, and what the community is talking about right now. Jump in — every conversation continues in the app."
+      lede="What's live, what's happening, and what the Fold is talking about right now. Jump in — every conversation continues in the app."
       aside={<CommunityAppLinks />}
     >
       {status === "error" ? (
         <section>
           <div className="page-gutter py-10">
             <ContentError
-              message="We couldn't load your community feed. Refresh to try again."
+              message="We couldn't load your Fold feed. Refresh to try again."
               onRetry={retry}
             />
           </div>
@@ -149,7 +149,7 @@ function SubscriberCommunity() {
             </div>
 
             <div>
-              <h2 className="label text-cyan">From the community</h2>
+              <h2 className="label text-cyan">From the Fold</h2>
               <div className="mt-6">
                 <CommunityFeed
                   items={data?.feed ?? null}
@@ -169,7 +169,7 @@ function MarketingShowcase() {
   return (
     <PageShell
       title="Real People, Real Conversations, Real Connection"
-      lede="Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and members talking through the day's news. On iOS, Android, and the web."
+      lede="The Fold puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and members talking through the day's news. On iOS, Android, and the web."
       aside={<CommunityAppLinks />}
     >
       <section>
@@ -178,15 +178,15 @@ function MarketingShowcase() {
             no="01"
             title="Call Me Back AMA"
             kicker="Your questions, answered weekly by the Call Me Back team."
-            body="Submit what's on your mind. Every week, the people behind Call Me Back pick a handful of questions from the community and give you a real answer."
+            body="Submit what's on your mind. Every week, the people behind Call Me Back pick a handful of questions from the Fold and give you a real answer."
             mockup={<QAScreen />}
           />
           <FeatureBlock
             no="02"
             flip
-            title="Community Connection"
+            title="Connection in the Fold"
             kicker="Join conversations with other members."
-            body="A private community for thoughtful people who want to go deeper on Jewish life, Israel, politics, culture, and the questions shaping the Jewish world. It's a place for honest conversation, real connection, and learning from people who may see things differently, all in a space built to be constructive, welcoming, and respectful."
+            body="The Fold is a private space for thoughtful people who want to go deeper on Jewish life, Israel, politics, culture, and the questions shaping the Jewish world. It's a place for honest conversation, real connection, and learning from people who may see things differently, all in a space built to be constructive, welcoming, and respectful."
             mockup={<FeedScreen />}
           />
           {/* Placeholders — the feature lineup isn't settled yet. Swap the title,
@@ -196,7 +196,7 @@ function MarketingShowcase() {
             no="03"
             badge="Coming soon"
             title="Placeholder feature"
-            kicker="Another community feature will live here."
+            kicker="Another Fold feature will live here."
             body="We're still settling the lineup. This slot is reserved for the next app feature once it's confirmed."
             mockup={<PlaceholderScreen label="Feature 03" />}
           />
@@ -438,7 +438,7 @@ function FeedScreen() {
       <StatusBar />
       {/* header */}
       <div className="mt-5 flex items-center justify-between border-b border-white/10 px-5 pb-4">
-        <div className="text-[15px] font-bold text-white/95">Community</div>
+        <div className="text-[15px] font-bold text-white/95">The Fold</div>
         <div className="flex items-center gap-1.5 text-[10px] text-white/55">
           <span className="inline-block h-[6px] w-[6px] rounded-full bg-[#7bd389]" />
           2,847 online

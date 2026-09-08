@@ -9,7 +9,7 @@ import { circleUrls, newsletterCircleSpaces } from "../config/urls";
 /**
  * Circle headless client.
  *
- * The /community subscriber feed reads `fetchEventStrip` / `fetchCommunityFeed`
+ * The /fold subscriber feed reads `fetchEventStrip` / `fetchCommunityFeed`
  * / `fetchSuggestedSpaces`, which proxy the `/api/circle/community-*` server
  * routes (real Circle Admin v2 reads, projected to the stable client shapes)
  * and fall back to local mock data when the server has no Admin API token.
@@ -25,7 +25,7 @@ function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
 }
 
 /**
- * GET + parse JSON. THROWS on a network/parse/non-2xx failure so the /community
+ * GET + parse JSON. THROWS on a network/parse/non-2xx failure so the /fold
  * UI can show an error+retry instead of silently degrading; a successful empty
  * response is a genuine empty state. Public endpoints; no credentials so they
  * stay edge-cacheable.
@@ -50,9 +50,9 @@ async function getJsonAuthed<T>(url: string): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Subscriber community feed (v1)
+// Subscriber Fold feed (v1)
 //
-// These power the signed-in Ark+ subscriber's /community feed. Their return
+// These power the signed-in Ark+ subscriber's /fold feed. Their return
 // shapes are the v1→v2 contract: v1 projects the admin/mock data path below;
 // v2 swaps the backing source to authenticated per-member Circle reads without
 // changing these types or the UI that consumes them. The UI only ever sees
@@ -127,7 +127,7 @@ export async function fetchSuggestedSpaces(): Promise<SuggestedSpace[]> {
 }
 
 /**
- * Deep link to the events space in the Community app, where every event lives.
+ * Deep link to the events space in the Fold, where every event lives.
  * Circle's per-event URLs are opaque, hash-suffixed slugs that aren't derivable
  * from our event ids, so v1 lands the member on the events space rather than a
  * fabricated permalink. The real implementation will call Circle's deep-link

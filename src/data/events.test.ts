@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-// Live/upcoming classification for the community events strip. The window math
+// Live/upcoming classification for the Fold's events strip. The window math
 // (start ≤ now < start+duration) and the live/upcoming/excluded buckets are the
 // tricky bits, so they're pinned against an injected `now` — never wall-clock.
 

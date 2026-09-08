@@ -129,14 +129,14 @@ function BillingPage() {
   const periodEndLabel = formatTimestamp(periodEnd) || null;
 
   // A human noun phrase for a tier, so the pending-change banner can name the
-  // change ("from the Ark+ & Community bundle to Ark+").
+  // change ("from the Ark+ & The Fold bundle to Ark+").
   const tierLabel = (t: "ark-plus" | "circle" | "bundle" | "free") =>
     t === "bundle"
-      ? "the Ark+ & Community bundle"
+      ? "the Ark+ & The Fold bundle"
       : t === "ark-plus"
         ? "Ark+"
         : t === "circle"
-          ? "the Community"
+          ? "the Fold"
           : "the free plan";
 
   // The tier the cancel flow should operate on. Normally the current tier, but
@@ -248,7 +248,7 @@ function BillingPage() {
                 aria-live="polite"
               >
                 Done — you'll keep{" "}
-                {status.kept === "ark-plus" ? "Ark+" : "the Community"} on its
+                {status.kept === "ark-plus" ? "Ark+" : "the Fold"} on its
                 own. The change takes effect at the end of your current billing
                 period{periodEndLabel ? `, on ${periodEndLabel}` : ""}.
               </p>
@@ -339,7 +339,7 @@ function BillingPage() {
                 {cancelTier === "bundle"
                   ? "Cancel or change my membership"
                   : cancelTier === "circle"
-                    ? "Cancel Community"
+                    ? "Cancel the Fold"
                     : "Cancel Ark+"}
               </button>
             )}

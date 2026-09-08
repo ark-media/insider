@@ -450,7 +450,7 @@ async function handleGiftPaymentIntent(
   }
   const token = giftTokenForPaymentIntent(pi.id, env)
 
-  // The purchased tier (Ark+, Community, or Bundle) rides in on PI metadata,
+  // The purchased tier (Ark+, the Fold, or Bundle) rides in on PI metadata,
   // stamped by the gift checkout route; coerce defensively. The term is stored as
   // the row's `plan` and the duration clock starts at redemption.
   const tier = coerceTier(pi.metadata?.tier)

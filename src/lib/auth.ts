@@ -36,7 +36,7 @@ import type {
 } from "../../shared/retention";
 
 // The two independent access axes: arkPlus → the private feed, circle → the
-// community. Derived server-side from the tier; every gate checks an entitlement,
+// Fold. Derived server-side from the tier; every gate checks an entitlement,
 // never the tier (tasks/entitlement-tiers.md §2).
 type Entitlements = { arkPlus: boolean; circle: boolean };
 

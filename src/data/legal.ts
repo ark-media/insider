@@ -27,13 +27,13 @@ export const PRIVACY: LegalDoc = {
       heading: "Information we collect",
       body: [
         "What a reader gives us directly — name and email at sign-up, the email and delivery details on a gift purchase, and anything typed into the contact form.",
-        "What we receive from the services that run the membership: Stripe (payment and billing), Auth0 (sign-in), Beehiiv (newsletters), Circle (the community app), and our podcast hosting (episode delivery and private feeds).",
+        "What we receive from the services that run the membership: Stripe (payment and billing), Auth0 (sign-in), Beehiiv (newsletters), Circle (the Fold), and our podcast hosting (episode delivery and private feeds).",
       ],
     },
     {
       heading: "How we use it",
       body: [
-        "Delivering the membership: your private feed, newsletters, community access, and the emails that go with them.",
+        "Delivering the membership: your private feed, newsletters, access to the Fold, and the emails that go with them.",
         "Understanding what's read and listened to in aggregate, so we can make better shows.",
       ],
     },
@@ -77,7 +77,7 @@ export const TERMS: LegalDoc = {
     {
       heading: "Memberships and billing",
       body: [
-        "Ark+, Community, and the Bundle: what each includes, that membership renews automatically until cancelled, and when each renewal is charged.",
+        "Ark+, the Fold, and the Bundle: what each includes, that membership renews automatically until cancelled, and when each renewal is charged.",
         "Pay-what-you-choose: members set their own amount at or above the listed floor.",
       ],
     },
@@ -94,9 +94,9 @@ export const TERMS: LegalDoc = {
       ],
     },
     {
-      heading: "Community rules",
+      heading: "Fold rules",
       body: [
-        "The conduct expected in the community app, and when access can be withdrawn.",
+        "The conduct expected in the Fold, and when access can be withdrawn.",
       ],
     },
     {

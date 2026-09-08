@@ -34,9 +34,9 @@ type FlowId = "A" | "B" | "C" | "D" | "E";
 type Retained = "kept-ark-plus" | "kept-circle";
 
 // The product a save offer is measured in. The design words the Circle card
-// "of Ark+" too, but a Community member isn't being offered Ark+ — name what
+// "of Ark+" too, but a Fold member isn't being offered Ark+ — name what
 // they'd actually keep.
-const productName = (tier: Tier) => (tier === "circle" ? "the Community" : "Ark+");
+const productName = (tier: Tier) => (tier === "circle" ? "the Fold" : "Ark+");
 
 // The struck-through list price next to the discounted one — the design's
 // "$8 $6/month". Falls back to the list price alone when the offer carries no
@@ -531,12 +531,12 @@ export function CancelFlow({
     if (keptArkPlus && keptCircle) {
       onClose();
     } else if (keptArkPlus) {
-      // Remove the Community, keep Ark+ → Flow D.
+      // Remove the Fold, keep Ark+ → Flow D.
       flow("D");
       setTerminal({ kind: "debundle", to: "ark-plus", retained: "kept-ark-plus" });
       void loadOffers("D", "confirm");
     } else if (keptCircle) {
-      // Remove Ark+, keep the Community → Flow C.
+      // Remove Ark+, keep the Fold → Flow C.
       flow("C");
       setTerminal({ kind: "debundle", to: "circle", retained: "kept-circle" });
       void loadOffers("C", "confirm");
@@ -605,7 +605,7 @@ export function CancelFlow({
               : keptArkPlus
                 ? breakdown.arkPlus
                 : breakdown.circle;
-          const keptOneName = keptArkPlus ? "Ark+" : "The Community";
+          const keptOneName = keptArkPlus ? "Ark+" : "The Fold";
           // What the primary button charges: the bundle unchanged, or the kept
           // product at whatever it actually bills first (its intro rate).
           const buttonCents = !breakdown
@@ -650,7 +650,7 @@ export function CancelFlow({
                         onChange={() => setKeptCircle((v) => !v)}
                         className={box}
                       />
-                      <span className="text-fg-strong">The Community</span>
+                      <span className="text-fg-strong">The Fold</span>
                     </span>
                     {breakdown ? (
                       <RowPrice price={breakdown.circle} plan={plan} />
@@ -877,14 +877,14 @@ export function CancelFlow({
           <>
             {heading(
               terminal.to === "circle"
-                ? "Remove Ark+ and keep the Community?"
-                : "Remove the Community and keep Ark+?",
+                ? "Remove Ark+ and keep the Fold?"
+                : "Remove the Fold and keep Ark+?",
             )}
             <p className="mt-4 text-body-sm text-fg">
               {continuationCopy(
                 standalone,
                 plan,
-                terminal.to === "circle" ? "The Community" : "Ark+",
+                terminal.to === "circle" ? "The Fold" : "Ark+",
               )}
             </p>
             {errorLine}

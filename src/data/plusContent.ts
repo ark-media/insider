@@ -4,7 +4,7 @@
 // reader, an Ark+ member, and a full-bundle member. /plus is the public
 // "what membership is" page, and swapping its headline per entitlement made it
 // a different page depending on who was looking (a signed-in member landed on
-// community upsell copy instead of the page they expected). Personalization
+// Fold upsell copy instead of the page they expected). Personalization
 // stays where it belongs: the pricing grid below only offers tiers the viewer
 // doesn't already own.
 

@@ -92,9 +92,9 @@ function SubscriberDashboard({
             />
             <SurfaceRow
               icon={<ChatIcon />}
-              label="Community"
-              title="The Ark+ community"
-              body="The community is the main event. Open it in the app — you're signed in here, so you'll be signed in there too."
+              label="The Fold"
+              title="The Fold, in the app"
+              body="The Fold is the main event. Open it in the app — you're signed in here, so you'll be signed in there too."
               slot={<CommunityAppLinks className="shrink-0" />}
             />
             <SurfaceRow
@@ -149,7 +149,7 @@ function SurfaceRow({
   href?: string;
   external?: boolean;
   // When provided, render this custom action node instead of a single CTA
-  // (used by the Community surface for its App Store / Google Play / web links).
+  // (used by the Fold surface for its App Store / Google Play / web links).
   slot?: ReactNode;
 }) {
   const ctaCls =
@@ -195,7 +195,7 @@ function FreeDashboard({
   return (
     <PageShell
       title={me.firstName ? `You're signed in, ${me.firstName}.` : "You're signed in."}
-      lede={`Signed in as ${email}. Manage what lands in your inbox, or join Ark+ for the private feed and community.`}
+      lede={`Signed in as ${email}. Manage what lands in your inbox, or join Ark+ for the private feed and the Fold.`}
     >
       <section>
         <div className="page-section">
@@ -214,7 +214,7 @@ function FreeDashboard({
                   <li>— Call Me Back AMA, the members-only show</li>
                   <li>— Private podcast feed, ad-free</li>
                   <li>— Members-only newsletter</li>
-                  <li>— The Ark+ community in the app</li>
+                  <li>— The Fold, in the app</li>
                 </ul>
                 <Link
                   to="/plus"

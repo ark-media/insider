@@ -6,7 +6,7 @@ import type { Ref } from "react";
 
 // The approved mission copy (from the product cancellation-flows design). The
 // heading is shared; the body is tier-aware — an Ark+ member is thanked as an
-// "Ark+ subscriber", a Community (Circle) member as a "subscriber". Bundle
+// "Ark+ subscriber", a Fold (Circle) member as a "subscriber". Bundle
 // members hold Ark+, so they get the Ark+ wording. One edit point across all
 // five flows.
 type MissionVariant = "ark-plus" | "circle";

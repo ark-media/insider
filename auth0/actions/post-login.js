@@ -17,12 +17,12 @@
  *      Database account is a self-signup: reject it and delete the orphan
  *      record Auth0 created before this action ran.
  *
- *   3. Community (Circle) login gate. Circle's Custom SSO points at its own
+ *   3. The Fold (Circle) login gate. Circle's Custom SSO points at its own
  *      Auth0 Application; when the login is for THAT client, refuse it unless
  *      the member holds the `circle` entitlement. Circle cannot do this itself —
  *      it reads no roles or claims to decide access, and it auto-provisions a
  *      community member for anyone who completes the handshake — so an
- *      Ark+-only subscriber would otherwise walk into the community silently,
+ *      Ark+-only subscriber would otherwise walk into the Fold silently,
  *      the website's live Auth0 session carrying them straight through. The
  *      entitlement is a live read against the site (see circleAccess below);
  *      this action still stores none of it.
@@ -60,7 +60,7 @@
  *                         secret is unset the gate silently does nothing (there
  *                         is no way to recognise Circle's transaction without
  *                         it), so the action logs a warning; treat that line in
- *                         the Auth0 logs as "the community is currently open".
+ *                         the Auth0 logs as "the Fold is currently open".
  *   APP_BASE_URL          origin of the marketing site, e.g. https://arkmedia.org
  *                         (scheme optional). Used both to call the entitlement
  *                         gate and to send an unentitled member to the upsell.
@@ -81,7 +81,7 @@ const DB_CONNECTION = 'Username-Password-Authentication';
 // Budget for the entitlement lookup. Generous on purpose: the gate fails CLOSED,
 // so a timeout turns a paying member away, and the site's function can be cold.
 // An action gets ~20s in total, and this call is the only network hop on a
-// community login beyond the (cached) management token, so 5s costs nothing on
+// Fold login beyond the (cached) management token, so 5s costs nothing on
 // the happy path and removes cold-start false negatives.
 const CIRCLE_GATE_TIMEOUT_MS = 5000;
 
@@ -176,7 +176,7 @@ exports.onExecutePostLogin = async (event, api) => {
     if (primaryRoles) roles = primaryRoles;
   }
 
-  // --- Community (Circle) login gate ---------------------------------------
+  // --- The Fold (Circle) login gate -----------------------------------------
   // Keyed strictly on the client id so a website login can never reach it: this
   // is the one branch that can turn away a member who is otherwise perfectly
   // authenticated, and the two applications were a single Auth0 client until
@@ -186,18 +186,18 @@ exports.onExecutePostLogin = async (event, api) => {
   // sub here would find no row and turn a paying member away.
   const circleClientId = event.secrets.CIRCLE_CLIENT_ID;
   if (!circleClientId) {
-    console.warn('[circle-gate] CIRCLE_CLIENT_ID unset — community SSO is ungated');
+    console.warn('[circle-gate] CIRCLE_CLIENT_ID unset — Fold SSO is ungated');
   } else if (event.client.client_id === circleClientId) {
     const verdict = await circleAccess(event, resolved.user_id);
     if (verdict === 'error') {
       // "We could not check" is NOT "you are not entitled" — say so, and let
       // them retry, rather than sending a paying member to a sales page.
       return api.access.deny(
-        'We could not verify your community access just now. Please try again.',
+        'We could not verify your Fold access just now. Please try again.',
       );
     }
     if (verdict === 'deny') {
-      // Someone who bought the podcasts and clicked a community link. Auth0's
+      // Someone who bought the podcasts and clicked a Fold link. Auth0's
       // own denial screen is a dead end; send them to the page that sells them
       // the thing they just tried to open. This abandons the login transaction
       // by design — they never return to /continue, so Circle never gets a
@@ -207,7 +207,7 @@ exports.onExecutePostLogin = async (event, api) => {
       // when APP_BASE_URL is unset, so this line is unreachable without it.
       // Keep that invariant if either function is edited — a relative URL here
       // would throw inside the action instead of redirecting.
-      return api.redirect.sendUserTo(`${appBase(event)}/plus?from=community`);
+      return api.redirect.sendUserTo(`${appBase(event)}/plus?from=fold`);
     }
   }
 
@@ -329,7 +329,7 @@ async function deleteUser(event, token, userId) {
   );
 }
 
-// --- Community entitlement --------------------------------------------------
+// --- The Fold entitlement ---------------------------------------------------
 
 // Ask the site whether this member holds the `circle` entitlement. Three-valued
 // on purpose: 'allow' / 'deny' / 'error', because the caller must treat "not
@@ -341,12 +341,12 @@ async function deleteUser(event, token, userId) {
 // and is read live, so a member who upgraded a minute ago is let in and one who
 // cancelled is not. It is a service call rather than a direct database read
 // because the tier -> entitlement map (GRANTS) must exist in exactly one place;
-// re-deriving "which tiers include the community" here is how a login gate ends
+// re-deriving "which tiers include the Fold" here is how a login gate ends
 // up disagreeing with the content gates.
 //
 // Not cached. api.cache is a small tenant-wide store and a per-member key would
 // both crowd it and let a cancelled member back in for the life of the entry —
-// poor value when a community login is a rare event and the call is one hop.
+// poor value when a Fold login is a rare event and the call is one hop.
 async function circleAccess(event, sub) {
   const base = appBase(event);
   const secret = event.secrets.CIRCLE_GATE_SECRET;

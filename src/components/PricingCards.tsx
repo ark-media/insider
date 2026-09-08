@@ -14,7 +14,7 @@ type Plan = "monthly" | "yearly";
 
 // What each tier grants, in entitlement-axis terms. Used to personalize the grid
 // for signed-in members: a tier is shown only if every axis it grants is still
-// un-owned — so an Ark+ member sees just Community, a Circle member sees just
+// un-owned — so an Ark+ member sees just the Fold, a Circle member sees just
 // Ark+, and a full-bundle member sees none. This never offers a tier that
 // bundles an axis they already pay for (which would double-charge them).
 const TIER_GRANTS: Record<Tier, ("arkPlus" | "circle")[]> = {
@@ -25,7 +25,7 @@ const TIER_GRANTS: Record<Tier, ("arkPlus" | "circle")[]> = {
 
 // Stacked on a phone there's no "center" to feature, so the Bundle leads and the
 // two single-axis tiers follow. From `lg` the grid takes over and the DOM order
-// (Ark+ · Bundle · Community) puts the featured card back in the middle. Static
+// (Ark+ · Bundle · the Fold) puts the featured card back in the middle. Static
 // class strings so Tailwind can see them.
 const MOBILE_ORDER: Record<Tier, string> = {
   bundle: "max-lg:order-1",
@@ -207,7 +207,7 @@ export function PricingCards({ id = "plans" }: { id?: string }) {
     return (
       <div id={id} className="mx-auto max-w-xl px-6 py-10 text-center">
         <p className="text-body text-fg-strong">
-          You already have full access — Ark+ and the Community.
+          You already have full access — Ark+ and the Fold.
         </p>
         <Link
           to="/account"

@@ -9,7 +9,7 @@ export const Route = createFileRoute("/about/network")({
 
 type NetworkProperty = {
   title: string;
-  kind: "Podcast network" | "Newsroom" | "Community" | "Membership";
+  kind: "Podcast network" | "Newsroom" | "Members' app" | "Membership";
   description: string;
   to: string;
 };
@@ -30,17 +30,17 @@ const properties: NetworkProperty[] = [
     to: "/newsletters",
   },
   {
-    title: "The community",
-    kind: "Community",
+    title: "The Fold",
+    kind: "Members' app",
     description:
-      "The Ark+ community lives in the Community app. Episode threads, live audio rooms, member meetups, and long-form posts.",
-    to: "/community",
+      "The Fold is where Ark+ members gather. Episode threads, live audio rooms, member meetups, and long-form posts.",
+    to: "/fold",
   },
   {
     title: "Ark+ membership",
     kind: "Membership",
     description:
-      "Call Me Back AMA and members-only newsletters with Ark+; the community and live events with Circle. Get both in the bundle.",
+      "Call Me Back AMA and members-only newsletters with Ark+; the Fold and live events with Circle. Get both in the bundle.",
     to: "/plus",
   },
 ];

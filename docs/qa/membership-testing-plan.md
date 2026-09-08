@@ -26,7 +26,7 @@ JWT claim). Auth0 `app_metadata.tier` is a **mirror**, written *after* SC activa
 | **Simplecast** | Read-authoritative for `/api/me` | SC subscription exists / `ends_at` / `autorenew` | SC API `GET` user by email; SC dashboard |
 | **Beehiiv** | Newsletter delivery | Subscription + premium tier on Ark Daily (free) & Members Letter (paid) | Beehiiv dashboard; `beehiiv_subscription` DB mirror |
 | **Auth0** | Claim mirror | `app_metadata.tier` = `ark-plus-member` \| `free`; `gift_expires_at` | Auth0 Dashboard → User → app_metadata |
-| **Circle** | Community access | Membership in subscriber access group | Circle admin → access group members |
+| **Circle** | Access to the Fold | Membership in subscriber access group | Circle admin → access group members |
 | **Neon DB** | Ledger + mirror | `stripe_webhook_events`, `beehiiv_subscription`, `cancellation_survey` | `bun run` SQL / Neon console (`ark-insider-dev`) |
 
 ### 1.1 The sync invariant (truth table)

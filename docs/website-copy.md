@@ -12,7 +12,7 @@
 - **HEADLINE (LINE 2)**: Near and Far.
 - **BODY**: Ark Media is a podcast network that explores the big questions shaping Jewish life, Israel's future, and our rapidly changing world. Through conversations with leading Jewish thinkers from around the world, Ark Media aims to build a global community driven by curiosity and meaningful dialogue.
 - **PRIMARY CTA (NON-SUBSCRIBER)**: Become an Ark+ member →
-- **PRIMARY CTA (SUBSCRIBER)**: Explore community →
+- **PRIMARY CTA (SUBSCRIBER)**: Explore the Fold →
 
 ### Latest Episodes (home section)
 - **SECTION HEADING**: Latest episodes
@@ -45,14 +45,14 @@
 - **READ CTA**: Read the issue →
 - **EMAIL FOOTER**: You're reading the free weekly edition · Unsubscribe
 
-### Feature band — Community
-- **EYEBROW**: Community
+### Feature band — The Fold
+- **EYEBROW**: The Fold
 - **TITLE**: In the room.
-- **BODY**: Nadav, Amit and Tal in conversation with members — in the Community app.
+- **BODY**: Nadav, Amit and Tal in conversation with members — in the Fold.
 - **CTA**: Learn more →
 
-### Community visual (illustrative mock)
-- **APP EYEBROW**: Ark+ Community
+### Fold visual (illustrative mock)
+- **APP EYEBROW**: The Fold
 - **APP TITLE**: In the room
 - **SECTION LABEL**: Live & upcoming
 - **FORMAT LABEL FALLBACK**: Live room
@@ -63,14 +63,14 @@
 - **EVENT TIME FALLBACK**: This week
 - **EVENT CTA (LIVE)**: Join now
 - **EVENT CTA (UPCOMING)**: RSVP
-- **SECTION LABEL**: From the community
+- **SECTION LABEL**: From the Fold
 - **SAMPLE POST AUTHOR**: Dan Senor
 - **SAMPLE POST BODY**: Thanks for all the questions on tonight's vote — recording the bonus segment now.
 
 ### Feature band — Ark+
 - **EYEBROW**: Ark+
 - **TITLE**: All in.
-- **BODY**: The paid feed and members-only newsletters. Add the community, or get both in the bundle.
+- **BODY**: The paid feed and members-only newsletters. Add the Fold, or get both in the bundle.
 - **CTA**: Explore Ark+ →
 
 ### Ark+ visual (illustrative mock)
@@ -89,7 +89,7 @@
 - **NAV DROPDOWN ITEM (PODCASTS)**: All
 > The rest of the Podcasts dropdown lists show titles and cadence lines from the show data.
 - **BADGE (PAID SHOWS IN PODCASTS DROPDOWN)**: Ark+
-- **NAV ITEM**: Community
+- **NAV ITEM**: The Fold
 - **NAV ITEM**: Newsletters
 - **NAV ITEM**: Book Club
 - **NAV ITEM (HIDDEN FOR FULL-BUNDLE MEMBERS)**: Subscribe
@@ -129,7 +129,7 @@
 - **COLUMN TITLE**: Read
 - **LINKS**: Newsletters / Hosts / About / Israel Votes
 - **COLUMN TITLE**: Connect
-- **LINKS**: Community / Contact / Careers
+- **LINKS**: The Fold / Contact / Careers
 - **COLUMN TITLE**: Ark+
 - **LINKS**: Become a member / Pricing / Gift Ark+ / FAQ
 
@@ -206,13 +206,13 @@
 
 ### Ark+ upsell in hero (free shows, non-members only)
 - **LABEL**: Want more?
-- **BODY**: Ark+ members get the members-only newsletter and the ad-free Call Me Back Ark+ feed — add the community, or get both in the bundle.
+- **BODY**: Ark+ members get the members-only newsletter and the ad-free Call Me Back Ark+ feed — add the Fold, or get both in the bundle.
 - **CTA**: Join Ark+ →
 
 ### Ark+ members-only gate (paid shows, non-members — replaces the episode browser)
 - **LABEL**: Ark+ members only
 - **HEADING**: Join Ark+ to listen to {show title}.
-- **BODY**: Members get extended interviews, ad-free episodes, members-only Q&As, the Ark+ newsletter, and the community.
+- **BODY**: Members get extended interviews, ad-free episodes, members-only Q&As, the Ark+ newsletter, and the Fold.
 - **CARD LABEL**: Get Ark+
 - **CARD BODY**: Full access to {show title} plus everything else in Ark+.
 - **CARD BUTTON**: See Ark+ membership →
@@ -354,10 +354,10 @@
 ### Hero — guest / free member
 - **EYEBROW**: Ark+
 - **HEADLINE**: The full Ark Media experience. ("experience." in the cyan accent)
-- **LEAD**: Ark+ is our premium membership, offering ad-free podcasts, unlimited access to all written content, and full access to the Ark community.
+- **LEAD**: Ark+ is our premium membership, offering ad-free podcasts, unlimited access to all written content, and full access to the Fold.
 - **BULLET**: Call Me Back AMA — extended interviews, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
-- **BULLET**: The Ark+ community — join the hosts and other members in the room
+- **BULLET**: The Fold — join the hosts and other members in the room
 - **BULLET**: Live events and Q&As
 - **BULLET**: Early access to new shows
 - **PRIMARY CTA**: Become a member
@@ -366,24 +366,24 @@
 - **MEMBER BADGE LABEL**: Ark+ Member
 - **MEMBER BADGE NUMBER**: No. 00214
 
-### Hero — Ark+ member without Community ("add Community")
-- **EYEBROW**: The Ark Community
-- **HEADLINE**: You have the feed. Now join the community. ("community." in the cyan accent)
-- **LEAD**: You already get Call Me Back AMA ad-free and the members-only newsletters. Add the Ark community — conversations with the hosts, live member events, and Dan's book club.
-- **BULLET**: The Ark community app — talk with the hosts and fellow members
+### Hero — Ark+ member without the Fold ("add the Fold")
+- **EYEBROW**: The Fold
+- **HEADLINE**: You have the feed. Now join the Fold. ("the Fold." in the cyan accent)
+- **LEAD**: You already get Call Me Back AMA ad-free and the members-only newsletters. Add the Fold — conversations with the hosts, live member events, and Dan's book club.
+- **BULLET**: The Fold — talk with the hosts and fellow members
 - **BULLET**: Live member events and Q&As
 - **BULLET**: Dan's book club
 - **BULLET**: Exclusive members-only spaces
-- **PRIMARY CTA**: Add Community
+- **PRIMARY CTA**: Add the Fold
 - **GIFT LINK**: Gift a membership
-- **LOGO MARK SUBTITLE**: Community
+- **LOGO MARK SUBTITLE**: The Fold
 - **MEMBER BADGE LABEL**: Ark+ Member
-- **MEMBER BADGE VALUE**: Add Community
+- **MEMBER BADGE VALUE**: Add the Fold
 
-### Hero — Community member without Ark+ ("add Ark+")
+### Hero — Fold member without Ark+ ("add Ark+")
 - **EYEBROW**: Ark+
 - **HEADLINE**: You're in the room. Now go ad-free. ("ad-free." in the cyan accent)
-- **LEAD**: You're already part of the Ark community. Add Ark+ — Call Me Back AMA as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
+- **LEAD**: You're already part of the Fold. Add Ark+ — Call Me Back AMA as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
 - **BULLET**: Call Me Back AMA — private, ad-free feed
 - **BULLET**: The full Ark Media network, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
@@ -391,16 +391,16 @@
 - **PRIMARY CTA**: Add Ark+
 - **GIFT LINK**: Gift a membership
 - **LOGO MARK SUBTITLE**: Membership
-- **MEMBER BADGE LABEL**: Community Member
+- **MEMBER BADGE LABEL**: Fold Member
 - **MEMBER BADGE VALUE**: Add Ark+
 
 ### Hero — full bundle member
 - **EYEBROW**: Membership
 - **HEADLINE**: You have the full Ark Media experience. ("experience." in the cyan accent)
-- **LEAD**: You have Ark+ and the Ark community — the private, ad-free feed, the members-only newsletters, and the full community. Thank you for being a member.
+- **LEAD**: You have Ark+ and the Fold — the private, ad-free feed, the members-only newsletters, and the Fold in full. Thank you for being a member.
 - **BULLET**: Call Me Back AMA — private, ad-free feed
 - **BULLET**: Members-only newsletters
-- **BULLET**: The Ark community, live events, and Dan's book club
+- **BULLET**: The Fold, live events, and Dan's book club
 - **PRIMARY CTA**: Manage your membership
 - **GIFT LINK**: Gift a membership
 - **LOGO MARK SUBTITLE**: Full member
@@ -423,7 +423,7 @@
 - **CTA (MONTHLY)**: Subscribe monthly →
 - **ERROR MESSAGE**: We couldn't load pricing right now. Refresh to try again.
 - **COMPARE LINK**: Compare all plans →
-- **FULL-ACCESS BODY (MEMBER OWNS EVERYTHING)**: You already have full access — Ark+ and the Community.
+- **FULL-ACCESS BODY (MEMBER OWNS EVERYTHING)**: You already have full access — Ark+ and the Fold.
 - **FULL-ACCESS LINK**: Manage your membership →
 
 ### Billing period toggle
@@ -435,12 +435,12 @@
 - **TIER NAME (ARK+)**: Ark+
 - **TIER BLURB (ARK+)**: Every Ark Media podcast, ad-free, plus the members-only newsletters.
 - **TIER FEATURES (ARK+)**: Call Me Back AMA — private, ad-free feed / The full network, ad-free / Members-only newsletters
-- **TIER NAME (BUNDLE, FEATURED)**: Ark+ & Community
-- **TIER BLURB (BUNDLE)**: Both — the private feed and the community, one membership.
-- **TIER FEATURES (BUNDLE)**: Call Me Back AMA — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Ark Media community / Live member events & Q&As
-- **TIER NAME (COMMUNITY)**: Community
-- **TIER BLURB (COMMUNITY)**: The Ark Media community app — conversations, member events, and Dan's book club.
-- **TIER FEATURES (COMMUNITY)**: The Ark Media community / Live member events & Q&As / Dan's book club
+- **TIER NAME (BUNDLE, FEATURED)**: Ark+ & The Fold
+- **TIER BLURB (BUNDLE)**: Both — the private feed and the Fold, one membership.
+- **TIER FEATURES (BUNDLE)**: Call Me Back AMA — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Fold / Live member events & Q&As
+- **TIER NAME (FOLD)**: The Fold
+- **TIER BLURB (FOLD)**: The Fold — conversations, member events, and Dan's book club.
+- **TIER FEATURES (FOLD)**: The Fold / Live member events & Q&As / Dan's book club
 
 ### Why subscribe (mission pitch)
 - **EYEBROW**: Why subscribe
@@ -456,12 +456,12 @@
 ### Page hero
 - **EYEBROW**: Membership
 - **HEADLINE**: Choose your plan. ("plan." in the cyan accent)
-- **BODY**: Three ways in — the private feed, the community, or both. Every plan is pay-what-you-choose, and you can cancel anytime.
+- **BODY**: Three ways in — the private feed, the Fold, or both. Every plan is pay-what-you-choose, and you can cancel anytime.
 
 ### Comparison table
 - **EYEBROW**: Compare plans
 - **HEADING**: What you get with each tier
-- **COLUMN HEADERS**: Ark+ / Ark+ & Community / Community
+- **COLUMN HEADERS**: Ark+ / Ark+ & The Fold / The Fold
 - **COLUMN BADGE (BUNDLE)**: Best value
 - **PRICE LINE (ANNUAL)**: From {price} / yr
 - **PRICE LINE (MONTHLY)**: From {price} / mo
@@ -470,8 +470,8 @@
 - **ROW**: Subscriber-exclusive content
 - **ROW**: Early access
 - **ROW**: Ad-free video episodes
-- **GROUP HEADING**: Community & newsletters
-- **ROW**: Premium access to the Community app
+- **GROUP HEADING**: The Fold & newsletters
+- **ROW**: Premium access to the Fold
 - **ROW**: Full access to Ark Media newsletters
 - **COLUMN CTA**: Choose →
 
@@ -488,8 +488,8 @@
 - **ENTRY BULLETS**: Mid-week Call Me Back episode — Wednesdays, not Fridays / History show
 - **ENTRY**: Ad-free video episodes
 - **ENTRY SUMMARY**: The video editions of the shows, without the ad breaks.
-- **ENTRY**: Premium access to the Community app
-- **ENTRY SUMMARY**: The Ark Media community app, in full.
+- **ENTRY**: Premium access to the Fold
+- **ENTRY SUMMARY**: The Fold, in full.
 - **ENTRY BULLETS**: Conversations with the hosts and fellow members / Live member events & Q&As / Dan's book club / Members-only spaces
 - **ENTRY**: Full access to Ark Media newsletters
 - **ENTRY SUMMARY**: Both member newsletters, in your inbox.
@@ -499,8 +499,8 @@
 ### Modal chrome
 - **EYEBROW**: {tier label} · Annual / {tier label} · Monthly
 - **TIER LABEL (ARK+)**: Ark+ Membership
-- **TIER LABEL (COMMUNITY)**: Ark Community
-- **TIER LABEL (BUNDLE)**: Ark+ & Community
+- **TIER LABEL (FOLD)**: The Fold
+- **TIER LABEL (BUNDLE)**: Ark+ & The Fold
 
 ### Promo banner (when a promo auto-applies)
 - **BANNER**: {discount} applied automatically — {promo name}. (e.g. "20% off applied automatically — Launch promo."; without the promo name when it has none)
@@ -560,7 +560,7 @@
 ### Left pitch column
 - **EYEBROW**: Give a membership
 - **HEADLINE**: Give the full Ark Media experience. ("experience." in the cyan accent)
-- **LEAD**: Pick Ark+ for the private, ad-free feed and members-only newsletters, the Community, or the Bundle of both. It's a one-time gift — no renewals, no surprise charges — and they'll get an email with everything they need to start.
+- **LEAD**: Pick Ark+ for the private, ad-free feed and members-only newsletters, the Fold, or the Bundle of both. It's a one-time gift — no renewals, no surprise charges — and they'll get an email with everything they need to start.
 - **BULLET**: A one-time gift — it never renews or charges again
 - **BULLET**: Lands in their inbox within minutes
 - **BULLET**: Encrypted, secure checkout
@@ -568,14 +568,14 @@
 ### Gift form — tier picker
 - **SECTION LABEL**: Choose a membership
 - **TIER OPTION (ARK+)**: Ark+ — Private, ad-free podcast feed
-- **TIER OPTION (COMMUNITY)**: Community — Access to the Ark community
-- **TIER OPTION (BUNDLE)**: Bundle — The private feed plus the community
+- **TIER OPTION (FOLD)**: The Fold — Access to the Fold
+- **TIER OPTION (BUNDLE)**: Bundle — The private feed plus the Fold
 
 ### Gift form — length picker
 - **SECTION LABEL**: Choose a length
 - **TERM LABEL**: 6 months
 - **TERM LABEL**: 1 year
-- **PRICE (PER OPTION)**: ${price} (Ark+ $48 / $80 · Community $48 / $80 · Bundle $75 / $130)
+- **PRICE (PER OPTION)**: ${price} (Ark+ $48 / $80 · The Fold $48 / $80 · Bundle $75 / $130)
 
 ### Gift form — from / to
 - **SECTION LABEL**: From
@@ -641,7 +641,7 @@
 - **EYEBROW**: You're all set
 - **BODY (GIFT ADDED AS CREDIT)**: You already have an active membership, so your gift has been added as account credit toward your future renewals.
 - **BODY (SUBSCRIPTION EXTENDED)**: You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift.
-- **BODY (NEW MEMBERSHIP)**: Your Ark+ membership is active. Set up your private podcast feed and join the community from your welcome page.
+- **BODY (NEW MEMBERSHIP)**: Your Ark+ membership is active. Set up your private podcast feed and join the Fold from your welcome page.
 - **CTA (CREDIT / EXTENDED)**: Go to your account →
 - **CTA (NEW MEMBERSHIP)**: Get started →
 
@@ -685,10 +685,10 @@
 - **CARD 1 BODY**: Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, What's Your Number, Ark News Daily, and Call Me Back AMA.
 - **CARD 2 EYEBROW / TITLE**: Newsroom — Newsletters
 - **CARD 2 BODY**: Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to Ark+ subscribers.
-- **CARD 3 EYEBROW / TITLE**: Community — The community
-- **CARD 3 BODY**: The Ark+ community lives in the Community app. Episode threads, live audio rooms, member meetups, and long-form posts.
+- **CARD 3 EYEBROW / TITLE**: Members' app — The Fold
+- **CARD 3 BODY**: The Fold lives in the Fold. Episode threads, live audio rooms, member meetups, and long-form posts.
 - **CARD 4 EYEBROW / TITLE**: Membership — Ark+ membership
-- **CARD 4 BODY**: Call Me Back AMA and members-only newsletters with Ark+; the community and live events with Circle. Get both in the bundle.
+- **CARD 4 BODY**: Call Me Back AMA and members-only newsletters with Ark+; the Fold and live events with Circle. Get both in the bundle.
 - **CARD CTA (ALL CARDS)**: Visit →
 
 ### Shows by name
@@ -817,12 +817,12 @@
 ### Hero
 - **EYEBROW**: Dan's Book Club
 - **HEADING**: A book club worth showing up for. ("showing up" in a highlighted display span)
-- **LEDE**: One standout book a month, handpicked by Dan — and a community that reads along, digs in, and argues it out. Big ideas, sharp debate, and a conversation you'll actually want to be part of.
+- **LEDE**: One standout book a month, handpicked by Dan — and the Fold reading along, digging in, and arguing it out. Big ideas, sharp debate, and a conversation you'll actually want to be part of.
 
 ### Current pick
 - **EYEBROW**: {Month 'YY} Pick (e.g. "July '26 Pick")
 - **BUTTON**: Buy on Amazon →
-- **LINK**: Discuss it in the community →
+- **LINK**: Discuss it in the Fold →
 
 ### Past picks
 - **EYEBROW**: The shelf
@@ -835,7 +835,7 @@
 
 ### Pick detail modal
 - **BUTTON**: Buy on Amazon →
-- **BUTTON**: Discuss it in the community →
+- **BUTTON**: Discuss it in the Fold →
 
 ### Placeholder book cover (books without cover art)
 - **EYEBROW**: Ark Book Club
@@ -846,7 +846,7 @@
 - **THINKING, FAST AND SLOW — DANIEL KAHNEMAN (JUNE '26)**: PLACEHOLDER — the book that reframed how I read every poll, every forecast, every gut call. A useful antidote to a news cycle built on snap judgments.
 - **THE LOOMING TOWER — LAWRENCE WRIGHT (MAY '26)**: PLACEHOLDER — narrative history at its best, and essential context for so much of what we talk about on the show.
 - **TEAM OF RIVALS — DORIS KEARNS GOODWIN (APRIL '26)**: PLACEHOLDER — leadership under impossible pressure. Worth reading for the temperament alone.
-- **SAPIENS — YUVAL NOAH HARARI (MARCH '26)**: PLACEHOLDER — a big, argumentative sweep of a book. The community had plenty to disagree with, which is exactly the point.
+- **SAPIENS — YUVAL NOAH HARARI (MARCH '26)**: PLACEHOLDER — a big, argumentative sweep of a book. The Fold had plenty to disagree with, which is exactly the point.
 
 ### Books by Dan
 - **BOOK 1 TITLE / SUBTITLE**: The Genius of Israel — The Surprising Resilience of a Divided Nation in a Turbulent World
@@ -887,23 +887,23 @@
 - **TRACK 09 (CALL ME BACK)**: The Only-Bibi Camp vs Never-Bibi Camp
 - **TRACK 10 (CALL ME BACK)**: Netanyahu Seeks Pardon
 - **TRACK 11 (FOR HEAVEN'S SAKE)**: Coming Apart
-# Community & Newsletters
+# The Fold & Newsletters
 
-## Community (members)   /community
+## The Fold (members)   /fold
 ### Page header
 - **TITLE**: Welcome back to the room.
-- **LEDE**: What's live, what's happening, and what the community is talking about right now. Jump in — every conversation continues in the app.
+- **LEDE**: What's live, what's happening, and what the Fold is talking about right now. Jump in — every conversation continues in the app.
 
 ### Sections & states
 - **SECTION LABEL**: Live & upcoming
-- **SECTION LABEL**: From the community
-- **FEED ERROR**: We couldn't load your community feed. Refresh to try again.
+- **SECTION LABEL**: From the Fold
+- **FEED ERROR**: We couldn't load your Fold feed. Refresh to try again.
 - **FEED LOADING**: Loading your feed…
 - **FEED CARD CTA**: Read & reply in the app →
 
 ### Feed empty state
 - **HEADING**: Your feed is quiet — join a space to fill it.
-- **BODY**: Your feed comes alive once you've joined a few spaces. Here's where the community is most active right now.
+- **BODY**: Your feed comes alive once you've joined a few spaces. Here's where the Fold is most active right now.
 - **LOADING (SPACES)**: Loading spaces…
 - **MEMBER COUNT (PER SUGGESTED SPACE)**: {count} members
 - **CTA (PER SUGGESTED SPACE)**: Join in the app →
@@ -917,10 +917,10 @@
 - **CTA (LIVE)**: Join in the app →
 - **CTA (UPCOMING)**: Open in the app →
 
-## Community (marketing showcase)   /community
+## The Fold (marketing showcase)   /fold
 ### Page header (non-members)
 - **TITLE**: The room behind the show — in the app.
-- **LEDE**: Our Community app puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web.
+- **LEDE**: Our The Fold puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web.
 
 ### Feature block 01
 - **TITLE**: Call Me Back AMA
@@ -928,14 +928,14 @@
 - **BODY**: Ask questions. Get actual answers - not a comments section, not a bot. Bring what's on your mind to the people making the show.
 
 ### Feature block 02
-- **TITLE**: Community Connection
+- **TITLE**: Connection in the Fold
 - **KICKER**: Join conversations with thousands of other members.
 - **BODY**: The room keeps going between episodes - members debating the news, sharing what they're reading, and starting meetups in their own cities.
 
 ### Feature blocks 03 & 04 (placeholders — lineup not settled)
 - **BADGE**: Coming soon
 - **TITLE**: Placeholder feature
-- **KICKER (03)**: Another community feature will live here.
+- **KICKER (03)**: Another Fold feature will live here.
 - **BODY (03)**: We're still settling the lineup. This slot is reserved for the next app feature once it's confirmed.
 - **KICKER (04)**: And one more, to be decided.
 - **BODY (04)**: A second reserved slot. Same pattern as the blocks above — headline, supporting line, and an app screen.
@@ -951,30 +951,30 @@
 - **COMPOSER PLACEHOLDER**: Ask a question…
 
 ### Phone mockup — feed screen (illustrative)
-- **HEADER**: Community
+- **HEADER**: The Fold
 - **ONLINE COUNT**: 2,847 online
 - **SAMPLE POST (MAYA L. · TEL AVIV · 12M)**: Just finished today's episode. The point about the budget timeline reframed the whole thing for me.
 - **SAMPLE POST (DAVID R. · NEW YORK · 1H)**: Anyone going to the listener meetup next week? Trying to coordinate a group from the Upper West Side.
 - **SAMPLE POST (SARAH K. · LONDON · 3H)**: Sharing the long-read Nadav mentioned — worth every minute.
 - **TAB BAR**: Feed / Events / Rooms / Profile
 
-## Community section (on /plus and /pricing)
+## The Fold section (on /plus and /pricing)
 ### Section header
-- **EYEBROW**: Community
+- **EYEBROW**: The Fold
 - **HEADING**: Somewhere to argue properly. ("argue" in the cyan accent)
-- **BODY**: Join the Ark Media community. Conversations, member events, and Dan's book club — in an app built for talking rather than for going viral.
+- **BODY**: Join the Fold. Conversations, member events, and Dan's book club — in an app built for talking rather than for going viral.
 
 ### Pricing + CTA
 - **PRICE UNIT (AFTER LIVE PRICE)**: / month
-- **PRICE ERROR**: We couldn't load the community price just now.
-- **CTA**: Join the community →
-- **BUNDLE NOTE**: Want the private feed too? The Ark+ & Community bundle covers both — see the plans above.
+- **PRICE ERROR**: We couldn't load the Fold price just now.
+- **CTA**: Join the Fold →
+- **BUNDLE NOTE**: Want the private feed too? The Ark+ & The Fold bundle covers both — see the plans above.
 
 ### Pillars
 - **PILLAR 01 TITLE**: The conversation, all week
 - **PILLAR 01 BODY**: The arguments the episodes start, carried on by the people who listen to them — analysts, veterans, students, and the hosts themselves, in the thread with everyone else.
 - **PILLAR 02 TITLE**: Member events, live
-- **PILLAR 02 BODY**: Live discussions and Q&As held in the community — the room where questions get asked out loud instead of shouted into a comments section.
+- **PILLAR 02 BODY**: Live discussions and Q&As held in the Fold — the room where questions get asked out loud instead of shouted into a comments section.
 - **PILLAR 03 TITLE**: Dan's book club
 - **PILLAR 03 BODY**: One book at a time, read together, with Dan running the discussion. Slow, serious reading in the middle of a very fast news cycle.
 
@@ -1027,16 +1027,16 @@
 
 ### Discussion footer
 - **LABEL (POST HAS FORUM THREAD)**: Discuss this piece
-- **BODY (POST HAS FORUM THREAD)**: There's an open thread on this post in the Ark+ community.
+- **BODY (POST HAS FORUM THREAD)**: There's an open thread on this post in the Fold.
 - **CTA (POST HAS FORUM THREAD)**: Discuss on forum →
 - **LABEL (NO FORUM THREAD)**: Keep the conversation going
-- **BODY (NO FORUM THREAD)**: Comments and replies live in the Community. Sign in once and they open straight to the thread.
+- **BODY (NO FORUM THREAD)**: Comments and replies live in the Fold. Sign in once and they open straight to the thread.
 - **CTA (NO FORUM THREAD)**: Comment in the app →
 
 ### Members-only gate (Ark+ posts, non-members)
 - **LABEL**: Members only
 - **HEADING**: The rest of this post is for Ark+ members.
-- **BODY**: Ark+ includes the paid feed, members-only newsletters, and the community.
+- **BODY**: Ark+ includes the paid feed, members-only newsletters, and the Fold.
 - **CTA**: Become an Ark+ member →
 
 ### Post not found
@@ -1063,23 +1063,23 @@
 - **CADENCE**: Weekly
 - **AUTHOR**: Ark Media editorial
 
-## Community broadcasts (mock member highlights, src/data/communityBroadcasts.ts)
+## Fold broadcasts (mock member highlights, src/data/communityBroadcasts.ts)
 ### Broadcast — Sarah K. (Member, Tel Aviv)
-- **EXCERPT**: What it actually feels like to be a member of this community in week 82.
+- **EXCERPT**: What it actually feels like to be a member of the Fold in week 82.
 - **BODY**: I joined Ark+ for the podcast feed and stayed for the room. There's a thread running right now about the Cairo readout that has three people I'd never have met otherwise, all sharper than I am, and one of them is in the room with me on a watch party tonight. This is what I was looking for and didn't know how to ask for.
 
 ### Broadcast — Daniel R. (Member, Toronto)
 - **EXCERPT**: Three things the show didn't say, that the room is saying.
-- **BODY**: After the episode dropped on Sunday, the discussion thread filled up with three things that didn't make the cut — and one of them turned out to be the most useful read of the week. The community sometimes does the work the show can't.
+- **BODY**: After the episode dropped on Sunday, the discussion thread filled up with three things that didn't make the cut — and one of them turned out to be the most useful read of the week. The Fold sometimes does the work the show can't.
 
 ### Broadcast — Lior B. (Member, Jerusalem)
 - **EXCERPT**: An invitation to the Friday-morning members' coffee in Jerusalem.
-- **BODY**: Friday morning, 9am, same coffee shop as last month. Five members from the community have started meeting in person. If you're an Ark+ member and you're in the city, the invitation is open.
+- **BODY**: Friday morning, 9am, same coffee shop as last month. Five members from the Fold have started meeting in person. If you're an Ark+ member and you're in the city, the invitation is open.
 
 ## Mock / fallback events (src/data/events.ts)
 ### Call Me Back Live — Coalition Roundtable
 - **HOSTS**: Dan Senor, Amit Segal, Nadav Eyal
-- **DESCRIPTION**: An audio roundtable in the Ark+ community on the latest coalition geometry. Members can submit questions live.
+- **DESCRIPTION**: An audio roundtable in the Fold on the latest coalition geometry. Members can submit questions live.
 
 ### For Heaven's Sake — Members AMA
 - **HOSTS**: Donniel Hartman, Yossi Klein Halevi
@@ -1087,11 +1087,11 @@
 
 ### Knesset session watch party
 - **HOSTS**: Ark Media newsroom
-- **DESCRIPTION**: We watch the Knesset session together with live commentary in the Ark+ community.
+- **DESCRIPTION**: We watch the Knesset session together with live commentary in the Fold.
 
 ### Open conversation: a year of Ark Media
 - **HOSTS**: Dan Senor, Donniel Hartman
-- **DESCRIPTION**: An open audio conversation marking a year of Ark Media. Open to everyone — RSVP in the Community app.
+- **DESCRIPTION**: An open audio conversation marking a year of Ark Media. Open to everyone — RSVP in the Fold.
 
 ### Ark Media in New York — a live recording
 - **HOSTS**: Dan Senor
@@ -1101,16 +1101,16 @@
 
 ## Welcome   /welcome
 ### Hero
-- **HEADLINE (ARK+ + COMMUNITY / BUNDLE)**: Welcome to Ark+ & Community.
-- **HEADLINE (COMMUNITY ONLY)**: Welcome to the Community.
+- **HEADLINE (ARK+ + FOLD / BUNDLE)**: Welcome to Ark+ & The Fold.
+- **HEADLINE (FOLD ONLY)**: Welcome to the Fold.
 - **HEADLINE (ARK+ ONLY / DEFAULT)**: Welcome to Ark+.
 - **INTRO**: {count word} to do, and then you're set. Your membership is active now — provisioning happens in the background and may take a minute or two to land in every place. (count word = "One thing" / "Two things" / "Three things" / "{n} things")
 - **LOADING**: Loading…
 
 ### Step cards
 - **STEP LABEL**: Step {n} (zero-padded: 01, 02, …)
-- **STEP TITLE (COMMUNITY)**: Download the community app
-- **STEP BODY (COMMUNITY)**: Nadav, Amit and Tal are in the Community app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically.
+- **STEP TITLE (FOLD)**: Download the Fold app
+- **STEP BODY (FOLD)**: Nadav, Amit and Tal are in the Fold — alongside everyone else who joined this month. Install the app and you'll be signed in automatically.
 - **STEP TITLE (FEEDS)**: Set up your private podcast feeds
 - **STEP BODY (FEEDS)**: Your members-only shows live in the podcast app you already use. One-tap setup for Apple Podcasts, Overcast, Pocket Casts, Spotify, and more.
 - **STEP CTA (FEEDS)**: Set up your feeds →
@@ -1140,8 +1140,8 @@
 - **ROW (PODCAST) LABEL / TITLE**: Podcast — Your private podcast feeds
 - **ROW (PODCAST) BODY**: Your members-only shows live in the podcast app you already use. One-tap setup for Apple Podcasts, Overcast, Pocket Casts, Spotify, and more.
 - **ROW (PODCAST) CTA**: Set up your feeds →
-- **ROW (COMMUNITY) LABEL / TITLE**: Community — The Ark+ community
-- **ROW (COMMUNITY) BODY**: The community is the main event. Open it in the app — you're signed in here, so you'll be signed in there too.
+- **ROW (FOLD) LABEL / TITLE**: The Fold — The Fold, in the app
+- **ROW (FOLD) BODY**: The Fold is the main event. Open it in the app — you're signed in here, so you'll be signed in there too.
 - **ROW (NEWSLETTER) LABEL / TITLE**: Newsletter — Newsletter preferences
 - **ROW (NEWSLETTER) BODY**: The members-only newsletter is on by default. Adjust which emails you want — or which you don't — at any time.
 - **ROW (NEWSLETTER) CTA**: Manage newsletters →
@@ -1150,13 +1150,13 @@
 
 ### Free-account dashboard
 - **PAGE TITLE**: You're signed in.
-- **LEDE**: Signed in as {email}. Manage what lands in your inbox, or join Ark+ for the private feed and community.
+- **LEDE**: Signed in as {email}. Manage what lands in your inbox, or join Ark+ for the private feed and the Fold.
 - **UPSELL CARD EYEBROW**: Become an Ark+ member
 - **UPSELL CARD HEADING**: Go deeper with Ark+.
 - **UPSELL LIST ITEM**: — Call Me Back AMA, the members-only show
 - **UPSELL LIST ITEM**: — Private podcast feed, ad-free
 - **UPSELL LIST ITEM**: — Members-only newsletter
-- **UPSELL LIST ITEM**: — The Ark+ community in the app
+- **UPSELL LIST ITEM**: — The Fold in the app
 - **UPSELL CTA**: Become a member →
 - **ACCOUNT CARD EYEBROW**: Your account
 - **LINK**: Newsletter preferences →
@@ -1164,7 +1164,7 @@
 
 ### Your access (per-service rows)
 - **SECTION LABEL**: Your access
-- **SERVICE NAMES**: Ark+ / Community
+- **SERVICE NAMES**: Ark+ / The Fold
 - **BADGE (GIFT)**: 🎁 Gift
 - **BADGE (SUBSCRIPTION)**: Subscription
 - **STATUS (GIFT, WITH DATE)**: Gift access until {date}
@@ -1172,16 +1172,16 @@
 - **STATUS (SUBSCRIPTION, CANCELLING)**: Access until {date} · won't renew
 - **STATUS (SUBSCRIPTION, RENEWING)**: Renews {date}
 - **STATUS (SUBSCRIPTION, NO DATES)**: Active
-- **STATUS (SERVICE NOT HELD)**: You don't have {Ark+|Community} yet.
-- **BUTTON (SERVICE NOT HELD)**: Get {Ark+|Community} →
+- **STATUS (SERVICE NOT HELD)**: You don't have {Ark+|The Fold} yet.
+- **BUTTON (SERVICE NOT HELD)**: Get {Ark+|The Fold} →
 
 ### Expiring gift banner (gifted access ending within 14 days)
-- **BANNER**: Your gifted {Ark+|Community} access ends on {date} — {today / in {n} day / in {n} days}. Keep it going so you don't lose access.
-- **BANNER (NO DATE)**: Your gifted {Ark+|Community} access is ending soon. Keep it going so you don't lose access.
+- **BANNER**: Your gifted {Ark+|The Fold} access ends on {date} — {today / in {n} day / in {n} days}. Keep it going so you don't lose access.
+- **BANNER (NO DATE)**: Your gifted {Ark+|The Fold} access is ending soon. Keep it going so you don't lose access.
 - **BUTTON (OTHER SERVICE IS A SUBSCRIPTION)**: Add it to your plan →
 - **BUTTON (BUSY)**: Switching…
-- **BUTTON (NO OTHER SUBSCRIPTION)**: Keep {Ark+|Community} →
-- **SUCCESS (SWITCHED TO BUNDLE)**: You're on the bundle now — both Ark+ and the Community are on your subscription, effective {date}.
+- **BUTTON (NO OTHER SUBSCRIPTION)**: Keep {Ark+|The Fold} →
+- **SUCCESS (SWITCHED TO BUNDLE)**: You're on the bundle now — both Ark+ and the Fold are on your subscription, effective {date}.
 - **ERROR**: Could not switch to the bundle — please try again.
 
 ## Account — Billing   /account/billing
@@ -1193,7 +1193,7 @@
 - **LOADING**: Loading…
 
 ### Tier labels (used inside the sentences below)
-- **LABELS**: the Ark+ & Community bundle / Ark+ / the Community / the free plan
+- **LABELS**: the Ark+ & The Fold bundle / Ark+ / the Fold / the free plan
 
 ### Pending-change banner
 - **BANNER (SCHEDULED TIER CHANGE)**: Your membership will change from {current tier} to {new tier} on {date}. You'll keep full access until then. (without a date: "…at the end of your current billing period. You'll keep full access until then.")
@@ -1209,7 +1209,7 @@
 ### Confirmation messages (after a flow action)
 - **CONFIRMATION (CANCELLED)**: Cancellation confirmed. Access continues until {date}.
 - **CONFIRMATION (DEBUNDLED, KEPT ARK+)**: Done — you'll keep Ark+ on its own. The change takes effect at the end of your current billing period, on {date}.
-- **CONFIRMATION (DEBUNDLED, KEPT COMMUNITY)**: Done — you'll keep the Community on its own. The change takes effect at the end of your current billing period, on {date}.
+- **CONFIRMATION (DEBUNDLED, KEPT FOLD)**: Done — you'll keep the Fold on its own. The change takes effect at the end of your current billing period, on {date}.
 - **CONFIRMATION (REACTIVATED)**: Your membership is back on. It renews on {date}.
 - **CONFIRMATION (CHANGE UNDONE)**: The scheduled change was cancelled — your membership continues unchanged. It renews on {date}.
 
@@ -1220,7 +1220,7 @@
 - **BUTTON (UNDO, BUSY)**: Undoing…
 - **BUTTON (CANCEL WHILE CHANGE PENDING)**: Cancel my membership
 - **BUTTON (OPEN CANCEL FLOW — BUNDLE)**: Cancel or change my membership
-- **BUTTON (OPEN CANCEL FLOW — COMMUNITY)**: Cancel Community
+- **BUTTON (OPEN CANCEL FLOW — FOLD)**: Cancel the Fold
 - **BUTTON (OPEN CANCEL FLOW — ARK+)**: Cancel Ark+
 - **ERROR (REACTIVATE)**: Could not reactivate — please try again.
 - **ERROR (UNDO)**: Could not undo the change — please try again.
@@ -1229,17 +1229,17 @@
 ### Mission reminder (step 0 of every flow)
 - **HEADING**: Thanks for being a subscriber!
 - **BODY (ARK+ / BUNDLE)**: Ark Media is funded in large part by our Ark+ subscribers. They allow us to cover Israel and the Jewish world honestly, without compromise. As an Ark+ subscriber, you make that possible.
-- **BODY (COMMUNITY)**: Ark Media is funded in large part by our subscribers. They allow us to cover Israel and the Jewish world honestly, without compromise. As a subscriber, you make that possible.
+- **BODY (FOLD)**: Ark Media is funded in large part by our subscribers. They allow us to cover Israel and the Jewish world honestly, without compromise. As a subscriber, you make that possible.
 - **BUTTON (KEEP — BUNDLE)**: Keep my bundle
-- **BUTTON (KEEP — ARK+ / COMMUNITY)**: Keep my subscription
+- **BUTTON (KEEP — ARK+ / FOLD)**: Keep my subscription
 - **BUTTON (CONTINUE — BUNDLE)**: Continue
-- **BUTTON (CONTINUE — ARK+ / COMMUNITY)**: Continue to cancel
+- **BUTTON (CONTINUE — ARK+ / FOLD)**: Continue to cancel
 
 ### Bundle service selector (bundle members only)
 - **HEADING**: Do you want to keep any services?
 - **BODY**: Your membership includes these services for {price}/{month|year}. Choose any individual services you'd like to keep. (without prices: "Your membership includes both of these. Choose any you'd like to keep — uncheck the rest.")
 - **CHECKBOX LABEL**: Ark+
-- **CHECKBOX LABEL**: The Community
+- **CHECKBOX LABEL**: The Fold
 - **SUMMARY (KEEP NONE)**: Your membership ends at the end of your current billing period.
 - **SUMMARY (KEEP BOTH)**: Keeping both — your membership is unchanged.
 - **PRIMARY BUTTON (KEEP NONE)**: Cancel all services
@@ -1257,7 +1257,7 @@
 - **OFFER BODY (SWITCH TO MONTHLY)**: Switch to monthly billing for {list price, struck through} {discounted price}/month for {n} months, then {list price}/month (or simply "Switch to monthly billing" with no discount)
 - **OFFER CTA (SWITCH TO MONTHLY)**: Switch to monthly
 - **OFFER HEADING (DISCOUNT OFFER)**: Keep your benefits for {discount, e.g. 20% off}
-- **OFFER BODY (DISCOUNT OFFER)**: {list price, struck through} {discounted price}/{month|year} for {n} months of {Ark+|the Community}
+- **OFFER BODY (DISCOUNT OFFER)**: {list price, struck through} {discounted price}/{month|year} for {n} months of {Ark+|the Fold}
 - **OFFER CTA (DISCOUNT OFFER)**: Redeem {discount} discount
 - **OFFER CTA (BUSY)**: Applying…
 - **DECLINE BUTTON (CANCEL FLOWS)**: No thanks, just cancel
@@ -1266,9 +1266,9 @@
 - **SECONDARY BUTTON (DEBUNDLE FLOWS)**: Keep my bundle
 
 ### Debundle confirm
-- **HEADING (KEEP COMMUNITY)**: Remove Ark+ and keep the Community?
-- **HEADING (KEEP ARK+)**: Remove the Community and keep Ark+?
-- **BODY (CONTINUATION SENTENCE)**: {Ark+|The Community} continues on its own at {intro price}/{month|year} {intro term}, then {list price}/{month|year} — starting at the end of your current billing period. (no intro rate: "…at {price}/{month|year}, starting at the end of your current billing period."; intro term = "for your first year" / "for your first {n} years" / "for {n} months" / "for 1 month")
+- **HEADING (KEEP FOLD)**: Remove Ark+ and keep the Fold?
+- **HEADING (KEEP ARK+)**: Remove the Fold and keep Ark+?
+- **BODY (CONTINUATION SENTENCE)**: {Ark+|The Fold} continues on its own at {intro price}/{month|year} {intro term}, then {list price}/{month|year} — starting at the end of your current billing period. (no intro rate: "…at {price}/{month|year}, starting at the end of your current billing period."; intro term = "for your first year" / "for your first {n} years" / "for {n} months" / "for 1 month")
 - **BUTTON**: Confirm
 - **BUTTON (BUSY)**: Updating…
 - **BUTTON**: Keep my bundle

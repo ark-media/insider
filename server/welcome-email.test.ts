@@ -101,7 +101,7 @@ describe('renderSubscriberWelcomeEmail', () => {
     expect(html).toContain('Hi there,')
   })
 
-  test('ark-plus (feed-only): does not promise the community', () => {
+  test('ark-plus (feed-only): does not promise the Fold', () => {
     const { subject, html } = renderSubscriberWelcomeEmail({
       welcomeUrl: 'https://app.test/welcome',
       tier: 'ark-plus',
@@ -111,21 +111,21 @@ describe('renderSubscriberWelcomeEmail', () => {
     // The feed blurb, asserted through the constant rather than a copy literal:
     // what matters is that this tier gets the feed benefits and stops there.
     expect(html).toContain(FEED_INCLUDED)
-    // A feed-only membership must not advertise community access it lacks.
-    expect(html).not.toContain('community')
+    // A feed-only membership must not advertise access to the Fold it lacks.
+    expect(html).not.toContain('Fold')
   })
 
-  test('bundle: adds the community on top of the feed', () => {
+  test('bundle: adds the Fold on top of the feed', () => {
     const { subject, html } = renderSubscriberWelcomeEmail({
       welcomeUrl: 'https://app.test/welcome',
       tier: 'bundle',
     })
     expect(subject).toBe('Welcome to Ark+ Bundle')
     expect(html).toContain('Welcome to Ark+ Bundle.')
-    // Same feed blurb as ark-plus, with the community appended — the two
+    // Same feed blurb as ark-plus, with the Fold appended — the two
     // assertions together are what "on top of the feed" means.
     expect(html).toContain(FEED_INCLUDED)
-    expect(html).toContain('community')
+    expect(html).toContain('Fold')
   })
 })
 
@@ -145,13 +145,13 @@ describe('renderAxisAddedEmail', () => {
       plan: 'monthly',
       renewsOn: 'September 14, 2026',
     })
-    expect(subject).toContain('community')
+    expect(subject).toContain('Fold')
     expect(html).toContain('Hi Alice,')
     expect(html).toContain('$25 a month')
     expect(html).toContain('covers everything')
     expect(html).toContain('Nothing to pay today')
     expect(html).toContain('September 14, 2026')
-    expect(html).toContain('Enter the community')
+    expect(html).toContain('Enter the Fold')
     // Not a first-purchase welcome, and never a set-password email: this member
     // has had a login since the day they first subscribed.
     expect(html).not.toContain('Welcome to Ark+')
@@ -202,11 +202,11 @@ describe('renderAxisAddedEmail', () => {
     expect(html).not.toContain('Your next bill is')
   })
 
-  test('adding Community: carries the app links and the profile setup link', () => {
-    // A new community member meets the download step on /welcome. Someone who
+  test('adding the Fold: carries the app links and the profile setup link', () => {
+    // A new Fold member meets the download step on /welcome. Someone who
     // upgrades from their account page never passes through it, so the links
     // have to travel in the email itself — getting the app IS the step that
-    // puts them in the community, and the profile is what makes them a person
+    // puts them in the Fold, and the profile is what makes them a person
     // in it rather than an email address.
     const { html } = renderAxisAddedEmail({
       axis: 'circle',
@@ -233,8 +233,8 @@ describe('renderAxisAddedEmail', () => {
     expect(subject).toContain('feed')
     expect(html).toContain(FEED_INCLUDED)
     expect(html).toContain('Set up your feed')
-    expect(html).not.toContain('Enter the community')
-    // The community app links belong to the axis that grants the community.
+    expect(html).not.toContain('Enter the Fold')
+    // The Fold app links belong to the axis that grants the Fold.
     expect(html).not.toContain(circleUrls.appStoreIos)
   })
 })

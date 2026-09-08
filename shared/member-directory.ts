@@ -24,7 +24,7 @@ export type MemberDirectoryEntry = {
   currentPeriodEnd: string | null;
   cancelAt: string | null;
   // Per-axis gift expiries (D4): a gift extends a specific entitlement axis, so
-  // an Ark+ gift and a Community gift can run concurrently with independent end
+  // an Ark+ gift and a Fold gift can run concurrently with independent end
   // dates. Null on either axis = no gift term for it.
   arkPlusGiftExpiresAt: string | null;
   circleGiftExpiresAt: string | null;

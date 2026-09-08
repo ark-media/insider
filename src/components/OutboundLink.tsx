@@ -7,7 +7,7 @@ import { trackEvent } from "../lib/analytics";
  * We are a media business whose product is partly *elsewhere* — Circle, the app
  * stores, Spotify/Apple, five social profiles, Beehiiv. Before this existed
  * none of that outflow was measured: five social icons with no onClick, every
- * community card a bare `<a>`. Wrapping them all in one component means the
+ * Fold card a bare `<a>`. Wrapping them all in one component means the
  * `outbound_link_clicked` event can never drift the way seven hand-written
  * `trackEvent` calls would (BI plan §4.1, §2.2).
  *

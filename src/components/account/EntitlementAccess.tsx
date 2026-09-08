@@ -24,12 +24,27 @@ const NEAR_EXPIRY_DAYS = 14;
 type AxisKey = "arkPlus" | "circle";
 type StandaloneTier = "ark-plus" | "circle";
 
+// `label` heads the row and starts a sentence; `inline` is the same product
+// named mid-sentence, where "The Fold" would read as a stray capital ("Your
+// gifted The Fold access"). Identical for Ark+, which needs no article.
 const AXIS: Record<
   AxisKey,
-  { tier: StandaloneTier; other: AxisKey; label: string; noun: string }
+  { tier: StandaloneTier; other: AxisKey; label: string; inline: string; noun: string }
 > = {
-  arkPlus: { tier: "ark-plus", other: "circle", label: "Ark+", noun: "the private feed & members-only show" },
-  circle: { tier: "circle", other: "arkPlus", label: "Community", noun: "the Ark community" },
+  arkPlus: {
+    tier: "ark-plus",
+    other: "circle",
+    label: "Ark+",
+    inline: "Ark+",
+    noun: "the private feed & members-only show",
+  },
+  circle: {
+    tier: "circle",
+    other: "arkPlus",
+    label: "The Fold",
+    inline: "the Fold",
+    noun: "the Fold",
+  },
 };
 
 // Null rather than "" so callers can drop the whole clause; the dates here are
@@ -148,7 +163,7 @@ function BundleConfirm({
   return (
     <div className="mb-6 border border-cyan/50 bg-cyan/5 px-4 py-4">
       <h3 className="font-display text-[18px] leading-tight text-fg-strong">
-        Add {meta.label} to your membership
+        Add {meta.inline} to your membership
       </h3>
       <ul className="mt-3 space-y-2 text-body-sm text-fg">
         <li>
@@ -196,7 +211,7 @@ function BundleConfirm({
             ? "Switching…"
             : bundle
               ? `Switch to ${bundle} ${perPeriod(plan)}`
-              : `Add ${meta.label}`}
+              : `Add ${meta.inline}`}
         </button>
         <button
           type="button"
@@ -313,7 +328,7 @@ export function EntitlementAccess({
         className="mb-6 border border-[#e8a33d]/50 bg-[#e8a33d]/10 px-4 py-3 text-body-sm text-fg-strong"
       >
         <p>
-          Your gifted <span className="font-semibold">{meta.label}</span> access
+          Your gifted <span className="font-semibold">{meta.inline}</span> access
           {until ? ` ends on ${until}` : " is ending soon"}
           {typeof days === "number"
             ? ` — ${days === 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`}`
@@ -336,7 +351,7 @@ export function EntitlementAccess({
               onClick={() => setCheckout({ tier: meta.tier, plan: "monthly" })}
               className="inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              Keep {meta.label} →
+              Keep {meta.inline} →
             </button>
           )}
         </div>
@@ -390,7 +405,7 @@ export function EntitlementAccess({
               // the banner used to hardcode "the rest of this month" and the
               // charge direction, which contradicted the confirm step for every
               // yearly member and every above-bundle pay-what-you-can one.
-              `You're in — your membership covers Ark+ and the Community now. ${NOTHING_TO_PAY_TODAY} ${nextBillLine(
+              `You're in — your membership covers Ark+ and the Fold now. ${NOTHING_TO_PAY_TODAY} ${nextBillLine(
                 {
                   plan: bundle.preview.plan,
                   renewsOn: fmtDate(bundle.preview.renewsAt),
@@ -398,8 +413,8 @@ export function EntitlementAccess({
                 },
               )}`
             : bundle.effectiveAt
-              ? `Your membership covers Ark+ and the Community from ${fmtDate(bundle.effectiveAt)}.`
-              : "Your membership covers Ark+ and the Community now."}
+              ? `Your membership covers Ark+ and the Fold from ${fmtDate(bundle.effectiveAt)}.`
+              : "Your membership covers Ark+ and the Fold now."}
         </p>
       ) : null}
 
@@ -444,8 +459,8 @@ export function EntitlementAccess({
                         ? // Deliberately no price here: a number on this line,
                           // next to what they already pay, reads as an add-on.
                           // The confirm panel is where the money is spelled out.
-                          `You don't have ${meta.label} yet — add it and your membership covers both, at one price.`
-                        : `You don't have ${meta.label} yet.`}
+                          `You don't have ${meta.inline} yet — add it and your membership covers both, at one price.`
+                        : `You don't have ${meta.inline} yet.`}
                   </p>
                 </div>
               </div>
@@ -457,7 +472,7 @@ export function EntitlementAccess({
                     disabled={bundleBusy}
                     className="inline-flex shrink-0 items-center gap-2 self-start border border-cyan px-4 py-2 button-text font-display font-bold text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60 sm:self-auto"
                   >
-                    {bundleCta ?? `Add ${meta.label} →`}
+                    {bundleCta ?? `Add ${meta.inline} →`}
                   </button>
                 ) : (
                   <button
@@ -465,7 +480,7 @@ export function EntitlementAccess({
                     onClick={() => setCheckout({ tier: meta.tier, plan: "monthly" })}
                     className="inline-flex shrink-0 items-center gap-2 self-start border border-cyan px-4 py-2 button-text font-display font-bold text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:self-auto"
                   >
-                    Get {meta.label} →
+                    Get {meta.inline} →
                   </button>
                 )
               ) : null}

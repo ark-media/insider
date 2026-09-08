@@ -167,9 +167,9 @@ describe('runGiftExpiryReminders', () => {
         return true
       },
     })
-    expect(captured[0].subject).toBe('Your gifted Ark+ access ends in 5 days')
+    expect(captured[0].subject).toBe('Your gifted access to Ark+ ends in 5 days')
     expect(captured[0].html).toContain(
-      'Your gifted Ark+ access ends in 5 days, on <strong>November 19, 2023 ET</strong>.',
+      'Your gifted access to Ark+ ends in 5 days, on <strong>November 19, 2023 ET</strong>.',
     )
   })
 
@@ -279,7 +279,7 @@ describe('renderGiftExpiryEmail', () => {
       otherAxisSubscribed: false,
     })
     expect(html).toContain(
-      'Your gifted Ark+ access ends in 7 days, on <strong>August 20, 2026 ET</strong>.',
+      'Your gifted access to Ark+ ends in 7 days, on <strong>August 20, 2026 ET</strong>.',
     )
   })
 
@@ -302,7 +302,7 @@ describe('renderGiftExpiryEmail', () => {
 
   test('bundle-switch copy when the recipient already subscribes to the other axis', () => {
     const { html } = renderGiftExpiryEmail({
-      axisLabel: 'Community',
+      axisLabel: 'the Fold',
       expiresOn: 'August 20, 2026 ET',
       daysRemaining: 7,
       accountUrl: 'https://ark.test/account',

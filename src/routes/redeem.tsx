@@ -214,7 +214,7 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
         ? "You already have an active membership, so your gift has been added as account credit toward your future renewals."
         : applied === "extended"
           ? "You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift."
-          : "Your Ark+ membership is active. Set up your private podcast feed and join the community from your welcome page.";
+          : "Your Ark+ membership is active. Set up your private podcast feed and join the Fold from your welcome page.";
     return (
       <Card>
         <p className="eyebrow text-cyan">You're all set</p>

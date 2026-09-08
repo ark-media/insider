@@ -24,7 +24,7 @@ function priceLookupKey(tier: PricedTier, plan: Plan): string {
 
 // Gifts are one-time SKUs on their own catalog products (scripts/stripe-catalog.ts
 // GIFT_CATALOG), lookup-keyed `gift_<prefix>_<term>` — independent of the
-// recurring subscription prices. Prices are $48/$80 (Ark+, Community) and
+// recurring subscription prices. Prices are $48/$80 (Ark+, the Fold) and
 // $75/$130 (Bundle), each with the same 40-currency `currency_options`.
 export type GiftTerm = '6mo' | '1yr'
 

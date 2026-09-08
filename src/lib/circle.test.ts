@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 // The v1 subscriber-feed read functions. After dropping the mock fallback these
-// hit their /api/circle/* endpoints and THROW on failure (so /community can show
+// hit their /api/circle/* endpoints and THROW on failure (so /fold can show
 // an error+retry). These tests stub global fetch to cover both paths: a 200
 // response is passed through (preserving the CommunityFeedItem / SuggestedSpace
 // contract), and a failure rejects rather than silently degrading.

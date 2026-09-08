@@ -183,8 +183,8 @@ function PostPage() {
               </div>
               <p className="mt-2 text-body-sm text-fg">
                 {post.discussUrl
-                  ? "There's an open thread on this post in the Ark+ community."
-                  : "Comments and replies live in the Community. Sign in once and they open straight to the thread."}
+                  ? "There's an open thread on this post in the Fold."
+                  : "Comments and replies live in the Fold. Sign in once and they open straight to the thread."}
               </p>
             </div>
             <a
@@ -213,7 +213,7 @@ function PostPage() {
             </h2>
             <p className="mt-4 max-w-2xl text-body-lg">
               Ark+ includes the paid feed, members-only newsletters, and the
-              community.
+              Fold.
             </p>
             <Link
               to="/plus"

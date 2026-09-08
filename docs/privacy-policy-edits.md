@@ -56,7 +56,7 @@ thin cover, and this is the disclosure most easily checked against reality.
 > - **Accounts and sign-in** — Auth0 by Okta
 > - **Email** — Beehiiv (newsletters), Resend (transactional email such as
 >   sign-in links and receipts)
-> - **Community** — Circle (the Ark Media community app)
+> - **The Fold** — Circle (the Fold, our members' app)
 > - **Podcast hosting and delivery** — Simplecast
 > - **Analytics and product measurement** — PostHog (product analytics and
 >   session recording), Vercel (web analytics and performance)

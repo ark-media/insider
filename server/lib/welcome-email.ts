@@ -4,7 +4,7 @@
 //
 // Each email is the single touchpoint for a new member: it carries the
 // set-password link (an Auth0 password-change ticket, for brand-new accounts)
-// and points at /welcome for feed + community setup. It replaces both the old
+// and points at /welcome for feed + Fold setup. It replaces both the old
 // SC welcome email and Auth0's own password-reset email.
 
 import type { GiftTerm } from './activation.js'
@@ -121,12 +121,12 @@ export function renderShell(p: ShellParams): string {
 }
 
 // The private-feed benefits every Ark+ (feed) tier gets. Bundle/gift append the
-// community on top; a feed-only Ark+ membership stops here. Exported so the
+// Fold on top; a feed-only Ark+ membership stops here. Exported so the
 // tests can assert WHICH blurb reaches which tier without pinning the copy —
 // this wording is edited on its own schedule.
 export const FEED_INCLUDED =
   'Exclusive content, Early Access to new episodes, and ad-free listening'
-const WHATS_INCLUDED = `${FEED_INCLUDED}, plus the Ark+ community`
+const WHATS_INCLUDED = `${FEED_INCLUDED}, plus the Fold`
 
 // The greeting name, or undefined so the caller's "Hi there," stands. Routed
 // through the shared helper rather than a bare split so a value that is really
@@ -145,7 +145,7 @@ function firstName(name?: string, email?: string): string | undefined {
 // The subscriber welcome CTA: a brand-new account gets a set-password link
 // (the Auth0 ticket); an existing account is pointed at sign-in. welcomeUrl is
 // always referenced as the follow-up step. includesCommunity adds "join the
-// community" to the setup step — true for the bundle, false for a feed-only
+// Fold" to the setup step — true for the bundle, false for a feed-only
 // Ark+ membership.
 function ctaFor(
   welcomeUrl: string,
@@ -154,10 +154,10 @@ function ctaFor(
 ) {
   const isNewAccount = Boolean(passwordSetupUrl)
   const newSetup = includesCommunity
-    ? 'set up your private podcast feed and join the community'
+    ? 'set up your private podcast feed and join the Fold'
     : 'set up your private podcast feed'
   const returningSetup = includesCommunity
-    ? 'set up your feed and enter the community'
+    ? 'set up your feed and enter the Fold'
     : 'set up your feed and start listening'
   return {
     ctaHref: isNewAccount ? passwordSetupUrl! : welcomeUrl,
@@ -179,8 +179,8 @@ export type SubscriberWelcomeEmailParams = {
   welcomeUrl: string
   // Present only for brand-new accounts: an Auth0 password-change ticket URL.
   passwordSetupUrl?: string
-  // Which feed tier this is. 'bundle' also carries the Circle community, so its
-  // copy adds the community on top of the feed; 'ark-plus' is feed-only.
+  // Which feed tier this is. 'bundle' also carries the Fold (Circle), so its
+  // copy adds the Fold on top of the feed; 'ark-plus' is feed-only.
   tier: 'ark-plus' | 'bundle'
 }
 
@@ -276,7 +276,7 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
 }
 
 // ---------------------------------------------------------------------------
-// Circle-only member (community access, no private feed)
+// Circle-only member (the Fold, no private feed)
 // ---------------------------------------------------------------------------
 
 export type CircleWelcomeEmailParams = {
@@ -288,9 +288,9 @@ export type CircleWelcomeEmailParams = {
   passwordSetupUrl?: string
 }
 
-// A Circle-only membership grants the community, not the private podcast feed —
-// so this copy is community-first and drops the feed-setup language. The CTA
-// still routes brand-new accounts through set-password before the community.
+// A Circle-only membership grants the Fold, not the private podcast feed —
+// so this copy is Fold-first and drops the feed-setup language. The CTA
+// still routes brand-new accounts through set-password before the Fold.
 export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
   subject: string
   html: string
@@ -298,25 +298,25 @@ export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
   const first = firstName(p.name, p.email)
   const isNewAccount = Boolean(p.passwordSetupUrl)
   const html = renderShell({
-    preheader: 'Your Ark community membership is active.',
+    preheader: 'Your Fold membership is active.',
     eyebrow: "You're in",
-    headlineHtml: 'Welcome to the Ark community.',
+    headlineHtml: 'Welcome to the Fold.',
     greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
     bodyHtml:
-      'Your community membership is active — join the conversation, member Q&amp;As, and events in the Ark community on Circle.',
+      'Your membership is active — join the conversation, member Q&amp;As, and events in the Fold.',
     footerHtml:
       'Manage your membership anytime from your account. Need help? Just reply to this email.',
     ctaHref: isNewAccount ? p.passwordSetupUrl! : p.welcomeUrl,
-    ctaLabel: isNewAccount ? 'Set your password' : 'Enter the community',
+    ctaLabel: isNewAccount ? 'Set your password' : 'Enter the Fold',
     ctaFollowupHtml: isNewAccount
-      ? `Once you've set a password, you'll enter the community from <a href="${p.welcomeUrl}" style="color:${BRAND_CYAN};">your welcome page</a>.`
-      : `You already have an Ark login — sign in to enter the community from <a href="${p.welcomeUrl}" style="color:${BRAND_CYAN};">your welcome page</a>.`,
+      ? `Once you've set a password, you'll enter the Fold from <a href="${p.welcomeUrl}" style="color:${BRAND_CYAN};">your welcome page</a>.`
+      : `You already have an Ark login — sign in to enter the Fold from <a href="${p.welcomeUrl}" style="color:${BRAND_CYAN};">your welcome page</a>.`,
   })
-  return { subject: 'Welcome to the Ark community', html }
+  return { subject: 'Welcome to the Fold', html }
 }
 
 // ---------------------------------------------------------------------------
-// Existing member who added an axis (Ark+ ⇄ Community → Bundle)
+// Existing member who added an axis (Ark+ ⇄ the Fold → Bundle)
 // ---------------------------------------------------------------------------
 
 export type AxisAddedEmailParams = {
@@ -369,12 +369,12 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
 
   // Split so the em-dash clause lands at the END of the sentence: "added X —
   // detail" reads, "added X — detail to your membership" does not.
-  const gained = addedCircle ? 'the Ark+ community' : 'the private podcast feed'
+  const gained = addedCircle ? 'the Fold' : 'the private podcast feed'
   const gainedDetail = addedCircle
     ? 'conversations, member Q&amp;As, and events'
     : FEED_INCLUDED
 
-  const coversEverything = 'the private feed and the community'
+  const coversEverything = 'the private feed and the Fold'
   const priceSentence = p.price
     ? `Your membership is now <strong>${esc(p.price)} ${perPeriod(p.plan)}</strong>, and that covers everything: ${coversEverything}.`
     : `Your membership now covers everything: ${coversEverything}.`
@@ -390,9 +390,9 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
   })}`
 
   // The app links live in the email itself, not only behind the CTA. A new
-  // community member meets these on /welcome; someone who upgrades from their
+  // Fold member meets these on /welcome; someone who upgrades from their
   // account page never passes through it, and "download the app" is the one
-  // step that actually gets them into the community. Plain text links, not the
+  // step that actually gets them into the Fold. Plain text links, not the
   // store badge lockups: SVG doesn't render in most mail clients, and image
   // blocking would leave the row empty in the rest.
   const link = (href: string, label: string) =>
@@ -413,7 +413,7 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
       : 'Your private feed is ready — your membership covers everything now.',
     eyebrow: 'Added to your membership',
     headlineHtml: addedCircle
-      ? 'The community is yours now.'
+      ? 'The Fold is yours now.'
       : 'Your private feed is ready.',
     greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
     bodyHtml: `You just added ${gained} — ${gainedDetail}.`,
@@ -421,7 +421,7 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
     footerHtml:
       'Manage your membership anytime from your account. Need help? Just reply to this email.',
     ctaHref: p.welcomeUrl,
-    ctaLabel: addedCircle ? 'Enter the community' : 'Set up your feed',
+    ctaLabel: addedCircle ? 'Enter the Fold' : 'Set up your feed',
     // No set-password branch: by construction this member already has a login —
     // it's what made the change an upgrade instead of a first purchase.
     ctaFollowupHtml: addedCircle ? communityFollowup : feedFollowup,
@@ -429,7 +429,7 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
 
   return {
     subject: addedCircle
-      ? "You're in the Ark+ community"
+      ? "You're in the Fold"
       : 'Your Ark+ private feed is ready',
     html,
   }

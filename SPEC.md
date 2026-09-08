@@ -1,7 +1,7 @@
-# SPEC — Community web feed for Ark+ subscribers
+# SPEC — The Fold's web feed for Ark+ subscribers
 
 Status: Draft for approval
-Scope: The `/community` route (`src/routes/community.tsx`) and its Circle data layer
+Scope: The `/fold` route (`src/routes/fold.tsx`) and its Circle data layer
 (`src/lib/circle.ts`). Decided via product interview; see "Decisions" below.
 
 ---
@@ -9,10 +9,10 @@ Scope: The `/community` route (`src/routes/community.tsx`) and its Circle data l
 ## 1. Objective
 
 Give a **logged-in Ark+ subscriber** a personalized, **read-only** window into their
-Circle community when they land on `/community`, while keeping the app the home of all
+Fold when they land on `/fold`, while keeping the app the home of all
 engagement. Non-subscribers keep today's marketing showcase unchanged.
 
-The web surface exists to make the community feel **alive and personal** and to pull
+The web surface exists to make the Fold feel **alive and personal** and to pull
 members back **into the app** for time-sensitive moments (live Q&As, events) and new
 activity — not to become a second client. Every action (like, reply, post, RSVP) leaves
 the website and opens Circle.
@@ -39,7 +39,7 @@ from Circle** (member-scoped token via the `/circle-sso` bridge or Circle's Head
 Member API). Today `src/lib/circle.ts` only mocks the **admin** token path.
 
 - **v1 (this spec — ships on the existing admin/mock data path):**
-  live + upcoming events strip · curated community-highlights feed (same for every
+  live + upcoming events strip · curated Fold-highlights feed (same for every
   subscriber) · onboarding empty state · persistent "Open in app" card · 45s polling.
   Subscriber view replaces the marketing showcase. **No per-user auth to Circle.**
 - **v2 (later, after member-auth reads exist):** swap the highlights feed for the true
@@ -71,23 +71,23 @@ Files touched / added for v1:
 ```
 src/
   routes/
-    community.tsx          # MODIFIED — subscriber branch renders the feed; guest branch unchanged
+    fold.tsx               # MODIFIED — subscriber branch renders the feed; guest branch unchanged
   lib/
     circle.ts              # MODIFIED — add v1 read fns returning the v2-stable shapes
   data/
     events.ts              # REUSED — upcomingEvents(), live/upcoming derivation
     communityBroadcasts.ts # REUSED — source for the v1 curated highlights feed
   components/
-    community/             # NEW (optional) — extract feed UI if community.tsx grows large
+    community/             # NEW (optional) — extract feed UI if fold.tsx grows large
       LiveEventsStrip.tsx
       CommunityFeed.tsx
       FeedEmptyState.tsx
 ```
 
 Guidance:
-- Keep the existing `PhoneFrame` / mockup components in `community.tsx` for the
+- Keep the existing `PhoneFrame` / mockup components in `fold.tsx` for the
   **non-subscriber** showcase; do not delete them.
-- Only extract new components if the subscriber branch makes `community.tsx`
+- Only extract new components if the subscriber branch makes `fold.tsx`
   unwieldy (> ~450 lines). Prefer co-locating small helpers in the route first.
 
 ### Data contract (must be stable v1 → v2)
@@ -122,14 +122,14 @@ Follow the existing codebase conventions — no new patterns:
   (`text-fg-strong`, `border-rule`, `bg-navy-800`, `text-cyan`, etc.).
 - Auth gating via `useSubscriberAuth()`; subscriber = `state.kind === "member" &&
   state.me.tier === "subscriber"`. Render `null` while `state.kind === "loading"`
-  (matches current `community.tsx`).
+  (matches current `fold.tsx`).
 - **Conditional JSX uses ternary `? … : null`, never `&&`** (project rule).
 - App mockup/phone screens keep **fixed dark colors** (not theme tokens) so they read as
   app screenshots in both light and dark site themes — but the **real subscriber feed is
   page content** and SHOULD use theme tokens.
 - Deep links go through existing helpers: `circleEventLink(id)`, `CIRCLE_OPEN_LINKS`,
   and the `/circle-sso?return_to=…` bridge for landing members in a specific space.
-- Episode/event/community data is **never hardcoded in components** — always read through
+- Episode/event/Fold data is **never hardcoded in components** — always read through
   the `circle.ts` data functions (mirrors the "fetch at runtime" project rule).
 
 ---
@@ -149,9 +149,9 @@ Follow the existing codebase conventions — no new patterns:
   injectable `now` — do not rely on wall-clock; mirrors `upcomingEvents(now)`.)
 
 **Manual / browser verification (acceptance):**
-1. **Subscriber** → `/community` shows: live/upcoming events strip, community feed,
+1. **Subscriber** → `/fold` shows: live/upcoming events strip, Fold feed,
    persistent "Open in app" card. **No 01–04 marketing blocks.**
-2. **Guest / non-subscriber** → `/community` unchanged (marketing showcase + Join CTA).
+2. **Guest / non-subscriber** → `/fold` unchanged (marketing showcase + Join CTA).
 3. Every feed/event action opens Circle (app links / `circle-sso`), no in-page write UI.
 4. **Empty feed** → onboarding nudge with suggested spaces, each deep-linking to the app.
 5. **Polling** → with a live event active, "● live now" appears within ~45s without a
@@ -176,7 +176,7 @@ Follow the existing codebase conventions — no new patterns:
 - Gate the feed strictly to signed-in Ark+ subscribers; treat any non-subscriber as the
   marketing audience.
 - Keep the web feed **read-only**; route every action into the Circle app.
-- Read all community/event data through `src/lib/circle.ts` so v1→v2 is a data swap.
+- Read all Fold/event data through `src/lib/circle.ts` so v1→v2 is a data swap.
 - Preserve the existing non-subscriber showcase and its mockup components.
 - Use ternary for conditional rendering; use existing design tokens and deep-link helpers.
 

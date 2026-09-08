@@ -56,8 +56,8 @@ function WelcomePage() {
   if (state.kind === "guest") return null;
 
   // The two core steps are entitlement-driven, not tier-driven: `arkPlus` (Ark+
-  // or Bundle) buys the private feed; `circle` (Community or Bundle) buys the
-  // community app. A Bundle member holds both axes, so both steps show — no
+  // or Bundle) buys the private feed; `circle` (the Fold or Bundle) buys the
+  // Fold app. A Bundle member holds both axes, so both steps show — no
   // per-tier branching needed.
   const arkPlus = isArkPlusMember(state);
   const circle = isCircleMember(state);
@@ -73,8 +73,8 @@ function WelcomePage() {
   const steps: StepDef[] = [];
   if (showCommunity) {
     steps.push({
-      title: "Download the community app",
-      body: "Nadav, Amit and Tal are in the Community app — alongside everyone else who joined this month. Install the app and you'll be signed in automatically.",
+      title: "Download the Fold app",
+      body: "Nadav, Amit and Tal are in the Fold — alongside everyone else who joined this month. Install the app and you'll be signed in automatically.",
       slot: <CommunityAppLinks className="mt-6" />,
     });
   }
@@ -184,14 +184,14 @@ function WelcomeHeadline({
   if (feeds && community) {
     return (
       <>
-        Welcome to <span className="display text-cyan">Ark+ &amp; Community</span>.
+        Welcome to <span className="display text-cyan">Ark+ &amp; The Fold</span>.
       </>
     );
   }
   if (community) {
     return (
       <>
-        Welcome to the <span className="display text-cyan">Community</span>.
+        Welcome to the <span className="display text-cyan">Fold</span>.
       </>
     );
   }
@@ -263,7 +263,7 @@ function WelcomeStep({
   href?: string;
   external?: boolean;
   // When provided, render this custom action node instead of a single CTA
-  // (used by the community step for its App Store / Google Play / web links).
+  // (used by the Fold step for its App Store / Google Play / web links).
   slot?: ReactNode;
 }) {
   const ctaCls =

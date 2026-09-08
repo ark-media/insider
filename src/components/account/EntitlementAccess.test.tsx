@@ -106,7 +106,7 @@ const axis = (over: Partial<AxisAccess> = {}): AxisAccess => ({
   ...over,
 });
 
-// A member on an Ark+ SUBSCRIPTION with no community access: the shape the row
+// A member on an Ark+ SUBSCRIPTION with no Fold access: the shape the row
 // CTA offers the bundle switch to.
 function arkPlusMember(): Me {
   return {
@@ -141,11 +141,11 @@ async function mount(me: Me = arkPlusMember()) {
   );
 }
 
-// Opens the confirm panel from the Community row's "add to your plan" CTA.
+// Opens the confirm panel from the Fold row's "add to your plan" CTA.
 async function openConfirm() {
   await mount();
   await act(async () => {
-    buttonWith("Add Community")?.click();
+    buttonWith("Add the Fold")?.click();
   });
 }
 
@@ -161,8 +161,8 @@ describe("bundle switch — reading the preview", () => {
     previewReply = { status: 200, preview: null };
     await openConfirm();
     // The standalone CheckoutModal, not the confirm panel.
-    expect(text()).not.toContain("Add Community to your membership");
-    expect(text()).toContain("Ark Community · Monthly");
+    expect(text()).not.toContain("Add the Fold to your membership");
+    expect(text()).toContain("The Fold · Monthly");
   });
 
   test("a FAILED preview says so and offers a retry, rather than selling a second subscription", async () => {
@@ -182,7 +182,7 @@ describe("bundle switch — reading the preview", () => {
     await act(async () => {
       buttonWith("Try again")?.click();
     });
-    expect(text()).toContain("Add Community to your membership");
+    expect(text()).toContain("Add the Fold to your membership");
   });
 });
 
@@ -195,7 +195,7 @@ describe("bundle switch — a failed switch", () => {
     });
     expect(text()).toContain("Could not change your plan.");
     // Both still there: the panel, and the price it quoted.
-    expect(text()).toContain("Add Community to your membership");
+    expect(text()).toContain("Add the Fold to your membership");
     expect(text()).toContain("$8 → $25");
   });
 

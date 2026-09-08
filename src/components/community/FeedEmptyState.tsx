@@ -18,7 +18,7 @@ export function FeedEmptyState({
       </h3>
       <p className="mt-3 max-w-xl text-body-sm">
         Your feed comes alive once you've joined a few spaces. Here's where the
-        community is most active right now.
+        Fold is most active right now.
       </p>
 
       {spaces === null ? (

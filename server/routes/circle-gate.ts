@@ -4,20 +4,20 @@
 //   POST /api/internal/circle-access   { "sub": "auth0|..." }
 //        -> 200 { allow, tier }
 //
-// Members sign into the Circle community (thefold.arkmedia.org) with their Auth0
+// Members sign into the Fold (Circle, thefold.arkmedia.org) with their Auth0
 // credentials: Circle's Custom SSO bounces them through our tenant and maps the
-// returned identity onto a community member. Circle cannot gate that itself —
+// returned identity onto a Circle community member. Circle cannot gate that itself —
 // it consumes `sub`/`email`/`name` and has no "deny unless claim X" rule, and it
 // AUTO-PROVISIONS a member for anyone who completes the handshake (see the 404
 // -> 'no-member' comment in ../entitlement.ts). So an Ark+-only subscriber, who
-// bought the podcasts and not the community, would otherwise walk straight in —
+// bought the podcasts and not the Fold, would otherwise walk straight in —
 // silently, because the website has already established an Auth0 session.
 //
 // The gate therefore lives in the Auth0 post-login Action (auth0/actions/
 // post-login.js), which is the one place able to stop the transaction. This
 // endpoint is what the Action asks. It exists rather than the Action reading
 // Neon directly so that GRANTS / liveAxes stay in exactly one place: a login
-// gate that re-implemented "which tiers include the community" is precisely the
+// gate that re-implemented "which tiers include the Fold" is precisely the
 // multi-authority drift the Neon cutover removed (tasks/entitlement-tiers.md
 // §3). Auth0 still carries NO entitlement — it asks, per login.
 //
@@ -56,7 +56,7 @@ export function circleGateRoutes({ env }: Deps): Route[] {
         const secret = env.CIRCLE_GATE_SECRET
         // Unconfigured is a 500, not a 401: the Action distinguishes the two
         // only by "not 200", but the log line matters when someone is asking
-        // why every community login is being turned away.
+        // why every Fold login is being turned away.
         if (!secret) return json(500, { error: 'not_configured' })
         // Checked before the body is read, so an unauthenticated caller can't
         // learn anything from how we react to what they sent.

@@ -59,8 +59,8 @@ function BookClubPage() {
             <span className="display text-cyan">showing up</span> for.
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-body-lg text-fg">
-            One standout book a month, handpicked by Dan — and a community that
-            reads along, digs in, and argues it out. Big ideas, sharp debate, and
+            One standout book a month, handpicked by Dan — and the Fold reading
+            along, digging in, and arguing it out. Big ideas, sharp debate, and
             a conversation you'll actually want to be part of.
           </p>
         </div>
@@ -92,11 +92,11 @@ function BookClubPage() {
                 <div className="mt-8 flex flex-wrap items-center gap-4">
                   <BuyOnAmazon book={current} />
                   <Link
-                    to="/community"
+                    to="/fold"
                     onClick={() => trackEvent("book_club_join_clicked")}
                     className="group inline-flex min-h-12 items-center gap-2 button-text font-display font-bold tracking-cta text-cyan transition hover:text-fg-strong"
                   >
-                    Discuss it in the community
+                    Discuss it in the Fold
                     <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
                       →
                     </span>
@@ -184,7 +184,7 @@ function BookClubPage() {
       ) : null}
 
       {/* Pick detail — opened by clicking a cover in the shelf. Shows the note
-          and the two actions: buy it, or take it into the community. */}
+          and the two actions: buy it, or take it into the Fold. */}
       <Modal
         open={selected !== null}
         onClose={() => setSelected(null)}
@@ -213,11 +213,11 @@ function BookClubPage() {
               <div className="mt-6 flex flex-col gap-3">
                 <BuyOnAmazon book={selected} className="w-full" />
                 <Link
-                  to="/community"
+                  to="/fold"
                   onClick={() => trackEvent("book_club_join_clicked")}
                   className="group inline-flex min-h-12 w-full items-center justify-between border border-rule-strong px-5 button-text font-display font-bold tracking-cta text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
-                  Discuss it in the community
+                  Discuss it in the Fold
                   <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
                     →
                   </span>

@@ -102,7 +102,7 @@ function GiftPage() {
               </h1>
               <p className="rise rise-3 mt-8 max-w-md text-body-lg text-fg">
                 Pick Ark+ for the exclusive content, ad-free feed and members-only
-                newsletters, the Community, or the Bundle of both. It's a
+                newsletters, the Fold, or the Bundle of both. It's a
                 one-time gift — no renewals, no surprise charges — and they'll
                 get an email with everything they need to start.
               </p>

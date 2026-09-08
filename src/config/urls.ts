@@ -90,10 +90,10 @@ export const contactTopics = [
 export type ContactTopic = (typeof contactTopics)[number]["value"];
 
 // ---------------------------------------------------------------------------
-// Circle community + companion apps
+// The Fold (Circle) + companion apps
 // ---------------------------------------------------------------------------
 export const circleUrls = {
-  /** Web home of the Ark+ community (Circle). */
+  /** Web home of the Fold (Circle). */
   community: "https://thefold.arkmedia.org",
   /** Universal app-open / SSO landing for the web app. */
   webApp: "https://thefold.arkmedia.org",
@@ -102,23 +102,28 @@ export const circleUrls = {
    * hash-suffixed slugs that aren't derivable from our own ids, so this
    * deep-links to the space itself rather than a fabricated per-event
    * permalink. The space slug is read from Circle's own `spaces` list, not
-   * guessed — the rebuilt community dropped the hash suffixes the old slugs
+   * guessed — the rebuilt Fold dropped the hash suffixes the old slugs
    * carried (`events-71d23b` → `events`).
    */
   eventsSpace: "https://thefold.arkmedia.org/c/events",
   /**
-   * Where a member edits their own community profile — photo, headline, the
-   * name other members see. Confirmed against the live community rather than
+   * Where a member edits their own Fold profile — photo, headline, the
+   * name other members see. Confirmed against the live Fold rather than
    * assumed: `/settings/profile` answers 302 (bounce to auth) while an unknown
    * path under `/settings` answers 404. Circle's API also hands back a
    * `profile_url` per member, but that is the PUBLIC `/u/<public_uid>` view
    * page — per-member, and not somewhere they can edit anything.
    */
   profileSettings: "https://thefold.arkmedia.org/settings/profile",
-  /** The Ark Media Community app in the App Store. */
+  /**
+   * The Fold in the App Store. The `the-ark-media-community` segment is a
+   * historical slug Apple built from the listing's old name; the `id…` segment
+   * is what actually resolves, so this link stays correct through a rename and
+   * is not a leftover to chase. Confirmed current 2026-09-08.
+   */
   appStoreIos:
     "https://apps.apple.com/us/app/the-ark-media-community/id6775856136",
-  /** The Ark Media Community app on Google Play. */
+  /** The Fold on Google Play. */
   appStoreAndroid:
     "https://play.google.com/store/apps/details?id=org.arkmedia.app",
 } as const;
@@ -127,7 +132,7 @@ export const circleUrls = {
  * Circle space for each newsletter's mirrored discussion. The space slug
  * doesn't always match the newsletter slug, so this mapping is explicit.
  *
- * INTERIM: both point at The Conversation. The rebuilt community has no
+ * INTERIM: both point at The Conversation. The rebuilt Fold has no
  * per-newsletter spaces — the slugs these carried (`ark-daily`,
  * `inside-call-me-back`) no longer exist, so both links were 404s. Keep in step
  * with DISCUSS_SPACE_BINDINGS in server/lib/discuss-threads.ts, which is where

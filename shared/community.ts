@@ -1,4 +1,4 @@
-// Shared DTOs for the /community subscriber feed.
+// Shared DTOs for the /fold subscriber feed.
 //
 // These are the v1→v2-stable shapes the client UI consumes and the server
 // Circle projections produce. They live in shared/ (not src/lib/circle.ts) so
