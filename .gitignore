@@ -39,3 +39,4 @@ package-lock.json
 
 # Machine-specific workspace overrides
 .humanlayer/workspace.local.json
+.vercel
