@@ -34,6 +34,16 @@ type Flow = 'A' | 'B' | 'C' | 'D' | 'E'
 // the three-tier split still compiles and just omits it.
 type Tier = 'ark-plus' | 'circle' | 'bundle'
 
+// Which door a promo code was typed at. Both run the same component, so one
+// event set covers them and `surface` keeps membership and gift separable.
+type PromoSurface = 'membership' | 'gift'
+
+// Why a code the buyer typed didn't end up applied.
+//   invalid         — Stripe refused it (unknown, expired, spent, restricted).
+//   worse_than_sale — valid, but worth less than the discount already applied.
+//                     A Session holds one discount, so we kept the better one.
+type PromoRejection = 'invalid' | 'worse_than_sale'
+
 // Where a checkout attempt died, so `checkout_failed` is one event you can
 // break down by stage in PostHog instead of three near-duplicate events.
 type CheckoutFailureStage =
@@ -67,6 +77,24 @@ interface EventMap {
     stage: CheckoutFailureStage
     reason?: string
   }
+
+  // Promo codes the BUYER typed. The house sale applying itself is deliberately
+  // not an event: it fires on every checkout while a sale runs, and Stripe
+  // already counts its redemptions. A promo code is a marketing identifier, not
+  // PII, so it's safe to send — and useless for segmentation without it.
+  promo_code_applied: {
+    surface: PromoSurface
+    code: string
+    // The resulting discount, in the charge currency's minor units.
+    discount_minor: number
+    currency: string
+  }
+  promo_code_rejected: {
+    surface: PromoSurface
+    code: string
+    reason: PromoRejection
+  }
+  promo_code_removed: { surface: PromoSurface; code: string }
 
   // --- Tier 2: churn / retention (tier-aware flows A–E) ---
   // Fired at the entry of every cancel/debundle flow, tagged with which flow

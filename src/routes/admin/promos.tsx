@@ -18,7 +18,7 @@ import {
   adminFieldLabel,
   adminPrimaryButton,
 } from "../../lib/admin-styles";
-import { formatCouponDiscount } from "../../lib/currency";
+import { formatCouponDiscount, formatMajor } from "../../lib/currency";
 import { useCrudResource } from "../../lib/useCrudResource";
 import { formatTimestamp } from "../../../shared/format-date";
 
@@ -38,6 +38,10 @@ type FormState = {
   autoApply: boolean;
   maxRedemptions: string;
   redeemBy: string;
+  firstTimeOnly: boolean;
+  codeMaxRedemptions: string;
+  codeExpiresAt: string;
+  minimumDollars: string;
 };
 
 function emptyForm(): FormState {
@@ -53,6 +57,10 @@ function emptyForm(): FormState {
     autoApply: false,
     maxRedemptions: "",
     redeemBy: "",
+    firstTimeOnly: false,
+    codeMaxRedemptions: "",
+    codeExpiresAt: "",
+    minimumDollars: "",
   };
 }
 
@@ -98,6 +106,14 @@ function PromosAdmin() {
     if (form.maxRedemptions.trim()) {
       draft.maxRedemptions = Number(form.maxRedemptions);
     }
+    if (form.firstTimeOnly) draft.firstTimeOnly = true;
+    if (form.codeMaxRedemptions.trim()) {
+      draft.codeMaxRedemptions = Number(form.codeMaxRedemptions);
+    }
+    if (form.codeExpiresAt.trim()) draft.codeExpiresAt = form.codeExpiresAt;
+    if (form.minimumDollars.trim()) {
+      draft.minimumAmountCents = Math.round(Number(form.minimumDollars) * 100);
+    }
     if (form.redeemBy.trim()) {
       draft.redeemBy = new Date(form.redeemBy).toISOString();
     }
@@ -130,9 +146,11 @@ function PromosAdmin() {
         <section aria-label="New promo code">
           <h2 className="font-display text-lg text-fg-strong">New promo</h2>
           <p className="mt-2 text-body-sm">
-            Creates a Stripe coupon (and a promotion code if you set one). Promos
-            marked <strong className="text-fg">auto-apply</strong> discount the
-            targeted plan at checkout automatically.
+            Creates a Stripe coupon and its promotion code. Promos marked{" "}
+            <strong className="text-fg">auto-apply</strong> are applied for
+            everyone buying the targeted plan; the rest only discount a buyer who
+            types the code. Either way it reaches checkout by code, so an
+            auto-apply promo must have one.
           </p>
 
           <form onSubmit={submit} className="mt-6 space-y-5">
@@ -149,7 +167,10 @@ function PromosAdmin() {
                   placeholder="SPRING60"
                   className={`mt-2 ${adminField}`}
                 />
-                <p className="mt-1 text-body-sm">Optional label code.</p>
+                <p className="mt-1 text-body-sm">
+                  What buyers type at checkout. Required for an auto-apply
+                  promo — that's how checkout applies it.
+                </p>
               </div>
               <div>
                 <label htmlFor="p-name" className={adminFieldLabel}>
@@ -323,6 +344,89 @@ function PromosAdmin() {
               </div>
             </div>
 
+            <fieldset className="border border-rule p-4">
+              <legend className="px-2 label font-bold text-fg-muted">
+                Per buyer
+              </legend>
+              <p className="text-body-sm">
+                Checked when the code is redeemed, so these limit each buyer —
+                unlike max redemptions above, which is one counter for everyone.
+                They need a code.
+              </p>
+
+              <label className="mt-4 flex items-center gap-2 text-body-sm text-fg">
+                <input
+                  type="checkbox"
+                  checked={form.firstTimeOnly}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, firstTimeOnly: e.target.checked }))
+                  }
+                  className="size-4 accent-cyan"
+                />
+                New buyers only (no earlier payment or invoice)
+              </label>
+
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="p-code-max" className={adminFieldLabel}>
+                    Redemptions per code
+                  </label>
+                  <input
+                    id="p-code-max"
+                    type="number"
+                    min="1"
+                    value={form.codeMaxRedemptions}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, codeMaxRedemptions: e.target.value }))
+                    }
+                    placeholder="Unlimited"
+                    className={`mt-2 ${adminField}`}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="p-code-expiry" className={adminFieldLabel}>
+                    Code expires
+                  </label>
+                  <input
+                    id="p-code-expiry"
+                    type="datetime-local"
+                    value={form.codeExpiresAt}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, codeExpiresAt: e.target.value }))
+                    }
+                    className={`mt-2 ${adminField}`}
+                  />
+                  <p className="mt-1 text-body-sm">
+                    Can't outlast the promo's own expiry.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <label htmlFor="p-min" className={adminFieldLabel}>
+                  Minimum spend (USD)
+                </label>
+                <input
+                  id="p-min"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.minimumDollars}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, minimumDollars: e.target.value }))
+                  }
+                  placeholder="No minimum"
+                  className={`mt-2 ${adminField}`}
+                />
+                <p className="mt-1 text-body-sm">
+                  Restated in every currency we sell in, scaled off the catalog
+                  price — a USD-only minimum would make the code unusable
+                  everywhere else. On a subscription it applies to the first
+                  payment.
+                </p>
+              </div>
+            </fieldset>
+
             <label className="flex items-center gap-2 text-body-sm text-fg">
               <input
                 type="checkbox"
@@ -332,7 +436,7 @@ function PromosAdmin() {
                 }
                 className="size-4 accent-cyan"
               />
-              Auto-apply at checkout (no code needed)
+              Auto-apply at checkout (applied for the buyer, code still works)
             </label>
 
             {formError ? <p className="text-body-sm text-red-400">{formError}</p> : null}
@@ -382,6 +486,20 @@ function PromosAdmin() {
                   <AdminTag>
                     expires {formatTimestamp(p.redeemBy)}
                   </AdminTag>
+                ) : null}
+                {p.firstTimeOnly ? <AdminTag>new buyers only</AdminTag> : null}
+                {p.codeMaxRedemptions != null ? (
+                  <AdminTag>
+                    {p.codeTimesRedeemed ?? 0}/{p.codeMaxRedemptions} per code
+                  </AdminTag>
+                ) : null}
+                {p.minimumAmountCents != null ? (
+                  <AdminTag>
+                    min {formatMajor(p.minimumAmountCents / 100, "usd")}
+                  </AdminTag>
+                ) : null}
+                {p.codeExpiresAt ? (
+                  <AdminTag>code ends {formatTimestamp(p.codeExpiresAt)}</AdminTag>
                 ) : null}
               </div>
             </li>

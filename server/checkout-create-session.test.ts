@@ -368,6 +368,20 @@ describe('POST /api/stripe/create-checkout-session — session shape', () => {
     expect(args.consent_collection).toBeUndefined()
   })
 
+  test('takes promotion codes instead of a server-set discount', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
+    const args = lastSessionCreateArgs()
+    // The buyer needs a field to type a code into, and Stripe refuses
+    // allow_promotion_codes alongside a `discounts` array on one Session ("You
+    // may only specify one of these parameters"). So every discount — the house
+    // sale included — is applied in the browser by code, and this route never
+    // picks a coupon.
+    expect(args.allow_promotion_codes).toBe(true)
+    expect(args.discounts).toBeUndefined()
+    expect(stripeCalls.some((c) => c.method === 'coupons.list')).toBe(false)
+  })
+
   test('exact-floor amount uses the catalog price (no inline price_data)', async () => {
     const res = await post({ email: 'a@b.co', plan: 'monthly' })
     expect(res.statusCode).toBe(200)

@@ -12,8 +12,8 @@
 import { readJson, sendCsv } from '../lib/http.js'
 import { requireAdmin } from '../lib/session.js'
 import { requireAdminRequest } from '../lib/guards.js'
-import { listActiveCoupons } from '../lib/stripe-promos.js'
-import { buildPromo, listAllPromotionCodes, serializeCoupon } from '../lib/admin-promos.js'
+import { listActiveCoupons, listPromotionCodes } from '../lib/stripe-promos.js'
+import { buildPromo, minimumsByCurrency, serializeCoupon } from '../lib/admin-promos.js'
 import { getDb } from '../lib/db.js'
 import {
   cancellationRowsToCsv,
@@ -25,6 +25,8 @@ import {
   isOfferOutcome,
   type CancellationFilter,
 } from '../../shared/cancellation.js'
+import type Stripe from 'stripe'
+import { resolveCatalogPrice } from '../lib/pricing.js'
 import type { Promo } from '../../shared/promo.js'
 import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
@@ -53,15 +55,15 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         if (req.method === 'GET') {
           const [coupons, codes] = await Promise.all([
             listActiveCoupons(stripe),
-            listAllPromotionCodes(stripe),
+            listPromotionCodes(stripe),
           ])
-          // A coupon can back several promotion codes; show the first as its
-          // label. (The back office creates at most one per coupon.)
-          const codeByCoupon = new Map<string, string>()
+          // A coupon can back several promotion codes; show the first, with its
+          // own restrictions. (The back office creates at most one per coupon.)
+          const codeByCoupon = new Map<string, Stripe.PromotionCode>()
           for (const pc of codes) {
             const c = pc.promotion.coupon
             const couponId = typeof c === 'string' ? c : c?.id
-            if (couponId && !codeByCoupon.has(couponId)) codeByCoupon.set(couponId, pc.code)
+            if (couponId && !codeByCoupon.has(couponId)) codeByCoupon.set(couponId, pc)
           }
           const promos: Promo[] = coupons.map((c) =>
             serializeCoupon(c, codeByCoupon.get(c.id) ?? null),
@@ -74,14 +76,41 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
           if (!built.ok) return json(400, { error: built.error })
 
           const coupon = await stripe.coupons.create(built.value.coupon)
-          let code: string | null = null
+          let promotionCode: Stripe.PromotionCode | null = null
           if (built.value.code) {
+            const { maxRedemptions, expiresAt, firstTimeTransaction, minimumAmountCents } =
+              built.value.restrictions
+            // A minimum has to be stated in every currency we sell in, or the
+            // code stops working outside USD entirely. The catalog's own
+            // per-currency floors are the ratio — see minimumsByCurrency, which
+            // leaves USD out because Stripe derives that one from
+            // minimum_amount_currency and rejects it here.
+            let currencyOptions: Record<string, { minimum_amount: number }> | undefined
+            if (minimumAmountCents != null) {
+              const { floors } = await resolveCatalogPrice(stripe, 'ark-plus', 'yearly')
+              currencyOptions = minimumsByCurrency(minimumAmountCents, floors)
+            }
             try {
-              const pc = await stripe.promotionCodes.create({
+              promotionCode = await stripe.promotionCodes.create({
                 promotion: { type: 'coupon', coupon: coupon.id },
                 code: built.value.code,
+                ...(maxRedemptions != null ? { max_redemptions: maxRedemptions } : {}),
+                ...(expiresAt != null ? { expires_at: expiresAt } : {}),
+                ...(firstTimeTransaction || minimumAmountCents != null
+                  ? {
+                      restrictions: {
+                        ...(firstTimeTransaction ? { first_time_transaction: true } : {}),
+                        ...(minimumAmountCents != null
+                          ? {
+                              minimum_amount: minimumAmountCents,
+                              minimum_amount_currency: 'usd',
+                              currency_options: currencyOptions,
+                            }
+                          : {}),
+                      },
+                    }
+                  : {}),
               })
-              code = pc.code
             } catch (err) {
               // The code string was taken/invalid. Roll back the coupon so a
               // retry doesn't pile up orphaned coupons; report the real reason.
@@ -94,7 +123,7 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
               return json(409, { error: `Could not create promo code: ${msg}` })
             }
           }
-          return json(200, { promo: serializeCoupon(coupon, code) })
+          return json(200, { promo: serializeCoupon(coupon, promotionCode) })
         }
 
         if (req.method === 'DELETE') {

@@ -9,6 +9,8 @@ import {
   type StripeCheckoutElementsValue,
 } from "@stripe/react-stripe-js/checkout";
 import { CheckoutConsent } from "./CheckoutConsent";
+import { PromoBanner, PromoCode } from "./PromoCode";
+import { fetchActivePromo, type PromoInfo } from "../lib/promo";
 import { useCheckoutConsent, type Renewal } from "../lib/checkoutConsent";
 import { billingPeriod } from "../../shared/checkout-consent";
 import { Modal } from "./Modal";
@@ -24,7 +26,6 @@ import {
   browserCountry,
   currencySymbol,
   decimalsForCurrency,
-  formatCouponDiscount,
   formatMajor,
   toMajor,
   toMinor,
@@ -54,13 +55,6 @@ const TIER_LABEL: Record<Tier, string> = {
   "ark-plus": "Ark+ Membership",
   circle: "Ark Community",
   bundle: "Ark+ & Community",
-};
-
-type PromoInfo = {
-  name: string | null;
-  kind: "percent" | "amount";
-  percentOff?: number;
-  amountOffCents?: number;
 };
 
 type Step =
@@ -249,42 +243,23 @@ export function CheckoutModal({
     onClose();
   }, [onClose]);
 
-  // Auto-apply the active promo (if any) for this plan when the modal opens.
-  // Display-only (the coupon Stripe actually charges is attached server-side at
-  // session creation); failures fall back silently to full price.
+  // The house sale for this purchase, and the code that applies it — the
+  // payment step needs the code, because the Session allows promotion codes
+  // instead of carrying a server-set discount (see server/routes/promo.ts).
+  // Tier and currency are part of the question: they decide the list price the
+  // coupons are ranked against, and a fixed-amount coupon in the wrong currency
+  // can't apply at all. Failures fall back silently to full price.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     void (async () => {
-      try {
-        const res = await fetch(`/api/promo/active?plan=${plan}`);
-        const data = (await res.json().catch(() => ({}))) as {
-          active?: boolean;
-          name?: string | null;
-          kind?: "percent" | "amount";
-          percent_off?: number;
-          amount_off_cents?: number;
-        };
-        if (
-          !cancelled &&
-          data.active &&
-          (data.kind === "percent" || data.kind === "amount")
-        ) {
-          setPromo({
-            name: data.name ?? null,
-            kind: data.kind,
-            percentOff: data.percent_off,
-            amountOffCents: data.amount_off_cents,
-          });
-        }
-      } catch {
-        /* non-fatal: full price */
-      }
+      const active = await fetchActivePromo({ plan, tier, currency });
+      if (!cancelled) setPromo(active);
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, plan]);
+  }, [open, plan, tier, currency]);
 
   // Fetch per-currency pricing on open so the slider knows its floor and the
   // buyer sees their local currency. Prices come from /api/pricing (Stripe, the
@@ -578,20 +553,6 @@ export function CheckoutModal({
         </>
       ) : null}
     </Modal>
-  );
-}
-
-function PromoBanner({ promo }: { promo: PromoInfo }) {
-  return (
-    <p
-      role="status"
-      className="mt-3 border border-cyan/50 bg-cyan/10 px-3 py-2 text-body-sm text-fg-strong"
-    >
-      <span className="font-semibold">
-        {formatCouponDiscount(promo.percentOff, promo.amountOffCents)}
-      </span>{" "}
-      applied automatically{promo.name ? ` — ${promo.name}` : ""}.
-    </p>
   );
 }
 
@@ -1153,8 +1114,6 @@ function CheckoutForm({
         </span>
       </h2>
 
-      {promo ? <PromoBanner promo={promo} /> : null}
-
       <form onSubmit={pay} className="mt-6 space-y-4">
         {/* Apple Pay / Google Pay. Always mounted so onReady can report wallet
             availability; the wrapper collapses to nothing when no wallet exists
@@ -1225,6 +1184,7 @@ function CheckoutForm({
             the Session, saves them to customer.name — the only point in the
             funnel where a new subscriber's name is captured. */}
         <BillingAddressElement options={{ display: { name: "split" } }} />
+        <PromoCode checkout={checkout} promo={promo} surface="membership" />
         <div className="space-y-2 border-t border-rule pt-3 text-sm">
           <div className="flex items-baseline justify-between">
             <span className="text-fg-muted">Subtotal</span>

@@ -46,7 +46,6 @@ import {
   signSessionToken,
   verifyGiftClaimToken,
 } from '../lib/session.js'
-import { listActiveCoupons, pickBestCoupon } from '../lib/stripe-promos.js'
 import type Stripe from 'stripe'
 
 // Membership statuses that count as an active paid membership for the gift
@@ -133,25 +132,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // The one-time gift price for this tier+term from the catalog. It carries
         // the per-currency currency_options the session's `currency` selects, so
         // the buyer is charged the localized gift amount (not USD via the old,
-        // inert Adaptive Pricing). `amountCents` is the charge-currency list
-        // amount, used only to rank promos here — the row's stored amount comes
-        // from the PaymentIntent's actual `amount_received` in the webhook.
+        // inert Adaptive Pricing). The row's stored amount comes from the
+        // PaymentIntent's actual `amount_received` in the webhook, so a promo
+        // code the giver redeems is reflected there and nowhere else.
         const gift = await resolveGiftPrice(stripe, tier, term)
-        const amountCents = gift.floors[currency]
-
-        // Auto-apply the best active promo to gifts too. Per product decision,
-        // any auto-apply coupon qualifies regardless of its plan target, so we
-        // pass plan=null (a gift has no monthly/yearly plan). Ranked in the charge
-        // currency (a foreign-currency amount_off coupon can't apply). The
-        // discount is optional, so a lookup failure must never block checkout:
-        // log and charge full price.
-        let discountCoupon: string | null = null
-        try {
-          const best = pickBestCoupon(await listActiveCoupons(stripe), null, amountCents, currency)
-          if (best) discountCoupon = best.id
-        } catch (err) {
-          console.error('[gift] promo lookup failed; charging full price:', err)
-        }
 
         const existing = await stripe.customers.list({ email: giverEmail, limit: 1 })
         const customer =
@@ -183,7 +167,13 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           // back onto the pre-set Customer — required when a customer is
           // attached, and it feeds the tax jurisdiction.
           customer_update: { address: 'auto' },
-          ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
+          // Gift buyers get the same promo-code field as members, so the
+          // Session carries `allow_promotion_codes` rather than a server-set
+          // `discounts` array (Stripe rejects both together). The house sale is
+          // applied by code in the browser — any auto-apply coupon qualifies
+          // for a gift regardless of its plan target, which is what
+          // /api/promo/active?term= resolves.
+          allow_promotion_codes: true,
           // Stamp the PaymentIntent so the existing webhook
           // (payment_intent.succeeded, kind:'gift') activates SC + entitlement
           // unchanged — the Session is just the funnel that creates it.
@@ -740,8 +730,9 @@ async function subscriptionCurrency(
 // that matters — you get back what you PAID, never the catalog list price — is
 // directly testable.
 //
-// Crediting list was a money bug: gift checkout auto-applies any active coupon
-// and lets the buyer pick any supported presentment currency, whose floors are
+// Crediting list was a money bug: gift checkout discounts the buyer (an
+// auto-applied sale, or a promo code they type) and lets them pick any
+// supported presentment currency, whose floors are
 // purchasing-power presets rather than FX-equivalent. Buying low and redeeming
 // against your own Bundle sub then minted the difference as balance.
 export function giftCreditCents(opts: {

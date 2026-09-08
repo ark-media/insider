@@ -8,6 +8,8 @@ import {
 } from "@stripe/react-stripe-js/checkout";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckoutConsent } from "./CheckoutConsent";
+import { PromoCode } from "./PromoCode";
+import { fetchActivePromo, type PromoInfo } from "../lib/promo";
 import { useCheckoutConsent } from "../lib/checkoutConsent";
 import { Modal } from "./Modal";
 import { LoadingRow } from "./Spinner";
@@ -88,6 +90,10 @@ export function GiftCheckoutModal({
   const [currency, setCurrency] = useState<string>("usd");
   const [currencies, setCurrencies] = useState<string[] | null>(null);
   const [currencyReady, setCurrencyReady] = useState(false);
+  // The house sale for this gift, and the code that applies it. The Session
+  // allows promotion codes rather than carrying a server-set discount, so the
+  // sale is applied in the browser like any other code — see PromoCode.
+  const [promo, setPromo] = useState<PromoInfo | null>(null);
   const startedFor = useRef<string | null>(null);
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -129,6 +135,25 @@ export function GiftCheckoutModal({
       cancelled = true;
     };
   }, [open]);
+
+  // Which sale applies to this gift, in this currency. A gift ignores a
+  // coupon's monthly/yearly targeting (it has no plan), which is what the
+  // `term=` form of the endpoint resolves. Silent on failure: full price.
+  useEffect(() => {
+    if (!open || !input) return;
+    let cancelled = false;
+    void (async () => {
+      const active = await fetchActivePromo({
+        term: input.term,
+        tier: input.tier,
+        currency,
+      });
+      if (!cancelled) setPromo(active);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, input, currency]);
 
   // Kick off (or recreate) the Checkout Session. Keyed on the gift identity AND
   // the currency, so changing currency mints a fresh Session charging the new
@@ -252,6 +277,7 @@ export function GiftCheckoutModal({
           >
             <GiftPaymentForm
               input={input}
+              promo={promo}
               checkoutSessionId={step.checkoutSessionId}
               onError={(message) => setStep({ kind: "error", message })}
               onActivating={() => setStep({ kind: "activating" })}
@@ -324,6 +350,7 @@ export function GiftCheckoutModal({
 // email step — currency + payment, then confirm.
 function GiftPaymentForm({
   input,
+  promo,
   checkoutSessionId,
   onError,
   onActivating,
@@ -331,6 +358,7 @@ function GiftPaymentForm({
   onDone,
 }: {
   input: GiftInput;
+  promo: PromoInfo | null;
   checkoutSessionId: string;
   onError: (message: string) => void;
   onActivating: () => void;
@@ -428,6 +456,7 @@ function GiftPaymentForm({
         {/* Billing address powers Stripe Tax: the calculated tax updates the
             totals below as soon as a usable address is entered. */}
         <BillingAddressElement />
+        <PromoCode checkout={checkout} promo={promo} surface="gift" />
         <div className="space-y-2 border-t border-rule pt-3 text-sm">
           <div className="flex items-baseline justify-between">
             <span className="text-fg-muted">Subtotal</span>

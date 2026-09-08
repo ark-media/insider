@@ -48,10 +48,10 @@ let retrievedPI: FakePI | null = null
 let retrievedSession: FakeSession | null = null
 let webhookEvent: unknown = null
 
-// Coupons returned by stripe.coupons.list (used by the gift promo auto-apply
-// path). Default empty so existing tests see no discount.
+// Coupons returned by stripe.coupons.list. The gift route no longer reads them
+// (discounts arrive by code); the stub stays so a regression that reaches for
+// the catalog shows up as a recorded call.
 let availableCoupons: Array<Record<string, unknown>> = []
-let couponsListThrows = false
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -126,7 +126,6 @@ class FakeStripe {
   coupons = {
     list: async (args: { limit: number; starting_after?: string }) => {
       stripeCalls.push({ method: 'coupons.list', args: [args] })
-      if (couponsListThrows) throw new Error('stripe coupons.list failed')
       return { data: availableCoupons, has_more: false }
     },
   }
@@ -298,7 +297,6 @@ beforeEach(() => {
   retrievedSession = null
   webhookEvent = null
   availableCoupons = []
-  couponsListThrows = false
   fetchImpl = async () => new Response('{}', { status: 200 })
 })
 
@@ -561,15 +559,18 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
 })
 
 // ===========================================================================
-// POST /api/gift/create-checkout — promo auto-apply
+// POST /api/gift/create-checkout — discounts
 // ===========================================================================
-// Gifts auto-apply any active coupon whose metadata.auto_apply is "true",
-// regardless of metadata.plan targeting (a gift has no monthly/yearly plan,
-// so pickBestCoupon is called with plan=null). A lookup failure must never
-// block checkout — the buyer is charged the full price.
+// A discount reaches a gift Session by code, never as a server-set `discounts`
+// array. The Session carries allow_promotion_codes so the giver has a field to
+// type into, and Stripe refuses both parameters on one Session ("You may only
+// specify one of these parameters"). The house sale is resolved by
+// /api/promo/active and applied in the browser — which is why this route no
+// longer reads the coupon catalog at all.
 
 type SessionWithDiscounts = SessionArgs & {
   discounts?: Array<{ coupon: string }>
+  allow_promotion_codes?: boolean
 }
 
 function couponLike(
@@ -602,80 +603,26 @@ async function postGift1yr(): Promise<FakeRes> {
   return res
 }
 
-describe('POST /api/gift/create-checkout — promo auto-apply', () => {
-  test('applies the best auto-apply coupon to the session', async () => {
+describe('POST /api/gift/create-checkout — discounts', () => {
+  test('the Session takes promotion codes, not a server-set discount', async () => {
     availableCoupons = [
-      couponLike('coupon_pct20', {
-        percent_off: 20,
-        metadata: { auto_apply: 'true' },
-      }),
+      couponLike('coupon_pct20', { percent_off: 20, metadata: { auto_apply: 'true' } }),
     ]
     const res = await postGift1yr()
     expect(res.statusCode).toBe(200)
     const args = sessionCreateArgs() as SessionWithDiscounts
-    expect(args.discounts).toEqual([{ coupon: 'coupon_pct20' }])
-    // Source price is still the full $80 gift Price — Stripe applies the discount.
+    expect(args.allow_promotion_codes).toBe(true)
+    expect(args.discounts).toBeUndefined()
+    // Source price is still the full $80 gift Price — Stripe discounts it.
     expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
   })
 
-  test('no eligible coupon → no `discounts` field on the session', async () => {
+  test('never reads the coupon catalog — the browser applies the code', async () => {
     availableCoupons = [
-      // Missing auto_apply: shouldn't be picked.
-      couponLike('coupon_code_only', { percent_off: 50, metadata: {} }),
+      couponLike('coupon_pct20', { percent_off: 20, metadata: { auto_apply: 'true' } }),
     ]
-    const res = await postGift1yr()
-    expect(res.statusCode).toBe(200)
-    const args = sessionCreateArgs() as SessionWithDiscounts
-    expect(args.discounts).toBeUndefined()
-  })
-
-  test('picks the coupon yielding the largest discount on the gift base price', async () => {
-    // For a 1yr gift ($80 = 8000c): pct10 → 800c, $15 off → 1500c,
-    // pct25 → 2000c (winner).
-    availableCoupons = [
-      couponLike('coupon_pct10', {
-        percent_off: 10,
-        metadata: { auto_apply: 'true' },
-      }),
-      couponLike('coupon_15off', {
-        amount_off: 1500,
-        currency: 'usd',
-        metadata: { auto_apply: 'true' },
-      }),
-      couponLike('coupon_pct25', {
-        percent_off: 25,
-        metadata: { auto_apply: 'true' },
-      }),
-    ]
-    const res = await postGift1yr()
-    expect(res.statusCode).toBe(200)
-    const args = sessionCreateArgs() as SessionWithDiscounts
-    expect(args.discounts).toEqual([{ coupon: 'coupon_pct25' }])
-  })
-
-  test('applies a sub-plan-targeted coupon to gifts too (any-plan policy)', async () => {
-    // A coupon targeted at "yearly" subs still applies to gifts, because gifts
-    // call pickBestCoupon with plan=null. This is the documented product call;
-    // if it ever changes to "untargeted-only", this test should change with it.
-    availableCoupons = [
-      couponLike('coupon_yearly_only', {
-        percent_off: 15,
-        metadata: { auto_apply: 'true', plan: 'yearly' },
-      }),
-    ]
-    const res = await postGift1yr()
-    expect(res.statusCode).toBe(200)
-    const args = sessionCreateArgs() as SessionWithDiscounts
-    expect(args.discounts).toEqual([{ coupon: 'coupon_yearly_only' }])
-  })
-
-  test('coupon lookup error never blocks checkout (charges full price)', async () => {
-    couponsListThrows = true
-    const res = await postGift1yr()
-    expect(res.statusCode).toBe(200)
-    const args = sessionCreateArgs() as SessionWithDiscounts
-    expect(args.discounts).toBeUndefined()
-    expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
+    await postGift1yr()
+    expect(stripeCalls.some((c) => c.method === 'coupons.list')).toBe(false)
   })
 })
 

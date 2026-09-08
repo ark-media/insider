@@ -276,6 +276,14 @@ export type PromoDraft = {
   offerKind?: string;
   maxRedemptions?: number;
   redeemBy?: string;
+  // --- Per-buyer limits (they live on the CODE, so they need one) ----------
+  // Stripe checks these at redemption, which is what makes them per-buyer —
+  // the coupon's own maxRedemptions is a global counter.
+  firstTimeOnly?: boolean;
+  codeMaxRedemptions?: number;
+  codeExpiresAt?: string;
+  // USD minor units; the server restates it in every supported currency.
+  minimumAmountCents?: number;
 };
 
 export async function listPromos(): Promise<Promo[]> {

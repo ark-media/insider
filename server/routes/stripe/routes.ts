@@ -51,7 +51,7 @@ import {
   isRetainedProduct,
   MAX_CANCELLATION_NOTE_LEN,
 } from '../../../shared/cancellation.js'
-import { listActiveCoupons, pickBestCoupon } from '../../lib/stripe-promos.js'
+import { listActiveCoupons } from '../../lib/stripe-promos.js'
 import {
   isSupportedCurrency,
   minorUnitFactors,
@@ -222,23 +222,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 quantity: 1,
               }
 
-        // Auto-apply the best active promo for this plan, ranked in the charge
-        // currency (a foreign-currency amount_off coupon can't apply). Discovered
-        // fresh from Stripe — the client never influences the discount. Optional,
-        // so a lookup failure must never block checkout: log and charge full.
-        let discountCoupon: string | null = null
-        try {
-          const best = pickBestCoupon(
-            await listActiveCoupons(stripe),
-            plan,
-            amountCents,
-            currency,
-          )
-          if (best) discountCoupon = best.id
-        } catch (err) {
-          console.error('[stripe] promo lookup failed; charging full price:', err)
-        }
-
         // Find-or-reuse a customer so we never mint duplicates for the same
         // email (and so the resulting subscription's customer always has an
         // email). Checkout has historically created a Customer per Session, so
@@ -268,7 +251,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // the Customer, that null was what made Auth0, Supporting Cast, Circle
           // and every welcome email fall back to the email local part.
           customer_update: { address: 'auto', name: 'auto' },
-          ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
+          // Let the buyer redeem a promotion code in the modal, and let the
+          // house sale ride the same rail: this is exclusive with a server-set
+          // `discounts` array (Stripe: "You may only specify one of these
+          // parameters"), so the sale is applied client-side by code too —
+          // /api/promo/active hands the browser the code to apply, and Stripe
+          // validates every code, ours included, at redemption.
+          allow_promotion_codes: true,
           // Stamp the subscription so the webhook (task 9) derives the tier and
           // records the amount/plan/currency for the membership row. The webhook
           // is authoritative for the tier via the price product's entitlements;
