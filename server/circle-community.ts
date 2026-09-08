@@ -1,7 +1,7 @@
-// Circle Admin API v2 → /community subscriber-feed projections.
+// Circle Admin API v2 → /fold subscriber-feed projections.
 //
 // Parallels circle-broadcasts.ts / circle-space-posts.ts, but feeds the
-// signed-in Ark+ subscriber view on /community rather than the newsletter
+// signed-in Ark+ subscriber view on /fold rather than the newsletter
 // pages. Three surfaces, three projections, all returning the v1→v2-stable
 // client shapes so the data source can swap (admin reads now → per-member
 // reads later) without touching the UI:
@@ -23,8 +23,8 @@ import type { CommunityFeedItem, SuggestedSpace } from '../shared/community.js'
 import { circleUrls } from '../src/config/urls.js'
 
 // Fallback Circle destination when a record carries no canonical url. Read from
-// the one place the community's host lives — a second copy here is how the
-// server kept pointing at a hostname the community had already moved off.
+// the one place the Fold's host lives — a second copy here is how the
+// server kept pointing at a hostname the Fold had already moved off.
 const CIRCLE_APP_URL = circleUrls.community
 
 // ---------------------------------------------------------------------------
@@ -153,11 +153,21 @@ export type CircleSpace = {
 }
 
 // System / non-joinable spaces excluded from the "join a space" nudge.
+//
+// Slugs, so a community rebuild silently empties this set rather than failing:
+// these named the OLD community's spaces (`start-here`, `introduce-yourself`,
+// `ark-code-of-conduct`, `events-71d23b`), none of which survived it, and the
+// nudge went back to recommending onboarding and read-only spaces as though
+// they were places to talk. The rebuilt community has eight spaces —
+// announcements, ask-share, conversation, events, faqs, get-started, lounge,
+// say-hi — and what's left after this filter (ask-share, conversation, lounge)
+// is exactly the set a member can usefully join.
 const SYSTEM_SPACE_SLUGS = new Set([
-  'events-71d23b',
-  'ark-code-of-conduct',
-  'start-here',
-  'introduce-yourself',
+  'announcements',
+  'faqs',
+  'get-started',
+  'say-hi',
+  'events',
 ])
 
 export function projectSpaces(records: CircleSpace[]): SuggestedSpace[] {

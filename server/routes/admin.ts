@@ -75,21 +75,29 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
           const built = buildPromo(await readJson(req))
           if (!built.ok) return json(400, { error: built.error })
 
+          const { maxRedemptions, expiresAt, firstTimeTransaction, minimumAmountCents } =
+            built.value.restrictions
+          // A minimum has to be stated in every currency we sell in, or the
+          // code stops working outside USD entirely. The catalog's own
+          // per-currency floors are the ratio — see minimumsByCurrency, which
+          // leaves USD out because Stripe derives that one from
+          // minimum_amount_currency and rejects it here.
+          //
+          // Resolved BEFORE the coupon exists. resolveCatalogPrice throws by
+          // design — a missing currency_option, a stale lookup_key, a Stripe
+          // hiccup — and a throw between the coupon and its code lands outside
+          // the rollback below, leaving a live, codeless coupon behind and
+          // minting another on every retry. Which is the state the rollback was
+          // written to prevent.
+          let currencyOptions: Record<string, { minimum_amount: number }> | undefined
+          if (built.value.code && minimumAmountCents != null) {
+            const { floors } = await resolveCatalogPrice(stripe, 'ark-plus', 'yearly')
+            currencyOptions = minimumsByCurrency(minimumAmountCents, floors)
+          }
+
           const coupon = await stripe.coupons.create(built.value.coupon)
           let promotionCode: Stripe.PromotionCode | null = null
           if (built.value.code) {
-            const { maxRedemptions, expiresAt, firstTimeTransaction, minimumAmountCents } =
-              built.value.restrictions
-            // A minimum has to be stated in every currency we sell in, or the
-            // code stops working outside USD entirely. The catalog's own
-            // per-currency floors are the ratio — see minimumsByCurrency, which
-            // leaves USD out because Stripe derives that one from
-            // minimum_amount_currency and rejects it here.
-            let currencyOptions: Record<string, { minimum_amount: number }> | undefined
-            if (minimumAmountCents != null) {
-              const { floors } = await resolveCatalogPrice(stripe, 'ark-plus', 'yearly')
-              currencyOptions = minimumsByCurrency(minimumAmountCents, floors)
-            }
             try {
               promotionCode = await stripe.promotionCodes.create({
                 promotion: { type: 'coupon', coupon: coupon.id },

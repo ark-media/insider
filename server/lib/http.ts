@@ -60,7 +60,7 @@ const DEFAULT_FETCH_TIMEOUT_MS = 8000
 // `fetch` with a deadline. Node's fetch waits indefinitely for response headers,
 // so without this our availability is coupled to the SLOWEST of five third
 // parties: a degraded upstream behind an unauthenticated endpoint (episodes,
-// community feed, newsletter posts) exhausts concurrent function slots and takes
+// Fold feed, newsletter posts) exhausts concurrent function slots and takes
 // the whole API down with it, checkout and the Stripe webhook included.
 //
 // Rejects with a TimeoutError, which every existing call site already handles —
@@ -94,9 +94,14 @@ export function fetchWithTimeout(
 // caching back for gated content is to split it into two resources — a public
 // one everyone may read, and a private one that never enters a shared cache —
 // not to describe one mixed resource more precisely.
+//
+// The options are a union rather than a `{ gated, maxAgeSec }` pair because a
+// gated resource has no shared-cache lifetime to state: it is never stored. A
+// caller that hands one over is either confused about that or reading the wrong
+// resource, and the type is the cheapest place to say so.
 export function setReadCacheControl(
   res: ServerResponse,
-  opts: { gated: boolean; maxAgeSec: number },
+  opts: { gated: true } | { gated: false; maxAgeSec: number },
 ): void {
   if (opts.gated) {
     res.setHeader('cache-control', 'private, no-store')

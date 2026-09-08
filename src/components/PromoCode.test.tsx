@@ -85,35 +85,58 @@ async function typeInto(input: HTMLInputElement, value: string) {
 }
 
 // --- a Checkout Session that behaves like Stripe's --------------------------
-// Codes this fake knows, and what each is worth in minor units. Anything else
-// is rejected the way Stripe rejects an unknown code.
-const WORTH: Record<string, number> = { SALE20: 2000, SAVE10: 1000, BIG50: 5000 };
+// Codes this fake knows: what each takes off an invoice, and how many invoices
+// it survives to — the second half matters, because a discount is worth what it
+// takes off every invoice it lasts for, not what it takes off today's. Anything
+// else is rejected the way Stripe rejects an unknown code.
+type Lasts = { type: "forever" } | { type: "repeating"; durationInMonths: number } | null;
+const CODES: Record<string, { minor: number; lasts: Lasts }> = {
+  SALE20: { minor: 2000, lasts: { type: "forever" } },
+  SAVE10: { minor: 1000, lasts: { type: "forever" } },
+  BIG50: { minor: 5000, lasts: { type: "forever" } },
+  // Both take more off the FIRST invoice than the sale does, and nothing off any
+  // invoice after it. FIRSTFREE is a free month against a $5.99 monthly plan;
+  // ONEOFF25 is the same shape against the yearly one.
+  FIRSTFREE: { minor: 5990, lasts: null },
+  ONEOFF25: { minor: 2500, lasts: null },
+};
 
 type CheckoutProp = ComponentProps<typeof PromoCode>["checkout"];
 
-function fakeCheckout() {
+function fakeCheckout(recurring: { interval: string; intervalCount: number } | null = {
+  interval: "month",
+  intervalCount: 1,
+}) {
   const calls: string[] = [];
   let applied: string | null = null;
+  let throwOnApply: string | null = null;
 
   const session = () => {
-    const value = applied ? WORTH[applied] : 0;
+    const entry = applied ? CODES[applied] : null;
+    const value = entry?.minor ?? 0;
     return {
+      recurring,
       total: { discount: { minorUnitsAmount: value, amount: `$${value / 100}` } },
-      discountAmounts: applied
-        ? [
-            {
-              promotionCode: applied,
-              minorUnitsAmount: value,
-              amount: `$${value / 100}`,
-              displayName: applied,
-            },
-          ]
-        : null,
+      discountAmounts:
+        applied && entry
+          ? [
+              {
+                promotionCode: applied,
+                minorUnitsAmount: entry.minor,
+                amount: `$${entry.minor / 100}`,
+                displayName: applied,
+                recurring: entry.lasts,
+              },
+            ]
+          : null,
     };
   };
 
   const checkout = {
     currency: "usd",
+    get recurring() {
+      return recurring;
+    },
     get total() {
       return session().total;
     },
@@ -123,7 +146,12 @@ function fakeCheckout() {
     applyPromotionCode: async (code: string) => {
       calls.push(`apply:${code}`);
       const upper = code.toUpperCase();
-      if (!(upper in WORTH)) {
+      // The connection dying mid-call — Stripe throws rather than answering
+      // {type:'error'}, which is a different path through the component.
+      if (throwOnApply !== null && upper === throwOnApply) {
+        throw new Error("network down");
+      }
+      if (!(upper in CODES)) {
         return {
           type: "error" as const,
           error: { message: "That promotion code is invalid.", code: "invalidCode" },
@@ -143,6 +171,9 @@ function fakeCheckout() {
     calls,
     checkout: checkout as unknown as CheckoutProp,
     applied: () => applied,
+    throwOn: (code: string) => {
+      throwOnApply = code;
+    },
   };
 }
 
@@ -270,6 +301,96 @@ describe("PromoCode", () => {
       "promo_code_applied",
       "promo_code_removed",
     ]);
+  });
+
+  test("a code worth more today, and nothing after, still loses to the sale", async () => {
+    const fake = fakeCheckout();
+    const { container } = await render(
+      <PromoCode checkout={fake.checkout} promo={sale} surface="membership" />,
+    );
+    await redeem(container, "FIRSTFREE");
+
+    // FIRSTFREE takes $59.90 off the first invoice against the sale's $20, so
+    // on today's number alone it wins — and the buyer is worse off from the
+    // second month on, every month, for as long as they stay. What the two are
+    // worth over the same stretch of time is the only comparison that answers
+    // the question the rule is actually asking.
+    expect(fake.applied()).toBe("SALE20");
+    expect(container.textContent).toContain(
+      "The current sale is a better deal than FIRSTFREE",
+    );
+    expect(events).toEqual([
+      {
+        event: "promo_code_rejected",
+        props: { surface: "membership", code: "FIRSTFREE", reason: "worse_than_sale" },
+      },
+    ]);
+  });
+
+  test("the yearly plan is valued over more than one invoice too", async () => {
+    // The reason the horizon is two years rather than one: a one-year horizon
+    // spans a single yearly invoice, and every discount on that plan collapses
+    // back to what it takes off today — the comparison this replaced. Here
+    // ONEOFF25 takes $25 off the only invoice it touches, against $20 off each
+    // of the two the sale reaches.
+    const fake = fakeCheckout({ interval: "year", intervalCount: 1 });
+    const { container } = await render(
+      <PromoCode checkout={fake.checkout} promo={sale} surface="membership" />,
+    );
+    await redeem(container, "ONEOFF25");
+    expect(fake.applied()).toBe("SALE20");
+  });
+
+  test("a one-off big enough to win over the horizon does win", async () => {
+    // The rule is a comparison, not a thumb on the scale for the house. On the
+    // yearly plan the sale is worth $20 twice; FIRSTFREE's $59.90 once beats
+    // that, so it takes the slot — the same arithmetic that kept the sale on
+    // the monthly plan, run on the numbers that actually apply here.
+    const fake = fakeCheckout({ interval: "year", intervalCount: 1 });
+    const { container } = await render(
+      <PromoCode checkout={fake.checkout} promo={sale} surface="membership" />,
+    );
+    await redeem(container, "FIRSTFREE");
+    expect(fake.applied()).toBe("FIRSTFREE");
+  });
+
+  test("a call that throws puts the sale back and lets the buyer try again", async () => {
+    const fake = fakeCheckout();
+    const { container } = await render(
+      <PromoCode checkout={fake.checkout} promo={sale} surface="membership" />,
+    );
+    fake.throwOn("BIG50");
+    await redeem(container, "BIG50");
+
+    // The slot was emptied to make room for BIG50 and the apply never landed.
+    // Leaving it empty would silently move the buyer from the sale to full
+    // price — the one outcome worse than refusing their code.
+    expect(fake.applied()).toBe("SALE20");
+    expect(container.textContent).toContain("We couldn't apply that code");
+    // And the field is usable again: without the finally, both it and the Apply
+    // button stayed disabled with nothing on screen to explain why.
+    expect(codeInput(container)?.disabled).toBe(false);
+    expect(applyButton(container)?.disabled).toBe(false);
+    expect(events).toEqual([
+      {
+        event: "promo_code_rejected",
+        props: { surface: "membership", code: "BIG50", reason: "error" },
+      },
+    ]);
+  });
+
+  test("a sale that fails to apply says so instead of showing full price", async () => {
+    const fake = fakeCheckout();
+    fake.throwOn("SALE20");
+    const { container } = await render(
+      <PromoCode checkout={fake.checkout} promo={sale} surface="membership" />,
+    );
+
+    // The buyer was told on the email step that the sale was already applied.
+    // Meeting the full price here with no word about it is the version of this
+    // they have no way to notice.
+    expect(fake.applied()).toBeNull();
+    expect(container.textContent).toContain("Spring sale couldn't be applied");
   });
 
   test("with no sale running, a code just applies", async () => {

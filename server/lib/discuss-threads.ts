@@ -20,10 +20,13 @@ import { fetchWithTimeout } from "./http.js"
 // today; write-side bindings stay separate so we can target whichever space
 // hosts public-facing discussion threads per newsletter without coupling the
 // two paths. Space slugs map to space IDs via Circle's /spaces endpoint.
-// INTERIM, both of them: the rebuilt community dropped the per-newsletter
+// INTERIM, both of them: the rebuilt Fold dropped the per-newsletter
 // spaces these named (`ark-daily`, `inside-call-me-back`), so every thread
 // creation was failing the space lookup. `conversation` is the only space among
 // the eight that hosts discussion; the redesign may split them again.
+// One consequence to keep in view: the Fold highlights feed reads that
+// same space, so it filters these threads back out by id — see
+// listCompanionCirclePostIds below.
 const DISCUSS_SPACE_BINDINGS: Record<NewsletterSlug, string> = {
   'ark-daily': 'conversation',
   'members-letter': 'conversation',
@@ -68,6 +71,26 @@ export async function listDiscussThreads(sql: Sql): Promise<DiscussThread[]> {
     limit 500
   `) as Row[]
   return rows.map(mapRow)
+}
+
+/**
+ * The Circle post ids of the companion threads we created — what the Fold
+ * highlights feed subtracts from the space it reads, now that both point at
+ * `conversation` (see COMMUNITY_FEED_SPACE_SLUG in server/routes/circle.ts).
+ * Ids we recorded at creation, so the exclusion is exact rather than a guess
+ * from post titles, which are just the article's own title.
+ *
+ * Capped at the most recent 1000: the feed only ever inspects the newest few
+ * hundred posts in the space, so a thread older than that cannot appear in it.
+ */
+export async function listCompanionCirclePostIds(sql: Sql): Promise<string[]> {
+  const rows = (await sql`
+    select circle_post_id
+    from discuss_threads
+    order by created_at desc
+    limit 1000
+  `) as Row[]
+  return rows.map((r) => String(r.circle_post_id))
 }
 
 export async function listDiscussThreadsByNewsletter(

@@ -17,6 +17,9 @@ import { silenceExpectedConsole } from '../test-utils.js'
 // axis). Stub @neondatabase/serverless so a staged membership row decides the
 // gate; `membershipRow` is set per test and reset in beforeEach.
 let membershipRow: Record<string, unknown> | null = null
+// The companion threads the highlights feed subtracts from the space it reads.
+// Empty for every test but the one that stages them.
+let companionRows: Array<{ circle_post_id: string }> = []
 mock.module('@neondatabase/serverless', () => ({
   neon:
     (_url: string) =>
@@ -24,6 +27,9 @@ mock.module('@neondatabase/serverless', () => ({
       const merged = strings.join('?')
       if (merged.includes('from membership where auth0_sub')) {
         return Promise.resolve(membershipRow ? [membershipRow] : [])
+      }
+      if (merged.includes('select circle_post_id')) {
+        return Promise.resolve(companionRows)
       }
       return Promise.resolve([])
     },
@@ -152,6 +158,7 @@ beforeEach(() => {
   fetchCalls.length = 0
   fetchImpl = async () => new Response('{}', { status: 200 })
   membershipRow = null
+  companionRows = []
   __resetCircleCachesForTests()
 })
 
@@ -314,6 +321,53 @@ describe('GET /api/circle/community-feed', () => {
     const body = res.__json() as { items: Array<{ id: string; title: string }> }
     expect(body.items.map((i) => i.title)).toEqual(['Newer', 'Older'])
   })
+
+  test('leaves out the companion threads we posted into the same space', async () => {
+    // The discuss bindings post one thread per newsletter article into
+    // `conversation`, which is the space this feed reads. Left in, the
+    // highlights feed becomes a list of our own auto-generated stubs and
+    // nothing else, within a few sends.
+    companionRows = [{ circle_post_id: '1' }]
+    fetchImpl = async (url) => {
+      if (url.includes('/spaces')) {
+        return new Response(
+          JSON.stringify({ records: [{ id: 77, slug: 'conversation' }] }),
+          { status: 200 },
+        )
+      }
+      if (url.includes('/posts')) {
+        return new Response(
+          JSON.stringify({
+            records: [
+              {
+                id: 1,
+                name: 'Discuss: this week in the newsletter',
+                body: '<p>Discussion for…</p>',
+                published_at: '2026-02-02T00:00:00Z',
+                status: 'published',
+              },
+              {
+                id: 2,
+                name: 'What we owe each other',
+                body: '<p>A real post.</p>',
+                published_at: '2026-02-01T00:00:00Z',
+                status: 'published',
+              },
+            ],
+          }),
+          { status: 200 },
+        )
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+    membershipRow = circleMembershipRow()
+    const handler = findHandler(buildDeps(MEMBER_ENV), FEED_PATH)
+    const res = makeRes()
+    await handler(await makeMemberReq(FEED_PATH), res)
+    const body = res.__json() as { items: Array<{ id: string; title: string }> }
+    // The stub is the NEWER of the two, so it would otherwise lead the feed.
+    expect(body.items.map((i) => i.title)).toEqual(['What we owe each other'])
+  })
 })
 
 describe('GET /api/circle/spaces', () => {
@@ -331,8 +385,8 @@ describe('GET /api/circle/spaces', () => {
         return new Response(
           JSON.stringify({
             records: [
-              { id: 1, slug: 'events-71d23b', name: 'Virtual Events', space_type: 'event' },
-              { id: 2, slug: 'start-here', name: 'Welcome!', space_type: 'basic' },
+              { id: 1, slug: 'events', name: 'Events', space_type: 'event' },
+              { id: 2, slug: 'get-started', name: 'Get started', space_type: 'basic' },
               { id: 3, slug: 'world', name: 'World', space_type: 'basic', url: 'https://thefold.arkmedia.org/c/world' },
             ],
           }),

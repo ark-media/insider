@@ -57,16 +57,36 @@ export const GIFT_TERM_DAYS: Record<GiftTerm, number> = {
   '1yr': 365,
 }
 
-// The `welcomed_axes` stamp: which axes the welcome email covered, in the same
-// comma-separated vocabulary the catalog's product metadata uses. Stripe stores
-// metadata as strings, and an empty value would read back as an absent key, so
-// a member welcomed for nothing (which cannot happen — every paid tier grants
-// at least one axis) would be indistinguishable from an unstamped subscription.
-function axesMetadataValue(entitlements: Entitlements): string {
-  const axes: string[] = []
-  if (entitlements.arkPlus) axes.push('ark_plus')
-  if (entitlements.circle) axes.push('circle')
-  return axes.join(',')
+// The `welcomed_axes` stamp, in the same comma-separated vocabulary the
+// catalog's product metadata uses. Stripe stores metadata as strings, and an
+// empty value would read back as an absent key, so a member welcomed for
+// nothing (which cannot happen — every paid tier grants at least one axis)
+// would be indistinguishable from an unstamped subscription.
+function parseAxes(welcomedAxes: string | undefined): Set<string> {
+  return new Set(
+    (welcomedAxes ?? '')
+      .split(',')
+      .map((a) => a.trim())
+      .filter(Boolean),
+  )
+}
+
+// What the member has now been TOLD they hold: everything an earlier email
+// covered, plus the axes the email this activation is about to send names.
+//
+// It accumulates rather than overwrites, and it is written on both send paths.
+// Stamping only the first activation was the bug: a Circle-only member who
+// added Ark+ got the upgrade email and kept the stamp `circle`, so the record
+// of what they had been told never caught up with what they had been told.
+function welcomedAxesValue(
+  existing: string | undefined,
+  entitlements: Entitlements,
+): string {
+  const axes = parseAxes(existing)
+  if (entitlements.arkPlus) axes.add('ark_plus')
+  if (entitlements.circle) axes.add('circle')
+  // Canonical order, so the stamp reads identically however it accumulated.
+  return ['ark_plus', 'circle'].filter((a) => axes.has(a)).join(',')
 }
 
 // Whether an axis that just finished provisioning is one the member did NOT
@@ -77,16 +97,16 @@ function axesMetadataValue(entitlements: Entitlements): string {
 // about what its welcome covered. Treated as "welcomed for nothing", which errs
 // toward sending: an upgrade that goes unannounced is the silence this branch
 // was added to fix, and a stray email is the cheaper mistake of the two.
+//
+// Note what this cannot see: an axis the member held, lost, and bought back is
+// still in the stamp, so the re-purchase is silent. Fixing that means clearing
+// the axis when the entitlement is removed, which belongs on the downgrade
+// path, not here.
 function gainedAxis(
   welcomedAxes: string | undefined,
   provisionedNow: { arkPlus: boolean; circle: boolean },
 ): boolean {
-  const welcomed = new Set(
-    (welcomedAxes ?? '')
-      .split(',')
-      .map((a) => a.trim())
-      .filter(Boolean),
-  )
+  const welcomed = parseAxes(welcomedAxes)
   if (provisionedNow.circle && !welcomed.has('circle')) return true
   if (provisionedNow.arkPlus && !welcomed.has('ark_plus')) return true
   return false
@@ -374,15 +394,23 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       circleProvisioned = status === 'ok'
     }
 
-    // The axes the WELCOME email covered — recorded on the first activation, and
-    // the thing that separates a genuine upgrade from a first purchase whose
-    // provisioning had to be retried. Both look identical to `addingCircle` /
-    // `addingArkPlus`: a Bundle buyer whose Circle add failed and succeeded on a
-    // redelivery is "adding circle" on that second pass, even though they bought
-    // it minutes ago and were already welcomed for it. Comparing against what
-    // they were welcomed FOR is what tells the two apart. Vocabulary matches the
-    // catalog's `entitlements` metadata (see tierFromEntitlementString).
-    const welcomedAxes = axesMetadataValue(entitlements)
+    // The axes the member has been told about — the thing that separates a
+    // genuine upgrade from a first purchase whose provisioning had to be
+    // retried. Both look identical to `addingCircle` / `addingArkPlus`: a Bundle
+    // buyer whose Circle add failed and succeeded on a redelivery is "adding
+    // circle" on that second pass, even though they bought it minutes ago and
+    // were already welcomed for it. Comparing against what they were welcomed
+    // FOR is what tells the two apart. Vocabulary matches the catalog's
+    // `entitlements` metadata (see tierFromEntitlementString).
+    //
+    // Read off `fresh.metadata` BEFORE the stamp below overwrites it, since the
+    // stamp is now written on the upgrade path too and would otherwise erase
+    // the very difference the send is gated on.
+    const gainedNewAxis = gainedAxis(fresh.metadata?.welcomed_axes, {
+      arkPlus: addingArkPlus && scSubscriptionId != null,
+      circle: addingCircle && circleProvisioned,
+    })
+    const welcomedAxes = welcomedAxesValue(fresh.metadata?.welcomed_axes, entitlements)
 
     // Stamp resolved ids + idempotency markers back onto the sub. The webhook
     // reads sc_user_id / auth0_user_id back off this for the membership row.
@@ -395,16 +423,19 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
           : {}),
         ...(auth0Sub ? { auth0_user_id: auth0Sub } : {}),
         ...(circleProvisioned ? { circle_provisioned: 'true' } : {}),
-        ...(wasUnprovisioned ? { welcomed_axes: welcomedAxes } : {}),
+        // Both send paths record what they announced. Only the first activation
+        // used to, which left the stamp permanently behind on any member who
+        // ever upgraded.
+        ...(wasUnprovisioned || gainedNewAxis ? { welcomed_axes: welcomedAxes } : {}),
       },
     })
 
     if (wasUnprovisioned) {
       // One branded welcome email — replaces both the SC welcome email (feed
       // setup lives on /welcome) and Auth0's reset email (link embedded above).
-      // One per tier: bundle (feed + community) and ark-plus (feed only) share
+      // One per tier: bundle (feed + Fold) and ark-plus (feed only) share
       // the subscriber template but branch on tier for accurate copy;
-      // Circle-only gets the community-first copy. Soft-fail: the membership is
+      // Circle-only gets the Fold-first copy. Soft-fail: the membership is
       // already provisioned.
       const { subject, html } = entitlements.arkPlus
         ? renderSubscriberWelcomeEmail({
@@ -451,32 +482,29 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
           syncSubscriberName({ env, sql: getDb(env) }, email, { first, last }),
         )
       }
-    } else if (
+    } else if (gainedNewAxis) {
       // An already-provisioned member who just gained an axis — an Ark+ member
-      // adding Community (or the reverse), which moves their subscription onto
+      // adding the Fold (or the reverse), which moves their subscription onto
       // the Bundle. `wasUnprovisioned` deliberately keeps the welcome copy away
       // from them, which until now left the upgrade completely silent: no
       // branded email, no pointer to the thing they just bought, and no notice
       // of the new recurring price (Stripe's receipt doesn't arrive until the
       // next invoice, since the change is prorated onto it).
       //
-      // Gated on the provisioning having SUCCEEDED, not merely been attempted:
-      // "the community is yours now" must not go out while the Circle add is
-      // still failing. A retry that finally succeeds sends it then.
+      // Gated (see gainedNewAxis above) on the provisioning having SUCCEEDED,
+      // not merely been attempted: "the Fold is yours now" must not go out
+      // while the Circle add is still failing. A retry that finally succeeds
+      // sends it then.
       //
       // And gated on the axis being one the member did NOT already buy. Without
       // that, a Bundle purchase whose Circle add failed the first time and
       // landed on a redelivery sent its brand-new buyer an upgrade email
-      // minutes after their welcome — "You just added the Ark+ community" and
+      // minutes after their welcome — "You just added the Fold" and
       // "Nothing to pay today", to someone who added nothing and paid in full
       // that morning.
-      gainedAxis(fresh.metadata?.welcomed_axes, {
-        arkPlus: addingArkPlus && scSubscriptionId != null,
-        circle: addingCircle && circleProvisioned,
-      })
-    ) {
+
       // Circle wins when both landed at once: its copy is the one that names the
-      // community, and the price sentence covers the whole Bundle either way.
+      // Fold, and the price sentence covers the whole Bundle either way.
       const axis = addingCircle && circleProvisioned ? 'circle' : 'ark-plus'
       const { subject, html } = renderAxisAddedEmail({
         name,

@@ -53,8 +53,8 @@ const INPUT_MAX_MULTIPLE = 400;
 // the tier's catalog product server-side; this is copy only.
 const TIER_LABEL: Record<Tier, string> = {
   "ark-plus": "Ark+ Membership",
-  circle: "Ark Community",
-  bundle: "Ark+ & Community",
+  circle: "The Fold",
+  bundle: "Ark+ & The Fold",
 };
 
 type Step =
@@ -253,11 +253,11 @@ export function CheckoutModal({
     tierAmounts?.[plan === "yearly" ? "yearly" : "monthly"]?.[currency] ?? null;
   const factor = pricing?.minor_factors[currency] ?? 100;
 
-  // Closing only tells the parent. Resetting is the block above's job, which
-  // runs on the `open` flip every close produces — so a modal closed by the
-  // overlay, by Escape, or by a caller that never routes through here can't
-  // reopen carrying the last purchase's answers.
-  const handleClose = onClose;
+  // Closing only tells the parent — `onClose` is called directly everywhere
+  // below. Resetting is the block above's job, which runs on the `open` flip
+  // every close produces, so a modal closed by the overlay, by Escape, or by a
+  // caller that never routes through here can't reopen carrying the last
+  // purchase's answers.
 
   // The house sale for this purchase, and the code that applies it — the
   // payment step needs the code, because the Session allows promotion codes
@@ -283,6 +283,12 @@ export function CheckoutModal({
   // default currency; we seed the selector with it. While it loads the slider
   // stays disabled; a failure leaves it disabled and the buyer checks out at
   // the floor in USD.
+  //
+  // Keyed on `tier` as well as `open`, because the reset block above clears
+  // `pricing` and `currency` on a tier change too. Without it, a grid that
+  // swaps tiers on ONE mounted modal (which is what the grids do) cleared the
+  // pricing and never fetched it again: a dead slider, a dead currency
+  // selector, and a buyer whose geo currency was GBP checked out in USD.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -310,7 +316,7 @@ export function CheckoutModal({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, tier]);
 
   const submitEmail = useCallback(
     // customAmountMinor is already in the selected currency's minor units (the
@@ -325,7 +331,7 @@ export function CheckoutModal({
       customAmountRef.current = customAmountMinor;
       trackEvent("checkout_email_submitted", {
         plan,
-        tier: tier,
+        tier,
         is_custom_amount: customAmountMinor !== null,
       });
       setStep({ kind: "creating" });
@@ -336,7 +342,7 @@ export function CheckoutModal({
           body: JSON.stringify({
             email,
             plan,
-            tier: tier,
+            tier,
             currency: selectedCurrency,
             custom_amount_cents: customAmountMinor ?? undefined,
             // Ride the acquisition channel into Stripe's subscription metadata
@@ -390,7 +396,7 @@ export function CheckoutModal({
       // subscription — the true bottom of the funnel.
       trackEvent("checkout_succeeded", {
         plan,
-        tier: tier,
+        tier,
         is_custom_amount: customAmountRef.current !== null,
       });
       try {
@@ -415,7 +421,7 @@ export function CheckoutModal({
   return (
     <Modal
       open={open}
-      onClose={handleClose}
+      onClose={onClose}
       className="max-w-lg"
       labelledBy="checkout-title"
       describedBy="checkout-desc"
@@ -513,7 +519,7 @@ export function CheckoutModal({
             </button>
             <button
               type="button"
-              onClick={handleClose}
+              onClick={onClose}
               className={modalSecondaryCta}
             >
               Close
@@ -540,7 +546,7 @@ export function CheckoutModal({
             </p>
             <button
               type="button"
-              onClick={handleClose}
+              onClick={onClose}
               className={`mt-4 ${modalSecondaryCta}`}
             >
               Close
@@ -912,16 +918,20 @@ export function EmailForm({
 // cycle — a first-period-only discount has already fallen away from it, and the
 // tax the billing address implies is already in it — so it is the number the
 // disclosure has to name, not today's total and not the pre-tax list price.
-// `plan` supplies the period if Stripe ever hands back a session without
-// `recurring`: a subscription must never lose the sentence, only its precision.
+//
+// If Stripe ever hands back a subscription session without `recurring`, `plan`
+// supplies the period and the amount is DROPPED. Today's total is the one
+// number we know is wrong for this sentence: a first-month-only code and
+// today's tax are both inside it, and the sentence is stamped on the Session as
+// the evidence of what was agreed. A subscription must never lose the sentence,
+// only its precision.
 function renewalDisclosure(
   session: StripeCheckoutElementsValue | null,
   plan: Plan,
 ): Renewal | null {
   if (!session) return null;
   return {
-    amount:
-      session.recurring?.dueNext.total.amount ?? session.total.total.amount,
+    amount: session.recurring?.dueNext.total.amount ?? null,
     period: session.recurring
       ? billingPeriod(
           session.recurring.interval,

@@ -12,11 +12,14 @@ describe('formatCurrencyMajor', () => {
     expect(formatCurrencyMajor(8.5, 'usd')).toBe('$8.50')
   })
 
-  test('the narrow symbol, so a member billed in their own currency sees "$"', () => {
-    // The divergence this module exists to end: the server used to render these
-    // as "CA$25" / "A$25" while the site rendered them as "$25".
-    expect(formatCurrencyMajor(25, 'cad')).toBe('$25')
-    expect(formatCurrencyMajor(25, 'aud')).toBe('$25')
+  test('the dollars are told apart — an email has nothing else that can', () => {
+    // The site can lean on a currency selector two lines away; the renewal
+    // email cannot, and "$25 a year" to a member billed in CAD is a billing
+    // disclosure that does not say what it discloses.
+    expect(formatCurrencyMajor(25, 'cad')).toBe('CA$25')
+    expect(formatCurrencyMajor(25, 'aud')).toBe('A$25')
+    // The majority case stays plain: en-US spells its own dollar "$".
+    expect(formatCurrencyMajor(25, 'usd')).toBe('$25')
   })
 
   test('case-insensitive on the ISO code', () => {

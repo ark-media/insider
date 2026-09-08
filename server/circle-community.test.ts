@@ -108,13 +108,17 @@ describe('isPublishedFeedPost', () => {
 })
 
 describe('projectSpaces', () => {
+  // The rebuilt Fold's own slugs. The old ones (`start-here`,
+  // `introduce-yourself`, …) are gone, and a fixture still written in them
+  // passed while the filter matched nothing at all.
   const records = [
-    { id: 1, slug: 'events-71d23b', name: 'Virtual Events', space_type: 'event' },
-    { id: 2, slug: 'ark-code-of-conduct', name: 'Community Guidelines', space_type: 'basic' },
-    { id: 3, slug: 'start-here', name: 'Welcome!', space_type: 'basic' },
-    { id: 4, slug: 'introduce-yourself', name: 'Introduce Yourself', space_type: 'basic' },
-    { id: 5, slug: 'world', name: 'World', space_type: 'basic', url: 'https://thefold.arkmedia.org/c/world' },
-    { id: 6, slug: 'life', name: 'Life', space_type: 'basic' },
+    { id: 1, slug: 'events', name: 'Events', space_type: 'event' },
+    { id: 2, slug: 'announcements', name: 'Announcements', space_type: 'basic' },
+    { id: 3, slug: 'get-started', name: 'Get started', space_type: 'basic' },
+    { id: 4, slug: 'say-hi', name: 'Say hi', space_type: 'basic' },
+    { id: 5, slug: 'faqs', name: 'FAQs', space_type: 'basic' },
+    { id: 6, slug: 'world', name: 'World', space_type: 'basic', url: 'https://thefold.arkmedia.org/c/world' },
+    { id: 7, slug: 'life', name: 'Life', space_type: 'basic' },
   ]
 
   test('excludes system + event spaces, keeps member-facing ones', () => {

@@ -25,9 +25,18 @@ export const TERMS_STATEMENT =
  * charge (currency symbol included), and `period` comes from billingPeriod
  * below — never a hand-built "$5.99" or "monthly", which would be wrong the
  * moment a buyer checks out in another currency or on a yearly plan.
+ *
+ * `amount` is null when the Session doesn't carry a renewal figure we can
+ * trust, and then the sentence is asked WITHOUT one. The alternative — naming
+ * today's total instead — quotes a number we know is not the recurring charge
+ * (a first-period discount and today's tax are both in it), and this string is
+ * also what gets stamped on the Session as the record of what the buyer agreed
+ * to. A subscription must never lose the sentence, only its precision.
  */
-export function renewalStatement(amount: string, period: string): string {
-  return `I understand my subscription renews automatically at ${amount} ${period} until I cancel.`
+export function renewalStatement(amount: string | null, period: string): string {
+  return amount === null
+    ? `I understand my subscription renews automatically ${asCadence(period)} until I cancel.`
+    : `I understand my subscription renews automatically at ${amount} ${period} until I cancel.`
 }
 
 export type BillingInterval = 'day' | 'week' | 'month' | 'year'
@@ -35,6 +44,14 @@ export type BillingInterval = 'day' | 'week' | 'month' | 'year'
 /** "per month" / "per year", or "every 3 months" for a multi-interval price. */
 export function billingPeriod(interval: BillingInterval, count: number): string {
   return count === 1 ? `per ${interval}` : `every ${count} ${interval}s`
+}
+
+// The same cadence as an adverb — "every month" where billingPeriod says "per
+// month" — for the sentence with no figure in front of it, which "renews
+// automatically per month" would leave ungrammatical. Total over billingPeriod's
+// own output: its multi-interval form ("every 3 months") already reads this way.
+function asCadence(period: string): string {
+  return period.startsWith('per ') ? `every ${period.slice(4)}` : period
 }
 
 // Bounds for the recorded copy. Stripe caps a metadata value at 500 characters,

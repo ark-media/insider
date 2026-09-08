@@ -151,40 +151,45 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
 
         // Every store that greets this member by name has to hear about the
         // edit, or the one left behind keeps sending the old value: Beehiiv
-        // personalizes campaigns from its custom fields, and Supporting Cast's
-        // first_name is what the feed-setup reminder cron greets from. Each is
-        // soft-failed — neither may sink a save the member can see succeeded in
-        // Auth0 — and both are fire-and-forget for the same reason.
-        if (env.DATABASE_URL) {
-          await tryPush('profile name sync', () =>
-            syncSubscriberName({ env, sql: getDb(env) }, identity.email, {
-              // null, not '': the member deleting their surname is a deliberate
-              // clear, and Beehiiv has to drop the field rather than keep
-              // merging the old one into every campaign.
+        // personalizes campaigns from its custom fields, Supporting Cast's
+        // first_name is what the feed-setup reminder cron greets from, and
+        // Circle shows the name to every other member — the one store where a
+        // stale value is read by strangers rather than by us. Each is
+        // soft-failed: none may sink a save the member can see succeeded in
+        // Auth0.
+        //
+        // Started together and awaited once. They are independent of each other
+        // and nothing below reads their results, so running them in series only
+        // added their latencies together on a request the member is watching —
+        // and Circle's push is two round trips on its own (search, then PUT).
+        const pushes = [
+          env.DATABASE_URL
+            ? tryPush('profile name sync', () =>
+                syncSubscriberName({ env, sql: getDb(env) }, identity.email, {
+                  // null, not '': the member deleting their surname is a
+                  // deliberate clear, and Beehiiv has to drop the field rather
+                  // than keep merging the old one into every campaign.
+                  first: given,
+                  last: familyName || null,
+                }),
+              )
+            : null,
+          env.SC_API_KEY && env.SC_NETWORK_ID
+            ? tryPush('profile name sync (sc)', () =>
+                updateScUserName(createScClient(env), identity.email, {
+                  first: given,
+                  last: familyName,
+                }),
+              )
+            : null,
+          tryPush('profile name sync (circle)', () =>
+            updateCircleMemberName(env, identity.email, {
               first: given,
               last: familyName || null,
             }),
-          )
-        }
-        if (env.SC_API_KEY && env.SC_NETWORK_ID) {
-          await tryPush('profile name sync (sc)', () =>
-            updateScUserName(createScClient(env), identity.email, {
-              first: given,
-              last: familyName,
-            }),
-          )
-        }
-        // Circle shows this name to every other member, which makes it the one
-        // store where a stale value is read by strangers rather than by us. It
-        // was the only greeting surface missing from this fan-out: a member
-        // could fix their name here and still appear in the community under the
-        // email address we created them with.
-        await tryPush('profile name sync (circle)', () =>
-          updateCircleMemberName(env, identity.email, {
-            first: given,
-            last: familyName || null,
-          }),
-        )
+          ),
+        ].filter((p) => p !== null)
+        await Promise.allSettled(pushes)
 
         return json(200, {
           givenName: given,

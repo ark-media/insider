@@ -249,7 +249,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         // the edge hit; `beehiivRawCache` still spares Beehiiv the round-trip,
         // and an anonymous request resolves no identity so it never reaches
         // Neon either.
-        setReadCacheControl(res, { gated: true, maxAgeSec: 300 })
+        setReadCacheControl(res, { gated: true })
 
         const token = env.BEEHIIV_API_KEY
         if (!token) return json(200, { posts: [] })

@@ -127,6 +127,22 @@ describe("CheckoutConsent copy", () => {
     expect(links.every((a) => a.getAttribute("target") === "_blank")).toBe(true);
   });
 
+  test("with no renewal figure, the sentence is asked without one", async () => {
+    // Stripe handed back a subscription Session with no `recurring`, so the
+    // next charge cannot be read. The box still has to be there — this is a
+    // subscription — but naming today's total instead would put a number in
+    // front of the buyer that we know is not what recurs, and stamp that same
+    // number on the Session as the record of what they agreed to.
+    const { container } = await render(
+      <Harness renewal={{ amount: null, period: "per month" }} />,
+    );
+    expect(boxes(container)).toHaveLength(2);
+    expect(labels(container)[1]).toBe(
+      "I understand my subscription renews automatically every month until I cancel.",
+    );
+    expect(labels(container)[1]).toBe(renewalStatement(null, "per month"));
+  });
+
   test("a one-time purchase gets the terms box and no renewal box", async () => {
     const { container } = await render(<Harness renewal={null} />);
     expect(boxes(container)).toHaveLength(1);

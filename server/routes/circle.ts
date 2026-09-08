@@ -19,15 +19,17 @@ import {
 import type { ArkEvent } from '../../src/data/events.js'
 import type { CommunityFeedItem, SuggestedSpace } from '../../shared/community.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
+import { listCompanionCirclePostIds } from '../lib/discuss-threads.js'
+import { getDb } from '../lib/db.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import type { IncomingMessage } from 'node:http'
 import { fetchWithTimeout } from "../lib/http.js"
 
 /**
- * Does the caller hold Circle access? The community lives on the `circle`
+ * Does the caller hold Circle access? The Fold lives on the `circle`
  * entitlement axis (Circle/Bundle), NOT arkPlus — gating it on arkPlus would
- * leak community to Ark+-only members and false-lock the Circle-only members who
+ * leak the Fold to Ark+-only members and false-lock the Circle-only members who
  * paid for it (§3 risk 5). Resolved from Neon (the authority); guests → false.
  */
 async function callerHasCircleAccess(
@@ -116,10 +118,10 @@ async function resolveSpaceIdBySlug(
 }
 
 // ---------------------------------------------------------------------------
-// /community subscriber feed — events, curated highlights, suggested spaces
+// /fold subscriber feed — events, curated highlights, suggested spaces
 //
 // Same Admin v2 + paginate + project + cache pattern as above, but feeding the
-// signed-in subscriber view on /community. Projections live in
+// signed-in subscriber view on /fold. Projections live in
 // circle-community.ts; this file owns the HTTP/pagination/caching.
 // ---------------------------------------------------------------------------
 
@@ -142,13 +144,35 @@ const CIRCLE_EVENTS_MAX_PAGES = 3
 // The space whose published posts power the curated highlights feed. Resolved
 // to a Circle space id via `resolveSpaceIdBySlug`.
 //
-// INTERIM. The rebuilt community has eight spaces — announcements, ask-share,
+// INTERIM. The rebuilt Fold has eight spaces — announcements, ask-share,
 // conversation, events, faqs, get-started, lounge, say-hi — and the one this
 // pointed at (the old members-only content space) is not among them, so the
 // feed had gone quietly empty. `conversation` is the closest fit until
-// the community page is redesigned around the new spaces, at which point this
+// the Fold page is redesigned around the new spaces, at which point this
 // is the line to change (or to replace with a multi-space aggregate).
+//
+// It is also the space DISCUSS_SPACE_BINDINGS posts newsletter companion
+// threads into — the same rebuild pushed both there — so the highlights feed
+// would otherwise fill with one auto-generated stub per article and show
+// nothing else. Those posts are subtracted below by the ids we recorded when we
+// created them; if this slug ever stops colliding with the discuss binding, the
+// subtraction becomes a no-op rather than a thing to remember to remove.
 const COMMUNITY_FEED_SPACE_SLUG = 'conversation'
+
+// Companion-thread post ids, to keep our own machine-created stubs out of a
+// feed that is meant to surface what members and the team actually wrote.
+//
+// Best-effort: no DATABASE_URL, or a Neon hiccup, degrades to an unfiltered
+// feed and a logged line. A cluttered highlights feed beats no highlights feed.
+async function companionThreadPostIds(env: Deps['env']): Promise<Set<string>> {
+  if (!env.DATABASE_URL) return new Set()
+  try {
+    return new Set(await listCompanionCirclePostIds(getDb(env)))
+  } catch (err) {
+    console.error('[circle] companion thread ids unavailable, feed unfiltered:', err)
+    return new Set()
+  }
+}
 
 async function fetchCircleEvents(token: string): Promise<ArkEvent[]> {
   const cached = circleEventsCache.get('events')
@@ -174,6 +198,7 @@ async function fetchCircleEvents(token: string): Promise<ArkEvent[]> {
 
 async function fetchCircleCommunityFeed(
   token: string,
+  env: Deps['env'],
 ): Promise<CommunityFeedItem[]> {
   const cached = circleCommunityFeedCache.get(COMMUNITY_FEED_SPACE_SLUG)
   if (cached) return cached
@@ -182,12 +207,17 @@ async function fetchCircleCommunityFeed(
   if (spaceId === null) {
     // Say so. A renamed or deleted space used to degrade to an empty feed with
     // no signal anywhere — which is exactly how this slug stayed stale through
-    // a whole community rebuild.
+    // a whole Fold rebuild.
     console.error(
       `[circle] community feed space "${COMMUNITY_FEED_SPACE_SLUG}" not found — feed is empty`,
     )
     return []
   }
+
+  // Resolved before paging, not after: excluding afterwards would let the
+  // companion threads eat into CIRCLE_SPACE_POSTS_TARGET and hand back a feed
+  // shorter than the page it fills.
+  const companions = await companionThreadPostIds(env)
 
   const matches: CircleFeedPost[] = []
   await paginateCircleAdmin<CircleFeedPost>(
@@ -197,7 +227,7 @@ async function fetchCircleCommunityFeed(
     CIRCLE_SPACE_POSTS_MAX_PAGES,
     (records) => {
       for (const p of records) {
-        if (isPublishedFeedPost(p)) {
+        if (isPublishedFeedPost(p) && !companions.has(String(p.id))) {
           matches.push(p)
           if (matches.length >= CIRCLE_SPACE_POSTS_TARGET) return true
         }
@@ -271,7 +301,7 @@ export function circleRoutes({ env }: Deps): Route[] {
       path: '/api/circle/community-feed',
       method: 'GET',
       handler: async (req, res, json) => {
-        // Community content (the "Exclusive" space) — gated on the circle axis.
+        // Fold content (the "Exclusive" space) — gated on the circle axis.
         // Never let a shared cache hold it; the response is identity-scoped.
         res.setHeader('cache-control', 'private, no-store')
 
@@ -285,7 +315,7 @@ export function circleRoutes({ env }: Deps): Route[] {
         }
 
         try {
-          const items = await fetchCircleCommunityFeed(token)
+          const items = await fetchCircleCommunityFeed(token, env)
           json(200, { items })
         } catch (err) {
           console.error('[circle] community feed fetch failed:', err)

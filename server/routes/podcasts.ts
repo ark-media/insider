@@ -211,7 +211,10 @@ function setReadCache(
   access: AudioAccess,
   maxAgeSec: number,
 ): void {
-  setReadCacheControl(res, { gated: access.paid, maxAgeSec })
+  setReadCacheControl(
+    res,
+    access.paid ? { gated: true } : { gated: false, maxAgeSec },
+  )
 }
 
 function withAudioAccess<T extends { audioUrl: string }>(

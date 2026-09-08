@@ -10,10 +10,14 @@
 //
 // Two decisions, both deliberate:
 //
-//   1. The narrow symbol ("$", not "US$" / "CA$"). Where the currency is
-//      ambiguous the surrounding UI disambiguates it — the checkout has a
-//      currency selector — and a member billed in their own currency does not
-//      need it spelled at them.
+//   1. The full symbol, which en-US spells "$25" for USD and "CA$25" / "A$25"
+//      for the other dollars. The narrow symbol renders every one of them as a
+//      bare "$", and the argument for it — that the surrounding UI
+//      disambiguates, since the checkout has a currency selector — is true of
+//      the site and false of the emails, which are the other half of what this
+//      formats. A renewal notice that says "$25 a year" to a member billed in
+//      CAD carries nothing anywhere in the message to say which dollar that is,
+//      and a billing disclosure is the last place to be ambiguous about it.
 //   2. 'en-US', not the host or viewer locale. The site is English-only; see
 //      shared/format-date.ts for the same rule applied to dates. A viewer in
 //      de-DE reading English copy should not meet "25,00 $" inside it.
@@ -23,7 +27,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * A MAJOR-unit amount as a currency string ("$25", "₪485.88", "¥21,125").
+ * A MAJOR-unit amount as a currency string ("$25", "CA$25", "₪485.88").
  * Falls back to a bare number + ISO code if the runtime rejects the code, so a
  * bad currency degrades to something readable rather than throwing through a
  * price line.
@@ -33,7 +37,7 @@ export function formatCurrencyMajor(major: number, currency: string): string {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency.toUpperCase(),
-      currencyDisplay: 'narrowSymbol',
+      currencyDisplay: 'symbol',
       ...(Number.isInteger(major) ? { minimumFractionDigits: 0 } : {}),
     }).format(major)
   } catch {

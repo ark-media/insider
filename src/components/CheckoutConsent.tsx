@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import type { CheckoutConsentState, Renewal } from "../lib/checkoutConsent";
+import { renewalStatement } from "../../shared/checkout-consent";
 
 /**
  * The two consent checkboxes that sit directly above a checkout's pay button,
@@ -54,8 +55,11 @@ export function CheckoutConsent({
           invalid={error !== null && !value.renewal}
           onChange={(next) => setValue({ ...value, renewal: next })}
         >
-          I understand my subscription renews automatically at {renewal.amount}{" "}
-          {renewal.period} until I cancel.
+          {/* Rendered from the shared builder rather than rebuilt in JSX: this
+              label carries no links, so there is nothing to gain from a second
+              copy of the sentence and a whole variant (the one with no amount)
+              to keep in step. */}
+          {renewalStatement(renewal.amount, renewal.period)}
         </ConsentCheckbox>
       ) : null}
       {message ? (

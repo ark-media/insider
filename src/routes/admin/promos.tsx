@@ -110,7 +110,14 @@ function PromosAdmin() {
     if (form.codeMaxRedemptions.trim()) {
       draft.codeMaxRedemptions = Number(form.codeMaxRedemptions);
     }
-    if (form.codeExpiresAt.trim()) draft.codeExpiresAt = form.codeExpiresAt;
+    // Both date fields go over the wire as instants. A `datetime-local` value
+    // ("2026-12-01T18:00") carries no zone, and Date.parse resolves one of those
+    // in the RUNTIME's zone — UTC on Vercel — so sending it raw expired an
+    // admin's 6pm code at 6pm UTC, and left the server comparing a shifted
+    // instant against a correctly-zoned redeemBy.
+    if (form.codeExpiresAt.trim()) {
+      draft.codeExpiresAt = new Date(form.codeExpiresAt).toISOString();
+    }
     if (form.minimumDollars.trim()) {
       draft.minimumAmountCents = Math.round(Number(form.minimumDollars) * 100);
     }

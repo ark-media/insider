@@ -12,6 +12,7 @@ import { SUPPORTED_CURRENCIES, __resetPriceCacheForTests } from './lib/pricing'
 type StripeCall = { method: string; args: unknown[] }
 const stripeCalls: StripeCall[] = []
 let codeCreateThrows: string | null = null
+let priceListThrows: string | null = null
 
 // $80/yr, with a currency_options entry for every supported currency (the
 // per-currency floors the minimum is scaled against). GBP is deliberately
@@ -52,9 +53,10 @@ class FakeStripe {
     list: async () => ({ data: [], has_more: false }),
   }
   prices = {
-    list: async (args: { lookup_keys?: string[] }) => ({
-      data: [priceFor(args.lookup_keys?.[0] ?? '')],
-    }),
+    list: async (args: { lookup_keys?: string[] }) => {
+      if (priceListThrows) throw new Error(priceListThrows)
+      return { data: [priceFor(args.lookup_keys?.[0] ?? '')] }
+    },
   }
 }
 
@@ -105,6 +107,7 @@ silenceExpectedConsole()
 beforeEach(() => {
   stripeCalls.length = 0
   codeCreateThrows = null
+  priceListThrows = null
   __resetPriceCacheForTests()
 })
 
@@ -173,6 +176,18 @@ describe('POST /api/admin/promos — per-buyer limits', () => {
     const res = await post({ ...BASE_PROMO, firstTimeOnly: true })
     expect(res.statusCode).toBe(409)
     expect(stripeCalls.some((c) => c.method === 'coupons.del')).toBe(true)
+  })
+
+  test('a catalog lookup that fails leaves no coupon behind', async () => {
+    // The minimum has to be scaled against the catalog's per-currency floors,
+    // and that lookup throws on a missing currency_option, a stale lookup_key
+    // or any Stripe hiccup. Run after the coupon is created, a throw lands
+    // outside the rollback and strands a live, codeless coupon — one more on
+    // every retry, which is exactly what the rollback exists to prevent.
+    priceListThrows = 'stripe prices.list failed'
+    const res = await post({ ...BASE_PROMO, minimumAmountCents: 10000 })
+    expect(res.statusCode).toBe(500)
+    expect(stripeCalls.some((c) => c.method === 'coupons.create')).toBe(false)
   })
 
   test('a limit the coupon cannot honour is refused before anything is created', async () => {

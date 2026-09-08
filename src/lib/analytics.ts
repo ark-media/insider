@@ -42,7 +42,11 @@ type PromoSurface = 'membership' | 'gift'
 //   invalid         — Stripe refused it (unknown, expired, spent, restricted).
 //   worse_than_sale — valid, but worth less than the discount already applied.
 //                     A Session holds one discount, so we kept the better one.
-type PromoRejection = 'invalid' | 'worse_than_sale'
+//   error           — the call threw instead of answering: a dropped connection
+//                     or the SDK itself. Kept separate from `invalid` because
+//                     nothing is known about the code, and a rise in these is
+//                     our problem rather than the buyer's typing.
+type PromoRejection = 'invalid' | 'worse_than_sale' | 'error'
 
 // Where a checkout attempt died, so `checkout_failed` is one event you can
 // break down by stage in PostHog instead of three near-duplicate events.
@@ -149,7 +153,7 @@ interface EventMap {
   // The one-click path: linking Spotify once follows every private feed in the
   // network. `feed_count` is how many feeds that link covers.
   feed_spotify_linked: { feed_count: number }
-  // Intent to buy the Community tier from the /community page — it opens OUR
+  // Intent to buy the Fold tier from the /fold page — it opens OUR
   // CheckoutModal, so this is a top-of-funnel event that continues into
   // checkout_opened, not a hand-off. (It was previously documented as a
   // hand-off to Circle's own paid signup; that is wrong. Every purchase
@@ -177,8 +181,8 @@ interface EventMap {
   // --- Tier 4: content engagement (high-value subset) ---
   episode_play_clicked: { show: string; episode: string }
   listen_link_clicked: { platform: string }
-  // Book club: outbound Amazon (affiliate) click per pick, and the community
-  // hand-off CTA — the two ends of the book-club → community funnel.
+  // Book club: outbound Amazon (affiliate) click per pick, and the Fold
+  // hand-off CTA — the two ends of the book-club → Fold funnel.
   book_link_clicked: { slug: string }
   book_club_join_clicked: void
 }

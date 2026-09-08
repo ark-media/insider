@@ -174,10 +174,10 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
   })
 
   test('adding an axis emails the upgrade, not the welcome — with the new price', async () => {
-    // An Ark+ member adding Community: they were provisioned long ago, so
+    // An Ark+ member adding the Fold: they were provisioned long ago, so
     // `wasUnprovisioned` is false and the welcome email is (correctly) skipped.
     // Until this email existed that left the upgrade entirely silent — no
-    // pointer to the community, and no notice of the new recurring price, which
+    // pointer to the Fold, and no notice of the new recurring price, which
     // Stripe's own receipt doesn't carry until the next invoice.
     const { stripe, sub } = makeFakeStripe({
       sc_subscription_id: '555',
@@ -192,7 +192,7 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
 
     expect(circleGroupPost()).toBe(true)
     expect(sentEmails.length).toBe(1)
-    expect(sentEmails[0].subject).toContain('community')
+    expect(sentEmails[0].subject).toContain('Fold')
     expect(sentEmails[0].subject).not.toContain('Welcome')
     // The price is read off the metadata change-tier stamps, in the currency
     // the subscription actually bills in.
@@ -244,9 +244,9 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
     // A Bundle buyer whose Circle add failed on the first delivery: SC and
     // Auth0 were stamped and the welcome went out, so the redelivery that
     // finally lands Circle is "adding circle" by every marker the activator
-    // has. It is not an upgrade — they bought community that morning and have
+    // has. It is not an upgrade — they bought the Fold that morning and have
     // already been welcomed for it — and an email saying "You just added the
-    // Ark+ community. Nothing to pay today" would be false twice over.
+    // the Fold. Nothing to pay today" would be false twice over.
     const { stripe, sub } = makeFakeStripe({
       sc_subscription_id: '555',
       sc_user_id: '999',
@@ -261,8 +261,8 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
     expect(sentEmails.length).toBe(0)
   })
 
-  test('a member welcomed for Ark+ alone still hears about gaining community', async () => {
-    const { stripe, sub } = makeFakeStripe({
+  test('a member welcomed for Ark+ alone still hears about gaining the Fold', async () => {
+    const { stripe, sub, meta } = makeFakeStripe({
       sc_subscription_id: '555',
       sc_user_id: '999',
       auth0_user_id: 'auth0|abc',
@@ -275,7 +275,29 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
     await activator.activateMembershipForStripeSub(sub, 'bundle')
 
     expect(sentEmails.length).toBe(1)
-    expect(sentEmails[0].subject).toContain('community')
+    // The upgrade path records what it announced. Only the first activation
+    // used to write this, so the stamp stayed at `ark_plus` for the rest of the
+    // membership's life and no later read could tell that the Fold had already
+    // been announced.
+    expect(meta.welcomed_axes).toBe('ark_plus,circle')
+    expect(sentEmails[0].subject).toContain('Fold')
+  })
+
+  test('an upgrade that has already been announced is not announced again', async () => {
+    // The pass above, delivered twice. Only possible because the first pass
+    // extends the stamp: replay it against the metadata that pass left behind
+    // and the second delivery has to be silent.
+    const { stripe, sub } = makeFakeStripe({
+      sc_subscription_id: '555',
+      sc_user_id: '999',
+      auth0_user_id: 'auth0|abc',
+      circle_provisioned: 'true',
+      welcomed_axes: 'ark_plus,circle',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(0)
   })
 
   test('a redelivery that adds no axis sends nothing', async () => {
