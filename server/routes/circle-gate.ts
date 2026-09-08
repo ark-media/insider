@@ -4,7 +4,7 @@
 //   POST /api/internal/circle-access   { "sub": "auth0|..." }
 //        -> 200 { allow, tier }
 //
-// Members sign into the Circle community (app.arkmedia.org) with their Auth0
+// Members sign into the Circle community (thefold.arkmedia.org) with their Auth0
 // credentials: Circle's Custom SSO bounces them through our tenant and maps the
 // returned identity onto a community member. Circle cannot gate that itself —
 // it consumes `sub`/`email`/`name` and has no "deny unless claim X" rule, and it

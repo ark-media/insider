@@ -20,9 +20,12 @@ import { stripHtml } from './show-notes.js'
 import { toIsoDate } from './lib/dates.js'
 import type { ArkEvent, EventFormat } from '../src/data/events.js'
 import type { CommunityFeedItem, SuggestedSpace } from '../shared/community.js'
+import { circleUrls } from '../src/config/urls.js'
 
-// Fallback Circle destination when a record carries no canonical url.
-const CIRCLE_APP_URL = 'https://app.arkmedia.org'
+// Fallback Circle destination when a record carries no canonical url. Read from
+// the one place the community's host lives — a second copy here is how the
+// server kept pointing at a hostname the community had already moved off.
+const CIRCLE_APP_URL = circleUrls.community
 
 // ---------------------------------------------------------------------------
 // Events  →  ArkEvent

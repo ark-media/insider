@@ -1,5 +1,5 @@
 // The Circle SSO login gate (server/routes/circle-gate.ts) — the endpoint the
-// Auth0 post-login action asks before letting anyone into app.arkmedia.org.
+// Auth0 post-login action asks before letting anyone into thefold.arkmedia.org.
 //
 // Two things are pinned here, and they fail in opposite directions:
 //   * the auth gate, because an open endpoint would let anyone enumerate who

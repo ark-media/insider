@@ -224,7 +224,7 @@ describe('GET /api/circle/community-events', () => {
               duration_in_seconds: 3600,
               location_type: 'live_room',
               host: 'Noa',
-              url: 'https://app.arkmedia.org/c/events-71d23b/coalition-roundtable',
+              url: 'https://thefold.arkmedia.org/c/events-71d23b/coalition-roundtable',
             },
           ],
         }),
@@ -239,7 +239,7 @@ describe('GET /api/circle/community-events', () => {
     expect(body.events.length).toBe(1)
     expect(body.events[0]!.id).toBe('coalition-roundtable')
     expect(body.events[0]!.deepLink).toBe(
-      'https://app.arkmedia.org/c/events-71d23b/coalition-roundtable',
+      'https://thefold.arkmedia.org/c/events-71d23b/coalition-roundtable',
     )
     expect(res.__header('cache-control')).toBe('private, no-store')
   })
@@ -272,7 +272,7 @@ describe('GET /api/circle/community-feed', () => {
     fetchImpl = async (url) => {
       if (url.includes('/spaces')) {
         return new Response(
-          JSON.stringify({ records: [{ id: 77, slug: 'exclusive-ark-content' }] }),
+          JSON.stringify({ records: [{ id: 77, slug: 'conversation' }] }),
           { status: 200 },
         )
       }
@@ -288,7 +288,7 @@ describe('GET /api/circle/community-feed', () => {
                 status: 'published',
                 user_name: 'Ava',
                 space_name: 'Exclusive Ark+ Content',
-                url: 'https://app.arkmedia.org/c/exclusive-ark-content/older',
+                url: 'https://thefold.arkmedia.org/c/conversation/older',
               },
               {
                 id: 2,
@@ -298,7 +298,7 @@ describe('GET /api/circle/community-feed', () => {
                 status: 'published',
                 user_name: 'Ava',
                 space_name: 'Exclusive Ark+ Content',
-                url: 'https://app.arkmedia.org/c/exclusive-ark-content/newer',
+                url: 'https://thefold.arkmedia.org/c/conversation/newer',
               },
             ],
           }),
@@ -333,7 +333,7 @@ describe('GET /api/circle/spaces', () => {
             records: [
               { id: 1, slug: 'events-71d23b', name: 'Virtual Events', space_type: 'event' },
               { id: 2, slug: 'start-here', name: 'Welcome!', space_type: 'basic' },
-              { id: 3, slug: 'world', name: 'World', space_type: 'basic', url: 'https://app.arkmedia.org/c/world' },
+              { id: 3, slug: 'world', name: 'World', space_type: 'basic', url: 'https://thefold.arkmedia.org/c/world' },
             ],
           }),
           { status: 200 },
@@ -347,7 +347,7 @@ describe('GET /api/circle/spaces', () => {
     await handler(await makeMemberReq(SPACES_PATH), res)
     const body = res.__json() as { spaces: Array<{ id: string; href: string }> }
     expect(body.spaces.map((s) => s.id)).toEqual(['world'])
-    expect(body.spaces[0]!.href).toBe('https://app.arkmedia.org/c/world')
+    expect(body.spaces[0]!.href).toBe('https://thefold.arkmedia.org/c/world')
     expect(res.__header('cache-control')).toBe('private, no-store')
   })
 

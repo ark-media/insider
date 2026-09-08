@@ -139,9 +139,16 @@ const CIRCLE_SPACE_POSTS_MAX_PAGES = 5
 const CIRCLE_SPACE_POSTS_TARGET = 50
 const CIRCLE_EVENTS_MAX_PAGES = 3
 
-// The space whose published posts power the curated highlights feed (decided
-// with product). Resolved to a Circle space id via `resolveSpaceIdBySlug`.
-const COMMUNITY_FEED_SPACE_SLUG = 'exclusive-ark-content'
+// The space whose published posts power the curated highlights feed. Resolved
+// to a Circle space id via `resolveSpaceIdBySlug`.
+//
+// INTERIM. The rebuilt community has eight spaces — announcements, ask-share,
+// conversation, events, faqs, get-started, lounge, say-hi — and the one this
+// pointed at (the old members-only content space) is not among them, so the
+// feed had gone quietly empty. `conversation` is the closest fit until
+// the community page is redesigned around the new spaces, at which point this
+// is the line to change (or to replace with a multi-space aggregate).
+const COMMUNITY_FEED_SPACE_SLUG = 'conversation'
 
 async function fetchCircleEvents(token: string): Promise<ArkEvent[]> {
   const cached = circleEventsCache.get('events')
@@ -172,7 +179,15 @@ async function fetchCircleCommunityFeed(
   if (cached) return cached
 
   const spaceId = await resolveSpaceIdBySlug(COMMUNITY_FEED_SPACE_SLUG, token)
-  if (spaceId === null) return []
+  if (spaceId === null) {
+    // Say so. A renamed or deleted space used to degrade to an empty feed with
+    // no signal anywhere — which is exactly how this slug stayed stale through
+    // a whole community rebuild.
+    console.error(
+      `[circle] community feed space "${COMMUNITY_FEED_SPACE_SLUG}" not found — feed is empty`,
+    )
+    return []
+  }
 
   const matches: CircleFeedPost[] = []
   await paginateCircleAdmin<CircleFeedPost>(

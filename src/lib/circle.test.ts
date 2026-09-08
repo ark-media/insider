@@ -37,7 +37,7 @@ describe("fetchCommunityFeed", () => {
       authorRole: "Host",
       publishedAt: "2026-05-01T00:00:00.000Z",
       excerpt: "A preview line.",
-      href: "https://app.arkmedia.org/c/exclusive-ark-content/p1",
+      href: "https://thefold.arkmedia.org/c/conversation/p1",
     };
     stubFetch(() => jsonResponse({ items: [item] }));
 
@@ -70,7 +70,7 @@ describe("fetchSuggestedSpaces", () => {
       name: "Inside Call Me Back",
       description: "The room around the flagship show.",
       memberCount: 4120,
-      href: "https://app.arkmedia.org/c/call-me-back",
+      href: "https://thefold.arkmedia.org/c/call-me-back",
     };
     stubFetch(() => jsonResponse({ spaces: [space] }));
     expect(await fetchSuggestedSpaces()).toEqual([space]);

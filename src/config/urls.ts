@@ -94,16 +94,18 @@ export type ContactTopic = (typeof contactTopics)[number]["value"];
 // ---------------------------------------------------------------------------
 export const circleUrls = {
   /** Web home of the Ark+ community (Circle). */
-  community: "https://app.arkmedia.org",
+  community: "https://thefold.arkmedia.org",
   /** Universal app-open / SSO landing for the web app. */
-  webApp: "https://app.arkmedia.org",
+  webApp: "https://thefold.arkmedia.org",
   /**
-   * The events space, where every event lives in the app. Circle space/post
-   * URLs are opaque hash-suffixed slugs (e.g. /c/events-71d23b/ep-106-…-78c2ff)
-   * that aren't derivable from our mock ids, so v1 deep-links to the space
-   * itself rather than a fabricated per-event permalink.
+   * The events space, where every event lives in the app. Post URLs are opaque
+   * hash-suffixed slugs that aren't derivable from our own ids, so this
+   * deep-links to the space itself rather than a fabricated per-event
+   * permalink. The space slug is read from Circle's own `spaces` list, not
+   * guessed — the rebuilt community dropped the hash suffixes the old slugs
+   * carried (`events-71d23b` → `events`).
    */
-  eventsSpace: "https://app.arkmedia.org/c/events-71d23b",
+  eventsSpace: "https://thefold.arkmedia.org/c/events",
   /**
    * Where a member edits their own community profile — photo, headline, the
    * name other members see. Confirmed against the live community rather than
@@ -112,7 +114,7 @@ export const circleUrls = {
    * `profile_url` per member, but that is the PUBLIC `/u/<public_uid>` view
    * page — per-member, and not somewhere they can edit anything.
    */
-  profileSettings: "https://app.arkmedia.org/settings/profile",
+  profileSettings: "https://thefold.arkmedia.org/settings/profile",
   /** The Ark Media Community app in the App Store. */
   appStoreIos:
     "https://apps.apple.com/us/app/the-ark-media-community/id6775856136",
@@ -124,10 +126,16 @@ export const circleUrls = {
 /**
  * Circle space for each newsletter's mirrored discussion. The space slug
  * doesn't always match the newsletter slug, so this mapping is explicit.
+ *
+ * INTERIM: both point at The Conversation. The rebuilt community has no
+ * per-newsletter spaces — the slugs these carried (`ark-daily`,
+ * `inside-call-me-back`) no longer exist, so both links were 404s. Keep in step
+ * with DISCUSS_SPACE_BINDINGS in server/lib/discuss-threads.ts, which is where
+ * the threads are actually posted.
  */
 export const newsletterCircleSpaces: Record<NewsletterSlug, string> = {
-  "ark-daily": `${circleUrls.community}/c/ark-daily`,
-  "members-letter": `${circleUrls.community}/c/inside-call-me-back`,
+  "ark-daily": `${circleUrls.community}/c/conversation`,
+  "members-letter": `${circleUrls.community}/c/conversation`,
 };
 
 // ---------------------------------------------------------------------------

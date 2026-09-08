@@ -20,9 +20,13 @@ import { fetchWithTimeout } from "./http.js"
 // today; write-side bindings stay separate so we can target whichever space
 // hosts public-facing discussion threads per newsletter without coupling the
 // two paths. Space slugs map to space IDs via Circle's /spaces endpoint.
+// INTERIM, both of them: the rebuilt community dropped the per-newsletter
+// spaces these named (`ark-daily`, `inside-call-me-back`), so every thread
+// creation was failing the space lookup. `conversation` is the only space among
+// the eight that hosts discussion; the redesign may split them again.
 const DISCUSS_SPACE_BINDINGS: Record<NewsletterSlug, string> = {
-  'ark-daily': 'ark-daily',
-  'members-letter': 'inside-call-me-back',
+  'ark-daily': 'conversation',
+  'members-letter': 'conversation',
 }
 
 function discussSpaceSlugFor(slug: NewsletterSlug): string {

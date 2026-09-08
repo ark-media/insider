@@ -21,7 +21,7 @@ describe('projectEvent', () => {
     duration_in_seconds: 3600,
     location_type: 'live_room',
     host: 'Noa',
-    url: 'https://app.arkmedia.org/c/events-71d23b/coalition-roundtable',
+    url: 'https://thefold.arkmedia.org/c/events-71d23b/coalition-roundtable',
   }
 
   test('maps fields and derives a live-room format + label', () => {
@@ -68,7 +68,7 @@ describe('projectFeedPost', () => {
     status: 'published',
     user_name: 'Ava',
     space_name: 'Exclusive Ark+ Content',
-    url: 'https://app.arkmedia.org/c/exclusive-ark-content/inside-mossad',
+    url: 'https://thefold.arkmedia.org/c/conversation/inside-mossad',
   }
 
   test('projects title/author/role + plain-text excerpt + Circle href', () => {
@@ -113,7 +113,7 @@ describe('projectSpaces', () => {
     { id: 2, slug: 'ark-code-of-conduct', name: 'Community Guidelines', space_type: 'basic' },
     { id: 3, slug: 'start-here', name: 'Welcome!', space_type: 'basic' },
     { id: 4, slug: 'introduce-yourself', name: 'Introduce Yourself', space_type: 'basic' },
-    { id: 5, slug: 'world', name: 'World', space_type: 'basic', url: 'https://app.arkmedia.org/c/world' },
+    { id: 5, slug: 'world', name: 'World', space_type: 'basic', url: 'https://thefold.arkmedia.org/c/world' },
     { id: 6, slug: 'life', name: 'Life', space_type: 'basic' },
   ]
 
@@ -126,7 +126,7 @@ describe('projectSpaces', () => {
     const spaces = projectSpaces(records)
     const world = spaces.find((s) => s.id === 'world')!
     const life = spaces.find((s) => s.id === 'life')!
-    expect(world.href).toBe('https://app.arkmedia.org/c/world')
-    expect(life.href).toBe('https://app.arkmedia.org/c/life')
+    expect(world.href).toBe('https://thefold.arkmedia.org/c/world')
+    expect(life.href).toBe('https://thefold.arkmedia.org/c/life')
   })
 })
