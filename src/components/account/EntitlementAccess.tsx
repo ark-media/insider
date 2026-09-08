@@ -4,6 +4,12 @@ import { changeTier, getBundleUpgradePreview } from "../../lib/auth";
 import { formatMinor } from "../../lib/currency";
 import { formatTimestamp } from "../../../shared/format-date";
 import { CheckoutModal } from "../CheckoutModal";
+import {
+  NOTHING_TO_PAY_TODAY,
+  nextBillLine,
+  perPeriod,
+  type Settlement,
+} from "../../../shared/billing-copy";
 import { HeadphonesIcon, ChatIcon } from "./SurfaceIcons";
 
 // Per-axis entitlement rows for account settings (T7.2/T7.3/T7.4, decisions
@@ -59,18 +65,33 @@ function accessLine(a: AxisAccess): string {
 // The state of a D9 "switch to the bundle" action. The switch is a real,
 // immediate price change, so it goes through a confirm step that states what
 // the new price is before anything is billed — never straight off the row CTA.
+//
+// `error` carries the axis and preview it failed on, and `ok` carries the
+// preview it succeeded on, because both still have something to say about the
+// member's own numbers: a failure has to leave the panel on screen to retry
+// from, and a success has to state the settlement in the member's own cadence
+// rather than a hardcoded month.
 type BundleState =
   | { kind: "idle" }
   | { kind: "loading"; axis: AxisKey }
   | { kind: "confirm"; axis: AxisKey; preview: BundleUpgradePreview }
   | { kind: "working"; axis: AxisKey; preview: BundleUpgradePreview }
-  | { kind: "ok"; immediate: boolean; effectiveAt?: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; axis: AxisKey; preview: BundleUpgradePreview; message: string }
+  // The preview itself failed, so there are no numbers to confirm against and
+  // nothing to retry inside the panel. Distinct from `error` for that reason.
+  | { kind: "preview-error"; axis: AxisKey }
+  | { kind: "ok"; immediate: boolean; preview: BundleUpgradePreview; effectiveAt?: string };
 
-// "a month" / "a year" — the confirm panel quotes a price per billing period,
-// and the member's cadence is whatever their existing subscription bills on.
-function perPeriod(plan: "monthly" | "yearly"): string {
-  return plan === "yearly" ? "a year" : "a month";
+// Which way the switch settles on the member's next bill. A pay-what-you-can
+// member paying above the bundle price is owed the unused remainder rather than
+// charged a difference — same "nothing today", opposite direction afterwards.
+// Never 'unknown' here: unlike the follow-up email, this side knows both prices.
+function settlementOf(preview: BundleUpgradePreview): Settlement {
+  return preview.currentCents !== null &&
+    preview.bundleCents !== null &&
+    preview.currentCents > preview.bundleCents
+    ? "credited"
+    : "charged";
 }
 
 // The confirm step for D9. Every line answers a question a member asks at
@@ -91,6 +112,7 @@ function BundleConfirm({
   alreadyActive,
   preview,
   working,
+  error,
   onConfirm,
   onCancel,
 }: {
@@ -100,6 +122,9 @@ function BundleConfirm({
   alreadyActive: boolean;
   preview: BundleUpgradePreview;
   working: boolean;
+  // A failed attempt, rendered INSIDE the panel, so the numbers the member is
+  // deciding on stay on screen to retry from.
+  error: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -114,25 +139,11 @@ function BundleConfirm({
       ? null
       : formatMinor(preview.currentCents, currency, minorFactor);
   const renews = fmtDate(preview.renewsAt);
-  const restOfPeriod =
-    plan === "yearly" ? "the rest of this year" : "the rest of this month";
-  // A pay-what-you-can member paying above the bundle price is owed the unused
-  // remainder rather than charged a difference — same "nothing today", opposite
-  // direction on the next bill.
-  const owedCredit =
-    preview.currentCents !== null &&
-    preview.bundleCents !== null &&
-    preview.currentCents > preview.bundleCents;
-  // Built whole rather than glued from fragments: without a readable date the
-  // clause-by-clause version ran together into "Your next bill with the
-  // difference…".
-  const nextBillLine = owedCredit
-    ? renews
-      ? `Your next bill is ${renews}, with credit for what you've already paid.`
-      : `Your next bill comes with credit for what you've already paid.`
-    : renews
-      ? `Your next bill is ${renews}, with the difference for ${restOfPeriod} added on.`
-      : `Your next bill picks up the difference for ${restOfPeriod}.`;
+  const billLine = nextBillLine({
+    plan,
+    renewsOn: renews,
+    settlement: settlementOf(preview),
+  });
 
   return (
     <div className="mb-6 border border-cyan/50 bg-cyan/5 px-4 py-4">
@@ -166,9 +177,14 @@ function BundleConfirm({
               : "Your private feed is ready right away."}
         </li>
         <li>
-          Nothing to pay today. {nextBillLine}
+          {NOTHING_TO_PAY_TODAY} {billLine}
         </li>
       </ul>
+      {error ? (
+        <p className="mt-4 text-body-sm text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
       <div className="mt-4 flex flex-wrap gap-3">
         <button
           type="button"
@@ -223,13 +239,23 @@ export function EntitlementAccess({
   // buying the missing axis standalone, as before.
   const openBundleConfirm = async (axis: AxisKey) => {
     setBundle({ kind: "loading", axis });
-    const preview = await getBundleUpgradePreview();
-    if (!preview) {
+    const result = await getBundleUpgradePreview();
+    // "No live subscription to change" and "the request failed" are opposite
+    // instructions and used to arrive as the same null. Only the first is a
+    // reason to sell a standalone subscription instead: doing that on a failure
+    // drops a member who already HAS a healthy subscription into buying a
+    // second one, which the single-active-subscription guard then refuses with
+    // an "already a member" screen they didn't ask for.
+    if (result.kind === "none") {
       setBundle({ kind: "idle" });
       setCheckout({ tier: AXIS[axis].tier, plan: "monthly" });
       return;
     }
-    setBundle({ kind: "confirm", axis, preview });
+    if (result.kind === "error") {
+      setBundle({ kind: "preview-error", axis });
+      return;
+    }
+    setBundle({ kind: "confirm", axis, preview: result.preview });
   };
 
   // Step 2: move the member's existing single-axis subscription onto the bundle
@@ -240,17 +266,25 @@ export function EntitlementAccess({
     if (bundle.kind !== "confirm") return;
     const { axis, preview } = bundle;
     setBundle({ kind: "working", axis, preview });
-    const r = await changeTier({ tier: "bundle", plan: preview.plan });
+    const r = await changeTier({
+      tier: "bundle",
+      plan: preview.plan,
+    });
     if (r.ok) {
       setBundle({
         kind: "ok",
         immediate: r.timing !== "period_end",
+        preview,
         effectiveAt: r.effective_at,
       });
       onRefresh();
     } else {
+      // Back to `confirm`, not away from it: the panel keeps the numbers, so a
+      // retry is one click rather than a second preview round trip.
       setBundle({
         kind: "error",
+        axis,
+        preview,
         message: r.error ?? "Could not switch to the bundle — please try again.",
       });
     }
@@ -314,30 +348,58 @@ export function EntitlementAccess({
     <div className="mb-10">
       {banners}
 
-      {bundle.kind === "confirm" || bundle.kind === "working" ? (
-        // `working` carries the same preview so the panel stays on screen,
-        // numbers intact, while the switch runs.
+      {bundle.kind === "confirm" ||
+      bundle.kind === "working" ||
+      bundle.kind === "error" ? (
+        // `working` and `error` carry the same preview so the panel stays on
+        // screen, numbers intact, while the switch runs and if it fails.
         <BundleConfirm
           axis={bundle.axis}
           alreadyActive={axes[bundle.axis].active}
           preview={bundle.preview}
           working={bundle.kind === "working"}
+          error={bundle.kind === "error" ? bundle.message : null}
           onConfirm={confirmBundle}
           onCancel={() => setBundle({ kind: "idle" })}
         />
       ) : null}
 
+      {bundle.kind === "preview-error" ? (
+        <div
+          className="mb-6 border border-danger/50 px-4 py-3 text-body-sm text-fg-strong"
+          role="alert"
+        >
+          <p className="text-danger">
+            We couldn't read what this change would cost. Nothing has been
+            charged.
+          </p>
+          <button
+            type="button"
+            onClick={() => void openBundleConfirm(bundle.axis)}
+            className="mt-3 inline-flex items-center px-2 py-1 text-body-sm text-fg underline underline-offset-4 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            Try again
+          </button>
+        </div>
+      ) : null}
+
       {bundle.kind === "ok" ? (
         <p className="mb-6 border border-cyan/50 bg-cyan/10 px-4 py-3 text-body-sm text-cyan" aria-live="polite">
           {bundle.immediate
-            ? "You're in — your membership covers Ark+ and the Community now. Nothing to pay today; your next bill picks up the rest of this month."
+            ? // Same facts the panel stated a moment ago, from the same module:
+              // the banner used to hardcode "the rest of this month" and the
+              // charge direction, which contradicted the confirm step for every
+              // yearly member and every above-bundle pay-what-you-can one.
+              `You're in — your membership covers Ark+ and the Community now. ${NOTHING_TO_PAY_TODAY} ${nextBillLine(
+                {
+                  plan: bundle.preview.plan,
+                  renewsOn: fmtDate(bundle.preview.renewsAt),
+                  settlement: settlementOf(bundle.preview),
+                },
+              )}`
             : bundle.effectiveAt
               ? `Your membership covers Ark+ and the Community from ${fmtDate(bundle.effectiveAt)}.`
               : "Your membership covers Ark+ and the Community now."}
-        </p>
-      ) : bundle.kind === "error" ? (
-        <p className="mb-6 text-body-sm text-danger" aria-live="polite">
-          {bundle.message}
         </p>
       ) : null}
 

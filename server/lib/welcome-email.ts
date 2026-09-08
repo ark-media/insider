@@ -9,6 +9,11 @@
 
 import type { GiftTerm } from './activation.js'
 import { greetingFirstName, splitFullName } from '../../shared/profile-name.js'
+import {
+  NOTHING_TO_PAY_TODAY,
+  nextBillLine,
+  perPeriod,
+} from '../../shared/billing-copy.js'
 import { circleUrls } from '../../src/config/urls.js'
 
 const GIFT_LABEL: Record<GiftTerm, string> = {
@@ -137,15 +142,15 @@ function firstName(name?: string, email?: string): string | undefined {
   return greetingFirstName(first, email, last)
 }
 
-// Both emails share the same CTA logic: a brand-new account gets a
-// set-password link (the Auth0 ticket); an existing account is pointed at
-// sign-in. welcomeUrl is always referenced as the follow-up step.
-// includesCommunity adds "join the community" to the setup step — true for
-// bundle/gift (which carry community), false for a feed-only Ark+ membership.
+// The subscriber welcome CTA: a brand-new account gets a set-password link
+// (the Auth0 ticket); an existing account is pointed at sign-in. welcomeUrl is
+// always referenced as the follow-up step. includesCommunity adds "join the
+// community" to the setup step — true for the bundle, false for a feed-only
+// Ark+ membership.
 function ctaFor(
   welcomeUrl: string,
-  passwordSetupUrl?: string,
-  includesCommunity = true,
+  passwordSetupUrl: string | undefined,
+  includesCommunity: boolean,
 ) {
   const isNewAccount = Boolean(passwordSetupUrl)
   const newSetup = includesCommunity
@@ -161,65 +166,6 @@ function ctaFor(
       ? `Once you've set a password, you'll ${newSetup} at <a href="${welcomeUrl}" style="color:${CYAN};">your welcome page</a>.`
       : `You already have an Ark+ login — sign in to ${returningSetup} at <a href="${welcomeUrl}" style="color:${CYAN};">your welcome page</a>.`,
   }
-}
-
-// ---------------------------------------------------------------------------
-// Gift recipient
-// ---------------------------------------------------------------------------
-
-export type GiftWelcomeEmailParams = {
-  recipientName?: string
-  // The recipient's address — required for the name check, see firstName().
-  recipientEmail?: string
-  giverName?: string
-  term: GiftTerm
-  message?: string
-  welcomeUrl: string
-  // Present only for brand-new accounts: an Auth0 password-change ticket URL.
-  passwordSetupUrl?: string
-}
-
-export function renderGiftWelcomeEmail(p: GiftWelcomeEmailParams): {
-  subject: string
-  html: string
-} {
-  const termLabel = GIFT_LABEL[p.term]
-  const giver = p.giverName?.trim()
-  const first = firstName(p.recipientName, p.recipientEmail)
-
-  const subject = giver ? `${giver} sent you Ark+` : `You've been gifted Ark+`
-  const headlineHtml = giver
-    ? `${esc(giver)} gifted you ${termLabel} of Ark+.`
-    : `You've been gifted ${termLabel} of Ark+.`
-
-  const messageBlockHtml = p.message?.trim()
-    ? `
-            <tr>
-              <td style="padding:0 0 28px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${CYAN};background:${NAVY_900};border-radius:6px;">
-                  <tr>
-                    <td style="padding:16px 20px;">
-                      <p style="margin:0 0 6px;font:600 11px ${FONT};letter-spacing:0.16em;text-transform:uppercase;color:${CYAN};">A note from ${giver ? esc(giver) : 'the sender'}</p>
-                      <p style="margin:0;font:italic 15px/1.6 ${FONT};color:${FG};">${esc(p.message.trim())}</p>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>`
-    : undefined
-
-  const html = renderShell({
-    preheader: esc(headlineHtml),
-    eyebrow: 'A gift for you',
-    headlineHtml,
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
-    bodyHtml: `Your membership is active now. It includes ${WHATS_INCLUDED}.`,
-    messageBlockHtml,
-    footerHtml: `Gifts are one-time — your access runs for ${termLabel} and won't auto-renew. Need help? Just reply to this email.`,
-    ...ctaFor(p.welcomeUrl, p.passwordSetupUrl),
-  })
-
-  return { subject, html }
 }
 
 // ---------------------------------------------------------------------------
@@ -408,18 +354,18 @@ export type AxisAddedEmailParams = {
 //      invoice, so a member watching their card sees no charge and no
 //      explanation unless we give them one.
 //
-// The next-bill sentence stays direction-neutral ("covers the rest of this
-// month at the new price"): a pay-what-you-can member who was paying MORE than
-// the bundle ends up owed a credit rather than charged a difference, and this
-// renderer isn't told which way it went.
+// Both sentences come from shared/billing-copy.ts, which the account page's
+// confirm panel reads too: this email is the follow-up to a promise made
+// there, so the two cannot word the same facts differently. The next-bill
+// sentence takes that module's 'unknown' settlement — a pay-what-you-can member
+// who was paying MORE than the bundle is owed a credit rather than charged a
+// difference, and this renderer is told the new price, never the old one.
 export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
   subject: string
   html: string
 } {
   const first = firstName(p.name, p.email)
   const addedCircle = p.axis === 'circle'
-  const per = p.plan === 'yearly' ? 'a year' : 'a month'
-  const restOfPeriod = p.plan === 'yearly' ? 'the rest of this year' : 'the rest of this month'
 
   // Split so the em-dash clause lands at the END of the sentence: "added X —
   // detail" reads, "added X — detail to your membership" does not.
@@ -430,11 +376,18 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
 
   const coversEverything = 'the private feed and the community'
   const priceSentence = p.price
-    ? `Your membership is now <strong>${esc(p.price)} ${per}</strong>, and that covers everything: ${coversEverything}.`
+    ? `Your membership is now <strong>${esc(p.price)} ${perPeriod(p.plan)}</strong>, and that covers everything: ${coversEverything}.`
     : `Your membership now covers everything: ${coversEverything}.`
-  const billSentence = p.renewsOn
-    ? ` Nothing to pay today. Your next bill is ${esc(p.renewsOn)}, and it covers ${restOfPeriod} at the new price.`
-    : ` Nothing to pay today. Your next bill covers ${restOfPeriod} at the new price.`
+  // Same wording the confirm panel promised — see shared/billing-copy.ts, which
+  // exists because this sentence and that one used to be written out twice.
+  // 'unknown' is the honest settlement here: this renderer is told what the
+  // membership costs NOW, never what it cost before, so it can't say which way
+  // the money went.
+  const billSentence = ` ${NOTHING_TO_PAY_TODAY} ${nextBillLine({
+    plan: p.plan,
+    renewsOn: p.renewsOn ? esc(p.renewsOn) : null,
+    settlement: 'unknown',
+  })}`
 
   // The app links live in the email itself, not only behind the CTA. A new
   // community member meets these on /welcome; someone who upgrades from their

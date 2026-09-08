@@ -244,16 +244,27 @@ export type BundleUpgradePreview = {
   renewsAt: string | null;
 };
 
-export async function getBundleUpgradePreview(): Promise<BundleUpgradePreview | null> {
+// Deliberately three outcomes, not two. "No live subscription to change" and
+// "the request failed" are opposite instructions to the caller — the first
+// means fall back to buying the axis standalone, the second means say so and
+// offer a retry — and collapsing them into `null` routed a member with a
+// perfectly healthy subscription into a SECOND one whenever the endpoint
+// hiccuped.
+export type BundleUpgradePreviewResult =
+  | { kind: "preview"; preview: BundleUpgradePreview }
+  | { kind: "none" }
+  | { kind: "error" };
+
+export async function getBundleUpgradePreview(): Promise<BundleUpgradePreviewResult> {
   try {
     const res = await fetch("/api/stripe/bundle-upgrade-preview", {
       credentials: "include",
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { kind: "error" };
     const json = (await res.json()) as { preview: BundleUpgradePreview | null };
-    return json.preview;
+    return json.preview ? { kind: "preview", preview: json.preview } : { kind: "none" };
   } catch {
-    return null;
+    return { kind: "error" };
   }
 }
 

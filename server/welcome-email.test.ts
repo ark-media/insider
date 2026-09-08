@@ -3,7 +3,6 @@ import {
   FEED_INCLUDED,
   renderAxisAddedEmail,
   renderGiftRedemptionEmail,
-  renderGiftWelcomeEmail,
   renderSubscriberWelcomeEmail,
 } from './lib/welcome-email'
 import { circleUrls } from '../src/config/urls'
@@ -26,57 +25,23 @@ describe('renderGiftRedemptionEmail', () => {
     // Auto-login promise, not a "sign in first" instruction.
     expect(html).toContain('signed in automatically')
   })
-})
-
-describe('renderGiftWelcomeEmail', () => {
-  test('new account: set-password CTA carries the ticket URL', () => {
-    const { subject, html } = renderGiftWelcomeEmail({
-      recipientName: 'Alice Smith',
-      giverName: 'Bob',
-      term: '1yr',
-      message: 'Enjoy the show',
-      welcomeUrl: 'https://app.test/welcome',
-      passwordSetupUrl: 'https://auth.test/u/reset?ticket=abc',
-    })
-    expect(subject).toBe('Bob sent you Ark+')
-    expect(html).toContain('Bob gifted you 1 year of Ark+.')
-    expect(html).toContain('Hi Alice,') // first name only
-    expect(html).toContain('Set your password')
-    expect(html).toContain('https://auth.test/u/reset?ticket=abc')
-    expect(html).toContain('Enjoy the show')
-    // Welcome page still referenced as the follow-up step.
-    expect(html).toContain('https://app.test/welcome')
-  })
 
   test('an address typed into recipient_name is never greeted', () => {
     // Free text a giver types. The capitalization rule used to accept this,
-    // rendering "Hi Alice@example.com," at the top of the welcome email.
-    const { html } = renderGiftWelcomeEmail({
+    // rendering "Hi Alice@example.com," at the top of the email.
+    const { html } = renderGiftRedemptionEmail({
       recipientName: 'Alice@example.com',
       term: '1yr',
-      welcomeUrl: 'https://app.test/welcome',
+      claimUrl: 'https://app.test/redeem?mt=jwt',
     })
     expect(html).toContain('Hi there,')
     expect(html).not.toContain('Alice@example.com')
   })
 
-  test('existing account: log-in CTA, no ticket', () => {
-    const { subject, html } = renderGiftWelcomeEmail({
-      giverName: 'Bob',
-      term: '6mo',
-      welcomeUrl: 'https://app.test/welcome',
-    })
-    expect(subject).toBe('Bob sent you Ark+')
-    expect(html).toContain('6 months of Ark+.')
-    expect(html).toContain('Start listening')
-    expect(html).toContain('already have an Ark+ login')
-    expect(html).not.toContain('Set your password')
-  })
-
   test('no giver name: falls back to generic subject + headline', () => {
-    const { subject, html } = renderGiftWelcomeEmail({
+    const { subject, html } = renderGiftRedemptionEmail({
       term: '1yr',
-      welcomeUrl: 'https://app.test/welcome',
+      claimUrl: 'https://app.test/redeem?mt=jwt',
     })
     expect(subject).toBe("You've been gifted Ark+")
     expect(html).toContain("You've been gifted 1 year of Ark+.")
@@ -84,11 +49,11 @@ describe('renderGiftWelcomeEmail', () => {
   })
 
   test('escapes HTML in user-supplied giver name and message', () => {
-    const { html } = renderGiftWelcomeEmail({
+    const { html } = renderGiftRedemptionEmail({
       giverName: '<script>x</script>',
       term: '1yr',
       message: 'a & b < c',
-      welcomeUrl: 'https://app.test/welcome',
+      claimUrl: 'https://app.test/redeem?mt=jwt',
     })
     expect(html).not.toContain('<script>x</script>')
     expect(html).toContain('&lt;script&gt;')
