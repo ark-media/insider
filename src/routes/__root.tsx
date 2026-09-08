@@ -4,6 +4,7 @@ import { Footer } from "../components/Footer";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import { AuthErrorNotice } from "../components/AuthErrorNotice";
 import { Spinner } from "../components/Spinner";
+import { SupportWidget } from "../components/support/SupportWidget";
 import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
 
 export const Route = createRootRoute({
@@ -51,6 +52,10 @@ function RootContent() {
         <Outlet />
       </div>
       {chromeless ? null : <Footer />}
+      {/* Floating help launcher. Stays on /welcome, /setup and /redeem on
+          purpose — those are exactly where people get stuck. It suppresses
+          itself on /admin/*. */}
+      {chromeless ? null : <SupportWidget />}
     </div>
   );
 }

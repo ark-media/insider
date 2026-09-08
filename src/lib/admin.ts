@@ -14,6 +14,7 @@ import type {
 } from "../../shared/cancellation";
 import type { NewsletterSlug } from "../data/newsletters";
 import type { ReminderConfig } from "../../shared/feed-reminder";
+import type { SupportSession } from "../../shared/support";
 import type {
   MemberDirectoryEntry,
   MemberDirectoryFilter,
@@ -23,6 +24,7 @@ import type {
 export type { Promo, BeehiivDraft, DiscussThread };
 export type { CancellationSummary, CancellationFilter };
 export type { ReminderConfig };
+export type { SupportSession };
 export type { MemberDirectoryEntry, MemberDirectoryFilter, MemberDirectoryPage };
 
 // Kept as a thin indirection so call sites stay uniform; the session now
@@ -433,4 +435,19 @@ export async function deleteDiscussThread(id: string): Promise<void> {
     { method: "DELETE", headers: await authHeaders(), credentials: "include" },
   );
   if (!res.ok) throw new Error(await errorMessage(res));
+}
+
+// --- Help widget sessions -------------------------------------------------
+
+// Read-only. Throws on a non-OK response so /admin/support can show a retry
+// rather than an empty page that looks like "nobody has asked anything".
+export async function listSupportSessions(
+  limit = 200,
+): Promise<SupportSession[]> {
+  const res = await fetch(
+    `/api/admin/support-conversations?limit=${encodeURIComponent(String(limit))}`,
+    { headers: await authHeaders(), credentials: "include" },
+  );
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { sessions: SupportSession[] }).sessions;
 }

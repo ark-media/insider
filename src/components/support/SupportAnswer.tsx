@@ -1,0 +1,33 @@
+import parse from "html-react-parser";
+import type { Faq } from "../../lib/faqs";
+
+// The answer arrives already sanitized by the server (server/lib/faqs.ts
+// re-sanitizes on the way OUT, not just on the way in), so it goes straight to
+// html-react-parser — the same contract FAQ.tsx relies on.
+//
+// Prose styling is a narrowed version of the /faq accordion's: the same tag
+// coverage, sized for a ~360px panel rather than a two-column page.
+const ANSWER_PROSE = [
+  "[&_p]:mb-3 [&_p:last-child]:mb-0",
+  "[&_a]:text-cyan [&_a]:underline [&_a]:underline-offset-[3px] [&_a]:break-words",
+  "[&_strong]:text-fg-strong [&_b]:text-fg-strong",
+  "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5",
+  "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5",
+  "[&_li]:ml-1",
+  "[&_h2]:mt-4 [&_h2]:font-display [&_h2]:text-[15px] [&_h2]:text-fg-strong",
+  "[&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-fg-strong",
+  "[&_h4]:mt-2 [&_h4]:font-semibold [&_h4]:text-fg-strong",
+  "[&_blockquote]:border-l-2 [&_blockquote]:border-rule-strong [&_blockquote]:pl-3 [&_blockquote]:text-fg-muted",
+].join(" ");
+
+export function SupportAnswer({ faq }: { faq: Faq }) {
+  return (
+    <div>
+      {faq.category ? <p className="eyebrow text-cyan">{faq.category}</p> : null}
+      <h3 className="mt-1 font-display text-[17px] leading-snug text-fg-strong">
+        {faq.question}
+      </h3>
+      <div className={`mt-3 text-body-sm ${ANSWER_PROSE}`}>{parse(faq.answer)}</div>
+    </div>
+  );
+}

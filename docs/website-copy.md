@@ -137,6 +137,191 @@
 - **COPYRIGHT**: © {year} Ark Media LLC (year = current year)
 - **AFFILIATE DISCLOSURE**: As an Amazon Associate, Ark Media earns from qualifying purchases.
 
+## Help widget (floating, shared)
+Floating launcher on every public page (hidden in the back office). Not an AI
+chatbot — it searches the published FAQs and routes to the right place, and the
+destinations change with what the member owns. Topic copy lives in
+`src/data/supportTopics.ts`; the answers themselves are the FAQ entries, edited
+in the back office, not here.
+
+### Launcher & panel chrome
+- **LAUNCHER (CLOSED)**: Help
+- **LAUNCHER (OPEN)**: Close
+- **PANEL TITLE**: Help.
+- **PANEL SUBTITLE**: Answers to the usual questions.
+- **CLOSE BUTTON (ARIA)**: Close help
+- **SEARCH LABEL (SCREEN READER)**: Search the help answers
+- **PLACEHOLDER (SEARCH)**: Ask a question
+- **PLACEHOLDER (LOADING)**: Loading answers…
+- **BACK BUTTON**: ← All topics
+- **ESCALATION BUTTON**: Talk to a person
+
+### Result states
+- **PROMPT (NOTHING TYPED)**: Search the answers, or pick a topic.
+- **HEADING (CONFIDENT MATCH)**: This should answer it
+- **HEADING (WEAK MATCH)**: These might help
+- **HEADING (RELATED TOPICS)**: Go straight to
+- **HEADING (TOPIC'S OWN FAQS)**: Related answers
+- **NO MATCH**: I couldn't find an answer for that.
+- **KNOWN GAP**: falls back to the matched topic's blurb, or — **That one needs a person.**
+- **TOPIC RETIRED**: That topic has moved.
+- **ERROR (ANSWERS DIDN'T LOAD)**: The answers didn't load. Browse the topics below, or try again.
+- **RETRY BUTTON**: Try again
+
+### Handoff to /contact
+Escalating preselects the **Membership and technical support** desk and prefills
+the message with a short summary — never a verbatim log. The member edits it
+before sending.
+- **TRANSCRIPT HEADER**: — From the help widget —
+- **TRANSCRIPT LINE**: Looking at: “{topic}”
+- **TRANSCRIPT LINE**: Looked for: “{query}”
+- **TRANSCRIPT LINE**: Read: “{question}”
+- **TRANSCRIPT LINE**: Found no answer for: “{query}”
+- **TRANSCRIPT OVERFLOW**: (+{n} more)
+
+### Topics
+Each is a chip on the panel's home screen unless marked otherwise; the rest are
+reachable by typing. Buttons are listed across every membership state, so a
+single member only ever sees some of them.
+#### What's included, and what it costs
+- **CHIP**: What's included, and what it costs
+- **BLURB**: The three subscriptions, what each one gets you, and the price.
+- **BUTTON**: Compare the plans
+- **BUTTON**: See your membership
+
+#### How much it costs *(search only — not a chip)*
+- **CHIP**: How much it costs
+- **BLURB**: Prices for each subscription, monthly and annual.
+- **BUTTON**: See the prices
+
+#### Set up my podcast feed
+- **CHIP**: Set up my podcast feed
+- **BLURB**: Get subscriber episodes into Apple Podcasts, Spotify, or wherever you listen.
+- **BUTTON**: Sign in to set up your feed
+- **BUTTON**: See what Ark+ includes
+- **BUTTON**: Open feed setup
+- *(shown only to: signed out, Ark+, Bundle)*
+
+#### Episodes aren't showing up
+- **CHIP**: Episodes aren't showing up
+- **BLURB**: Subscriber episodes missing, still hearing ads, or a locked episode.
+- **NOTE**: If you subscribed through Apple Podcasts, you won't have a login here — Apple keeps those subscriptions entirely on their side, and you manage them in Apple's Settings. If you subscribed on our website, sign in and it'll all be on your account page.
+- **BUTTON**: See what Ark+ includes
+- **NOTE**: Almost always one of three things: you're signed in with a different email than you subscribed with, the private feed hasn't been added to your podcast app yet, or the app hasn't refreshed. Feed setup walks through all three.
+- **BUTTON**: Open feed setup
+- *(shown only to: signed out, Ark+, Bundle)*
+
+#### Listening on Spotify
+- **CHIP**: Listening on Spotify
+- **BLURB**: Linking your Spotify account, and why it asks.
+- **BUTTON**: See what Ark+ includes
+- **BUTTON**: Link Spotify
+
+#### I subscribed through Apple
+- **CHIP**: I subscribed through Apple
+- **BLURB**: What's different, and where to manage an Apple subscription.
+- **BUTTON**: Manage an Apple subscription
+- **BUTTON**: Send us a message
+
+#### The Fold
+- **CHIP**: The Fold
+- **BLURB**: Getting in, and what's inside.
+- **BUTTON**: See what's inside
+- **BUTTON**: Add the Fold
+- **BUTTON**: Open the Fold
+- **BUTTON**: Open in the app
+
+#### Newsletters & emails
+- **CHIP**: Newsletters & emails
+- **BLURB**: Which newsletters you get, and how to change that.
+- **BUTTON**: See the newsletters
+- **BUTTON**: Manage your newsletters
+
+#### Billing & payment
+- **CHIP**: Billing & payment
+- **BLURB**: Where you're subscribed, and what you're paying.
+- **NOTE**: If you subscribed through Apple Podcasts, you won't have a login here — Apple keeps those subscriptions entirely on their side, and you manage them in Apple's Settings. If you subscribed on our website, sign in and it'll all be on your account page.
+- **BUTTON**: Sign in
+- **BUTTON**: See the plans
+- **BUTTON**: Open billing
+- *(shown only to: signed out, Ark+, the Fold, Bundle)*
+
+#### Cancel or change my plan
+- **CHIP**: Cancel or change my plan
+- **BLURB**: Cancel, switch billing period, or move between plans.
+- **NOTE**: If you subscribed through Apple Podcasts, you won't have a login here — Apple keeps those subscriptions entirely on their side, and you manage them in Apple's Settings. If you subscribed on our website, sign in and it'll all be on your account page.
+- **BUTTON**: Send us a message
+- **BUTTON**: Manage your membership
+- *(shown only to: signed out, Ark+, the Fold, Bundle)*
+
+#### Add the other half of the Bundle
+- **CHIP**: Add the other half of the Bundle
+- **BLURB**: You have one side — here's how to add the other.
+- **BUTTON**: Change your plan
+- **BUTTON**: Compare the plans
+- *(shown only to: Ark+, the Fold)*
+
+#### I can't log in
+- **CHIP**: I can't log in
+- **BLURB**: Sign-in trouble, or you're not sure which email you used.
+- **BUTTON**: Try signing in
+- **NOTE**: If you subscribed through Apple Podcasts, you won't have a login here — Apple keeps those subscriptions entirely on their side, and you manage them in Apple's Settings. If you subscribed on our website, sign in and it'll all be on your account page.
+- **BUTTON**: Email support instead
+- *(shown only to: signed out)*
+
+#### I subscribed to Inside Call Me Back
+- **CHIP**: I subscribed to Inside Call Me Back
+- **BLURB**: What changed when Inside Call Me Back became Ark+.
+- **BUTTON**: Sign in to check
+- **BUTTON**: Send us a message
+- **BUTTON**: Check your feed setup
+
+#### Gift a subscription
+- **CHIP**: Gift a subscription
+- **BLURB**: Buy Ark+, the Fold, or the Bundle for someone else.
+- **BUTTON**: Gift a subscription
+
+#### I received a gift *(search only — not a chip)*
+- **CHIP**: I received a gift
+- **BLURB**: Claim a gifted subscription.
+- **NOTE**: Your gift email has a link that signs you in and sets everything up. If you can't find it, check spam — and if it's expired, send us a message and we'll reissue it.
+- **BUTTON**: Claim a gift
+- **BUTTON**: Send us a message
+
+#### A refund or a charge I don't recognise *(search only — not a chip)*
+- **CHIP**: A refund or a charge I don't recognise
+- **BLURB**: We'll need to look at your account for this one.
+- **BUTTON**: Send us a message
+
+#### A receipt or invoice *(search only — not a chip)*
+- **CHIP**: A receipt or invoice
+- **BLURB**: We can send one over.
+- **BUTTON**: Send us a message
+
+#### Change the email on my subscription *(search only — not a chip)*
+- **CHIP**: Change the email on my subscription
+- **BLURB**: We'll move it for you.
+- **BUTTON**: Send us a message
+
+#### A promo or discount code *(search only — not a chip)*
+- **CHIP**: A promo or discount code
+- **BLURB**: Codes go in at checkout.
+- **NOTE**: There's a box for it on the payment step when you subscribe.
+- **BUTTON**: Go to checkout
+- **BUTTON**: The code isn't working
+
+#### A free trial *(search only — not a chip)*
+- **CHIP**: A free trial
+- **BLURB**: There isn't one — but you can cancel any time.
+- **NOTE**: We don't run free trials, but nothing is locked in — you can cancel whenever and keep access to the end of what you've paid for.
+- **BUTTON**: See the plans
+
+#### Delete my account or data *(search only — not a chip)*
+- **CHIP**: Delete my account or data
+- **BLURB**: A person handles this one.
+- **BUTTON**: Read the privacy policy
+- **BUTTON**: Send us a message
+
 ## Newsletter signup form (shared)
 - **INPUT PLACEHOLDER**: Email
 - **SUBMIT CTA**: Subscribe

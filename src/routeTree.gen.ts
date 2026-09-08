@@ -39,6 +39,7 @@ import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
 import { Route as AdminFeedRemindersRouteImport } from './routes/admin/feed-reminders'
 import { Route as AdminMembersRouteImport } from './routes/admin/members'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
+import { Route as AdminSupportRouteImport } from './routes/admin/support'
 import { Route as CareersIndexRouteImport } from './routes/careers/index'
 import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
 import { Route as HostsIndexRouteImport } from './routes/hosts/index'
@@ -210,6 +211,11 @@ const AdminPromosRoute = AdminPromosRouteImport.update({
   path: '/admin/promos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminSupportRoute = AdminSupportRouteImport.update({
+  id: '/admin/support',
+  path: '/admin/support',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CareersIndexRoute = CareersIndexRouteImport.update({
   id: '/careers/',
   path: '/careers/',
@@ -341,6 +347,7 @@ export interface FileRoutesByFullPath {
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
   '/admin/members': typeof AdminMembersRoute
   '/admin/promos': typeof AdminPromosRoute
+  '/admin/support': typeof AdminSupportRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
@@ -392,6 +399,7 @@ export interface FileRoutesByTo {
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
   '/admin/members': typeof AdminMembersRoute
   '/admin/promos': typeof AdminPromosRoute
+  '/admin/support': typeof AdminSupportRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
@@ -445,6 +453,7 @@ export interface FileRoutesById {
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
   '/admin/members': typeof AdminMembersRoute
   '/admin/promos': typeof AdminPromosRoute
+  '/admin/support': typeof AdminSupportRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
@@ -499,6 +508,7 @@ export interface FileRouteTypes {
     | '/admin/feed-reminders'
     | '/admin/members'
     | '/admin/promos'
+    | '/admin/support'
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
@@ -550,6 +560,7 @@ export interface FileRouteTypes {
     | '/admin/feed-reminders'
     | '/admin/members'
     | '/admin/promos'
+    | '/admin/support'
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
@@ -602,6 +613,7 @@ export interface FileRouteTypes {
     | '/admin/feed-reminders'
     | '/admin/members'
     | '/admin/promos'
+    | '/admin/support'
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
@@ -650,6 +662,7 @@ export interface RootRouteChildren {
   AdminFeedRemindersRoute: typeof AdminFeedRemindersRoute
   AdminMembersRoute: typeof AdminMembersRoute
   AdminPromosRoute: typeof AdminPromosRoute
+  AdminSupportRoute: typeof AdminSupportRoute
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
@@ -884,6 +897,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPromosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/support': {
+      id: '/admin/support'
+      path: '/admin/support'
+      fullPath: '/admin/support'
+      preLoaderRoute: typeof AdminSupportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/careers/': {
       id: '/careers/'
       path: '/careers'
@@ -1093,6 +1113,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminFeedRemindersRoute: AdminFeedRemindersRoute,
   AdminMembersRoute: AdminMembersRoute,
   AdminPromosRoute: AdminPromosRoute,
+  AdminSupportRoute: AdminSupportRoute,
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,

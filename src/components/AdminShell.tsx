@@ -11,7 +11,8 @@ type Tab =
   | "promos"
   | "discuss-threads"
   | "cancellations"
-  | "feed-reminders";
+  | "feed-reminders"
+  | "support";
 
 const TABS: { id: Tab; label: string; to: string }[] = [
   { id: "home", label: "Overview", to: "/admin" },
@@ -23,6 +24,7 @@ const TABS: { id: Tab; label: string; to: string }[] = [
   { id: "discuss-threads", label: "Discuss threads", to: "/admin/discuss-threads" },
   { id: "cancellations", label: "Cancellations", to: "/admin/cancellations" },
   { id: "feed-reminders", label: "Feed reminders", to: "/admin/feed-reminders" },
+  { id: "support", label: "Help widget", to: "/admin/support" },
 ];
 
 // Consistent chrome for every back-office page: the admin gate plus a title and

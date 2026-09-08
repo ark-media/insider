@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import { contactTopics, type ContactTopic } from "../config/urls";
 import { sendContactMessage } from "../lib/contact";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { takeSupportDraft } from "../lib/support/session";
 
 export const Route = createFileRoute("/contact")({
   // Allow a topic to be pre-selected via ?topic=… (e.g. links that want the
@@ -24,12 +26,44 @@ const labelClass =
 
 function ContactPage() {
   const { topic: topicParam } = Route.useSearch();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const { state } = useSubscriberAuth();
+
+  // Name and email are DERIVED, not copied: null means "the member hasn't
+  // touched this field", so a signed-in member sees their own details without
+  // an effect that races /api/me resolving after mount. Typing anything (an
+  // empty string included) takes ownership of the field from then on.
+  const me = state.kind === "member" ? state.me : null;
+  const [nameInput, setNameInput] = useState<string | null>(null);
+  const [emailInput, setEmailInput] = useState<string | null>(null);
+  // The greeting rule from shared/profile-name.ts holds here too: a name we
+  // were never given stays blank rather than being invented from the email.
+  const name = nameInput ?? me?.firstName ?? "";
+  const email = emailInput ?? me?.email ?? "";
+
   const [topic, setTopic] = useState<ContactTopic>(
     topicParam ?? contactTopics[0].value,
   );
   const [message, setMessage] = useState("");
+
+  // Handoff from the help widget: it stashes a short transcript in
+  // sessionStorage and navigates here with the desk already preselected.
+  //
+  // This is a read from an external system that also CLEARS it, so it can't be
+  // derived during render and it can't be a useState initializer (StrictMode
+  // double-invokes those, and the second call would find the draft already
+  // gone). Clearing is the point: a member who sends this and then hits Back
+  // should not find the transcript sitting in the form again.
+  //
+  // Reading-and-clearing an external store on mount is the external-system
+  // synchronisation the set-state-in-effect rule carves out, but it can't see
+  // that through the helper — hence the one-line exemption below.
+  useEffect(() => {
+    const draft = takeSupportDraft();
+    if (!draft?.message) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessage(draft.message);
+  }, []);
+
   // Honeypot — see server/routes/contact.ts. Real users leave it blank.
   const [company, setCompany] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "ok" | "error">(
@@ -46,8 +80,10 @@ function ContactPage() {
     if (r.ok) {
       setStatus("ok");
       setFeedback("Thanks — your message is on its way. We'll be in touch.");
-      setName("");
-      setEmail("");
+      // Back to derived: a signed-in member sees their details again, a
+      // signed-out one sees a blank form.
+      setNameInput(null);
+      setEmailInput(null);
       setMessage("");
       setTopic(contactTopics[0].value);
     } else {
@@ -74,7 +110,7 @@ function ContactPage() {
                   type="text"
                   required
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => setNameInput(e.target.value)}
                   placeholder="Your name"
                   className={`mt-3 ${inputClass}`}
                 />
@@ -85,7 +121,7 @@ function ContactPage() {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => setEmailInput(e.target.value)}
                   placeholder="you@example.com"
                   className={`mt-3 ${inputClass}`}
                 />
