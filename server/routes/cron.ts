@@ -35,6 +35,12 @@ function cronAuthorized(req: IncomingMessage, cronSecret: string): boolean {
 // can never drop a marker that could still match a live retry.
 const WEBHOOK_EVENT_RETENTION_DAYS = 90
 
+// Help-widget sessions are kept longer than webhook events because their value
+// is a trend — which questions keep going unanswered — not an individual row.
+// They still expire: the steps include whatever a member typed into the search
+// box, which can carry personal details, so this must not accumulate forever.
+const SUPPORT_SESSION_RETENTION_DAYS = 180
+
 export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
   return [
     defineRoute({
@@ -167,7 +173,15 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             delete from sc_webhook_events
             where received_at < now() - make_interval(days => ${WEBHOOK_EVENT_RETENTION_DAYS})
             returning id`
-          json(200, { stripe: stripeDeleted.length, sc: scDeleted.length })
+          const supportDeleted = await sql`
+            delete from support_conversations
+            where created_at < now() - make_interval(days => ${SUPPORT_SESSION_RETENTION_DAYS})
+            returning id`
+          json(200, {
+            stripe: stripeDeleted.length,
+            sc: scDeleted.length,
+            support: supportDeleted.length,
+          })
         } catch (err) {
           console.error('[cron] prune-webhook-events failed:', err)
           json(500, { error: 'prune_failed' })

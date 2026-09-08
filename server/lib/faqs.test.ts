@@ -95,3 +95,36 @@ describe('validateFaqInput', () => {
     expect(validateFaqInput('nope').ok).toBe(false)
   })
 })
+
+describe('validateFaqInput — key', () => {
+  const ok = (raw: unknown) => {
+    const r = validateFaqInput(raw)
+    if (!r.ok) throw new Error(`expected ok, got: ${r.error}`)
+    return r.value
+  }
+
+  test('absent or blank becomes null, so the unique index ignores it', () => {
+    expect(ok(valid).key).toBeNull()
+    expect(ok({ ...valid, key: '   ' }).key).toBeNull()
+  })
+
+  test('accepts a slug and lowercases it', () => {
+    expect(ok({ ...valid, key: 'cancel-anytime' }).key).toBe('cancel-anytime')
+    expect(ok({ ...valid, key: '  Cancel-Anytime  ' }).key).toBe('cancel-anytime')
+  })
+
+  test('rejects anything that is not a clean slug', () => {
+    for (const key of ['has space', 'under_score', 'trailing-', '-leading', 'double--hyphen', 'punct!']) {
+      const r = validateFaqInput({ ...valid, key })
+      expect(r.ok).toBe(false)
+    }
+  })
+
+  // The admin editor PUTs the whole record, so a form that forgot to carry the
+  // key would silently clear it and break every widget topic bound to that row.
+  // This asserts the shape the editor must send, not just what validates.
+  test('a full-replace draft round-trips its key', () => {
+    const draft = { ...valid, key: 'where-am-i-subscribed', category: 'Account', enabled: true, displayOrder: 22 }
+    expect(ok(draft).key).toBe('where-am-i-subscribed')
+  })
+})

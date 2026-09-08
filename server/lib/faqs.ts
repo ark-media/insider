@@ -16,6 +16,7 @@ import type { Faq } from '../../shared/faq.js'
 export type { Faq }
 
 export type FaqInput = {
+  key: string | null
   question: string
   answer: string
   category: string
@@ -65,6 +66,22 @@ export function validateFaqInput(raw: unknown): ValidationResult {
   // Category is an optional plain-text section heading; strip any markup.
   const category = typeof r.category === 'string' ? sanitizeQuestion(r.category) : ''
 
+  // The key is a code-facing slug, not prose: lowercase letters, digits and
+  // hyphens. Blank means "nothing references this row", stored as null so the
+  // unique index ignores it (Postgres allows many nulls). Validated rather
+  // than slugified, because silently rewriting an editor's key would break the
+  // binding it was typed to fix.
+  let key: string | null = null
+  if (typeof r.key === 'string' && r.key.trim()) {
+    key = r.key.trim().toLowerCase()
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key)) {
+      return {
+        ok: false,
+        error: 'Key must be lowercase letters, numbers and single hyphens.',
+      }
+    }
+  }
+
   const enabled = r.enabled == null ? true : r.enabled === true
 
   let displayOrder = 0
@@ -76,7 +93,7 @@ export function validateFaqInput(raw: unknown): ValidationResult {
     displayOrder = n
   }
 
-  return { ok: true, value: { question, answer, category, enabled, displayOrder } }
+  return { ok: true, value: { key, question, answer, category, enabled, displayOrder } }
 }
 
 // --- DB accessors --------------------------------------------------------
@@ -92,6 +109,7 @@ type Row = Record<string, unknown>
 function mapRow(r: Row): Faq {
   return {
     id: String(r.id),
+    key: r.key == null ? null : String(r.key),
     question: String(r.question),
     answer: sanitizeRichText(String(r.answer)),
     category: String(r.category ?? ''),
@@ -102,7 +120,7 @@ function mapRow(r: Row): Faq {
   }
 }
 
-const COLUMNS = `id, question, answer, category, enabled, display_order, created_at, updated_at`
+const COLUMNS = `id, key, question, answer, category, enabled, display_order, created_at, updated_at`
 
 // All FAQs, for the admin list (enabled or not).
 export async function listFaqs(sql: Sql): Promise<Faq[]> {
@@ -127,8 +145,8 @@ export async function listEnabledFaqs(sql: Sql): Promise<Faq[]> {
 
 export async function createFaq(sql: Sql, input: FaqInput): Promise<Faq> {
   const rows = (await sql`
-    insert into faqs (question, answer, category, enabled, display_order)
-    values (${input.question}, ${input.answer}, ${input.category}, ${input.enabled}, ${input.displayOrder})
+    insert into faqs (key, question, answer, category, enabled, display_order)
+    values (${input.key}, ${input.question}, ${input.answer}, ${input.category}, ${input.enabled}, ${input.displayOrder})
     returning ${sql.unsafe(COLUMNS)}
   `) as Row[]
   return mapRow(rows[0])
@@ -141,6 +159,7 @@ export async function updateFaq(
 ): Promise<Faq | null> {
   const rows = (await sql`
     update faqs set
+      key = ${input.key},
       question = ${input.question},
       answer = ${input.answer},
       category = ${input.category},

@@ -23,6 +23,7 @@ export const Route = createFileRoute("/admin/faqs")({
 });
 
 type FormState = {
+  key: string;
   question: string;
   answer: string;
   category: string;
@@ -32,6 +33,7 @@ type FormState = {
 
 function emptyForm(): FormState {
   return {
+    key: "",
     question: "",
     answer: "",
     category: "",
@@ -42,6 +44,7 @@ function emptyForm(): FormState {
 
 function formFrom(f: Faq): FormState {
   return {
+    key: f.key ?? "",
     question: f.question,
     answer: f.answer,
     category: f.category,
@@ -61,6 +64,7 @@ function FaqsAdmin() {
       return;
     }
     const draft: FaqDraft = {
+      key: form.key.trim(),
       question: form.question.trim(),
       answer: form.answer,
       category: form.category.trim(),
@@ -132,6 +136,7 @@ function FaqsAdmin() {
 
               <p className="mt-2 text-body-sm text-fg-faint">
                 Order: {f.displayOrder}
+                {f.key ? ` · ${f.key}` : null}
               </p>
             </AdminListRow>
           )}
@@ -198,6 +203,26 @@ function FaqForm({
           />
           <p className="mt-1 text-body-sm">
             Plain text — shown as the expandable row label.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="faq-key" className={adminFieldLabel}>
+            Key
+          </label>
+          <input
+            id="faq-key"
+            type="text"
+            value={form.key}
+            onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+            placeholder="cancel-anytime"
+            className={`mt-2 ${adminField}`}
+          />
+          <p className="mt-1 text-body-sm">
+            How the help widget points at this answer. Lowercase letters,
+            numbers and hyphens. Safe to reword the question above without
+            touching this — but changing or clearing the key will stop the
+            widget from surfacing this FAQ. Leave blank if nothing links to it.
           </p>
         </div>
 

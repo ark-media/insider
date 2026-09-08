@@ -218,6 +218,8 @@ export async function deleteCareer(id: string): Promise<void> {
 // What the editor submits. The server sanitizes the question (plain text) and
 // answer (rich HTML) before storing.
 export type FaqDraft = {
+  /** Stable slug the help widget binds to. Empty string clears it. */
+  key: string;
   question: string;
   answer: string;
   category: string;

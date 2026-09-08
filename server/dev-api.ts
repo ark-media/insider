@@ -41,6 +41,7 @@ import { scWebhookRoutes } from './routes/sc-webhook.js'
 import { podcastRoutes } from './routes/podcasts.js'
 import { smsRoutes } from './routes/sms.js'
 import { stripeRoutes } from './routes/stripe/routes.js'
+import { supportRoutes } from './routes/support.js'
 
 interface Api {
   appBaseUrl: string
@@ -78,6 +79,7 @@ function buildApi(env: Env): Api {
     ...adminFeedActivationRoutes(deps),
     ...discussThreadsRoutes(deps),
     ...contactRoutes(deps),
+    ...supportRoutes(deps),
     ...cronRoutes(deps),
   ]
 
