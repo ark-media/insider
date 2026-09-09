@@ -43,10 +43,10 @@ type Tier = "ark-plus" | "circle" | "bundle";
 // The slider's drag ceiling and the typed safety cap are expressed as multiples
 // of the plan's floor so they hold in any currency (a fixed "$3,600" is
 // meaningless in ¥ or ₪). SLIDER_MAX = the top of the *drag range* (not a hard
-// cap — the field accepts up to INPUT_MAX beyond it). ~27× the floor mirrors the
-// old $130 → $3,600 USD range; ~400× mirrors the old $50k typed ceiling. The
-// curve/snap math lives in ../lib/pwycSlider.
-const SLIDER_MAX_MULTIPLE = 27;
+// cap — the field accepts up to INPUT_MAX beyond it). ~14.4× the floor mirrors
+// the $250 → $3,600 USD range (bundle yearly); ~400× mirrors the old $50k typed
+// ceiling. The curve/snap math lives in ../lib/pwycSlider.
+const SLIDER_MAX_MULTIPLE = 14.4;
 const INPUT_MAX_MULTIPLE = 400;
 
 // The SKU label shown in the modal chrome. Checkout derives entitlements from
