@@ -163,7 +163,12 @@ describe('duplicate keys', () => {
     return sql
   }
 
-  const violation = { code: '23505', constraint_name: 'faqs_key_idx' }
+  // The field is `constraint` — the name NeonDbError actually carries. Spelled
+  // `constraint_name` this fixture passed through the "no constraint reported"
+  // fallback instead of the branch it was meant to exercise, so it went on
+  // passing while the check matched every 23505 regardless of which index
+  // raised it.
+  const violation = { code: '23505', constraint: 'faqs_key_idx' }
 
   test('createFaq reports the collision, and names the key', async () => {
     const err = await createFaq(failingSql(violation), input).catch((e: unknown) => e)
@@ -190,5 +195,16 @@ describe('duplicate keys', () => {
     const err = await createFaq(failingSql(other), input).catch((e: unknown) => e)
     expect(err).not.toBeInstanceOf(DuplicateFaqKeyError)
     expect(err).toBe(other)
+  })
+
+  test('a unique violation on a DIFFERENT index is not called a key collision', async () => {
+    // The reason the field name matters. `faqs` carries one unique index
+    // besides its primary key today, so a mismatched spelling was invisible;
+    // the moment a second one exists, telling an editor to "pick a different
+    // key" is advice about the wrong column.
+    const elsewhere = { code: '23505', constraint: 'faqs_question_idx' }
+    const err = await createFaq(failingSql(elsewhere), input).catch((e: unknown) => e)
+    expect(err).not.toBeInstanceOf(DuplicateFaqKeyError)
+    expect(err).toBe(elsewhere)
   })
 })

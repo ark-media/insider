@@ -58,9 +58,17 @@ const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
 // subscription guard treats the same set as live, so a second checkout can't
 // mint a second sub whose webhook overwrites the one-row membership and runs
 // scDelete on the still-paid feed.
+//
+// `withPaymentMethod` expands each subscription's default payment method, which
+// is what lets readCardOnFile skip a serial paymentMethods.retrieve. It is
+// OPT-IN rather than always-on: one of the twelve call sites reads the card, and
+// the other eleven would otherwise pay for the expansion — on a list of up to
+// 100 subscriptions per customer, across every customer sharing the email — to
+// carry a field they never look at.
 export async function findLiveSubscription(
   stripe: Stripe,
   email: string,
+  { withPaymentMethod = false }: { withPaymentMethod?: boolean } = {},
 ): Promise<Stripe.Subscription | null> {
   const customers = await stripe.customers.list({ email, limit: 100 })
   const subLists = await Promise.all(
@@ -69,10 +77,7 @@ export async function findLiveSubscription(
         customer: customer.id,
         status: 'all',
         limit: 100,
-        // Costs nothing on a call we already make, and saves the account page a
-        // serial paymentMethods.retrieve on every load — see readCardOnFile,
-        // whose "already an object" branch this is what makes reachable.
-        expand: ['data.default_payment_method'],
+        ...(withPaymentMethod ? { expand: ['data.default_payment_method'] } : {}),
       }),
     ),
   )

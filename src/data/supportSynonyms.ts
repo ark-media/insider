@@ -34,9 +34,15 @@ export const supportAliases: Alias[] = [
     intent: "newsletters",
   },
   {
+    // "dont renew" / "do not renew" are POINTEDLY absent. Both `dont` and `not`
+    // are stopwords, so each collapsed to the bare needle " renew " and fired
+    // this intent on "when does my subscription renew" — a renewal question
+    // answered confidently with the cancellation FAQ. The tokenizer cannot
+    // carry a negation; "stop renewing" says the same thing in tokens that
+    // survive it. See the collapse test in src/lib/support/search.test.ts.
     phrases: [
       "cancel", "unsubscribe", "stop paying", "stop billing", "stop my subscription",
-      "end my subscription", "turn off auto renew", "dont renew", "do not renew",
+      "end my subscription", "turn off auto renew", "stop renewing",
       "quit", "opt out",
     ],
     expand: ["cancel", "cancel my subscription"],
@@ -91,8 +97,16 @@ export const supportAliases: Alias[] = [
   //     but the Apple aliases boost every Apple document, so without binding
   //     these phrasings to the right answer it lands third.
   {
+    // The bare "not subscribed" is POINTEDLY absent. `not` is a stopword and
+    // `subscribed` stems to `subscribe`, which sits in 32 of the 33 documents,
+    // so the phrase collapsed to the needle " subscribe " and this alias fired
+    // on essentially every query a member types — injecting `applepodcasts`,
+    // one of the rarest and therefore highest-weighted terms in the corpus,
+    // into "can I cancel", "what does my plan include" and the rest. The
+    // longer phrasings below all retain two or more tokens and still cover
+    // "it says I'm not subscribed", which is how people actually write it.
     phrases: [
-      "says i am not subscribed", "says im not subscribed", "not subscribed",
+      "says i am not subscribed", "says im not subscribed",
       "doesnt think i am subscribed", "says i dont have a subscription",
       "wont recognise my subscription", "wont recognize my subscription",
     ],
@@ -170,7 +184,10 @@ export const supportAliases: Alias[] = [
 
   // --- Gifting. Zero corpus coverage; pure routing.
   {
-    phrases: ["gift", "gifting", "give as a gift", "buy for someone", "present", "buy it for"],
+    // "buy it for" is POINTEDLY absent: `it` and `for` are stopwords, so it
+    // collapsed to " buy " and routed "I want to buy a subscription" to
+    // gifting. "buy for someone" keeps both tokens and means the same thing.
+    phrases: ["gift", "gifting", "give as a gift", "buy for someone", "present"],
     intent: "gift-give",
   },
   {
@@ -242,7 +259,11 @@ export const supportUnanswerable: Unanswerable[] = [
     intent: "billing-refund",
   },
   {
-    phrases: ["receipt", "invoice", "for my taxes", "tax receipt", "proof of purchase"],
+    // "for my taxes" is POINTEDLY absent: it collapsed to the needle " tax ",
+    // and a hit on THIS table skips ranking altogether, so "is tax included in
+    // the price" escalated to a person instead of being answered. "tax receipt"
+    // keeps both tokens and "invoice" already covers the accounting phrasing.
+    phrases: ["receipt", "invoice", "tax receipt", "proof of purchase"],
     intent: "billing-receipt",
   },
   {

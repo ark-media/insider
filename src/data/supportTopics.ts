@@ -538,7 +538,12 @@ export function visibleTopics(viewer: SupportViewer): SupportTopic[] {
   return supportTopics.filter((t) => t.chip && topicVisible(t, viewer));
 }
 
-/** The first action rule that applies to this viewer, for each rule in order. */
+/**
+ * Every action this viewer is offered, in authored order — see
+ * `SupportActionRule`, which is where the "every rule that passes" contract is
+ * spelled out. On an escalate-only topic the contact action is lifted to the
+ * front, since "a person has to do this" is the topic's actual answer.
+ */
 export function actionsFor(topic: SupportTopic, viewer: SupportViewer): SupportAction[] {
   const actions = topic.actions
     .filter((rule) => (rule.when ? rule.when(viewer) : true))

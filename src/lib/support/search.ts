@@ -271,6 +271,15 @@ function matchUnanswerable(
  * Stopword removal makes the match more forgiving in the right direction too:
  * "charged twice" now matches "I was charged it twice", which the adjacency of
  * the raw string ruled out.
+ *
+ * THE COST, which is paid by the curated tables and not by this function:
+ * a phrase whose only content word is common degenerates into a single-token
+ * matcher that no longer means what it says. "not subscribed" became
+ * " subscribe " — a term in 32 of the 33 documents — and fired its alias on
+ * nearly every query in the widget, injecting `applepodcasts` into all of them.
+ * Two tests in ./search.test.ts hold that line, and both tables carry a note
+ * where a phrase was dropped for it. Adding a phrase here is adding a matcher
+ * for its TOKENS, not for its words.
  */
 function phraseHaystack(input: string): string {
   return ` ${tokenize(input).join(' ')} `
@@ -320,7 +329,13 @@ function expandQuery(query: string, aliases: SupportAlias[]): {
   return {
     tokens: [...tokens, ...added].filter(keep),
     baseTokens: tokens.filter(keep),
-    intents,
+    // Deduped, first-fired order preserved — two alias entries legitimately
+    // share an intent (the general Apple block and the "says I'm not
+    // subscribed" one both route to `apple-questions`), and when both hit, the
+    // panel rendered that topic twice, as two identical buttons under "Go
+    // straight to" sharing a React key. Order is load-bearing: the tables are
+    // evaluated in sequence so the more specific entry can claim a query first.
+    intents: [...new Set(intents)],
   }
 }
 

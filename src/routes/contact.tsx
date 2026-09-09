@@ -60,31 +60,32 @@ function ContactPage() {
   // Reading-and-clearing an external store is the external-system
   // synchronisation the set-state-in-effect rule carves out.
   //
-  // Read on mount AND on the widget's event: escalating while already standing
-  // on /contact only changes the search param, so this component is not
-  // remounted and the mount read alone would drop the transcript on the floor —
-  // leaving it in sessionStorage to ambush some later visit instead.
+  // Both inputs to the desk are settled here, in one effect, because they are
+  // one decision and they arrive together. Escalating from the widget while
+  // already standing on /contact changes only the search param on a matched
+  // route: TanStack updates the params without remounting, so neither a
+  // mount-only draft read nor a `useState` initializer for `topic` would fire.
+  // Hence ?topic=… is treated as a live input, and the widget announces the
+  // draft with an event — otherwise the transcript sits in sessionStorage and
+  // ambushes some later visit.
+  //
+  // The draft is applied SECOND and wins. Today the two always agree (the
+  // widget navigates with the same topic it stashes), but the draft is the
+  // more specific signal — it is the desk chosen for this transcript — and
+  // relying on them agreeing is the kind of coupling that quietly stops
+  // holding.
   useEffect(() => {
-    const apply = () => {
+    const applyDraft = () => {
       const draft = takeSupportDraft();
       if (!draft?.message) return;
       setMessage(draft.message);
-      // The desk the widget picked, which the search param alone won't apply
-      // when the route doesn't remount.
       if (draft.topic) setTopic(draft.topic);
     };
-    apply();
-    window.addEventListener(SUPPORT_DRAFT_EVENT, apply);
-    return () => window.removeEventListener(SUPPORT_DRAFT_EVENT, apply);
-  }, []);
-
-  // ?topic=… is a live input, not just an initial value: a link into /contact
-  // from a page the member is already on changes the param without remounting,
-  // and the desk has to follow it.
-  useEffect(() => {
-    if (!topicParam) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTopic(topicParam);
+    if (topicParam) setTopic(topicParam);
+    applyDraft();
+    window.addEventListener(SUPPORT_DRAFT_EVENT, applyDraft);
+    return () => window.removeEventListener(SUPPORT_DRAFT_EVENT, applyDraft);
   }, [topicParam]);
 
   // Honeypot — see server/routes/contact.ts. Real users leave it blank.

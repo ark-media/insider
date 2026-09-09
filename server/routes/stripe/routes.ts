@@ -802,7 +802,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const sub = await findLiveSubscription(stripe, email)
+        // The one caller that reads the card on file, so the one that asks for
+        // the payment method to ride along on the list.
+        const sub = await findLiveSubscription(stripe, email, { withPaymentMethod: true })
         // When cancel_at_period_end is set, Stripe populates cancel_at; fall back
         // to the current period end so we always have a date to show.
         let cancelAt: string | null = null
@@ -957,16 +959,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!sub || !plan) return json(200, { preview: null })
 
         const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
-        // `unit_amount` is stated in the PRICE's own currency. A catalog price
-        // billed through currency_options reports the USD base here while the
-        // subscription charges the localized amount — quoting that as "what you
-        // pay now" would be wrong money, so only trust it when the currencies
-        // agree and drop the line otherwise.
+        // What the member pays today, in their own currency — see
+        // subscriptionAmount. Dropping the line for everyone outside the base
+        // currency was worse here than on the plan card: `bundleCents` below IS
+        // localized, so a non-USD member was shown what the Bundle costs with
+        // nothing to compare it against, which is the entire point of a preview.
         const price = sub.items.data[0]?.price
-        const currentCents =
-          price && price.currency === sub.currency && typeof price.unit_amount === 'number'
-            ? price.unit_amount
-            : null
+        const currentCents = price ? await subscriptionAmount(stripe, sub, price) : null
 
         let bundleCents: number | null = null
         try {

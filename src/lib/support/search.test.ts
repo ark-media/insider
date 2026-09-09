@@ -19,6 +19,7 @@
 import { describe, expect, test } from 'bun:test'
 import { buildSupportIndex, searchSupport, type SupportSearchResult } from './search'
 import { loadFaqFixtures } from './search.fixtures'
+import { tokenize } from './text'
 import {
   aliasTextByFaqKey,
   supportAliases,
@@ -239,6 +240,81 @@ describe('the curated topic table stays wired to the corpus', () => {
   test('escalate-only topics offer no FAQ, since none of them have one', () => {
     for (const topic of supportTopics.filter((t) => t.escalateOnly)) {
       expect(topic.faqKeys).toEqual([])
+    }
+  })
+
+  // --- Curated phrases must survive the tokenizer ---------------------------
+  //
+  // Both curated tables are matched through `tokenize()` so they share the
+  // ranker's stemmer (that is what makes "how do I get refunds" reach the
+  // refund guard). The same call also drops stopwords, which means a phrase
+  // whose only content word is common degenerates into a single-token matcher
+  // that no longer means what it says: "not subscribed" became " subscribe ",
+  // "dont renew" became " renew ", "buy it for" became " buy ". The first of
+  // those fired on nearly every query in the widget and injected the alias's
+  // high-IDF expansion terms into all of them.
+  //
+  // A phrase collapsing to one token is not wrong in itself — "my son" -> " son "
+  // is exactly right. It is wrong when the surviving token is one the corpus
+  // uses everywhere, or when a false positive skips ranking entirely.
+
+  const collapsed = (phrase: string) =>
+    phrase.trim().split(/\s+/).length > 1 && tokenize(phrase).length === 1
+
+  test('no alias phrase collapses onto a term the corpus uses everywhere', () => {
+    // A third of the corpus. `subscribe` sits at 32/33, which is what made
+    // "not subscribed" match everything; nothing else today exceeds 5.
+    const ubiquitous = index.size / 3
+    const offenders = supportAliases.flatMap((alias) =>
+      alias.phrases
+        .filter(collapsed)
+        .map((phrase) => ({ phrase, term: tokenize(phrase)[0] }))
+        .filter(({ term }) => (index.df.get(term) ?? 0) > ubiquitous)
+        .map(({ phrase, term }) => `${alias.intent}: "${phrase}" -> " ${term} "`),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  test('no unanswerable phrase collapses to a single token', () => {
+    // Stricter than the alias rule on purpose: a hit here skips ranking and
+    // escalates, so a phrase that quietly widens to one word costs a member an
+    // answer the corpus actually holds.
+    const offenders = supportUnanswerable.flatMap((entry) =>
+      entry.phrases
+        .filter(collapsed)
+        .map((phrase) => `${entry.intent}: "${phrase}" -> " ${tokenize(phrase)[0]} "`),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  test('a renewal question is not answered with the cancellation FAQ', () => {
+    // The regression that "dont renew" -> " renew " caused: `cancel` fired, and
+    // the phrase bonus carried cancel-anytime to a CONFIDENT first place.
+    const r = run('when does my subscription renew')
+    expect(r.intents).not.toContain('cancel')
+  })
+
+  test('buying a subscription is not routed to gifting', () => {
+    expect(run('I want to buy a subscription').intents).not.toContain('gift-give')
+  })
+
+  test('an intent two alias entries share is reported once', () => {
+    // Both the general Apple block and the "says I'm not subscribed" one route
+    // to apple-questions; undeduped, the panel drew that topic twice.
+    const { intents } = run('my iphone says I am not subscribed')
+    expect(intents).toContain('apple-questions')
+    expect(intents.length).toBe(new Set(intents).size)
+  })
+
+  test('an ordinary subscription question does not pull in the Apple alias', () => {
+    // "not subscribed" -> " subscribe " put apple-questions on almost every
+    // query, and its expansion injects `applepodcasts` into the ranking.
+    for (const q of [
+      'can I cancel my subscription',
+      'what does my subscription include',
+      'is there a discount for annual subscriptions',
+    ]) {
+      expect(run(q).intents).not.toContain('apple-questions')
     }
   })
 })

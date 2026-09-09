@@ -163,7 +163,14 @@ export class DuplicateFaqKeyError extends Error {
 
 function isDuplicateKey(err: unknown): boolean {
   const code = (err as { code?: unknown })?.code
-  const constraint = (err as { constraint_name?: unknown })?.constraint_name
+  // `constraint`, not `constraint_name`: that is what NeonDbError carries
+  // (@neondatabase/serverless index.d.ts). Spelled wrong it read undefined on
+  // every error, the null branch below always won, and this degraded to "any
+  // 23505 is a duplicate key" — correct today only because `faqs` has one
+  // unique index besides its gen_random_uuid() primary key, and wrong the day
+  // someone adds a second. The null branch stays as a fallback for a driver
+  // that reports no constraint at all.
+  const constraint = (err as { constraint?: unknown })?.constraint
   return code === '23505' && (constraint == null || constraint === 'faqs_key_idx')
 }
 
