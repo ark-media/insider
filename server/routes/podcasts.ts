@@ -97,13 +97,14 @@ const SHOW_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const showCache = makeTTLCache<string, string>(SHOW_CACHE_TTL_MS)
 
 // The cross-show "latest episodes" strip. Separate from `episodesCache` because
-// it holds a different thing — a handful of episodes merged across every public
-// show, not one show's list — and shares its 5 minute TTL because a new episode
-// should surface on the homepage as promptly as on the show page.
+// it holds a different thing — the newest episode of each public show, not one
+// show's list — and shares its 5 minute TTL because a new episode should
+// surface on /podcasts as promptly as on the show page.
 const latestCache = makeTTLCache<string, EpisodeSummary[]>(EPISODES_CACHE_TTL_MS)
 
-// Upper bound on `?limit`. The homepage asks for 4; the cap only exists so the
-// parameter can't be turned into a request for every episode of every show.
+// Upper bound on `?limit`. The podcasts page wants one card per public show;
+// the cap only exists so the parameter can't be turned into a request for
+// every episode of every show.
 const LATEST_MAX = 12
 const LATEST_DEFAULT = 4
 
@@ -327,32 +328,27 @@ async function fetchEpisode(
   return episode
 }
 
-// The homepage's "latest episodes" strip.
+// The podcasts-page "latest episodes" strip: one newest episode per public
+// show, not the newest N across the catalogue (which used to let a daily show
+// fill every slot).
 //
-// This used to be assembled on the client: fetch every public show's FULL list
-// through /api/podcasts/episodes, merge, then throw away all but the newest
-// four. That is 250 episodes of upstream work for four cards, and because the
-// client awaited all five shows it was gated on the slowest one — measured at
-// 8.21s wall against our real catalogue. Asking each show for only the episodes
-// that could actually place brings the same five parallel requests to 1.07s.
-//
-// `limit` per show is the correct bound, not `limit / shows.length`: the top
-// four overall can all come from one show, so each show has to offer four
-// candidates for the merge to be right.
+// Each show is asked for a single published episode. That is enough for the
+// one-per-show rule and keeps the Beehiiv work to one short page per show
+// instead of pulling every show's full list to throw most of it away.
 async function fetchLatestEpisodes(
   config: BeehiivConfig,
   env: Env,
   limit: number,
 ): Promise<EpisodeSummary[]> {
-  const cacheKey = `${config.publicationId}:${limit}`
+  const cacheKey = `${config.publicationId}:one-per-show`
   const cached = latestCache.get(cacheKey)
-  if (cached) return cached
+  if (cached) return cached.slice(0, limit)
 
   // Public shows only. A paid show's audio is withheld from anyone who hasn't
   // proved membership, and this response is deliberately cacheable by a shared
   // edge for every caller — so the two must not meet. Filtering here (rather
-  // than stripping audio later) also means an anonymous homepage request never
-  // does an entitlement lookup.
+  // than stripping audio later) also means an anonymous request never does an
+  // entitlement lookup.
   const candidates = shows
     .filter((show) => !show.paid)
     .map((show) => ({ show, podcastId: resolvePodcastId(env, show.slug) }))
@@ -364,13 +360,14 @@ async function fetchLatestEpisodes(
   const perShow = await Promise.all(
     candidates.map(async ({ show, podcastId }) => {
       try {
-        const page = await fetchEpisodePage(config, podcastId, 1, limit)
-        return page
-          .filter(isPublishedEpisode)
-          .map((e) => projectBeehiivEpisodeSummary(e, show.slug))
+        const page = await fetchEpisodePage(config, podcastId, 1, 1)
+        const latest = page.filter(isPublishedEpisode)[0]
+        return latest
+          ? [projectBeehiivEpisodeSummary(latest, show.slug)]
+          : []
       } catch (err) {
-        // One show being unavailable shouldn't blank the homepage strip — the
-        // other four still have episodes worth showing. Only a total failure
+        // One show being unavailable shouldn't blank the strip — the other
+        // shows still have episodes worth showing. Only a total failure
         // (handled by the caller, below) is worth an error state.
         console.error(`[beehiiv] latest fetch failed for ${show.slug}:`, err)
         return null
@@ -395,10 +392,9 @@ async function fetchLatestEpisodes(
       (a, b) =>
         b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id),
     )
-    .slice(0, limit)
 
   latestCache.set(cacheKey, episodes)
-  return episodes
+  return episodes.slice(0, limit)
 }
 
 async function fetchShowDescription(
@@ -473,7 +469,7 @@ export function podcastRoutes({ env }: Deps): Route[] {
         const config = resolveConfig(env)
         if (!config) {
           // No credentials (dev without a key). An empty strip renders as
-          // nothing at all, which is the right homepage in that case.
+          // nothing at all, which is the right podcasts page in that case.
           return json(200, { episodes: [] })
         }
 

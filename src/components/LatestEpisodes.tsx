@@ -4,13 +4,13 @@ import {
   formatEpisodeDateLong,
   type Episode,
 } from "../data/episodes";
-import type { Show } from "../data/shows";
+import { shows, type Show } from "../data/shows";
 import { listLatestEpisodes } from "../lib/podcasts";
 import { useAsyncResource } from "../lib/useAsyncResource";
 import { ContentError } from "./ContentError";
 import { PlayGlyph } from "./PlayGlyph";
 
-const DISPLAY_LIMIT = 4;
+const DISPLAY_LIMIT = shows.filter((show) => !show.paid).length;
 
 function LatestEpisodeCard({
   show,

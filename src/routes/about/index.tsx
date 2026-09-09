@@ -40,7 +40,7 @@ function AboutPage() {
           </h2>
           <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-12">
             <p className="text-[15.5px] leading-[1.75] text-fg lg:col-span-7">
-              Ark Media is a podcast network that explores the big questions
+              Ark Media explores the big questions
               shaping Jewish life, Israel's future, and our rapidly changing
               world. Through conversations with leading Jewish thinkers from
               around the world, Ark Media aims to build a global community

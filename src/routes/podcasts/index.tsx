@@ -4,6 +4,7 @@ import { PageShell } from "../../components/PageShell";
 import { ShowCover } from "../../components/ShowCover";
 import { ClampedText } from "../../components/ClampedText";
 import { ArkPlusMark } from "../../components/ArkPlusMark";
+import { LatestEpisodes } from "../../components/LatestEpisodes";
 import { useShowDescriptions } from "../../lib/useShowDescription";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 
@@ -24,6 +25,7 @@ function ShowsHub() {
       title="News, debate, history, and everything in between."
       lede="Honest conversations about Jewish life, both big and small."
     >
+      <LatestEpisodes />
       <section>
         <div className="page-section">
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">

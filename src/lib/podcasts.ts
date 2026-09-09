@@ -30,18 +30,12 @@ export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
 export type EpisodeWithShow = Episode & { show: Show };
 
 /**
- * Most recent episodes across all public shows, newest first.
+ * Newest episode of each public show, newest-first across that set.
  *
- * One request. This used to fan out to `listEpisodes()` per show and merge on
- * the client, which pulled every show's full 50-episode list — 250 episodes of
- * Beehiiv work — to render four cards, and blocked on the slowest show while it
- * did (measured 8.21s against the real catalogue, versus 1.07s for the shape
- * /api/podcasts/latest fetches). The merge lives on the server now so it can
- * ask each show for only the episodes that could actually place.
- *
- * The response carries `showSlug`, not the show itself — show metadata is local
- * data, so rehydrating it here keeps it off the wire. An episode whose slug we
- * don't recognise is dropped rather than rendered without its show.
+ * One request. The server asks each show for a single published episode so a
+ * daily show cannot fill every slot, then rehydrates local show metadata here
+ * so it stays off the wire. An episode whose slug we don't recognise is
+ * dropped rather than rendered without its show.
  */
 export async function listLatestEpisodes(
   limit = 3,

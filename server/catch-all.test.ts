@@ -689,13 +689,13 @@ describe('/api/podcasts/latest', () => {
     })
   }
 
-  test('merges the newest episodes across shows, newest first', async () => {
+  test('returns the newest episode of each show, newest first', async () => {
     fetchImpl = async (url) => {
       if (url.startsWith(EPISODES_URL)) {
         return new Response(
           JSON.stringify({
             data: [
-              { ...makeEpisode(1), displayed_date: 1777899600 }, // newest
+              { ...makeEpisode(1), displayed_date: 1777899600 }, // newest CMB
               { ...makeEpisode(3), displayed_date: 1777726800 },
             ],
           }),
@@ -725,17 +725,14 @@ describe('/api/podcasts/latest', () => {
     const body = res.__json() as {
       episodes: Array<{ id: string; showSlug: string }>
     }
-    expect(body.episodes.map((e) => e.id)).toEqual(['ep-1', 'fhs-2', 'ep-3'])
+    expect(body.episodes.map((e) => e.id)).toEqual(['ep-1', 'fhs-2'])
     expect(body.episodes.map((e) => e.showSlug)).toEqual([
       'call-me-back',
       'for-heavens-sake',
-      'call-me-back',
     ])
   })
 
-  test('asks each show for only `limit` episodes, on one page', async () => {
-    // The whole point of the route: the homepage used to pull five full
-    // 50-episode lists to render four cards.
+  test('asks each show for a single latest episode, on one page', async () => {
     fetchImpl = async () =>
       new Response(JSON.stringify({ data: [] }), { status: 200 })
 
@@ -748,13 +745,13 @@ describe('/api/podcasts/latest', () => {
     expect(calls).toHaveLength(2)
     for (const call of calls) {
       const params = new URL(call.url).searchParams
-      expect(params.get('limit')).toBe('4')
+      expect(params.get('limit')).toBe('1')
       expect(params.get('page')).toBe('1')
       expect(params.get('status')).toBe('published')
     }
   })
 
-  test('clamps an absurd limit instead of fetching every episode', async () => {
+  test('does not forward an absurd limit to Beehiiv', async () => {
     fetchImpl = async () =>
       new Response(JSON.stringify({ data: [] }), { status: 200 })
 
@@ -764,7 +761,7 @@ describe('/api/podcasts/latest', () => {
     )
 
     const call = fetchCalls.find((c) => c.url.includes('/episodes?'))!
-    expect(new URL(call.url).searchParams.get('limit')).toBe('12')
+    expect(new URL(call.url).searchParams.get('limit')).toBe('1')
   })
 
   test('still renders the strip when one show is unavailable', async () => {

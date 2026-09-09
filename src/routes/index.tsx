@@ -1,5 +1,4 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { CommunityAppLinks } from "../components/CommunityAppLinks";
 import { useEffect, useState, type ReactNode } from "react";
 import { shows, getShow, type ShowSlug } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
@@ -8,7 +7,6 @@ import { formatPostDate, type NewsletterPost } from "../data/newsletters";
 import { listPostsPublic } from "../lib/beehiiv";
 import { fetchEventStrip, type EventStripItem } from "../lib/circle";
 import { formatEventStart, type ArkEvent } from "../data/events";
-import { LatestEpisodes } from "../components/LatestEpisodes";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { ArkPlusMark } from "../components/ArkPlusMark";
@@ -30,7 +28,7 @@ export const Route = createFileRoute("/")({
 // hover. Distinct from the hero's solid CTA so these read as peer offerings, not
 // a second call to the same action.
 const bandCtaClass =
-  "mt-7 inline-flex min-h-12 w-fit items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+  "inline-flex min-h-12 w-fit items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
 // ---------------------------------------------------------------------------
 // Newsletter visual — styled to read like an actual email/newsletter: a navy
@@ -270,7 +268,7 @@ function PlusVisual() {
           <div className="eyebrow text-[10px] text-cyan">Ark+ membership</div>
         </div>
         <div className="mt-2 font-display text-[20px] font-bold text-fg-strong">
-          Everything, included.
+          Premium podcast benefits
         </div>
         <ul className="mt-5 space-y-3">
           {plusIncludes.map((item) => (
@@ -376,7 +374,7 @@ function FeatureBand({
   flip = false,
 }: {
   eyebrow: string;
-  title: string;
+  title?: string;
   body: string;
   visual: ReactNode;
   cta?: string;
@@ -384,22 +382,27 @@ function FeatureBand({
   action?: ReactNode;
   flip?: boolean;
 }) {
+  const eyebrowClass = "eyebrow text-[18px] text-cyan sm:text-[22px]";
   return (
     <section>
       <div className="page-section">
         <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-16">
           <div className={`flex flex-col${flip ? " lg:order-2" : ""}`}>
-            <div className="eyebrow text-[18px] text-cyan sm:text-[22px]">
-              {eyebrow}
-            </div>
-            <h2 className="mt-3 display-upright text-[clamp(1.9rem,3.6vw,2.8rem)] leading-[1.04] text-fg-strong">
-              {title}
-            </h2>
+            {title ? (
+              <>
+                <div className={eyebrowClass}>{eyebrow}</div>
+                <h2 className="mt-3 display-upright text-[clamp(1.9rem,3.6vw,2.8rem)] leading-[1.04] text-fg-strong">
+                  {title}
+                </h2>
+              </>
+            ) : (
+              <h2 className={eyebrowClass}>{eyebrow}</h2>
+            )}
             <p className="mt-5 max-w-md text-body-lg text-fg-muted">{body}</p>
             {action ? (
               <div className="mt-7 max-w-md">{action}</div>
             ) : cta && to ? (
-              <Link to={to} className={bandCtaClass}>
+              <Link to={to} className={`mt-7 ${bandCtaClass}`}>
                 {cta} →
               </Link>
             ) : null}
@@ -424,24 +427,22 @@ function AlsoFromArkMedia() {
   return (
     <>
       <FeatureBand
-        eyebrow="Newsletter"
-        title="In your inbox."
-        body="Subscribe to our newsletter and get new episodes every Friday."
-        visual={<NewsletterVisual />}
-        {...(showSignup
-          ? { action: <NewsletterSignupForm slug="ark-daily" /> }
-          : isMember && !prefsLoading
-            ? { cta: "Read newsletters", to: "/newsletters" }
-            : {})}
+        eyebrow="Ark+"
+        title="Coverage you can trust."
+        body="Ark+ subscribers fund honest coverage of Israel and Jewish life."
+        visual={<PlusVisual />}
+        cta="Become a subscriber"
+        to="/plus"
       />
       <FeatureBand
         eyebrow="The Fold"
-        title="Real People, Real Conversations, Real Connection"
-        body="The conversation about this week's episodes is already happening in the Fold. Thoughtful people are weighing in on Israel, Jewish life, and the issues shaping the Jewish world. Come see what they're saying."
+        body="The Fold is where Ark listeners become part of the conversation. Join a private, thoughtful community for serious discussion, meaningful connection, and deeper engagement with the questions shaping Jewish life, Israel, and the world."
         visual={<CommunityVisual />}
         action={
-          <div className="flex flex-col gap-5">
-            <CommunityAppLinks />
+          <div className="flex flex-col items-start gap-4">
+            <Link to="/plus" className={bandCtaClass}>
+              Join The Fold →
+            </Link>
             <Link
               to="/fold"
               className="inline-flex min-h-11 w-fit items-center gap-2 button-text font-display font-bold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
@@ -453,12 +454,15 @@ function AlsoFromArkMedia() {
         flip
       />
       <FeatureBand
-        eyebrow="Ark+"
-        title="Coverage you can trust."
-        body="Ark+ subscribers fund honest coverage of Israel and Jewish life."
-        visual={<PlusVisual />}
-        cta="Become a subscriber"
-        to="/plus"
+        eyebrow="Newsletter"
+        title="In your inbox."
+        body="Subscribe to our newsletter and get new episodes every Friday."
+        visual={<NewsletterVisual />}
+        {...(showSignup
+          ? { action: <NewsletterSignupForm slug="ark-daily" /> }
+          : isMember && !prefsLoading
+            ? { cta: "Read newsletters", to: "/newsletters" }
+            : {})}
       />
     </>
   );
@@ -491,7 +495,7 @@ function HomePage() {
                 style={{ animationDelay: "0.7s" }}
               />
               <p className="rise rise-5 mt-8 max-w-2xl text-body-lg">
-                Ark Media is a podcast network that explores the big questions
+                Ark Media explores the big questions
                 shaping Jewish life, Israel's future, and our rapidly changing
                 world. Through conversations with leading Jewish thinkers from
                 around the world, Ark Media aims to build a global community
@@ -516,8 +520,6 @@ function HomePage() {
           </div>
         </div>
       </section>
-
-      <LatestEpisodes />
 
       {/* Podcast row — card grid (good for browsing) */}
       <section>
@@ -556,8 +558,8 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Also from Ark Media — full-width feature bands giving the newsletter,
-          Fold, and Ark+ offerings equal weight beside the podcasts */}
+      {/* Also from Ark Media — Ark+ sits directly under the podcast grid, then
+          Fold and newsletter bands give those offerings equal weight. */}
       <AlsoFromArkMedia />
 
       {gift === "complete" ? (
