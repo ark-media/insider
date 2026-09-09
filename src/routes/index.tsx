@@ -429,7 +429,7 @@ function AlsoFromArkMedia() {
       <FeatureBand
         eyebrow="Ark+"
         title="Coverage you can trust."
-        body="Ark+ subscribers fund honest coverage of Israel and Jewish life."
+        body="Subscribers fund honest coverage of Israel and Jewish life."
         visual={<PlusVisual />}
         cta="Become a subscriber"
         to="/plus"

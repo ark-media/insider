@@ -17,7 +17,7 @@ const MISSION_REMINDER_COPY: Record<
 > = {
   "ark-plus": {
     heading: "Thanks for being a subscriber!",
-    body: "Ark Media is funded in large part by our Ark+ subscribers. They allow us to cover Israel and the Jewish world honestly, without compromise. As an Ark+ subscriber, you make that possible.",
+    body: "Ark Media is funded in large part by our subscribers. They allow us to cover Israel and the Jewish world honestly, without compromise. As an Ark+ subscriber, you make that possible.",
   },
   circle: {
     heading: "Thanks for being a subscriber!",

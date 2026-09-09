@@ -131,7 +131,7 @@ function PaidShowJoinCta({ show }: { show: Show }) {
               Join Ark+ to listen to {show.title}.
             </h2>
             <p className="mt-4 max-w-2xl text-body-lg">
-            Ark+ subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
+            Subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
             </p>
           </div>
           <div className="lg:col-span-5">

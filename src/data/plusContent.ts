@@ -21,8 +21,6 @@ export type HeroContent = {
   head: Heading;
   lead: string;
   // `href` renders an in-page anchor (to #pricing); `to` renders a router Link.
-  cta: { label: string; href?: string; to?: string };
-  giftLabel: string;
   // The square card beside the headline. `src` is a path in /public so it goes
   // through srcSet() — see src/lib/images.ts.
   art: { src: string; alt: string };
@@ -35,8 +33,6 @@ export const HERO_CONTENT: HeroContent = {
     line2Accent: "Get more in return.",
     line2Post: "",
   },
-  lead: "Ark+ subscribers fund honest coverage of Israel and Jewish life. Get exclusive content and ad-free listening across every show.",
-  cta: { label: "Become a member", href: "#pricing" },
-  giftLabel: "Gift Ark+",
+  lead: "Subscribers fund honest coverage of Israel and Jewish life. Get exclusive content and ad-free listening across every show.",
   art: { src: "/ark-plus-hero.jpg", alt: "Ark+" },
 };

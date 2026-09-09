@@ -98,7 +98,7 @@ function ArkPlusCallout() {
             <div className="label text-cyan">Ark+</div>
           </div>
           <p className="mt-3 max-w-2xl text-body-lg">
-            Ark+ subscribers fund honest coverage of Israel and Jewish life. Get
+            Subscribers fund honest coverage of Israel and Jewish life. Get
             ad-free listening and exclusive content across every show.
           </p>
         </div>

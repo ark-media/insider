@@ -26,7 +26,7 @@ const properties: NetworkProperty[] = [
     title: "Newsletters",
     kind: "Newsroom",
     description:
-      "Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to Ark+ subscribers.",
+      "Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to subscribers.",
     to: "/newsletters",
   },
   {

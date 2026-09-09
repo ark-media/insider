@@ -169,7 +169,7 @@ function MarketingShowcase() {
   return (
     <PageShell
       title="Real People, Real Conversations, Real Connection"
-      lede="The Fold puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and members talking through the day's news. On iOS, Android, and the web."
+      lede="The Fold is where Ark listeners become part of the conversation. Join a private, thoughtful community for serious discussion, meaningful connection, and deeper engagement with the questions shaping Jewish life, Israel, and the world."
       aside={<CommunityAppLinks />}
     >
       <section>

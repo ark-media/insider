@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { HERO_CONTENT } from "../data/plusContent";
 import { srcSet } from "../lib/images";
 
@@ -24,40 +23,9 @@ export function Hero() {
           </h1>
 
           <p className="rise rise-3 mt-6 max-w-lg text-body-lg">{content.lead}</p>
-
-          <div className="rise rise-5 mt-8 flex flex-wrap items-center gap-6">
-            {content.cta.to ? (
-              <Link
-                to={content.cta.to}
-                className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
-              >
-                {content.cta.label}
-                <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
-                  →
-                </span>
-              </Link>
-            ) : (
-              <a
-                href={content.cta.href}
-                className="group relative inline-flex min-h-11 items-center gap-3 bg-cyan px-6 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
-              >
-                {content.cta.label}
-                <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
-                  →
-                </span>
-              </a>
-            )}
-            <Link
-              to="/plus/gift"
-              className="inline-flex min-h-11 items-center text-body-lg text-fg underline decoration-rule-strong underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan"
-            >
-              {content.giftLabel}
-            </Link>
-          </div>
         </div>
 
-        {/* Right — the Ark+ mark */}
-        <div className="relative lg:col-span-5">
+        <div className="relative hidden lg:col-span-5 lg:block">
           <div className="rise rise-2 relative mx-auto max-w-[320px]">
             <img
               src={content.art.src}
@@ -73,7 +41,6 @@ export function Hero() {
         </div>
       </div>
 
-      {/* Bottom cyan hairline */}
       <div className="hairline" />
     </section>
   );

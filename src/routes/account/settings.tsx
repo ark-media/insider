@@ -40,10 +40,6 @@ function SettingsTab() {
             <div className="p-6">
               <div className="eyebrow text-fg-muted">Email</div>
               <p className="mt-2 text-body text-fg-strong">{me.email}</p>
-              <p className="mt-2 text-body-sm text-fg-muted">
-                This is how we identify your membership. Contact us to change
-                it.
-              </p>
             </div>
 
             {/* Only for accounts that have a password at all — a member who
