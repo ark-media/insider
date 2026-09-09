@@ -20,14 +20,18 @@ const ANSWER_PROSE = [
   "[&_blockquote]:border-l-2 [&_blockquote]:border-rule-strong [&_blockquote]:pl-3 [&_blockquote]:text-fg-muted",
 ].join(" ");
 
+/**
+ * The body of one answer, without its question — the disclosure row above it is
+ * already showing that, and repeating it wasted the top third of a phone-sized
+ * panel restating what the member just tapped. The category stays: it is the
+ * only orientation an answer carries once it is lifted out of the /faq page's
+ * two-level accordion.
+ */
 export function SupportAnswer({ faq }: { faq: Faq }) {
   return (
     <div>
       {faq.category ? <p className="eyebrow text-cyan">{faq.category}</p> : null}
-      <h3 className="mt-1 font-display text-[17px] leading-snug text-fg-strong">
-        {faq.question}
-      </h3>
-      <div className={`mt-3 text-body-sm ${ANSWER_PROSE}`}>{parse(faq.answer)}</div>
+      <div className={`mt-2 text-body-sm ${ANSWER_PROSE}`}>{parse(faq.answer)}</div>
     </div>
   );
 }

@@ -11,7 +11,7 @@
 // from src/lib/subscriberAuth.tsx. `SupportViewer` therefore has no `tier`
 // field at all, so a tier check is not merely discouraged but unspellable.
 
-import { circleUrls, contactEmails, type ContactTopic } from "../config/urls.js";
+import { circleUrls, type ContactTopic } from "../config/urls.js";
 
 export type SupportIntentId =
   // Answerable from the FAQ corpus.
@@ -36,6 +36,7 @@ export type SupportIntentId =
   | "change-email"
   | "promo-code"
   | "no-trial"
+  | "concession-pricing"
   | "delete-account";
 
 /**
@@ -52,7 +53,7 @@ export type SupportViewer = {
   free: boolean;
 };
 
-export type SupportPredicate = (v: SupportViewer) => boolean;
+type SupportPredicate = (v: SupportViewer) => boolean;
 
 export type SupportAction =
   /** In-app navigation. Closes the panel on click. */
@@ -66,8 +67,15 @@ export type SupportAction =
   /** Short curated copy. PLAIN TEXT — this file is not sanitized like DB answers. */
   | { kind: "note"; body: string };
 
-/** First rule whose `when` passes wins; a rule with no `when` is the fallback. */
-export type SupportActionRule = { when?: SupportPredicate; action: SupportAction };
+/**
+ * EVERY rule whose `when` passes contributes an action, in order — a topic
+ * legitimately offers several (open the Fold, or open it in the app). A rule
+ * with no `when` therefore shows to everyone, so anything that is really a
+ * fallback has to say so in its predicate. Getting this wrong is not cosmetic:
+ * an unguarded "Add the Fold" offered a Bundle member an upsell for the half
+ * they already pay for.
+ */
+type SupportActionRule = { when?: SupportPredicate; action: SupportAction };
 
 export type SupportTopic = {
   id: SupportIntentId;
@@ -92,6 +100,8 @@ const isGuest: SupportPredicate = (v) => !v.signedIn;
 const hasArkPlus: SupportPredicate = (v) => v.arkPlus;
 const hasCircle: SupportPredicate = (v) => v.circle;
 const isPaid: SupportPredicate = (v) => v.arkPlus || v.circle;
+/** Holds both axes — there is nothing left to sell them. */
+const hasEverything: SupportPredicate = (v) => v.arkPlus && v.circle;
 
 /**
  * The Apple fork.
@@ -131,7 +141,10 @@ export const supportTopics: SupportTopic[] = [
     ],
     actions: [
       { when: isPaid, action: { kind: "route", label: "See your membership", to: "/account" } },
-      { action: { kind: "route", label: "Compare the plans", to: "/pricing" } },
+      {
+        when: (v) => !hasEverything(v),
+        action: { kind: "route", label: "Compare the plans", to: "/pricing" },
+      },
     ],
     chip: true,
   },
@@ -153,7 +166,10 @@ export const supportTopics: SupportTopic[] = [
     actions: [
       { when: hasArkPlus, action: { kind: "route", label: "Open feed setup", to: "/setup" } },
       { when: isGuest, action: { kind: "signIn", label: "Sign in to set up your feed" } },
-      { action: { kind: "route", label: "See what Ark+ includes", to: "/plus" } },
+      {
+        when: (v) => !v.arkPlus,
+        action: { kind: "route", label: "See what Ark+ includes", to: "/plus" },
+      },
     ],
     // Circle-only members have no podcast feed; don't offer them setup.
     visibleWhen: (v) => v.arkPlus || !v.signedIn,
@@ -181,7 +197,10 @@ export const supportTopics: SupportTopic[] = [
       },
       { when: hasArkPlus, action: { kind: "route", label: "Open feed setup", to: "/setup" } },
       { when: isGuest, action: appleFork },
-      { action: { kind: "route", label: "See what Ark+ includes", to: "/plus" } },
+      {
+        when: (v) => !v.arkPlus,
+        action: { kind: "route", label: "See what Ark+ includes", to: "/plus" },
+      },
     ],
     visibleWhen: (v) => v.arkPlus || !v.signedIn,
     chip: true,
@@ -199,7 +218,10 @@ export const supportTopics: SupportTopic[] = [
     ],
     actions: [
       { when: hasArkPlus, action: { kind: "route", label: "Link Spotify", to: "/setup" } },
-      { action: { kind: "route", label: "See what Ark+ includes", to: "/plus" } },
+      {
+        when: (v) => !v.arkPlus,
+        action: { kind: "route", label: "See what Ark+ includes", to: "/plus" },
+      },
     ],
     chip: true,
   },
@@ -241,8 +263,16 @@ export const supportTopics: SupportTopic[] = [
         when: hasCircle,
         action: { kind: "external", label: "Open in the app", href: circleUrls.community, platform: "circle" },
       },
-      { when: hasArkPlus, action: { kind: "route", label: "Add the Fold", to: "/pricing" } },
-      { action: { kind: "route", label: "See what's inside", to: "/fold" } },
+      // Only to someone who holds Ark+ and NOT the Fold. Unguarded, this sold
+      // the Fold to Bundle members, who already have it.
+      {
+        when: (v) => v.arkPlus && !v.circle,
+        action: { kind: "route", label: "Add the Fold", to: "/pricing" },
+      },
+      {
+        when: (v) => !v.circle,
+        action: { kind: "route", label: "See what's inside", to: "/fold" },
+      },
     ],
     chip: true,
   },
@@ -255,7 +285,7 @@ export const supportTopics: SupportTopic[] = [
     actions: [
       {
         when: (v) => v.signedIn,
-        action: { kind: "route", label: "Manage your newsletters", to: "/account/newsletters" },
+        action: { kind: "route", label: "Manage your newsletters", to: "/account/settings" },
       },
       { action: { kind: "route", label: "See the newsletters", to: "/newsletters" } },
     ],
@@ -271,7 +301,10 @@ export const supportTopics: SupportTopic[] = [
       { when: isPaid, action: { kind: "route", label: "Open billing", to: "/account/billing" } },
       { when: isGuest, action: appleFork },
       { when: isGuest, action: { kind: "signIn", label: "Sign in" } },
-      { action: { kind: "route", label: "See the plans", to: "/pricing" } },
+      {
+        when: (v) => !isPaid(v),
+        action: { kind: "route", label: "See the plans", to: "/pricing" },
+      },
     ],
     visibleWhen: (v) => v.arkPlus || v.circle || !v.signedIn,
     chip: true,
@@ -444,6 +477,31 @@ export const supportTopics: SupportTopic[] = [
     chip: false,
   },
   {
+    id: "concession-pricing",
+    // Not a refund question, which is where these phrasings used to land: a
+    // student asking what it costs was answered with "a refund or a charge I
+    // don't recognise / we'll need to look at your account", having never paid
+    // us anything. Pay-what-you-can is the real answer and it is a good one.
+    label: "Student, group or team pricing",
+    blurb: "No special rates — but you can pay what you can.",
+    keywords: [
+      "student discount", "military discount", "senior discount",
+      "group rate", "team plan", "bulk", "site licence",
+    ],
+    faqKeys: ["where-to-subscribe-and-cost"],
+    actions: [
+      {
+        action: {
+          kind: "note",
+          body: "We don't run separate student, military or senior rates. Instead every plan is pay-what-you-can above the floor price, so you can set it to what works for you and it stays there.",
+        },
+      },
+      { action: { kind: "route", label: "See the plans", to: "/pricing" } },
+      { action: contactSupport("Group or team subscriptions") },
+    ],
+    chip: false,
+  },
+  {
     id: "delete-account",
     label: "Delete my account or data",
     blurb: "A person handles this one.",
@@ -462,16 +520,38 @@ export const supportTopicById = new Map(supportTopics.map((t) => [t.id, t]));
 
 /** The desk a widget escalation lands on when a topic doesn't name one. */
 export const SUPPORT_ESCALATION_TOPIC: ContactTopic = "support";
-export const SUPPORT_EMAIL = contactEmails.support;
+
+/**
+ * Whether this viewer may be shown this topic at all.
+ *
+ * Every path that surfaces a topic goes through here, not just the chip grid:
+ * search reaches topics by intent as well, and gating only the chips let a
+ * Bundle member search their way to "upgrade-bundle" and be sold an axis they
+ * already own.
+ */
+export function topicVisible(topic: SupportTopic, viewer: SupportViewer): boolean {
+  return topic.visibleWhen ? topic.visibleWhen(viewer) : true;
+}
 
 /** Topics offered as chips, filtered to the ones this viewer can actually use. */
 export function visibleTopics(viewer: SupportViewer): SupportTopic[] {
-  return supportTopics.filter((t) => t.chip && (t.visibleWhen ? t.visibleWhen(viewer) : true));
+  return supportTopics.filter((t) => t.chip && topicVisible(t, viewer));
 }
 
 /** The first action rule that applies to this viewer, for each rule in order. */
 export function actionsFor(topic: SupportTopic, viewer: SupportViewer): SupportAction[] {
-  return topic.actions
+  const actions = topic.actions
     .filter((rule) => (rule.when ? rule.when(viewer) : true))
     .map((rule) => rule.action);
+
+  // On an escalate-only topic the honest answer is "a person has to do this",
+  // so the contact action is the primary one. Without this, `delete-account`
+  // opened with "Read the privacy policy" as its first and most prominent CTA
+  // — a link, offered in place of the person the topic says is required.
+  // Stable partition: everything else keeps its authored order.
+  if (!topic.escalateOnly) return actions;
+  return [
+    ...actions.filter((a) => a.kind === "contact"),
+    ...actions.filter((a) => a.kind !== "contact"),
+  ];
 }

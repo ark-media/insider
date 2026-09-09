@@ -11,9 +11,24 @@ import {
 // This supersedes the standalone /account/newsletters page, which showed a
 // member the members-letter toggle and a free reader the free-newsletter one —
 // never both. An entitled member is on two lists and could only ever see one of
-// them, so turning the daily off meant guessing where the switch lived. The
-// prefs API has always carried `free` and `premium` independently; this just
-// stops hiding one of them.
+// them, so turning the daily off meant guessing where the switch lived.
+//
+// WHAT THE TWO TOGGLES ACTUALLY ARE
+// They are not independent, and treating them as if they were is a way to
+// silently cancel a paid product. Both newsletters live in ONE Beehiiv
+// publication (server/lib/beehiiv-sync.ts: BEEHIIV_PUBLICATION_ID_ARK_DAILY and
+// _MEMBERS_LETTER resolve to the same pub_ id), so:
+//
+//   `free`    = subscribed to the publication at all. Off sends
+//               `unsubscribe: true`, which deactivates the whole record.
+//   `premium` = holds the paid tier WITHIN that subscription. Meaningless while
+//               the record is unsubscribed — the tier survives, the delivery
+//               does not.
+//
+// So the members letter is delivered only when BOTH are true, the daily switch
+// is really the master switch, and this component says so rather than rendering
+// two lies side by side. See the same note on /api/me/newsletters in
+// server/routes/me.ts.
 
 type Key = "premium" | "free";
 
@@ -27,6 +42,26 @@ const ROWS: Record<Key, { title: string; description: string }> = {
     description: "Every weekday morning.",
   },
 };
+
+/** What a tap on `key` should send, given where the preferences stand now. */
+function patchFor(
+  key: Key,
+  prefs: NewsletterPrefs,
+): { free?: boolean; premium?: boolean } {
+  if (key === "free") return { free: !prefs.free };
+  // Turning the members letter back on from an unsubscribed record has to
+  // re-subscribe as well, or the tier is set on a record that receives nothing
+  // and the switch reads On while nothing arrives.
+  if (!isDelivered("premium", prefs)) {
+    return prefs.free ? { premium: true } : { free: true, premium: true };
+  }
+  return { premium: false };
+}
+
+/** Whether this list is actually reaching the member right now. */
+function isDelivered(key: Key, prefs: NewsletterPrefs): boolean {
+  return key === "free" ? prefs.free : prefs.premium && prefs.free;
+}
 
 export function EmailPreferences({ email }: { email: string }) {
   const [prefs, setPrefs] = useState<NewsletterPrefs | null>(null);
@@ -77,15 +112,15 @@ export function EmailPreferences({ email }: { email: string }) {
 
   const onToggle = async (key: Key) => {
     if (!prefs || saving || loading || loadError) return;
-    const nextOn = !prefs[key];
+    const patch = patchFor(key, prefs);
     const previous = prefs;
     // Bump the generation so a load still in flight can't overwrite the
     // optimistic value with the pre-toggle one.
     loadGeneration.current += 1;
-    setPrefs({ ...prefs, [key]: nextOn });
+    setPrefs({ ...prefs, ...patch });
     setSaving(key);
     setError(null);
-    const result = await saveNewsletterPrefs({ [key]: nextOn });
+    const result = await saveNewsletterPrefs(patch);
     setSaving(null);
     if (result.ok && result.prefs) {
       loadGeneration.current += 1;
@@ -128,16 +163,28 @@ export function EmailPreferences({ email }: { email: string }) {
             {prefs?.canPremium ? (
               <PrefRow
                 title={ROWS.premium.title}
-                description={ROWS.premium.description}
-                on={prefs.premium}
+                description={
+                  prefs.premium && !prefs.free
+                    ? "Weekly, from the hosts. Paused while all email is off — turning this on resumes both."
+                    : ROWS.premium.description
+                }
+                on={isDelivered("premium", prefs)}
                 busy={saving === "premium"}
                 onToggle={() => void onToggle("premium")}
               />
             ) : null}
             <PrefRow
               title={ROWS.free.title}
-              description={ROWS.free.description}
-              on={prefs?.free ?? false}
+              description={
+                // The one place a member can stop everything. An entitled
+                // member turning this off loses the letter they pay for, so the
+                // row says that here rather than letting them find out by not
+                // receiving it.
+                prefs?.canPremium
+                  ? "Every weekday morning. Turning this off stops all Ark Media newsletters, including the members-only one."
+                  : ROWS.free.description
+              }
+              on={prefs ? isDelivered("free", prefs) : false}
               busy={saving === "free"}
               onToggle={() => void onToggle("free")}
             />

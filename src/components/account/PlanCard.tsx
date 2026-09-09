@@ -37,7 +37,12 @@ export function PlanCard({
 
   const meta = TIERS.find((t) => t.key === tier);
   const sub = subscription;
-  const cadence = sub?.plan === "yearly" ? "/year" : "/month";
+  // Only ever the interval we actually read. `plan` is null for an interval
+  // that isn't month or year, and defaulting that to "/month" labels a price as
+  // monthly on a subscription that isn't — the more alarming of the two guesses,
+  // on the one number on this page a member checks against their statement.
+  const cadence =
+    sub?.plan === "yearly" ? "/year" : sub?.plan === "monthly" ? "/month" : "";
 
   const price =
     sub && typeof sub.amountCents === "number" && sub.currency
@@ -202,12 +207,15 @@ function StatusBadge({
   loading: boolean;
 }) {
   // No badge at all while we're still reading Stripe: "Active" that flips to
-  // "Ending" a beat later is worse than a badge that arrives late.
-  if (loading) return null;
+  // "Ending" a beat later is worse than a badge that arrives late. And none
+  // when the read FAILED either (null subscription, not loading) — a badge that
+  // is confidently wrong is worse than both, and "Active" is an assertion about
+  // someone's money that we are in no position to make.
+  if (loading || !subscription) return null;
 
-  const { text, tone } = subscription?.cancelAtPeriodEnd
+  const { text, tone } = subscription.cancelAtPeriodEnd
     ? { text: "Ending", tone: "border-danger/50 bg-danger/10 text-danger" }
-    : subscription?.pendingChange
+    : subscription.pendingChange
       ? { text: "Change scheduled", tone: "border-cyan/50 bg-cyan/10 text-cyan" }
       : { text: "Active", tone: "border-cyan/50 bg-cyan/10 text-cyan" };
 

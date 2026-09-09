@@ -84,6 +84,7 @@ import {
   releaseScheduleIfAny,
   scheduledPlanOf,
   scheduleIdOf,
+  subscriptionAmount,
   tsToIso,
   validatePwycAmount,
 } from './helpers.js'
@@ -809,17 +810,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           cancelAt = tsToIso(sub.cancel_at) ?? periodEndIso(sub)
         }
         const hasSchedule = Boolean(sub && scheduleIdOf(sub))
-        // What the member actually pays, for the account page's plan card. Same
-        // caveat as bundle-upgrade-preview: `unit_amount` is stated in the
-        // PRICE's currency, and a catalog price billed through currency_options
-        // reports the USD base while the subscription charges the localized
-        // amount. Quoting that would be wrong money, so only trust it when the
-        // two currencies agree — the card drops the amount otherwise.
+        // What the member actually pays, for the account page's plan card.
         const price = sub?.items?.data?.[0]?.price
-        const amountCents =
-          sub && price && price.currency === sub.currency && typeof price.unit_amount === 'number'
-            ? price.unit_amount
-            : null
+        const amountCents = sub && price ? await subscriptionAmount(stripe, sub, price) : null
         const currency = sub ? sub.currency : null
         const minorFactor =
           currency && isSupportedCurrency(currency) ? (minorUnitFactors()[currency] ?? 100) : 100

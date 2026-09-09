@@ -80,28 +80,35 @@ export function SupportWidget() {
         }}
         aria-expanded={open}
         aria-controls="support-panel"
-        className="fixed bottom-4 right-4 z-[45] inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-4 button-text text-navy shadow-2xl transition hover:bg-navy-900 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan motion-reduce:transition-none"
+        aria-label={open ? "Close help" : "Help"}
+        // Icon-only below `sm`. At 390px the site's primary CTAs — the pricing
+        // cards' "Subscribe annually", the FAQ rows — run the full width of the
+        // column, and a labelled launcher sat across the middle of them. A
+        // 48px square still overlaps the last inch of a full-width control,
+        // which is the accepted cost of a floating launcher, but it no longer
+        // lands on the words.
+        className="fixed bottom-4 right-4 z-[45] inline-flex size-12 items-center justify-center gap-2 border border-cyan bg-cyan button-text text-navy shadow-2xl transition hover:bg-navy-900 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan motion-reduce:transition-none sm:size-auto sm:min-h-12 sm:px-4"
       >
         <svg
-          width="16"
-          height="16"
+          width="18"
+          height="18"
           viewBox="0 0 16 16"
           aria-hidden="true"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.6"
+          strokeWidth="1.8"
           strokeLinecap="square"
         >
           {open ? (
-            <path d="M3 3l10 10M13 3L3 13" />
+            <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" />
           ) : (
             <>
-              <path d="M5.5 5.8a2.6 2.6 0 1 1 3 2.6v1.4" />
-              <path d="M8.5 12.2h-1v-1h1z" fill="currentColor" />
+              <path d="M5.6 6a2.6 2.6 0 1 1 2.9 2.6v1.3" />
+              <path d="M9.2 13.1H7.8v-1.4h1.4z" fill="currentColor" stroke="none" />
             </>
           )}
         </svg>
-        {open ? "Close" : "Help"}
+        <span className="hidden sm:inline">{open ? "Close" : "Help"}</span>
       </button>
 
       {everOpened ? (

@@ -251,7 +251,7 @@ export const supportUnanswerable: Unanswerable[] = [
   },
   {
     phrases: ["student discount", "military discount", "senior discount", "group rate", "team plan"],
-    intent: "billing-refund",
+    intent: "concession-pricing",
   },
   {
     phrases: ["delete my account", "delete my data", "close my account", "gdpr", "erase my account"],

@@ -15,7 +15,7 @@ import {
   type SupportStepKind,
 } from '../../shared/support.js'
 
-export type { SupportSession, SupportSessionInput, SupportStep }
+export type { SupportSession, SupportSessionInput }
 
 const KINDS = new Set<string>(SUPPORT_STEP_KINDS)
 // Client-generated, so treat it as opaque and constrain it hard: it is a
@@ -128,11 +128,18 @@ export async function recordSupportSession(
 }
 
 /** Most recent sessions, for the back office. */
+export const SUPPORT_SESSIONS_DEFAULT_LIMIT = 200
+
 export async function listSupportSessions(
   sql: Sql,
-  limit = 200,
+  limit: number = SUPPORT_SESSIONS_DEFAULT_LIMIT,
 ): Promise<SupportSession[]> {
-  const capped = Math.min(Math.max(Math.trunc(limit) || 0, 1), 500)
+  // A non-finite limit means the caller could not read one, which is the
+  // default's job — not the floor's. `Math.trunc(NaN) || 0` was 0, and the
+  // clamp turned that into 1, so `?limit=abc` returned a single row and the
+  // back office read as "almost nobody has used the widget".
+  const requested = Number.isFinite(limit) ? Math.trunc(limit) : SUPPORT_SESSIONS_DEFAULT_LIMIT
+  const capped = Math.min(Math.max(requested, 1), 500)
   const rows = (await sql`
     select ${sql.unsafe(COLUMNS)} from support_conversations
     order by created_at desc

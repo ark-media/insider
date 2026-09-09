@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { AdminShell } from "../../components/AdminShell";
 import { AdminListPanel, AdminTag, StatusPill } from "../../components/admin/AdminList";
@@ -72,8 +72,10 @@ function SupportAdmin() {
         What people asked the floating help widget. The list worth acting on is
         the first one: those are questions the FAQ corpus could not answer, and
         each is a candidate for a new entry in{" "}
-        <span className="text-fg-strong">FAQs</span>. Sessions are kept for 180
-        days.
+        <Link to="/admin/faqs" className="text-cyan underline">
+          FAQs
+        </Link>
+        . Sessions are kept for 180 days.
       </p>
 
       {error ? (

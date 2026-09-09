@@ -12,6 +12,7 @@ import { getDb } from '../lib/db.js'
 import {
   createFaq,
   deleteFaq,
+  DuplicateFaqKeyError,
   listEnabledFaqs,
   listFaqs,
   updateFaq,
@@ -53,20 +54,38 @@ export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (req.method === 'GET') {
           return json(200, { faqs: await listFaqs(sql) })
         }
+        // A key collision is the one write failure an editor can fix from the
+        // form, so it gets its own message naming the key rather than the
+        // catch-all's `internal_error`.
+        const keyTaken = (key: string) =>
+          json(409, {
+            error: `The key "${key}" is already used by another FAQ. Pick a different one.`,
+          })
+
         if (req.method === 'POST') {
           const v = validateFaqInput(await readJson(req))
           if (!v.ok) return json(400, { error: v.error })
-          const faq = await createFaq(sql, v.value)
-          return json(200, { faq })
+          try {
+            const faq = await createFaq(sql, v.value)
+            return json(200, { faq })
+          } catch (err) {
+            if (err instanceof DuplicateFaqKeyError) return keyTaken(err.key)
+            throw err
+          }
         }
         // PUT (full replace) — the editor always submits the whole record.
         if (req.method === 'PUT') {
           if (!id) return json(400, { error: 'id required' })
           const v = validateFaqInput(await readJson(req))
           if (!v.ok) return json(400, { error: v.error })
-          const updated = await updateFaq(sql, id, v.value)
-          if (!updated) return json(404, { error: 'not_found' })
-          return json(200, { faq: updated })
+          try {
+            const updated = await updateFaq(sql, id, v.value)
+            if (!updated) return json(404, { error: 'not_found' })
+            return json(200, { faq: updated })
+          } catch (err) {
+            if (err instanceof DuplicateFaqKeyError) return keyTaken(err.key)
+            throw err
+          }
         }
         if (req.method === 'DELETE') {
           if (!id) return json(400, { error: 'id required' })

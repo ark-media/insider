@@ -1,4 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  type LinkProps,
+} from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
 import { ProfileNameCard } from "../components/account/ProfileNameCard";
@@ -24,7 +28,16 @@ type StepDef = {
   title: string;
   body: string;
   cta?: string;
-  href?: string;
+  /**
+   * Typed as the route union, not `string`.
+   *
+   * As a plain string it widened past the literal union at the `<Link to>` call
+   * site, so `tsc` happily accepted a step pointing at /account/newsletters
+   * after that page was folded into /account/settings — a 404 on the last step
+   * of every new member's onboarding, in the flow least likely to be re-walked
+   * by whoever deleted the route.
+   */
+  href?: LinkProps["to"];
   slot?: ReactNode;
 };
 
@@ -91,7 +104,7 @@ function WelcomePage() {
     title: "Confirm your notification preferences",
     body: "New post, podcast, and members-only newsletter alerts are on by default. Confirm your preferences so you never miss an update.",
     cta: "Newsletter preferences",
-    href: "/account/newsletters",
+    href: "/account/settings",
   });
 
   // Gift recipients arrive via a magic link with no password. Offer to set one
@@ -253,15 +266,13 @@ function WelcomeStep({
   body,
   cta,
   href,
-  external,
   slot,
 }: {
   n: string;
   title: string;
   body: string;
   cta?: string;
-  href?: string;
-  external?: boolean;
+  href?: LinkProps["to"];
   // When provided, render this custom action node instead of a single CTA
   // (used by the Fold step for its App Store / Google Play / web links).
   slot?: ReactNode;
@@ -278,17 +289,15 @@ function WelcomeStep({
         {title}
       </h2>
       <p className="mt-4 text-body-sm text-fg">{body}</p>
+      {/* Every off-site link on this page goes through `slot` (the Fold step's
+          store buttons), so the CTA is always an internal route. */}
       {slot ? (
         slot
-      ) : external ? (
-        <a href={href} className={ctaCls} target="_blank" rel="noreferrer noopener">
-          {cta} →
-        </a>
-      ) : (
-        <Link to={href!} className={ctaCls}>
+      ) : href ? (
+        <Link to={href} className={ctaCls}>
           {cta} →
         </Link>
-      )}
+      ) : null}
     </div>
   );
 }

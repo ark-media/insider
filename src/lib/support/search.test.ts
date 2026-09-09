@@ -141,9 +141,23 @@ const UNANSWERABLE: [query: string, intent: string][] = [
   ['I need a receipt', 'billing-receipt'],
   ['can you send me an invoice', 'billing-receipt'],
   ['is there a free trial', 'no-trial'],
-  ['do you have a student discount', 'billing-refund'],
+  // NOT billing-refund. A student asking what it costs has never paid us
+  // anything, and was being answered with "a refund or a charge I don't
+  // recognise / we'll need to look at your account".
+  ['do you have a student discount', 'concession-pricing'],
+  ['is there a group rate', 'concession-pricing'],
   ['delete my account', 'delete-account'],
   ['change my email address', 'change-email'],
+  // PLURALS. The curated tables are matched against tokenized text, so they
+  // stem exactly as the ranker does. Matched against the raw string instead,
+  // " refund " is not a substring of " how do i get refunds " and every one of
+  // these fell through to BM25 — "refunds" landing on the cancellation FAQ is
+  // the precise failure the unanswerable list exists to prevent.
+  ['how do I get refunds', 'billing-refund'],
+  ['can I get receipts for these', 'billing-receipt'],
+  ['do you offer free trials', 'no-trial'],
+  // Stopwords between the words of a curated phrase no longer break the match.
+  ['I was charged it twice', 'billing-refund'],
 ]
 
 /** Nothing in the corpus is relevant; never offer an answer anyway. */

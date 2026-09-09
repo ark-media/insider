@@ -18,6 +18,7 @@ import {
   actionsFor,
   supportTopicById,
   supportTopics,
+  topicVisible,
   visibleTopics,
   SUPPORT_ESCALATION_TOPIC,
   type SupportAction,
@@ -111,7 +112,10 @@ export function SupportPanel({ onClose }: { onClose: () => void }) {
         unanswerable: supportUnanswerable,
       });
       logSupportStep("query", q);
-      if (r.kind === "unanswerable") logSupportStep("unanswerable", r.intents[0] ?? q);
+      // The intent id is what the back office tallies; the member's own words
+      // are what the support desk needs to read, so the query rides along as
+      // the label. Handing a person "billing-refund" tells them nothing.
+      if (r.kind === "unanswerable") logSupportStep("unanswerable", r.intents[0] ?? q, q);
       else if (r.kind === "no-match") logSupportStep("no_results", q);
     }, LOG_SETTLE_MS);
     return () => clearTimeout(timer);
@@ -180,6 +184,15 @@ export function SupportPanel({ onClose }: { onClose: () => void }) {
   const chips = useMemo(() => visibleTopics(viewer), [viewer]);
   const searchable = index !== null;
 
+  const activeTopic = view.kind === "topic" ? supportTopicById.get(view.id) : undefined;
+  // A topic whose own answer is "a person has to look at this" already offers
+  // the escalation as its primary button. Showing the standing one underneath
+  // it stacked two identical CTAs — the same destination, differently worded,
+  // which reads as a choice the member has to make.
+  const topicEscalates = activeTopic
+    ? actionsFor(activeTopic, viewer).some((a) => a.kind === "contact")
+    : false;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* --- Search ------------------------------------------------------ */}
@@ -218,7 +231,7 @@ export function SupportPanel({ onClose }: { onClose: () => void }) {
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
         {view.kind === "topic" ? (
           <TopicView
-            topic={supportTopicById.get(view.id)}
+            topic={activeTopic}
             viewer={viewer}
             faqByKey={faqByKey}
             openId={openId}
@@ -232,6 +245,7 @@ export function SupportPanel({ onClose }: { onClose: () => void }) {
             query={deferredQuery}
             result={result}
             chips={chips}
+            viewer={viewer}
             openId={openId}
             onToggle={toggleFaq}
             onOpenTopic={openTopic}
@@ -239,16 +253,18 @@ export function SupportPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      {/* --- Escalation, reachable from every state ----------------------- */}
-      <div className="border-t border-rule px-4 py-3">
-        <button
-          type="button"
-          onClick={() => escalate(SUPPORT_ESCALATION_TOPIC)}
-          className={actionSecondaryClass}
-        >
-          Talk to a person
-        </button>
-      </div>
+      {/* --- Escalation: every dead end needs an exit ---------------------- */}
+      {topicEscalates ? null : (
+        <div className="border-t border-rule px-4 py-3">
+          <button
+            type="button"
+            onClick={() => escalate(SUPPORT_ESCALATION_TOPIC)}
+            className={actionSecondaryClass}
+          >
+            Talk to a person
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -261,6 +277,7 @@ function HomeView({
   query,
   result,
   chips,
+  viewer,
   openId,
   onToggle,
   onOpenTopic,
@@ -270,6 +287,7 @@ function HomeView({
   query: string;
   result: SupportSearchResult | null;
   chips: SupportTopic[];
+  viewer: SupportViewer;
   openId: string | null;
   onToggle: (faq: Faq) => void;
   onOpenTopic: (topic: SupportTopic) => void;
@@ -303,9 +321,14 @@ function HomeView({
     );
   }
 
+  // Gated on the viewer exactly as `chips` is. An intent reached by typing is
+  // still a topic being offered, and `visibleWhen` means "this viewer cannot
+  // use this" regardless of which path found it — ungated, "upgrade bundle"
+  // typed by a Bundle member offered them the upsell that visibleWhen exists
+  // to suppress, and login-trouble was offered to someone already signed in.
   const intentTopics = result.intents
     .map((id) => supportTopicById.get(id as SupportIntentId))
-    .filter((t): t is SupportTopic => Boolean(t));
+    .filter((t): t is SupportTopic => t !== undefined && topicVisible(t, viewer));
 
   // The corpus provably has no answer here, so no FAQ is shown at all — not
   // even a plausible-looking one. This is the single most valuable branch in
@@ -377,6 +400,10 @@ function TopicView({
   }
 
   const actions = actionsFor(topic, viewer);
+  // The first BUTTON is the primary one, not the first action — several topics
+  // lead with an explanatory note, and counting that as the primary left the
+  // real call to action styled as an afterthought.
+  const primary = actions.findIndex((a) => a.kind !== "note");
   // A key that resolves to nothing is not an error: an admin can retire an FAQ
   // at any time, and the widget's job is to carry on with what is left.
   const faqs = topic.faqKeys
@@ -402,7 +429,7 @@ function TopicView({
                 key={i}
                 type="button"
                 onClick={() => onAction(action)}
-                className={i === 0 ? actionClass : actionSecondaryClass}
+                className={i === primary ? actionClass : actionSecondaryClass}
               >
                 {action.label}
               </button>

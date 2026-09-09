@@ -4,7 +4,10 @@ import { PageShell } from "../components/PageShell";
 import { contactTopics, type ContactTopic } from "../config/urls";
 import { sendContactMessage } from "../lib/contact";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
-import { takeSupportDraft } from "../lib/support/session";
+import {
+  SUPPORT_DRAFT_EVENT,
+  takeSupportDraft,
+} from "../lib/support/session";
 
 export const Route = createFileRoute("/contact")({
   // Allow a topic to be pre-selected via ?topic=… (e.g. links that want the
@@ -54,15 +57,35 @@ function ContactPage() {
   // gone). Clearing is the point: a member who sends this and then hits Back
   // should not find the transcript sitting in the form again.
   //
-  // Reading-and-clearing an external store on mount is the external-system
-  // synchronisation the set-state-in-effect rule carves out, but it can't see
-  // that through the helper — hence the one-line exemption below.
+  // Reading-and-clearing an external store is the external-system
+  // synchronisation the set-state-in-effect rule carves out.
+  //
+  // Read on mount AND on the widget's event: escalating while already standing
+  // on /contact only changes the search param, so this component is not
+  // remounted and the mount read alone would drop the transcript on the floor —
+  // leaving it in sessionStorage to ambush some later visit instead.
   useEffect(() => {
-    const draft = takeSupportDraft();
-    if (!draft?.message) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMessage(draft.message);
+    const apply = () => {
+      const draft = takeSupportDraft();
+      if (!draft?.message) return;
+      setMessage(draft.message);
+      // The desk the widget picked, which the search param alone won't apply
+      // when the route doesn't remount.
+      if (draft.topic) setTopic(draft.topic);
+    };
+    apply();
+    window.addEventListener(SUPPORT_DRAFT_EVENT, apply);
+    return () => window.removeEventListener(SUPPORT_DRAFT_EVENT, apply);
   }, []);
+
+  // ?topic=… is a live input, not just an initial value: a link into /contact
+  // from a page the member is already on changes the param without remounting,
+  // and the desk has to follow it.
+  useEffect(() => {
+    if (!topicParam) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTopic(topicParam);
+  }, [topicParam]);
 
   // Honeypot — see server/routes/contact.ts. Real users leave it blank.
   const [company, setCompany] = useState("");

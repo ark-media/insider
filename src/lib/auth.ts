@@ -206,17 +206,23 @@ export type MySubscription = {
 // The signed-in member's plan, cancel schedule, price and card on file, from
 // GET /api/stripe/my-subscription. Drives the account page's plan card and its
 // persistent "set to cancel" state, so a member who already cancelled doesn't
-// see the cancel option again after a reload. Any failure degrades to "no
-// pending cancel" so the page still renders normally.
-export async function getMySubscription(): Promise<MySubscription> {
+// see the cancel option again after a reload.
+//
+// NULL means the read failed, and callers must keep it distinguishable from a
+// healthy subscription. This used to degrade to `{cancelAtPeriodEnd:false}`,
+// which is byte-for-byte what a live, uncancelled subscription looks like — so
+// a Stripe outage rendered a confident "Active" badge to a member whose
+// subscription may in fact have been set to cancel. Degrading gracefully is
+// still right; degrading INTO an assertion is not.
+export async function getMySubscription(): Promise<MySubscription | null> {
   try {
     const res = await fetch("/api/stripe/my-subscription", {
       credentials: "include",
     });
-    if (!res.ok) return { cancelAtPeriodEnd: false, cancelAt: null };
+    if (!res.ok) return null;
     return (await res.json()) as MySubscription;
   } catch {
-    return { cancelAtPeriodEnd: false, cancelAt: null };
+    return null;
   }
 }
 

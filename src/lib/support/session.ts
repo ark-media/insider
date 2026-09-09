@@ -220,9 +220,13 @@ export function supportTranscript(): string {
     }
   }
 
+  // A question that found nothing is reported once, under the line that says
+  // so — not twice, once as a search and again as a failure.
+  const onlySearched = searched.filter((q) => !stuck.includes(q));
+
   const lines: string[] = [];
   if (topics.length) lines.push(`Looking at: ${quoteList(topics)}`);
-  if (searched.length) lines.push(`Looked for: ${quoteList(searched)}`);
+  if (onlySearched.length) lines.push(`Looked for: ${quoteList(onlySearched)}`);
   if (read.length) lines.push(`Read: ${quoteList(read)}`);
   if (stuck.length) lines.push(`Found no answer for: ${quoteList(stuck)}`);
   if (lines.length === 0) return "";
@@ -236,6 +240,19 @@ function quoteList(items: string[]): string {
   const extra = items.length - shown.length;
   return extra > 0 ? `${shown.join(", ")} (+${extra} more)` : shown.join(", ");
 }
+
+/**
+ * Fired after a handoff is stashed, so a /contact page that is ALREADY mounted
+ * picks it up.
+ *
+ * Escalating from the widget navigates to /contact, but when the member is
+ * standing on /contact already that is a search-param-only change on a matched
+ * route: TanStack updates the params without remounting, the mount-time read
+ * never re-runs, and the transcript sits unread in sessionStorage until it
+ * ambushes some later visit. The event closes that gap without making the
+ * stored draft a reactive store.
+ */
+export const SUPPORT_DRAFT_EVENT = "ark:support-draft";
 
 export function writeSupportDraft(topic: ContactTopic): void {
   const transcript = supportTranscript();
@@ -251,6 +268,11 @@ export function writeSupportDraft(topic: ContactTopic): void {
     store()?.setItem(DRAFT_KEY, JSON.stringify(draft));
   } catch {
     /* the /contact form still works, just without the prefill */
+  }
+  try {
+    window.dispatchEvent(new Event(SUPPORT_DRAFT_EVENT));
+  } catch {
+    /* non-DOM host; the mount-time read still covers the normal case */
   }
 }
 

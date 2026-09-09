@@ -16,6 +16,7 @@ import { resolveRequestIdentity } from '../lib/session.js'
 import {
   listSupportSessions,
   recordSupportSession,
+  SUPPORT_SESSIONS_DEFAULT_LIMIT,
   validateSupportSession,
 } from '../lib/support.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
@@ -73,10 +74,16 @@ export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (!admin) return
 
         if (!env.DATABASE_URL) return json(200, { sessions: [] })
-        const limit = Number(
-          new URL(req.url ?? '/', 'http://x').searchParams.get('limit') ?? '200',
+        // Reject a junk `?limit=` here rather than letting NaN reach the clamp.
+        const raw = new URL(req.url ?? '/', 'http://x').searchParams.get('limit')
+        const parsed = raw === null || raw.trim() === '' ? NaN : Number(raw)
+        if (raw !== null && !Number.isFinite(parsed)) {
+          return json(400, { error: 'limit must be a number' })
+        }
+        const sessions = await listSupportSessions(
+          getDb(env),
+          Number.isFinite(parsed) ? parsed : SUPPORT_SESSIONS_DEFAULT_LIMIT,
         )
-        const sessions = await listSupportSessions(getDb(env), limit)
         return json(200, { sessions })
       },
     }),

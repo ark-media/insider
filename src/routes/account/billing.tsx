@@ -66,7 +66,7 @@ function BillingPage() {
     if (!isPaidMember(state)) return;
     let active = true;
     void getMySubscription().then((s) => {
-      if (!active) return;
+      if (!active || !s) return; // null = read failed; leave the state alone
       if (s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
       setPendingChange(Boolean(s.pendingChange));
       setScheduledTier(s.scheduledTier ?? null);

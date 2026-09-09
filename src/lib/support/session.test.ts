@@ -24,6 +24,7 @@ import {
   supportSessionId,
   supportSteps,
   supportTranscript,
+  SUPPORT_DRAFT_EVENT,
   takeSupportDraft,
   writeSupportDraft,
 } from "./session";
@@ -159,7 +160,10 @@ describe("transcript", () => {
     logSupportStep("no_results", "refund");
 
     const t = supportTranscript();
-    expect(t).toContain("Looked for: “how do I cancel”, “refund”");
+    // "refund" appears only under the line that says it found nothing — a
+    // question is not both a search and a separate failure.
+    expect(t).toContain("Looked for: “how do I cancel”");
+    expect(t).not.toContain("Looked for: “how do I cancel”, “refund”");
     // The slug is what the log stores; a human gets the question.
     expect(t).toContain("Can I cancel my subscription at any time?");
     expect(t).not.toContain("cancel-anytime");
@@ -215,5 +219,30 @@ describe("handoff draft", () => {
   test("a corrupt draft is ignored rather than thrown", () => {
     window.sessionStorage.setItem("ark.support.draft", "{not json");
     expect(takeSupportDraft()).toBeNull();
+  });
+
+  test("announces itself, so a /contact already on screen picks it up", () => {
+    // Escalating from the widget navigates to /contact — but a member standing
+    // on /contact already gets a search-param-only change on a matched route,
+    // which does not remount the page. Without this event its mount-time read
+    // never re-runs: the transcript is dropped and the unread draft ambushes
+    // some later visit instead.
+    // Collected rather than assigned to a `let`: the assertions below sit
+    // outside the callback, where TS would narrow a `let` to its initializer.
+    const readAtFireTime: (string | null)[] = [];
+    const onDraft = () => {
+      readAtFireTime.push(takeSupportDraft()?.message ?? null);
+    };
+    window.addEventListener(SUPPORT_DRAFT_EVENT, onDraft);
+    try {
+      logSupportStep("query", "double charged");
+      writeSupportDraft("support");
+    } finally {
+      window.removeEventListener(SUPPORT_DRAFT_EVENT, onDraft);
+    }
+
+    expect(readAtFireTime).toHaveLength(1);
+    // Fired AFTER the write, so the listener finds a draft rather than a race.
+    expect(readAtFireTime[0]).toContain("double charged");
   });
 });

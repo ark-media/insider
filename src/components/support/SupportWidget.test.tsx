@@ -242,7 +242,7 @@ describe("escalation", () => {
     await mount();
     await open();
     await click(buttonWith("Cancel or change my plan"));
-    await click(buttonWith("Talk to a person"));
+    await click(buttonWith("Send us a message"));
 
     expect(router.state.location.pathname).toBe("/contact");
     expect(router.state.location.search).toMatchObject({ topic: "support" });
@@ -255,6 +255,28 @@ describe("escalation", () => {
 
     // And it closes behind itself, rather than floating over the form.
     expect(launcher().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  test("is reachable from the home screen, where no topic offers it", async () => {
+    await mount();
+    await open();
+    await click(buttonWith("Talk to a person"));
+    expect(router.state.location.pathname).toBe("/contact");
+  });
+
+  test("is never offered twice on the same screen", async () => {
+    // A topic whose whole answer is "a person has to look at this" carries the
+    // escalation as its own primary button; the standing one would sit
+    // directly underneath it, same destination, different words.
+    await mount();
+    await open();
+    await click(buttonWith("Cancel or change my plan"));
+
+    const escalations = buttons().filter((b) => {
+      const t = (b.textContent ?? "").trim();
+      return t === "Send us a message" || t === "Talk to a person";
+    });
+    expect(escalations).toHaveLength(1);
   });
 });
 

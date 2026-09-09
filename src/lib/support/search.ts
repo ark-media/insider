@@ -101,7 +101,7 @@ export type SupportIndex = {
   size: number
 }
 
-export type SupportHit = { faq: Faq; score: number; coverage: number }
+type SupportHit = { faq: Faq; score: number; coverage: number }
 
 export type SupportSearchResult = {
   /**
@@ -243,18 +243,37 @@ export type UnanswerableEntry = { phrases: string[]; intent: string }
  * FAQ (wrong, and expensive) and "discount code" lands on the annual-discount
  * FAQ. Ranking cannot fix that; this list can.
  */
-export function matchUnanswerable(
+function matchUnanswerable(
   query: string,
   entries: UnanswerableEntry[],
 ): string | null {
-  const haystack = ` ${normalizeText(query).replace(/[^a-z0-9]+/g, ' ').trim()} `
+  const haystack = phraseHaystack(query)
   for (const entry of entries) {
     for (const phrase of entry.phrases) {
-      const needle = ` ${normalizeText(phrase).replace(/[^a-z0-9]+/g, ' ').trim()} `
+      const needle = phraseHaystack(phrase)
       if (needle.trim() && haystack.includes(needle)) return entry.intent
     }
   }
   return null
+}
+
+/**
+ * The space-padded token string a curated phrase is matched against.
+ *
+ * Built from `tokenize()` rather than from raw normalised text, so the curated
+ * tables share the stemmer with the ranker they are meant to override. Matching
+ * the raw string instead silently loses every plural a member actually types:
+ * " refund " is not a substring of " how do i get refunds ", so the guard never
+ * fired and the query fell through to BM25 and the cancellation FAQ — the exact
+ * outcome the list above exists to prevent. The same held for receipts,
+ * invoices, trials, coupons, vouchers and gifts.
+ *
+ * Stopword removal makes the match more forgiving in the right direction too:
+ * "charged twice" now matches "I was charged it twice", which the adjacency of
+ * the raw string ruled out.
+ */
+function phraseHaystack(input: string): string {
+  return ` ${tokenize(input).join(' ')} `
 }
 
 export type SupportAlias = {
@@ -273,11 +292,14 @@ export type SupportAlias = {
 }
 
 /** Expands a raw query with curated bridge terms, and reports which intents fired. */
-export function expandQuery(query: string, aliases: SupportAlias[]): {
+function expandQuery(query: string, aliases: SupportAlias[]): {
+  /** The member's own tokens plus the expansions, for the unigram layer. */
   tokens: string[]
+  /** The member's own tokens alone, for the phrase layer. */
+  baseTokens: string[]
   intents: string[]
 } {
-  const haystack = ` ${normalizeText(query).replace(/[^a-z0-9]+/g, ' ').trim()} `
+  const haystack = phraseHaystack(query)
   const tokens = tokenize(query)
   const banned = new Set<string>()
   const added: string[] = []
@@ -285,7 +307,7 @@ export function expandQuery(query: string, aliases: SupportAlias[]): {
 
   for (const alias of aliases) {
     const hit = alias.phrases.some((phrase) => {
-      const needle = ` ${normalizeText(phrase).replace(/[^a-z0-9]+/g, ' ').trim()} `
+      const needle = phraseHaystack(phrase)
       return needle.trim().length > 0 && haystack.includes(needle)
     })
     if (!hit) continue
@@ -294,7 +316,12 @@ export function expandQuery(query: string, aliases: SupportAlias[]): {
     for (const e of alias.expand ?? []) added.push(...tokenize(e))
   }
 
-  return { tokens: [...tokens, ...added].filter((t) => !banned.has(t)), intents }
+  const keep = (t: string) => !banned.has(t)
+  return {
+    tokens: [...tokens, ...added].filter(keep),
+    baseTokens: tokens.filter(keep),
+    intents,
+  }
 }
 
 export type SearchOptions = {
@@ -324,7 +351,7 @@ export function searchSupport(params: {
   const knownUnknown = matchUnanswerable(query, unanswerable)
   if (knownUnknown) return { kind: 'unanswerable', hits: [], intents: [knownUnknown] }
 
-  const { tokens, intents } = expandQuery(query, aliases)
+  const { tokens, baseTokens, intents } = expandQuery(query, aliases)
   if (tokens.length === 0) return { kind: 'no-match', hits: [], intents }
 
   const { resolved, oov } = resolveTerms(index, tokens)
@@ -335,7 +362,16 @@ export function searchSupport(params: {
   const totalIdf = resolved.reduce((n, r) => n + idf(index, r.term) * r.damping, 0)
   if (totalIdf <= 0) return { kind: 'no-match', hits: [], intents }
 
-  const queryBigrams = bigrams(tokens)
+  // Phrase layer over the member's OWN tokens, never the expanded set. Bigrams
+  // taken across `[...tokens, ...added]` span the seam between what was typed
+  // and what an alias injected: "cancel apple" with an alias expanding to
+  // `applepodcasts` manufactures the bigram "apple applepodcasts", and two
+  // aliases firing join the tail of one expansion to the head of the next. Each
+  // such pair can pay out up to PHRASE_BONUS.question x idf — on a rare term,
+  // comparable to SIMILAR_QUESTION_BONUS — for a phrase nobody typed. The
+  // expansions still count in full as unigrams above, which is where a curated
+  // bridge term belongs.
+  const queryBigrams = bigrams(baseTokens)
   const normalizedQuery = normalizeText(query).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
   const queryTokenSet = new Set(tokens)
 

@@ -65,7 +65,15 @@ export async function findLiveSubscription(
   const customers = await stripe.customers.list({ email, limit: 100 })
   const subLists = await Promise.all(
     customers.data.map((customer) =>
-      stripe.subscriptions.list({ customer: customer.id, status: 'all', limit: 100 }),
+      stripe.subscriptions.list({
+        customer: customer.id,
+        status: 'all',
+        limit: 100,
+        // Costs nothing on a call we already make, and saves the account page a
+        // serial paymentMethods.retrieve on every load — see readCardOnFile,
+        // whose "already an object" branch this is what makes reachable.
+        expand: ['data.default_payment_method'],
+      }),
     ),
   )
   for (const subs of subLists) {
@@ -167,6 +175,44 @@ export type CardOnFile = {
   last4: string
   expMonth: number
   expYear: number
+}
+
+/**
+ * What the subscription actually bills, in the subscription's own currency.
+ *
+ * `price.unit_amount` is stated in the PRICE's currency. Under the per-currency
+ * `currency_options` scheme (server/lib/pricing.ts) every catalog price is
+ * denominated in USD and carries the other 39 currencies as options, so for
+ * every non-USD member `price.currency` is 'usd' while `sub.currency` is
+ * theirs, and quoting unit_amount would be wrong money.
+ *
+ * Refusing to quote it was right; stopping there was not — it left every member
+ * outside the base currency with no price on their plan card at all. The real
+ * amount is one field over, in `currency_options[sub.currency].unit_amount`,
+ * which Stripe only returns on an explicit expand. That expand is too deep to
+ * ride along on the subscriptions.list call (`data.items.data.price` is already
+ * at the limit), so it costs one price retrieve — and only for the members who
+ * would otherwise see nothing.
+ *
+ * Null means "we could not establish this honestly": the card shows the renewal
+ * date without inventing a figure.
+ */
+export async function subscriptionAmount(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+  price: Stripe.Price,
+): Promise<number | null> {
+  if (price.currency === sub.currency) {
+    return typeof price.unit_amount === 'number' ? price.unit_amount : null
+  }
+  try {
+    const full = await stripe.prices.retrieve(price.id, { expand: ['currency_options'] })
+    const localized = full.currency_options?.[sub.currency]?.unit_amount
+    return typeof localized === 'number' ? localized : null
+  } catch (err) {
+    console.error('[stripe] currency_options read failed:', err)
+    return null
+  }
 }
 
 export async function readCardOnFile(

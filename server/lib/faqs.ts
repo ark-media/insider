@@ -143,12 +143,42 @@ export async function listEnabledFaqs(sql: Sql): Promise<Faq[]> {
   return rows.map(mapRow)
 }
 
+/**
+ * Thrown when a write would give two rows the same `key`.
+ *
+ * `faqs_key_idx` is the only constraint an editor can trip from the form, and
+ * uncaught it arrives as a bare Postgres 23505 that the route's catch-all turns
+ * into `internal_error` — a generic failure that says nothing about the key,
+ * next to the key that caused it. Uniqueness can't be validated up front
+ * without a race, so it is caught where the database reports it.
+ */
+export class DuplicateFaqKeyError extends Error {
+  key: string
+  constructor(key: string) {
+    super(`FAQ key "${key}" is already in use`)
+    this.name = 'DuplicateFaqKeyError'
+    this.key = key
+  }
+}
+
+function isDuplicateKey(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code
+  const constraint = (err as { constraint_name?: unknown })?.constraint_name
+  return code === '23505' && (constraint == null || constraint === 'faqs_key_idx')
+}
+
 export async function createFaq(sql: Sql, input: FaqInput): Promise<Faq> {
-  const rows = (await sql`
-    insert into faqs (key, question, answer, category, enabled, display_order)
-    values (${input.key}, ${input.question}, ${input.answer}, ${input.category}, ${input.enabled}, ${input.displayOrder})
-    returning ${sql.unsafe(COLUMNS)}
-  `) as Row[]
+  let rows: Row[]
+  try {
+    rows = (await sql`
+      insert into faqs (key, question, answer, category, enabled, display_order)
+      values (${input.key}, ${input.question}, ${input.answer}, ${input.category}, ${input.enabled}, ${input.displayOrder})
+      returning ${sql.unsafe(COLUMNS)}
+    `) as Row[]
+  } catch (err) {
+    if (input.key && isDuplicateKey(err)) throw new DuplicateFaqKeyError(input.key)
+    throw err
+  }
   return mapRow(rows[0])
 }
 
@@ -157,18 +187,24 @@ export async function updateFaq(
   id: string,
   input: FaqInput,
 ): Promise<Faq | null> {
-  const rows = (await sql`
-    update faqs set
-      key = ${input.key},
-      question = ${input.question},
-      answer = ${input.answer},
-      category = ${input.category},
-      enabled = ${input.enabled},
-      display_order = ${input.displayOrder},
-      updated_at = now()
-    where id = ${id}
-    returning ${sql.unsafe(COLUMNS)}
-  `) as Row[]
+  let rows: Row[]
+  try {
+    rows = (await sql`
+      update faqs set
+        key = ${input.key},
+        question = ${input.question},
+        answer = ${input.answer},
+        category = ${input.category},
+        enabled = ${input.enabled},
+        display_order = ${input.displayOrder},
+        updated_at = now()
+      where id = ${id}
+      returning ${sql.unsafe(COLUMNS)}
+    `) as Row[]
+  } catch (err) {
+    if (input.key && isDuplicateKey(err)) throw new DuplicateFaqKeyError(input.key)
+    throw err
+  }
   return rows[0] ? mapRow(rows[0]) : null
 }
 
