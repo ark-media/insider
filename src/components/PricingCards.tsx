@@ -102,9 +102,6 @@ function PriceCard({
             <span className="text-cyan">· Save {savingsPct}%</span>
           ) : null}
         </div>
-        <p className="mt-2 text-body-sm text-fg-muted">
-          Give more to sustain independent Jewish media.
-        </p>
       </div>
 
       <p className="mt-5 text-body-sm text-fg">{meta.blurb}</p>
