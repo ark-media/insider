@@ -754,9 +754,6 @@ export function EmailForm({
       <h2 id="checkout-title" className={titleClass}>
         Complete your membership
       </h2>
-      <p className="mt-2 text-sm text-fg-muted">
-        Billed {intervalLabel}ly. We'll send your sign-in link here.
-      </p>
       {promo ? <PromoBanner promo={promo} /> : null}
 
       {/* Pay what you choose — the floor is the minimum. A one-shot thumb
