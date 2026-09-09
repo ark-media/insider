@@ -125,7 +125,7 @@
 
 ### Link columns
 - **COLUMN TITLE**: Podcasts
-- **LINKS**: Call Me Back / Ark News Daily / For Heaven's Sake / All podcasts
+- **LINKS**: Call Me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems / All podcasts
 - **COLUMN TITLE**: Read
 - **LINKS**: Newsletters / Hosts / About / Israel Votes
 - **COLUMN TITLE**: Connect

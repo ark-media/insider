@@ -15,6 +15,7 @@ const sections: FooterSection[] = [
       { label: "Call Me Back", to: "/podcasts/call-me-back" },
       { label: "Ark News Daily", to: "/podcasts/ark-news-daily" },
       { label: "For Heaven's Sake", to: "/podcasts/for-heavens-sake" },
+      { label: "Chosen People Problems", to: "/podcasts/chosen-people-problems" },
       { label: "All podcasts", to: "/podcasts" },
     ],
   },
