@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AboutRouteImport } from './routes/about'
 import { Route as AccountRouteRouteImport } from './routes/account/route'
 import { Route as BookClubRouteImport } from './routes/book-club'
 import { Route as ContactRouteImport } from './routes/contact'
@@ -24,6 +23,7 @@ import { Route as RedeemRouteImport } from './routes/redeem'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as WelcomeRouteImport } from './routes/welcome'
+import { Route as AboutIndexRouteImport } from './routes/about/index'
 import { Route as AboutNetworkRouteImport } from './routes/about/network'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as AccountBillingRouteImport } from './routes/account/billing'
@@ -63,11 +63,6 @@ import { Route as ShowsShowEpisodeRouteImport } from './routes/shows/$show/$epis
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountRouteRoute = AccountRouteRouteImport.update({
@@ -135,10 +130,15 @@ const WelcomeRoute = WelcomeRouteImport.update({
   path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AboutIndexRoute = AboutIndexRouteImport.update({
+  id: '/about/',
+  path: '/about/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutNetworkRoute = AboutNetworkRouteImport.update({
-  id: '/network',
-  path: '/network',
-  getParentRoute: () => AboutRoute,
+  id: '/about/network',
+  path: '/about/network',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AccountIndexRoute = AccountIndexRouteImport.update({
   id: '/',
@@ -315,7 +315,6 @@ const ShowsShowEpisodeRoute = ShowsShowEpisodeRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRouteRouteWithChildren
-  '/about': typeof AboutRouteWithChildren
   '/book-club': typeof BookClubRoute
   '/contact': typeof ContactRoute
   '/faq': typeof FaqRoute
@@ -352,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
+  '/about/': typeof AboutIndexRoute
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/careers/': typeof CareersIndexRoute
@@ -366,7 +366,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/about': typeof AboutRouteWithChildren
   '/book-club': typeof BookClubRoute
   '/contact': typeof ContactRoute
   '/faq': typeof FaqRoute
@@ -403,6 +402,7 @@ export interface FileRoutesByTo {
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
+  '/about': typeof AboutIndexRoute
   '/account': typeof AccountIndexRoute
   '/admin': typeof AdminIndexRoute
   '/careers': typeof CareersIndexRoute
@@ -419,7 +419,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRouteRouteWithChildren
-  '/about': typeof AboutRouteWithChildren
   '/book-club': typeof BookClubRoute
   '/contact': typeof ContactRoute
   '/faq': typeof FaqRoute
@@ -456,6 +455,7 @@ export interface FileRoutesById {
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
+  '/about/': typeof AboutIndexRoute
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/careers/': typeof CareersIndexRoute
@@ -473,7 +473,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account'
-    | '/about'
     | '/book-club'
     | '/contact'
     | '/faq'
@@ -510,6 +509,7 @@ export interface FileRouteTypes {
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/shows/$show'
+    | '/about/'
     | '/account/'
     | '/admin/'
     | '/careers/'
@@ -524,7 +524,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/about'
     | '/book-club'
     | '/contact'
     | '/faq'
@@ -561,6 +560,7 @@ export interface FileRouteTypes {
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/shows/$show'
+    | '/about'
     | '/account'
     | '/admin'
     | '/careers'
@@ -576,7 +576,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/account'
-    | '/about'
     | '/book-club'
     | '/contact'
     | '/faq'
@@ -613,6 +612,7 @@ export interface FileRouteTypes {
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/shows/$show'
+    | '/about/'
     | '/account/'
     | '/admin/'
     | '/careers/'
@@ -629,7 +629,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRouteRoute: typeof AccountRouteRouteWithChildren
-  AboutRoute: typeof AboutRouteWithChildren
   BookClubRoute: typeof BookClubRoute
   ContactRoute: typeof ContactRoute
   FaqRoute: typeof FaqRoute
@@ -642,6 +641,7 @@ export interface RootRouteChildren {
   SetupRoute: typeof SetupRoute
   TermsRoute: typeof TermsRoute
   WelcomeRoute: typeof WelcomeRoute
+  AboutNetworkRoute: typeof AboutNetworkRoute
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
   AdminCancellationsRoute: typeof AdminCancellationsRoute
   AdminCareersRoute: typeof AdminCareersRoute
@@ -661,6 +661,7 @@ export interface RootRouteChildren {
   PodcastsChosenPeopleProblemsRoute: typeof PodcastsChosenPeopleProblemsRoute
   PodcastsForHeavensSakeRoute: typeof PodcastsForHeavensSakeRoute
   ShowsShowRoute: typeof ShowsShowRouteWithChildren
+  AboutIndexRoute: typeof AboutIndexRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CareersIndexRoute: typeof CareersIndexRoute
   HostsIndexRoute: typeof HostsIndexRoute
@@ -679,13 +680,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account': {
@@ -779,12 +773,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/about/': {
+      id: '/about/'
+      path: '/about'
+      fullPath: '/about/'
+      preLoaderRoute: typeof AboutIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about/network': {
       id: '/about/network'
-      path: '/network'
+      path: '/about/network'
       fullPath: '/about/network'
       preLoaderRoute: typeof AboutNetworkRouteImport
-      parentRoute: typeof AboutRoute
+      parentRoute: typeof rootRouteImport
     }
     '/account/': {
       id: '/account/'
@@ -1047,16 +1048,6 @@ const AccountRouteRouteWithChildren = AccountRouteRoute._addFileChildren(
   AccountRouteRouteChildren,
 )
 
-interface AboutRouteChildren {
-  AboutNetworkRoute: typeof AboutNetworkRoute
-}
-
-const AboutRouteChildren: AboutRouteChildren = {
-  AboutNetworkRoute: AboutNetworkRoute,
-}
-
-const AboutRouteWithChildren = AboutRoute._addFileChildren(AboutRouteChildren)
-
 interface ShowsShowRouteChildren {
   ShowsShowEpisodeRoute: typeof ShowsShowEpisodeRoute
 }
@@ -1072,7 +1063,6 @@ const ShowsShowRouteWithChildren = ShowsShowRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRouteRoute: AccountRouteRouteWithChildren,
-  AboutRoute: AboutRouteWithChildren,
   BookClubRoute: BookClubRoute,
   ContactRoute: ContactRoute,
   FaqRoute: FaqRoute,
@@ -1085,6 +1075,7 @@ const rootRouteChildren: RootRouteChildren = {
   SetupRoute: SetupRoute,
   TermsRoute: TermsRoute,
   WelcomeRoute: WelcomeRoute,
+  AboutNetworkRoute: AboutNetworkRoute,
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
   AdminCancellationsRoute: AdminCancellationsRoute,
   AdminCareersRoute: AdminCareersRoute,
@@ -1104,6 +1095,7 @@ const rootRouteChildren: RootRouteChildren = {
   PodcastsChosenPeopleProblemsRoute: PodcastsChosenPeopleProblemsRoute,
   PodcastsForHeavensSakeRoute: PodcastsForHeavensSakeRoute,
   ShowsShowRoute: ShowsShowRouteWithChildren,
+  AboutIndexRoute: AboutIndexRoute,
   AdminIndexRoute: AdminIndexRoute,
   CareersIndexRoute: CareersIndexRoute,
   HostsIndexRoute: HostsIndexRoute,
