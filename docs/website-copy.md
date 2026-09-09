@@ -125,7 +125,7 @@
 
 ### Link columns
 - **COLUMN TITLE**: Podcasts
-- **LINKS**: All podcasts / Call Me Back / What's Your Number / For Heaven's Sake / Ark News Daily
+- **LINKS**: Call Me Back / Ark News Daily / For Heaven's Sake / All podcasts
 - **COLUMN TITLE**: Read
 - **LINKS**: Newsletters / Hosts / About / Israel Votes
 - **COLUMN TITLE**: Connect
@@ -486,12 +486,6 @@ single member only ever sees some of them.
 - **TITLE**: For Heaven's Sake
 - **TAGLINE / DESCRIPTION**: Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of constructive disagreement about Israel, world Jewry, and the future of Zionism.
 - **HOSTS**: Donniel Hartman, Yossi Klein Halevi
-- **CADENCE**: Weekly
-
-### What's Your Number?
-- **TITLE**: What's Your Number?
-- **TAGLINE / DESCRIPTION**: Hosted by Yonatan Adiri and Yael Wissner-Levy, What's Your Number? explores the forces shaping the Israeli economy from within and without.
-- **HOSTS**: Yonatan Adiri, Yael Wissner-Levy
 - **CADENCE**: Weekly
 
 ### Ark News Daily
@@ -867,7 +861,7 @@ single member only ever sees some of them.
 ### Properties cards
 - **SECTION HEADING**: Properties
 - **CARD 1 EYEBROW / TITLE**: Podcast network — Ark Media podcasts
-- **CARD 1 BODY**: Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, What's Your Number, Ark News Daily, and Call Me Back AMA.
+- **CARD 1 BODY**: Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, Ark News Daily, Chosen People Problems, and Call Me Back AMA.
 - **CARD 2 EYEBROW / TITLE**: Newsroom — Newsletters
 - **CARD 2 BODY**: Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to Ark+ subscribers.
 - **CARD 3 EYEBROW / TITLE**: Members' app — The Fold
@@ -928,16 +922,6 @@ single member only ever sees some of them.
 - **ROLE**: Call Me Back Contributor
 - **SHORT BIO**: Vice President at the Shalom Hartman Institute. Former Legal Adviser to Israel's Ministry of Foreign Affairs.
 - **LONG BIO**: Dr. Tal Becker is Vice President at the Shalom Hartman Institute, where he directs its educational initiatives on Israel and the Jewish world and is a lead faculty member of the iEngage Project. Previously, he served as Legal Adviser of the Israeli Ministry of Foreign Affairs and was a senior member of Israel's peace negotiation team, including a key role in negotiating the Abraham Accords with the UAE, Bahrain, and Morocco. He holds a doctorate from Columbia University and is the author of Terrorism and the State.
-
-### Yonatan Adiri
-- **ROLE**: Host, What's Your Number
-- **SHORT BIO**: Yonatan Adiri is an Israeli entrepreneur and co-host of Ark Media’s What’s Your Number? podcast.
-- **LONG BIO**: Yonatan Adiri is an Israeli entrepreneur. From 2008-2011, Yonatan served as Chief Technology Officer for former Israeli President Shimon Peres. In 2013, Yonatan established Healthy.io, a digital healthcare start-up that helps doctors diagnose patients using images from smartphones. In 2020, he was selected to Fortune Magazine’s 40 under 40 list.
-
-### Yael Wissner-Levy
-- **ROLE**: Host, What's Your Number
-- **SHORT BIO**: Yael Wissner-Levy is co-host of Ark Media’s What’s Your Number? podcast and the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company (no closing period in source)
-- **LONG BIO**: Yael Wissner-Levy is the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company building AI hackers to ensure enterprises deliver unbreakable code. Previously, she served as VP Communications at Lemonade, a NYSE-traded insurance company powered by AI, from seed stage to public markets. Prior to that, she served as a speechwriter and communications consultant for Israeli political and business leaders, and in media, as both a television news presenter and journalist at various outlets including i24 News (i24news.com), Israel’s Channel 10 (now Channel 13), and an editor at Ha’aretz (haaretz.com). She started her career working for former US Representative Steve Israel in the US Congress. Yael holds a MSc in International Relations from the London School of Economics.
 
 ### Deborah Pardes
 - **ROLE**: Host, Ark News Daily
@@ -1064,14 +1048,12 @@ single member only ever sees some of them.
 - **TRACK 01 (CALL ME BACK)**: A Political Shakeup in Israel? — with Amit Segal and Nadav Eyal
 - **TRACK 02 (CALL ME BACK)**: The Political Landscape — with Nadav Eyal and Amit Segal
 - **TRACK 03 (FOR HEAVEN'S SAKE)**: Election Currents
-- **TRACK 04 (WHAT'S YOUR NUMBER)**: From War Economy to Election Economy
-- **TRACK 05 (FOR HEAVEN'S SAKE)**: Bennett 2026
-- **TRACK 06 (INSIDE CALL ME BACK)**: Sneak Peek: Live with Tal Becker and Nadav Eyal
-- **TRACK 07 (FOR HEAVEN'S SAKE)**: The State of the Israeli Center
-- **TRACK 08 (WHAT'S YOUR NUMBER)**: Is Israel's 2026 Budget a Red Flag?
-- **TRACK 09 (CALL ME BACK)**: The Only-Bibi Camp vs Never-Bibi Camp
-- **TRACK 10 (CALL ME BACK)**: Netanyahu Seeks Pardon
-- **TRACK 11 (FOR HEAVEN'S SAKE)**: Coming Apart
+- **TRACK 04 (FOR HEAVEN'S SAKE)**: Bennett 2026
+- **TRACK 05 (FOR HEAVEN'S SAKE)**: The State of the Israeli Center
+- **TRACK 06 (CALL ME BACK)**: The Only-Bibi Camp vs Never-Bibi Camp
+- **TRACK 07 (FOR HEAVEN'S SAKE)**: The State of the Israeli Right
+- **TRACK 08 (CALL ME BACK)**: Netanyahu Seeks Pardon
+- **TRACK 09 (FOR HEAVEN'S SAKE)**: Coming Apart
 # The Fold & Newsletters
 
 ## The Fold (members)   /fold

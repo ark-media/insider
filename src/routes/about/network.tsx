@@ -19,7 +19,7 @@ const properties: NetworkProperty[] = [
     title: "Ark Media podcasts",
     kind: "Podcast network",
     description:
-      "Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, What's Your Number, Ark News Daily, and Call Me Back AMA.",
+      "Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, Ark News Daily, Chosen People Problems, and Call Me Back AMA.",
     to: "/podcasts",
   },
   {

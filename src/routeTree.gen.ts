@@ -54,7 +54,6 @@ import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-
 import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-me-back'
 import { Route as PodcastsChosenPeopleProblemsRouteImport } from './routes/podcasts/chosen-people-problems'
 import { Route as PodcastsForHeavensSakeRouteImport } from './routes/podcasts/for-heavens-sake'
-import { Route as PodcastsWhatsYourNumberRouteImport } from './routes/podcasts/whats-your-number'
 import { Route as ShowsIndexRouteImport } from './routes/shows/index'
 import { Route as ShowsShowRouteImport } from './routes/shows/$show'
 import { Route as NewslettersSlugPostRouteImport } from './routes/newsletters/$slug/$post'
@@ -287,11 +286,6 @@ const PodcastsForHeavensSakeRoute = PodcastsForHeavensSakeRouteImport.update({
   path: '/podcasts/for-heavens-sake',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PodcastsWhatsYourNumberRoute = PodcastsWhatsYourNumberRouteImport.update({
-  id: '/podcasts/whats-your-number',
-  path: '/podcasts/whats-your-number',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ShowsIndexRoute = ShowsIndexRouteImport.update({
   id: '/shows/',
   path: '/shows/',
@@ -357,7 +351,6 @@ export interface FileRoutesByFullPath {
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
-  '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
@@ -409,7 +402,6 @@ export interface FileRoutesByTo {
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
-  '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account': typeof AccountIndexRoute
   '/admin': typeof AdminIndexRoute
@@ -463,7 +455,6 @@ export interface FileRoutesById {
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
-  '/podcasts/whats-your-number': typeof PodcastsWhatsYourNumberRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
@@ -518,7 +509,6 @@ export interface FileRouteTypes {
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
-    | '/podcasts/whats-your-number'
     | '/shows/$show'
     | '/account/'
     | '/admin/'
@@ -570,7 +560,6 @@ export interface FileRouteTypes {
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
-    | '/podcasts/whats-your-number'
     | '/shows/$show'
     | '/account'
     | '/admin'
@@ -623,7 +612,6 @@ export interface FileRouteTypes {
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
-    | '/podcasts/whats-your-number'
     | '/shows/$show'
     | '/account/'
     | '/admin/'
@@ -672,7 +660,6 @@ export interface RootRouteChildren {
   PodcastsCallMeBackRoute: typeof PodcastsCallMeBackRoute
   PodcastsChosenPeopleProblemsRoute: typeof PodcastsChosenPeopleProblemsRoute
   PodcastsForHeavensSakeRoute: typeof PodcastsForHeavensSakeRoute
-  PodcastsWhatsYourNumberRoute: typeof PodcastsWhatsYourNumberRoute
   ShowsShowRoute: typeof ShowsShowRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
   CareersIndexRoute: typeof CareersIndexRoute
@@ -1002,13 +989,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PodcastsForHeavensSakeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/podcasts/whats-your-number': {
-      id: '/podcasts/whats-your-number'
-      path: '/podcasts/whats-your-number'
-      fullPath: '/podcasts/whats-your-number'
-      preLoaderRoute: typeof PodcastsWhatsYourNumberRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/shows/': {
       id: '/shows/'
       path: '/shows'
@@ -1123,7 +1103,6 @@ const rootRouteChildren: RootRouteChildren = {
   PodcastsCallMeBackRoute: PodcastsCallMeBackRoute,
   PodcastsChosenPeopleProblemsRoute: PodcastsChosenPeopleProblemsRoute,
   PodcastsForHeavensSakeRoute: PodcastsForHeavensSakeRoute,
-  PodcastsWhatsYourNumberRoute: PodcastsWhatsYourNumberRoute,
   ShowsShowRoute: ShowsShowRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
   CareersIndexRoute: CareersIndexRoute,

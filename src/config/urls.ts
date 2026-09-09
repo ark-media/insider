@@ -158,11 +158,6 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "spotify", url: "https://open.spotify.com/show/79j7N0DUYHOgrt3GUjiCzb" },
     { platform: "youtube", url: "https://www.youtube.com/@the.fhs.podcast" },
   ],
-  "whats-your-number": [
-    { platform: "apple", url: "https://podcasts.apple.com/us/podcast/whats-your-number/id1810695711" },
-    { platform: "spotify", url: "https://open.spotify.com/show/575KzqLWPUyFLjmMPzqWXn" },
-    { platform: "youtube", url: "https://www.youtube.com/@wyn.podcast" },
-  ],
   "ark-news-daily": [
     { platform: "apple", url: "https://podcasts.apple.com/us/podcast/ark-news-daily/id1885015768" },
     { platform: "spotify", url: "https://open.spotify.com/show/1O5ohSo8vLhudPTdSpXSwZ" },

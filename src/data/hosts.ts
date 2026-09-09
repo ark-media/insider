@@ -7,8 +7,6 @@ type HostSlug =
   | "nadav-eyal"
   | "amit-segal"
   | "tal-becker"
-  | "yonatan-adiri"
-  | "yael-wissner-levy"
   | "deborah-pardes";
 
 type HostKind = "host" | "contributor";
@@ -108,29 +106,6 @@ export const hosts: Host[] = [
       "Dr. Tal Becker is Vice President at the Shalom Hartman Institute, where he directs its educational initiatives on Israel and the Jewish world and is a lead faculty member of the iEngage Project. Previously, he served as Legal Adviser of the Israeli Ministry of Foreign Affairs and was a senior member of Israel's peace negotiation team, including a key role in negotiating the Abraham Accords with the UAE, Bahrain, and Morocco. He holds a doctorate from Columbia University and is the author of Terrorism and the State.",
     shows: ["call-me-back", "inside-call-me-back"],
     initials: "TB",
-  },
-  {
-    slug: "yonatan-adiri",
-    name: "Yonatan Adiri",
-    kind: "host",
-    role: "Host, What's Your Number",
-    shortBio:
-      "Yonatan Adiri is an Israeli entrepreneur and co-host of Ark Media’s What’s Your Number? podcast. ",
-    longBio: "Yonatan Adiri is an Israeli entrepreneur. From 2008-2011, Yonatan served as Chief Technology Officer for former Israeli President Shimon Peres. In 2013, Yonatan established Healthy.io, a digital healthcare start-up that helps doctors diagnose patients using images from smartphones. In 2020, he was selected to Fortune Magazine’s 40 under 40 list.",
-    shows: ["whats-your-number"],
-    initials: "YA",
-    headshot: "/hosts/yonatan-adiri.jpg",
-  },
-  {
-    slug: "yael-wissner-levy",
-    name: "Yael Wissner-Levy",
-    kind: "host",
-    role: "Host, What's Your Number",
-    shortBio: "Yael Wissner-Levy is co-host of Ark Media’s What’s Your Number? podcast and the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company",
-    longBio: "Yael Wissner-Levy is the Chief Communications Officer at Tenzai, an early-stage AI-native cybersecurity company building AI hackers to ensure enterprises deliver unbreakable code. Previously, she served as VP Communications at Lemonade, a NYSE-traded insurance company powered by AI, from seed stage to public markets. Prior to that, she served as a speechwriter and communications consultant for Israeli political and business leaders, and in media, as both a television news presenter and journalist at various outlets including i24 News (i24news.com), Israel’s Channel 10 (now Channel 13), and an editor at Ha’aretz (haaretz.com). She started her career working for former US Representative Steve Israel in the US Congress. Yael holds a MSc in International Relations from the London School of Economics.",
-    shows: ["whats-your-number"],
-    initials: "YW",
-    headshot: "/hosts/yael-wissner-levy.jpg",
   },
   {
     slug: "deborah-pardes",

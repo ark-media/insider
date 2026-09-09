@@ -492,22 +492,6 @@ body {
     linear-gradient(180deg, #fdeee6 0%, #fbe6da 48%, #f8dccd 100%);
 }
 
-/* What's Your Number? — vivid red (matches the cover's red WYN mark) */
-.wyn-bg {
-  background:
-    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(236, 24, 22, 0.40) 0%, transparent 65%),
-    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.12) 0%, transparent 65%),
-    linear-gradient(180deg, #170506 0%, #4d0f11 55%, #170506 100%);
-}
-[data-theme="light"] .wyn-bg {
-  background:
-    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(236, 24, 22, 0.20) 0%, transparent 64%),
-    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.14) 0%, transparent 64%),
-    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
-    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(23, 5, 6, 0.07) 0%, transparent 60%),
-    linear-gradient(180deg, #fdeaea 0%, #fbe0e0 48%, #f8d4d4 100%);
-}
-
 /* Top fade for the bespoke show washes — let each colored wash emerge from the
    masthead's navy instead of butting against it with a hard seam. The overlay
    sits above the wash but behind the hero content (z-index/isolation), and melts
@@ -517,15 +501,13 @@ body {
 .and-bg,
 .cmb-bg,
 .icmb-bg,
-.fhs-bg,
-.wyn-bg {
+.fhs-bg {
   isolation: isolate;
 }
 .and-bg::before,
 .cmb-bg::before,
 .icmb-bg::before,
-.fhs-bg::before,
-.wyn-bg::before {
+.fhs-bg::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;

@@ -78,11 +78,6 @@ export const PLAYLIST: CuratedEpisode[] = [
     title: "Election Currents",
   },
   {
-    show: "whats-your-number",
-    episodeId: "pod_ep_01a058ad-4280-7c8d-9c85-1715f2165b4c",
-    title: "From War Economy to Election Economy",
-  },
-  {
     show: "for-heavens-sake",
     // The 2026-01-07 original, not the 2026-04-29 re-release.
     episodeId: "pod_ep_01a058c8-4c69-7940-a365-f5806a18a0e1",
@@ -92,11 +87,6 @@ export const PLAYLIST: CuratedEpisode[] = [
     show: "for-heavens-sake",
     episodeId: "pod_ep_01a058c8-5034-76b2-843a-dec5f45a52d2",
     title: "The State of the Israeli Center",
-  },
-  {
-    show: "whats-your-number",
-    episodeId: "pod_ep_01a058ad-4606-7b82-8dbd-e776349527fc",
-    title: "Is Israel's 2026 Budget a Red Flag?",
   },
   {
     show: "call-me-back",

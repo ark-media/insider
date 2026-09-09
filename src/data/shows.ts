@@ -4,7 +4,6 @@ export type ShowSlug =
   | "call-me-back"
   | "inside-call-me-back"
   | "for-heavens-sake"
-  | "whats-your-number"
   | "ark-news-daily"
   | "chosen-people-problems";
 
@@ -89,21 +88,6 @@ export const shows: Show[] = [
     listen: showListenLinks["for-heavens-sake"],
   },
   {
-    slug: "whats-your-number",
-    route: "/podcasts/whats-your-number",
-    title: "What's Your Number?",
-    shortTitle: "What's Your Number?",
-    tagline:
-      "Hosted by Yonatan Adiri and Yael Wissner-Levy, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
-    description:
-      "Hosted by Yonatan Adiri and Yael Wissner-Levy, What's Your Number? explores the forces shaping the Israeli economy from within and without.",
-    hosts: ["Yonatan Adiri", "Yael Wissner-Levy"],
-    cadence: "Weekly",
-    coverArt: "/shows/whats-your-number.jpg",
-    paid: false,
-    listen: showListenLinks["whats-your-number"],
-  },
-  {
     slug: "ark-news-daily",
     route: "/podcasts/ark-news-daily",
     title: "Ark News Daily",
@@ -168,8 +152,6 @@ export function showAtmosphere(slug: ShowSlug): string {
       return "icmb-bg";
     case "for-heavens-sake":
       return "fhs-bg";
-    case "whats-your-number":
-      return "wyn-bg";
     case "ark-news-daily":
       return "and-bg";
     default:

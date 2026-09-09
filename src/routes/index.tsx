@@ -318,7 +318,7 @@ const heroFan: {
   z: number;
 }[] = [
   { slug: "for-heavens-sake", x: -52, y: -6, r: -14, z: 10 },
-  { slug: "whats-your-number", x: 52, y: -2, r: 13, z: 20 },
+  { slug: "chosen-people-problems", x: 52, y: -2, r: 13, z: 20 },
   { slug: "ark-news-daily", x: -24, y: 12, r: -6, z: 30 },
   { slug: "call-me-back", x: 22, y: 6, r: 5, z: 40 },
 ];

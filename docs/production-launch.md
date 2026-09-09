@@ -139,7 +139,7 @@ a green build.
 | Var | Scope | Prod source / action |
 |---|---|---|
 | `BEEHIIV_PUBLICATION_ID_PODCASTS` | server | Publication the podcasts live under. Falls back to `BEEHIIV_PUBLICATION_ID_ARK_DAILY` if unset — set it explicitly if the shows sit in their own publication. |
-| `BEEHIIV_PODCAST_ID_<SLUG>` (5 shows) | server | One per show, slug upper-cased with `-`→`_`: `_CALL_ME_BACK`, `_FOR_HEAVENS_SAKE`, `_WHATS_YOUR_NUMBER`, `_ARK_NEWS_DAILY`, `_CHOSEN_PEOPLE_PROBLEMS`. Beehiiv's own `pod_…` id; the bare UUID is accepted and normalised. |
+| `BEEHIIV_PODCAST_ID_<SLUG>` (4 shows) | server | One per show, slug upper-cased with `-`→`_`: `_CALL_ME_BACK`, `_FOR_HEAVENS_SAKE`, `_ARK_NEWS_DAILY`, `_CHOSEN_PEOPLE_PROBLEMS`. Beehiiv's own `pod_…` id; the bare UUID is accepted and normalised. |
 
 #### Circle
 | Var | Scope | Prod source / action |
