@@ -2,11 +2,7 @@
 //
 // This header is deliberately STATIC — it reads the same for a guest, a free
 // reader, an Ark+ member, and a full-bundle member. /plus is the public
-// "what membership is" page, and swapping its headline per entitlement made it
-// a different page depending on who was looking (a signed-in member landed on
-// Fold upsell copy instead of the page they expected). Personalization
-// stays where it belongs: the pricing grid below only offers tiers the viewer
-// doesn't already own.
+// "what membership is" page, not an entitlement-personalized upsell.
 
 // A two-line heading with a single cyan accent span. `line2Accent` sits between
 // `line2Pre` and `line2Post`, so the accent can land anywhere on the second line.

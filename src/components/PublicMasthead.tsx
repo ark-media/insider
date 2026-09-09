@@ -68,10 +68,9 @@ const NAV_ITEMS: NavItem[] = [
   },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
   // One landing page to browse membership (/plus); gifting lives in this
-  // dropdown rather than as its own tab. On /plus the pricing grid shows only
-  // the tier(s) the visitor doesn't already own. Hidden from full-bundle
-  // members (they own Ark+ AND the Fold, so there's nothing left to buy) —
-  // the full-member-only "Gift" tab below keeps gifting reachable for them.
+  // dropdown rather than as its own tab. Hidden from full-bundle members —
+  // they already have Ark+ and the Fold — and the full-member-only "Gift" tab
+  // below keeps gifting reachable for them.
   {
     variant: "menu",
     label: "Subscribe",

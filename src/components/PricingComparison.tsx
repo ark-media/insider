@@ -95,7 +95,6 @@ const GROUPS: Group[] = [
       {
         label: "Premium access to the Fold",
         shortLabel: "The Fold",
-        summary: "The Fold, Ark Media's members' app, in full.",
         detail: [
           "Conversations with the hosts and fellow members",
           "Live member events & Q&As",
@@ -107,7 +106,6 @@ const GROUPS: Group[] = [
       {
         label: "Full access to Ark Media newsletters",
         shortLabel: "Newsletters",
-        summary: "Both member newsletters, in your inbox.",
         detail: ["Weekly roundup", "Ark+ paid newsletter with Nadav's column"],
         tiers: { "ark-plus": true, apple: false, bundle: true, circle: true },
       },

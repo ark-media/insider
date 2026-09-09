@@ -3,7 +3,7 @@ import { srcSet } from "../lib/images";
 
 export function Hero() {
   // Static by design — see data/plusContent.ts. /plus reads the same whether or
-  // not you're signed in; the pricing grid below is what adapts to entitlements.
+  // not you're signed in.
   const content = HERO_CONTENT;
 
   return (

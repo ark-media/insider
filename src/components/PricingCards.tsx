@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
 import { BillingPeriodToggle } from "./BillingPeriodToggle";
 import { CheckoutModal } from "./CheckoutModal";
 import { ContentError } from "./ContentError";
@@ -8,20 +7,8 @@ import { trackEvent } from "../lib/analytics";
 import { TIERS, type Tier, type TierMeta } from "../data/pricingTiers";
 import { type TierAmounts, formatMinor, toMajor } from "../lib/currency";
 import { usePricing, annualSavingsPct } from "../lib/usePricing";
-import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 type Plan = "monthly" | "yearly";
-
-// What each tier grants, in entitlement-axis terms. Used to personalize the grid
-// for signed-in members: a tier is shown only if every axis it grants is still
-// un-owned — so an Ark+ member sees just the Fold, a Circle member sees just
-// Ark+, and a full-bundle member sees none. This never offers a tier that
-// bundles an axis they already pay for (which would double-charge them).
-const TIER_GRANTS: Record<Tier, ("arkPlus" | "circle")[]> = {
-  "ark-plus": ["arkPlus"],
-  circle: ["circle"],
-  bundle: ["arkPlus", "circle"],
-};
 
 // Stacked on a phone there's no "center" to feature, so the Bundle leads and the
 // two single-axis tiers follow. From `lg` the grid takes over and the DOM order
@@ -159,31 +146,14 @@ function PriceCard({
 }
 
 // The 3-card pricing grid: a shared Monthly/Annual toggle, one card per SKU
-// (the Bundle featured in the center), and the checkout modal. Prices come from
-// Stripe (the source of truth) via /api/pricing — never hardcoded, so the
-// displayed amount can't drift from what we charge.
+// (the Bundle featured in the center), and the checkout modal. Always the full
+// catalog — /plus is a public membership page, not an upsell that hides SKUs
+// the viewer already owns. Prices come from Stripe (the source of truth) via
+// /api/pricing — never hardcoded, so the displayed amount can't drift from
+// what we charge.
 export function PricingCards({ id = "plans" }: { id?: string }) {
   const [plan, setPlanRaw] = useState<Plan>("yearly");
   const [checkout, setCheckout] = useState<{ tier: Tier } | null>(null);
-  const { state } = useSubscriberAuth();
-
-  // Which axes the signed-in member already owns (guests own neither). The grid
-  // then shows only tiers that grant something they're still missing.
-  const owned = {
-    arkPlus: state.kind === "member" && state.me.entitlements.arkPlus,
-    circle: state.kind === "member" && state.me.entitlements.circle,
-  };
-  const visibleTiers = TIERS.filter((meta) =>
-    TIER_GRANTS[meta.key].every((axis) => !owned[axis]),
-  );
-  // One card centers, two cards sit in a narrower two-up; three keeps the full
-  // grid. (Static class strings so Tailwind can see them.)
-  const gridColsClass =
-    visibleTiers.length === 1
-      ? "lg:mx-auto lg:max-w-md lg:grid-cols-1"
-      : visibleTiers.length === 2
-        ? "lg:mx-auto lg:max-w-3xl lg:grid-cols-2"
-        : "lg:grid-cols-3";
 
   const setPlan = (p: Plan) => {
     setPlanRaw(p);
@@ -200,27 +170,6 @@ export function PricingCards({ id = "plans" }: { id?: string }) {
 
   // Representative savings for the toggle badge — the Bundle's annual discount.
   const toggleSavings = tiers ? annualSavingsPct(tiers.bundle) : null;
-
-  // Owns both axes already — nothing left to sell. Reachable only by deep link
-  // (the nav hides "Subscribe" for full members), so keep it simple.
-  if (visibleTiers.length === 0) {
-    return (
-      <div id={id} className="mx-auto max-w-xl px-6 py-10 text-center">
-        <p className="text-body text-fg-strong">
-          You already have full access — Ark+ and the Fold.
-        </p>
-        <Link
-          to="/account"
-          className="group mt-6 inline-flex items-center gap-2 button-text font-display font-bold text-cyan transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          Manage your membership
-          <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
-            →
-          </span>
-        </Link>
-      </div>
-    );
-  }
 
   if (pricing.status === "error") {
     return (
@@ -243,10 +192,8 @@ export function PricingCards({ id = "plans" }: { id?: string }) {
         />
       </div>
 
-      <div
-        className={`mt-10 grid grid-cols-1 gap-6 lg:items-start lg:gap-5 ${gridColsClass}`}
-      >
-        {visibleTiers.map((meta) => (
+      <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start lg:gap-5">
+        {TIERS.map((meta) => (
           <PriceCard
             key={meta.key}
             meta={meta}
