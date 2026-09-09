@@ -102,22 +102,16 @@ function GiftPage() {
               </h1>
               <p className="rise rise-3 mt-8 max-w-md text-body-lg text-fg">
                 Pick Ark+ for the exclusive content, ad-free feed and members-only
-                newsletters, the Fold, or the Bundle of both. It's a
-                one-time gift — no renewals, no surprise charges — and they'll
-                get an email with everything they need to start.
+                newsletters, the Fold, or the Bundle of both.
               </p>
               <ul className="rise rise-4 mt-10 space-y-2 text-body-sm text-fg">
                 <li className="flex items-start gap-3">
                   <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
-                  A one-time gift — it never renews or charges again
+                  A one-time gift
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
                   Lands in their inbox within minutes
-                </li>
-                <li className="flex items-start gap-3">
-                  <span className="mt-[8px] inline-block h-px w-4 bg-cyan" />
-                  Encrypted, secure checkout
                 </li>
               </ul>
             </div>
