@@ -865,9 +865,9 @@ single member only ever sees some of them.
 - **CARD 2 EYEBROW / TITLE**: Newsroom — Newsletters
 - **CARD 2 BODY**: Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to Ark+ subscribers.
 - **CARD 3 EYEBROW / TITLE**: Members' app — The Fold
-- **CARD 3 BODY**: The Fold lives in the Fold. Episode threads, live audio rooms, member meetups, and long-form posts.
+- **CARD 3 BODY**: The Fold is Ark Media's members' app. Episode threads, live audio rooms, member meetups, and long-form posts.
 - **CARD 4 EYEBROW / TITLE**: Membership — Ark+ membership
-- **CARD 4 BODY**: Call Me Back AMA and members-only newsletters with Ark+; the Fold and live events with Circle. Get both in the bundle.
+- **CARD 4 BODY**: Ark+ is every Ark Media podcast ad-free, plus the members-only newsletters. The Fold is the members' app, live events, and Dan's book club. Ark+ & The Fold is both, one membership.
 - **CARD CTA (ALL CARDS)**: Visit →
 
 ### Shows by name

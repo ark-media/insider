@@ -33,14 +33,14 @@ const properties: NetworkProperty[] = [
     title: "The Fold",
     kind: "Members' app",
     description:
-      "The Fold is where Ark+ members gather. Episode threads, live audio rooms, member meetups, and long-form posts.",
+      "The Fold is Ark Media's members' app. Episode threads, live audio rooms, member meetups, and long-form posts.",
     to: "/fold",
   },
   {
     title: "Ark+ membership",
     kind: "Membership",
     description:
-      "Call Me Back AMA and members-only newsletters with Ark+; the Fold and live events with Circle. Get both in the bundle.",
+      "Ark+ is every Ark Media podcast ad-free, plus the members-only newsletters. The Fold is the members' app, live events, and Dan's book club. Ark+ & The Fold is both, one membership.",
     to: "/plus",
   },
 ];
