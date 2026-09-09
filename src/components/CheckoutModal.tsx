@@ -634,8 +634,13 @@ export function EmailForm({
   // draft so the slider doesn't twitch on every keystroke — it commits on blur.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Visual hint on the slider once the floor is in — a jump, then a pulsing
+  // ring — without changing the charged amount. Stripped on pointerdown.
+  const [nudge, setNudge] = useState(false);
+  const nudged = useRef(false);
   const intervalLabel = plan === "yearly" ? "year" : "month";
   const shortInterval = plan === "yearly" ? "yr" : "mo";
+  const floorReady = floorMinor !== null;
 
   // Switching currency resets the chosen amount to the new floor — a raw number
   // carried across currencies is meaningless (300 USD ≠ 300 JPY). Adjusted
@@ -647,6 +652,19 @@ export function EmailForm({
     setCustomAmount("");
     setEditing(false);
   }
+
+  useEffect(() => {
+    if (!floorReady || nudged.current) return;
+    const reduceMotion =
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    nudged.current = true;
+    if (reduceMotion) return;
+    setNudge(true);
+  }, [floorReady]);
+
+  const stopNudge = () => {
+    if (nudge) setNudge(false);
+  };
 
   // Everything below works in MAJOR units of the selected currency. The floor is
   // what we charge if the buyer doesn't raise it; the slider drags up to
@@ -702,6 +720,7 @@ export function EmailForm({
 
   const startEdit = () => {
     if (floorMajor === null) return;
+    stopNudge();
     setDraft(effectiveAmount !== null ? String(effectiveAmount) : "");
     setEditing(true);
   };
@@ -740,11 +759,11 @@ export function EmailForm({
       </p>
       {promo ? <PromoBanner promo={promo} /> : null}
 
-      {/* Pay what you choose — the floor is the minimum; give more to sustain
-          independent Jewish media. The chosen figure is the hero; tap it to
-          type an exact amount, or drag the slider. A currency selector (seeded
-          from the buyer's locale) sits alongside. Disabled until the floor
-          loads. */}
+      {/* Pay what you choose — the floor is the minimum. A one-shot thumb
+          nudge invites a first drag; helper copy and the CTA then reflect
+          whether the buyer stayed at the floor or gave more. Tap the hero
+          amount to type an exact figure. A currency selector (seeded from
+          the buyer's locale) sits alongside. Disabled until the floor loads. */}
       <div className="mt-6 border-t border-rule pt-5">
         <div className="flex items-center justify-between gap-3">
           <span className="eyebrow text-fg-muted">Choose your amount</span>
@@ -838,8 +857,10 @@ export function EmailForm({
           step={1}
           value={sliderPos}
           disabled={floorMajor === null}
+          onPointerDown={stopNudge}
           onChange={(e) => {
             if (floorMajor === null) return;
+            stopNudge();
             const a = amountFromPos(
               Number(e.target.value),
               floorMajor,
@@ -859,7 +880,7 @@ export function EmailForm({
               valid: isCustom,
             });
           }}
-          className="pwyc-slider mt-5 w-full"
+          className={`pwyc-slider mt-5 w-full${nudge ? " pwyc-slider--nudge" : ""}`}
           style={{ "--pct": `${sliderPct}%` } as React.CSSProperties}
         />
 
@@ -872,9 +893,11 @@ export function EmailForm({
         ) : null}
 
         <p className="mt-3 text-body-sm">
-          {floorMajor !== null
-            ? "Give more to sustain independent Jewish media."
-            : "Loading price…"}
+          {floorMajor === null
+            ? "Loading price…"
+            : isCustom
+              ? "Thank you for supporting our mission."
+              : "Give more to sustain independent Jewish media."}
         </p>
       </div>
 
@@ -902,7 +925,11 @@ export function EmailForm({
           aria-busy={working}
           className={ctaClass}
         >
-          {working ? "Loading…" : "Continue to payment"}
+          {working
+            ? "Loading…"
+            : effectiveAmount !== null
+              ? `Continue at ${formatMajor(effectiveAmount, currency)}/${shortInterval}`
+              : "Continue to payment"}
         </button>
         <p className="text-body-sm">
           You'll receive a sign-in link by email once your membership is

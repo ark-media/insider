@@ -694,12 +694,14 @@ single member only ever sees some of them.
 - **AMOUNT LABEL**: Choose your amount
 - **AMOUNT SUFFIX**: /yr (annual) · /mo (monthly)
 - **SLIDER FLOOR LABEL**: {floor price} minimum
-- **PWYC HELPER**: Give more to sustain independent Jewish media.
+- **PWYC HELPER (FLOOR)**: Give more to sustain independent Jewish media.
+- **PWYC HELPER (ABOVE FLOOR)**: Thank you for supporting our mission.
 - **PWYC HELPER (LOADING)**: Loading price…
 - **FIELD LABEL**: Email
 - **EMAIL PLACEHOLDER**: you@example.com
 - **VALIDATION ERROR**: Please enter a valid email.
-- **CTA**: Continue to payment
+- **CTA**: Continue at {amount}/{yr|mo}
+- **CTA (LOADING PRICE)**: Continue to payment
 - **CTA (WORKING)**: Loading…
 - **HELPER BELOW CTA**: You'll receive a sign-in link by email once your membership is active.
 

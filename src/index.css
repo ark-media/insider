@@ -730,6 +730,54 @@ body {
   -moz-appearance: textfield;
 }
 
+/* Idle hint: one large jump (visual only — the charged amount stays at the
+   floor), then a gentle pulsing cyan ring on the lever until the buyer
+   touches it. .pwyc-slider--nudge is added once the floor has loaded and
+   stripped on first pointerdown. */
+@keyframes pwyc-nudge-thumb {
+  0%, 100% { transform: translateX(0) scale(1); }
+  35%, 52% { transform: translateX(48px) scale(1.12); }
+}
+@keyframes pwyc-nudge-fill {
+  0%, 100% { background-size: var(--pct, 0%) 100%, auto; }
+  35%, 52% { background-size: 14% 100%, auto; }
+}
+@keyframes pwyc-pulse-ring {
+  0%, 100% {
+    box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.4),
+      0 0 0 3px color-mix(in srgb, var(--color-cyan) 28%, transparent);
+  }
+  50% {
+    box-shadow: 0 2px 8px -1px rgb(0 0 0 / 0.45),
+      0 0 0 10px color-mix(in srgb, var(--color-cyan) 42%, transparent);
+  }
+}
+.pwyc-slider--nudge::-webkit-slider-thumb {
+  animation:
+    pwyc-nudge-thumb 1.05s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both,
+    pwyc-pulse-ring 1.8s 1.33s ease-in-out infinite;
+  transition: none;
+}
+.pwyc-slider--nudge::-moz-range-thumb {
+  animation:
+    pwyc-nudge-thumb 1.05s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both,
+    pwyc-pulse-ring 1.8s 1.33s ease-in-out infinite;
+  transition: none;
+}
+.pwyc-slider--nudge::-webkit-slider-runnable-track {
+  animation: pwyc-nudge-fill 1.05s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: none;
+}
+/* Grabbing the thumb cancels the hint in the same frame as the pointerdown
+   (React state that removes the class lands a frame later). */
+.pwyc-slider--nudge:active::-webkit-slider-thumb,
+.pwyc-slider--nudge:active::-moz-range-thumb {
+  animation: none;
+}
+.pwyc-slider--nudge:active::-webkit-slider-runnable-track {
+  animation: none;
+}
+
 /* Hover — a soft cyan halo blooms around the cap */
 .pwyc-slider:hover::-webkit-slider-thumb {
   box-shadow: 0 2px 8px -1px rgb(0 0 0 / 0.5), 0 0 0 6px var(--thumb-ring);
@@ -768,6 +816,11 @@ body {
   .pwyc-slider::-webkit-slider-thumb,
   .pwyc-slider::-moz-range-thumb {
     transition: none;
+  }
+  .pwyc-slider--nudge::-webkit-slider-thumb,
+  .pwyc-slider--nudge::-moz-range-thumb,
+  .pwyc-slider--nudge::-webkit-slider-runnable-track {
+    animation: none !important;
   }
 }
 

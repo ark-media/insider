@@ -133,4 +133,15 @@ describe("CheckoutModal amount selection", () => {
     await rerender(form(usd));
     expect(isEditing(container)).toBe(true);
   });
+
+  test("at the floor, the helper invites a drag and the CTA quotes the amount", async () => {
+    const { container } = await render(form(usd));
+    expect(container.textContent).toContain(
+      "Give more to sustain independent Jewish media.",
+    );
+    const cta = container.querySelector("button[type='submit']");
+    expect(cta?.textContent).toContain("Continue at");
+    expect(cta?.textContent).toContain("$5");
+    expect(cta?.textContent).toContain("/mo");
+  });
 });
