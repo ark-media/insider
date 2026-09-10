@@ -25,7 +25,7 @@ export const Route = createFileRoute("/account")({
 
 function AccountLayout() {
   const navigate = useNavigate();
-  const { state, authError, refresh } = useSubscriberAuth();
+  const { state, authError, refresh, isAdmin } = useSubscriberAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
@@ -73,6 +73,7 @@ function AccountLayout() {
       <AccountTabs
         pathname={pathname}
         entitlements={me.entitlements}
+        isAdmin={isAdmin}
       />
       <Outlet />
     </PageShell>

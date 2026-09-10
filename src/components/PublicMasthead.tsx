@@ -8,7 +8,8 @@ import { shows } from "../data/shows";
 
 // Nav order per Figma IA spec: Podcasts | The Fold | Newsletters | Israel
 // Votes | Subscribe | About | Account. Israel Votes renders as a pill for
-// campaign emphasis; Account is its own dropdown.
+// campaign emphasis; Account is a plain link straight to /account (no menu —
+// everything it used to list is a tab on that page, Admin included).
 //
 // Items render in array order — reorder here, the nav reflows. Each item's
 // variant chooses the renderer (text link / pill / menu). `hideWhen` removes
@@ -104,8 +105,9 @@ const NAV_ITEMS: NavItem[] = [
   // { variant: "text", label: "Israel Votes", to: "/israel-votes" },
 ];
 
-// Appended to the nav only for admins (see useSubscriberAuth().isAdmin).
-const ADMIN_NAV_ITEM: NavItem = { variant: "text", label: "Admin", to: "/admin" };
+// Admin isn't a masthead tab: it lives with the member's own sections, in the
+// /account tab bar (see AccountTabs), so the public nav stays the same shape
+// for staff as it is for everyone else.
 
 // Focus-trap selector for the mobile drawer (mirrors Modal.tsx).
 const FOCUSABLE =
@@ -142,7 +144,6 @@ function visibleNavItems(flags: {
 }
 
 export function PublicMasthead() {
-  const [accountOpen, setAccountOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   // Hide-on-scroll: the masthead tucks up out of view when the reader scrolls
   // down (reclaiming its ~96px on the phone) and reappears the instant they
@@ -150,7 +151,7 @@ export function PublicMasthead() {
   // `max-sm:` transform below.
   const [hidden, setHidden] = useState(false);
   const lastScrollY = useRef(0);
-  const { state, signOut, signIn, isAdmin } = useSubscriberAuth();
+  const { state, signIn } = useSubscriberAuth();
   // Any paid tier counts as a subscriber for the nav (drives the mobile CTA and
   // the "Set up your feed" account link).
   const isSubscriber = state.kind === "member" && state.me.tier !== "free";
@@ -164,10 +165,7 @@ export function PublicMasthead() {
   // pulldown. Only meaningful for non-subscribers, and only once auth has
   // resolved (so it never flashes).
   const showSubscribe = !isSubscriber && state.kind !== "loading";
-  const navItems = isAdmin
-    ? [...visibleNavItems({ isSubscriber, isFullMember }), ADMIN_NAV_ITEM]
-    : visibleNavItems({ isSubscriber, isFullMember });
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const navItems = visibleNavItems({ isSubscriber, isFullMember });
   const headerRef = useRef<HTMLElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -190,14 +188,14 @@ export function PublicMasthead() {
     };
   }, []);
 
-  // Reveal on scroll-up, hide on scroll-down. Any open menu forces the masthead
-  // visible — hiding it would yank the open panel (which lives inside <header>)
-  // off-screen. rAF-throttled; a small threshold ignores scroll jitter.
+  // Reveal on scroll-up, hide on scroll-down. An open drawer forces the
+  // masthead visible — hiding it would yank the open panel off-screen.
+  // rAF-throttled; a small threshold ignores scroll jitter.
   useEffect(() => {
-    // While a menu is open the masthead is force-shown at render (see
+    // While the drawer is open the masthead is force-shown at render (see
     // `effectiveHidden`), so there's nothing to track — skip the scroll
     // listener entirely.
-    if (mobileOpen || accountOpen) return;
+    if (mobileOpen) return;
     let ticking = false;
     const threshold = 8;
     const update = () => {
@@ -219,28 +217,7 @@ export function PublicMasthead() {
     lastScrollY.current = Math.max(0, window.scrollY);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, [mobileOpen, accountOpen]);
-
-  useEffect(() => {
-    if (!accountOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        setAccountOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAccountOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [accountOpen]);
+  }, [mobileOpen]);
 
   // Mobile drawer: lock background scroll, trap focus inside the panel, close on
   // Escape, and restore focus to the menu button on close (mirrors Modal.tsx).
@@ -290,7 +267,7 @@ export function PublicMasthead() {
   // An open menu lives inside <header>, so the masthead must stay visible while
   // one is open — otherwise hiding it would yank the panel off-screen. Derive
   // that here rather than forcing state from an effect.
-  const effectiveHidden = hidden && !mobileOpen && !accountOpen;
+  const effectiveHidden = hidden && !mobileOpen;
 
   return (
     <header
@@ -341,7 +318,7 @@ export function PublicMasthead() {
             }
           })}
 
-          <div ref={dropdownRef} className="relative">
+          <div className="relative">
             {state.kind === "loading" ? (
               <button
                 type="button"
@@ -352,30 +329,19 @@ export function PublicMasthead() {
                 <Spinner className="inline-block h-3 w-3" />
               </button>
             ) : state.kind === "member" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setAccountOpen((v) => !v)}
-                  aria-expanded={accountOpen}
-                  className="hidden min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:inline-flex"
-                >
-                  Account
-                </button>
-                {accountOpen ? (
-                  <div className="absolute right-0 mt-2 w-64 border border-rule bg-navy-900 p-4 text-[13px] text-fg shadow-xl">
-                    <MemberMenu
-                      email={state.me.email}
-                      isAdmin={isAdmin}
-                      isSubscriber={isSubscriber}
-                      onSignOut={() => {
-                        setAccountOpen(false);
-                        signOut();
-                      }}
-                      onClose={() => setAccountOpen(false)}
-                    />
-                  </div>
-                ) : null}
-              </>
+              /* Straight to /account — no menu. The tab bar there already lists
+                 every section the dropdown used to duplicate (Membership,
+                 Podcasts, the Fold, Settings, and Admin for staff), and Sign
+                 out lives on the Settings tab. */
+              <Link
+                to="/account"
+                aria-current={
+                  location.pathname.startsWith("/account") ? "page" : undefined
+                }
+                className="hidden min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:inline-flex"
+              >
+                Account
+              </Link>
             ) : (
               <div className="hidden items-center gap-2 sm:flex">
                 {/* Sign in is the only auth action here: signing up happens
@@ -855,60 +821,5 @@ function NavPillLink({
     >
       {item.label}
     </Link>
-  );
-}
-
-function MemberMenu({
-  email,
-  isAdmin,
-  isSubscriber,
-  onSignOut,
-  onClose,
-}: {
-  email: string;
-  isAdmin: boolean;
-  isSubscriber: boolean;
-  onSignOut: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <p className="eyebrow">Signed in</p>
-      <p className="truncate text-[12px] text-fg" title={email}>
-        {email}
-      </p>
-      <Link
-        to="/account"
-        onClick={onClose}
-        className="inline-flex min-h-11 w-full items-center justify-center border border-cyan bg-cyan px-3 text-center text-[12px] font-semibold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        Account settings
-      </Link>
-      {isSubscriber ? (
-        <Link
-          to="/setup"
-          onClick={onClose}
-          className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          Set up your feed
-        </Link>
-      ) : null}
-      {isAdmin ? (
-        <Link
-          to="/admin"
-          onClick={onClose}
-          className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-center text-[12px] font-semibold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          Admin
-        </Link>
-      ) : null}
-      <button
-        type="button"
-        onClick={onSignOut}
-        className="inline-flex min-h-11 w-full items-center justify-center border border-rule-strong px-3 text-[12px] font-semibold uppercase tracking-button text-fg-muted transition hover:border-rule-strong hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        Sign out
-      </button>
-    </div>
   );
 }

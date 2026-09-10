@@ -8,21 +8,29 @@ import { Link } from "@tanstack/react-router";
 // only lists what the member can actually reach: Podcasts needs the Ark+ axis
 // and the Fold needs the Circle axis, so a free reader sees Membership and
 // Settings alone rather than two tabs that redirect them away.
+//
+// Admin is the one tab that leaves the section: it used to sit in the
+// masthead, where it put a staff-only door in the public nav. It's a
+// "somewhere I go as this signed-in person" link like the rest of these, so it
+// rides along at the end of the bar for admins only.
 
 type TabPath =
   | "/account"
   | "/account/podcast-feed"
   | "/account/fold"
-  | "/account/settings";
+  | "/account/settings"
+  | "/admin";
 
 type Tab = { to: TabPath; label: string };
 
 export function AccountTabs({
   pathname,
   entitlements,
+  isAdmin = false,
 }: {
   pathname: string;
   entitlements: { arkPlus: boolean; circle: boolean };
+  isAdmin?: boolean;
 }) {
   const tabs: Tab[] = [
     { to: "/account", label: "Membership" },
@@ -33,12 +41,13 @@ export function AccountTabs({
       ? [{ to: "/account/fold" as const, label: "The Fold" }]
       : []),
     { to: "/account/settings", label: "Settings" },
+    ...(isAdmin ? [{ to: "/admin" as const, label: "Admin" }] : []),
   ];
 
   return (
     <nav aria-label="Account sections" className="border-b border-rule">
       <div className="page-gutter">
-        {/* Tighter gaps on narrow screens so all four tabs fit a phone without
+        {/* Tighter gaps on narrow screens so every tab fits a phone without
             scrolling. It stays scrollable rather than wrapping as a fallback:
             a second row of tabs reads as a second nav, and the tab bar is the
             one piece of chrome that has to stay recognisable as one strip. */}
