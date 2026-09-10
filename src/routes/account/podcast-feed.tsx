@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { PodcastFeedSetup } from "../../components/PodcastFeedSetup";
-import { trackEvent } from "../../lib/analytics";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 
 type PodcastFeedSearch = { feed?: string; spotify?: "linked" };
@@ -37,30 +36,26 @@ function PodcastsTab() {
     }
   }, [state, navigate]);
 
-  // Read the return marker once, at mount, so the confirmation survives us
-  // stripping it from the URL below.
-  const [spotifyLinked] = useState(() => spotify === "linked");
-  const consumed = useRef(false);
-
-  // Coming back from Beehiiv's Spotify consent flow. Check the shows off (the
-  // `podcasts.private_feed.activated` webhook is authoritative but can lag by
-  // minutes) and drop the marker, so a reload or a copied link doesn't
-  // re-announce a link that didn't just happen. The ref guard matters: marking
-  // feeds set up updates auth state, which re-runs this effect before the
-  // router has applied the new search params.
+  // Coming back from Beehiiv's Spotify consent flow.
+  //
+  // The marker deliberately stays in the URL. It drives the confirmation the
+  // member sees, and holding that in component state instead made it vanish on
+  // a re-render — the URL is the one place that survives whatever the router
+  // and the auth refresh do to this subtree. It also says something that stays
+  // true on a reload.
+  //
+  // The Spotify CTA already marks the show set up on click, but that request
+  // races the same-tab navigation away from the page and can be cancelled
+  // mid-flight, so redo it here: this is the path that is guaranteed to run.
+  // Marking is idempotent (it only ever flips a feed that isn't already set
+  // up), which is what makes it safe to leave the marker in the URL.
+  const spotifyLinked = spotify === "linked";
+  const marked = useRef(false);
   useEffect(() => {
-    if (spotify !== "linked" || state.kind !== "member" || consumed.current) {
-      return;
-    }
-    consumed.current = true;
-    const ids = state.me.feeds.map((f) => f.id);
-    trackEvent("feed_spotify_linked", { feed_count: ids.length });
-    markFeedsSetUp(ids);
-    void routeNavigate({
-      search: feed ? { feed } : {},
-      replace: true,
-    });
-  }, [spotify, state, feed, markFeedsSetUp, routeNavigate]);
+    if (!spotifyLinked || state.kind !== "member" || marked.current) return;
+    marked.current = true;
+    markFeedsSetUp(state.me.feeds.map((f) => f.id));
+  }, [spotifyLinked, state, markFeedsSetUp]);
 
   if (state.kind !== "member" || !state.me.entitlements.arkPlus) return null;
 

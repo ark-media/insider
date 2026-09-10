@@ -603,8 +603,8 @@ embedded feeds, and `member.joined` as the clock. All three disappear:
   Name` custom field; keep the guard
 
 New `GET /api/me/feeds/spotify` — session-authenticated, mints the JWT for the
-caller's own subscription, 302s to the Beehiiv show page. Same-origin guard,
-rate-limited, never logs the target URL.
+caller's own subscription, 302s into Beehiiv's Spotify consent flow. Same-origin
+guard, rate-limited, never logs the target URL.
 
 `server/routes/sms.ts` → replace with `POST /api/me/feeds/email` calling
 Beehiiv's `send-private-feed-email`, keeping the same-origin guard and 3/hour
@@ -738,8 +738,8 @@ panel, `urls.podcastSupport`, and every `SC_*` env var.
 and artwork; Apple/Overcast/Pocket Casts/Castro deep links carry the private
 token; the QR, the raw feed URL and "email me the link" all render. `POST
 /api/me/feeds/email` returned 200 and Beehiiv sent the mail. `GET
-/api/me/feeds/spotify` 302s to the show page (403 cross-origin, 401
-unauthenticated). `/plus/inside-call-me-back` plays a real Beehiiv episode, and
+/api/me/feeds/spotify` 302s into Beehiiv's Spotify consent flow (403
+cross-origin, 401 unauthenticated). `/plus/inside-call-me-back` plays a real Beehiiv episode, and
 the show appears in `/podcasts` badged Ark+.
 
 ### One bug this found
@@ -761,13 +761,68 @@ Beehiiv's title is what lands in the member's podcast app, which is why the SETU
 page reads it live. Making only `ShowPage`'s `<h1>` dynamic would leave the nav
 and grid disagreeing with it.
 
+### The Spotify hand-off, second cut (2026-09-10)
+
+Beehiiv came back with a purpose-built entry point rather than the show-page
+detour we had reverse-engineered:
+
+    {publication_url}/oauth/spotify/authorize
+      ?subscriber_id={subscriber_id}
+      &jwt_token={jwt}
+      &redirect_path={url-encoded URL back to us}
+
+So `buildSpotifyHandoff` now takes a return URL instead of a podcast id and
+builds that, and the route passes
+`${APP_BASE_URL}/account/podcast-feed?spotify=linked`. Three things this buys
+over landing on the show page: the member goes straight into Spotify's consent
+screen instead of hunting for a button, the round trip ends back on our own
+setup page, and the show id stops being a dependency of the Spotify path (Open
+Access links the *subscriber*, not one show).
+
+Verified live: the authorize URL redirects to
+`accounts.spotify.com/…?scope=user-soa-link&redirect_uri=https://sso.beehiiv.com/oauth/spotify/callback`
+— `user-soa-link` being Spotify Open Access's own link scope, i.e. this is the
+real flow and not a generic login. curl gets a Cloudflare bot challenge on that
+URL; it has to be checked from a browser.
+
+Two consequences on our side:
+
+- The tile now opens in the **same tab** (`target` omitted for the hand-off,
+  kept `_blank` for the app deep links). A round trip that returns to us in a
+  background tab would be worse than useless.
+- The return marker stays in the URL rather than being stripped after reading.
+  Holding it in component state made the confirmation vanish on a re-render; the
+  URL is the one thing that survives whatever the router and the auth refresh do
+  to the subtree, and it stays true on a reload. The banner reads it directly,
+  and the effect behind it only re-marks the feed set up — idempotent, which is
+  what makes leaving the marker there safe. (That re-mark is not belt-and-braces
+  decoration: the CTA marks on click, and a same-tab navigation can cancel that
+  request mid-flight.)
+
+Open question for Beehiiv: what happens to `redirect_path` if the member
+**cancels** at Spotify's consent screen. If they are still returned to us we
+would claim "Spotify is linked" when nothing was. The blast radius is small —
+the false marker writes `pending_at`, and the reminder cron reads
+`activated = true` only, so nobody gets un-nudged — but the copy would be wrong.
+
 ### Still open
 
 - `BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK`, `BEEHIIV_SUBSCRIBER_HOST` and
   `BEEHIIV_PREMIUM_TIER_ID` need setting in Vercel.
-- Register `podcasts.private_feed.*` on the Beehiiv webhook (same URL/secret as
-  the subscription events).
+- ~~Register `podcasts.private_feed.*` on the Beehiiv webhook.~~ **DONE
+  2026-09-11.** There was no production webhook at all — the only two registered
+  were Modal test URLs carrying `podcasts.episode.published`, and Call me Back
+  had none. Registered `ep_3J9Y4Iy7JkpdEsjaWyyeNu9o10N` →
+  `https://ark-plus.xyz/api/beehiiv/webhook?key=…` with all ten types we handle
+  (three `podcasts.private_feed.*` + seven `subscription.*`). Prod domain is
+  **ark-plus.xyz** (ark-media.xyz does not resolve yet — re-point the webhook
+  when it does). The two Modal test hooks were left in place.
+  Until this landed the reminder cron would have nudged members who had already
+  set up their feed: it reads `getActivatedFeeds` off the mirror, which only the
+  webhook fills. The setup page was never affected — `/api/me` folds Beehiiv's
+  live `activated` in from the feed GET.
 - Disable the Plus tier's two Beehiiv-native prices (§4) — a Beehiiv-direct buyer
   would otherwise get the feed with no Neon row and be revoked nightly.
 - The §5 consolidation ops (move posts/subscribers, `mail.ark-plus.xyz`).
 - Test subscribers left in Beehiiv: `hannah.waxman8+test@`, `+mint0910@`.
+- Ask Beehiiv what `redirect_path` does on a cancelled Spotify consent (above).
