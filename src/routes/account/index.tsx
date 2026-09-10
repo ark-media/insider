@@ -8,6 +8,9 @@ import { ProductMarks } from "../../components/FoldLogo";
 import { useEntitlementOffers } from "../../components/account/useEntitlementOffers";
 import { PlanCard } from "../../components/account/PlanCard";
 import { ProfileNameCard } from "../../components/account/ProfileNameCard";
+import { OutboundLink } from "../../components/OutboundLink";
+import { circleAppDownloads } from "../../lib/circle";
+import { circleUrls } from "../../config/urls";
 
 export const Route = createFileRoute("/account/")({
   component: MembershipTab,
@@ -85,9 +88,10 @@ function PaidMembership({ me, onRefresh }: { me: Me; onRefresh: () => void }) {
             <JumpCard
               icon={<ProductMarks marks={["fold"]} />}
               title="The Fold"
-              body="You're signed in here, so you'll be signed in there too."
               cta="Open the Fold"
-              to="/account/fold"
+              href={circleUrls.webApp}
+              platform="circle_web"
+              footer={<AppDownloadLine />}
               primary
             />
           ) : null}
@@ -122,8 +126,9 @@ function PaidMembership({ me, onRefresh }: { me: Me; onRefresh: () => void }) {
   );
 }
 
-// One card on the "Jump back in" shelf. Most of them go somewhere (`to`); the
-// cross-sell card starts a flow on this page instead (`onSelect`), and takes
+// One card on the "Jump back in" shelf. Most of them go somewhere on our own
+// site (`to`); the Fold hands off to another product entirely (`href`), and the
+// cross-sell card starts a flow on this page instead (`onSelect`), taking
 // `accent` so it reads as an offer beside its neighbours without shouting over
 // the primary "Set up your feeds".
 function JumpCard({
@@ -132,6 +137,9 @@ function JumpCard({
   body,
   cta,
   to,
+  href,
+  platform,
+  footer,
   onSelect,
   disabled = false,
   primary = false,
@@ -144,6 +152,12 @@ function JumpCard({
   body?: string;
   cta: string;
   to?: "/account/podcast-feed" | "/account/fold" | "/account/settings";
+  /** An off-site destination, for a card whose surface isn't ours. */
+  href?: string;
+  /** The brand `href` hands off to, for `outbound_link_clicked`. */
+  platform?: string;
+  /** A quieter second option under the action — the app stores, on the Fold. */
+  footer?: ReactNode;
   onSelect?: () => void;
   disabled?: boolean;
   primary?: boolean;
@@ -199,6 +213,15 @@ function JumpCard({
         <Link to={to} className={action}>
           {cta} →
         </Link>
+      ) : href ? (
+        <OutboundLink
+          href={href}
+          platform={platform ?? "circle"}
+          placement="account_jump_back_in"
+          className={action}
+        >
+          {cta} →
+        </OutboundLink>
       ) : (
         <button
           type="button"
@@ -209,7 +232,40 @@ function JumpCard({
           {cta} →
         </button>
       )}
+      {/* Rendered empty on the cards that have no second option, for the same
+          reason the eyebrow slot is: the shelf stretches every card to the
+          tallest, and one card growing a line under its button is what knocks
+          the other two CTAs off the shared baseline. `1.6em` is one line of
+          `text-body-sm`, which is what the slot ever holds. */}
+      <div className="mt-3 min-h-[1.6em] text-body-sm">{footer}</div>
     </div>
+  );
+}
+
+// The app stores, under "Open the Fold". The button goes to the web app, which
+// is the one destination that works everywhere; this is for the member who
+// wants the Fold on their phone instead. Only the store they can install from
+// on a phone — both when we can't tell (a desktop browser), since either could
+// be the phone in their pocket.
+function AppDownloadLine() {
+  const downloads = circleAppDownloads();
+  return (
+    <>
+      Or get the app:{" "}
+      {downloads.map((download, i) => (
+        <span key={download.platform}>
+          {i > 0 ? " · " : null}
+          <OutboundLink
+            href={download.href}
+            platform={download.platform}
+            placement="account_jump_back_in"
+            className="underline decoration-rule-strong underline-offset-4 transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            {download.label}
+          </OutboundLink>
+        </span>
+      ))}
+    </>
   );
 }
 

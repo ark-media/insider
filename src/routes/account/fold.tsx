@@ -27,8 +27,7 @@ function FoldTab() {
       <div className="page-section">
         <h2 className="text-h2">The Fold</h2>
         <p className="mt-4 max-w-2xl text-body">
-          The Fold is the main event. Open it in the app — you're signed in
-          here, so you'll be signed in there too.
+          Download the app to start your subscription and access The Fold.
         </p>
         <CommunityAppLinks className="mt-8" placement="account_fold_tab" />
       </div>
