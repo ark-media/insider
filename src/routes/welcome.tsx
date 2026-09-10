@@ -26,7 +26,7 @@ export const Route = createFileRoute("/welcome")({
 
 type StepDef = {
   title: string;
-  body: string;
+  body?: string;
   cta?: string;
   /**
    * Typed as the route union, not `string`.
@@ -83,29 +83,23 @@ function WelcomePage() {
   const showCommunity = known ? circle : true;
   const showFeeds = known ? arkPlus : true;
 
+  // Feeds before the app on purpose: feed setup stays in this browser, while
+  // the app links hand the member off to the App Store / Play Store. Anything
+  // we ask for after that hand-off is unlikely to get done.
   const steps: StepDef[] = [];
-  if (showCommunity) {
-    steps.push({
-      title: "Download the Fold app",
-      body: "Nadav, Amit and Tal are in the Fold — alongside everyone else who joined this month. Install the app and you'll be signed in automatically.",
-      slot: <CommunityAppLinks className="mt-6" />,
-    });
-  }
   if (showFeeds) {
     steps.push({
       title: "Set up your private podcast feeds",
-      body: "Your members-only shows live in the podcast app you already use. One-tap setup for Apple Podcasts, Overcast, Pocket Casts, Spotify, and more.",
       cta: "Set up your feeds",
       href: "/account/podcast-feed",
     });
   }
-  // Every member confirms notification preferences last.
-  steps.push({
-    title: "Confirm your notification preferences",
-    body: "New post, podcast, and members-only newsletter alerts are on by default. Confirm your preferences so you never miss an update.",
-    cta: "Newsletter preferences",
-    href: "/account/settings",
-  });
+  if (showCommunity) {
+    steps.push({
+      title: "Download the Fold app",
+      slot: <CommunityAppLinks className="mt-6" />,
+    });
+  }
 
   // Gift recipients arrive via a magic link with no password. Offer to set one
   // so they can sign in with email + password later instead of the link/Google.
@@ -136,8 +130,7 @@ function WelcomePage() {
           </h1>
           <p className="mt-8 max-w-2xl text-body-lg">
             {countWord} to do, and then you're set. Your membership is active
-            now — provisioning happens in the background and may take a minute
-            or two to land in every place.
+            now.
           </p>
         </div>
       </section>
@@ -270,7 +263,7 @@ function WelcomeStep({
 }: {
   n: string;
   title: string;
-  body: string;
+  body?: string;
   cta?: string;
   href?: LinkProps["to"];
   // When provided, render this custom action node instead of a single CTA

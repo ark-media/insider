@@ -12,11 +12,11 @@
 //      not a hardcoded month.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
-// CheckoutModal (imported by EntitlementAccess) reads the Stripe key at module
-// scope, so it has to be set before the module graph evaluates — see the note
-// in CheckoutModal.test.tsx for why this is a dynamic import.
+// CheckoutModal (imported by this hook) reads the Stripe key at module scope,
+// so it has to be set before the module graph evaluates — see the note in
+// CheckoutModal.test.tsx for why this is a dynamic import.
 process.env.VITE_STRIPE_PUBLISHABLE_KEY ||= "pk_test_fake";
-const { EntitlementAccess } = await import("./EntitlementAccess");
+const { useEntitlementOffers } = await import("./useEntitlementOffers");
 
 const g = globalThis as unknown as {
   document?: unknown;
@@ -131,11 +131,31 @@ const preview = (over: Partial<BundleUpgradePreview> = {}): BundleUpgradePreview
   ...over,
 });
 
+// Stands in for the membership tab: the notices full-width, then one card per
+// offer — the same title/body/CTA the real JumpCard draws.
+function Harness({ me }: { me: Me }) {
+  const { notices, offers } = useEntitlementOffers({ me, onRefresh: () => {} });
+  return (
+    <>
+      {notices}
+      {offers.map((offer) => (
+        <div key={offer.key}>
+          <h3>{offer.title}</h3>
+          <p>{offer.body}</p>
+          <button type="button" onClick={offer.onSelect} disabled={offer.disabled}>
+            {offer.cta} →
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}
+
 async function mount(me: Me = arkPlusMember()) {
   return render(
     <ThemeProvider>
       <SubscriberAuthProvider>
-        <EntitlementAccess me={me} onRefresh={() => {}} />
+        <Harness me={me} />
       </SubscriberAuthProvider>
     </ThemeProvider>,
   );
@@ -154,6 +174,63 @@ beforeEach(() => {
   changeReply = { status: 200, body: { ok: true, changed: true, timing: "immediate" } };
   changePosts = [];
   stubFetch();
+});
+
+// A member on the Bundle: both axes live, nothing left to add.
+function bundleMember(): Me {
+  return {
+    email: "member@example.com",
+    tier: "bundle",
+    entitlements: { arkPlus: true, circle: true },
+    feeds: [],
+    axes: {
+      arkPlus: axis({ active: true, source: "subscription", renewsAt: "2026-10-01T00:00:00.000Z" }),
+      circle: axis({ active: true, source: "subscription", renewsAt: "2026-10-01T00:00:00.000Z" }),
+    },
+  };
+}
+
+// A gifted Fold axis that runs out inside the near-expiry window, alongside a
+// live Ark+ subscription.
+function nearExpiryGiftMember(): Me {
+  const soon = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  return {
+    email: "member@example.com",
+    tier: "ark-plus",
+    entitlements: { arkPlus: true, circle: true },
+    feeds: [],
+    axes: {
+      arkPlus: axis({ active: true, source: "subscription", renewsAt: "2026-10-01T00:00:00.000Z" }),
+      circle: axis({ active: true, source: "gift", expiresAt: soon }),
+    },
+  };
+}
+
+describe("what the member is offered at all", () => {
+  test("an axis the member already holds is not offered — the plan card says that", async () => {
+    await mount();
+    // Ark+ is live on this member; the Fold is the one they're missing. Asserted
+    // on the axis names rather than the card's body copy, which the offer no
+    // longer carries — the card is title + CTA now, and a stale sentence here
+    // was reading as a broken offer rather than as changed copy.
+    expect(text()).toContain("The Fold");
+    expect(text()).not.toContain("Ark+");
+    expect(buttonWith("Add the Fold")).toBeDefined();
+    expect(text()).not.toContain("Your access");
+    expect(text()).not.toContain("Subscription");
+    expect(text()).not.toContain("Renews");
+  });
+
+  test("a member with both axes is offered nothing", async () => {
+    const container = await mount(bundleMember());
+    expect(container.textContent).toBe("");
+  });
+
+  test("a near-expiry gift still gets its banner, even with both axes covered", async () => {
+    await mount(nearExpiryGiftMember());
+    expect(text()).toContain("Your gifted the Fold access");
+    expect(buttonWith("Add it to your plan")).toBeDefined();
+  });
 });
 
 describe("bundle switch — reading the preview", () => {
