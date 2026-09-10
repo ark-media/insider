@@ -1,14 +1,10 @@
-# Production Launch & User Migration Runbook
+# Production Launch Runbook
 
 Status: **Draft — pre-launch.** Owner: engineering. Last updated: 2026-07-22.
 
-This is the go-live checklist for Ark+ Insider. Two parts:
-
-- **Part 1 — Accounts & API keys.** Every third-party account we depend on, the
-  keys it produces, where each key goes, and what has to flip from test/sandbox
-  to production.
-- **Part 2 — Migrating ~15,000 existing members into Auth0** and emailing them
-  how to log in.
+This is the go-live checklist for Ark+ Insider: every third-party account we
+depend on, the keys it produces, where each key goes, and what has to flip from
+test/sandbox to production.
 
 > **Read first — the whole stack is still sandbox-scoped.** The app was built
 > and tested against Stripe **test** keys, and `scripts/backfill-membership.ts`
@@ -19,7 +15,7 @@ This is the go-live checklist for Ark+ Insider. Two parts:
 
 ---
 
-## Part 1 — Accounts & API keys
+## Accounts & API keys
 
 ### 1.1 How configuration is wired
 
@@ -150,7 +146,7 @@ a green build.
 | Var | Scope | Prod source / action |
 |---|---|---|
 | `CRON_SECRET` | server | `openssl rand -hex 32`; Vercel sends it as `Authorization: Bearer` to cron routes. |
-| `FEED_REMINDER_ENABLED` + `FEED_REMINDER_*` | server | Keep **off** until the activation backfill has run (see Part 2), or every migrated member gets a spurious nudge. |
+| `FEED_REMINDER_ENABLED` + `FEED_REMINDER_*` | server | Keep **off** until real members exist and their feed-activation state is being recorded, or the first run nudges people who are already set up. |
 | `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` | **browser** | PostHog project key + host (`us` or `eu`). Analytics funnel is dark in prod until the key is set. |
 | `VITE_SENTRY_DSN` | **browser** | Sentry client DSN. |
 
@@ -161,7 +157,7 @@ matter of pasting a key.
 | # | Prerequisite | Why it blocks launch | Owner |
 |---|---|---|---|
 | A | **Google OAuth production app** (Google Cloud Console) — OAuth 2.0 client id/secret wired into the Auth0 Google connection, **plus a verified OAuth consent screen** (app name, logo, authorized domains, privacy/terms URLs). | Auth0's built-in "dev keys" for Google are rate-limited, show Auth0 branding, and **must not** be used in production. Consent-screen verification by Google can take days. | Eng + brand |
-| B | **Auth0 paid plan + "Production" tenant.** Custom domain (`auth.ark-plus.xyz`) and ~15k MAU both require a paid B2C plan; the tenant must be switched to the Production environment (stricter, but real, rate limits). | Free tier MAU cap is below 15k; custom domain won't run on free. Budget/procurement lead time. | Eng + finance |
+| B | **Auth0 paid plan + "Production" tenant.** The custom domain (`auth.ark-plus.xyz`) requires a paid B2C plan, and the tenant must be switched to the Production environment (stricter, but real, rate limits). | Custom domain won't run on free, and the free MAU cap needs checking against projected signups. Budget/procurement lead time. | Eng + finance |
 | C | **Stripe account activation for live mode** — business identity, bank account, and payout details verified. | Live keys don't process payments until the account is activated; verification can bounce. | Finance |
 | D | **DNS ownership & access** for `arkmedia.org` and `ark-plus.xyz` — Vercel domain, Auth0 custom-domain CNAME, and Resend SPF/DKIM/DMARC records all live here. | A single "who controls DNS" dependency gates the app domain, login domain, and email deliverability at once. | Eng |
 | E | **Legal pages live** — Privacy Policy + Terms at stable URLs. | Required by the Google consent screen (A), by Stripe, and referenced in the migration email footer. | Legal |
@@ -191,201 +187,11 @@ Regenerate all shared secrets for prod: `SESSION_SECRET`, `CHECKOUT_SESSION_SECR
 
 ---
 
-## Part 2 — Migrating ~15,000 existing members into Auth0
-
-### 2.1 The situation
-The ~15k existing members live in **Supporting Cast** (legacy membership +
-private feeds). They have no login on the new site. We need to, for each entitled
-member:
-
-1. Create an Auth0 account on the `Username-Password-Authentication` connection.
-2. Write a `membership` row in Neon (the entitlement source of truth) so gates
-   resolve the correct tier.
-3. Email them a branded "set your password / log in" message.
-
-**Why this shape works with the existing code:** the app already treats "a
-Database account exists for this email" as "this is a real member" — the
-Post-Login signup gate (`auth0/actions/post-login.js`) rejects anyone *without*
-one. So bulk-creating the accounts is exactly what turns 15k SC members into 15k
-people who can log in. Google-first login then links onto the Database account
-automatically, **provided the Google email matches the SC email**.
-
-### 2.2 Why not just loop `findOrCreateAuth0User` 15,000 times
-That path calls Auth0's `dbconnections/change_password` **per user**, which is
-tightly rate-limited and would blast 15k emails on Auth0's timing, not ours. It's
-right for one-off checkout/gift provisioning, wrong for a bulk backfill. For the
-migration we use Auth0's **Bulk User Import job** to create accounts, then send
-**our own** Resend email carrying a per-user set-password link. This gives us
-batching, branded copy, retries, and send-rate control.
-
-### 2.3 The ⚠️ blocker to clear first
-`scripts/backfill-membership.ts` hard-refuses any non-`sk_test_` key
-(`assertTestMode`) because the whole redesign was sandbox-scoped. Before a
-production entitlement backfill you must consciously lift that guard (a
-`--prod`/`--i-understand` flag, not deleting the check) and re-verify the script
-against a Neon **branch** first. Do not remove the guard silently.
-
-### 2.4 Data flow
-
-```
-Supporting Cast roster (~15k)
-        │  export: email, first/last name, sc_user_id, plan, status
-        ▼
-[1] Build import file (dedup, validate emails, entitled-only)
-        │
-        ├──► [2] Auth0 Bulk Import job ──► Database accounts (email_verified:false)
-        │                                   password left unset (temp)
-        │
-        └──► [3] Neon `membership` upsert (tier from plan) ── source of truth
-        │
-        ▼
-[4] Per-user set-password ticket (Management API, create:user_tickets)
-        ▼
-[5] Resend branded "Welcome to the new Ark+ — set your password" email
-        ▼
-[6] Reconcile: activation backfill, then enable feed reminders
-```
-
-### 2.5 Step-by-step
-
-**[1] Export & prepare the roster.**
-- **Export the roster from Supporting Cast as a CSV** (confirmed source). Required
-  columns: `email`, `first_name`, `last_name`, `sc_user_id`, `plan`, `status`.
-  Keep this CSV as the immutable **system-of-record snapshot** of who was migrated
-  and when — do not overwrite it mid-run.
-  - (The reminder cron reads the live roster via v1 `loadAllMemberships`; for a
-    one-shot migration a CSV is simpler and gives you a frozen, auditable input.)
-- Filter to **entitled** members (active/comped/gift). Drop cancelled/expired
-  unless product wants a win-back path.
-- **Normalize + dedup on lowercased email** — email is the join key for the whole
-  system. Discard invalid/blank emails to a manual-review list.
-- Output a JSON array shaped for Auth0 import (see [2]) plus a parallel CSV for
-  the Neon backfill (email + sc_user_id + tier).
-
-**[2] Bulk-create Auth0 accounts.**
-- Use Management API **Create Import Users Job** (`POST /api/v2/jobs/users-imports`)
-  against `Username-Password-Authentication`. One record per member:
-  ```json
-  { "email": "member@example.com", "email_verified": false,
-    "given_name": "Ada", "family_name": "Lovelace" }
-  ```
-  - Omit passwords → accounts exist with no usable password; members set one via
-    the link in [4]. Matches how `findOrCreateAuth0User` already leaves accounts.
-  - `email_verified:false` is fine — the Post-Login gate keys on *existence* of
-    the Database account, not its verified flag (see the action's notes). The
-    set-password ticket in [4] marks the email verified when they complete it.
-  - `upsert:false`, `send_completion_email:false`. Chunk into files of a few
-    thousand; Auth0 processes one import job at a time — submit sequentially and
-    poll job status. Log per-record failures for manual retry.
-
-**[3] Backfill Neon `membership` (entitlement source of truth).**
-- Adapt `scripts/backfill-membership.ts` — it already resolves `auth0_sub` by
-  email (`auth0SubForEmail`) and upserts idempotently. Its **Pass B** (SC members
-  without a Stripe sub) is exactly the migration cohort; they're written as
-  `ark-plus`, perpetual (null expiry).
-  - Map SC plan → tier deliberately (don't blanket-`ark-plus` if bundle/circle
-    tiers exist for these members).
-  - ⚠️ Clear the test-mode guard (2.3) and dry-run (no `--apply`) against a Neon
-    branch; diff the row count against the roster before `--apply` on prod.
-- Idempotent by `auth0_sub` — safe to re-run for stragglers.
-
-**[4] Mint per-user set-password links.**
-- For each created user, call `createAuth0PasswordChangeTicket(userId, resultUrl, env)`
-  (`server/lib/auth0-user.ts`) — a self-contained URL, `mark_email_as_verified:true`,
-  `result_url` = a post-set landing page (e.g. `${APP_BASE_URL}/welcome`).
-  - Requires M2M `create:user_tickets`.
-  - **Throttle** — the Management API is rate-limited; run at a steady rate
-    (e.g. batches with backoff) over hours, not all at once. Tickets are
-    long-lived enough to pre-mint per batch right before the send.
-  - Persist `{email, userId, ticketUrl, sent:false}` so the send is resumable and
-    idempotent.
-
-**[5] Send the login-instructions email via Resend.**
-- One branded email per member, `from = EMAIL_FROM`, containing the set-password
-  link from [4]. Suggested copy skeleton:
-  > **Subject:** Your Ark+ membership has a new home — set your password
-  >
-  > Hi {first_name}, we've moved Ark+ to a new website. Your membership and
-  > private feeds carried over. To finish, set your password and sign in:
-  > **[Set my password]({ticketUrl})**. Prefer Google? You can sign in with the
-  > Google account on **{email}** and we'll link it automatically.
-  > Questions? Reply to this email.
-- **Rate-limit sends** to Resend's account throughput; mark `sent:true` per
-  record so a re-run only targets the unsent. Send in waves (e.g. 1–2k/hr) so
-  support can absorb replies and you can watch deliverability.
-- **Deliverability:** warm the domain, verify SPF/DKIM/DMARC, and consider a
-  first small canary batch (e.g. 200 internal/friendly addresses) before the
-  full 15k.
-
-**[6] Reconcile & enable ongoing jobs.**
-- Run the **feed-activation backfill** (`scripts/backfill-feed-activations-from-csv.ts`
-  / `feed-activation-csv`) so migrated members who already activated feeds aren't
-  treated as un-started — **then** set `FEED_REMINDER_ENABLED`. Order matters:
-  enabling reminders first spams already-set-up members.
-- The nightly `reconcile-entitlements` cron will keep Neon aligned with
-  Stripe/SC afterward.
-
-### 2.6 Email compliance & deliverability (the 15k blast)
-Sending 15,000 emails in a short window is the highest-risk, least-reversible step.
-- **Classification.** A one-time "your account moved, set your password" notice is
-  defensible as **transactional**, but treat it with marketing-grade care: include
-  a physical mailing address and an unsubscribe/contact path (CAN-SPAM), and honor
-  any prior opt-outs.
-- **Auth / reputation.** SPF, DKIM, **and DMARC** aligned on the `EMAIL_FROM`
-  domain before the first send. Decide dedicated vs shared IP with Resend; if
-  dedicated, **warm it** — you cannot cold-send 15k from a fresh IP without
-  landing in spam.
-- **Waves + canary.** Send a small internal canary (~200) first, check
-  placement/bounces, then ramp in waves (e.g. 1–2k/hr) so support and
-  deliverability signals stay observable.
-- **Suppression.** Track Resend bounces/complaints and never re-send to them; a
-  hard bounce = a member with no way in (route to manual outreach).
-
-### 2.7 Rehearse before prod (staging Auth0 + Neon branch)
-- Do a full dry run of import → backfill → ticket-mint against a **separate dev
-  Auth0 tenant** and a **Neon branch**, using a slice of the CSV (a few hundred
-  rows). Bulk-import mistakes are painful to unwind on a prod tenant.
-- **Back up first:** snapshot the prod Neon DB before the entitlement backfill,
-  and keep the SC CSV frozen (2.5[1]). Rollback = restore Neon + (if needed)
-  delete the imported Auth0 batch by run tag.
-- Budget the **Auth0 Management API rate limit** for minting ~15k set-password
-  tickets — this, not account creation, is the throughput bottleneck. Import jobs
-  are serialized (one at a time); ticket minting is per-call. Plan the run over
-  hours, resumable at each step.
-
-### 2.8 Known edge cases (document for support)
-- **Email mismatch on Google sign-in.** A member whose Google email ≠ their SC
-  email has no matching Database account and is rejected as a stranger. Support
-  fix: have them use the password link, or align the email. This is inherent to
-  email-as-join-key.
-- **Duplicate emails / pre-existing accounts.** Import with `upsert:false` and
-  reconcile the skip list — staff/admin/comp accounts may already exist from dev.
-- **Bounced migration emails.** Track Resend bounces; a bounced address = no way
-  in. Route to a manual list.
-- **Members who log in before the email.** Fine for password path (they can't
-  without the link) but a Google-first login works immediately if the account
-  exists and the email matches — which is the desired outcome.
-- **Rate limits.** Both Auth0 (import jobs are serialized; Management API ticket
-  minting) and Resend (send throughput) are the real constraints. Plan the run
-  over a day, resumable at every step.
-
-### 2.9 Rollout order (summary)
-1. Prod accounts + keys live (Part 1), Stripe live webhook verified.
-2. Neon migrations applied; **dry-run** the entitlement backfill on a branch.
-3. Bulk import a **canary** cohort (~100), verify login + entitlement end-to-end.
-4. Full Auth0 import → Neon backfill → mint tickets.
-5. Canary email batch → then waved full send.
-6. Feed-activation backfill → enable feed reminders.
-7. Monitor: Sentry errors, Auth0 login success rate, Resend deliverability,
-   support inbox.
 
 ---
 
 ## Open questions for product/ops
-- Which SC plans map to which tier (`ark-plus` vs `bundle`/`circle`)?
-- Do cancelled/expired SC members get a migration email (win-back) or not?
 - Launch with the `VITE_GATE_PASSWORD` gate on (soft launch) or fully public?
-- Send-window and support staffing for the 15k email wave.
 - **Email ownership — Beehiiv vs Resend.** Beehiiv sends the feed-delivery mail
   (`POST /api/me/feeds/email`) and the newsletters; Resend sends our own
   transactional mail. Confirm the split is deliberate before any launch blast, so
