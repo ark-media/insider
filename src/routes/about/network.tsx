@@ -40,7 +40,7 @@ const properties: NetworkProperty[] = [
     title: "Ark+ membership",
     kind: "Membership",
     description:
-      "Ark+ is every Ark Media podcast ad-free, plus the members-only newsletters. The Fold is the members' app, live events, and Dan's book club. Ark+ & The Fold is both, one membership.",
+      "Ark+ is every Ark Media podcast ad-free, plus the members-only newsletter. The Fold is the members' app, live events, and Dan's book club. Ark+ & The Fold is both, one membership.",
     to: "/plus",
   },
 ];

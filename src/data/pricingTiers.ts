@@ -32,7 +32,7 @@ export const TIERS: TierMeta[] = [
     label: "Ark+",
     marks: ["ark-plus"],
     blurb:
-      "Every Ark Media podcast, ad-free, plus the members-only newsletters.",
+      "Every Ark Media podcast, ad-free, plus the members-only newsletter.",
     includes: [
       "Exclusive Ark+ Member's only content.",
       "The full network, ad-free",

@@ -255,7 +255,7 @@ const plusIncludes = [
   "Exclusive episodes",
   "Early access",
   "Ad-free listening",
-  "Members-only newsletters",
+  "Members-only newsletter",
 ];
 
 function PlusVisual() {
@@ -375,7 +375,7 @@ function FeatureBand({
 }: {
   eyebrow: string;
   title?: string;
-  body: string;
+  body?: string;
   visual: ReactNode;
   cta?: string;
   to?: string;
@@ -456,7 +456,6 @@ function AlsoFromArkMedia() {
       <FeatureBand
         eyebrow="Newsletter"
         title="In your inbox."
-        body="Subscribe to our newsletter and get new episodes every Friday."
         visual={<NewsletterVisual />}
         {...(showSignup
           ? { action: <NewsletterSignupForm slug="ark-daily" /> }

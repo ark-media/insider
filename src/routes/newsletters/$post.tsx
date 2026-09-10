@@ -212,7 +212,7 @@ function PostPage() {
               The rest of this post is for Ark+ members.
             </h2>
             <p className="mt-4 max-w-2xl text-body-lg">
-              Ark+ includes the paid feed, members-only newsletters, and the
+              Ark+ includes the paid feed, members-only newsletter, and the
               Fold.
             </p>
             <Link
