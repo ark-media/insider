@@ -31,12 +31,13 @@ mock.module('@neondatabase/serverless', () => ({
 // Imports AFTER mock.module so getDb picks up the fake neon.
 import {
   emailForStripeCustomer,
+  provisionCircleMember,
   reconcileEntitlements,
   syncEntitlement,
 } from './entitlement'
 
 const BASE_ENV = {
-  CIRCLE_API_TOKEN: 'circle-tok',
+  CIRCLE_ADMIN_API_TOKEN: 'circle-admin-tok',
   CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: 'ag-99',
   SC_API_KEY: 'sc-key',
   SC_NETWORK_ID: 'net-1',
@@ -162,7 +163,11 @@ describe('syncEntitlement', () => {
 
   test('skips Circle when token absent', async () => {
     installFetch(() => jsonRes(500, {}))
-    const res = await syncEntitlement({ ...BASE_ENV, CIRCLE_API_TOKEN: '' }, 'a@x.com', 'circle')
+    const res = await syncEntitlement(
+      { ...BASE_ENV, CIRCLE_ADMIN_API_TOKEN: '' },
+      'a@x.com',
+      'circle',
+    )
     expect(res.circle).toBe('skipped')
     expect(calls.length).toBe(0)
   })
@@ -175,6 +180,240 @@ describe('syncEntitlement', () => {
       'circle',
     )
     expect(res.circle).toBe('skipped')
+  })
+})
+
+// --- The cancelled access group ---------------------------------------------
+//
+// Losing the circle axis MOVES the member from "subscriber" to "cancelled"
+// rather than deleting anything: the Circle member record and the Auth0 account
+// both survive, so a re-join lands them back on their own history. The
+// "cancelled" group holds no Spaces, so it is a marker and never an entitlement.
+
+describe('syncEntitlement — cancelled access group', () => {
+  const CANCEL_ENV = { ...BASE_ENV, CIRCLE_CANCELLED_ACCESS_GROUP_ID: 'ag-cancel' }
+
+  // Which group each access-group call touched, in order.
+  function groupCalls(): Array<{ group: string; method: string }> {
+    return calls
+      .map((c) => {
+        const m = /\/access_groups\/([^/]+)\/community_members/.exec(c.url)
+        return m ? { group: m[1] as string, method: String(c.init?.method) } : null
+      })
+      .filter((c): c is { group: string; method: string } => c !== null)
+  }
+
+  test('losing circle moves subscriber → cancelled', async () => {
+    installFetch(() => jsonRes(200, {}))
+    const res = await syncEntitlement(CANCEL_ENV, 'a@x.com', 'ark-plus')
+    expect(res.circle).toBe('ok')
+    // Removal first — it is the write that actually cuts access.
+    expect(groupCalls()).toEqual([
+      { group: 'ag-99', method: 'DELETE' },
+      { group: 'ag-cancel', method: 'POST' },
+    ])
+    const tag = calls.find((c) => c.url.includes('ag-cancel'))
+    expect(JSON.parse(String(tag!.init!.body))).toEqual({ email: 'a@x.com' })
+  })
+
+  test('a member who was never in the subscriber group is not tagged cancelled', async () => {
+    // DELETE 404 = wasn't in the group. Every cancel runs through here, Ark+-only
+    // members included; tagging those would misdescribe them.
+    installFetch(({ url }) => (url.includes('ag-99') ? jsonRes(404, {}) : jsonRes(200, {})))
+    const res = await syncEntitlement(CANCEL_ENV, 'a@x.com', 'free')
+    expect(res.circle).toBe('ok')
+    expect(groupCalls()).toEqual([{ group: 'ag-99', method: 'DELETE' }])
+  })
+
+  test('re-joining clears the cancelled marker', async () => {
+    installFetch(() => jsonRes(200, {}))
+    const res = await syncEntitlement(CANCEL_ENV, 'a@x.com', 'bundle')
+    expect(res.circle).toBe('ok')
+    // Grant first, then clear the marker.
+    expect(groupCalls()).toEqual([
+      { group: 'ag-99', method: 'POST' },
+      { group: 'ag-cancel', method: 'DELETE' },
+    ])
+    expect(calls.find((c) => c.url.includes('ag-cancel'))!.url).toContain('email=a%40x.com')
+  })
+
+  test('a re-join already out of the cancelled group is fine (DELETE 404)', async () => {
+    installFetch(({ url }) => (url.includes('ag-cancel') ? jsonRes(404, {}) : jsonRes(200, {})))
+    const res = await syncEntitlement(CANCEL_ENV, 'a@x.com', 'circle')
+    expect(res.circle).toBe('ok')
+  })
+
+  test('a non-member (POST 404) never touches the cancelled group', async () => {
+    installFetch(() => jsonRes(404, {}))
+    const res = await syncEntitlement(CANCEL_ENV, 'a@x.com', 'circle')
+    expect(res.circle).toBe('no-member')
+    expect(groupCalls()).toEqual([{ group: 'ag-99', method: 'POST' }])
+  })
+
+  test('a failing cancelled-group write never fails the access change', async () => {
+    // The marker is bookkeeping; the access write already landed.
+    installFetch(({ url }) => (url.includes('ag-cancel') ? jsonRes(500, {}) : jsonRes(200, {})))
+    expect((await syncEntitlement(CANCEL_ENV, 'a@x.com', 'ark-plus')).circle).toBe('ok')
+    calls = []
+    expect((await syncEntitlement(CANCEL_ENV, 'a@x.com', 'bundle')).circle).toBe('ok')
+  })
+
+  test('unset cancelled group leaves the revoke a plain removal', async () => {
+    installFetch(() => jsonRes(200, {}))
+    const res = await syncEntitlement(BASE_ENV, 'a@x.com', 'free')
+    expect(res.circle).toBe('ok')
+    expect(groupCalls()).toEqual([{ group: 'ag-99', method: 'DELETE' }])
+  })
+})
+
+// --- provisionCircleMember: resolving the member id -------------------------
+//
+// Circle answers a create and an already-a-member with the SAME 201 envelope,
+// the id nested under `community_member`. Reading a top-level `id` found nothing
+// on either, so the auth0_sub stamp was skipped for every member.
+
+describe('provisionCircleMember', () => {
+  function stampedMemberId(): string | null {
+    const put = calls.find((c) => c.init?.method === 'PUT')
+    const m = put ? /\/community_members\/(\d+)$/.exec(put.url) : null
+    return m ? (m[1] as string) : null
+  }
+
+  // These exercise the v2 fallback: BASE_ENV has no v1 config.
+  test('reads the id nested under community_member', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/community_members') && init?.method === 'POST') {
+        return jsonRes(201, {
+          message: 'This user is already a member of this community.',
+          community_member: { id: 777 },
+        })
+      }
+      return jsonRes(200, {})
+    })
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
+    expect(stampedMemberId()).toBe('777')
+  })
+
+  test('falls back to the by-email search on an unrecognised envelope', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/community_members') && init?.method === 'POST') {
+        return jsonRes(201, { message: 'created' })
+      }
+      // The search endpoint answers with the member object directly, no wrapper.
+      if (url.includes('/community_members/search')) return jsonRes(200, { id: 888 })
+      return jsonRes(200, {})
+    })
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
+    expect(stampedMemberId()).toBe('888')
+  })
+
+  test('a member create that fails hard is an error, not a silent skip', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/community_members') && init?.method === 'POST') {
+        return jsonRes(401, { message: 'API token not found.' })
+      }
+      return jsonRes(200, {})
+    })
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('error')
+  })
+
+  // --- the v1 create (invitation suppressed) -------------------------------
+  //
+  // v1 is used for exactly one call because `skip_invitation` exists nowhere
+  // else. It also answers HTTP 200 for FAILURES, so the body is the status.
+
+  const V1_ENV = {
+    ...BASE_ENV,
+    CIRCLE_API_TOKEN: 'circle-v1-tok',
+    CIRCLE_COMMUNITY_ID: '501818',
+  }
+
+  function v1Create(): FetchCall | undefined {
+    return calls.find((c) => c.url.includes('/api/v1/community_members'))
+  }
+
+  test('creates via v1 with skip_invitation and the v1 token', async () => {
+    installFetch(({ url }) => {
+      if (url.includes('/api/v1/community_members')) {
+        return jsonRes(200, { success: true, community_member: { id: 555 } })
+      }
+      return jsonRes(200, {})
+    })
+    expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A B', 'auth0|abc')).toBe('ok')
+
+    const create = v1Create()
+    expect(create).toBeDefined()
+    expect(create!.init?.method).toBe('POST')
+    expect(create!.url).toContain('skip_invitation=true')
+    expect(create!.url).toContain('community_id=501818')
+    expect(create!.url).toContain('email=a%40x.com')
+    // v1 authenticates as `Token <tok>`, NOT Bearer, and with the v1 token.
+    expect((create!.init?.headers as Record<string, string>).Authorization).toBe(
+      'Token circle-v1-tok',
+    )
+    // The v2 create must not also run — that is the call that sends the invite.
+    expect(
+      calls.some(
+        (c) => c.url.endsWith('/admin/v2/community_members') && c.init?.method === 'POST',
+      ),
+    ).toBe(false)
+    expect(stampedMemberId()).toBe('555')
+  })
+
+  test('a v1 failure is HTTP 200 — the body is the status', async () => {
+    // Reading res.ok here would treat an unauthorized token as a created member.
+    for (const body of [
+      { success: false, message: 'Could not find Community record with ID 999999' },
+      { status: 'unauthorized', message: 'Your account could not be authenticated.' },
+    ]) {
+      calls = []
+      installFetch(({ url }) =>
+        url.includes('/api/v1/community_members') ? jsonRes(200, body) : jsonRes(200, {}),
+      )
+      expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('error')
+    }
+  })
+
+  test('a v1 duplicate carries the existing member id', async () => {
+    installFetch(({ url }) => {
+      if (url.includes('/api/v1/community_members')) {
+        return jsonRes(200, {
+          success: true,
+          message: 'This user is already a member of this community.',
+          community_member: { id: 81174895 },
+        })
+      }
+      return jsonRes(200, {})
+    })
+    expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
+    expect(stampedMemberId()).toBe('81174895')
+  })
+
+  test('without v1 config it falls back to the v2 create', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/admin/v2/community_members') && init?.method === 'POST') {
+        return jsonRes(201, { community_member: { id: 42 } })
+      }
+      return jsonRes(200, {})
+    })
+    // BASE_ENV carries no CIRCLE_API_TOKEN / CIRCLE_COMMUNITY_ID.
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
+    expect(v1Create()).toBeUndefined()
+    expect(stampedMemberId()).toBe('42')
+  })
+
+  test('provisioning clears a cancelled marker left by an earlier lapse', async () => {
+    installFetch(({ url, init }) => {
+      if (url.endsWith('/community_members') && init?.method === 'POST') {
+        return jsonRes(201, { community_member: { id: 777 } })
+      }
+      return jsonRes(200, {})
+    })
+    const env = { ...BASE_ENV, CIRCLE_CANCELLED_ACCESS_GROUP_ID: 'ag-cancel' }
+    expect(await provisionCircleMember(env, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
+    expect(
+      calls.some((c) => c.url.includes('ag-cancel') && c.init?.method === 'DELETE'),
+    ).toBe(true)
   })
 })
 

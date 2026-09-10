@@ -6,9 +6,10 @@
 //
 //   1. The tier → entitlements model (GRANTS / deriveEntitlements).
 //   2. The Circle axis: creating members, stamping the auth0_sub join field,
-//      and adding/removing the community access group
-//      (CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID). The arkPlus axis (Supporting Cast)
-//      is owned by lib/activation.ts + the webhook.
+//      and moving them between the two community access groups
+//      (CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID / CIRCLE_CANCELLED_ACCESS_GROUP_ID).
+//      The arkPlus axis (Supporting Cast) is owned by lib/activation.ts + the
+//      webhook.
 //   3. The nightly reconciler — Neon-authoritative drift removal across both
 //      external access systems (SC + Circle), keyed on opaque ids, never email.
 //
@@ -143,61 +144,147 @@ export async function fetchAuth0EmailVerified(
 
 // --- Circle ----------------------------------------------------------------
 // Circle's Admin v2 API. Members of the configured access group can see the
-// Spaces gated to it; non-members can't. The group's ID is created once in
-// Circle admin and stored as CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID.
+// Spaces gated to it; non-members can't. Two groups describe a member's standing
+// in the Fold, both created once in Circle admin:
+//
+//   CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID — "subscriber". Holds the Fold's Spaces.
+//   CIRCLE_CANCELLED_ACCESS_GROUP_ID  — "cancelled". Holds NO Spaces, so it
+//     grants nothing; it is a marker, not an entitlement. Optional — unset, a
+//     revoke is just the removal from "subscriber" it always was.
 //
 // The Admin v2 access-groups endpoints take email directly, so no separate
 // member-id lookup is needed in the per-email path. Member-id resolution is
 // still required for the reconciler's drift pass (see
-// listCircleAccessGroupSubscriberEmails) because the access-group list
-// returns only ids.
+// listCircleAccessGroupMembers) because the access-group list returns only ids.
+//
+// Every call below is Admin **v2** and authenticates with CIRCLE_ADMIN_API_TOKEN,
+// with ONE deliberate exception: createCircleMemberV1, which is v1 + the v1
+// token because `skip_invitation` exists nowhere else.
+//
+// They all used to send CIRCLE_API_TOKEN, which is an Admin **v1** token —
+// perfectly valid, but only against /api/v1/*. As a Bearer on /api/admin/v2/*
+// Circle answers 401 to all of it, so the entire Circle axis was failing
+// silently: `provisionCircleMember` returned 'error' and the subscriber access
+// group sat at zero members while people were paying for the Fold. The two
+// tokens are distinct on purpose (they are two different APIs); a call site just
+// has to hold the one for the version it is calling.
 
 const CIRCLE_API = 'https://app.circle.so/api/admin/v2'
+// Admin v1, used for exactly one call — see createCircleMemberV1.
+const CIRCLE_API_V1 = 'https://app.circle.so/api/v1'
 
+function accessGroupMembersUrl(groupId: string): string {
+  return `${CIRCLE_API}/access_groups/${encodeURIComponent(groupId)}/community_members`
+}
+
+// Add an email to one access group. Answers whether the write landed on a real
+// Circle member: `false` means 404 — the email has no community member record
+// at all, which is a no-op rather than a failure.
+//
+// A duplicate add is not an error to Circle — re-adding a member already in the
+// group answers 201, like the first add. 422 / 409 stay tolerated as well (the
+// spec documents neither, and a tolerated duplicate is the right outcome however
+// it is signalled). All other 4xx (400, 401, 403, ...) still throw so auth and
+// validation errors surface.
+async function addToAccessGroup(
+  headers: Record<string, string>,
+  groupId: string,
+  email: string,
+): Promise<boolean> {
+  const res = await fetchWithTimeout(accessGroupMembersUrl(groupId), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email }),
+  })
+  if (res.status === 404) return false
+  if (!res.ok && res.status !== 422 && res.status !== 409) {
+    throw new Error(`Circle access-group POST ${res.status}: ${await res.text()}`)
+  }
+  return true
+}
+
+// Remove an email from one access group. Answers whether it was actually IN the
+// group: Circle 404s when it wasn't (never added, or no member record), which is
+// already the desired state.
+async function removeFromAccessGroup(
+  headers: Record<string, string>,
+  groupId: string,
+  email: string,
+): Promise<boolean> {
+  const res = await fetchWithTimeout(
+    `${accessGroupMembersUrl(groupId)}?email=${encodeURIComponent(email)}`,
+    { method: 'DELETE', headers },
+  )
+  if (res.status === 404) return false
+  if (!res.ok) {
+    throw new Error(`Circle access-group DELETE ${res.status}: ${await res.text()}`)
+  }
+  return true
+}
+
+// Mirror the tier's circle entitlement onto the two groups — granted → in
+// "subscriber", out of "cancelled"; revoked → the reverse.
+//
+// Revoking is a MOVE, never a delete. Nothing here (or anywhere else on the
+// cancel path) touches the Circle community member or their Auth0 account: their
+// posts, comments, DMs and profile survive a cancellation untouched, so someone
+// who re-joins comes back to their own history rather than a blank account. The
+// "cancelled" group is what makes that survivable to look at — it has no Spaces,
+// so holding it grants nothing, and it lets the roster tell a lapsed member from
+// someone who was never a subscriber (and gives win-back campaigns an audience).
+//
+// The access-critical write goes first in both directions and is the only one
+// allowed to fail the call; the marker write is soft. Circle's groups are
+// additive, so the marker can never gate anything either way.
 async function setCircleAccessGroup(
   env: Env,
   email: string,
   wantCircle: boolean,
 ): Promise<'ok' | 'no-member' | 'skipped'> {
-  const apiToken = env.CIRCLE_API_TOKEN
+  const apiToken = env.CIRCLE_ADMIN_API_TOKEN
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
   if (!apiToken || !accessGroupId) return 'skipped'
+  const cancelledGroupId = env.CIRCLE_CANCELLED_ACCESS_GROUP_ID
 
   const headers = {
     Authorization: `Bearer ${apiToken}`,
     'Content-Type': 'application/json',
   }
-  const base = `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members`
 
   if (wantCircle) {
-    const res = await fetchWithTimeout(base, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ email }),
-    })
-    // 404 → the email isn't a Circle community member yet. Treat as
-    // no-member, matching the pre-access-group behavior; the user will be
-    // added on their first Circle SSO.
-    if (res.status === 404) return 'no-member'
-    // 422 / 409 → already a member (Circle's response code for duplicates is
-    // undocumented in the Admin v2 spec; both have been observed in practice).
-    // Treat as in-desired-state. All other 4xx (400, 401, 403, ...) still
-    // throw so auth and validation errors surface.
-    if (!res.ok && res.status !== 422 && res.status !== 409) {
-      throw new Error(`Circle access-group POST ${res.status}: ${await res.text()}`)
+    const added = await addToAccessGroup(headers, accessGroupId, email)
+    // The email isn't a Circle community member yet. Treat as no-member,
+    // matching the pre-access-group behavior; the user will be added on their
+    // first Circle SSO. There is no member record to clear a marker off, either.
+    if (!added) return 'no-member'
+    if (cancelledGroupId) {
+      try {
+        await removeFromAccessGroup(headers, cancelledGroupId, email)
+      } catch (err) {
+        console.error(
+          `[circle] cancelled-group clear failed for ${redactEmail(email)}:`,
+          err,
+        )
+      }
     }
     return 'ok'
   }
 
-  // wantCircle false → remove
-  const res = await fetchWithTimeout(
-    `${base}?email=${encodeURIComponent(email)}`,
-    { method: 'DELETE', headers },
-  )
-  // 404 → not in the group already (either never was, or no member record).
-  // Treat as desired state.
-  if (!res.ok && res.status !== 404) {
-    throw new Error(`Circle access-group DELETE ${res.status}: ${await res.text()}`)
+  // wantCircle false → revoke.
+  const wasSubscriber = await removeFromAccessGroup(headers, accessGroupId, email)
+  // Only mark someone who was actually in the subscriber group. EVERY cancel
+  // runs through here, Ark+-only members who never had the Fold included, and
+  // tagging those "cancelled" would both misdescribe them and quietly poison any
+  // win-back audience built off the group.
+  if (wasSubscriber && cancelledGroupId) {
+    try {
+      await addToAccessGroup(headers, cancelledGroupId, email)
+    } catch (err) {
+      console.error(
+        `[circle] cancelled-group tag failed for ${redactEmail(email)}:`,
+        err,
+      )
+    }
   }
   return 'ok'
 }
@@ -233,7 +320,7 @@ export async function provisionCircleMember(
   name: string | undefined,
   auth0Sub: string | null,
 ): Promise<CircleProvisionStatus> {
-  const apiToken = env.CIRCLE_API_TOKEN
+  const apiToken = env.CIRCLE_ADMIN_API_TOKEN
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
   if (!apiToken || !accessGroupId) return 'skipped'
   const headers = {
@@ -243,7 +330,7 @@ export async function provisionCircleMember(
 
   let memberId: number | null
   try {
-    memberId = await ensureCircleMember(headers, email, name)
+    memberId = await ensureCircleMember(env, headers, email, name)
   } catch (err) {
     console.error(`[circle] ensure member failed for ${redactEmail(email)}:`, err)
     return 'error'
@@ -266,12 +353,81 @@ export async function provisionCircleMember(
   return 'ok'
 }
 
-// POST /community_members to create the member; a duplicate (Circle answers 409
-// or 422 for an existing email) is treated as success. Returns the member id
-// when Circle hands one back — on create or by a follow-up email lookup — so the
-// caller can stamp the custom field; null when it can't be resolved (the add-to-
-// group step still works off email, and the reconciler can re-stamp later).
+type CircleMemberCreateBody = {
+  id?: number
+  community_member_id?: number
+  community_member?: { id?: number }
+}
+
+// Create (or find) the member. Prefers the v1 call, which is the only one that
+// can suppress Circle's invitation email; falls back to v2 when v1 isn't
+// configured — a member who gets one extra email is a far better outcome than a
+// member who never gets Fold access at all.
 async function ensureCircleMember(
+  env: Env,
+  v2Headers: Record<string, string>,
+  email: string,
+  name: string | undefined,
+): Promise<number | null> {
+  if (env.CIRCLE_API_TOKEN && env.CIRCLE_COMMUNITY_ID) {
+    return createCircleMemberV1(env, email, name)
+  }
+  console.warn(
+    '[circle] CIRCLE_API_TOKEN / CIRCLE_COMMUNITY_ID unset — creating via v2, which emails the member a community invitation',
+  )
+  return createCircleMemberV2(v2Headers, email, name)
+}
+
+// The ONE call in this file that is Admin **v1**, and deliberately so:
+// `skip_invitation` exists only there. Without it Circle sends every new
+// subscriber its own "you've been invited to the community" on top of our
+// branded welcome email — a second, competing call to action for a product they
+// just bought. Verified live against both APIs: v1 + skip_invitation delivers
+// nothing, while v2 ignores every spelling of the idea (skip_invitation,
+// send_invitation, skip_invitation_email, invitation) and always invites.
+//
+// Two v1 quirks this depends on, both verified:
+//
+//   1. Everything is HTTP 200 — failures included. `{ success: false }` is a bad
+//      community id, `{ status: 'unauthorized' }` a bad token. Reading `res.ok`
+//      here (the reflex from every other call in this file) would read both as a
+//      successful create and hand back a null id.
+//   2. A duplicate is `success: true` carrying the EXISTING member's id, so
+//      create and find-existing are one call — no separate dedup branch.
+async function createCircleMemberV1(
+  env: Env,
+  email: string,
+  name: string | undefined,
+): Promise<number | null> {
+  const params = new URLSearchParams({
+    community_id: env.CIRCLE_COMMUNITY_ID,
+    email,
+    skip_invitation: 'true',
+  })
+  if (name) params.set('name', name)
+  const res = await fetchWithTimeout(`${CIRCLE_API_V1}/community_members?${params}`, {
+    method: 'POST',
+    headers: { Authorization: `Token ${env.CIRCLE_API_TOKEN}` },
+  })
+  const body = (await res.json().catch(() => null)) as
+    | (CircleMemberCreateBody & { success?: boolean; message?: string; status?: string })
+    | null
+  if (!res.ok || body?.success !== true) {
+    throw new Error(
+      `Circle v1 member create ${res.status}: ${body?.message ?? body?.status ?? 'unreadable body'}`,
+    )
+  }
+  return body.community_member?.id ?? body.community_member_id ?? body.id ?? null
+}
+
+// The v2 create — the fallback, which always emails an invitation. A duplicate
+// is not an error to Circle: an existing email comes back 201 with
+// `{ message: "This user is already a member of this community.",
+// community_member: { … } }`, the same envelope a fresh create returns, so both
+// land on the same read. The id is NESTED under `community_member`; reading only
+// a top-level `id` (as this did) returned null for every existing member and
+// silently skipped the auth0_sub stamp.
+async function createCircleMemberV2(
   headers: Record<string, string>,
   email: string,
   name: string | undefined,
@@ -282,12 +438,15 @@ async function ensureCircleMember(
     body: JSON.stringify(name ? { email, name } : { email }),
   })
   if (res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { id?: number; community_member_id?: number }
-      | null
-    return body?.community_member_id ?? body?.id ?? null
+    const body = (await res.json().catch(() => null)) as CircleMemberCreateBody | null
+    const id = body?.community_member?.id ?? body?.community_member_id ?? body?.id
+    if (typeof id === 'number') return id
+    // An envelope we don't recognise. Ask by email rather than give up on the
+    // stamp — the search endpoint answers with the member object directly.
+    return findCircleMemberIdByEmail(headers, email)
   }
-  // 409 / 422 → already a member. Resolve the id by email so we can still stamp.
+  // 409 / 422 — what this endpoint was assumed to answer for duplicates before
+  // the 201 was observed. Kept tolerated: a tolerated duplicate is never wrong.
   if (res.status === 409 || res.status === 422) {
     return findCircleMemberIdByEmail(headers, email)
   }
@@ -341,19 +500,14 @@ async function stampCircleAuth0Sub(
 // Soft by construction — returns false rather than throwing. Every caller is
 // downstream of a save the member has already seen succeed, so a Circle hiccup
 // must never surface as a failed save.
-// CIRCLE_ADMIN_API_TOKEN, deliberately unlike every other Circle call in this
-// file. They pass CIRCLE_API_TOKEN — an Admin **v1** token — as a Bearer
-// against the Admin **v2** base URL, and Circle answers 401 to all of them:
+// CIRCLE_ADMIN_API_TOKEN — which is now what every Circle call in this file
+// uses. This function was for a while the only one that did, and the pairing it
+// was tested with (admin token + v2 search + v2 PUT) is the one the rest of the
+// file was corrected to:
 //
 //   Bearer <v1 token>    → /api/admin/v2/community_members/search  401
 //   Bearer <admin token> → /api/admin/v2/community_members/search  200
 //   Token  <v1 token>    → /api/v1/community_members               200
-//
-// That is a real bug in the provisioning path, not a quirk to copy — but fixing
-// it there means re-verifying member create, the profile-field stamp and the
-// access-group add/remove against a live community, so it is called out rather
-// than swept into this change. This function uses the pairing that was actually
-// tested end to end (admin token + v2 search + v2 PUT).
 export async function updateCircleMemberName(
   env: Env,
   email: string,
@@ -650,7 +804,7 @@ async function reconcileCircleAxis(
   maxPages: number,
   batchSize: number,
 ): Promise<number> {
-  const apiToken = env.CIRCLE_API_TOKEN
+  const apiToken = env.CIRCLE_ADMIN_API_TOKEN
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
   if (!apiToken || !accessGroupId) return 0
 
@@ -698,7 +852,7 @@ async function listCircleAccessGroupMembers(
   env: Env,
   maxPages: number,
 ): Promise<CircleReconcileMember[]> {
-  const apiToken = env.CIRCLE_API_TOKEN
+  const apiToken = env.CIRCLE_ADMIN_API_TOKEN
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
   if (!apiToken || !accessGroupId) return []
   const headers = { Authorization: `Bearer ${apiToken}` }

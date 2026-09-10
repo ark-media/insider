@@ -189,13 +189,13 @@ async function main(): Promise<void> {
 
   // --- Pass C: Circle community members --------------------------------------
   console.log('\nPass C — Circle community members')
-  // CIRCLE_API_TOKEN, not CIRCLE_ADMIN_API_TOKEN: the two are distinct by design
-  // (docs/production-launch.md) and every working caller of
-  // /api/admin/v2/community_members — server/entitlement.ts — authenticates with
-  // this one. CIRCLE_ADMIN_API_TOKEN reads the /fold feed instead.
-  const circleToken = env.CIRCLE_API_TOKEN
+  // CIRCLE_ADMIN_API_TOKEN, because the URL below is Admin **v2**. This used to
+  // read CIRCLE_API_TOKEN on the grounds that server/entitlement.ts did — which
+  // was true, and was the bug: that is an Admin v1 token, Circle 401s it on
+  // /api/admin/v2/*, and this pass threw on its first page every time it ran.
+  const circleToken = env.CIRCLE_ADMIN_API_TOKEN
   if (!circleToken) {
-    console.log('  (CIRCLE_API_TOKEN unset — skipped)')
+    console.log('  (CIRCLE_ADMIN_API_TOKEN unset — skipped)')
   } else {
     let scanned = 0
     let hits = 0

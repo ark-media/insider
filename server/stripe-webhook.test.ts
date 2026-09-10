@@ -256,7 +256,7 @@ const SYNC_ENV = {
   AUTH0_MANAGEMENT_CLIENT_ID: 'cid',
   AUTH0_MANAGEMENT_CLIENT_SECRET: 'csec',
   AUTH0_TENANT_DOMAIN: 'https://tenant.us.auth0.com',
-  CIRCLE_API_TOKEN: 'circle-tok',
+  CIRCLE_ADMIN_API_TOKEN: 'circle-tok',
   CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: 'ag-99',
 }
 
