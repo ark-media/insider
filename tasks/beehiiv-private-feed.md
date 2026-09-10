@@ -805,6 +805,51 @@ would claim "Spotify is linked" when nothing was. The blast radius is small —
 the false marker writes `pending_at`, and the reminder cron reads
 `activated = true` only, so nobody gets un-nudged — but the copy would be wrong.
 
+### Deep links on a computer (2026-09-11)
+
+Reported from the setup page on a Mac: the Apple row opened Podcasts and left
+the "Follow a show by URL" box **empty**.
+
+Verified on this machine, not inferred. Launch Services binds `podcast:`,
+`pcast:` and `itms-podcasts:` to Podcasts.app (`itpc:` is not registered at
+all). Handing it Beehiiv's own link —
+
+    open -g "podcast://rss.beehiiv.com/podcasts/<show>/private/<token>.xml"
+
+— opens the app and adds nothing: the feed never appears in the Podcasts
+library (`ZMTPODCAST.ZFEEDURL` in `MTLibrary.sqlite`). Same result for the
+`pcast://` form. The URL is Beehiiv's `protocol_links.apple` verbatim, so there
+is no link we could send that behaves differently; the Mac app simply drops the
+payload. On a phone the same link works, which is what it is for.
+
+So the deep links were never a desktop path, and three of the four rows were
+worse than that: Overcast and Castro have no desktop app at all, so their row
+was a dead click on a computer.
+
+`FeedSetup` now asks the device instead of the viewport (`pointer: coarse`,
+which reports the PRIMARY input — a touchscreen laptop still counts as
+desktop):
+
+- **Handheld** — unchanged. The whole row is the deep link.
+- **Computer** — the row IS the QR toggle, because moving the member to their
+  phone is the only thing that finishes the job. Only Apple keeps an "Open
+  here" beside it: it copies the https feed URL to the clipboard on the way out
+  and then names the box to paste it into. Pocket Casts has a Mac app but it is
+  rarely installed (no `pktc:` handler on this machine), and a row that
+  promises to open an app that isn't there is worse than a row that doesn't.
+  The QR button that used to sit at `md:` and the panel's width query are gone
+  with it.
+
+A web page cannot type into another app's window, so the clipboard is as close
+to "auto-paste" as this gets. Unverified: whether Podcasts' box auto-fills FROM
+the clipboard — reading that dialog needs Accessibility rights osascript does
+not have here.
+
+Still unverified: whether the iPhone Camera app acts on a QR whose payload is a
+custom scheme (`podcast://`). If it doesn't, the desktop path needs the QR to
+carry an https URL that bounces to the scheme — put the feed in the FRAGMENT so
+the token never reaches a server log.
+
 ### Still open
 
 - `BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK`, `BEEHIIV_SUBSCRIBER_HOST` and

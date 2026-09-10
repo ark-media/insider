@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import QRCode from "qrcode";
 import {
   ApplePodcastsIcon,
@@ -24,24 +24,75 @@ const SPOTIFY_HANDOFF_PATH = "/api/me/feeds/spotify";
 // Beehiiv didn't return for a feed is dropped, because our only fallback would
 // be the raw RSS URL, which none of these apps can open. Everything else is
 // served by the "copy the feed URL" row at the bottom.
+//
+// `desktopBox` names the "add by URL" box that app's DESKTOP client opens, and
+// null means don't offer one at all. Overcast and Castro are iOS-only, and
+// Pocket Casts' Mac app is rare enough that a row promising to open it is more
+// likely to do nothing than to help — on a computer those three are the QR code
+// and nothing else.
 const APPS = [
-  { key: "apple", name: "Apple Podcasts", protocolKey: "apple", Icon: ApplePodcastsIcon },
-  { key: "overcast", name: "Overcast", protocolKey: "overcast", Icon: OvercastIcon },
-  { key: "pocketcasts", name: "Pocket Casts", protocolKey: "pocket_casts", Icon: PocketCastsIcon },
-  { key: "castro", name: "Castro", protocolKey: "castro", Icon: null },
+  {
+    key: "apple",
+    name: "Apple Podcasts",
+    protocolKey: "apple",
+    Icon: ApplePodcastsIcon,
+    // Verified 2026-09-11 on macOS 15: the Mac app registers `podcast:` (and
+    // `pcast:`) but throws the feed URL away — it opens this box EMPTY however
+    // the link is formed. Nothing we can send fixes it, so the desktop row
+    // copies the feed URL on the way out and says where to paste it.
+    desktopBox: "Follow a Show by URL",
+  },
+  { key: "overcast", name: "Overcast", protocolKey: "overcast", Icon: OvercastIcon, desktopBox: null },
+  {
+    key: "pocketcasts",
+    name: "Pocket Casts",
+    protocolKey: "pocket_casts",
+    Icon: PocketCastsIcon,
+    desktopBox: null,
+  },
+  { key: "castro", name: "Castro", protocolKey: "castro", Icon: null, desktopBox: null },
 ] as const;
 
 type App = (typeof APPS)[number];
+
+// Is this the device the podcast app lives on? A protocol link only finishes
+// the job there — on a computer it either opens nothing (Overcast, Castro) or
+// opens the app with the feed URL dropped on the floor (Apple), which is what
+// makes the QR code the real desktop path rather than a convenience.
+//
+// `pointer: coarse` reports the PRIMARY input, so a touchscreen laptop with a
+// trackpad still counts as desktop. Width would be the wrong question: a
+// half-width browser window on a Mac is still a Mac.
+function useHandheld(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mql = window.matchMedia?.("(pointer: coarse)");
+      mql?.addEventListener("change", onChange);
+      return () => mql?.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia?.("(pointer: coarse)").matches ?? false,
+    () => false,
+  );
+}
 
 /**
  * Private-feed setup: a flat list of deep links, one tap each.
  *
  * The shape of this page follows the shape of the job. On a phone the member
  * is already holding the device the podcast app lives on, so every row is just
- * a link they tap. On a desktop the same tap can't reach their phone, so each
- * row also offers a QR code of that app's link. Spotify stays first and set
- * apart: it links the account rather than a device, so it's the one path that
- * finishes wherever it's started and covers every show at once.
+ * a link they tap and the app opens with the feed in it.
+ *
+ * On a computer that tap goes nowhere useful — Overcast and Castro don't exist
+ * there at all, Pocket Casts' Mac app is rarely installed, and Apple's Mac app
+ * opens its "Follow a Show by URL" box EMPTY however the protocol link is
+ * formed (verified 2026-09-11). So on a computer every row is the QR code,
+ * which moves the member to the device that can finish the job, and Apple —
+ * the one desktop app people do listen in — keeps an "open here" that copies
+ * the feed URL first so the empty box is one paste from done.
+ *
+ * Spotify stays first and set apart: it links the account rather than a device,
+ * so it's the one path that finishes wherever it's started and covers every
+ * show at once.
  */
 export function FeedSetup({
   feeds,
@@ -195,6 +246,7 @@ function FeedBlock({
   // Which app's QR code is open, if any. Desktop-only affordance, but the
   // state is harmless on a phone, where the toggle is never rendered.
   const [qrApp, setQrApp] = useState<App | null>(null);
+  const handheld = useHandheld();
 
   const links = feed.protocolLinks ?? {};
   const apps = APPS.filter((a) => Boolean(links[a.protocolKey]));
@@ -235,6 +287,8 @@ function FeedBlock({
               key={app.key}
               app={app}
               url={links[app.protocolKey] as string}
+              feedUrl={feed.url}
+              handheld={handheld}
               qrOpen={qrApp?.key === app.key}
               onToggleQr={() => setQrApp(qrApp?.key === app.key ? null : app)}
               onOpen={() => {
@@ -254,62 +308,117 @@ function FeedBlock({
 function AppRow({
   app,
   url,
+  feedUrl,
+  handheld,
   qrOpen,
   onToggleQr,
   onOpen,
 }: {
   app: App;
+  /** The app's own protocol link, e.g. `podcast://…`. */
   url: string;
+  /** The plain https feed URL — what a desktop app's "add by URL" box wants. */
+  feedUrl: string;
+  handheld: boolean;
   qrOpen: boolean;
   onToggleQr: () => void;
   onOpen: () => void;
 }) {
   const { Icon } = app;
   const panelId = `${useId()}-qr`;
+  // Non-null only for apps with a desktop client — see APPS.
+  const desktopBox = app.desktopBox;
+  // Set once the member has used the desktop "open here" escape hatch, which
+  // is the only moment the paste instruction is worth the space it takes.
+  const [pasted, setPasted] = useState(false);
+
+  const icon = Icon ? (
+    <Icon className="size-7 shrink-0" />
+  ) : (
+    <span
+      aria-hidden="true"
+      className="flex size-7 shrink-0 items-center justify-center rounded-md bg-navy-900 font-display text-[13px] font-bold text-cyan ring-1 ring-rule"
+    >
+      {app.name.charAt(0)}
+    </span>
+  );
+  const name = (
+    <span className="min-w-0 flex-1 truncate text-left font-display font-bold tracking-[0.04em] text-fg-strong">
+      {app.name}
+    </span>
+  );
+  const rowClass =
+    "group flex min-w-0 flex-1 items-center gap-3 p-4 transition hover:bg-fg-strong/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan";
+
   return (
     <li className="-mt-px border border-rule">
       <div className="flex items-stretch">
-        {/* The whole row is the tap target — this is the mobile flow. */}
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          onClick={onOpen}
-          className="group flex min-w-0 flex-1 items-center gap-3 p-4 transition hover:bg-fg-strong/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
-        >
-          {Icon ? (
-            <Icon className="size-7 shrink-0" />
-          ) : (
-            <span
-              aria-hidden="true"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md bg-navy-900 font-display text-[13px] font-bold text-cyan ring-1 ring-rule"
-            >
-              {app.name.charAt(0)}
+        {handheld ? (
+          /* The phone: the whole row is the tap target, and the link lands in
+             the app with the feed already in it. */
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={onOpen}
+            className={rowClass}
+          >
+            {icon}
+            {name}
+            <span className="button-text shrink-0 text-fg-muted transition group-hover:text-cyan">
+              Open <span aria-hidden="true">→</span>
             </span>
-          )}
-          <span className="min-w-0 flex-1 truncate font-display font-bold tracking-[0.04em] text-fg-strong">
-            {app.name}
-          </span>
-          <span className="button-text shrink-0 text-fg-muted transition group-hover:text-cyan">
-            Open <span aria-hidden="true">→</span>
-          </span>
-        </a>
-        {/* Desktop only: a phone-only app can't be opened from here, and even
-            Apple's desktop app isn't where most people listen. */}
-        <button
-          type="button"
-          onClick={onToggleQr}
-          aria-expanded={qrOpen}
-          aria-controls={panelId}
-          aria-label={`${qrOpen ? "Hide" : "Show"} QR code for ${app.name}`}
-          className={`hidden shrink-0 items-center gap-2 border-l border-rule px-4 button-text transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan md:flex ${
-            qrOpen ? "bg-cyan/10 text-cyan" : "text-fg-muted"
-          }`}
-        >
-          <QrIcon />
-          Scan
-        </button>
+          </a>
+        ) : (
+          /* A computer: the QR is the action, because it moves the member to
+             the device the app actually runs on. */
+          <button
+            type="button"
+            onClick={onToggleQr}
+            aria-expanded={qrOpen}
+            aria-controls={panelId}
+            className={rowClass}
+          >
+            {icon}
+            {name}
+            <span
+              className={`button-text flex shrink-0 items-center gap-2 transition group-hover:text-cyan ${
+                qrOpen ? "text-cyan" : "text-fg-muted"
+              }`}
+            >
+              <QrIcon />
+              {qrOpen ? "Hide code" : "Scan"}
+            </span>
+          </button>
+        )}
+        {!handheld && desktopBox && feedUrl ? (
+          <a
+            href={url}
+            rel="noreferrer"
+            onClick={() => {
+              // The desktop app takes the FEED url, not the deep link — see the
+              // note on `desktopBox`. Copy it on the way out so the box the app
+              // opens is one paste from done. Same tab on purpose: a protocol
+              // link in a new tab leaves an orphan tab sitting on `podcast://`.
+              void navigator.clipboard?.writeText(feedUrl);
+              setPasted(true);
+              onOpen();
+            }}
+            className="flex shrink-0 items-center border-l border-rule px-4 button-text text-fg-muted transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
+          >
+            Open here
+          </a>
+        ) : null}
       </div>
+      {pasted && desktopBox ? (
+        <p
+          role="status"
+          className="border-t border-rule bg-navy-900/40 px-4 py-3 text-body-sm"
+        >
+          {app.name} opens its “{desktopBox}” box empty on a computer — your
+          feed URL is on the clipboard, so paste it in there.
+        </p>
+      ) : null}
       {qrOpen ? <QrPanel id={panelId} appName={app.name} url={url} /> : null}
     </li>
   );
@@ -354,7 +463,7 @@ function QrPanel({
   return (
     <div
       id={id}
-      className="hidden items-center gap-6 border-t border-rule bg-navy-900/40 p-5 md:flex"
+      className="flex items-center gap-6 border-t border-rule bg-navy-900/40 p-5"
     >
       <div className="size-32 shrink-0 bg-white p-2">
         <img
