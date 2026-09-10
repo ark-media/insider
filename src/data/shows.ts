@@ -102,12 +102,14 @@ export const shows: Show[] = [
     paid: false,
     listen: showListenLinks["ark-news-daily"],
   },
-  // PLACEHOLDER CONTENT. Chosen People Problems has no assets of its own yet, so
-  // it stands up on Ask a Jew's cover art, description, hosts, and listen links
-  // (Ava's call — "use Ask a Jew materials for now"). Every field below except
-  // `slug`, `route`, `title`, and `shortTitle` is Ask a Jew's and needs
-  // replacing. It is also absent from `schedule` below: we don't know when it
-  // drops, and a guess would put a wrong show in the masthead's next-drop strip.
+  // PARTLY PLACEHOLDER. The cover art is now the show's own (finalised art, added
+  // 2026-09-10), and the tagline/description/hosts match it. What is still Ask a
+  // Jew's: `listen` — every link in showListenLinks["chosen-people-problems"]
+  // still points at the Ask a Jew feed/channel — and `cadence`. The episode
+  // artwork and per-episode descriptions come from the podcast host at runtime,
+  // not from here, so those update when the host's do. It is also absent from
+  // `schedule` below: we don't know when it drops, and a guess would put a wrong
+  // show in the masthead's next-drop strip.
   {
     slug: "chosen-people-problems",
     route: "/podcasts/chosen-people-problems",

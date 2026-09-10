@@ -492,6 +492,50 @@ body {
     linear-gradient(180deg, #fdeee6 0%, #fbe6da 48%, #f8dccd 100%);
 }
 
+/* The Fold — the one backdrop in the family that is a supplied brand image
+   rather than hand-authored gradients (Ark's "The Fold Bg 01/02"). The sails in
+   the logo are amber over teal, and the artwork is the same gesture blown up,
+   so the Fold reads as its own product rather than another show wash.
+
+   The image's dark mass sits on the LEFT, which is where the hero puts its h1
+   and lede — so the copy lands on the quiet side and the bright streak falls
+   behind the app-badge column on the right. `background-position: right center`
+   keeps that relationship when `cover` crops on narrow viewports (a `center`
+   crop would walk the streak under the headline). The scrim on top is the
+   guardrail for the stacked mobile layout, where the lede does end up over the
+   brighter half. */
+.fold-bg {
+  background-image:
+    linear-gradient(90deg, rgba(7, 11, 34, 0.92) 0%, rgba(7, 11, 34, 0.55) 45%, rgba(7, 11, 34, 0.12) 100%),
+    url("/fold/hero-dark.jpg");
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: cover;
+  background-color: var(--color-navy-900);
+}
+[data-theme="light"] .fold-bg {
+  background-image:
+    linear-gradient(90deg, rgba(255, 253, 250, 0.88) 0%, rgba(255, 253, 250, 0.5) 45%, rgba(255, 253, 250, 0.1) 100%),
+    url("/fold/hero-light.jpg");
+}
+
+/* Below `lg` the hero stacks: the lede goes full-width and runs straight
+   through the bright streak the horizontal scrim was shaped to leave alone. Flatten
+   the scrim to an even veil at those widths — the artwork still reads, the copy
+   keeps its contrast. */
+@media (width < 64rem) {
+  .fold-bg {
+    background-image:
+      linear-gradient(90deg, rgba(7, 11, 34, 0.9) 0%, rgba(7, 11, 34, 0.82) 100%),
+      url("/fold/hero-dark.jpg");
+  }
+  [data-theme="light"] .fold-bg {
+    background-image:
+      linear-gradient(90deg, rgba(255, 253, 250, 0.86) 0%, rgba(255, 253, 250, 0.78) 100%),
+      url("/fold/hero-light.jpg");
+  }
+}
+
 /* Top fade for the bespoke show washes — let each colored wash emerge from the
    masthead's navy instead of butting against it with a hard seam. The overlay
    sits above the wash but behind the hero content (z-index/isolation), and melts
@@ -501,13 +545,15 @@ body {
 .and-bg,
 .cmb-bg,
 .icmb-bg,
-.fhs-bg {
+.fhs-bg,
+.fold-bg {
   isolation: isolate;
 }
 .and-bg::before,
 .cmb-bg::before,
 .icmb-bg::before,
-.fhs-bg::before {
+.fhs-bg::before,
+.fold-bg::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;

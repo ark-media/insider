@@ -16,6 +16,7 @@ import { isCircleMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { CommunityFeed } from "../components/community/CommunityFeed";
 import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
+import { FoldLogo } from "../components/FoldLogo";
 
 export const Route = createFileRoute("/fold")({
   component: CommunityPage,
@@ -125,9 +126,11 @@ function SubscriberCommunity() {
 
   return (
     <PageShell
+      brand={<FoldLogo className="h-9 sm:h-11" />}
       title="Real People, Real Conversations, Real Connection"
       lede="What's live, what's happening, and what the Fold is talking about right now. Jump in — every conversation continues in the app."
       aside={<CommunityAppLinks />}
+      heroClassName="fold-bg grain-overlay overflow-hidden"
     >
       {status === "error" ? (
         <section>
@@ -168,9 +171,11 @@ function SubscriberCommunity() {
 function MarketingShowcase() {
   return (
     <PageShell
+      brand={<FoldLogo className="h-9 sm:h-11" />}
       title="Real People, Real Conversations, Real Connection"
       lede="The Fold is where Ark listeners become part of the conversation. Join a private, thoughtful community for serious discussion, meaningful connection, and deeper engagement with the questions shaping Jewish life, Israel, and the world."
       aside={<CommunityAppLinks />}
+      heroClassName="fold-bg grain-overlay overflow-hidden"
     >
       <section>
         <div className="page-gutter flex flex-col gap-12 py-12 sm:py-16">

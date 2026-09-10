@@ -36,6 +36,8 @@ import {
   posFromAmount,
   snapStep,
 } from "../lib/pwycSlider";
+import { ProductMarks } from "./FoldLogo";
+import type { ProductMark } from "../data/pricingTiers";
 
 type Plan = "monthly" | "yearly";
 type Tier = "ark-plus" | "circle" | "bundle";
@@ -55,6 +57,15 @@ const TIER_LABEL: Record<Tier, string> = {
   "ark-plus": "Ark+ Membership",
   circle: "The Fold",
   bundle: "Ark+ & The Fold",
+};
+
+// The brand marks beside that label, mirroring the tier cards on /plus so the
+// modal reads as a continuation of the card the buyer just clicked. Same grant
+// as TIERS[].marks in data/pricingTiers.ts.
+const TIER_MARKS: Record<Tier, ProductMark[]> = {
+  "ark-plus": ["ark-plus"],
+  circle: ["fold"],
+  bundle: ["ark-plus", "fold"],
 };
 
 type Step =
@@ -432,8 +443,11 @@ export function CheckoutModal({
           Without the padding this line runs underneath it on a phone, where
           the longest tier label and the period barely fit the width as it is —
           it wraps to two lines instead, which is the harmless outcome. */}
-      <p id="checkout-desc" className="eyebrow pr-10">
-        {TIER_LABEL[tier]} · {plan === "yearly" ? "Annual" : "Monthly"}
+      <p id="checkout-desc" className="flex items-center gap-2 eyebrow pr-10">
+        <ProductMarks marks={TIER_MARKS[tier]} size="sm" />
+        <span>
+          {TIER_LABEL[tier]} · {plan === "yearly" ? "Annual" : "Monthly"}
+        </span>
       </p>
 
       {step.kind === "email" ? (

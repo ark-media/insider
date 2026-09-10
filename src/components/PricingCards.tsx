@@ -3,6 +3,7 @@ import { BillingPeriodToggle } from "./BillingPeriodToggle";
 import { CheckoutModal } from "./CheckoutModal";
 import { ContentError } from "./ContentError";
 import { PriceSkeleton } from "./PriceSkeleton";
+import { ProductMarks } from "./FoldLogo";
 import { trackEvent } from "../lib/analytics";
 import { TIERS, type Tier, type TierMeta } from "../data/pricingTiers";
 import { type TierAmounts, formatMinor, toMajor } from "../lib/currency";
@@ -76,8 +77,11 @@ function PriceCard({
         </span>
       ) : null}
 
-      <div className="text-h4 font-display font-bold text-fg-strong">
-        {meta.label}
+      <div className="flex items-center gap-3">
+        <ProductMarks marks={meta.marks} />
+        <div className="text-h4 font-display font-bold text-fg-strong">
+          {meta.label}
+        </div>
       </div>
 
       <div className="mt-5 border-t border-rule pt-5">

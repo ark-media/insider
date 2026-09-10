@@ -11,7 +11,17 @@ export type TierMeta = {
   blurb: string;
   includes: string[];
   featured?: boolean;
+  /**
+   * Which product marks head the card, in order. This is the *grant*, not the
+   * label — which is why the Bundle carries both: two marks say "you get both
+   * products" faster than the label does. Rendered decoratively (the label
+   * beside them already names the tier).
+   */
+  marks: ProductMark[];
 };
+
+/** The two things a membership can grant, each with its own brand mark. */
+export type ProductMark = "ark-plus" | "fold";
 
 // The three SKUs, in card order: Ark+, then the Bundle (featured, center), then
 // the Fold. The Fold is NOT part of Ark+ — it's its own tier, and the Bundle
@@ -20,6 +30,7 @@ export const TIERS: TierMeta[] = [
   {
     key: "ark-plus",
     label: "Ark+",
+    marks: ["ark-plus"],
     blurb:
       "Every Ark Media podcast, ad-free, plus the members-only newsletters.",
     includes: [
@@ -31,6 +42,7 @@ export const TIERS: TierMeta[] = [
   {
     key: "bundle",
     label: "Ark+ & The Fold",
+    marks: ["ark-plus", "fold"],
     blurb: "Both — the private feed and the Fold, one membership.",
     featured: true,
     includes: [
@@ -44,6 +56,7 @@ export const TIERS: TierMeta[] = [
   {
     key: "circle",
     label: "The Fold",
+    marks: ["fold"],
     blurb:
       "The Fold, Ark Media's members' app — conversations, member events, and Dan's book club.",
     includes: [
