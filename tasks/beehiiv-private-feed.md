@@ -824,5 +824,10 @@ the false marker writes `pending_at`, and the reminder cron reads
 - Disable the Plus tier's two Beehiiv-native prices (§4) — a Beehiiv-direct buyer
   would otherwise get the feed with no Neon row and be revoked nightly.
 - The §5 consolidation ops (move posts/subscribers, `mail.ark-plus.xyz`).
-- Test subscribers left in Beehiiv: `hannah.waxman8+test@`, `+mint0910@`.
+- ~~Test subscribers left in Beehiiv: `hannah.waxman8+test@`, `+mint0910@`.~~
+  **DELETED 2026-09-11** (both 204; neither had a `beehiiv_subscription`,
+  `beehiiv_feed_activations` or `feed_reminder_sends` row, so nothing was
+  orphaned). Ark Media is down to four subscribers, and the real account's
+  private feed still returns 200. One A/B control sub remains on the abandoned
+  Call me Back publication (`sub_aecbaee8…`).
 - Ask Beehiiv what `redirect_path` does on a cancelled Spotify consent (above).
