@@ -12,7 +12,7 @@
 //   1. RANK_1     — the obvious phrasings land on the right answer, first.
 //   2. TOP_3      — harder paraphrases at least surface it.
 //   3. UNHELPFUL  — the ones that MUST NOT produce a confident answer. This is
-//                   the group that matters most. On a 33-document corpus the
+//                   the group that matters most. On a 32-document corpus the
 //                   dominant failure is not a mis-ranked answer, it is a
 //                   confident answer to a question the corpus cannot address.
 
@@ -76,8 +76,6 @@ const RANK_1: [query: string, faqKey: string][] = [
 
   // Benefits
   ['who gets the paid newsletter', 'paid-newsletter-who'],
-  ['youtube', 'youtube-members-only'],
-  ['members only youtube content', 'youtube-members-only'],
   ['can I share with my wife', 'family-sharing'],
   ['can my husband use it too', 'family-sharing'],
   ['is the community app included', 'community-app-included'],
@@ -262,7 +260,7 @@ describe('the curated topic table stays wired to the corpus', () => {
     phrase.trim().split(/\s+/).length > 1 && tokenize(phrase).length === 1
 
   test('no alias phrase collapses onto a term the corpus uses everywhere', () => {
-    // A third of the corpus. `subscribe` sits at 32/33, which is what made
+    // A third of the corpus. `subscribe` sits at 31/32, which is what made
     // "not subscribed" match everything; nothing else today exceeds 5.
     const ubiquitous = index.size / 3
     const offenders = supportAliases.flatMap((alias) =>

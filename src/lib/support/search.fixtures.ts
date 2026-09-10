@@ -1,7 +1,7 @@
 // The live FAQ corpus, parsed out of the migrations at test time.
 //
 // Test-only (imported by search.test.ts, never by the app). Parsed rather than
-// transcribed so there is no second copy of 33 questions to drift: if someone
+// transcribed so there is no second copy of 32 questions to drift: if someone
 // lands a new content migration, these fixtures follow it and the golden set
 // fails loudly instead of quietly testing yesterday's corpus.
 //

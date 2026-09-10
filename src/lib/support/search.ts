@@ -5,12 +5,12 @@
 // widget or its curated content.
 //
 // WHY BM25 AND NOT WEIGHTED OVERLAP
-// The usual instinct at N=33 is "IDF is noisy on a tiny corpus, just count
+// The usual instinct at N=32 is "IDF is noisy on a tiny corpus, just count
 // overlapping words". That is exactly backwards here. This corpus is topically
 // homogeneous — every document is about subscriptions, Apple, Spotify, feeds
-// and billing, and `subscription` alone appears in 28 of the 33. Unweighted
+// and billing, and `subscribe` alone appears in 31 of the 32. Unweighted
 // overlap therefore makes almost every query match almost every document. IDF
-// computed over these 33 documents is not an approximation of a language model;
+// computed over these 32 documents is not an approximation of a language model;
 // it is a direct measurement of which of the words you typed actually narrow
 // the corpus down. Per-field length normalisation earns its place for the same
 // reason: answers run from ~12 to ~120 words, and without it the three longest
@@ -237,11 +237,11 @@ export type UnanswerableEntry = { phrases: string[]; intent: string }
  * This is the single highest-value piece of the whole design. On a corpus this
  * small the dominant failure is not "the right answer ranked second" — it is
  * confidently answering a question that has no answer here. Measured against
- * the 33 seeded FAQs, the words refund, receipt, invoice, trial, password,
- * promo, coupon, gift and redeem appear ZERO times, yet members ask all of
- * them. Left to the ranker, "how do I get a refund" lands on the cancellation
- * FAQ (wrong, and expensive) and "discount code" lands on the annual-discount
- * FAQ. Ranking cannot fix that; this list can.
+ * the seeded FAQs, the words refund, receipt, invoice, trial, promo, coupon,
+ * gift and redeem appear ZERO times, yet members ask all of them. Left to the
+ * ranker, "how do I get a refund" lands on the cancellation FAQ (wrong, and
+ * expensive) and "discount code" lands on the annual-discount FAQ. Ranking
+ * cannot fix that; this list can.
  */
 function matchUnanswerable(
   query: string,
@@ -275,7 +275,7 @@ function matchUnanswerable(
  * THE COST, which is paid by the curated tables and not by this function:
  * a phrase whose only content word is common degenerates into a single-token
  * matcher that no longer means what it says. "not subscribed" became
- * " subscribe " — a term in 32 of the 33 documents — and fired its alias on
+ * " subscribe " — a term in 31 of the 32 documents — and fired its alias on
  * nearly every query in the widget, injecting `applepodcasts` into all of them.
  * Two tests in ./search.test.ts hold that line, and both tables carry a note
  * where a phrase was dropped for it. Adding a phrase here is adding a matcher

@@ -1,10 +1,10 @@
 // Bridges between the words members type and the words the FAQ corpus uses.
 //
 // Every entry here exists because of a measured gap, not a guess. Counted over
-// the 33 seeded FAQs, these terms appear ZERO times anywhere in the corpus:
+// the 32 seeded FAQs, these terms appear ZERO times anywhere in the corpus:
 //
-//   refund · receipt · invoice · trial · password · promo · coupon · gift ·
-//   redeem · unsubscribe · iphone · ios · android · circle · ads
+//   refund · receipt · invoice · trial · promo · coupon · gift · redeem ·
+//   unsubscribe · iphone · ios · android · circle · ads
 //
 // ...and members ask about every one of them. `ads` is the sharpest case: the
 // corpus only ever writes the hyphenated adjective `ad-free`, so "I'm still
@@ -59,9 +59,12 @@ export const supportAliases: Alias[] = [
     intent: "pricing",
   },
 
-  // --- Sign-in. `password` appears nowhere in all 33 documents, and `locked`
-  //     appears once — in the Spotify payment answer — so "locked out" lands
-  //     on Spotify without this.
+  // --- Sign-in. `locked` appears once — in the Spotify payment answer — so
+  //     "locked out" lands on Spotify without this. `password` used to be
+  //     absent too; migration 0022 put it in the Fold access answer ("either
+  //     Continue with Google or your email and password"), which is the WRONG
+  //     answer to "I forgot my password", so the binding matters more now, not
+  //     less.
   {
     phrases: [
       "cant log in", "can not log in", "cannot log in", "cant sign in", "cant login",
@@ -148,6 +151,21 @@ export const supportAliases: Alias[] = [
     expand: ["fold", "included"],
     intent: "community-access",
     faqKey: "community-app-included",
+  },
+  // The what-does-it-include answer has the same problem, one refresh later:
+  // 0022 reworded its question to "What does a subscription to The Fold
+  // include?", so the natural "what does a fold subscription include" no longer
+  // matches it verbatim and the Ark+ includes answer takes the top slot. Bind
+  // the phrasings members actually use — including the legacy "community" ones,
+  // which have nothing left in the corpus to match.
+  {
+    phrases: [
+      "fold subscription", "a fold subscription", "community subscription",
+      "what does the fold include", "what does the fold get me",
+    ],
+    expand: ["subscription to the fold", "fold include"],
+    intent: "community-access",
+    faqKey: "plan-community-includes",
   },
 
   // --- Other podcast apps and devices.
@@ -248,7 +266,7 @@ export const supportAliases: Alias[] = [
 /**
  * Checked BEFORE ranking; a hit skips search entirely and escalates.
  *
- * This is the highest-value list in the widget. On a 33-document corpus the
+ * This is the highest-value list in the widget. On a 32-document corpus the
  * dominant failure mode is not a mis-ranked answer — it is a confident answer
  * to a question the corpus does not cover. It doubles as the content backlog:
  * anything here that starts getting asked a lot is an FAQ worth writing.
