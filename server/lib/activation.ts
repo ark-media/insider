@@ -1,18 +1,18 @@
-// SC subscription / gift activation.
+// Membership / gift activation.
 //
-// Two callers can race for the same Stripe sub: the webhook (eventually
+// The arkPlus axis is granted by applying Beehiiv's premium "Plus" tier to the
+// member's subscriber record — Beehiiv issues the private podcast feed off that
+// tier. It replaced a Supporting Cast subscription, which is why the elaborate
+// create-dedup that used to live here is gone: SC minted a NEW subscription per
+// POST and needed three layers of guard against a duplicate, while the Beehiiv
+// grant is idempotent on the member's email (look up → create or update), so
+// two callers racing the same checkout converge on one record.
+//
+//
+// Two callers do still race for the same Stripe sub: the webhook (eventually
 // consistent) and /api/auth/checkout-session (called by the SPA right after
-// confirmPayment). Three layers of dedup keep a duplicate SC subscription
-// from being created:
-//
-//   1. Per-instance: `provisionInFlight` — the second caller in the same
-//      process awaits the first's promise and re-reads Stripe metadata.
-//   2. Cross-instance metadata re-check: we re-read Stripe between SC user
-//      resolution and SC subscription POST, in case another instance won
-//      while we were mid-flight.
-//   3. SC-side idempotency: an `Idempotency-Key` derived from the Stripe sub
-//      / payment-intent id is sent on POST /subscriptions, so an SC API
-//      that honors the header will return the existing record on a retry.
+// confirmPayment). `provisionInFlight` collapses them within one process; the
+// Stripe metadata markers collapse them across instances.
 
 import type Stripe from 'stripe'
 import {
@@ -39,17 +39,18 @@ import {
 } from './welcome-email.js'
 import { formatMinorUnits } from './pricing.js'
 import { EMAIL_TIME_ZONE, formatTimestampInZone } from '../../shared/format-date.js'
-import { createScClient, findOrCreateScUser } from './sc-client.js'
 import { redactEmail } from '../../shared/validation.js'
 import { splitFullName } from '../../shared/profile-name.js'
 
 type Env = Record<string, string>
 type Plan = 'monthly' | 'yearly'
 
-// Gift purchases — one-time Stripe charge, fixed-term SC subscription
-// stamped with ends_at. Term-length policy lives here so the activator owns it;
-// the charge AMOUNT now comes from the Stripe catalog gift Price
-// (server/lib/pricing.ts resolveGiftPrice), not a hardcoded USD table.
+// Gift purchases — a one-time Stripe charge granting a fixed term. Term-length
+// policy lives here so the activator owns it; the charge AMOUNT comes from the
+// Stripe catalog gift Price (server/lib/pricing.ts resolveGiftPrice), not a
+// hardcoded USD table. The term itself is enforced by us (the Neon row's
+// per-axis expiry + the reconciler), because neither Beehiiv nor Circle holds
+// an end date.
 export type GiftTerm = '6mo' | '1yr'
 
 export const GIFT_TERM_DAYS: Record<GiftTerm, number> = {
@@ -161,25 +162,26 @@ function billingFactsFor(sub: Stripe.Subscription): {
 }
 
 // What a paid-tier activation resolved to. The webhook (task 9) reads this to
-// write the Neon membership row: `auth0Sub` keys it, `scUserId` is the arkPlus
-// join key, `plan`/`tier` describe the SKU. Any field is null when its axis
-// wasn't granted or its provisioning soft-failed (Auth0 down, no SC feed for a
-// Circle-only tier) — the caller must not write a row without an `auth0Sub`.
+// write the Neon membership row: `auth0Sub` keys it, `plan`/`tier` describe the
+// SKU. `auth0Sub` is null when the login provisioning soft-failed (Auth0 down)
+// — the caller must not write a row without one.
+//
+// No arkPlus id comes back: the Beehiiv grant is keyed on the member's email,
+// which the row already carries by way of Auth0, so there is nothing opaque to
+// hand on.
 type MembershipProvisionResult = {
   email: string
   name?: string
   tier: Tier
   plan: Plan
   auth0Sub: string | null
-  scUserId: number | null
-  scSubscriptionId: number | null
 }
 
 export type Activator = {
-  // Tier-aware provisioning: Auth0 login for every paid tier, SC only when the
-  // tier grants arkPlus, Circle only when it grants circle. Returns the ids the
-  // webhook needs for the membership row. Idempotent per axis (keyed on sub
-  // metadata markers).
+  // Tier-aware provisioning: Auth0 login for every paid tier, the Beehiiv
+  // premium tier only when the tier grants arkPlus, Circle only when it grants
+  // circle. Returns what the webhook needs for the membership row. Idempotent
+  // per axis (keyed on sub metadata markers).
   activateMembershipForStripeSub: (
     sub: Stripe.Subscription,
     tier: Tier,
@@ -194,65 +196,24 @@ export type Activator = {
     name?: string
     auth0Sub: string | null
     term: GiftTerm
-    // The gift's redemption token — the SC idempotency scope. Keying on the gift
-    // (not recipient+term) dedups a RETRY of the same redemption while letting a
-    // second, distinct gift mint its own SC subscription instead of silently
-    // collapsing into the first (which left its ends_at un-extended).
+    // The gift's redemption token. Retained for logging and for the caller's
+    // own idempotency; Beehiiv's grant is a boolean tier, so unlike the SC
+    // subscription it replaced there is nothing here to accidentally collapse
+    // two distinct gifts into.
     giftToken: string
     // Epoch ms each axis's term is measured from — null means "don't grant this
     // axis". The redeem flow passes an existing unexpired gift expiry so a
-    // stacked same-axis gift extends rather than resets. The SC gift sub's
-    // ends_at (arkPlus) and the returned per-axis endsAt both use these.
+    // stacked same-axis gift extends rather than resets; the returned per-axis
+    // endsAt is measured from it.
     arkPlusFromMs: number | null
     circleFromMs: number | null
   }) => Promise<{
-    scUserId: number | null
-    scSubscriptionId: number | null
     arkPlusEndsAt: string | null
     circleEndsAt: string | null
   }>
 }
 
-// SC rejects a second active subscription per user with HTTP 409. We translate
-// that to this typed error so callers (the post-checkout route + the webhook)
-// can react differently from a generic provisioning failure.
-export class AlreadySubscribedError extends Error {
-  readonly kind = 'already_subscribed' as const
-  readonly email: string
-  constructor(email: string) {
-    super(`User ${email} already has an active subscription on this network.`)
-    this.name = 'AlreadySubscribedError'
-    this.email = email
-  }
-}
-
 export function createActivator(env: Env, stripe: Stripe | null): Activator {
-  const resolveScPriceId = (plan: 'monthly' | 'yearly'): string => {
-    const id =
-      plan === 'monthly'
-        ? env.SC_SUBSCRIPTION_PRICE_ID_MONTHLY
-        : env.SC_SUBSCRIPTION_PRICE_ID_YEARLY
-    if (!id) {
-      throw new Error(
-        `SC_SUBSCRIPTION_PRICE_ID_${plan.toUpperCase()} must be set in .env`,
-      )
-    }
-    return id
-  }
-
-  const resolveScGiftPriceId = (term: GiftTerm): string => {
-    const id =
-      term === '6mo'
-        ? env.SC_SUBSCRIPTION_PRICE_ID_GIFT_6MO
-        : env.SC_SUBSCRIPTION_PRICE_ID_GIFT_1YR
-    const envKey =
-      term === '6mo'
-        ? 'SC_SUBSCRIPTION_PRICE_ID_GIFT_6MO'
-        : 'SC_SUBSCRIPTION_PRICE_ID_GIFT_1YR'
-    if (!id) throw new Error(`${envKey} must be set in .env`)
-    return id
-  }
-
   const provisionInFlight = new Map<string, Promise<MembershipProvisionResult>>()
 
   // Create the Auth0 login for a paid member (any tier), suppressing Auth0's own
@@ -287,46 +248,19 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     return { userId, created: auth0Result?.created ?? false, passwordSetupUrl }
   }
 
-  // Provision the Supporting Cast feed (the arkPlus axis). Preserves the
-  // cross-instance race guard: between the caller's metadata read and here, the
-  // SC user lookup adds network time in which another instance (webhook racing
-  // /api/auth/checkout-session) may have finished — re-check the sub before
-  // POSTing a fresh SC subscription. Returns the SC ids for the membership row.
-  const provisionSc = async (
-    subId: string,
-    email: string,
-    name: string | undefined,
-    plan: Plan,
-  ): Promise<{ scUserId: number; scSubscriptionId: number }> => {
-    const scPriceId = resolveScPriceId(plan)
-    const sc = createScClient(env)
-    const user = await findOrCreateScUser(sc, email, name)
-
-    const recheck = await stripe!.subscriptions.retrieve(subId)
-    if (recheck.metadata?.sc_subscription_id) {
-      return {
-        scUserId: recheck.metadata.sc_user_id
-          ? Number(recheck.metadata.sc_user_id)
-          : user.id,
-        scSubscriptionId: Number(recheck.metadata.sc_subscription_id),
-      }
-    }
-
-    let created: { subscription: { id: number } }
-    try {
-      created = await sc.call<{ subscription: { id: number } }>(
-        'POST',
-        '/subscriptions',
-        { user_id: user.id, subscription_price_id: Number(scPriceId) },
-        { idempotencyKey: `stripe_sub_${subId}` },
-      )
-    } catch (err) {
-      const e = err as { status?: number }
-      if (e?.status === 409) throw new AlreadySubscribedError(email)
-      throw err
-    }
-    return { scUserId: user.id, scSubscriptionId: created.subscription.id }
-  }
+  // Provision the arkPlus axis: create (or upgrade) the member's Beehiiv
+  // subscriber and put them on the premium "Plus" tier, which is what entitles
+  // them to the private podcast feed and the members' letter.
+  //
+  // Answers whether the grant landed. `false` means Beehiiv isn't configured in
+  // this environment (preview, tests) — not that it failed, which throws and
+  // leaves the marker unstamped so a webhook redelivery retries. Either way the
+  // caller must not claim the axis on a `false`.
+  const provisionArkPlus = async (email: string): Promise<boolean> =>
+    ensureSubscribedWithPremium(
+      { env, sql: env.DATABASE_URL ? getDb(env) : null },
+      email,
+    )
 
   const doActivateMembership = async (
     subId: string,
@@ -350,30 +284,25 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
 
     // First activation = no axis has a provisioning marker yet. Gates the single
-    // welcome email + Beehiiv push so a later webhook delivery (completing a
-    // partially-failed axis) doesn't re-send them.
+    // welcome email so a later webhook delivery (completing a partially-failed
+    // axis) doesn't re-send it.
     const wasUnprovisioned =
-      !fresh.metadata?.sc_subscription_id &&
+      fresh.metadata?.beehiiv_premium !== 'true' &&
       !fresh.metadata?.auth0_user_id &&
       fresh.metadata?.circle_provisioned !== 'true'
 
-    let scUserId = fresh.metadata?.sc_user_id ? Number(fresh.metadata.sc_user_id) : null
-    let scSubscriptionId = fresh.metadata?.sc_subscription_id
-      ? Number(fresh.metadata.sc_subscription_id)
-      : null
-
-    // SC (arkPlus) first, so a later Auth0/Circle outage can never block feed
-    // access — the paid product (§3 "the ordering trap").
+    // Beehiiv premium (arkPlus) first, so a later Auth0/Circle outage can never
+    // block feed access — the paid product (§3 "the ordering trap"). It holds
+    // the slot the SC subscription used to.
     // `addingArkPlus` records that THIS call is what grants the axis, which is
     // what separates an upgrade from a redelivery; the axis markers are stamped
     // below, so a later fan-out sees the axis already provisioned and reports
     // false. Paired with the success check at the send site, the axis-added
     // email fires only on the transition into the entitlement.
-    const addingArkPlus = entitlements.arkPlus && scSubscriptionId == null
+    let arkPlusGranted = fresh.metadata?.beehiiv_premium === 'true'
+    const addingArkPlus = entitlements.arkPlus && !arkPlusGranted
     if (addingArkPlus) {
-      const provisioned = await provisionSc(subId, email, name, plan)
-      scUserId = provisioned.scUserId
-      scSubscriptionId = provisioned.scSubscriptionId
+      arkPlusGranted = await provisionArkPlus(email)
     }
 
     // Auth0 login for every paid tier. Reuse an already-stamped login.
@@ -407,20 +336,20 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     // stamp is now written on the upgrade path too and would otherwise erase
     // the very difference the send is gated on.
     const gainedNewAxis = gainedAxis(fresh.metadata?.welcomed_axes, {
-      arkPlus: addingArkPlus && scSubscriptionId != null,
+      arkPlus: addingArkPlus && arkPlusGranted,
       circle: addingCircle && circleProvisioned,
     })
     const welcomedAxes = welcomedAxesValue(fresh.metadata?.welcomed_axes, entitlements)
 
-    // Stamp resolved ids + idempotency markers back onto the sub. The webhook
-    // reads sc_user_id / auth0_user_id back off this for the membership row.
+    // Stamp the idempotency markers back onto the sub. The webhook reads
+    // auth0_user_id back off this for the membership row, and `beehiiv_premium`
+    // is what stops a redelivery re-granting (and re-announcing) the arkPlus
+    // axis. Stamped only when the grant actually landed, so a Beehiiv outage
+    // leaves the sub unmarked and the next delivery retries it.
     await stripe!.subscriptions.update(fresh.id, {
       metadata: {
         ...fresh.metadata,
-        ...(scUserId != null ? { sc_user_id: String(scUserId) } : {}),
-        ...(scSubscriptionId != null
-          ? { sc_subscription_id: String(scSubscriptionId) }
-          : {}),
+        ...(arkPlusGranted ? { beehiiv_premium: 'true' } : {}),
         ...(auth0Sub ? { auth0_user_id: auth0Sub } : {}),
         ...(circleProvisioned ? { circle_provisioned: 'true' } : {}),
         // Both send paths record what they announced. Only the first activation
@@ -462,15 +391,6 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       })
       if (!sent) {
         console.error('[email] member welcome email did not send:', redactEmail(email))
-      }
-
-      // Beehiiv premium letter gates on arkPlus (task 11), so Circle-only does
-      // not get it. Soft-fail: entitlement already landed; the reconciler /
-      // next /account/newsletters edit repairs drift.
-      if (entitlements.arkPlus && env.DATABASE_URL) {
-        await tryPush('ensure premium (sub)', () =>
-          ensureSubscribedWithPremium({ env, sql: getDb(env) }, email),
-        )
       }
 
       // Carry the name the buyer entered at checkout onto their Beehiiv record
@@ -524,17 +444,9 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       if (!sent) {
         console.error('[email] axis-added email did not send:', redactEmail(email))
       }
-
-      // The premium letter gates on the arkPlus axis, so a Circle-only member
-      // who just added Ark+ needs the same push the first-time path does.
-      if (addingArkPlus && entitlements.arkPlus && env.DATABASE_URL) {
-        await tryPush('ensure premium (axis added)', () =>
-          ensureSubscribedWithPremium({ env, sql: getDb(env) }, email),
-        )
-      }
     }
 
-    return { email, name, tier, plan, auth0Sub, scUserId, scSubscriptionId }
+    return { email, name, tier, plan, auth0Sub }
   }
 
   const activateMembershipForStripeSub = async (
@@ -542,20 +454,13 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     tier: Tier,
   ): Promise<MembershipProvisionResult> => {
     if (!stripe) {
-      return {
-        email: '',
-        tier,
-        plan: 'yearly',
-        auth0Sub: null,
-        scUserId: null,
-        scSubscriptionId: null,
-      }
+      return { email: '', tier, plan: 'yearly', auth0Sub: null }
     }
 
     // Fast path: every external grant this tier needs is already marked on the
     // sub. Avoids the retrieve/retrieve/update round-trips on the many
     // metadata-only customer.subscription.updated events Stripe fires. Keyed on
-    // the external-grant markers (sc_subscription_id / circle_provisioned), not
+    // the external-grant markers (beehiiv_premium / circle_provisioned), not
     // auth0_user_id — the login is best-effort and stamped alongside them on the
     // first activation, so requiring it here would re-provision legacy subs that
     // predate the stamp.
@@ -563,7 +468,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     const m = sub.metadata ?? {}
     const fullyProvisioned =
       (need.arkPlus || need.circle) &&
-      (!need.arkPlus || Boolean(m.sc_subscription_id)) &&
+      (!need.arkPlus || m.beehiiv_premium === 'true') &&
       (!need.circle || m.circle_provisioned === 'true')
     if (fullyProvisioned) {
       return {
@@ -571,8 +476,6 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         tier,
         plan: (m.plan as Plan | undefined) ?? 'yearly',
         auth0Sub: m.auth0_user_id ?? null,
-        scUserId: m.sc_user_id ? Number(m.sc_user_id) : null,
-        scSubscriptionId: m.sc_subscription_id ? Number(m.sc_subscription_id) : null,
       }
     }
 
@@ -597,41 +500,29 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     arkPlusFromMs: number | null
     circleFromMs: number | null
   }): Promise<{
-    scUserId: number | null
-    scSubscriptionId: number | null
     arkPlusEndsAt: string | null
     circleEndsAt: string | null
   }> => {
     const termMs = GIFT_TERM_DAYS[opts.term] * 24 * 60 * 60 * 1000
-    let scUserId: number | null = null
-    let scSubscriptionId: number | null = null
     let arkPlusEndsAt: string | null = null
     let circleEndsAt: string | null = null
 
     if (opts.arkPlusFromMs != null) {
       arkPlusEndsAt = new Date(opts.arkPlusFromMs + termMs).toISOString()
-      const sc = createScClient(env)
-      const user = await findOrCreateScUser(sc, opts.email, opts.name)
-      const scPriceId = resolveScGiftPriceId(opts.term)
-      // Idempotency key ties the SC gift sub to THIS gift (its redemption token),
-      // so a redeem retry returns the existing record while a second, distinct
-      // gift creates its own fixed-term subscription — feed access is the union
-      // of their ends_at. (The old recipient+term key silently collapsed two
-      // gifts into one, leaving the stacked ends_at un-extended on SC.)
-      const created = await sc.call<{ subscription: { id: number } }>(
-        'POST',
-        '/subscriptions',
-        { user_id: user.id, subscription_price_id: Number(scPriceId), ends_at: arkPlusEndsAt },
-        { idempotencyKey: `gift_redeem_${opts.giftToken}` },
-      )
-      scUserId = user.id
-      scSubscriptionId = created.subscription.id
+      // ⚠ The grant carries NO end date upstream. Supporting Cast held the gift
+      // term itself (a fixed-term subscription with `ends_at`, which SC expired
+      // on its own); Beehiiv's premium tier is a boolean with no term, so the
+      // ONLY thing that ever ends a gifted feed is `ark_plus_gift_expires_at` on
+      // the Neon row plus the reconciler's downgrade pass. If that pass is
+      // disabled or silently failing, expired recipients keep their feed
+      // indefinitely and nothing surfaces it.
+      await provisionArkPlus(opts.email)
     }
     if (opts.circleFromMs != null) {
       circleEndsAt = new Date(opts.circleFromMs + termMs).toISOString()
       await provisionCircleMember(env, opts.email, opts.name, opts.auth0Sub)
     }
-    return { scUserId, scSubscriptionId, arkPlusEndsAt, circleEndsAt }
+    return { arkPlusEndsAt, circleEndsAt }
   }
 
   return {

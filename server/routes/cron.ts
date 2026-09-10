@@ -10,13 +10,13 @@ import { reconcileEntitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
 import { getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
+import { premiumPodcastIdFromEnv } from '../lib/beehiiv-feeds.js'
 import {
   GIFT_EXPIRY_REMINDER_DAYS,
   runGiftExpiryReminders,
 } from '../lib/gift-expiry-reminders.js'
 import { getAuth0NameProfile } from '../lib/auth0-user.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
-import { createScV1Client } from '../lib/sc-client.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import type { IncomingMessage } from 'node:http'
 
@@ -31,7 +31,7 @@ function cronAuthorized(req: IncomingMessage, cronSecret: string): boolean {
 // How long a webhook-dedup marker outlives its delivery. The `*_webhook_events`
 // tables hold one (id, type, received_at) row per event purely to reject a
 // provider's retried delivery; once the retry window has long passed the marker
-// is dead weight. 90 days dwarfs any Stripe/SC retry window, so pruning past it
+// is dead weight. 90 days dwarfs any Stripe/Beehiiv retry window, so pruning past it
 // can never drop a marker that could still match a live retry.
 const WEBHOOK_EVENT_RETENTION_DAYS = 90
 
@@ -57,16 +57,17 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         const summary = await reconcileEntitlements(env, stripe)
         json(200, {
           scanned: summary.scanned,
-          scRemoved: summary.scRemoved,
+          arkPlusRemoved: summary.arkPlusRemoved,
           circleRemoved: summary.circleRemoved,
           errors: summary.errors,
         })
       },
     }),
     defineRoute({
-      // Nudge members who joined but haven't finished setting up their private
-      // feeds. Scans the SC roster, sends a one-time Resend reminder to the
-      // incomplete ones, and records each send so nobody is nagged twice.
+      // Nudge members who started paying but haven't set up their private
+      // feed. Scans the premium readers in Neon, sends a one-time Resend
+      // reminder to the ones who never activated, and records each send so
+      // nobody is nagged twice.
       path: '/api/cron/feed-setup-reminders',
       method: ['POST', 'GET'],
       handler: async (req, _res, json) => {
@@ -81,14 +82,16 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
 
         const sql = getDb(env)
         try {
+          const showId = premiumPodcastIdFromEnv(env)
+          if (!showId) return json(500, { error: 'not_configured' })
           const config = await getReminderConfig(sql, env)
           const summary = await runFeedSetupReminders({
             env,
             sql,
-            sc: createScV1Client(env),
             appBaseUrl,
             config,
             nowMs: Date.now(),
+            showId,
           })
           json(200, summary)
         } catch (err) {
@@ -169,8 +172,8 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             delete from stripe_webhook_events
             where received_at < now() - make_interval(days => ${WEBHOOK_EVENT_RETENTION_DAYS})
             returning id`
-          const scDeleted = await sql`
-            delete from sc_webhook_events
+          const beehiivDeleted = await sql`
+            delete from beehiiv_webhook_events
             where received_at < now() - make_interval(days => ${WEBHOOK_EVENT_RETENTION_DAYS})
             returning id`
           const supportDeleted = await sql`
@@ -179,7 +182,7 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             returning id`
           json(200, {
             stripe: stripeDeleted.length,
-            sc: scDeleted.length,
+            beehiiv: beehiivDeleted.length,
             support: supportDeleted.length,
           })
         } catch (err) {

@@ -21,17 +21,16 @@
 import type Stripe from 'stripe'
 import { redactEmail } from '../shared/validation.js'
 import { getManagementClient } from './auth0.js'
-import { downgradeToFree as beehiivDowngradeToFree, tryPush } from './lib/beehiiv-sync.js'
+import {
+  downgradeToFree as beehiivDowngradeToFree,
+  loadPremiumSubscriberEmails,
+  tryPush,
+} from './lib/beehiiv-sync.js'
 import { getDb } from './lib/db.js'
 import {
   deleteExpiredGiftMemberships,
   loadAllMemberships as loadAllNeonMemberships,
 } from './lib/membership.js'
-import {
-  createScClient,
-  createScV1Client,
-  loadAllMemberships as loadAllScMemberships,
-} from './lib/sc-client.js'
 import { fetchWithTimeout } from "./lib/http.js"
 
 type Env = Record<string, string>
@@ -140,6 +139,29 @@ export async function fetchAuth0EmailVerified(
   }
   if (users.length === 0) return null
   return users.some((u) => u.email_verified === true)
+}
+
+// Every Auth0 user id holding this email. Used by the reconciler to project a
+// Beehiiv premium subscriber (keyed on email) onto a membership row (keyed on
+// the Auth0 sub). Returns null — distinct from an empty array — when the lookup
+// could not be performed, so callers can tell "no such user" from "we don't
+// know" and refuse to revoke on the latter.
+async function fetchAuth0SubsForEmail(
+  env: Env,
+  email: string,
+): Promise<string[] | null> {
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return null
+  try {
+    const users = await mgmt.users.listUsersByEmail({
+      email,
+      fields: 'user_id',
+      include_fields: true,
+    })
+    return users.map((u) => u.user_id).filter((id): id is string => Boolean(id))
+  } catch {
+    return null
+  }
 }
 
 // --- Circle ----------------------------------------------------------------
@@ -572,10 +594,15 @@ export async function emailForStripeCustomer(
 // (cancel, downgrade, expired gift) but whose external grant a webhook failed to
 // revoke. It reconciles on OPAQUE IDS, never email:
 //
-//   - arkPlus (Supporting Cast): the keep-set is the sc_user_id of every live
-//     arkPlus Neon row. Any SC member whose user_id isn't in it is drift — the
-//     SC user is deleted (SC only holds paid-feed members, so a non-arkPlus SC
-//     user is by definition stale).
+//   - arkPlus (Beehiiv premium tier): Beehiiv keys the grant — and therefore the
+//     private feed — on EMAIL, so this axis cannot reconcile on an opaque id the
+//     way the Circle one does. The roster is the premium newsletter mirror
+//     (beehiiv_subscription where has_premium), and each email is projected onto
+//     a membership row through Auth0 (email → sub → row). A premium grant whose
+//     owner has no live arkPlus row is drift and is downgraded to free.
+//     Projection failures NEVER revoke: an Auth0 lookup that errors, or an email
+//     with no Auth0 user at all, is left alone — the same rule the Circle axis
+//     applies to an unstamped member.
 //   - circle (Circle access group): the keep-set is the auth0_sub of every live
 //     circle Neon row. The access-group roster returns community_member_id; we
 //     project each to its stamped `auth0_sub` custom profile field and remove
@@ -586,21 +613,21 @@ export async function emailForStripeCustomer(
 // Neon row deliberately doesn't hold. The reconciler is a removal safety net;
 // run the backfill first so live members already have rows (§9).
 //
-// Every removal pass is capped (SC_DRIFT_MAX_REMOVE / CIRCLE_DRIFT_MAX_REMOVE)
-// so a bad roster response can't mass-revoke; overflow waits for the next run.
-// Email appears only as a transient write-address (Beehiiv downgrade, Circle
-// DELETE), sourced from the roster — never from Neon.
+// Every removal pass is capped (ARK_PLUS_DRIFT_MAX_REMOVE /
+// CIRCLE_DRIFT_MAX_REMOVE) so a bad roster response can't mass-revoke; overflow
+// waits for the next run. Neon still holds no email: the arkPlus roster's
+// addresses come from the Beehiiv mirror, and the Circle DELETE's from Circle.
 //
 // VERIFY-PENDING (§7 #9): the Circle member → auth0_sub custom-field projection
 // (readCircleProfileField) is written against the assumed Admin v2 shape and
 // must be confirmed against a live roster before this cron is enabled.
 
-const SC_DRIFT_MAX_REMOVE = 100
+const ARK_PLUS_DRIFT_MAX_REMOVE = 100
 const CIRCLE_DRIFT_MAX_REMOVE = 100
 
 export type ReconcileSummary = {
   scanned: number // Neon rows loaded
-  scRemoved: number
+  arkPlusRemoved: number
   circleRemoved: number
   errors: number
 }
@@ -672,27 +699,19 @@ export async function reconcileEntitlements(
   if (!env.DATABASE_URL) {
     // Neon is the authority; without it there's nothing to reconcile against.
     console.warn('[reconcile] no DATABASE_URL — skipping (Neon is the authority)')
-    return { scanned: 0, scRemoved: 0, circleRemoved: 0, errors: 0 }
+    return { scanned: 0, arkPlusRemoved: 0, circleRemoved: 0, errors: 0 }
   }
 
   const rows = await loadAllNeonMemberships(getDb(env))
   const live = rows.filter(membershipIsLive)
 
-  // Per-axis keep-sets from Neon, keyed on opaque ids.
-  const arkPlusScUserIds = new Set<number>()
+  // Per-axis keep-sets from Neon, keyed on the Auth0 sub — the only id a
+  // membership row carries.
+  const arkPlusSubs = new Set<string>()
   const circleSubs = new Set<string>()
-  // A live arkPlus row whose sc_user_id is null can't be matched to an SC roster
-  // entry, so it can't be added to the keep-set — but that member may still have
-  // a live SC feed, which the axis would then delete as drift. If ANY such row
-  // exists the keep-set is known-incomplete, so we skip SC removal that run
-  // rather than risk revoking a paid feed we simply couldn't key.
-  let arkPlusMissingScId = false
   for (const r of live) {
     const ent = liveAxes(r)
-    if (ent.arkPlus) {
-      if (r.sc_user_id != null) arkPlusScUserIds.add(r.sc_user_id)
-      else arkPlusMissingScId = true
-    }
+    if (ent.arkPlus) arkPlusSubs.add(r.auth0_sub)
     if (ent.circle) circleSubs.add(r.auth0_sub)
   }
 
@@ -706,13 +725,12 @@ export async function reconcileEntitlements(
     errors += 1
   }
 
-  const scRemoved = await reconcileScAxis(
+  const arkPlusRemoved = await reconcileArkPlusAxis(
     env,
-    arkPlusScUserIds,
-    arkPlusMissingScId,
+    arkPlusSubs,
     batchSize,
   ).catch((err: unknown) => {
-    console.error('[reconcile] SC axis failed:', err)
+    console.error('[reconcile] arkPlus axis failed:', err)
     errors += 1
     return 0
   })
@@ -727,70 +745,72 @@ export async function reconcileEntitlements(
     return 0
   })
 
-  return { scanned: rows.length, scRemoved, circleRemoved, errors }
+  return { scanned: rows.length, arkPlusRemoved, circleRemoved, errors }
 }
 
-// arkPlus drift: delete SC users whose user_id isn't in Neon's live arkPlus
-// keep-set (SC only holds paid-feed members, so a non-arkPlus SC user is stale).
-// Capped; also drops the removed member's Beehiiv premium (email from the SC
-// roster is a transient write-address).
-async function reconcileScAxis(
+// arkPlus drift: strip the Beehiiv premium tier from anyone holding it whose
+// Neon membership no longer grants arkPlus. Losing the tier is what revokes the
+// private feed, so this is the safety net for a cancel whose webhook never
+// landed.
+//
+// Unlike the Circle axis this cannot work on opaque ids: Beehiiv keys both the
+// premium grant and the feed on email. So each premium email is projected onto
+// a membership row through Auth0, and the projection is allowed to fail safely.
+async function reconcileArkPlusAxis(
   env: Env,
-  keep: Set<number>,
-  keepIncomplete: boolean,
+  keep: Set<string>,
   batchSize: number,
 ): Promise<number> {
-  if (!env.SC_API_KEY) return 0 // SC not configured
-  // The membership roster lives on the SC v1 API (key-scoped, no network id in
-  // the path); DELETE /users is v2. Using the v2 client for the roster load
-  // 404s, throws, and silently disables all SC drift removal — so the two calls
-  // need their two distinct clients.
-  const scV1 = createScV1Client(env)
-  const scV2 = createScClient(env)
-  const roster = await loadAllScMemberships(scV1)
+  if (!env.DATABASE_URL) return 0
+  const sql = getDb(env)
+  const roster = await loadPremiumSubscriberEmails(sql)
 
   // Fail-safe against a mass wipe. An empty keep-set against a non-empty roster
-  // (Neon not yet backfilled, a truncated roster read) would classify every SC
-  // member as drift; a known-incomplete keep-set (an arkPlus row with no
-  // sc_user_id) could delete a member we just couldn't key. In either case skip
-  // removal this run rather than revoke live paid feeds — the cap alone wouldn't
-  // save a roster from being wiped over successive nightly runs.
+  // means Neon isn't a trustworthy authority this run (a truncated read, an
+  // un-provisioned environment) and every premium member would classify as
+  // drift. Skip rather than revoke live paid feeds — the per-run cap alone
+  // wouldn't save a roster from being drained over successive nightly runs.
   if (roster.length === 0) return 0
   if (keep.size === 0) {
     console.error(
-      '[reconcile] SC keep-set empty but roster non-empty — skipping removal (run the backfill?)',
-    )
-    return 0
-  }
-  if (keepIncomplete) {
-    console.warn(
-      '[reconcile] SC keep-set incomplete (arkPlus row with null sc_user_id) — skipping removal this run',
+      '[reconcile] arkPlus keep-set empty but premium roster non-empty — skipping removal',
     )
     return 0
   }
 
-  const drift = roster
-    .filter((m) => !keep.has(m.user_id))
-    .slice(0, SC_DRIFT_MAX_REMOVE)
-  if (roster.filter((m) => !keep.has(m.user_id)).length > SC_DRIFT_MAX_REMOVE) {
-    console.warn(
-      `[reconcile] SC drift exceeded cap ${SC_DRIFT_MAX_REMOVE}; overflow waits for next run`,
-    )
-  }
-  await batched(drift, batchSize, async (m) => {
-    try {
-      await scV2.call('DELETE', `/users/${m.user_id}`)
-    } catch (err) {
-      console.error(`[reconcile] SC delete user ${m.user_id} failed:`, err)
+  // Resolve first, remove second, so the cap applies to confirmed drift only.
+  const drift: string[] = []
+  let unresolved = 0
+  await batched(roster, batchSize, async (email) => {
+    const subs = await fetchAuth0SubsForEmail(env, email)
+    // null = the lookup itself failed; [] = no Auth0 user for this address.
+    // Neither is evidence the member lost their entitlement, and revoking on a
+    // failed projection is exactly how a safety net turns into an outage.
+    if (subs === null || subs.length === 0) {
+      unresolved += 1
       return
     }
-    if (m.email && env.DATABASE_URL) {
-      await tryPush('reconcile SC drift', () =>
-        beehiivDowngradeToFree({ env, sql: getDb(env) }, m.email),
-      )
-    }
+    if (subs.some((sub) => keep.has(sub))) return
+    drift.push(email)
   })
-  return drift.length
+  if (unresolved > 0) {
+    console.warn(
+      `[reconcile] arkPlus: ${unresolved} premium subscriber(s) could not be projected onto a membership row — left alone`,
+    )
+  }
+
+  const capped = drift.slice(0, ARK_PLUS_DRIFT_MAX_REMOVE)
+  if (drift.length > capped.length) {
+    console.warn(
+      `[reconcile] arkPlus drift exceeded cap ${ARK_PLUS_DRIFT_MAX_REMOVE}; overflow waits for next run`,
+    )
+  }
+  await batched(capped, batchSize, async (email) => {
+    await tryPush('reconcile arkPlus drift', () =>
+      beehiivDowngradeToFree({ env, sql }, email),
+    )
+  })
+  return capped.length
 }
 
 // circle drift: remove access-group members whose stamped auth0_sub isn't in

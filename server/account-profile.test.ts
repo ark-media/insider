@@ -98,8 +98,6 @@ let beehiivHasSubscriber = true
 
 // Supporting Cast is the third sink: its first_name is what the feed-setup
 // reminder cron greets from, so a save that skips it keeps that email wrong.
-let scCalls: BeehiivCall[] = []
-let scHasUser = true
 
 // Circle is the fourth, and the only one whose copy of the name is read by
 // other MEMBERS — a Circle record created without one shows the whole email
@@ -113,16 +111,6 @@ globalThis.fetch = (async (
   init?: RequestInit,
 ) => {
   const url = typeof input === 'string' ? input : input.toString()
-  if (url.includes('api.supportingcast.fm')) {
-    scCalls.push({ url, method: init?.method ?? 'GET', body: parseJsonInitBody(init) })
-    if (url.endsWith('/users/search')) {
-      return new Response(
-        JSON.stringify(scHasUser ? { users: [{ id: 55, email: 'member@x.com' }] } : { users: [] }),
-        { status: 200 },
-      )
-    }
-    return new Response('{}', { status: 200 })
-  }
   if (url.includes('circle.so')) {
     circleCalls.push({ url, method: init?.method ?? 'GET', body: parseJsonInitBody(init) })
     if (url.includes('/community_members/search')) {
@@ -162,8 +150,6 @@ beforeEach(() => {
   updates = []
   beehiivCalls = []
   beehiivHasSubscriber = true
-  scCalls = []
-  scHasUser = true
   circleCalls = []
   circleHasMember = true
   byEmail = []
@@ -439,23 +425,6 @@ describe('PUT effects', () => {
       { name: 'First Name', value: 'Hannah' },
       { name: 'Last Name', delete: true },
     ])
-  })
-
-  test('pushes the name to Supporting Cast — the reminder cron greets from it', async () => {
-    const env = { ...BASE_ENV, SC_API_KEY: 'sc_test', SC_NETWORK_ID: 'net_1' }
-    const res = await put({ given_name: 'Hannah', family_name: 'Waxman' }, { env })
-    expect(res.statusCode).toBe(200)
-    const write = scCalls.find((c) => c.method === 'PATCH')
-    expect(write?.url).toContain('/users/55')
-    expect(write?.body).toEqual({ first_name: 'Hannah', last_name: 'Waxman' })
-  })
-
-  test('an SC outage still returns 200 — the save landed in Auth0', async () => {
-    const env = { ...BASE_ENV, SC_API_KEY: 'sc_test', SC_NETWORK_ID: 'net_1' }
-    scHasUser = false
-    const res = await put({ given_name: 'Hannah' }, { env })
-    expect(res.statusCode).toBe(200)
-    expect(scCalls.some((c) => c.method === 'PATCH')).toBe(false)
   })
 
   test('pushes the name to Circle — it is what other members read', async () => {

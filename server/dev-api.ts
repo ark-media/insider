@@ -4,7 +4,7 @@
 // Backend for the marketing site, run as Vite middleware in dev and as a
 // single Vercel Node Function (`api/handler.ts`) in production. The actual
 // route implementations live in server/routes/{podcasts,beehiiv,circle,me,
-// sms,stripe,gift,auth,cron}.ts; this file is the assembler that wires them
+// feed-actions,stripe,gift,auth,cron}.ts; this file is the assembler that wires them
 // to a per-instance dependency bundle.
 //
 // Auth: long-term sessions are Auth0 Bearer tokens; new subscribers get a
@@ -20,7 +20,6 @@ import type { Deps, Env, Handler, Route } from './lib/route.js'
 import { PayloadTooLargeError } from './lib/http.js'
 import { adminRoutes } from './routes/admin.js'
 import { adminMemberRoutes } from './routes/admin-members.js'
-import { adminFeedActivationRoutes } from './routes/admin-feed-activations.js'
 import { adminFeedReminderRoutes } from './routes/admin-feed-reminders.js'
 import { announcementRoutes } from './routes/announcements.js'
 import { accountRoutes } from './routes/account.js'
@@ -37,9 +36,8 @@ import { giftRoutes } from './routes/gift.js'
 import { meRoutes } from './routes/me.js'
 import { pricingRoutes } from './routes/pricing.js'
 import { promoRoutes } from './routes/promo.js'
-import { scWebhookRoutes } from './routes/sc-webhook.js'
 import { podcastRoutes } from './routes/podcasts.js'
-import { smsRoutes } from './routes/sms.js'
+import { feedActionRoutes } from './routes/feed-actions.js'
 import { stripeRoutes } from './routes/stripe/routes.js'
 import { supportRoutes } from './routes/support.js'
 
@@ -64,8 +62,7 @@ function buildApi(env: Env): Api {
     ...meRoutes(deps),
     ...pricingRoutes(deps),
     ...promoRoutes(deps),
-    ...smsRoutes(deps),
-    ...scWebhookRoutes(deps),
+    ...feedActionRoutes(deps),
     ...stripeRoutes(deps),
     ...giftRoutes(deps),
     ...authRoutes(deps),
@@ -76,7 +73,6 @@ function buildApi(env: Env): Api {
     ...adminRoutes(deps),
     ...adminMemberRoutes(deps),
     ...adminFeedReminderRoutes(deps),
-    ...adminFeedActivationRoutes(deps),
     ...discussThreadsRoutes(deps),
     ...contactRoutes(deps),
     ...supportRoutes(deps),

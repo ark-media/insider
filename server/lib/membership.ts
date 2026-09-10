@@ -11,7 +11,6 @@ export type MembershipRow = {
   auth0_sub: string
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
-  sc_user_id: number | null
   tier: Tier
   status: string
   plan: string | null
@@ -31,7 +30,6 @@ export type MembershipUpsert = {
   auth0_sub: string
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
-  sc_user_id: number | null
   tier: Tier
   status: string
   plan: string | null
@@ -50,7 +48,7 @@ export async function getMembershipByAuth0Sub(
   auth0Sub: string,
 ): Promise<MembershipRow | null> {
   const rows = await sql`
-    select auth0_sub, stripe_customer_id, stripe_subscription_id, sc_user_id,
+    select auth0_sub, stripe_customer_id, stripe_subscription_id,
            tier, status, plan, amount_cents,
            current_period_end, cancel_at,
            ark_plus_gift_expires_at, circle_gift_expires_at
@@ -66,7 +64,7 @@ export async function getMembershipByStripeCustomer(
   customerId: string,
 ): Promise<MembershipRow | null> {
   const rows = await sql`
-    select auth0_sub, stripe_customer_id, stripe_subscription_id, sc_user_id,
+    select auth0_sub, stripe_customer_id, stripe_subscription_id,
            tier, status, plan, amount_cents,
            current_period_end, cancel_at,
            ark_plus_gift_expires_at, circle_gift_expires_at
@@ -100,18 +98,17 @@ export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<v
   const circleGift = m.circle_gift_expires_at ?? null
   await sql`
     insert into membership (
-      auth0_sub, stripe_customer_id, stripe_subscription_id, sc_user_id,
+      auth0_sub, stripe_customer_id, stripe_subscription_id,
       tier, status, plan, amount_cents, current_period_end, cancel_at,
       ark_plus_gift_expires_at, circle_gift_expires_at, updated_at
     ) values (
-      ${m.auth0_sub}, ${m.stripe_customer_id}, ${m.stripe_subscription_id}, ${m.sc_user_id},
+      ${m.auth0_sub}, ${m.stripe_customer_id}, ${m.stripe_subscription_id},
       ${m.tier}, ${m.status}, ${m.plan}, ${m.amount_cents}, ${m.current_period_end}, ${m.cancel_at},
       ${arkPlusGift}, ${circleGift}, now()
     )
     on conflict (auth0_sub) do update set
       stripe_customer_id       = excluded.stripe_customer_id,
       stripe_subscription_id   = excluded.stripe_subscription_id,
-      sc_user_id               = coalesce(excluded.sc_user_id, membership.sc_user_id),
       tier                     = excluded.tier,
       status                   = excluded.status,
       plan                     = excluded.plan,
@@ -128,7 +125,6 @@ export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<v
 // these against the SC roster and the Circle access group.
 export type MembershipReconcileRow = {
   auth0_sub: string
-  sc_user_id: number | null
   tier: Tier
   status: string
   stripe_subscription_id: string | null
@@ -138,7 +134,7 @@ export type MembershipReconcileRow = {
 
 export async function loadAllMemberships(sql: Sql): Promise<MembershipReconcileRow[]> {
   const rows = await sql`
-    select auth0_sub, sc_user_id, tier, status, stripe_subscription_id,
+    select auth0_sub, tier, status, stripe_subscription_id,
            ark_plus_gift_expires_at, circle_gift_expires_at
     from membership`
   return rows as MembershipReconcileRow[]

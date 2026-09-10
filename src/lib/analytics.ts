@@ -149,7 +149,7 @@ interface EventMap {
   // Private-feed activation: which app a member picks, and the terminal
   // hand-off action (open deep link / copy URL / text themselves the link).
   feed_app_selected: { app: string }
-  feed_activated: { app: string; method: 'open' | 'copy' | 'sms' }
+  feed_activated: { app: string; method: 'open' | 'copy' | 'email' }
   // The one-click path: linking Spotify once follows every private feed in the
   // network. `feed_count` is how many feeds that link covers.
   feed_spotify_linked: { feed_count: number }

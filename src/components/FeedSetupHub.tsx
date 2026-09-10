@@ -6,6 +6,10 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
 import { OutboundLink } from "./OutboundLink";
 
+// Server route that mints the Beehiiv auto-login and 302s into Beehiiv's
+// Spotify consent flow, which returns the member to this page when it's done.
+const SPOTIFY_HANDOFF_PATH = "/api/me/feeds/spotify";
+
 // The landing surface for private-feed setup. Two paths, in priority order:
 //   1. Spotify — link once, follow every show in the network automatically.
 //      This is the clear default action, up top.
@@ -18,7 +22,7 @@ export function FeedSetupHub({
   embedded = false,
 }: {
   feeds: UserFeed[];
-  onSelect: (feedId: number) => void;
+  onSelect: (feedId: string) => void;
   /**
    * Rendered inside the /account shell (the Podcasts tab) rather than as a
    * page of its own. The shell already supplies the <main> element, the page
@@ -36,15 +40,12 @@ export function FeedSetupHub({
   const total = feeds.length;
   const allDone = total > 0 && doneCount === total;
 
-  // The Spotify account-link is network-wide: the same link on any feed grants
-  // the whole network. Take the first one we find.
-  const spotifyUrl = useMemo(() => {
-    for (const f of feeds) {
-      const match = f.apps?.find((a) => a.app === "spotify");
-      if (match) return match.url;
-    }
-    return "";
-  }, [feeds]);
+  // Spotify goes through our own server route, which mints Beehiiv's
+  // auto-login and redirects — Open Access requires the click to originate on
+  // Beehiiv's page, so there is no direct URL to link at. One route covers the
+  // account, not a feed, so it doesn't vary per show, and the member lands back
+  // here afterwards rather than stranded on Beehiiv.
+  const spotifyUrl = SPOTIFY_HANDOFF_PATH;
 
   const linkSpotify = () => {
     trackEvent("feed_spotify_linked", { feed_count: total });
@@ -218,6 +219,8 @@ function SpotifyHero({ url, onLink }: { url: string; onLink: () => void }) {
           href={url}
           platform="spotify"
           placement="setup_hub_spotify"
+          // The hand-off comes back to this page, so keep it in the same tab.
+          target="_self"
           rel="noreferrer"
           onClick={onLink}
           className="group inline-flex shrink-0 items-center justify-center gap-3 bg-cyan px-6 py-3.5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"

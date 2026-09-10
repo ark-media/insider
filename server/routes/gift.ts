@@ -534,17 +534,16 @@ async function redeemGiftForRecipient(
   const plan = planGiftRedemption(gift, existing, now)
   const term: GiftTerm = gift.plan === '6mo' || gift.plan === '1yr' ? gift.plan : '1yr'
 
-  // Grant FIRST, before the atomic claim. The grant is idempotent (SC keyed by
-  // recipient+axis, Circle group-add is a no-op if present), so a concurrent
-  // redeem that also grants is harmless — but if it THROWS (SC/Circle outage) the
-  // gift is still PENDING and the recipient can retry. Claiming first (the old
-  // order) would burn the gift on any transient provisioning failure.
+  // Grant FIRST, before the atomic claim. The grant is idempotent (the Beehiiv
+  // premium tier is a boolean, the Circle group-add a no-op if present), so a
+  // concurrent redeem that also grants is harmless — but if it THROWS (a
+  // Beehiiv/Circle outage) the gift is still PENDING and the recipient can
+  // retry. Claiming first (the old order) would burn the gift on any transient
+  // provisioning failure.
   let grant: {
-    scUserId: number | null
-    scSubscriptionId: number | null
     arkPlusEndsAt: string | null
     circleEndsAt: string | null
-  } = { scUserId: null, scSubscriptionId: null, arkPlusEndsAt: null, circleEndsAt: null }
+  } = { arkPlusEndsAt: null, circleEndsAt: null }
   if (plan.grantArkPlus || plan.grantCircle) {
     grant = await activator.activateGiftForRecipient({
       email,
@@ -569,7 +568,6 @@ async function redeemGiftForRecipient(
     auth0_sub: auth0Sub,
     stripe_customer_id: existing?.stripe_customer_id ?? null,
     stripe_subscription_id: existing?.stripe_subscription_id ?? null,
-    sc_user_id: grant.scUserId, // coalesced with any existing in the upsert
     tier: plan.rowTier,
     status: plan.hasPaidSub && existing != null ? existing.status : 'active',
     plan: plan.hasPaidSub && existing != null ? existing.plan : gift.plan,

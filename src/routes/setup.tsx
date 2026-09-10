@@ -6,9 +6,12 @@ import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 // The component's own gate redirects guests and free users to /plus.
 export const Route = createFileRoute("/setup")({
   component: SetupPage,
-  validateSearch: (search: Record<string, unknown>): { feed?: number } => {
-    const n = Number(search.feed);
-    return Number.isInteger(n) && n > 0 ? { feed: n } : {};
+  // The show id (`pod_<uuid>`), not the rotating feed token — see UserFeed.id.
+  validateSearch: (search: Record<string, unknown>): { feed?: string } => {
+    const v = search.feed;
+    return typeof v === "string" && v.length > 0 && v.length <= 64
+      ? { feed: v }
+      : {};
   },
 });
 
@@ -23,8 +26,8 @@ function SetupPage() {
       void navigate({ to: "/plus" });
       return;
     }
-    // Free accounts have no Simplecast record to set up. Send them to the
-    // upgrade pitch so the route can't be reached by URL-poking.
+    // Free accounts have no private feed to set up. Send them to the upgrade
+    // pitch so the route can't be reached by URL-poking.
     if (state.kind === "member" && !isArkPlusMember(state)) {
       void navigate({ to: "/plus" });
     }

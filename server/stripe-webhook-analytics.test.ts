@@ -156,7 +156,7 @@ function makeSub(overrides: Record<string, unknown> = {}) {
     status: 'active',
     currency: 'usd',
     customer: { id: 'cus_1', email: 'sub@example.com' },
-    metadata: { sc_subscription_id: '3119346' },
+    metadata: { beehiiv_premium: 'true' },
     items: {
       data: [
         {
@@ -207,7 +207,7 @@ describe('customer.subscription.created → subscription_started_confirmed', () 
       data: {
         object: makeSub({
           metadata: {
-            sc_subscription_id: '3119346',
+            beehiiv_premium: 'true',
             first_touch_source: 'cmb-ep412',
             first_touch_medium: 'referral',
             last_touch_source: 'newsletter',

@@ -24,6 +24,10 @@ import {
   type BeehiivSubscription,
 } from '../lib/beehiiv-sync.js'
 import { getDb, type Sql } from '../lib/db.js'
+import {
+  recordFeedActivated,
+  recordFeedRevoked,
+} from '../lib/feed-activations.js'
 import { fetchAuth0EmailVerified } from '../entitlement.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
@@ -312,7 +316,10 @@ export function beehiivRoutes({ env }: Deps): Route[] {
       // so we gate the route with a shared secret in the query string
       // (`?key=…`). Register the URL in Beehiiv as
       //   https://<APP_BASE_URL>/api/beehiiv/webhook?key=$BEEHIIV_WEBHOOK_SECRET
-      // and subscribe to the subscription.* event types.
+      // and subscribe to the subscription.* AND podcasts.private_feed.*
+      // event types — the latter are what mirror private-feed activation
+      // (this endpoint replaced the separate Supporting Cast webhook, so
+      // there is one secret and one registration).
       //
       // Caveat — query-string secret leakage. The `?key=` value appears in
       // upstream HTTP access logs (Vercel / CDN / proxy) more than headers
@@ -350,13 +357,46 @@ export function beehiivRoutes({ env }: Deps): Route[] {
           env.BEEHIIV_PUBLICATION_ID_ARK_DAILY ||
           env.BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER ||
           ''
+        // Idempotency: skip only events already fully PROCESSED. We READ the
+        // ledger here and WRITE it after the handler succeeds — never before.
+        // Claiming the id up front would mean a handler that throws leaves the
+        // id recorded, so Beehiiv's retry gets deduped and the event is lost
+        // (a dropped access_revoked would keep a lapsed member "activated").
+        // A missing uid just skips dedupe; every write is an idempotent upsert,
+        // so reprocessing is harmless.
+        const eventId = event.uid ? String(event.uid) : null
+        if (eventId !== null) {
+          try {
+            const seen = await sql`
+              select 1 from beehiiv_webhook_events where id = ${eventId} limit 1`
+            if (seen.length > 0) return json(200, { received: true, deduped: true })
+          } catch (err) {
+            console.error('[beehiiv] webhook idempotency read failed:', err)
+          }
+        }
+
         try {
           await handleBeehiivWebhook(sql, env, event, publicationId)
-          json(200, { received: true })
         } catch (err) {
           console.error('[beehiiv] webhook handler failed:', err)
-          json(500, { error: 'webhook_handler_failed' })
+          return json(500, { error: 'webhook_handler_failed' })
         }
+
+        // Processing succeeded — record the delivery so a retry of THIS one is
+        // deduped. Best-effort: a failed ledger write only means a later
+        // duplicate is reprocessed, which is strictly safer than dropping an
+        // unprocessed event.
+        if (eventId !== null) {
+          try {
+            await sql`
+              insert into beehiiv_webhook_events (id, type)
+              values (${eventId}, ${event.event_type ?? ''})
+              on conflict (id) do nothing`
+          } catch (err) {
+            console.error('[beehiiv] webhook idempotency ledger write failed:', err)
+          }
+        }
+        return json(200, { received: true })
       },
     }),
   ]
@@ -366,12 +406,22 @@ export function beehiivRoutes({ env }: Deps): Route[] {
 
 type BeehiivWebhookEvent = {
   event_type?: string
+  // Delivery id, used for the idempotency ledger. Absent on some event types,
+  // which just skips dedupe (every write below is an idempotent upsert).
+  uid?: string
   data?: {
     id?: string
     email?: string
     status?: string
     subscription_tier?: 'free' | 'premium'
     subscription_premium_tier_names?: string[]
+    // `podcasts.private_feed.*` events only. Note the email is nested under
+    // `subscription`, NOT top-level like the subscription events — reading
+    // `data.email` here would silently drop every feed event.
+    subscription?: { email?: string }
+    show?: { id?: string }
+    activated?: number | string | null
+    revoked?: number | string | null
   }
 }
 
@@ -392,15 +442,62 @@ async function isKnownReader(
   return (await fetchAuth0EmailVerified(env, email)) !== null
 }
 
+// Beehiiv reports feed timestamps as unix seconds; the mirror stores instants.
+function feedTimestamp(raw: number | string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null
+  const n = typeof raw === 'string' ? Number(raw) : raw
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null
+  const d = new Date(n * 1000)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+// `podcasts.private_feed.activated` / `.access_revoked` / `.deactivated`.
+// Returns true when the event was ours to handle, so the caller knows not to
+// fall through to the subscription mirror.
+async function handlePrivateFeedEvent(
+  sql: Sql,
+  env: Env,
+  event: BeehiivWebhookEvent,
+  type: string,
+): Promise<boolean> {
+  if (!type.startsWith('podcasts.private_feed')) return false
+
+  // Email is nested under `subscription`, show under `show` — both differ from
+  // the subscription events' top-level shape.
+  const email = event.data?.subscription?.email?.trim()
+  const showId = event.data?.show?.id?.trim()
+  if (!email || !showId) {
+    console.warn('[beehiiv] private_feed webhook missing email or show id', { type })
+    return true
+  }
+
+  // Same secret-leak bound as the subscription path: only readers we know.
+  if (!(await isKnownReader(sql, env, email))) return true
+
+  // Keyed on the SHOW id, never the feed token — `pod_feed_<uuid>` rotates on
+  // reissue and would reset the member's setup state.
+  if (type.endsWith('.activated')) {
+    await recordFeedActivated(sql, email, showId, feedTimestamp(event.data?.activated))
+  } else if (type.endsWith('.access_revoked') || type.endsWith('.deactivated')) {
+    await recordFeedRevoked(sql, email, showId, feedTimestamp(event.data?.revoked))
+  }
+  return true
+}
+
 async function handleBeehiivWebhook(
   sql: Sql,
   env: Env,
   event: BeehiivWebhookEvent,
   publicationId: string,
 ): Promise<void> {
+  const type = event.event_type ?? ''
+
+  // Dispatch the podcast events FIRST: they carry the reader's email nested
+  // under `data.subscription`, so the `data.email` guard below would drop them.
+  if (await handlePrivateFeedEvent(sql, env, event, type)) return
+
   const data = event.data
   if (!data?.email || !data.id) return
-  const type = event.event_type ?? ''
 
   // Reject events for readers we don't recognize. Failing closed here is
   // intentional — see the route comment on secret-leak mitigation.

@@ -128,11 +128,17 @@ describe('ensureSubscribedWithPremium', () => {
     expect(fetchCalls).toHaveLength(0)
   })
 
-  test('skips when premium tier id not set, logs error', async () => {
+  test('throws when premium tier id not set — a paid member would get nothing', async () => {
+    // Beehiiv is wired up but has no tier to apply. The premium tier IS the
+    // arkPlus grant, so swallowing this would provision a member who paid for a
+    // feed and silently didn't get one; raise it and let the webhook retry once
+    // the env is fixed.
     const { sql } = makeSqlStub(emptyRows)
     const env = { ...BASE_ENV }
     delete env.BEEHIIV_PREMIUM_TIER_ID
-    await ensureSubscribedWithPremium({ env, sql }, 'a@x.com')
+    await expect(ensureSubscribedWithPremium({ env, sql }, 'a@x.com')).rejects.toThrow(
+      /BEEHIIV_PREMIUM_TIER_ID/,
+    )
     expect(fetchCalls).toHaveLength(0)
   })
 

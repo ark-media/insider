@@ -1,10 +1,16 @@
 // Unit tests for the customer.subscription.* webhook handling in
-// server/routes/stripe.ts — specifically the SC cancel-schedule mirroring
-// (ends_at / autorenew) and the existing delete path.
+// server/routes/stripe.ts — the cancel and delete paths.
+//
+// The arkPlus axis is Beehiiv's premium tier, which has no upstream expiry to
+// mirror: a scheduled cancel is Stripe's business until the subscription is
+// actually deleted, and the delete is what drops the tier. These tests pin that
+// the webhook makes no upstream membership calls of its own on either event,
+// which is what replaced the SC ends_at/autorenew mirror and the SC DELETE.
 //
 // Strategy mirrors gift.test.ts: mock.module('stripe', …) swaps the SDK for a
-// fake whose webhooks.constructEvent returns a per-test `webhookEvent`; SC
-// calls go through the global fetch mock and are asserted via `fetchCalls`.
+// fake whose webhooks.constructEvent returns a per-test `webhookEvent`;
+// outbound calls go through the global fetch mock and are asserted via
+// `fetchCalls`.
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import {
@@ -55,17 +61,14 @@ import { devApiPlugin } from './dev-api'
 // Plugin harness
 // ---------------------------------------------------------------------------
 // No AUTH0_* / CIRCLE_* keys → syncEntitlement short-circuits to 'skipped' and
-// makes no fetch calls, so the only SC traffic in these tests is the cancel-
-// schedule PATCH / delete DELETE we're asserting on.
+// makes no fetch calls, and no DATABASE_URL → the Beehiiv downgrade and the
+// membership row stay out of the picture. So any fetch these tests see is
+// traffic the cancel/delete path issued on its own.
 const BASE_ENV = {
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-key',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
   STRIPE_WEBHOOK_SECRET: 'wh_test',
 }
-
-const SC_BASE = 'https://api.supportingcast.fm/v2/test-net'
 
 function getHandler(path: string, env: Record<string, string> = BASE_ENV): Middleware {
   return createDevApiHarness(devApiPlugin(env)).getHandler(path)
@@ -125,7 +128,7 @@ function makeSub(overrides: Record<string, unknown> = {}) {
     id: 'sub_1',
     status: 'active',
     customer: { id: 'cus_1', email: 'sub@example.com' },
-    metadata: { sc_subscription_id: '3119346' },
+    metadata: { beehiiv_premium: 'true' },
     cancel_at: null,
     cancel_at_period_end: false,
     ...overrides,
@@ -139,12 +142,14 @@ async function dispatch(event: unknown, env: Record<string, string> = BASE_ENV) 
   return res
 }
 
-const scPatches = () =>
-  fetchCalls.filter((c) => c.method === 'PATCH' && c.url === `${SC_BASE}/subscriptions/3119346`)
-
 // ===========================================================================
-describe('customer.subscription.updated — SC cancel-schedule mirroring', () => {
-  test('scheduled cancel → PATCH ends_at + autorenew:false', async () => {
+describe('customer.subscription.updated — a scheduled cancel is not mirrored', () => {
+  // Supporting Cast held its own copy of the cancel date (ends_at / autorenew)
+  // so the feed could self-expire if the .deleted event were missed. Beehiiv's
+  // premium tier has no such field: the member holds the tier — and the feed —
+  // until the subscription is actually deleted, which is the event that drops
+  // it. So a scheduled cancel now writes nothing upstream at all.
+  test('scheduled cancel → no upstream membership traffic', async () => {
     const res = await dispatch({
       type: 'customer.subscription.updated',
       data: {
@@ -153,26 +158,22 @@ describe('customer.subscription.updated — SC cancel-schedule mirroring', () =>
       },
     })
     expect(res.statusCode).toBe(200)
-    expect(scPatches()).toHaveLength(1)
-    expect(scPatches()[0]!.body).toEqual({
-      ends_at: new Date(CANCEL_AT * 1000).toISOString(),
-      autorenew: false,
-    })
+    expect(fetchCalls).toEqual([])
   })
 
-  test('un-cancel (cancel_at cleared) → PATCH ends_at:null + autorenew:true', async () => {
-    await dispatch({
+  test('un-cancel (cancel_at cleared) → no upstream membership traffic', async () => {
+    const res = await dispatch({
       type: 'customer.subscription.updated',
       data: {
         object: makeSub({ cancel_at: null, cancel_at_period_end: false }),
         previous_attributes: { cancel_at: CANCEL_AT, cancel_at_period_end: true },
       },
     })
-    expect(scPatches()).toHaveLength(1)
-    expect(scPatches()[0]!.body).toEqual({ ends_at: null, autorenew: true })
+    expect(res.statusCode).toBe(200)
+    expect(fetchCalls).toEqual([])
   })
 
-  test('metadata-only update (no cancel fields changed) → no SC PATCH', async () => {
+  test('metadata-only update → no upstream membership traffic', async () => {
     await dispatch({
       type: 'customer.subscription.updated',
       data: {
@@ -180,59 +181,20 @@ describe('customer.subscription.updated — SC cancel-schedule mirroring', () =>
         previous_attributes: { metadata: { plan: 'yearly' } },
       },
     })
-    expect(scPatches()).toHaveLength(0)
-  })
-
-  test('cancel scheduled but no sc_subscription_id metadata → no SC PATCH', async () => {
-    // status:'incomplete' keeps the activator from running so this test
-    // genuinely exercises only the missing-metadata guard (otherwise the
-    // PATCH=0 assertion passes for the wrong reason — activator traffic).
-    await dispatch({
-      type: 'customer.subscription.updated',
-      data: {
-        object: makeSub({
-          status: 'incomplete',
-          metadata: {},
-          cancel_at: CANCEL_AT,
-          cancel_at_period_end: true,
-        }),
-        previous_attributes: { cancel_at_period_end: false },
-      },
-    })
     expect(fetchCalls).toEqual([])
-  })
-
-  test('SC PATCH returns 404 (webhook reorder) → handler still 200', async () => {
-    // If customer.subscription.deleted arrives before customer.subscription.updated,
-    // the SC sub has already been DELETE'd. The mirror PATCH then 404s.
-    // The handler must still return 200 (Stripe will otherwise retry forever).
-    responseOverride = (url, method) =>
-      method === 'PATCH' && url === `${SC_BASE}/subscriptions/3119346`
-        ? new Response('{}', { status: 404 })
-        : null
-    const res = await dispatch({
-      type: 'customer.subscription.updated',
-      data: {
-        object: makeSub({ cancel_at: CANCEL_AT, cancel_at_period_end: true }),
-        previous_attributes: { cancel_at_period_end: false },
-      },
-    })
-    expect(res.statusCode).toBe(200)
-    expect(scPatches()).toHaveLength(1)
   })
 })
 
-describe('customer.subscription.deleted — SC delete (existing behavior)', () => {
-  test('deletes the SC subscription by metadata id', async () => {
+describe('customer.subscription.deleted', () => {
+  test('acks 200 and issues no Supporting Cast teardown', async () => {
+    // The revoke is the Beehiiv downgrade (skipped here — no DATABASE_URL), not
+    // a call keyed on SC metadata. Nothing may reach supportingcast.fm.
     const res = await dispatch({
       type: 'customer.subscription.deleted',
       data: { object: makeSub({ status: 'canceled' }) },
     })
     expect(res.statusCode).toBe(200)
-    const deletes = fetchCalls.filter(
-      (c) => c.method === 'DELETE' && c.url === `${SC_BASE}/subscriptions/3119346`,
-    )
-    expect(deletes).toHaveLength(1)
+    expect(fetchCalls.filter((c) => c.url.includes('supportingcast.fm'))).toEqual([])
   })
 })
 
@@ -241,15 +203,14 @@ describe('customer.subscription.deleted — SC delete (existing behavior)', () =
 //
 // entitlement.test.ts proves syncEntitlement isolates Auth0/Circle failures in
 // isolation. These tests prove the *integration* contract at the webhook layer:
-// an Auth0/Circle outage during a state change must NOT 500 the webhook (so
-// Stripe doesn't retry-storm), and the SC teardown of the paid product still
-// proceeds. Recovery for the drifted Auth0/Circle legs is deferred to the
-// nightly reconcile cron, not Stripe's retry.
+// an Auth0/Circle outage during a teardown must NOT 500 the webhook, so Stripe
+// doesn't retry-storm. Recovery for the drifted Auth0/Circle legs is deferred to
+// the nightly reconcile cron, not Stripe's retry.
 //
 // SYNC_ENV adds the Auth0 + Circle creds (BASE_ENV omits them, which is why the
 // existing tests above see syncEntitlement short-circuit to 'skipped'). No
 // DATABASE_URL, so the idempotency ledger and Beehiiv downgrade stay out of the
-// picture and the assertions isolate the SC + Auth0 + Circle legs.
+// picture and the assertions isolate the Auth0 + Circle legs.
 // ===========================================================================
 const SYNC_ENV = {
   ...BASE_ENV,
@@ -260,16 +221,11 @@ const SYNC_ENV = {
   CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: 'ag-99',
 }
 
-const scDeletes = () =>
-  fetchCalls.filter(
-    (c) => c.method === 'DELETE' && c.url === `${SC_BASE}/subscriptions/3119346`,
-  )
-
 describe('webhook resilience — entitlement-leg outages must not 500', () => {
-  test('Auth0 + Circle both 5xx on teardown → webhook still 200, SC delete still issued', async () => {
-    // FAIL-AU-01 / FAIL-CR-01 (delete trigger point): the paid product (SC) is
-    // torn down; the Auth0/Circle drift is left for reconcile. A 500 here would
-    // make Stripe retry the whole event indefinitely.
+  test('Auth0 + Circle both 5xx on teardown → webhook still 200', async () => {
+    // FAIL-AU-01 / FAIL-CR-01 (delete trigger point): the drift is left for
+    // reconcile. A 500 here would make Stripe retry the whole event
+    // indefinitely.
     responseOverride = (url: string) => {
       if (url.endsWith('/oauth/token')) {
         return new Response(
@@ -281,31 +237,12 @@ describe('webhook resilience — entitlement-leg outages must not 500', () => {
       if (url.includes('/access_groups/ag-99/community_members')) {
         return new Response('{"error":"boom"}', { status: 500 })
       }
-      return null // SC delete falls through to the default 200
+      return null
     }
     const res = await dispatch(
       { type: 'customer.subscription.deleted', data: { object: makeSub({ status: 'canceled' }) } },
       SYNC_ENV,
     )
     expect(res.statusCode).toBe(200)
-    expect(scDeletes()).toHaveLength(1)
-  })
-
-  test('SC delete itself 5xx → webhook still 200 (soft-fail; documents the over-entitlement gap)', async () => {
-    // FAIL-SC-03: the reconciler never touches Simplecast (see stripe.ts
-    // comment), so a permanently-failing SC DELETE leaves the member with paid
-    // feed access and NO automatic recovery. The webhook must still 200 (Stripe
-    // retry won't fix a 5xx-on-our-side SC call), but this drift needs
-    // monitoring + manual cleanup — it is the highest-severity sync risk.
-    responseOverride = (url, method) =>
-      method === 'DELETE' && url === `${SC_BASE}/subscriptions/3119346`
-        ? new Response('{"error":"sc down"}', { status: 500 })
-        : null
-    const res = await dispatch({
-      type: 'customer.subscription.deleted',
-      data: { object: makeSub({ status: 'canceled' }) },
-    })
-    expect(res.statusCode).toBe(200)
-    expect(scDeletes()).toHaveLength(1)
   })
 })

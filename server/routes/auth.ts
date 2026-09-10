@@ -13,7 +13,6 @@
 
 import type Stripe from 'stripe'
 import * as client from 'openid-client'
-import { AlreadySubscribedError } from '../lib/activation.js'
 import {
   createAuth0PasswordChangeTicket,
   findOrCreateAuth0User,
@@ -186,29 +185,19 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         }
 
         // Provision the tier the buyer actually purchased (Auth0 login always,
-        // SC only for arkPlus, Circle only for circle) so a Circle-only buyer
-        // isn't wrongly given a feed. Idempotent — if the webhook already ran,
-        // this is a no-op. The webhook (not this route) writes the membership
-        // row. Failures here mean the caller paid but provisioning is
-        // incomplete; the webhook retries async, but we shouldn't hand out a
-        // session token yet.
+        // the Beehiiv premium tier only for arkPlus, Circle only for circle) so
+        // a Circle-only buyer isn't wrongly given a feed. Idempotent — if the
+        // webhook already ran, this is a no-op, and a second grant of a tier the
+        // member already holds is a no-op upstream too. The webhook (not this
+        // route) writes the membership row. Failures here mean the caller paid
+        // but provisioning is incomplete; the webhook retries async, but we
+        // shouldn't hand out a session token yet.
         let resolvedSub: string | null = null
         try {
           const tier = await tierFromSubscription(sub, stripe)
           const result = await activator.activateMembershipForStripeSub(sub, tier)
           resolvedSub = result.auth0Sub
         } catch (err) {
-          if (err instanceof AlreadySubscribedError) {
-            // The new Stripe sub paid through, but SC already has an active sub
-            // for this user — usually a prior membership that wasn't fully torn
-            // down. Tell the buyer rather than the generic provisioning error;
-            // billing reconciliation is a separate manual step.
-            return json(409, {
-              error:
-                'This email already has an active Insider membership. Please sign in instead — and email support@arkmedia.org if you were charged for this second attempt.',
-              code: 'already_subscribed',
-            })
-          }
           console.error('[auth/checkout-session] provision failed:', err)
           return json(502, {
             error: 'Could not finish setting up your account. Please try again.',

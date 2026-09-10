@@ -66,7 +66,6 @@ const row = (over: Record<string, unknown> = {}) => ({
   auth0_sub: 'auth0|123',
   stripe_customer_id: 'cus_1',
   stripe_subscription_id: 'sub_1',
-  sc_user_id: 42,
   tier: 'ark-plus',
   status: 'active',
   plan: 'monthly',

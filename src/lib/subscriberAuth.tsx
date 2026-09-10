@@ -52,7 +52,7 @@ type SubscriberAuthValue = {
   // pending marker so it survives reloads and follows the member across
   // devices. Monotonic — only ever flips a feed to set up, never back. SC's
   // `feed.activated` webhook remains authoritative and reconciles on refresh.
-  markFeedsSetUp: (feedIds: number[]) => void;
+  markFeedsSetUp: (feedIds: string[]) => void;
   // True when /api/me couldn't be reached (network / server error, not a 401).
   // Member-data pages show an error+retry on this; `refresh` is the retry. Kept
   // separate from `state` so a transient outage doesn't ripple a new variant
@@ -139,7 +139,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [state]);
 
-  const markFeedsSetUp = useCallback((feedIds: number[]) => {
+  const markFeedsSetUp = useCallback((feedIds: string[]) => {
     if (feedIds.length === 0) return;
     const ids = new Set(feedIds);
     // Optimistic in-memory patch — instant check-off. Only flip feeds that

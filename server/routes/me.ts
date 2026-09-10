@@ -1,8 +1,12 @@
-// Whoami / personalized feeds. Returns the signed-in user's SC feeds so
-// the SPA can render the setup page (and decide whether to surface a "send
-// SMS" button).
+// Whoami / personalized feeds. Returns the signed-in user's private Beehiiv
+// feed so the SPA can render the setup page.
 
 import { redactEmail } from '../../shared/validation.js'
+import {
+  fetchPrivateFeed,
+  premiumPodcastIdFromEnv,
+  type PrivateFeed,
+} from '../lib/beehiiv-feeds.js'
 import {
   applyPreferences,
   ensureFreeSubscription,
@@ -20,7 +24,6 @@ import type { MembershipRow } from '../lib/membership.js'
 import { getSetupStates, recordFeedsPending } from '../lib/feed-activations.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
-import { createScClient, type ScError, type ScUserFeed } from '../lib/sc-client.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // Per-axis access for account settings (T7.1): what the member has on each
@@ -66,7 +69,8 @@ function computeAxes(
         return { active: true, source: 'gift', expiresAt: giftExpiry, renewsAt: null }
       }
     }
-    // Row-less active axis = the transitional SC-by-email fallback (arkPlus).
+    // Row-less active axis: no membership row resolved it, so we can say it's
+    // active but nothing about its source or dates.
     return { active: true, source: 'subscription', expiresAt: null, renewsAt: null }
   }
   return {
@@ -86,44 +90,86 @@ const newsletterPrefsLimiter = createRateLimiter({
 // Bucket the optimistic setup marker by normalized email. A member setting up
 // the whole network plus a few individual feeds fits well under 20 writes;
 // sustained refill is 1/6s. Bounds an authenticated caller from scripting the
-// endpoint to bloat sc_feed_activations with junk pending rows.
+// endpoint to bloat beehiiv_feed_activations with junk pending rows.
 const feedSetupLimiter = createRateLimiter({
   capacity: 20,
   refillPerSec: 1 / 6,
 })
 
 // A feed as returned to the SPA, plus the setup state we mirror server-side.
-// `activated` is authoritative once we've seen SC's `feed.activated` webhook;
-// `pending` is our optimistic marker, set when the member takes a setup action
-// but the webhook hasn't landed yet. The setup hub treats a feed as done if
-// either is true. Both are absent (undefined) when we have no record.
-type EnrichedFeed = ScUserFeed & {
+//
+// `id` is the SHOW id, not the feed token — `pod_feed_<uuid>` rotates on
+// reissue, and the client round-trips this id back through `?feed=` and the
+// pending marker, so a rotation would orphan both. The token never leaves the
+// server; the URL it appears in does.
+//
+// `activated` is authoritative — Beehiiv reports it on the feed itself and
+// through the `podcasts.private_feed` webhook. `pending` is our optimistic
+// marker, set when the member takes a setup action but the webhook hasn't
+// landed yet. The setup page treats a feed as done if either is true.
+type WireFeed = {
+  id: string
+  name: string
+  url: string
+  description?: string
+  image_url?: string
+  protocolLinks: Record<string, string>
   activated?: boolean
   activated_at?: string | null
   pending?: boolean
 }
 
-// Merge persisted setup state onto the SC feeds. Soft-fails: any DB error
-// (or no DATABASE_URL) returns the feeds untouched, so a mirror outage degrades
-// to "nothing set up yet" rather than breaking /api/me.
+// Project a Beehiiv feed onto the wire shape. Keeps `name`/`image_url` as the
+// client's field names — they now carry Beehiiv's own show title and artwork,
+// which is deliberate: those same values go into the RSS the member's podcast
+// app reads, so the site and the app agree without us hardcoding either.
+function toWireFeed(feed: PrivateFeed): WireFeed {
+  return {
+    id: feed.show.id,
+    name: feed.show.title,
+    url: feed.url,
+    ...(feed.show.description ? { description: feed.show.description } : {}),
+    ...(feed.show.artworkUrl ? { image_url: feed.show.artworkUrl } : {}),
+    protocolLinks: feed.protocolLinks,
+  }
+}
+
+// Merge persisted setup state onto the feeds. Belt and braces: Beehiiv's own
+// `activated` timestamp wins when present, so a missed webhook can't strand the
+// display; the mirror supplies the optimistic `pending` marker the API has no
+// concept of. Soft-fails — any DB error (or no DATABASE_URL) returns the live
+// state alone, so a mirror outage degrades to "not set up yet" rather than
+// breaking /api/me.
 async function enrichFeedsWithActivation(
   env: Deps['env'],
   email: string,
-  feeds: ScUserFeed[],
-): Promise<EnrichedFeed[]> {
-  if (!env.DATABASE_URL || feeds.length === 0) return feeds
+  feeds: PrivateFeed[],
+): Promise<WireFeed[]> {
+  const wire = feeds.map((f) => {
+    const w = toWireFeed(f)
+    if (f.activatedAt != null && f.revokedAt == null) {
+      w.activated = true
+      w.activated_at = f.activatedAt
+    }
+    return w
+  })
+  if (!env.DATABASE_URL || wire.length === 0) return wire
   try {
     const states = await getSetupStates(getDb(env), email)
-    if (states.size === 0) return feeds
-    return feeds.map((f) => {
-      const s = states.get(f.id)
-      return s
-        ? { ...f, activated: s.activated, activated_at: s.activatedAt, pending: s.pending }
-        : f
+    if (states.size === 0) return wire
+    return wire.map((w) => {
+      const s = states.get(w.id)
+      if (!s) return w
+      return {
+        ...w,
+        activated: w.activated === true || s.activated,
+        activated_at: w.activated_at ?? s.activatedAt,
+        pending: s.pending,
+      }
     })
   } catch (err) {
     console.error('[me] feed activation enrich failed:', err)
-    return feeds
+    return wire
   }
 }
 
@@ -145,13 +191,11 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // be cached by a shared proxy/CDN and served to another user.
         res.setHeader('cache-control', 'private, no-store')
 
-        // Neon is the single entitlement authority (§3). The transitional
-        // SC-by-email fallback (task 10) still grants arkPlus to a just-paid
-        // member whose webhook row hasn't landed — dropped once the backfill is
-        // verified complete.
-        const resolved = await resolveMembership(req, env, { scFallback: true, stripe })
+        // Neon is the single entitlement authority (§3). The by-email fallback
+        // still resolves a just-paid member whose session carries no sub yet.
+        const resolved = await resolveMembership(req, env, { emailFallback: true, stripe })
         if (!resolved) return json(401, { error: 'unauthenticated' })
-        const { identity, tier, entitlements, scUserId } = resolved
+        const { identity, tier, entitlements } = resolved
         const email = identity.email
         // Per-axis access (source + expiry) for account settings — recipients are
         // members-with-an-expiry, not subscribers, so the UI needs per-axis facts.
@@ -164,23 +208,16 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           return json(401, { error: 'membership_not_found' })
         }
 
-        // Render the SC private feed for the arkPlus axis, keyed on the resolved
-        // sc_user_id (no findScUserByEmail lookup). Soft-fail: a feed 404 or SC
-        // outage degrades to an empty feed list — entitlement came from Neon, so
-        // the membership decision never depends on SC being reachable.
-        let feeds: ScUserFeed[] = []
-        if (entitlements.arkPlus && scUserId != null) {
-          try {
-            const feedsRes = await createScClient(env).call<{ feeds: ScUserFeed[] }>(
-              'GET',
-              `/users/${scUserId}/feeds`,
-            )
-            feeds = feedsRes.feeds ?? []
-          } catch (feedErr) {
-            if ((feedErr as ScError).status !== 404) {
-              console.error('[me] feed fetch failed:', feedErr)
-            }
-          }
+        // Render the private feed for the arkPlus axis, keyed on the session
+        // email (Beehiiv has no id of ours to key on). `fetchPrivateFeed` never
+        // throws and returns null for every "no feed" case, so a Beehiiv outage
+        // degrades to an empty list — entitlement came from Neon, and the
+        // membership decision must never depend on Beehiiv being reachable.
+        const podcastId = premiumPodcastIdFromEnv(env)
+        const feeds: PrivateFeed[] = []
+        if (entitlements.arkPlus && podcastId) {
+          const feed = await fetchPrivateFeed(env, email, podcastId)
+          if (feed) feeds.push(feed)
         }
         const enriched = await enrichFeedsWithActivation(env, email, feeds)
 
@@ -243,17 +280,22 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // still stands and the webhook remains the source of truth, so ack.
         if (!env.DATABASE_URL) return json(200, { ok: true })
 
+        // Show ids (`pod_<uuid>`), not the rotating feed token — see WireFeed.
+        // Bounded length as well as shape: an authenticated caller must not be
+        // able to script this endpoint into bloating the mirror with junk rows.
         const body = await readJson<{ feed_ids?: unknown }>(req)
-        const feedIds = Array.isArray(body?.feed_ids)
+        const showIds = Array.isArray(body?.feed_ids)
           ? body.feed_ids
-              .map((n) => (typeof n === 'number' ? n : Number(n)))
-              .filter((n) => Number.isInteger(n) && n > 0)
+              .filter(
+                (v): v is string =>
+                  typeof v === 'string' && v.length > 0 && v.length <= 64,
+              )
               .slice(0, 100)
           : []
-        if (feedIds.length === 0) return json(400, { error: 'no_feed_ids' })
+        if (showIds.length === 0) return json(400, { error: 'no_feed_ids' })
 
         try {
-          await recordFeedsPending(getDb(env), email, feedIds)
+          await recordFeedsPending(getDb(env), email, showIds)
           json(200, { ok: true })
         } catch (err) {
           console.error('[me] feed pending write failed:', err)
@@ -283,7 +325,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // rides the arkPlus axis. A member who upgraded after their last login
         // is never stale here — the row is read live, keyed on their sub, with
         // the transitional SC-by-email fallback covering a not-yet-written row.
-        const resolved = await resolveMembership(req, env, { scFallback: true, stripe })
+        const resolved = await resolveMembership(req, env, { emailFallback: true, stripe })
         if (!resolved) return json(401, { error: 'unauthenticated' })
         const email = resolved.identity.email
         const isMember = resolved.entitlements.arkPlus

@@ -23,7 +23,6 @@
 //     Stripe; the source of truth for SC + entitlement state.
 
 import type Stripe from 'stripe'
-import { AlreadySubscribedError } from '../../lib/activation.js'
 import { deriveEntitlements } from '../../entitlement.js'
 import { getDb } from '../../lib/db.js'
 import {
@@ -69,7 +68,7 @@ import {
 import { getClientIp, isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
 import { getSessionEmail } from '../../lib/session.js'
-import { isValidEmail, redactEmail } from '../../../shared/validation.js'
+import { isValidEmail } from '../../../shared/validation.js'
 import { defineRoute, type Deps, type Route } from '../../lib/route.js'
 import {
   changeIsImmediate,
@@ -1308,14 +1307,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           await dispatchWebhookEvent(event, stripe, env, activator)
           json(200, { received: true })
         } catch (err) {
-          if (err instanceof AlreadySubscribedError) {
-            // The buyer already has an active SC sub — retrying the webhook
-            // won't fix that, so ack 200 and rely on the auth route's 409 to
-            // surface the situation to the buyer. Terminal: keep the claim so a
-            // retry doesn't reprocess. Manual billing follow-up.
-            console.warn('[dev-api] webhook: already subscribed:', redactEmail(err.email))
-            return json(200, { received: true, skipped: 'already_subscribed' })
-          }
           // Retryable failure: release the claim so Stripe's retry reprocesses
           // the event rather than getting deduped into a no-op.
           if (claimedEventId) {

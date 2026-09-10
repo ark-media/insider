@@ -22,7 +22,6 @@ import {
 import { setSessionCookies } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
 import { syncSubscriberName, tryPush } from '../lib/beehiiv-sync.js'
-import { createScClient, updateScUserName } from '../lib/sc-client.js'
 import { updateCircleMemberName } from '../entitlement.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
@@ -181,14 +180,6 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
                   // than keep merging the old one into every campaign.
                   first: given,
                   last: familyName || null,
-                }),
-              )
-            : null,
-          env.SC_API_KEY && env.SC_NETWORK_ID
-            ? tryPush('profile name sync (sc)', () =>
-                updateScUserName(createScClient(env), identity.email, {
-                  first: given,
-                  last: familyName,
                 }),
               )
             : null,

@@ -57,21 +57,28 @@ export const shows: Show[] = [
     paid: false,
     listen: showListenLinks["call-me-back"],
   },
-  // {
-  //   slug: "inside-call-me-back",
-  //   route: "/plus/inside-call-me-back",
-  //   title: "Call Me Back AMA",
-  //   shortTitle: "CMB AMA",
-  //   tagline:
-  //     "Presenting the challenges and dilemmas facing Israelis to a global audience.",
-  //   description:
-  //     "Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.",
-  //   hosts: ["Dan Senor"],
-  //   cadence: "New episodes weekly",
-  //   coverArt: "/inside-cmb.jpg",
-  //   paid: true,
-  //   listen: showListenLinks["inside-call-me-back"],
-  // },
+  {
+    // The premium show. Title, description and artwork below are FALLBACKS
+    // only: the live values are read from Beehiiv (/api/podcasts/show), because
+    // those same values go into the private RSS the member's podcast app reads
+    // — so hardcoding them here would let the site and the app disagree.
+    // Pointing at a different Beehiiv show is therefore a config change
+    // (BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK), not a deploy.
+    slug: "inside-call-me-back",
+    route: "/plus/inside-call-me-back",
+    title: "Call Me Back AMA",
+    shortTitle: "CMB AMA",
+    tagline:
+      "Presenting the challenges and dilemmas facing Israelis to a global audience.",
+    description:
+      "Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.",
+    hosts: ["Dan Senor"],
+    cadence: "New episodes weekly",
+    coverArt: "/inside-cmb.jpg",
+    paid: true,
+    // Deliberately empty: a private feed has no public "listen on" links.
+    listen: showListenLinks["inside-call-me-back"],
+  },
   {
     slug: "for-heavens-sake",
     route: "/podcasts/for-heavens-sake",

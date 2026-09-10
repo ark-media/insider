@@ -1,13 +1,11 @@
 // Unit tests for GET /api/me.
 //
-// Covers the post-free-account world where /api/me has two healthy outcomes
-// instead of one:
-//   - SC user found → 200 { tier: 'ark-plus-member', feeds }
-//   - SC user not found AND the session is an Auth0 bearer whose tier claim
-//     is not 'ark-plus-member' → 200 { tier: 'free', feeds: [] }
+// Entitlement comes from a Neon membership row; the private feed comes from
+// Beehiiv, keyed on the session email. Two healthy outcomes:
+//   - live arkPlus row → 200 { tier: 'ark-plus', feeds: [the private feed] }
+//   - no row on a durable Auth0 session → 200 { tier: 'free', feeds: [] }
 // The legacy 401 stays only for the checkout-cookie path (issued post-payment,
-// so a missing SC user there is a provisioning gap, not a free user) and for
-// stale 'ark-plus-member' JWTs whose SC record vanished.
+// so no entitlement there is a provisioning gap, not a free user).
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import {
@@ -30,13 +28,55 @@ import {
 // ---------------------------------------------------------------------------
 const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
+// A live membership row is what grants an axis now, so most tests stage one
+// here rather than staging an upstream record.
+let membershipRows: unknown[] = []
 
 mock.module('@neondatabase/serverless', () =>
-  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
+  neonMockModule(sqlCalls, (merged) =>
+    merged.includes('from membership') ? membershipRows : nextSqlResult(merged),
+  ),
 )
 
-// Static imports AFTER mock.module so the plugin picks up the fake neon.
+// A live Ark+ subscription row for `sub`. signAuth0TestToken subjects every
+// bearer as `auth0|<email>`, and the resolver keys on that sub.
+function arkPlusRow(sub: string): Record<string, unknown> {
+  return {
+    auth0_sub: sub,
+    stripe_customer_id: 'cus_1',
+    stripe_subscription_id: 'sub_1',
+    tier: 'ark-plus',
+    status: 'active',
+    plan: 'monthly',
+    amount_cents: 599,
+    current_period_end: null,
+    cancel_at: null,
+    ark_plus_gift_expires_at: null,
+    circle_gift_expires_at: null,
+  }
+}
+
+// --- Stripe mock ------------------------------------------------------------
+// A session with no Auth0 `sub` (the checkout cookie, minted before Auth0
+// provisioning stamps one) reaches its membership row by email → Stripe
+// customer → row. Stage the customer here; the row itself comes from the Neon
+// mock above, which is keyed by nothing, so any customer resolves it.
+let stripeCustomers: Array<{ id: string }> = []
+class FakeStripe {
+  customers = {
+    list: async (_args: { email: string; limit: number }) => ({ data: stripeCustomers }),
+  }
+  webhooks = {
+    constructEvent: () => {
+      throw new Error('not used in this file')
+    },
+  }
+}
+mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
+
+// Static imports AFTER mock.module so the plugin picks up the fakes.
 import { devApiPlugin } from './dev-api'
+import { clearPrivateFeedCache } from './lib/beehiiv-feeds'
 import { signCheckoutToken, signSessionToken } from './lib/session'
 import { CHECKOUT_COOKIE_NAME, SESSION_COOKIE_NAME } from './lib/cookies'
 
@@ -47,6 +87,7 @@ const signAuth0Token = signAuth0TestToken
 // ---------------------------------------------------------------------------
 const PATH = '/api/me'
 const PUB_ID = 'pub_test-me'
+const SHOW_ID = 'pod_test-show'
 
 const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'http://localhost:5173',
@@ -57,6 +98,8 @@ const BASE_ENV: Record<string, string> = {
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,
   BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: PUB_ID,
+  BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: SHOW_ID,
+  STRIPE_SECRET_KEY: 'sk_test_me',
   // getDb() caches the neon() client by URL across the process; distinct URL
   // per test file keeps each file's mocked sql closure isolated.
   DATABASE_URL: 'postgres://stub-me-test',
@@ -71,13 +114,12 @@ function buildHandler(env: Record<string, string> = BASE_ENV): Middleware {
 // ---------------------------------------------------------------------------
 // fetch mock — serves JWKS, Simplecast, and Beehiiv.
 // ---------------------------------------------------------------------------
-type ScUserStub = { id: number; email: string } | null
-type ScFeedsStub = { id: number; name: string; url: string }[]
 type BeehiivCall = { url: string; method: string; body: unknown }
 
-let scUserByEmail: Map<string, ScUserStub> = new Map()
-let scFeedsByUserId: Map<number, ScFeedsStub> = new Map()
-let scThrowOnSearch = false
+// The member's private feed, keyed by email. Absent → Beehiiv 404s, which is
+// how "this member has no feed" is expressed upstream.
+let privateFeedByEmail: Map<string, { token: string; activated?: number }> = new Map()
+let privateFeedStatus = 0 // non-zero forces this status on the feed lookup
 let beehiivCalls: BeehiivCall[] = []
 let beehiivHandler: (call: BeehiivCall) => Response = () =>
   new Response('{}', { status: 404 })
@@ -92,27 +134,42 @@ globalThis.fetch = (async (
   // JWKS endpoint (jose.createRemoteJWKSet).
   if (url === AUTH0_TEST_JWKS_URL) return jwksResponse()
 
-  // Simplecast user search.
-  if (url.endsWith('/users/search') && init?.method === 'POST') {
-    if (scThrowOnSearch) {
-      return new Response('{"error":"upstream"}', { status: 500 })
+  // Beehiiv private feed by email.
+  const feedMatch = url.match(/\/private_feeds\/by_email\/([^/?]+)$/)
+  if (feedMatch) {
+    if (privateFeedStatus !== 0) {
+      return new Response('{"errors":[{"message":"nope"}]}', { status: privateFeedStatus })
     }
-    const body = init.body ? (JSON.parse(init.body as string) as { email: string }) : { email: '' }
-    const user = scUserByEmail.get(body.email)
-    return new Response(JSON.stringify({ users: user ? [user] : [] }), {
-      status: 200,
-    })
-  }
-
-  // Simplecast feeds for a user.
-  const feedsMatch = url.match(/\/users\/(\d+)\/feeds$/)
-  if (feedsMatch) {
-    const userId = Number(feedsMatch[1])
-    const feeds = scFeedsByUserId.get(userId)
-    if (feeds === undefined) {
-      return new Response('{"error":"not_found"}', { status: 404 })
+    const email = decodeURIComponent(feedMatch[1])
+    const feed = privateFeedByEmail.get(email)
+    if (!feed) {
+      return new Response(
+        '{"errors":[{"message":"Couldn\'t find podcasts::feedtoken"}]}',
+        { status: 404 },
+      )
     }
-    return new Response(JSON.stringify({ feeds }), { status: 200 })
+    return new Response(
+      JSON.stringify({
+        data: {
+          id: 'pod_feed_abc',
+          url: `https://rss.beehiiv.com/podcasts/x/private/${feed.token}.xml`,
+          protocol_links: {
+            apple: `podcast://rss.beehiiv.com/${feed.token}`,
+            pocket_casts: `pktc://subscribe/${feed.token}`,
+          },
+          created: 1788982716,
+          activated: feed.activated ?? null,
+          revoked: null,
+          expires: null,
+          show: {
+            id: SHOW_ID,
+            title: 'Giraffe Sandbox | Ark+',
+            artwork_url: 'https://media.beehiiv.com/art.png',
+          },
+        },
+      }),
+      { status: 200 },
+    )
   }
 
   // Beehiiv — defer to per-test handler so tests can stage create/lookup
@@ -133,9 +190,11 @@ globalThis.fetch = (async (
 silenceExpectedConsole()
 
 beforeEach(() => {
-  scUserByEmail = new Map()
-  scFeedsByUserId = new Map()
-  scThrowOnSearch = false
+  privateFeedByEmail = new Map()
+  privateFeedStatus = 0
+  membershipRows = []
+  stripeCustomers = []
+  clearPrivateFeedCache()
   sqlCalls.length = 0
   nextSqlResult = () => []
   beehiivCalls = []
@@ -146,9 +205,9 @@ afterAll(() => {
   globalThis.fetch = originalFetch
 })
 
-// Per-axis access shapes in the /api/me response (T7.1). With no Neon row these
-// tests exercise the free path (both axes inactive) and the SC-by-email arkPlus
-// fallback (arkPlus active, attributed to a subscription, no gift expiry).
+// Per-axis access shapes in the /api/me response (T7.1): the free path (both
+// axes inactive) and a live Ark+ subscription (attributed to a subscription,
+// no gift expiry).
 const FREE_AXIS = { active: false, source: null, expiresAt: null, renewsAt: null }
 const SUB_ARKPLUS_AXIS = {
   active: true,
@@ -214,11 +273,9 @@ describe('GET /api/me with Auth0 bearer', () => {
     })
   })
 
-  test('tier=subscriber claim AND SC record found → 200 subscriber shape with feeds', async () => {
-    scUserByEmail.set('paid@x.com', { id: 42, email: 'paid@x.com' })
-    scFeedsByUserId.set(42, [
-      { id: 1, name: 'Private feed', url: 'https://example.com/feed.xml' },
-    ])
+  test('live arkPlus row → 200 subscriber shape carrying the private feed', async () => {
+    membershipRows = [arkPlusRow('auth0|paid@x.com')]
+    privateFeedByEmail.set('paid@x.com', { token: 'tok' })
     const token = await signAuth0Token({ email: 'paid@x.com' })
     const handler = buildHandler()
     const res = makeRes()
@@ -232,17 +289,25 @@ describe('GET /api/me with Auth0 bearer', () => {
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [
-        { id: 1, name: 'Private feed', url: 'https://example.com/feed.xml' },
+        {
+          id: SHOW_ID,
+          name: 'Giraffe Sandbox | Ark+',
+          url: 'https://rss.beehiiv.com/podcasts/x/private/tok.xml',
+          image_url: 'https://media.beehiiv.com/art.png',
+          protocolLinks: {
+            apple: 'podcast://rss.beehiiv.com/tok',
+            pocket_casts: 'pktc://subscribe/tok',
+          },
+        },
       ],
     })
   })
 
-  test('stale tier=free JWT but SC user exists → 200 subscriber (SC presence wins)', async () => {
-    // Simulates a recently-upgraded user whose access token still carries the
-    // pre-upgrade 'free' claim. Without this fallback they'd lose Circle /
-    // private-feed access until their next token refresh.
-    scUserByEmail.set('upgraded@x.com', { id: 7, email: 'upgraded@x.com' })
-    scFeedsByUserId.set(7, [])
+  test('a stale tier claim does not matter — the Neon row decides', async () => {
+    // A recently-upgraded member's access token still carries the pre-upgrade
+    // 'free' claim. Entitlement is read live from Neon, so they don't lose
+    // access until their next token refresh.
+    membershipRows = [arkPlusRow('auth0|upgraded@x.com')]
     const token = await signAuth0Token({ email: 'upgraded@x.com' })
     const handler = buildHandler()
     const res = makeRes()
@@ -259,10 +324,36 @@ describe('GET /api/me with Auth0 bearer', () => {
     })
   })
 
-  test('Auth0 bearer with no membership row and no SC user → 200 free', async () => {
-    // Neon is authoritative: no row + no SC feed on a durable login is a
-    // logged-in free user. The legacy 401 now applies only to the checkout
-    // cookie (post-payment), not to an Auth0 session.
+  test('the feed carries activation state straight from Beehiiv', async () => {
+    // Belt and braces: the GET reports `activated`, so a missed webhook can't
+    // strand the setup page on "not set up yet".
+    membershipRows = [arkPlusRow('auth0|active@x.com')]
+    privateFeedByEmail.set('active@x.com', { token: 'tok', activated: 1789000000 })
+    const token = await signAuth0Token({ email: 'active@x.com' })
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+    const feeds = (res.__json() as { feeds: Array<Record<string, unknown>> }).feeds
+    expect(feeds[0]).toMatchObject({ activated: true })
+    expect(feeds[0].activated_at).toBe(new Date(1789000000 * 1000).toISOString())
+  })
+
+  test('the rotating feed token is never the id the client round-trips', async () => {
+    // `pod_feed_<uuid>` changes on reissue; the setup marker and `?feed=` are
+    // keyed on the show id so a rotation can't orphan them.
+    membershipRows = [arkPlusRow('auth0|paid@x.com')]
+    privateFeedByEmail.set('paid@x.com', { token: 'tok' })
+    const token = await signAuth0Token({ email: 'paid@x.com' })
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+    const feeds = (res.__json() as { feeds: Array<Record<string, unknown>> }).feeds
+    expect(feeds[0].id).toBe(SHOW_ID)
+    expect(JSON.stringify(feeds[0])).not.toContain('pod_feed_abc')
+  })
+
+  test('Auth0 bearer with no membership row → 200 free', async () => {
+    // Neon is authoritative: no row on a durable login is a logged-in free
+    // user. The legacy 401 now applies only to the checkout cookie
+    // (post-payment), not to an Auth0 session.
     const token = await signAuth0Token({ email: 'gone@x.com' })
     const handler = buildHandler()
     const res = makeRes()
@@ -279,7 +370,7 @@ describe('GET /api/me with Auth0 bearer', () => {
     })
   })
 
-  test('no tier claim AND no SC user → 200 free (safety net for missing Action)', async () => {
+  test('no tier claim and no row → 200 free (safety net for a missing Action)', async () => {
     const token = await signAuth0Token({ email: 'unknown-tier@x.com' })
     const handler = buildHandler()
     const res = makeRes()
@@ -296,9 +387,11 @@ describe('GET /api/me with Auth0 bearer', () => {
     })
   })
 
-  test('SC feeds 404 is tolerated; returns subscriber with empty feeds', async () => {
-    scUserByEmail.set('newpaid@x.com', { id: 100, email: 'newpaid@x.com' })
-    // scFeedsByUserId intentionally not set → mock returns 404.
+  test('a 404 from the feed lookup is tolerated: entitled, feeds empty', async () => {
+    // The member is entitled but Beehiiv hasn't minted their feed yet. Both
+    // 404 variants (no subscriber / not premium) look the same and must not
+    // affect the membership decision.
+    membershipRows = [arkPlusRow('auth0|newpaid@x.com')]
     const token = await signAuth0Token({ email: 'newpaid@x.com' })
     const handler = buildHandler()
     const res = makeRes()
@@ -315,11 +408,11 @@ describe('GET /api/me with Auth0 bearer', () => {
     })
   })
 
-  test('SC upstream error is tolerated → 200 free (Neon is authoritative)', async () => {
-    // The SC-by-email lookup is now only a best-effort transitional fallback;
-    // entitlement comes from Neon, so an SC outage degrades to "no arkPlus"
-    // rather than 500ing /api/me.
-    scThrowOnSearch = true
+  test('a Beehiiv outage never costs a member their membership', async () => {
+    // Entitlement came from Neon; the feed lookup is decoration. A 500 upstream
+    // must degrade to "no feed yet", not to "not a member" and not to a 500.
+    membershipRows = [arkPlusRow('auth0|oops@x.com')]
+    privateFeedStatus = 500
     const token = await signAuth0Token({ email: 'oops@x.com' })
     const handler = buildHandler()
     const res = makeRes()
@@ -327,13 +420,24 @@ describe('GET /api/me with Auth0 bearer', () => {
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({
       email: 'oops@x.com',
-      tier: 'free',
+      tier: 'ark-plus',
       ...NO_NAME,
       ...DB_IDENTITY,
-      entitlements: { arkPlus: false, circle: false },
-      axes: FREE_AXES,
+      entitlements: { arkPlus: true, circle: false },
+      axes: ARKPLUS_AXES,
       feeds: [],
     })
+  })
+
+  test('a 422 (show not premium) is a config alarm, not a member state', async () => {
+    membershipRows = [arkPlusRow('auth0|conf@x.com')]
+    privateFeedStatus = 422
+    const token = await signAuth0Token({ email: 'conf@x.com' })
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { tier: string }).tier).toBe('ark-plus')
+    expect((res.__json() as { feeds: unknown[] }).feeds).toEqual([])
   })
 })
 
@@ -346,9 +450,11 @@ describe('GET /api/me with Auth0 bearer', () => {
 // That is the safe direction: a missing sub never offers a password reset for
 // an account that may not have one.
 describe('GET /api/me with checkout-cookie session', () => {
-  test('checkout cookie + SC user found → 200 subscriber', async () => {
-    scUserByEmail.set('fresh@x.com', { id: 11, email: 'fresh@x.com' })
-    scFeedsByUserId.set(11, [])
+  test('checkout cookie + a row reachable by Stripe customer → 200 subscriber', async () => {
+    // A checkout token carries no sub, so the row is reached by the by-email
+    // net (email → Stripe customer → membership).
+    membershipRows = [arkPlusRow('auth0|fresh')]
+    stripeCustomers = [{ id: 'cus_1' }]
     const token = await signCheckoutToken('fresh@x.com', BASE_ENV)
     const handler = buildHandler()
     const res = makeRes()
@@ -369,9 +475,9 @@ describe('GET /api/me with checkout-cookie session', () => {
     })
   })
 
-  test('session cookie + SC user found → 200 subscriber', async () => {
-    scUserByEmail.set('member@x.com', { id: 21, email: 'member@x.com' })
-    scFeedsByUserId.set(21, [])
+  test('session cookie + a row reachable by Stripe customer → 200 subscriber', async () => {
+    membershipRows = [arkPlusRow('auth0|member')]
+    stripeCustomers = [{ id: 'cus_1' }]
     const token = await signSessionToken({ email: 'member@x.com', roles: [] }, BASE_ENV)
     const res = makeRes()
     await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
@@ -387,7 +493,7 @@ describe('GET /api/me with checkout-cookie session', () => {
     })
   })
 
-  test('session cookie + no SC record → 200 free (logged-in, not a provisioning gap)', async () => {
+  test('session cookie + no membership → 200 free (logged-in, not a provisioning gap)', async () => {
     const token = await signSessionToken({ email: 'freebie@x.com', roles: [] }, BASE_ENV)
     const res = makeRes()
     await runHandler(buildHandler(), makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` }), res)
@@ -451,8 +557,8 @@ describe('GET /api/me with checkout-cookie session', () => {
   })
 
   test('checkout token as Bearer (not cookie) also resolves', async () => {
-    scUserByEmail.set('viabearer@x.com', { id: 22, email: 'viabearer@x.com' })
-    scFeedsByUserId.set(22, [])
+    membershipRows = [arkPlusRow('auth0|viabearer')]
+    stripeCustomers = [{ id: 'cus_1' }]
     const token = await signCheckoutToken('viabearer@x.com', BASE_ENV)
     const handler = buildHandler()
     const res = makeRes()
@@ -609,8 +715,7 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
   })
 
   test('subscriber path does NOT trigger free auto-subscribe', async () => {
-    scUserByEmail.set('paid@x.com', { id: 99, email: 'paid@x.com' })
-    scFeedsByUserId.set(99, [])
+    membershipRows = [arkPlusRow('auth0|paid@x.com')]
     const token = await signAuth0Token({ email: 'paid@x.com' })
     const handler = buildHandler()
     const res = makeRes()

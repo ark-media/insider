@@ -1,23 +1,24 @@
 // Backfill member names from the systems that already hold them.
 //
-// Most members migrated from Supporting Cast without a name, which is why every
-// lifecycle email opens "Hi there,". Before asking anyone to type their name in
-// the account page, harvest the ones we already have: a minority of records in
-// SC, Stripe and Circle carry a real name, and that coverage is free.
+// Many members have no name on file, which is why lifecycle emails open
+// "Hi there,". Before asking anyone to type theirs into the account page,
+// harvest the ones we already have: some records in Stripe and Circle carry a
+// real name, and that coverage is free.
 //
-// Three passes, in precedence order (first real name wins; a later pass never
+// Two passes, in precedence order (first real name wins; a later pass never
 // overwrites an earlier, better one):
 //
-//   A. Supporting Cast — loadAllMemberships returns first_name/last_name for the
-//      whole roster. Highest quality: it IS the migrated roster.
 //   B. Stripe — customer.name, for anyone who ever checked out.
 //   C. Circle — community members, for Fold-first joiners. Lowest yield,
 //      since most Circle members were created from a then-null Stripe name.
 //
+// (Pass A read the Supporting Cast roster, which was the highest-yield source
+// and is gone with the Beehiiv migration. The pass letters are left as B and C
+// so the console output still matches this comment.)
+//
 // Every candidate is filtered through shared/profile-name: all three systems
-// store a name we manufactured from the email local part when we had nothing
-// (findOrCreateScUser writes email.split('@')[0] into SC's first_name), so an
-// unfiltered copy would just move junk from one store to another.
+// store a name we manufactured from the email local part when we had nothing,
+// so an unfiltered copy would just move junk from one store to another.
 //
 // Writes go to Auth0 (given_name/family_name — the name's home; Neon stores no
 // PII), to Beehiiv custom fields (what campaigns actually personalize from), and
@@ -42,7 +43,6 @@ import { getManagementClient } from '../server/auth0.js'
 import { updateAuth0Name } from '../server/lib/auth0-user.js'
 import { syncSubscriberName } from '../server/lib/beehiiv-sync.js'
 import { updateCircleMemberName } from '../server/entitlement.js'
-import { createScV1Client, loadAllMemberships } from '../server/lib/sc-client.js'
 import { hasRealName, splitFullName } from '../shared/profile-name.js'
 
 type Env = Record<string, string | undefined>
@@ -142,31 +142,6 @@ async function main(): Promise<void> {
     if (onlyEmail && key !== onlyEmail) return
     if (found.has(key)) return // earlier pass wins
     found.set(key, c)
-  }
-
-  // --- Pass A: Supporting Cast ------------------------------------------------
-  console.log('Pass A — Supporting Cast roster')
-  try {
-    const members = await loadAllMemberships(createScV1Client(env as Record<string, string>))
-    let hits = 0
-    for (const m of members) {
-      const before = found.size
-      // SC's first_name held the whole name whenever the user was created from a
-      // single hint, so split it when nothing sits in last_name — otherwise
-      // "Hannah Waxman" lands in Auth0's given_name and every greeting in the
-      // system reads "Hi Hannah Waxman,". Pass B already splits Stripe's name;
-      // this is the higher-precedence pass, so it decides the whole roster.
-      const { first, last } = (m.last_name ?? '').trim()
-        ? { first: m.first_name, last: m.last_name }
-        : splitFullName(m.first_name)
-      offer(m.email, candidateFrom(m.email, first, last, 'supporting-cast'))
-      if (found.size > before) hits += 1
-    }
-    console.log(`  scanned ${members.length}, usable names ${hits}`)
-  } catch (err) {
-    console.log(`  ! FAILED — ${err instanceof Error ? err.message : String(err)}`)
-    console.log('    Pass A contributed nothing; this is the highest-yield source.')
-    passFailures.push('supporting-cast')
   }
 
   // --- Pass B: Stripe customers ----------------------------------------------

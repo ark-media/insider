@@ -5,8 +5,9 @@
 //     entitlement, task 5): a tier that grants circle POSTs the access group,
 //     one that doesn't DELETEs it. No Auth0 PATCH.
 //   - reconcileEntitlements is Neon-authoritative + removal-only (task 15): it
-//     diffs the Neon roster against the SC roster (arkPlus, on sc_user_id) and
-//     the Circle access group (circle, on the stamped auth0_sub), removing drift.
+//     diffs the Neon roster against the Beehiiv premium mirror (arkPlus, keyed
+//     on email and projected onto a sub through Auth0) and the Circle access
+//     group (circle, on the stamped auth0_sub), removing drift.
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import type Stripe from 'stripe'
@@ -14,6 +15,9 @@ import { silenceExpectedConsole } from './test-utils'
 
 // --- Neon mock (staged membership roster for the reconciler) ----------------
 let neonMembershipRows: unknown[] = []
+// The reconciler's arkPlus roster: emails currently holding the Beehiiv premium
+// tier, read from the mirror.
+let premiumEmails: string[] = []
 mock.module('@neondatabase/serverless', () => ({
   neon:
     (_url: string) =>
@@ -22,9 +26,31 @@ mock.module('@neondatabase/serverless', () => ({
       if (merged.includes('from membership')) {
         return Promise.resolve(neonMembershipRows)
       }
+      if (merged.includes('from beehiiv_subscription') && merged.includes('has_premium')) {
+        return Promise.resolve(premiumEmails.map((email) => ({ email })))
+      }
       // Everything else (beehiiv mirror reads/writes during drift downgrade) → [].
       return Promise.resolve([])
     },
+  __esModule: true,
+}))
+
+// --- Auth0 mock -------------------------------------------------------------
+// The arkPlus axis projects a premium EMAIL onto a membership row's Auth0 sub.
+// `auth0SubsByEmail` stages that projection; an email mapped to `null` models a
+// lookup failure (the SDK throwing), which must never cause a revoke.
+let auth0SubsByEmail = new Map<string, string[] | null>()
+mock.module('auth0', () => ({
+  ManagementClient: class {
+    users = {
+      listUsersByEmail: ({ email }: { email: string }) => {
+        const subs = auth0SubsByEmail.get(email)
+        if (subs === null) return Promise.reject(new Error('auth0 down'))
+        return Promise.resolve((subs ?? []).map((user_id) => ({ user_id })))
+      },
+    }
+  },
+  AuthenticationClient: class {},
   __esModule: true,
 }))
 
@@ -39,8 +65,10 @@ import {
 const BASE_ENV = {
   CIRCLE_ADMIN_API_TOKEN: 'circle-admin-tok',
   CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: 'ag-99',
-  SC_API_KEY: 'sc-key',
-  SC_NETWORK_ID: 'net-1',
+  AUTH0_MANAGEMENT_CLIENT_ID: 'mgmt-id',
+  AUTH0_MANAGEMENT_CLIENT_SECRET: 'mgmt-secret',
+  BEEHIIV_API_KEY: 'bk_test',
+  BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test',
   DATABASE_URL: 'postgres://stub-entitlement-test',
 } as Record<string, string>
 
@@ -70,6 +98,8 @@ silenceExpectedConsole()
 beforeEach(() => {
   calls = []
   neonMembershipRows = []
+  premiumEmails = []
+  auth0SubsByEmail = new Map()
 })
 
 afterAll(() => {
@@ -457,7 +487,6 @@ describe('emailForStripeCustomer', () => {
 function row(over: Partial<Record<string, unknown>>): Record<string, unknown> {
   return {
     auth0_sub: 'auth0|x',
-    sc_user_id: null,
     tier: 'free',
     status: 'active',
     stripe_subscription_id: null,
@@ -471,26 +500,32 @@ function row(over: Partial<Record<string, unknown>>): Record<string, unknown> {
 // (/users/{id}), Circle access-group list + members roster + DELETE, and Beehiiv
 // (tolerated during drift downgrade).
 function reconcilerFetch(opts: {
-  scMembers?: Array<{ user_id: number; email: string }>
   // Circle group members → { auth0_sub (custom field), email }.
   circleMembers?: Array<{ auth0Sub: string | null; email: string }>
 }): FetchHandler {
-  const scMembers = opts.scMembers ?? []
   const circleMembers = opts.circleMembers ?? []
   const idFor = new Map(circleMembers.map((m, i) => [m, i + 1] as const))
   return ({ url, init }) => {
-    // Beehiiv — tolerated no-op during a drift downgrade.
-    if (url.includes('api.beehiiv.com')) return jsonRes(404, {})
-    // SC memberships roster.
-    if (url.includes('/memberships')) {
-      return jsonRes(200, { data: scMembers, current_page: 1, last_page: 1 })
+    // Beehiiv — the drift downgrade looks the subscriber up by email, then
+    // PUTs tier:free. Answer the lookup as a live premium record so the
+    // downgrade actually runs.
+    if (url.includes('api.beehiiv.com')) {
+      const byEmail = url.match(/by_email\/([^/?]+)/)?.[1]
+      if (byEmail) {
+        return jsonRes(200, {
+          data: {
+            id: `sub_${byEmail}`,
+            email: decodeURIComponent(byEmail),
+            status: 'active',
+            subscription_tier: 'premium',
+          },
+        })
+      }
+      // The PUT that applies tier:free.
+      return jsonRes(200, {
+        data: { id: 'sub_x', email: 'x@x.com', status: 'active', subscription_tier: 'free' },
+      })
     }
-    // SC user delete.
-    if (url.includes('/users/') && init?.method === 'DELETE') {
-      return jsonRes(200, {})
-    }
-    // SC user search (beehiiv known-reader etc.) — empty.
-    if (url.includes('/users/search')) return jsonRes(200, { users: [] })
     // Circle access-group list.
     if (url.includes('/access_groups/ag-99/community_members')) {
       if (init?.method === 'DELETE') return jsonRes(200, {})
@@ -525,106 +560,117 @@ describe('reconcileEntitlements', () => {
       { ...BASE_ENV, DATABASE_URL: '' },
       {} as Stripe,
     )
-    expect(summary).toEqual({ scanned: 0, scRemoved: 0, circleRemoved: 0, errors: 0 })
+    expect(summary).toEqual({ scanned: 0, arkPlusRemoved: 0, circleRemoved: 0, errors: 0 })
     expect(calls.length).toBe(0)
   })
 
-  test('SC drift: deletes an SC user not in Neon arkPlus keep-set', async () => {
-    // Neon: one live arkPlus member on sc_user_id 1.
-    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus', sc_user_id: 1 })]
-    installFetch(
-      reconcilerFetch({
-        scMembers: [
-          { user_id: 1, email: 'keep@x.com' }, // in keep-set → left alone
-          { user_id: 2, email: 'drift@x.com' }, // not in Neon → removed
-        ],
-      }),
-    )
+  test('arkPlus drift: downgrades a premium subscriber with no live Neon row', async () => {
+    // Neon: one live arkPlus member. Beehiiv: that member plus a stale one.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    premiumEmails = ['keep@x.com', 'drift@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['drift@x.com', ['auth0|gone']],
+    ])
+    installFetch(reconcilerFetch({}))
     const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    expect(summary.scRemoved).toBe(1)
+    expect(summary.arkPlusRemoved).toBe(1)
     expect(summary.errors).toBe(0)
-    const del = calls.find((c) => c.url.includes('/users/2') && c.init?.method === 'DELETE')
-    expect(del).toBeDefined()
-    // The kept member is never deleted.
-    expect(calls.some((c) => c.url.includes('/users/1') && c.init?.method === 'DELETE')).toBe(false)
+    // The downgrade addresses the drifted member, never the kept one.
+    const touched = calls.filter((c) => c.url.includes('api.beehiiv.com'))
+    expect(touched.some((c) => c.url.includes('drift%40x.com'))).toBe(true)
+    expect(touched.some((c) => c.url.includes('keep%40x.com'))).toBe(false)
   })
 
-  test('SC drift: an expired gift row is not in the keep-set → its SC user is removed', async () => {
+  test('arkPlus drift: an expired gift row is not in the keep-set → downgraded', async () => {
     const past = new Date(Date.now() - 86_400_000).toISOString()
     neonMembershipRows = [
-      // A live member keeps the keep-set non-empty so the empty-keep-set fail-
-      // safe doesn't trip; the expired gift member is the drift under test.
-      row({ auth0_sub: 'auth0|live', tier: 'ark-plus', sc_user_id: 1 }),
-      row({ auth0_sub: 'auth0|gift', tier: 'ark-plus', sc_user_id: 5, ark_plus_gift_expires_at: past }),
-    ]
-    installFetch(
-      reconcilerFetch({
-        scMembers: [
-          { user_id: 1, email: 'live@x.com' },
-          { user_id: 5, email: 'gift@x.com' },
-        ],
+      // A live member keeps the keep-set non-empty so the empty-keep-set
+      // fail-safe doesn't trip; the expired gift member is the drift under test.
+      row({ auth0_sub: 'auth0|live', tier: 'ark-plus' }),
+      row({
+        auth0_sub: 'auth0|gift',
+        tier: 'ark-plus',
+        ark_plus_gift_expires_at: past,
       }),
-    )
+    ]
+    premiumEmails = ['live@x.com', 'gift@x.com']
+    auth0SubsByEmail = new Map([
+      ['live@x.com', ['auth0|live']],
+      ['gift@x.com', ['auth0|gift']],
+    ])
+    installFetch(reconcilerFetch({}))
     const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    expect(summary.scRemoved).toBe(1)
+    expect(summary.arkPlusRemoved).toBe(1)
     expect(
-      calls.some((c) => c.url.includes('/users/5') && c.init?.method === 'DELETE'),
+      calls.some((c) => c.url.includes('api.beehiiv.com') && c.url.includes('gift%40x.com')),
     ).toBe(true)
   })
 
-  test('SC roster loads on the v1 API; deletes go to v2', async () => {
-    // The membership roster lives on the key-scoped v1 API; DELETE /users is v2.
-    // Loading the roster with the v2 client would 404 and silently disable all
-    // drift removal, so assert each call hits its correct base.
-    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus', sc_user_id: 1 })]
-    installFetch(
-      reconcilerFetch({
-        scMembers: [
-          { user_id: 1, email: 'keep@x.com' },
-          { user_id: 2, email: 'drift@x.com' },
-        ],
-      }),
-    )
-    await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    const roster = calls.find((c) => c.url.includes('/memberships'))
-    expect(roster?.url).toContain('/v1/')
-    const del = calls.find((c) => c.url.includes('/users/2') && c.init?.method === 'DELETE')
-    expect(del?.url).toContain('/v2/')
-  })
-
-  test('SC drift: empty keep-set against a non-empty roster → skips removal (fail-safe)', async () => {
-    // No live arkPlus rows (e.g. Neon not yet backfilled). Removing every SC
-    // member as "drift" would wipe the paid roster, so the axis must no-op.
-    neonMembershipRows = []
-    installFetch(reconcilerFetch({ scMembers: [{ user_id: 7, email: 'live@x.com' }] }))
-    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    expect(summary.scRemoved).toBe(0)
-    expect(
-      calls.some((c) => c.url.includes('/users/7') && c.init?.method === 'DELETE'),
-    ).toBe(false)
-  })
-
-  test('SC drift: a live arkPlus row with a null sc_user_id → skips removal (incomplete keep-set)', async () => {
-    // The null-sc_user_id member can't be matched to the roster, so the keep-set
-    // is known-incomplete; deleting the "unmatched" roster entry could revoke a
-    // live feed. Skip removal this run rather than risk it.
-    neonMembershipRows = [
-      row({ auth0_sub: 'auth0|noscid', tier: 'ark-plus', sc_user_id: null }),
-      row({ auth0_sub: 'auth0|ok', tier: 'ark-plus', sc_user_id: 1 }),
-    ]
-    installFetch(reconcilerFetch({ scMembers: [{ user_id: 2, email: 'drift@x.com' }] }))
-    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    expect(summary.scRemoved).toBe(0)
-  })
-
-  test('SC drift: a future gift row keeps its SC user', async () => {
+  test('arkPlus drift: a future gift row keeps its premium tier', async () => {
     const future = new Date(Date.now() + 7 * 86_400_000).toISOString()
     neonMembershipRows = [
-      row({ auth0_sub: 'auth0|gift', tier: 'ark-plus', sc_user_id: 5, ark_plus_gift_expires_at: future }),
+      row({
+        auth0_sub: 'auth0|gift',
+        tier: 'ark-plus',
+        ark_plus_gift_expires_at: future,
+      }),
     ]
-    installFetch(reconcilerFetch({ scMembers: [{ user_id: 5, email: 'gift@x.com' }] }))
+    premiumEmails = ['gift@x.com']
+    auth0SubsByEmail = new Map([['gift@x.com', ['auth0|gift']]])
+    installFetch(reconcilerFetch({}))
     const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    expect(summary.scRemoved).toBe(0)
+    expect(summary.arkPlusRemoved).toBe(0)
+  })
+
+  test('arkPlus drift: empty keep-set against a non-empty roster → skips removal (fail-safe)', async () => {
+    // No live arkPlus rows (a truncated read, an un-provisioned env). Treating
+    // every premium member as drift would revoke the whole paid roster.
+    neonMembershipRows = []
+    premiumEmails = ['live@x.com']
+    auth0SubsByEmail = new Map([['live@x.com', ['auth0|live']]])
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.arkPlusRemoved).toBe(0)
+    expect(calls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
+  })
+
+  test('arkPlus drift: an Auth0 lookup failure never revokes', async () => {
+    // The projection is the only thing tying a premium email to a membership
+    // row. If it throws we know nothing about the member — revoking on that is
+    // how a safety net becomes an outage.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    premiumEmails = ['keep@x.com', 'unknown@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['unknown@x.com', null], // lookup throws
+    ])
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.arkPlusRemoved).toBe(0)
+  })
+
+  test('arkPlus drift: an email with no Auth0 user is left alone', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    premiumEmails = ['keep@x.com', 'noaccount@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['noaccount@x.com', []], // resolves, but to no user
+    ])
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.arkPlusRemoved).toBe(0)
+  })
+
+  test('arkPlus drift: a member with two Auth0 identities is kept if either is live', async () => {
+    // Social + database logins on one address produce two subs; the membership
+    // row is keyed on whichever one paid.
+    neonMembershipRows = [row({ auth0_sub: 'google-oauth2|123', tier: 'ark-plus' })]
+    premiumEmails = ['two@x.com']
+    auth0SubsByEmail = new Map([['two@x.com', ['auth0|123', 'google-oauth2|123']]])
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.arkPlusRemoved).toBe(0)
   })
 
   test('Circle drift: removes a group member whose auth0_sub is not in the Neon circle keep-set', async () => {
@@ -674,24 +720,28 @@ describe('reconcileEntitlements', () => {
     expect(summary.circleRemoved).toBe(0)
   })
 
-  test('bundle grants both axes: its SC user and Circle membership are both kept', async () => {
-    neonMembershipRows = [row({ auth0_sub: 'auth0|b', tier: 'bundle', sc_user_id: 9 })]
+  test('bundle grants both axes: premium tier and Circle membership are both kept', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|b', tier: 'bundle' })]
+    premiumEmails = ['b@x.com']
+    auth0SubsByEmail = new Map([['b@x.com', ['auth0|b']]])
     installFetch(
-      reconcilerFetch({
-        scMembers: [{ user_id: 9, email: 'b@x.com' }],
-        circleMembers: [{ auth0Sub: 'auth0|b', email: 'b@x.com' }],
-      }),
+      reconcilerFetch({ circleMembers: [{ auth0Sub: 'auth0|b', email: 'b@x.com' }] }),
     )
     const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    expect(summary.scRemoved).toBe(0)
+    expect(summary.arkPlusRemoved).toBe(0)
     expect(summary.circleRemoved).toBe(0)
   })
 
-  test('SC axis is skipped when SC_API_KEY is unset', async () => {
-    neonMembershipRows = [row({ auth0_sub: 'auth0|k', tier: 'ark-plus', sc_user_id: 1 })]
-    installFetch(reconcilerFetch({ scMembers: [{ user_id: 2, email: 'drift@x.com' }] }))
-    const summary = await reconcileEntitlements({ ...BASE_ENV, SC_API_KEY: '' }, {} as Stripe)
-    expect(summary.scRemoved).toBe(0)
-    expect(calls.some((c) => c.url.includes('/memberships'))).toBe(false)
+  test('arkPlus axis is skipped when the Auth0 management client is unconfigured', async () => {
+    // With no projection available every premium email is unresolved, which is
+    // the "leave alone" branch — not a mass revoke.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|k', tier: 'ark-plus' })]
+    premiumEmails = ['drift@x.com']
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(
+      { ...BASE_ENV, AUTH0_MANAGEMENT_CLIENT_ID: '', AUTH0_MANAGEMENT_CLIENT_SECRET: '' },
+      {} as Stripe,
+    )
+    expect(summary.arkPlusRemoved).toBe(0)
   })
 })

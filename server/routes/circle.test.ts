@@ -43,7 +43,6 @@ function circleMembershipRow(): Record<string, unknown> {
     auth0_sub: CIRCLE_MEMBER_SUB,
     stripe_customer_id: null,
     stripe_subscription_id: null,
-    sc_user_id: null,
     tier: 'circle',
     status: 'active',
     plan: 'monthly',

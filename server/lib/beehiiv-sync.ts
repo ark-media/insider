@@ -278,19 +278,43 @@ async function upsertLocalSubscription(
   sql: Sql,
   input: Omit<LocalSubscriptionRow, 'updatedAt'>,
 ): Promise<void> {
+  // `premium_since` stamps the false → true transition and is then left alone
+  // (so it keeps meaning "when they started paying", not "when we last
+  // synced"), and is cleared on a downgrade so a re-subscribe re-stamps. It is
+  // the reminder cron's join clock — see migration 0023.
   await sql`
     insert into beehiiv_subscription
-      (email, publication_id, beehiiv_subscription_id, status, has_premium, updated_at)
+      (email, publication_id, beehiiv_subscription_id, status, has_premium, premium_since, updated_at)
     values
       (${input.email.toLowerCase()}, ${input.publicationId}, ${input.beehiivSubscriptionId},
-       ${input.status}, ${input.hasPremium}, now())
+       ${input.status}, ${input.hasPremium},
+       case when ${input.hasPremium} then now() else null end, now())
     on conflict (email) do update set
       publication_id = excluded.publication_id,
       beehiiv_subscription_id = excluded.beehiiv_subscription_id,
       status = excluded.status,
       has_premium = excluded.has_premium,
+      premium_since = case
+        when excluded.has_premium
+          then coalesce(beehiiv_subscription.premium_since, now())
+        else null
+      end,
       updated_at = now()
   `
+}
+
+// Every reader currently holding the premium tier, by email. This is the
+// reconciler's arkPlus roster: holding the tier is what grants the private
+// feed, so a row here is a live grant that must be justified by a live Neon
+// membership. Read from the mirror rather than from Beehiiv because Beehiiv has
+// no "list premium subscribers" endpoint, and the mirror is kept current by the
+// same webhook that drives everything else.
+export async function loadPremiumSubscriberEmails(sql: Sql): Promise<string[]> {
+  const rows = (await sql`
+    select email from beehiiv_subscription where has_premium = true`) as Array<{
+    email: string
+  }>
+  return rows.map((r) => r.email)
 }
 
 export async function deleteLocalSubscription(
@@ -324,6 +348,14 @@ export type PushDeps = {
   sql: Sql
 }
 
+// Same deps, minus the requirement of a Neon store. Only the premium grant
+// takes this shape: it has to run in environments with no DATABASE_URL (the
+// webhook's no-DB branch), where every other push has nothing to mirror anyway.
+export type GrantDeps = {
+  env: Env
+  sql: Sql | null
+}
+
 function beehiivConfigured(env: Env): { pubId: string; token: string } | null {
   const token = env.BEEHIIV_API_KEY
   const pubId = publicationIdFromEnv(env)
@@ -354,20 +386,34 @@ export async function ensureFreeSubscription(
   })
 }
 
-// Subscribe (or upgrade) a reader to the premium tier. Used on Stripe sub
-// activation and gift redemption. Idempotent: re-running for an already-
+// Subscribe (or upgrade) a reader to the premium "Plus" tier. Used on Stripe
+// sub activation and gift redemption. Idempotent: re-running for an already-
 // premium-and-active reader skips the upstream PUT.
+//
+// This is the arkPlus GRANT, not a newsletter nicety: the premium tier is what
+// entitles a member to the private podcast feed, so activation.ts stamps its
+// provisioning marker on the strength of this call. Two consequences for the
+// contract here:
+//
+//   - it answers whether the tier actually landed, so a caller can tell "granted"
+//     from "Beehiiv isn't configured in this environment" (preview / tests) and
+//     only mark the axis provisioned in the first case;
+//   - a Beehiiv API failure THROWS rather than being swallowed, so the Stripe
+//     webhook retries instead of acking a member into a feedless membership.
+//
+// `sql` may be null where there is no Neon store to mirror into — the grant is
+// what matters, the local row is a cache of it.
 export async function ensureSubscribedWithPremium(
-  deps: PushDeps,
+  deps: GrantDeps,
   email: string,
-): Promise<void> {
+): Promise<boolean> {
   const cfg = beehiivConfigured(deps.env)
-  if (!cfg) return
+  if (!cfg) return false
   const premiumTierId = deps.env.BEEHIIV_PREMIUM_TIER_ID
-  if (!premiumTierId) {
-    console.error('[beehiiv-sync] BEEHIIV_PREMIUM_TIER_ID not set; cannot upgrade')
-    return
-  }
+  // Beehiiv is wired up but has no tier to apply — a misconfiguration, and one
+  // that would otherwise present as a member who paid and got nothing. Raise it
+  // rather than log-and-continue.
+  if (!premiumTierId) throw new PremiumNotConfiguredError()
 
   const normalized = email.toLowerCase()
   const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
@@ -386,7 +432,8 @@ export async function ensureSubscribedWithPremium(
   } else {
     result = existing
   }
-  await persistFromBeehiiv(deps.sql, cfg.pubId, result)
+  if (deps.sql) await persistFromBeehiiv(deps.sql, cfg.pubId, result)
+  return true
 }
 
 // Push a member's name onto their Beehiiv subscriber record so campaigns can

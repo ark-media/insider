@@ -60,7 +60,6 @@ mock.module('@neondatabase/serverless', () =>
               auth0_sub: sub,
               stripe_customer_id: null,
               stripe_subscription_id: null,
-              sc_user_id: null,
               tier: 'ark-plus',
               status: 'active',
               plan: 'monthly',

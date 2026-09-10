@@ -26,7 +26,6 @@ import {
   getMembershipByStripeCustomer,
   type MembershipRow,
 } from './membership.js'
-import { createScClient, findScUserByEmail, type ScUser } from './sc-client.js'
 import {
   resolveRequestIdentity,
   type RequestIdentity,
@@ -45,33 +44,16 @@ export type ResolvedMembership = {
   tier: Tier
   entitlements: Entitlements
   row: MembershipRow | null
-  // The SC join key for feed rendering — from the row, or from the fallback SC
-  // lookup. Null when the caller has no SC feed (Circle-only / free).
-  scUserId: number | null
-  // 'neon' = a live membership row decided it; 'sc-fallback' = the transitional
-  // SC-by-email arkPlus grant (no row yet); 'none' = no entitlement resolved.
-  origin: 'neon' | 'sc-fallback' | 'none'
-}
-
-// Look up the caller's SC user by email (the transitional fallback). Soft-fails
-// to null so an SC outage degrades to "no arkPlus" rather than throwing through
-// a gate.
-async function scUserForEmail(env: Env, email: string): Promise<ScUser | null> {
-  try {
-    return await findScUserByEmail(createScClient(env), email)
-  } catch (err) {
-    console.error('[entitlement] SC fallback lookup failed:', err)
-    return null
-  }
+  // 'neon' = a live membership row decided it; 'none' = no entitlement resolved.
+  origin: 'neon' | 'none'
 }
 
 // Resolve the caller's Neon membership row by email, via their Stripe customer.
 // The membership table is keyed on auth0_sub and holds no email (PII-free, §3),
 // so the join runs email → Stripe customer(s) → membership-by-customer. Covers a
 // member whose session carries no `sub` (a checkout token minted before Auth0
-// provisioning stamped it) — without this, the arkPlus-only SC net below would
-// silently downgrade a bundle/circle member to ark-plus. Soft-fails to null so a
-// Stripe outage degrades to that net rather than throwing through /api/me.
+// provisioning stamped it). Soft-fails to null so a Stripe outage degrades to
+// "no entitlement" rather than throwing through /api/me.
 async function membershipByEmailViaStripe(
   stripe: Stripe,
   env: Env,
@@ -92,16 +74,16 @@ async function membershipByEmailViaStripe(
   }
 }
 
-// Resolve entitlements for an already-known identity. `scFallback` opts into the
-// transitional by-email nets — /api/me passes it during cutover; the content
-// gates leave it off and run Neon-only (the backfill populates rows before task
-// 10/11 land, so a strict Neon read doesn't false-lock). `stripe`, when given,
-// enables the true-tier by-email lookup so bundle/circle members with a sub-less
-// session resolve to their real tier instead of the arkPlus-only SC fallback.
+// Resolve entitlements for an already-known identity.
+//
+// `emailFallback` opts into the by-email net below: /api/me passes it so a
+// just-paid member whose session carries no `sub` still resolves, while the
+// content gates leave it off and run strictly on the sub. It needs `stripe`,
+// since the only way from an email to a membership row is through the customer.
 export async function resolveMembershipForIdentity(
   identity: RequestIdentity,
   env: Env,
-  opts: { scFallback?: boolean; stripe?: Stripe | null } = {},
+  opts: { emailFallback?: boolean; stripe?: Stripe | null } = {},
 ): Promise<ResolvedMembership> {
   // 1. Neon is the authority: a live row keyed on the caller's sub decides tier.
   if (identity.sub && env.DATABASE_URL) {
@@ -115,46 +97,25 @@ export async function resolveMembershipForIdentity(
         tier: tierFromEntitlements(axes),
         entitlements: axes,
         row,
-        scUserId: row.sc_user_id,
         origin: 'neon',
       }
     }
   }
 
-  // 2. Transitional by-email nets (task 10), for a just-paid member whose session
-  //    carries no sub (checkout token pre-Auth0) or whose row hasn't landed yet.
-  if (opts.scFallback) {
-    // 2a. True-tier: find the Neon row via the member's Stripe customer, keyed on
-    //     the verified session email. Still a Neon read (the authority) — it just
-    //     reaches the row by customer instead of sub — so bundle/circle members
-    //     resolve to their real tier, not the arkPlus-only net below.
-    if (opts.stripe && env.DATABASE_URL) {
-      const row = await membershipByEmailViaStripe(opts.stripe, env, identity.email)
-      if (row) {
-        const axes = liveAxes(row)
-        return {
-          identity,
-          tier: tierFromEntitlements(axes),
-          entitlements: axes,
-          row,
-          scUserId: row.sc_user_id,
-          origin: 'neon',
-        }
-      }
-    }
-
-    // 2b. SC-only safety net: presence in Supporting Cast grants arkPlus. Covers
-    //     the webhook-lag window where the feed exists but no row is written yet.
-    //     Removed once the backfill is verified complete.
-    const user = await scUserForEmail(env, identity.email)
-    if (user) {
+  // 2. By-email net, for a just-paid member whose session carries no sub
+  //    (checkout token minted before Auth0 provisioning stamped it). Still a
+  //    Neon read — the authority — it just reaches the row by Stripe customer
+  //    instead of by sub, so bundle/circle members resolve to their real tier.
+  if (opts.emailFallback && opts.stripe && env.DATABASE_URL) {
+    const row = await membershipByEmailViaStripe(opts.stripe, env, identity.email)
+    if (row) {
+      const axes = liveAxes(row)
       return {
         identity,
-        tier: 'ark-plus',
-        entitlements: deriveEntitlements('ark-plus'),
-        row: null,
-        scUserId: user.id,
-        origin: 'sc-fallback',
+        tier: tierFromEntitlements(axes),
+        entitlements: axes,
+        row,
+        origin: 'neon',
       }
     }
   }
@@ -164,7 +125,6 @@ export async function resolveMembershipForIdentity(
     tier: 'free',
     entitlements: deriveEntitlements('free'),
     row: null,
-    scUserId: null,
     origin: 'none',
   }
 }
@@ -173,7 +133,7 @@ export async function resolveMembershipForIdentity(
 export async function resolveMembership(
   req: IncomingMessage,
   env: Env,
-  opts: { scFallback?: boolean; stripe?: Stripe | null } = {},
+  opts: { emailFallback?: boolean; stripe?: Stripe | null } = {},
 ): Promise<ResolvedMembership | null> {
   const identity = await resolveRequestIdentity(req, env)
   if (!identity) return null

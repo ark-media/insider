@@ -1,29 +1,34 @@
-type FeedApp = {
-  app: string;
-  name: string;
-  url: string;
-};
-
 export type UserFeed = {
-  id: number;
+  /**
+   * The SHOW id (`pod_<uuid>`), not the private feed token. Beehiiv rotates
+   * `pod_feed_<uuid>` whenever a feed is reissued, and this id is what we send
+   * back through `?feed=` and the setup marker — so it has to be the stable one.
+   */
+  id: string;
+  /** Beehiiv's own show title — the same one the member's podcast app shows. */
   name: string;
   url: string;
   description?: string;
   image_url?: string;
-  apps?: FeedApp[];
-  // Authoritative activation state, set once the server captures Supporting
-  // Cast's `feed.activated` webhook.
+  /**
+   * Beehiiv's per-app deep links, keyed by app: `apple`, `castro`, `overcast`,
+   * `pocket_casts`. That is the complete set — Spotify is not among them and
+   * goes through the server-side hand-off at /api/me/feeds/spotify instead.
+   */
+  protocolLinks?: Record<string, string>;
+  // Authoritative activation state: Beehiiv reports it on the feed itself and
+  // through the `podcasts.private_feed.activated` webhook.
   activated?: boolean;
   activated_at?: string | null;
   // Optimistic server-side marker: the member took a setup action but the
-  // `feed.activated` webhook hasn't landed yet. The setup hub treats a feed as
-  // done if it is `activated` OR `pending` (see feedIsSetUp).
+  // webhook hasn't landed yet. The setup page treats a feed as done if it is
+  // `activated` OR `pending` (see feedIsSetUp).
   pending?: boolean;
 };
 
-// A feed counts as "set up" once it's either confirmed (the `feed.activated`
-// webhook landed → `activated`) or pending (the member took a setup action and
-// we recorded an optimistic server-side marker → `pending`).
+// A feed counts as "set up" once it's either confirmed (Beehiiv reports it
+// activated) or pending (the member took a setup action and we recorded an
+// optimistic server-side marker).
 export function feedIsSetUp(feed: UserFeed): boolean {
   return feed.activated === true || feed.pending === true;
 }
@@ -425,11 +430,11 @@ export async function changeTier(input: {
 
 // Persist the optimistic "these feeds are set up" marker server-side (replaces
 // the old localStorage record), so it survives reloads and follows the member
-// across devices while SC's `feed.activated` webhook catches up. Fire-and-
+// across devices while Beehiiv's activation webhook catches up. Fire-and-
 // forget: failures are swallowed because the in-memory optimistic state still
 // stands and the webhook remains authoritative — a persistence blip must never
-// surface an error on a setup click.
-export async function persistFeedsSetUp(feedIds: number[]): Promise<void> {
+// surface an error on a setup click. Ids are SHOW ids (see UserFeed.id).
+export async function persistFeedsSetUp(feedIds: string[]): Promise<void> {
   if (feedIds.length === 0) return;
   try {
     await fetch("/api/me/feeds/setup", {
@@ -443,15 +448,33 @@ export async function persistFeedsSetUp(feedIds: number[]): Promise<void> {
   }
 }
 
-export async function sendSetupSms(
-  phone: string,
-  feedId?: number,
-): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch("/api/sc/send-setup-sms", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ phone, feed_id: feedId }),
-  });
-  return (await res.json()) as { ok: boolean; error?: string };
+// Ask Beehiiv to email the member their private feed URL and setup
+// instructions. Beehiiv owns the template and sends to the address on the
+// subscription, so this takes no arguments — the member can't send it anywhere
+// but their own inbox.
+export async function sendFeedEmail(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch("/api/me/feeds/email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: "{}",
+    });
+    if (res.ok) return { ok: true };
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    if (res.status === 429) {
+      return { ok: false, error: "Too many requests — please wait a few minutes." };
+    }
+    if (body?.error === "no_feed_yet") {
+      return {
+        ok: false,
+        error: "Your feed is still being set up. Give it a minute and try again.",
+      };
+    }
+    return { ok: false, error: "Could not send the email. Please try again." };
+  } catch {
+    return { ok: false, error: "Could not reach the server. Please try again." };
+  }
 }

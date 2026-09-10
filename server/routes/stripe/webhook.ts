@@ -1,6 +1,5 @@
 import { createHmac } from 'node:crypto'
 import type Stripe from 'stripe'
-import { AlreadySubscribedError } from '../../lib/activation.js'
 import { sendEmail } from '../../lib/email.js'
 import { signGiftClaimToken } from '../../lib/session.js'
 import { renderGiftRedemptionEmail } from '../../lib/welcome-email.js'
@@ -26,7 +25,6 @@ import {
   setMembershipStatusByCustomer,
   upsertMembership,
 } from '../../lib/membership.js'
-import { createScClient } from '../../lib/sc-client.js'
 import { type Plan } from '../../lib/pricing.js'
 import type { Deps, Env } from '../../lib/route.js'
 import {
@@ -94,25 +92,23 @@ const customerLocks = new Map<string, Promise<unknown>>()
 function serializeByCustomer<T>(customerId: string, fn: () => Promise<T>): Promise<T> {
   const prev = customerLocks.get(customerId) ?? Promise.resolve()
   const next = prev.then(fn, fn)
-  customerLocks.set(
-    customerId,
-    next.finally(() => {
-      if (customerLocks.get(customerId) === next) customerLocks.delete(customerId)
-    }),
+  // What the map holds is a promise nobody awaits, so it must settle rather than
+  // reject: an unhandled rejection is fatal to the process in Node, and a
+  // handler CAN now throw (a failed Beehiiv grant deliberately doesn't ack).
+  // The caller still gets the real error, from `next`.
+  //
+  // The next waiter only needs to know the previous call finished, which is all
+  // `settled` says. Store and compare the same promise — comparing the stored
+  // value against `next` never matched, so entries were never cleared.
+  const settled = next.then(
+    () => {},
+    () => {},
   )
+  customerLocks.set(customerId, settled)
+  void settled.then(() => {
+    if (customerLocks.get(customerId) === settled) customerLocks.delete(customerId)
+  })
   return next
-}
-
-// Delete the SC subscription recorded on the sub metadata (revokes the arkPlus
-// feed). Soft-fail: a transient SC error must not 500 the webhook.
-async function revokeScFeed(sub: Stripe.Subscription, env: Env): Promise<void> {
-  const scSubId = sub.metadata?.sc_subscription_id
-  if (!scSubId) return
-  try {
-    await createScClient(env).call('DELETE', `/subscriptions/${scSubId}`)
-  } catch (err) {
-    console.error('[dev-api] SC revoke failed:', err)
-  }
 }
 
 export async function dispatchWebhookEvent(
@@ -136,9 +132,10 @@ export async function dispatchWebhookEvent(
       const sub = event.data.object as Stripe.Subscription
       const customerId = customerIdOf(sub)
       await serializeByCustomer(customerId, async () => {
-        // Single-subscription member → no remaining entitlement. Revoke SC, drop
-        // the entitlement signals, and remove the membership row (absence = free).
-        await revokeScFeed(sub, env)
+        // Single-subscription member → no remaining entitlement. Drop the
+        // entitlement signals (the Beehiiv downgrade below revokes the arkPlus
+        // feed with the premium tier) and remove the membership row
+        // (absence = free).
         const email = await emailForStripeCustomer(sub.customer, stripe)
         if (email) {
           await syncEntitlement(env, email, 'free')
@@ -228,10 +225,6 @@ async function handleSubscriptionUpsert(
   const prev = (event.data.previous_attributes ?? {}) as Partial<Stripe.Subscription>
   const isActive = sub.status === 'active' || sub.status === 'trialing'
 
-  // Mirror Stripe's scheduled-cancel state onto SC so feed access self-expires
-  // even if the later .deleted webhook is missed. Bidirectional.
-  await syncScCancelSchedule(sub, prev, env)
-
   if (!isActive) {
     // Delinquent-but-not-yet-cancelled → dunning status only; no revoke.
     if (env.DATABASE_URL && (sub.status === 'past_due' || sub.status === 'unpaid')) {
@@ -271,7 +264,7 @@ async function handleSubscriptionUpsert(
   // Not-yet-provisioned = no axis marker on the sub. Combined with created / a
   // real entitlement diff, this is the fan-out gate.
   const notProvisioned =
-    !sub.metadata?.sc_subscription_id &&
+    sub.metadata?.beehiiv_premium !== 'true' &&
     sub.metadata?.circle_provisioned !== 'true' &&
     !sub.metadata?.auth0_user_id
   const shouldFanOut = created || entitlementsChanged || notProvisioned
@@ -282,9 +275,6 @@ async function handleSubscriptionUpsert(
   // one avoids throwing — which would 500 the webhook and trap the event in an
   // infinite Stripe retry loop.
   let auth0Sub = sub.metadata?.auth0_user_id ?? priorRow?.auth0_sub ?? null
-  let scUserId = sub.metadata?.sc_user_id
-    ? Number(sub.metadata.sc_user_id)
-    : priorRow?.sc_user_id ?? null
   let plan = planFromSubscription(sub) ?? (sub.metadata?.plan as Plan | undefined) ?? 'yearly'
 
   // The customer's email backs the analytics distinct_id, and the fan-out below
@@ -302,34 +292,15 @@ async function handleSubscriptionUpsert(
   if (shouldFanOut) {
     // Grant the (possibly new) tier — Auth0 login + the axes it grants. Provision
     // runs before the entitlement signals so an Auth0/Circle outage can't block
-    // feed access; the ids come back for the row.
-    try {
-      const result = await activator.activateMembershipForStripeSub(sub, tier)
-      if (result.auth0Sub) auth0Sub = result.auth0Sub
-      if (result.scUserId != null) scUserId = result.scUserId
-      plan = result.plan
-    } catch (err) {
-      if (!(err instanceof AlreadySubscribedError)) throw err
-      // The SC subscription create lost a race to the /api/auth/checkout-session
-      // poll — the client runs it right after checkout and it provisions the SAME
-      // Stripe sub concurrently, so one path's POST /subscriptions 409s. This is
-      // NOT the terminal "buyer already has a prior membership" conflict routes.ts
-      // guards against: re-read the sub to adopt the ids the sibling stamped and
-      // fall through to write the membership row (the authority) rather than
-      // acking 200 with no row. If the sibling hasn't stamped auth0_user_id yet,
-      // auth0Sub stays unresolved and the row-write below throws a plain Error →
-      // Stripe retries → the redelivery finds it stamped.
-      console.warn(
-        `[stripe] subscription.created raced checkout-poll for ${customerId}; adopting stamped ids`,
-      )
-      const fresh = await stripe.subscriptions.retrieve(sub.id)
-      if (fresh.metadata?.auth0_user_id) auth0Sub = fresh.metadata.auth0_user_id
-      if (fresh.metadata?.sc_user_id) scUserId = Number(fresh.metadata.sc_user_id)
-    }
+    // feed access. A failure propagates: Stripe retries the event rather than
+    // this acking a paying member into a half-provisioned membership.
+    const result = await activator.activateMembershipForStripeSub(sub, tier)
+    if (result.auth0Sub) auth0Sub = result.auth0Sub
+    plan = result.plan
 
-    // Revoke axes the prior tier granted that the new one drops (a downgrade in
-    // place, no cancellation).
-    if (priorEnt.arkPlus && !newEnt.arkPlus) await revokeScFeed(sub, env)
+    // Axes the prior tier granted that the new one drops (a downgrade in place,
+    // no cancellation) are revoked by the Beehiiv downgrade just below — losing
+    // the premium tier is losing the feed.
 
     // Mirror the entitlement signals: Auth0 tier claim (transitional shim, task 5
     // pending) + the Circle access group per the circle axis. Circle-member
@@ -360,7 +331,9 @@ async function handleSubscriptionUpsert(
       auth0_sub: auth0Sub,
       stripe_customer_id: customerId,
       stripe_subscription_id: sub.id,
-      sc_user_id: scUserId,
+      // No SC id comes off a subscription any more — the arkPlus grant is the
+      // Beehiiv premium tier, keyed on email. Gift redemption still writes one,
+      // and the upsert coalesces, so passing null here preserves it.
       tier,
       status: sub.status,
       plan,
@@ -537,39 +510,3 @@ export function giftTokenForPaymentIntent(piId: string, env: Env): string {
   return createHmac('sha256', secret).update(`gift:${piId}`).digest('base64url')
 }
 
-// Push Stripe's scheduled-cancel state onto the SC subscription. Only acts when
-// the cancel schedule actually changed in this event (cancel_at /
-// cancel_at_period_end present in previous_attributes), so routine updates —
-// payment-method swaps, our own metadata stamp from activation — don't generate
-// spurious SC writes.
-//
-//   scheduled to cancel → ends_at = cancel_at, autorenew = false  (SC shows
-//     "Expiring"; the member keeps access until ends_at, then SC expires them)
-//   un-canceled         → ends_at = null,       autorenew = true
-//
-// `status` is left for SC to derive. Soft-fail like the DELETE path: a transient
-// SC error must not 500 the webhook (which would make Stripe retry the event).
-async function syncScCancelSchedule(
-  sub: Stripe.Subscription,
-  prev: Partial<Stripe.Subscription>,
-  env: Env,
-): Promise<void> {
-  // Named for what we actually check — fields present in `previous_attributes`
-  // — not "the schedule semantically changed," which Stripe doesn't tell us.
-  const cancelFieldsPresent =
-    'cancel_at' in prev || 'cancel_at_period_end' in prev
-  if (!cancelFieldsPresent) return
-  const scSubId = sub.metadata?.sc_subscription_id
-  if (!scSubId) return
-  // Guard against a malformed payload pushing "Invalid Date" to SC, where it
-  // would silently 422 into the catch and produce an unhelpful log line.
-  const endsAt = tsToIso(sub.cancel_at)
-  const body = endsAt
-    ? { ends_at: endsAt, autorenew: false }
-    : { ends_at: null, autorenew: true }
-  try {
-    await createScClient(env).call('PATCH', `/subscriptions/${scSubId}`, body)
-  } catch (err) {
-    console.error('[dev-api] SC cancel-schedule sync failed:', err)
-  }
-}

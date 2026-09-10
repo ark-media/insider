@@ -1,7 +1,7 @@
 // Unit tests for the feed-setup reminder decision logic and email rendering.
 // The pure functions (memberInWindow / evaluateReminder / loadReminderConfigFromEnv)
-// carry the rules, so they're tested here without SC, the DB, or Resend. The
-// cron route's auth + wiring is covered in feed-reminders-cron.test.ts.
+// carry the rules, so they're tested here without the DB or Resend. The cron
+// route's auth + wiring is covered in feed-reminders-cron.test.ts.
 
 import { describe, test, expect } from 'bun:test'
 import {
@@ -11,27 +11,23 @@ import {
   memberInWindow,
   memberStatusEligible,
   passesCheapGate,
-  type ReminderConfig,
+  type PremiumReader,
 } from './lib/feed-reminders'
 import { renderFeedReminderEmail } from './lib/feed-reminder-email'
-import type { ScMembership } from './lib/sc-client'
 
 const NOW = Date.parse('2026-07-16T12:00:00Z')
 const HOUR = 3_600_000
 const DAY = 86_400_000
 
-function member(over: Partial<ScMembership> = {}): ScMembership {
+// The one premium show every reminder is about.
+const SHOW = 'pod_show'
+
+function member(over: Partial<PremiumReader> = {}): PremiumReader {
   return {
-    id: 1,
-    user_id: 1,
     email: 'a@x.com',
-    first_name: 'Ada',
+    firstName: 'Ada',
     status: 'active',
     joined: new Date(NOW - 3 * DAY).toISOString(),
-    feeds: [
-      { id: 10, name: 'Show A', url: 'u' },
-      { id: 20, name: 'Show B', url: 'u' },
-    ],
     ...over,
   }
 }
@@ -81,11 +77,11 @@ describe('memberStatusEligible', () => {
     expect(memberStatusEligible(undefined)).toBe(true)
   })
 
-  test('cancelled / expired / refunded (any case) are skipped', () => {
-    expect(memberStatusEligible('cancelled')).toBe(false)
-    expect(memberStatusEligible('Canceled')).toBe(false)
-    expect(memberStatusEligible('EXPIRED')).toBe(false)
-    expect(memberStatusEligible('refunded')).toBe(false)
+  test('unsubscribed / inactive / invalid (any case) are skipped', () => {
+    expect(memberStatusEligible('unsubscribed')).toBe(false)
+    expect(memberStatusEligible('Inactive')).toBe(false)
+    expect(memberStatusEligible('INVALID')).toBe(false)
+    expect(memberStatusEligible('needs_attention')).toBe(false)
   })
 })
 
@@ -98,16 +94,16 @@ describe('passesCheapGate', () => {
   // start from an enabled config.
   const cfg = { ...DEFAULT_REMINDER_CONFIG, enabled: true }
 
-  test('active in-window member with feeds passes', () => {
+  test('active in-window member passes', () => {
     expect(passesCheapGate(member(), cfg, NOW)).toBe(true)
   })
 
-  test('member with no feeds is gated out', () => {
-    expect(passesCheapGate(member({ feeds: [] }), cfg, NOW)).toBe(false)
+  test('member with no email is gated out', () => {
+    expect(passesCheapGate(member({ email: '  ' }), cfg, NOW)).toBe(false)
   })
 
-  test('cancelled member is gated out', () => {
-    expect(passesCheapGate(member({ status: 'cancelled' }), cfg, NOW)).toBe(false)
+  test('unsubscribed member is gated out', () => {
+    expect(passesCheapGate(member({ status: 'unsubscribed' }), cfg, NOW)).toBe(false)
   })
 
   test('disabled config gates everyone out', () => {
@@ -120,39 +116,40 @@ describe('passesCheapGate', () => {
 // ===========================================================================
 
 describe('evaluateReminder', () => {
-  // enabled:true (DEFAULT is opt-in off); onlyIfNoneSetUp = true.
+  // enabled:true (DEFAULT is opt-in off).
   const cfg = { ...DEFAULT_REMINDER_CONFIG, enabled: true }
 
-  test('zero feeds set up → candidate with doneCount 0', () => {
-    const c = evaluateReminder(member(), new Set(), false, cfg, NOW)
+  test('feed not set up → candidate with doneCount 0', () => {
+    const c = evaluateReminder(member(), new Set(), false, cfg, NOW, SHOW)
     expect(c).not.toBeNull()
-    expect(c).toMatchObject({ email: 'a@x.com', firstName: 'Ada', doneCount: 0, total: 2 })
+    expect(c).toMatchObject({
+      email: 'a@x.com',
+      firstName: 'Ada',
+      doneCount: 0,
+      total: 1,
+    })
   })
 
-  test('all feeds set up → null (nothing to nudge)', () => {
-    const c = evaluateReminder(member(), new Set([10, 20]), false, cfg, NOW)
+  test('feed set up → null (nothing to nudge)', () => {
+    const c = evaluateReminder(member(), new Set([SHOW]), false, cfg, NOW, SHOW)
     expect(c).toBeNull()
   })
 
-  test('partial setup with onlyIfNoneSetUp=true → null', () => {
-    const c = evaluateReminder(member(), new Set([10]), false, cfg, NOW)
-    expect(c).toBeNull()
-  })
-
-  test('partial setup with onlyIfNoneSetUp=false → candidate with doneCount 1', () => {
-    const relaxed: ReminderConfig = { ...cfg, onlyIfNoneSetUp: false }
-    const c = evaluateReminder(member(), new Set([10]), false, relaxed, NOW)
-    expect(c).toMatchObject({ doneCount: 1, total: 2 })
+  test('a different show being set up does not count', () => {
+    // Activation is keyed per show; another show's row must never suppress
+    // this show's reminder.
+    const c = evaluateReminder(member(), new Set(['pod_other']), false, cfg, NOW, SHOW)
+    expect(c).toMatchObject({ doneCount: 0, total: 1 })
   })
 
   test('already sent → null', () => {
-    const c = evaluateReminder(member(), new Set(), true, cfg, NOW)
+    const c = evaluateReminder(member(), new Set(), true, cfg, NOW, SHOW)
     expect(c).toBeNull()
   })
 
   test('out of window → null even with zero setup', () => {
     const old = member({ joined: new Date(NOW - 30 * DAY).toISOString() })
-    expect(evaluateReminder(old, new Set(), false, cfg, NOW)).toBeNull()
+    expect(evaluateReminder(old, new Set(), false, cfg, NOW, SHOW)).toBeNull()
   })
 
   test('normalizes email (trims + lowercases)', () => {
@@ -162,27 +159,39 @@ describe('evaluateReminder', () => {
       false,
       cfg,
       NOW,
+      SHOW,
     )
     expect(c?.email).toBe('ada@x.com')
   })
 
   test('blank first name yields undefined (email falls back to "Hi there")', () => {
-    const c = evaluateReminder(member({ first_name: '   ' }), new Set(), false, cfg, NOW)
+    const c = evaluateReminder(member({ firstName: '   ' }), new Set(), false, cfg, NOW, SHOW)
     expect(c?.firstName).toBeUndefined()
   })
 
-  test('a whole name in SC first_name greets by the leading token only', () => {
-    // findOrCreateScUser used to drop the entire name hint into first_name, so
-    // the migrated roster has records shaped like this. Greeting verbatim ships
-    // "Hi Ada Lovelace," to every one of them.
+  test('a whole name in firstName greets by the leading token only', () => {
     const c = evaluateReminder(
-      member({ first_name: 'Ada Lovelace' }),
+      member({ firstName: 'Ada Lovelace' }),
       new Set(),
       false,
       cfg,
       NOW,
+      SHOW,
     )
     expect(c?.firstName).toBe('Ada')
+  })
+
+  test('a name manufactured from the email local part is never greeted', () => {
+    // The guard that stops "Hi hannah.waxman8," reaching a real inbox.
+    const c = evaluateReminder(
+      member({ email: 'ada.lovelace@x.com', firstName: 'ada.lovelace' }),
+      new Set(),
+      false,
+      cfg,
+      NOW,
+      SHOW,
+    )
+    expect(c?.firstName).toBeUndefined()
   })
 })
 

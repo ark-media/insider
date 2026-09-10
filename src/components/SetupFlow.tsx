@@ -7,9 +7,8 @@ import {
   OvercastIcon,
   PocketCastsIcon,
   SpotifyIcon,
-  YouTubeIcon,
 } from "./PlatformIcons";
-import { sendSetupSms, type UserFeed } from "../lib/auth";
+import { sendFeedEmail, type UserFeed } from "../lib/auth";
 import { trackEvent } from "../lib/analytics";
 import { useCopyToClipboard } from "../lib/useCopyToClipboard";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
@@ -19,20 +18,29 @@ type Device = "phone" | "computer";
 type AppKey =
   | "apple"
   | "spotify"
-  | "youtube"
   | "overcast"
   | "pocketcasts"
+  | "castro"
   | "downcast"
   | "manual";
+
+// Server route that mints Beehiiv's auto-login and 302s the member into
+// Beehiiv's Spotify consent flow, which returns them here when it's done.
+// Open Access verifies the click originated on Beehiiv, so there is no direct
+// Spotify URL we can link — and because the round trip comes back to us, this
+// one opens in the same tab rather than a new one.
+const SPOTIFY_HANDOFF_PATH = "/api/me/feeds/spotify";
 
 type AppDef = {
   key: AppKey;
   name: string;
   tagline: string;
   devices: Device[];
-  // Which Supporting Cast `feed.apps[].app` identifier to map to. If
-  // omitted, we fall back to the plain feed URL.
-  scApp?: string;
+  // Which Beehiiv `protocol_links` key to use. If omitted, we fall back to the
+  // plain feed URL (the copy-paste apps).
+  protocolKey?: string;
+  /** Goes through our own server route rather than a feed URL. */
+  handoffPath?: string;
   instructions: string[];
   ctaLabel: string;
   note?: string;
@@ -44,11 +52,11 @@ const APPS: AppDef[] = [
     name: "Spotify",
     tagline: "Link once — no copy-paste",
     devices: ["phone", "computer"],
-    scApp: "spotify",
+    handoffPath: SPOTIFY_HANDOFF_PATH,
     instructions: [
-      "A separate window will open — click Link Account.",
-      "Sign in to your Spotify account.",
-      "{show} episodes unlock inside the show on Spotify.",
+      "We'll send you straight to Spotify — you're already signed in on our side.",
+      "Sign in to Spotify and approve the connection.",
+      "You'll come back here, and {show} unlocks inside Spotify.",
     ],
     ctaLabel: "Link my Spotify account",
   },
@@ -57,7 +65,7 @@ const APPS: AppDef[] = [
     name: "Apple Podcasts",
     tagline: "iPhone, iPad, Mac",
     devices: ["phone", "computer"],
-    scApp: "apple_podcasts",
+    protocolKey: "apple",
     instructions: [
       "The Podcasts app will open on your device.",
       "A pop-up will appear with the show URL — tap Follow.",
@@ -67,43 +75,43 @@ const APPS: AppDef[] = [
     note: "Can't find the show? Don't search for it — a private feed never appears in Apple Podcasts search. Go to Library → Shows to find it there.",
   },
   {
-    key: "youtube",
-    name: "YouTube Music",
-    tagline: "Phone or desktop",
-    devices: ["phone", "computer"],
-    scApp: "youtube_music",
-    instructions: [
-      "YouTube Music will open — sign in if you're not already.",
-      "A pop-up will appear with the show URL — tap Add.",
-      "Your exclusive {show} episodes appear in your library when new ones drop.",
-    ],
-    ctaLabel: "Open in YouTube Music",
-  },
-  {
     key: "overcast",
     name: "Overcast",
     tagline: "iPhone",
     devices: ["phone"],
-    scApp: "overcast",
+    protocolKey: "overcast",
     instructions: [
-      "Open Overcast on your phone.",
-      "Tap the + icon, then Add URL.",
-      "Paste the private feed URL below.",
+      "Overcast will open on your phone.",
+      "Confirm the prompt to add the private feed.",
+      "Your exclusive {show} episodes appear in your library.",
     ],
-    ctaLabel: "Copy feed URL",
+    ctaLabel: "Open in Overcast",
   },
   {
     key: "pocketcasts",
     name: "Pocket Casts",
     tagline: "iPhone & Android",
     devices: ["phone"],
-    scApp: "pocket_casts",
+    protocolKey: "pocket_casts",
     instructions: [
-      "Open Pocket Casts.",
-      "Tap Profile → Settings → Advanced → Add Podcast by URL.",
-      "Paste the private feed URL below.",
+      "Pocket Casts will open on your phone.",
+      "Confirm the prompt to add the private feed.",
+      "Your exclusive {show} episodes appear in your library.",
     ],
-    ctaLabel: "Copy feed URL",
+    ctaLabel: "Open in Pocket Casts",
+  },
+  {
+    key: "castro",
+    name: "Castro",
+    tagline: "iPhone",
+    devices: ["phone"],
+    protocolKey: "castro",
+    instructions: [
+      "Castro will open on your phone.",
+      "Confirm the prompt to add the private feed.",
+      "Your exclusive {show} episodes appear in your library.",
+    ],
+    ctaLabel: "Open in Castro",
   },
   {
     key: "downcast",
@@ -131,11 +139,13 @@ const APPS: AppDef[] = [
   },
 ];
 
-function feedAppUrl(feed: UserFeed | null, scApp: string | undefined): string {
+function feedAppUrl(feed: UserFeed | null, app: AppDef | null): string {
+  if (!app) return "";
+  if (app.handoffPath) return app.handoffPath;
   if (!feed) return "";
-  if (scApp) {
-    const match = feed.apps?.find((a) => a.app === scApp);
-    if (match) return match.url;
+  if (app.protocolKey) {
+    const match = feed.protocolLinks?.[app.protocolKey];
+    if (match) return match;
   }
   return feed.url;
 }
@@ -144,6 +154,7 @@ export function SetupFlow({
   feed,
   onBack,
   embedded = false,
+  spotifyLinked = false,
 }: {
   feed: UserFeed | null;
   // When set, the member has more than one feed; render a link back to the
@@ -151,6 +162,12 @@ export function SetupFlow({
   onBack?: () => void;
   /** Rendered inside the /account shell — see FeedSetupHub's note. */
   embedded?: boolean;
+  /**
+   * The member has just come back from Beehiiv's Spotify consent flow. The
+   * page they return to is otherwise identical to the one they left, so say
+   * plainly that it worked.
+   */
+  spotifyLinked?: boolean;
 }) {
   const { markFeedsSetUp } = useSubscriberAuth();
   const feedUrl = feed?.url ?? "";
@@ -173,14 +190,14 @@ export function SetupFlow({
   }, []);
 
   const visibleApps = useMemo(() => {
-    const scApps = new Set(feed?.apps?.map((a) => a.app) ?? []);
-    // Hide any app whose scApp is missing from SC's response — it means that
-    // integration isn't enabled on this plan, so our link would fall back to
-    // the raw RSS URL, which most of those apps can't open. Apps with no
-    // scApp (e.g. "manual", "downcast") are always shown.
+    const available = new Set(Object.keys(feed?.protocolLinks ?? {}));
+    // Hide any app whose deep link Beehiiv didn't return — our link would fall
+    // back to the raw RSS URL, which most of those apps can't open. Apps with
+    // no protocol key ("manual", "downcast") and the Spotify hand-off (which
+    // goes through our own route, not a feed link) are always shown.
     return APPS.filter((a) => {
       if (device && !a.devices.includes(device)) return false;
-      if (a.scApp && !scApps.has(a.scApp)) return false;
+      if (a.protocolKey && !available.has(a.protocolKey)) return false;
       return true;
     });
   }, [device, feed]);
@@ -198,7 +215,7 @@ export function SetupFlow({
     });
   };
 
-  const selectedAppUrl = feedAppUrl(feed, selectedApp?.scApp);
+  const selectedAppUrl = feedAppUrl(feed, selectedApp);
   const qrTarget = selectedAppUrl || feedUrl;
 
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
@@ -221,36 +238,25 @@ export function SetupFlow({
     };
   }, [qrTarget]);
 
-  const [smsPhone, setSmsPhone] = useState("");
-  const [smsState, setSmsState] = useState<
+  const [emailState, setEmailState] = useState<
     "idle" | "sending" | "sent" | "error"
   >("idle");
-  const [smsError, setSmsError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
-  const handleSendSms = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!smsPhone.trim() || smsState === "sending") return;
-    setSmsState("sending");
-    setSmsError(null);
-    try {
-      const result = await sendSetupSms(smsPhone, feed?.id);
-      if (result.ok) {
-        setSmsState("sent");
-        trackEvent("feed_activated", { app: appKey ?? "unknown", method: "sms" });
-        if (feed) markFeedsSetUp([feed.id]);
-      } else {
-        setSmsState("error");
-        setSmsError(result.error ?? "Could not send SMS.");
-      }
-    } catch {
-      setSmsState("error");
-      setSmsError("Could not reach the server. Please try again.");
+  const handleSendEmail = async () => {
+    if (emailState === "sending") return;
+    setEmailState("sending");
+    setEmailError(null);
+    const result = await sendFeedEmail();
+    if (result.ok) {
+      setEmailState("sent");
+      trackEvent("feed_activated", { app: appKey ?? "unknown", method: "email" });
+      if (feed) markFeedsSetUp([feed.id]);
+    } else {
+      setEmailState("error");
+      setEmailError(result.error ?? "Could not send the email.");
     }
   };
-
-  const selfSmsHref = feedUrl
-    ? `sms:?body=${encodeURIComponent(`Your ${showName} feed: ${feedUrl}`)}`
-    : "";
 
   const Frame = embedded ? "section" : "main";
 
@@ -286,6 +292,20 @@ export function SetupFlow({
             </span>
             All feeds
           </button>
+        ) : null}
+        {spotifyLinked ? (
+          <div
+            role="status"
+            className="rise rise-1 mb-10 flex items-start gap-3 border border-cyan/40 bg-cyan/10 px-5 py-4 text-body-sm text-fg-strong"
+          >
+            <span aria-hidden="true" className="font-display font-bold text-cyan">
+              ✓
+            </span>
+            <p>
+              Spotify is linked. Open {showName} in Spotify — your exclusive
+              episodes are there now.
+            </p>
+          </div>
         ) : null}
         {/* Masthead row */}
         <div className="rise rise-1 flex flex-col items-start gap-6 sm:flex-row sm:items-end sm:gap-8">
@@ -458,8 +478,10 @@ export function SetupFlow({
                 ) : (
                   <a
                     href={selectedAppUrl || feedUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                    // The hand-off returns the member to this page, so keep it
+                    // in the same tab; everything else is a jump out to an app.
+                    target={selectedApp.handoffPath ? undefined : "_blank"}
+                    rel={selectedApp.handoffPath ? undefined : "noreferrer"}
                     onClick={() => {
                       trackEvent("feed_activated", {
                         app: selectedApp.key,
@@ -495,18 +517,15 @@ export function SetupFlow({
                 />
               ) : null}
 
-              {device === "phone" && feedUrl ? (
-                <SmsHandoff
-                  phone={smsPhone}
-                  setPhone={setSmsPhone}
-                  state={smsState}
-                  error={smsError}
-                  onSubmit={handleSendSms}
+              {feedUrl ? (
+                <EmailHandoff
+                  state={emailState}
+                  error={emailError}
+                  onSend={handleSendEmail}
                   onReset={() => {
-                    setSmsState("idle");
-                    setSmsError(null);
+                    setEmailState("idle");
+                    setEmailError(null);
                   }}
-                  selfSmsHref={selfSmsHref}
                 />
               ) : null}
 
@@ -635,7 +654,6 @@ const BRAND_ICON: Partial<
 > = {
   apple: ApplePodcastsIcon,
   spotify: SpotifyIcon,
-  youtube: YouTubeIcon,
   overcast: OvercastIcon,
   pocketcasts: PocketCastsIcon,
   downcast: DowncastIcon,
@@ -772,32 +790,27 @@ function QrHandoff({
   );
 }
 
-function SmsHandoff({
-  phone,
-  setPhone,
+function EmailHandoff({
   state,
   error,
-  onSubmit,
+  onSend,
   onReset,
-  selfSmsHref,
 }: {
-  phone: string;
-  setPhone: (v: string) => void;
   state: "idle" | "sending" | "sent" | "error";
   error: string | null;
-  onSubmit: (e: React.FormEvent) => void;
+  onSend: () => void;
   onReset: () => void;
-  selfSmsHref: string;
 }) {
   return (
     <div className="border border-rule bg-navy-900/40 p-6">
       <div className="flex items-center gap-3 label text-cyan">
         <span className="h-px w-6 bg-cyan" />
-        Text me the setup link
+        Email me the setup link
       </div>
       <p className="mt-2 text-body-sm">
-        We'll text you a link that opens your feed. Useful if you'd rather set
-        this up on a different phone.
+        We'll email your private feed link and setup instructions to the address
+        on your membership. Useful if you'd rather finish this on another
+        device.
       </p>
 
       {state === "sent" ? (
@@ -807,7 +820,7 @@ function SmsHandoff({
           className="mt-4 flex items-center justify-between gap-4 border border-cyan/40 bg-cyan/10 p-4"
         >
           <p className="text-body-sm text-fg-strong">
-            Sent. Check your messages — tap the link to finish setup.
+            Sent. Check your inbox — open the link to finish setup.
           </p>
           <button
             type="button"
@@ -818,48 +831,24 @@ function SmsHandoff({
           </button>
         </div>
       ) : (
-        <form
-          onSubmit={onSubmit}
-          className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={state === "sending"}
+          aria-busy={state === "sending"}
+          className="group mt-4 inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
-          <input
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            aria-label="Phone number"
-            placeholder="+1 555 123 4567"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="flex-1 border border-rule bg-navy-900/60 px-4 py-3 font-mono text-body text-fg-strong placeholder:text-fg-placeholder focus:border-cyan focus:outline-none"
-            disabled={state === "sending"}
-          />
-          <button
-            type="submit"
-            disabled={!phone.trim() || state === "sending"}
-            aria-busy={state === "sending"}
-            className="group inline-flex items-center justify-center gap-3 bg-cyan px-6 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            {state === "sending" ? "Sending..." : "Text me the link"}
-            <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
-              →
-            </span>
-          </button>
-        </form>
+          {state === "sending" ? "Sending..." : "Email me the link"}
+          <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1 group-active:translate-x-1">
+            →
+          </span>
+        </button>
       )}
 
       {state === "error" && error ? (
         <p role="alert" className="mt-3 text-body-sm text-danger">
           {error}
         </p>
-      ) : null}
-
-      {selfSmsHref ? (
-        <a
-          href={selfSmsHref}
-          className="mt-4 inline-block text-body-sm underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          Or open Messages with the link pre-filled →
-        </a>
       ) : null}
     </div>
   );

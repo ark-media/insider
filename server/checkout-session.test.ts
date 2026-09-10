@@ -102,15 +102,32 @@ import { devApiPlugin } from './dev-api'
 // ---------------------------------------------------------------------------
 const CHECKOUT_SECRET = 'test-checkout-secret-0123456789abcdef0123456789abcdef'
 
+const PREMIUM_TIER_ID = 'tier_plus'
+
 const BASE_ENV = {
+  // Still present for the /api/me leg below: the entitlement resolver's
+  // by-email safety net (2b) reads Supporting Cast, which gift redemption still
+  // populates. Nothing in the checkout path touches SC any more.
   SC_NETWORK_ID: 'test-net',
   SC_API_KEY: 'test-key',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
-  SC_SUBSCRIPTION_PRICE_ID_MONTHLY: '100',
-  SC_SUBSCRIPTION_PRICE_ID_YEARLY: '200',
+  BEEHIIV_API_KEY: 'bh_key',
+  BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test',
+  BEEHIIV_PREMIUM_TIER_ID: PREMIUM_TIER_ID,
   CHECKOUT_SESSION_SECRET: CHECKOUT_SECRET,
 }
+
+// A Beehiiv subscriber the grant can land on, premium already applied.
+const premiumSubscriberBody = JSON.stringify({
+  data: {
+    id: 'sub_bh_1',
+    email: 'user@example.com',
+    status: 'active',
+    subscription_tier: 'premium',
+    subscription_premium_tier_names: ['Plus'],
+  },
+})
 
 function getHandler(path: string, envOverrides?: Record<string, string>): Middleware {
   return createDevApiHarness(
@@ -241,20 +258,18 @@ beforeEach(() => {
   fetchCalls.length = 0
   stripeCalls.length = 0
   nextSubscription = null
-  // Default: SC user exists, creating a subscription returns id 777, Auth0
-  // mgmt calls happy-path. Specific tests override as needed.
+  // Default: no Beehiiv subscriber yet, so the premium grant creates one;
+  // Auth0 mgmt calls happy-path. Specific tests override as needed.
   fetchImpl = async (url, init) => {
-    if (url.endsWith('/users/search')) {
-      return new Response(
-        JSON.stringify({ users: [{ id: 555, email: 'user@example.com' }] }),
-        { status: 200 },
-      )
+    if (url.includes('/subscriptions/by_email/')) {
+      return new Response('{"error":"not found"}', { status: 404 })
     }
-    if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-      return new Response(
-        JSON.stringify({ subscription: { id: 777 } }),
-        { status: 200 },
-      )
+    if (
+      url.includes('api.beehiiv.com') &&
+      url.endsWith('/subscriptions') &&
+      init?.method === 'POST'
+    ) {
+      return new Response(premiumSubscriberBody, { status: 200 })
     }
     return new Response('{}', { status: 200 })
   }
@@ -431,7 +446,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     expect((res.__json() as { email: string }).email).toBe('user@example.com')
   })
 
-  test('triggers SC provisioning when sc_subscription_id is not yet set', async () => {
+  test('grants the Beehiiv premium tier when the sub is not yet marked', async () => {
     nextSubscription = activeSub()
     const h = getHandler(PATH)
     const req = makeReq({
@@ -441,36 +456,38 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(200)
 
-    // SC user lookup happened (no creation since beforeEach returns an existing user)
-    expect(fetchCalls.some((c) => c.url.endsWith('/users/search'))).toBe(true)
-    // SC subscription was created
-    const subCall = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/subscriptions'),
+    // Looked the member up, then created them on the premium tier.
+    expect(fetchCalls.some((c) => c.url.includes('/subscriptions/by_email/'))).toBe(true)
+    const grant = fetchCalls.find(
+      (c) =>
+        c.method === 'POST' &&
+        c.url.includes('api.beehiiv.com') &&
+        c.url.endsWith('/subscriptions'),
     )
-    expect(subCall).toBeDefined()
-    expect((subCall!.body as { user_id: number }).user_id).toBe(555)
+    expect(grant).toBeDefined()
+    expect((grant!.body as { premium_tier_ids: string[] }).premium_tier_ids).toEqual([
+      PREMIUM_TIER_ID,
+    ])
 
-    // Stripe metadata was stamped with sc_subscription_id
+    // Stripe metadata was stamped so a redelivery doesn't re-grant.
     const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
     expect(update).toBeDefined()
     const md = (update!.args[1] as { metadata: Record<string, string> }).metadata
-    expect(md.sc_user_id).toBe('555')
-    expect(md.sc_subscription_id).toBe('777')
+    expect(md.beehiiv_premium).toBe('true')
   })
 
   test('sends the branded subscriber welcome email after provisioning', async () => {
     nextSubscription = activeSub()
     fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(
-          JSON.stringify({ users: [{ id: 555, email: 'user@example.com' }] }),
-          { status: 200 },
-        )
+      if (url.includes('/subscriptions/by_email/')) {
+        return new Response('{"error":"not found"}', { status: 404 })
       }
-      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ subscription: { id: 777 } }), {
-          status: 200,
-        })
+      if (
+        url.includes('api.beehiiv.com') &&
+        url.endsWith('/subscriptions') &&
+        init?.method === 'POST'
+      ) {
+        return new Response(premiumSubscriberBody, { status: 200 })
       }
       if (url.startsWith('https://api.resend.com')) {
         return new Response(JSON.stringify({ id: 'email_1' }), { status: 200 })
@@ -495,9 +512,9 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     expect(body.html).toContain('Welcome to Ark+.')
   })
 
-  test('idempotent: skips SC provisioning if sc_subscription_id is already set', async () => {
+  test('idempotent: skips the grant if the sub is already marked', async () => {
     nextSubscription = activeSub({
-      metadata: { plan: 'monthly', sc_subscription_id: '999' },
+      metadata: { plan: 'monthly', beehiiv_premium: 'true' },
     })
     const h = getHandler(PATH)
     const req = makeReq({
@@ -507,31 +524,22 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(200)
 
-    // No SC user search, no subscription creation
-    expect(fetchCalls.some((c) => c.url.endsWith('/users/search'))).toBe(false)
-    expect(
-      fetchCalls.some((c) => c.method === 'POST' && c.url.endsWith('/subscriptions')),
-    ).toBe(false)
+    // Nothing reached Beehiiv — not even the lookup.
+    expect(fetchCalls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
     // No Stripe metadata update either (already stamped)
     expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
   })
 
-  test('409 with already_subscribed code when SC rejects a second active sub', async () => {
+  test('502 and no session cookie when the premium grant fails', async () => {
+    // The grant is the feed. If it didn't land, the buyer must not be handed a
+    // session that tells the app they have access — the webhook retries.
     nextSubscription = activeSub()
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(
-          JSON.stringify({ users: [{ id: 555, email: 'user@example.com' }] }),
-          { status: 200 },
-        )
+    fetchImpl = async (url) => {
+      if (url.includes('/subscriptions/by_email/')) {
+        return new Response('{"error":"not found"}', { status: 404 })
       }
-      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-        return new Response(
-          JSON.stringify({
-            message: 'This network limits users to only one active subscription at a time.',
-          }),
-          { status: 409 },
-        )
+      if (url.includes('api.beehiiv.com') && url.endsWith('/subscriptions')) {
+        return new Response('{"error":"beehiiv down"}', { status: 500 })
       }
       return new Response('{}', { status: 200 })
     }
@@ -541,11 +549,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     })
     const res = makeRes()
     await runHandler(h, req, res)
-    expect(res.statusCode).toBe(409)
-    const body = res.__json() as { error: string; code: string }
-    expect(body.code).toBe('already_subscribed')
-    expect(body.error).toMatch(/already has an active/i)
-    // No session cookie should be set when provisioning fails.
+    expect(res.statusCode).toBe(502)
     expect(res.__header('set-cookie')).toBeUndefined()
   })
 
@@ -637,21 +641,13 @@ describe('Checkout cookie works with other authenticated endpoints', () => {
     const sessionToken = cookies.get('ark_checkout')?.value
     expect(sessionToken).toBeDefined()
 
-    // 2) Call /api/me with that token in a Cookie header. SC user lookup +
-    //    feeds list are stubbed so we get a clean 200.
-    fetchImpl = async (url) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(
-          JSON.stringify({ users: [{ id: 555, email: 'user@example.com' }] }),
-          { status: 200 },
-        )
-      }
-      if (url.match(/\/users\/555\/feeds$/)) {
-        return new Response(JSON.stringify({ feeds: [] }), { status: 200 })
-      }
-      return new Response('{}', { status: 200 })
-    }
-
+    // 2) Call /api/me with that token in a Cookie header.
+    //
+    // No membership row is staged here, so the answer is the deliberate
+    // provisioning-gap 401 (`membership_not_found`) rather than a member body —
+    // and that is exactly what proves the cookie was ACCEPTED: an unreadable
+    // token answers `unauthenticated` instead, which is what the forged-cookie
+    // test below asserts. Entitlement itself is covered in me.test.ts.
     const meHandler = getHandler(ME_PATH)
     const meReq = makeReq({
       method: 'GET',
@@ -660,9 +656,7 @@ describe('Checkout cookie works with other authenticated endpoints', () => {
     })
     const meRes = makeRes()
     await runHandler(meHandler, meReq, meRes)
-    expect(meRes.statusCode).toBe(200)
-    const body = meRes.__json() as { email: string; feeds: unknown[] }
-    expect(body.email).toBe('user@example.com')
+    expect((meRes.__json() as { error: string }).error).toBe('membership_not_found')
   })
 
   test('GET /api/me rejects a cookie signed with the wrong secret', async () => {
@@ -684,6 +678,8 @@ describe('Checkout cookie works with other authenticated endpoints', () => {
     const meRes = makeRes()
     await runHandler(meHandler, meReq, meRes)
     expect(meRes.statusCode).toBe(401)
+    // Unreadable token → the identity never resolves at all.
+    expect((meRes.__json() as { error: string }).error).toBe('unauthenticated')
   })
 
   test('GET /api/me rejects a cookie with the wrong audience', async () => {
@@ -769,26 +765,26 @@ describe('POST /api/signout — clears checkout cookies', () => {
 // ===========================================================================
 
 describe('Provisioning race — concurrent callers do not double-create', () => {
-  test('two concurrent calls produce exactly one SC subscription', async () => {
+  test('two concurrent calls produce exactly one Beehiiv grant', async () => {
     nextSubscription = activeSub()
 
-    // Slow down the SC /subscriptions POST so both callers enter the
-    // critical section concurrently. Without dedup, both would create.
-    let scSubCreates = 0
+    // Slow down the Beehiiv create so both callers enter the critical section
+    // concurrently. Without dedup, both would grant. (A double grant is benign
+    // upstream — Beehiiv is idempotent on the email — but the second call also
+    // re-sends the welcome email, which is not.)
+    let grants = 0
     fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(
-          JSON.stringify({ users: [{ id: 555, email: 'user@example.com' }] }),
-          { status: 200 },
-        )
+      if (url.includes('/subscriptions/by_email/')) {
+        return new Response('{"error":"not found"}', { status: 404 })
       }
-      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-        scSubCreates++
+      if (
+        url.includes('api.beehiiv.com') &&
+        url.endsWith('/subscriptions') &&
+        init?.method === 'POST'
+      ) {
+        grants++
         await new Promise((r) => setTimeout(r, 50))
-        return new Response(
-          JSON.stringify({ subscription: { id: 777 } }),
-          { status: 200 },
-        )
+        return new Response(premiumSubscriberBody, { status: 200 })
       }
       return new Response('{}', { status: 200 })
     }
@@ -808,7 +804,7 @@ describe('Provisioning race — concurrent callers do not double-create', () => 
 
     expect(resA.statusCode).toBe(200)
     expect(resB.statusCode).toBe(200)
-    // The provisioning lock should have dedup'd these — only one SC sub create.
-    expect(scSubCreates).toBe(1)
+    // The provisioning lock should have dedup'd these — only one grant.
+    expect(grants).toBe(1)
   })
 })

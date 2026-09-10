@@ -22,7 +22,7 @@ mock.module('@neondatabase/serverless', () => ({
 import { resolveMembershipForIdentity } from './lib/entitlement-resolver'
 import type { RequestIdentity } from './lib/session'
 
-// The SC-by-email net (2b) issues a real fetch via createScClient. Stub fetch at
+// The by-email net reaches Neon through Stripe. Stub fetch at
 // the global level (not the module — mock.module leaks across the shared test
 // process) so tests that fall through to it stay off the network and find no SC
 // user → the fall-through resolves to `free`. Restored after this file's tests.
@@ -49,7 +49,7 @@ const SUBLESS: RequestIdentity = { sub: null, email: 'buyer@example.com' } as Re
 
 const ENV = {
   DATABASE_URL: 'postgres://stub-resolver-test',
-  // Present so createScClient builds for the SC-net fall-through; the stubbed
+  // Stubbed
   // fetch above makes the search return no user regardless.
   SC_NETWORK_ID: 'test-net',
   SC_API_KEY: 'test-sc-key',
@@ -61,7 +61,6 @@ const row = (over: Record<string, unknown>) => ({
   auth0_sub: 'auth0|123',
   stripe_customer_id: 'cus_1',
   stripe_subscription_id: 'sub_1',
-  sc_user_id: 42,
   tier: 'ark-plus',
   status: 'active',
   plan: 'monthly',
@@ -84,7 +83,6 @@ describe('resolveMembershipForIdentity — no access leak', () => {
     expect(res.tier).toBe('free')
     expect(res.entitlements).toEqual({ arkPlus: false, circle: false })
     expect(res.origin).toBe('none')
-    expect(res.scUserId).toBeNull()
   })
 
   test('a downgraded-to-free row grants nothing', async () => {
@@ -119,24 +117,25 @@ describe('resolveMembershipForIdentity — no access leak', () => {
 // The reported bug: a bundle member on a sub-less checkout session was resolved
 // as ark-plus, because the resolver only looked up membership by sub and the
 // email net hardcoded arkPlus. The by-email → Stripe customer → Neon row lookup
-// restores the true tier without leaking access.
+// restores the true tier without leaking access. (That arkPlus-only net was the
+// Supporting Cast fallback, since removed — these cases now fall through to
+// free, which is what the "no leak" tests below assert.)
 describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
   test('sub-less session resolves the real tier (bundle) via Stripe customer, not ark-plus', async () => {
     membershipRows = [row({ tier: 'bundle' })]
     const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
-      scFallback: true,
+      emailFallback: true,
       stripe: fakeStripe,
     })
     expect(res.tier).toBe('bundle')
     expect(res.entitlements).toEqual({ arkPlus: true, circle: true })
     expect(res.origin).toBe('neon')
-    expect(res.scUserId).toBe(42)
   })
 
   test('a circle member is likewise not flattened to ark-plus', async () => {
     membershipRows = [row({ tier: 'circle' })]
     const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
-      scFallback: true,
+      emailFallback: true,
       stripe: fakeStripe,
     })
     expect(res.tier).toBe('circle')
@@ -145,7 +144,6 @@ describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
 
   test('no leak: a not-live row found by customer is ignored (not resolved to its paid tier)', async () => {
     // Row is present by customer but cancelled/expired → must not grant its tier.
-    // The SC net finds no user here (stubbed fetch), so it falls through to free.
     membershipRows = [
       row({
         tier: 'bundle',
@@ -155,17 +153,17 @@ describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
       }),
     ]
     const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
-      scFallback: true,
+      emailFallback: true,
       stripe: fakeStripe,
     })
     expect(res.tier).toBe('free')
     expect(res.entitlements).toEqual({ arkPlus: false, circle: false })
   })
 
-  test('no Stripe customer for the email → does not resolve the row, drops to the net', async () => {
+  test('no Stripe customer for the email → does not resolve the row, drops to free', async () => {
     membershipRows = [row({ tier: 'bundle' })] // present, but no customer resolves it
     const res = await resolveMembershipForIdentity(SUBLESS, ENV, {
-      scFallback: true,
+      emailFallback: true,
       stripe: emptyStripe,
     })
     expect(res.tier).toBe('free')
@@ -173,7 +171,7 @@ describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
 
   test('true-tier lookup is opt-in: no stripe passed → the by-customer step is skipped', async () => {
     membershipRows = [row({ tier: 'bundle' })]
-    const res = await resolveMembershipForIdentity(SUBLESS, ENV, { scFallback: true })
+    const res = await resolveMembershipForIdentity(SUBLESS, ENV, { emailFallback: true })
     expect(res.tier).toBe('free')
   })
 })
