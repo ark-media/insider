@@ -146,9 +146,8 @@ interface EventMap {
   // new membership term), an existing subscription was extended, or the value was
   // applied as account credit.
   gift_redeemed: { applied: 'membership' | 'credit' | 'mixed' | 'extended' }
-  // Private-feed activation: which app a member picks, and the terminal
-  // hand-off action (open deep link / copy URL / text themselves the link).
-  feed_app_selected: { app: string }
+  // Private-feed activation: the terminal hand-off action, and which app it
+  // was for (open a deep link / copy the RSS URL / email the link).
   feed_activated: { app: string; method: 'open' | 'copy' | 'email' }
   // The one-click path: linking Spotify once follows every private feed in the
   // network. `feed_count` is how many feeds that link covers.

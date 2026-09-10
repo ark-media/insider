@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import QRCode from "qrcode";
 import {
   ApplePodcastsIcon,
@@ -71,11 +71,16 @@ export function FeedSetup({
           </div>
         ) : null}
 
-        <h2 className="text-h2">Set up your private feed</h2>
-        <p className="mt-4 max-w-2xl text-body">
-          Pick where you listen. These links carry your membership, so keep them
-          to yourself.
-        </p>
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between sm:gap-10">
+          <div className="min-w-0">
+            <h2 className="text-h2">Set up your private feed</h2>
+            <p className="mt-4 max-w-2xl text-body">
+              Pick where you listen. These links carry your membership, so keep
+              them to yourself.
+            </p>
+          </div>
+          {feeds.length > 0 ? <SetupProgress feeds={feeds} /> : null}
+        </div>
 
         {feeds.length === 0 ? (
           <div className="mt-10 border border-rule bg-navy-900/60 p-6 text-body-sm text-fg">
@@ -103,6 +108,49 @@ export function FeedSetup({
         )}
       </div>
     </section>
+  );
+}
+
+// How many shows are already in a podcast app, so a member with several can
+// see at a glance what's left. A show counts once Beehiiv reports it activated
+// or we've recorded the optimistic marker — see feedIsSetUp.
+function SetupProgress({ feeds }: { feeds: UserFeed[] }) {
+  const done = feeds.filter(feedIsSetUp).length;
+  const total = feeds.length;
+  const left = total - done;
+
+  return (
+    <div className="w-full shrink-0 border border-rule bg-navy-900/60 p-4 sm:w-[220px]">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="label font-display font-bold text-fg-strong">
+          {left === 0 ? "All set" : "Setup"}
+        </span>
+        <span className="font-display text-[15px] font-bold tracking-cta text-cyan">
+          {done}
+          <span className="text-fg-muted">/{total}</span>
+        </span>
+      </div>
+      <div
+        className="mt-3 h-1.5 w-full overflow-hidden bg-navy-800"
+        role="progressbar"
+        aria-valuenow={done}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-label={`${done} of ${total} ${total === 1 ? "show" : "shows"} set up`}
+      >
+        <div
+          className="h-full bg-cyan transition-[width] duration-700 ease-[cubic-bezier(.16,1,.3,1)]"
+          style={{ width: `${total === 0 ? 0 : (done / total) * 100}%` }}
+        />
+      </div>
+      <p className="mt-2.5 text-body-sm text-fg-muted">
+        {left === 0
+          ? total === 1
+            ? "Your feed is in an app. Enjoy."
+            : "You're following the whole network."
+          : `${left} ${left === 1 ? "show" : "shows"} left to add.`}
+      </p>
+    </div>
   );
 }
 
@@ -217,6 +265,7 @@ function AppRow({
   onOpen: () => void;
 }) {
   const { Icon } = app;
+  const panelId = `${useId()}-qr`;
   return (
     <li className="-mt-px border border-rule">
       <div className="flex items-stretch">
@@ -251,6 +300,7 @@ function AppRow({
           type="button"
           onClick={onToggleQr}
           aria-expanded={qrOpen}
+          aria-controls={panelId}
           aria-label={`${qrOpen ? "Hide" : "Show"} QR code for ${app.name}`}
           className={`hidden shrink-0 items-center gap-2 border-l border-rule px-4 button-text transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan md:flex ${
             qrOpen ? "bg-cyan/10 text-cyan" : "text-fg-muted"
@@ -260,7 +310,7 @@ function AppRow({
           Scan
         </button>
       </div>
-      {qrOpen ? <QrPanel appName={app.name} url={url} /> : null}
+      {qrOpen ? <QrPanel id={panelId} appName={app.name} url={url} /> : null}
     </li>
   );
 }
@@ -268,13 +318,21 @@ function AppRow({
 // The QR encodes the app's own deep link, so scanning it hands the phone
 // exactly what tapping the row would — no sign-in on the second device, and
 // nothing for the member to copy across.
-function QrPanel({ appName, url }: { appName: string; url: string }) {
+function QrPanel({
+  id,
+  appName,
+  url,
+}: {
+  id: string;
+  appName: string;
+  url: string;
+}) {
   const [dataUrl, setDataUrl] = useState("");
-  const [failed, setFailed] = useState(false);
 
+  // A row's panel mounts when it opens and unmounts when it closes, so `url`
+  // never changes under a mounted panel — one generation per open.
   useEffect(() => {
     let cancelled = false;
-    setFailed(false);
     QRCode.toDataURL(url, {
       width: 512,
       margin: 1,
@@ -284,27 +342,28 @@ function QrPanel({ appName, url }: { appName: string; url: string }) {
         if (!cancelled) setDataUrl(d);
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        /* nothing renders until there's a code to render */
       });
     return () => {
       cancelled = true;
     };
   }, [url]);
 
-  if (failed) return null;
+  if (!dataUrl) return null;
 
   return (
-    <div className="hidden items-center gap-6 border-t border-rule bg-navy-900/40 p-5 md:flex">
+    <div
+      id={id}
+      className="hidden items-center gap-6 border-t border-rule bg-navy-900/40 p-5 md:flex"
+    >
       <div className="size-32 shrink-0 bg-white p-2">
-        {dataUrl ? (
-          <img
-            src={dataUrl}
-            alt={`QR code that opens ${appName} on your phone`}
-            width={128}
-            height={128}
-            className="block h-full w-full"
-          />
-        ) : null}
+        <img
+          src={dataUrl}
+          alt={`QR code that opens ${appName} on your phone`}
+          width={128}
+          height={128}
+          className="block h-full w-full"
+        />
       </div>
       <p className="min-w-0 text-body-sm">
         Point your phone's camera at this code to add the show to {appName}{" "}

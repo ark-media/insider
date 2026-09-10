@@ -75,38 +75,3 @@ export function PocketCastsIcon({ className = DEFAULT_ICON_CLASS }: { className?
   );
 }
 
-// Downcast has no published vector mark, so this is a hand-traced reproduction
-// of the App Store icon: a vertical red-gradient tile, a bold white "D", and two
-// white sound-wave arcs radiating to the right.
-export function DowncastIcon({ className = DEFAULT_ICON_CLASS }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <defs>
-        <linearGradient id="downcast-grad" x1="12" y1="0" x2="12" y2="24" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#EA1D24" />
-          <stop offset="1" stopColor="#AE0C16" />
-        </linearGradient>
-      </defs>
-      <rect width="24" height="24" rx="5.34" fill="url(#downcast-grad)" />
-      <path
-        fill="#fff"
-        fillRule="evenodd"
-        d="M4.8 6.8 H9 C11.1 6.8 12.7 8.9 12.7 12 C12.7 15.1 11.1 17.2 9 17.2 H4.8 Z M7.1 9.1 H8.7 C10 9.1 10.4 10.3 10.4 12 C10.4 13.7 10 14.9 8.7 14.9 H7.1 Z"
-      />
-      <path
-        fill="none"
-        stroke="#fff"
-        strokeWidth="1.85"
-        strokeLinecap="round"
-        d="M12.2 9.3 A3.1 3.1 0 0 1 12.2 14.7"
-      />
-      <path
-        fill="none"
-        stroke="#fff"
-        strokeWidth="1.85"
-        strokeLinecap="round"
-        d="M14 6.7 A6.3 6.3 0 0 1 14 17.3"
-      />
-    </svg>
-  );
-}
