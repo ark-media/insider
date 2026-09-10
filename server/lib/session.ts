@@ -180,8 +180,8 @@ export async function verifyCheckoutToken(token: string, env: Env): Promise<stri
 // The checkout token's payload: the buyer's email plus, when it was resolved at
 // provisioning time, their Auth0 `sub`. The `sub` lets a just-paid member (who
 // has no `ark_session` yet) resolve their Neon membership row directly, instead
-// of relying only on the SC-by-email arkPlus fallback (§3). Absent when Auth0
-// provisioning soft-failed — the SC fallback still covers the arkPlus feed.
+// of relying only on the by-email net (§3). Absent when Auth0 provisioning
+// soft-failed — the by-email net still covers the arkPlus feed.
 type CheckoutProfile = { email: string; sub: string | null }
 
 async function verifyCheckoutProfile(
@@ -405,7 +405,7 @@ export async function getSessionProfile(
 //   'auth0'    — a durable login (ark_session cookie or Auth0 bearer). A missing
 //                membership row means "free": a logged-in reader with nothing.
 //   'checkout' — the short-lived post-payment token. A missing row AND missing
-//                SC feed is a provisioning gap, not free — the caller paid.
+//                feed is a provisioning gap, not free — the caller paid.
 export type RequestIdentity = {
   email: string
   sub: string | null

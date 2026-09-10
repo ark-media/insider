@@ -3,7 +3,7 @@
 // The directory's spine is the Neon `membership` table (opaque, PII-free); each
 // entry's email/name is hydrated live from Stripe at read time and never
 // persisted. Activation ("has the member set up a private feed?") comes from
-// sc_feed_activations, keyed by email. See server/routes/admin-members.ts.
+// beehiiv_feed_activations, keyed by email. See server/routes/admin-members.ts.
 
 // A member's tier. `free` (no membership row) only appears via email search,
 // where a Stripe customer may exist without being a paying member.

@@ -1,6 +1,6 @@
 // Member-initiated actions on their own private feed.
 //
-// Replaces the Supporting Cast setup-SMS route. Two things a member can do
+// Two things a member can do
 // from the setup page that need a server:
 //
 //   POST /api/me/feeds/email    — ask Beehiiv to email them the feed + setup

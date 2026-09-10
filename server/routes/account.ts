@@ -160,9 +160,9 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
 
         // Every store that greets this member by name has to hear about the
         // edit, or the one left behind keeps sending the old value: Beehiiv
-        // personalizes campaigns from its custom fields, Supporting Cast's
-        // first_name is what the feed-setup reminder cron greets from, and
-        // Circle shows the name to every other member — the one store where a
+        // personalizes campaigns from its custom fields and is what the
+        // feed-setup reminder cron greets from, and Circle shows the name to
+        // every other member — the one store where a
         // stale value is read by strangers rather than by us. Each is
         // soft-failed: none may sink a save the member can see succeeded in
         // Auth0.

@@ -8,10 +8,10 @@
 //   2. The Circle axis: creating members, stamping the auth0_sub join field,
 //      and moving them between the two community access groups
 //      (CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID / CIRCLE_CANCELLED_ACCESS_GROUP_ID).
-//      The arkPlus axis (Supporting Cast) is owned by lib/activation.ts + the
-//      webhook.
+//      The arkPlus axis (Beehiiv's premium tier) is owned by lib/activation.ts
+//      + the webhook.
 //   3. The nightly reconciler — Neon-authoritative drift removal across both
-//      external access systems (SC + Circle), keyed on opaque ids, never email.
+//      external access systems (Beehiiv + Circle).
 //
 // Auth0 holds NO entitlement here. There is no tier claim and no app_metadata
 // mirror to keep in sync (task 5) — a per-request Neon read on the sub is never
@@ -51,7 +51,8 @@ const GRANTS: Record<Tier, Entitlements> = {
 
 // The one place tier → entitlements. Entitlements are always derived, never
 // stored (no drift). The two axes map 1:1 onto the two external access systems:
-// arkPlus → Supporting Cast (the private feed), circle → the Circle access group.
+// arkPlus → Beehiiv's premium tier (the private feed), circle → the Circle
+// access group.
 export function deriveEntitlements(tier: Tier): Entitlements {
   // The row's `tier` is a free-text column, so a corrupt value typed as Tier can
   // reach here at runtime; fall back to no entitlements (and log) rather than
@@ -96,7 +97,7 @@ export type EntitlementResult = {
 
 // Mirror the Circle access group to the tier's circle entitlement. This is the
 // one external write syncEntitlement still performs — the arkPlus axis
-// (Supporting Cast) and the Neon membership row are owned by activation/webhook.
+// (Beehiiv) and the Neon membership row are owned by activation/webhook.
 // A tier that grants circle → add to the group (idempotent); one that doesn't →
 // remove. Soft: a Circle outage yields 'error', never throws through the caller.
 export async function syncEntitlement(
@@ -512,12 +513,11 @@ async function stampCircleAuth0Sub(
 // Push a member's name onto their Circle profile — the Fold's copy of the
 // one thing every other store already hears about.
 //
-// PUT /api/account/profile fans an edited name out to Auth0 (its home), Beehiiv
-// and Supporting Cast. Circle was missing from that list, so a member who fixed
-// their name with us still read as their old one in the Fold. That is not
-// a cosmetic gap for the migrated roster: where we hold no name at all, Circle
-// fills `first_name` with the whole email address, so those members appear to
-// everyone else as "someone@example.com".
+// PUT /api/account/profile fans an edited name out to Auth0 (its home) and
+// Beehiiv. Circle was missing from that list, so a member who fixed their name
+// with us still read as their old one in the Fold. Not a cosmetic gap: where we
+// hold no name at all, Circle fills `first_name` with the whole email address,
+// so that member appears to everyone else as "someone@example.com".
 //
 // Soft by construction — returns false rather than throwing. Every caller is
 // downstream of a save the member has already seen succeed, so a Circle hiccup
@@ -829,7 +829,7 @@ async function reconcileCircleAxis(
   if (!apiToken || !accessGroupId) return 0
 
   const members = await listCircleAccessGroupMembers(env, maxPages)
-  // Same fail-safe as the SC axis: an empty keep-set against a populated access
+  // Same fail-safe as the arkPlus axis: an empty keep-set against a populated access
   // group means Neon isn't the trustworthy authority yet (unbackfilled / bad
   // read), so skip removal rather than clear the whole community group.
   if (members.length > 0 && keep.size === 0) {

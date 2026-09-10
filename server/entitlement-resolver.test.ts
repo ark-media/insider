@@ -51,8 +51,6 @@ const ENV = {
   DATABASE_URL: 'postgres://stub-resolver-test',
   // Stubbed
   // fetch above makes the search return no user regardless.
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-sc-key',
 } as Record<string, string>
 const IDENTITY: RequestIdentity = { sub: 'auth0|123', email: 'gone@example.com' } as RequestIdentity
 
@@ -117,9 +115,9 @@ describe('resolveMembershipForIdentity — no access leak', () => {
 // The reported bug: a bundle member on a sub-less checkout session was resolved
 // as ark-plus, because the resolver only looked up membership by sub and the
 // email net hardcoded arkPlus. The by-email → Stripe customer → Neon row lookup
-// restores the true tier without leaking access. (That arkPlus-only net was the
-// Supporting Cast fallback, since removed — these cases now fall through to
-// free, which is what the "no leak" tests below assert.)
+// restores the true tier without leaking access. (That arkPlus-only net is
+// gone — these cases now fall through to free, which is what the "no leak"
+// tests below assert.)
 describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
   test('sub-less session resolves the real tier (bundle) via Stripe customer, not ark-plus', async () => {
     membershipRows = [row({ tier: 'bundle' })]

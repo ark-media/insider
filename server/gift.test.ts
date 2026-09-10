@@ -160,13 +160,9 @@ import { SUPPORTED_CURRENCIES } from './lib/pricing'
 // ---------------------------------------------------------------------------
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-key',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
   STRIPE_WEBHOOK_SECRET: 'wh_test',
-  SC_SUBSCRIPTION_PRICE_ID_GIFT_6MO: '111',
-  SC_SUBSCRIPTION_PRICE_ID_GIFT_1YR: '222',
 }
 
 function getHandler(path: string, envOverrides?: Record<string, string>): Middleware {
@@ -742,9 +738,9 @@ async function runWebhook(envOverrides?: Record<string, string>): Promise<FakeRe
 describe('Webhook — gift purchase (redemption model)', () => {
   // A gift now grants nothing at purchase (§3): the webhook writes a pending
   // gift row (skipped here — no DB) and emails the recipient a claim link, never
-  // touching Supporting Cast. Redemption (POST /api/gift/redeem) writes the row.
+  // touching the feed provider. Redemption (POST /api/gift/redeem) writes the row.
 
-  test('stamps the gift_token on the PI and emails a single magic link — no SC/Auth0 calls', async () => {
+  test('stamps the gift_token on the PI and emails a single magic link — no Beehiiv/Auth0 calls', async () => {
     const pi = buildGiftPI({ term: '1yr', giver_name: 'Bob', message: 'Enjoy' })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
     retrievedPI = pi

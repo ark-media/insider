@@ -2,11 +2,9 @@
 //
 // The arkPlus axis is granted by applying Beehiiv's premium "Plus" tier to the
 // member's subscriber record — Beehiiv issues the private podcast feed off that
-// tier. It replaced a Supporting Cast subscription, which is why the elaborate
-// create-dedup that used to live here is gone: SC minted a NEW subscription per
-// POST and needed three layers of guard against a duplicate, while the Beehiiv
-// grant is idempotent on the member's email (look up → create or update), so
-// two callers racing the same checkout converge on one record.
+// tier. The grant is idempotent on the member's email (look up → create or
+// update), so two callers racing the same checkout converge on one record and
+// no create-dedup is needed here.
 //
 //
 // Two callers do still race for the same Stripe sub: the webhook (eventually
@@ -189,17 +187,16 @@ export type Activator = {
   // Grant a redeemed gift to the signed-in recipient (routes/gift.ts), one axis
   // at a time (D4): the redeem flow decides WHICH axes this gift extends (a
   // Bundle gift extends both; a gift overlapping a paid sub extends only the
-  // axis the sub lacks). SC is provisioned for the arkPlus axis, Circle for the
-  // circle axis. Returns the SC ids + the per-axis expiry for the membership row.
+  // axis the sub lacks). Beehiiv's premium tier covers the arkPlus axis, Circle
+  // the circle axis. Returns the per-axis expiry for the membership row.
   activateGiftForRecipient: (opts: {
     email: string
     name?: string
     auth0Sub: string | null
     term: GiftTerm
     // The gift's redemption token. Retained for logging and for the caller's
-    // own idempotency; Beehiiv's grant is a boolean tier, so unlike the SC
-    // subscription it replaced there is nothing here to accidentally collapse
-    // two distinct gifts into.
+    // own idempotency; the grant is a boolean tier, so there is nothing here
+    // to accidentally collapse two distinct gifts into.
     giftToken: string
     // Epoch ms each axis's term is measured from — null means "don't grant this
     // axis". The redeem flow passes an existing unexpired gift expiry so a
@@ -220,8 +217,8 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
   // reset email — the single welcome email carries the set-password link. Soft-
   // fails to a null userId so an Auth0 outage can't block the paid product; the
   // webhook then can't write a membership row and retries. Runs for every paid
-  // tier, not just SC — a Circle-only buyer needs a login to SSO into what they
-  // bought (§8 risk 6).
+  // tier, not just Ark+ — a Circle-only buyer needs a login to SSO into what
+  // they bought (§8 risk 6).
   const ensureAuth0Login = async (
     email: string,
     name: string | undefined,
@@ -292,8 +289,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       fresh.metadata?.circle_provisioned !== 'true'
 
     // Beehiiv premium (arkPlus) first, so a later Auth0/Circle outage can never
-    // block feed access — the paid product (§3 "the ordering trap"). It holds
-    // the slot the SC subscription used to.
+    // block feed access — the paid product (§3 "the ordering trap").
     // `addingArkPlus` records that THIS call is what grants the axis, which is
     // what separates an upgrade from a redelivery; the axis markers are stamped
     // below, so a later fan-out sees the axis already provisioned and reports
@@ -360,8 +356,8 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     })
 
     if (wasUnprovisioned) {
-      // One branded welcome email — replaces both the SC welcome email (feed
-      // setup lives on /welcome) and Auth0's reset email (link embedded above).
+      // One branded welcome email — feed setup lives on /welcome, and it stands
+      // in for Auth0's reset email too (link embedded above).
       // One per tier: bundle (feed + Fold) and ark-plus (feed only) share
       // the subscriber template but branch on tier for accurate copy;
       // Circle-only gets the Fold-first copy. Soft-fail: the membership is
@@ -509,11 +505,10 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
 
     if (opts.arkPlusFromMs != null) {
       arkPlusEndsAt = new Date(opts.arkPlusFromMs + termMs).toISOString()
-      // ⚠ The grant carries NO end date upstream. Supporting Cast held the gift
-      // term itself (a fixed-term subscription with `ends_at`, which SC expired
-      // on its own); Beehiiv's premium tier is a boolean with no term, so the
-      // ONLY thing that ever ends a gifted feed is `ark_plus_gift_expires_at` on
-      // the Neon row plus the reconciler's downgrade pass. If that pass is
+      // ⚠ The grant carries NO end date upstream. Beehiiv's premium tier is a
+      // boolean with no term of its own, so the ONLY thing that ever ends a
+      // gifted feed is `ark_plus_gift_expires_at` on the Neon row plus the
+      // reconciler's downgrade pass. If that pass is
       // disabled or silently failing, expired recipients keep their feed
       // indefinitely and nothing surfaces it.
       await provisionArkPlus(opts.email)

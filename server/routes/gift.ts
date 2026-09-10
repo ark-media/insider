@@ -175,8 +175,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           // /api/promo/active?term= resolves.
           allow_promotion_codes: true,
           // Stamp the PaymentIntent so the existing webhook
-          // (payment_intent.succeeded, kind:'gift') activates SC + entitlement
-          // unchanged — the Session is just the funnel that creates it.
+          // (payment_intent.succeeded, kind:'gift') activates the grant +
+          // entitlement unchanged — the Session is just the funnel that
+          // creates it.
           payment_intent_data: {
             receipt_email: giverEmail,
             description: `Ark Insider gift · ${termLabel}`,
@@ -236,8 +237,8 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           return json(403, { error: 'Forbidden' })
         }
 
-        // The PaymentIntent carries the live status and the sc_subscription_id
-        // the webhook stamps on activation.
+        // The PaymentIntent carries the live status the webhook stamps on
+        // activation.
         const pi =
           typeof session.payment_intent === 'object' ? session.payment_intent : null
         json(200, {

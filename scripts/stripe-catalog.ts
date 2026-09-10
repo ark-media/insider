@@ -103,7 +103,6 @@ type ProductDef = {
   name: string
   description: string
   entitlements: string // comma-separated: what buying this grants
-  scPlan: boolean // does this product provision a Supporting Cast feed?
   usdMonthlyMinor: number // $8-base anchor; other currencies scale from BASE_MONTHLY_MINOR
 }
 
@@ -119,9 +118,8 @@ const CATALOG: ProductDef[] = [
   {
     catalogKey: 'ark_plus',
     name: 'Ark+',
-    description: 'Private ad-free podcast feed (Supporting Cast).',
+    description: 'Private ad-free podcast feed.',
     entitlements: 'ark_plus',
-    scPlan: true,
     usdMonthlyMinor: 800,
   },
   {
@@ -129,7 +127,6 @@ const CATALOG: ProductDef[] = [
     name: 'The Fold',
     description: 'Access to the Fold (Circle).',
     entitlements: 'circle',
-    scPlan: false,
     usdMonthlyMinor: 1900,
   },
   {
@@ -137,7 +134,6 @@ const CATALOG: ProductDef[] = [
     name: 'Ark+ & The Fold',
     description: 'Private ad-free feed and access to the Fold.',
     entitlements: 'ark_plus,circle',
-    scPlan: true,
     usdMonthlyMinor: 2500,
   },
 ]
@@ -190,7 +186,7 @@ const GIFT_CATALOG: GiftProductDef[] = [
   {
     catalogKey: 'gift_ark_plus',
     name: 'Ark+ Gift',
-    description: 'Gift a private ad-free podcast feed (Supporting Cast).',
+    description: 'Gift a private ad-free podcast feed.',
     entitlements: 'ark_plus',
     tierMonthlyUsdMinor: 800,
     anchors: { '6mo': 4800, '1yr': 8000 },
@@ -286,7 +282,6 @@ async function upsertProduct(
     entitlements: def.entitlements,
     founding_multiple: FOUNDING_MULTIPLE,
   }
-  if (def.scPlan) metadata.sc_subscription_plan_id = 'true'
 
   if (existing) {
     console.log(`  product ${def.catalogKey}: exists (${existing.id}) — updating name/metadata`)
@@ -354,8 +349,7 @@ async function upsertPrice(
   }
 }
 
-// Gift products carry kind:'gift' and no founding/SC metadata (SC gift feeds are
-// provisioned via SC_SUBSCRIPTION_PRICE_ID_GIFT_* env, not this Stripe product).
+// Gift products carry kind:'gift' and no founding metadata.
 async function upsertGiftProduct(
   stripe: Stripe,
   def: GiftProductDef,

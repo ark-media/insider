@@ -43,10 +43,8 @@ This is the go-live checklist for Ark+ Insider. Two parts:
 | 2 | **Auth0** | Identity / login (BFF + social) | **Production tenant** on custom domain `auth.ark-plus.xyz`. Management API lives on the *native* tenant domain. |
 | 3 | **Neon (Postgres)** | Source of truth for entitlement + app data | Prod project = `ark-insider-dev` (us-east-1) per current env. Confirm before launch. |
 | 4 | **Stripe** | Payments, subscriptions, gift catalog | ⚠️ Live mode: catalog, webhooks, coupons all re-provisioned. |
-| 5 | **Supporting Cast** | Legacy membership + private podcast feeds; **holds the ~15k members to migrate** | Real network id + API key. |
-| 6 | **Simplecast** | Episode catalog (fetched at runtime — never hardcoded) | API token + per-show UUIDs. |
-| 7 | **Resend** | Transactional email (gift welcome, feed reminders, **migration emails**) | Verified sending domain. |
-| 8 | **Beehiiv** | Newsletter pages (Ark Daily + Members Letter) | API key, publication ids, premium tier id, webhook. |
+| 5 | **Resend** | Transactional email (gift welcome, feed reminders, **migration emails**) | Verified sending domain. |
+| 6 | **Beehiiv** | Newsletters (Ark Daily + Members Letter), episode catalog (fetched at runtime — never hardcoded), and the private paid feed | API key, publication ids, podcast ids, premium tier id, webhook. |
 | 9 | **Circle** | Community; gated Spaces via access group; SSO | Two tokens (v1 + v2), community id, access group id, SSO secret. |
 | 10 | **PostHog** | Product analytics + session replay | Project key (`phc_…`). |
 | 11 | **Sentry** | Error monitoring | Client DSN. |
@@ -99,7 +97,7 @@ you get the value; "Scope" = server-only vs shipped to browser.
 **Stripe live setup:**
 - Re-run the catalog provisioner (`scripts/stripe-catalog.ts`) against live mode
   to create products/prices with the `entitlements` metadata the tier resolver
-  reads. Capture `SC_SUBSCRIPTION_PRICE_ID_*` and gift price ids too.
+  reads. Capture the gift price ids too.
 - Create the **live webhook endpoint** → `https://<APP_BASE_URL>/api/stripe/webhook`,
   subscribe to the subscription/invoice/checkout events the handler consumes,
   copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the source
@@ -107,14 +105,6 @@ you get the value; "Scope" = server-only vs shipped to browser.
   the delivery path).
 - Disable Adaptive Pricing in the Dashboard (we use per-currency `currency_options`).
 - Re-create coupons/promos in live mode (Stripe-native; auto-applied via metadata).
-
-#### Supporting Cast
-| Var | Scope | Prod source / action |
-|---|---|---|
-| `SC_NETWORK_ID` | server | Real network id. |
-| `SC_API_KEY` | server | Admin Console → API Tokens (grants v1 **and** v2 access). |
-| `SC_SUBSCRIPTION_PRICE_ID_MONTHLY` / `_YEARLY` / `_GIFT_6MO` / `_GIFT_1YR` | server | Admin Console → Subscription Plans → Prices. |
-| `SC_WEBHOOK_SECRET` | server | `openssl rand -hex 32`; register SC webhook → `/api/sc/webhook?key=…` for `feed.activated` + `feed.access_revoked`. |
 
 #### Resend (email)
 | Var | Scope | Prod source / action |
@@ -177,13 +167,13 @@ matter of pasting a key.
 | E | **Legal pages live** — Privacy Policy + Terms at stable URLs. | Required by the Google consent screen (A), by Stripe, and referenced in the migration email footer. | Legal |
 | F | **Stripe Customer/Billing Portal + Tax config** (if used). Confirm the custom cancellation flow doesn't silently depend on the hosted portal. | A missing portal config surfaces as broken billing management post-launch. | Eng |
 
-> **Note — SMS needs no separate provider.** `server/routes/sms.ts` sends
-> setup-link texts by asking Supporting Cast to forward them to the carrier
-> (SC bills per message). No Twilio/other account required; it rides on `SC_*`.
+> **Note — no SMS provider needed.** Setup links are delivered by email
+> (`POST /api/me/feeds/email` asks Beehiiv to send the member their feed), so
+> there is no Twilio or carrier dependency to provision.
 
 ### 1.5 Secrets to generate (don't reuse dev values)
 Regenerate all shared secrets for prod: `SESSION_SECRET`, `CHECKOUT_SESSION_SECRET`,
-`CRON_SECRET`, `SC_WEBHOOK_SECRET`, `BEEHIIV_WEBHOOK_SECRET` — each
+`CRON_SECRET`, `BEEHIIV_WEBHOOK_SECRET` — each
 `openssl rand -hex 32`.
 
 ### 1.6 Pre-launch verification
@@ -396,13 +386,8 @@ Sending 15,000 emails in a short window is the highest-risk, least-reversible st
 - Do cancelled/expired SC members get a migration email (win-back) or not?
 - Launch with the `VITE_GATE_PASSWORD` gate on (soft launch) or fully public?
 - Send-window and support staffing for the 15k email wave.
-- **Email ownership — Supporting Cast vs Resend.** Do we keep letting Supporting
-  Cast send member emails (feed-setup links, receipts, its own new-content
-  notices), or consolidate **all** member-facing email onto Resend for one
-  branded sender, one deliverability reputation, and one suppression list?
-  Trade-offs: SC-sent mail is zero-effort but off-brand, split across two sending
-  domains/reputations, and outside our unsubscribe/analytics; owning it on Resend
-  gives brand + control but means re-implementing whatever SC sends today (and we
-  already own new-episode/new-post notices via the self-built 6h cron, so the
-  split is real). Decide before the migration blast so the "set your password"
-  email and any SC-sent welcome don't collide or double-send.
+- **Email ownership — Beehiiv vs Resend.** Beehiiv sends the feed-delivery mail
+  (`POST /api/me/feeds/email`) and the newsletters; Resend sends our own
+  transactional mail. Confirm the split is deliberate before any launch blast, so
+  the "set your password" email and Beehiiv's own feed mail don't collide or
+  double-send.

@@ -3,9 +3,9 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 /**
  * The house audio player.
  *
- * Beehiiv has no embeddable player — it returns a direct `audio_url` — so this
- * replaces the `player.simplecast.com` iframe that used to sit on the show and
- * episode pages. Everything is driven off one `<audio>` element we own, which
+ * Beehiiv has no embeddable player — it returns a direct `audio_url` — so the
+ * show and episode pages drive playback themselves. Everything runs off one
+ * `<audio>` element we own, which
  * means the controls inherit the site's own tokens instead of an iframe's
  * chrome, and the page keeps working with the browser's media keys.
  *

@@ -95,10 +95,8 @@ function EpisodePage() {
           />
           <div className="mt-8 grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-12">
             <div className="lg:col-span-8">
-              {/* The Simplecast embed used to be the album header — it rendered
-                  the episode art and title itself, so this <h1> was sr-only to
-                  avoid saying the same thing twice. Our own player renders
-                  controls only, so the title has to be visible again. */}
+              {/* Our player renders controls only — no art or title of its
+                  own — so the episode title has to be visible here. */}
               <h1 className="max-w-3xl font-display text-[clamp(1.6rem,3.2vw,2.35rem)] leading-[1.15] text-fg-strong">
                 {episode.title}
               </h1>

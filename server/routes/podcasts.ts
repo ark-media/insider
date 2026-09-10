@@ -35,8 +35,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const BEEHIIV_API_BASE = 'https://api.beehiiv.com/v2'
 
-// How many episodes a show page starts with. Matches the page size Simplecast
-// served, and `EpisodeBrowser` reveals them a screen at a time from there.
+// How many episodes a show page starts with; `EpisodeBrowser` reveals them a
+// screen at a time from there.
 const EPISODE_LIST_SIZE = 50
 
 // Beehiiv's list endpoint does its work per episode, not per request: measured

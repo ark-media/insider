@@ -105,11 +105,6 @@ const CHECKOUT_SECRET = 'test-checkout-secret-0123456789abcdef0123456789abcdef'
 const PREMIUM_TIER_ID = 'tier_plus'
 
 const BASE_ENV = {
-  // Still present for the /api/me leg below: the entitlement resolver's
-  // by-email safety net (2b) reads Supporting Cast, which gift redemption still
-  // populates. Nothing in the checkout path touches SC any more.
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-key',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
   BEEHIIV_API_KEY: 'bh_key',

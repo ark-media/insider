@@ -50,8 +50,8 @@ type SubscriberAuthValue = {
   // Optimistically mark private feeds as set up: patches the in-memory
   // `me.feeds` (instant check-off in the setup hub) and persists a server-side
   // pending marker so it survives reloads and follows the member across
-  // devices. Monotonic — only ever flips a feed to set up, never back. SC's
-  // `feed.activated` webhook remains authoritative and reconciles on refresh.
+  // devices. Monotonic — only ever flips a feed to set up, never back. The
+  // provider's feed webhook remains authoritative and reconciles on refresh.
   markFeedsSetUp: (feedIds: string[]) => void;
   // True when /api/me couldn't be reached (network / server error, not a 401).
   // Member-data pages show an error+retry on this; `refresh` is the retry. Kept

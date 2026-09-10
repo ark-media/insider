@@ -92,8 +92,6 @@ const HEADERS = { 'stripe-signature': 'sig' }
 // per-URL neon cache isolated to this file. No AUTH0/CIRCLE/BEEHIIV keys, so
 // dispatch stays inert beyond the ledger + the (log-only) event path.
 const ENV = {
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-key',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
   STRIPE_WEBHOOK_SECRET: 'wh_test',

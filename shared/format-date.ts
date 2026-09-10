@@ -9,7 +9,7 @@
 //    "15/07/2026" on their billing page in the same session.
 //
 // 2. A *calendar date* is not an *instant*, and they must not share a code path.
-//    Our feeds (Simplecast, Beehiiv, Circle) all serialize `publishedAt` as a
+//    Our feeds (Beehiiv, Circle) all serialize `publishedAt` as a
 //    bare 'YYYY-MM-DD'. Per spec, `new Date('2026-07-15')` parses as UTC
 //    midnight, so formatting it in the viewer's zone slid every published date
 //    back a day for every reader in the Americas. Calendar dates are therefore

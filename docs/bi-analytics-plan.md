@@ -46,12 +46,13 @@ An honest inventory, from the code — not aspiration.
    platforms, no `onClick`. Same for `CommunityAppLinks.tsx`,
    `community/CommunityFeed.tsx`, `community/LiveEventsStrip.tsx`.
 5. **On-site listening is a click, not a listen.** `episode_play_clicked` fires
-   on the Play button, but the player is a **Simplecast iframe**
-   (`ShowPage.tsx:709`). We have no start / 25% / 50% / 75% / complete signal, so
-   "listening on the website" is currently unmeasurable beyond intent-to-play.
-6. **Off-platform consumption is never joined.** Downloads live in Simplecast
-   (public shows) and Supporting Cast (private paid feeds). Neither is ingested.
-   The largest engagement surface in the business has no representation in BI.
+   on the Play button. The first-party player now exists (`AudioPlayer.tsx`), so
+   the timeline is ours to instrument, but no start / 25% / 50% / 75% / complete
+   events are emitted yet — "listening on the website" is still unmeasurable
+   beyond intent-to-play.
+6. **Off-platform consumption is never joined.** Downloads live in Beehiiv
+   (public shows and private paid feeds alike). Not ingested. The largest
+   engagement surface in the business has no representation in BI.
 7. **Newsletter is a one-event product.** Only `newsletter_subscribed`. No post
    reads, no read depth, no paywall-hit on gated posts, no unsubscribe event
    (`downgradeToFree()` exists server-side and fires nothing), and no ingestion of
@@ -65,7 +66,7 @@ An honest inventory, from the code — not aspiration.
    use one?*
 10. **No warehouse.** PostHog is excellent for funnels and retention curves and
     poor at MRR truth, cohort LTV, and joining Stripe × Neon × Beehiiv × Circle ×
-    Simplecast. Those need SQL over a warehouse.
+    the podcast host. Those need SQL over a warehouse.
 
 ---
 
@@ -88,9 +89,9 @@ An honest inventory, from the code — not aspiration.
 5. **No PII in properties.** Identity goes through `identifyUser()`. Properties
    are for segmentation.
 6. **`email_sha256` is the universal join key.** It already exists in
-   `observability.ts`. Every third-party ingest (Beehiiv, Circle, Supporting Cast,
-   Stripe) should be keyed on the same lowercase-trimmed SHA-256 so the warehouse
-   can stitch one person across five systems without ever storing an address.
+   `observability.ts`. Every third-party ingest (Beehiiv, Circle, Stripe) should
+   be keyed on the same lowercase-trimmed SHA-256 so the warehouse can stitch one
+   person across systems without ever storing an address.
 7. **Every metric has an owner and a decision attached.** If no one would act
    differently based on the number, don't build the dashboard.
 
@@ -112,7 +113,7 @@ measured on the same footing. Report MRR alongside it, always.
 
 **L1 — Reach (top of funnel)**
 - Unique site visitors, by first-touch channel
-- Podcast downloads/streams per week (Simplecast + Supporting Cast, combined)
+- Podcast downloads/streams per week (Beehiiv, public + private combined)
 - Social outbound clicks by platform (we send traffic *out*; measure it)
 - Newsletter list size: free vs premium
 
@@ -240,13 +241,11 @@ metadata forwarded from checkout — as **segmentation dimensions**, not as mone
 
 Two halves; both are needed.
 
-**On-site.** The Simplecast iframe is opaque. Options, best first:
-1. Replace the embed with a first-party `<audio>` element fed by the episode's
-   enclosure URL (already available from the Simplecast API projection in
-   `server/show-notes.ts`). We then own the timeline and can emit real depth
-   events. This is a real piece of work — a custom player — but it is the only
-   way to measure on-site listening, and it also unlocks resume-position,
-   playback speed, and chapter UI later.
+**On-site.** ✅ Step 1 is done: the third-party embed was replaced with a
+first-party `<audio>` element (`AudioPlayer.tsx`) fed by Beehiiv's `audio_url`.
+We own the timeline, so depth events are now an instrumentation task rather than
+a player rewrite — and the same player unlocks resume-position, playback speed,
+and chapter UI later.
 2. Keep the embed and accept click-intent only. Cheap, but "listening on the
    website" stays unanswerable.
 
@@ -262,11 +261,10 @@ episode_speed_changed      { rate }
 ```
 
 **Off-site (the bigger number).** A nightly job pulling:
-- **Simplecast Analytics API** → downloads/streams per episode per day, by
-  platform and geography. Land in Neon (`episode_daily_stats`), not PostHog —
-  it's aggregate, not per-person.
-- **Supporting Cast** → private-feed download activity per member. This *is*
-  per-person and is the Ark+ engagement signal that currently doesn't exist.
+- **Beehiiv podcast stats** → downloads/streams per episode per day. Land in
+  Neon (`episode_daily_stats`), not PostHog — it's aggregate, not per-person.
+- **Beehiiv private feeds** → per-member feed activity. This *is* per-person and
+  is the Ark+ engagement signal that currently doesn't exist.
   Note the known Spotify caveat: Open Access members stream rather than download,
   so a download-based measure undercounts them by ~3,300 — key the activation
   measure on `external_registration_type=spotify` as well.
@@ -353,8 +351,8 @@ faq_expanded          { slug }
 | Funnels, conversion, retention curves, replay | PostHog | client `trackEvent` + `posthog-node` server events |
 | MRR, ARR, churn bridge, refunds | Stripe → warehouse | Stripe data pipeline / nightly sync |
 | Entitlement, tier, membership state | Neon `membership` | already the source of truth |
-| Podcast downloads (public) | Simplecast Analytics API | nightly job → Neon |
-| Private-feed listening (per member) | Supporting Cast | nightly job → Neon |
+| Podcast downloads (public) | Beehiiv | nightly job → Neon |
+| Private-feed listening (per member) | Beehiiv | nightly job → Neon |
 | Newsletter sends/opens/clicks | Beehiiv | webhook + nightly sync → Neon |
 | Community activity | Circle Admin v2 | nightly job → Neon |
 | Transactional email delivery | Resend | webhook → Neon (bounces/complaints also feed suppression, already flagged in the launch doc) |
@@ -417,7 +415,7 @@ to unit tests and only showed up in a real browser.
 ### P1 — Make the three products measurable (~3–4 weeks)
 7. Newsletter events + Beehiiv ingest (§4.4).
 8. Community events + Circle ingest (§4.5).
-9. Simplecast + Supporting Cast nightly ingest (§4.3, off-site half).
+9. Beehiiv nightly ingest (§4.3, off-site half).
 10. First-party audio player + playback depth events (§4.3, on-site half) —
     scope as its own project.
 
@@ -497,8 +495,8 @@ with `data-ph-mask="false"`, that should be a deliberate, reviewed decision.
 ### Gap 2 — Named vendor list is two entries out of a dozen
 
 The policy names Google Analytics and Stripe. The stack actually processes user
-data through **PostHog, Sentry, Auth0, Beehiiv, Circle, Simplecast, Supporting
-Cast, Resend, Neon, and Vercel**. The generic "Service Providers to monitor and
+data through **PostHog, Sentry, Auth0, Beehiiv, Circle, Resend, Neon, and
+Vercel**. The generic "Service Providers to monitor and
 analyze the use of Our Service" clause is thin cover for that.
 
 **Fix:** name them, or at minimum name the analytics and communications

@@ -27,7 +27,7 @@ function isTextNode(node: DOMNode): node is DOMNode & { data: string } {
   return node.type === "text";
 }
 
-// Simplecast authors type runs like `____` or `---` as visual separators
+// Show-note authors type runs like `____` or `---` as visual separators
 // between sections. Sanitization strips real <hr>s, so these arrive as bare
 // text. Detect a node that is *only* separator glyphs (plus whitespace) so we
 // can render it as a proper rule instead of stray underscores on the page.
@@ -134,7 +134,7 @@ const showNotesParserOptions: HTMLReactParserOptions = {
       const href = safeHref(
         typeof node.attribs.href === "string" ? node.attribs.href : undefined,
       );
-      // Simplecast often nests surrounding spaces inside the anchor
+      // Authored show notes often nest surrounding spaces inside the anchor
       // (`<a> Inside Call me Back</a>`). Pull them out so the underline hugs
       // the link text instead of bleeding into the gap beside it.
       const kids = node.children;

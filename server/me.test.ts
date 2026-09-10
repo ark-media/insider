@@ -91,8 +91,6 @@ const SHOW_ID = 'pod_test-show'
 
 const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'http://localhost:5173',
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-sc-key',
   CHECKOUT_SESSION_SECRET: 'checkout-secret-for-tests-0123456789',
   SESSION_SECRET: 'session-secret-for-tests-32-chars__',
   BEEHIIV_API_KEY: 'bk_test',
@@ -112,7 +110,7 @@ function buildHandler(env: Record<string, string> = BASE_ENV): Middleware {
 }
 
 // ---------------------------------------------------------------------------
-// fetch mock — serves JWKS, Simplecast, and Beehiiv.
+// fetch mock — serves JWKS and Beehiiv.
 // ---------------------------------------------------------------------------
 type BeehiivCall = { url: string; method: string; body: unknown }
 

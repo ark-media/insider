@@ -3,12 +3,11 @@
 // sends a one-time nudge via Resend. A ledger (feed_reminder_sends) prevents
 // double-nagging.
 //
-// The roster used to come from Supporting Cast, which carried each member's
-// email, join date, feeds and status in one paged call. None of that survives
-// the move to Beehiiv: `membership` is keyed on the Auth0 sub and stores no
-// email, so it can't address a reminder. The premium newsletter mirror
-// (`beehiiv_subscription`) can — it is keyed on email, marks premium, and now
-// stamps `premium_since` (migration 0023) as the join clock.
+// Addressing a reminder is the awkward part: `membership` is keyed on the Auth0
+// sub and stores no email. The premium newsletter mirror
+// (`beehiiv_subscription`) is what makes it possible — it is keyed on email,
+// marks premium, and stamps `premium_since` (migration 0023) as the join
+// clock.
 //
 // One premium show means `total` is always 1, so "partially set up" is not a
 // state that exists any more: a member has either activated their feed or not,
@@ -92,9 +91,9 @@ export function memberInWindow(
   return age >= minAge && age <= maxAge
 }
 
-// One premium reader, as the roster query returns them. Replaces SC's
-// ScMembership: email and status come from the Beehiiv mirror, `joined` is
-// `premium_since`, and the feed list is implicit (exactly one show).
+// One premium reader, as the roster query returns them. Email and status come
+// from the Beehiiv mirror, `joined` is `premium_since`, and the feed list is
+// implicit (exactly one show).
 export type PremiumReader = {
   email: string
   status?: string
@@ -192,9 +191,8 @@ export type ReminderRunSummary = {
 }
 
 // The roster: premium readers inside the reminder window, straight from the
-// mirror. Bounded by the window in SQL rather than paging everyone and
-// filtering in memory — the old SC roster load was a paged fetch of the entire
-// member base on every run.
+// mirror. Bounded by the window in SQL rather than loading the whole member
+// base on every run and filtering in memory.
 async function loadPremiumReaders(
   sql: Sql,
   config: ReminderConfig,

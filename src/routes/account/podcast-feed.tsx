@@ -1,24 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { PodcastFeedSetup } from "../../components/PodcastFeedSetup";
+import { FeedSetup } from "../../components/FeedSetup";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 
-type PodcastFeedSearch = { feed?: string; spotify?: "linked" };
+type PodcastFeedSearch = { spotify?: "linked" };
 
 export const Route = createFileRoute("/account/podcast-feed")({
   component: PodcastsTab,
-  validateSearch: (search: Record<string, unknown>): PodcastFeedSearch => {
-    // `feed` is the show id (`pod_<uuid>`), not the rotating feed token — see
-    // UserFeed.id. `spotify=linked` is the marker Beehiiv redirects back with
-    // once Open Access has been authorized (see buildSpotifyHandoff).
-    const feed = search.feed;
-    return {
-      ...(typeof feed === "string" && feed.length > 0 && feed.length <= 64
-        ? { feed }
-        : {}),
-      ...(search.spotify === "linked" ? { spotify: "linked" as const } : {}),
-    };
-  },
+  // `spotify=linked` is the marker Beehiiv redirects back with once Open
+  // Access has been authorized (see buildSpotifyHandoff).
+  validateSearch: (search: Record<string, unknown>): PodcastFeedSearch =>
+    search.spotify === "linked" ? { spotify: "linked" as const } : {},
 });
 
 // The Podcasts tab. Auth and the greeting belong to the /account layout; this
@@ -26,8 +18,7 @@ export const Route = createFileRoute("/account/podcast-feed")({
 // feed to set up.
 function PodcastsTab() {
   const navigate = useNavigate();
-  const routeNavigate = Route.useNavigate();
-  const { feed, spotify } = Route.useSearch();
+  const { spotify } = Route.useSearch();
   const { state, markFeedsSetUp } = useSubscriberAuth();
 
   useEffect(() => {
@@ -59,14 +50,5 @@ function PodcastsTab() {
 
   if (state.kind !== "member" || !state.me.entitlements.arkPlus) return null;
 
-  return (
-    <PodcastFeedSetup
-      me={state.me}
-      feedParam={feed}
-      spotifyLinked={spotifyLinked}
-      onSelectFeed={(id) => void routeNavigate({ search: { feed: id } })}
-      onClearFeed={() => void routeNavigate({ search: {} })}
-      embedded
-    />
-  );
+  return <FeedSetup feeds={state.me.feeds} spotifyLinked={spotifyLinked} />;
 }

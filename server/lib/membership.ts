@@ -122,7 +122,7 @@ export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<v
 
 // The whole membership roster, projected to just what the reconciler needs to
 // compute per-axis keep-sets (§15). Neon is the authority; the reconciler diffs
-// these against the SC roster and the Circle access group.
+// these against Beehiiv's premium roster and the Circle access group.
 export type MembershipReconcileRow = {
   auth0_sub: string
   tier: Tier
@@ -142,7 +142,7 @@ export async function loadAllMemberships(sql: Sql): Promise<MembershipReconcileR
 
 // One page of the admin member directory, newest first. The optional tier
 // filter runs in SQL; email and activation are resolved outside this query
-// (email from Stripe, activation from sc_feed_activations) because Neon stores
+// (email from Stripe, activation from beehiiv_feed_activations) because Neon stores
 // no PII — see server/routes/admin-members.ts. `limit`/`offset` paginate the
 // membership spine; pass limit + 1 to detect a next page.
 export type MemberDirectoryRow = {

@@ -331,9 +331,8 @@ async function handleSubscriptionUpsert(
       auth0_sub: auth0Sub,
       stripe_customer_id: customerId,
       stripe_subscription_id: sub.id,
-      // No SC id comes off a subscription any more — the arkPlus grant is the
-      // Beehiiv premium tier, keyed on email. Gift redemption still writes one,
-      // and the upsert coalesces, so passing null here preserves it.
+      // The arkPlus grant is Beehiiv's premium tier, keyed on email, so a
+      // subscription carries no provider-side id to store here.
       tier,
       status: sub.status,
       plan,
@@ -370,7 +369,7 @@ async function handleSubscriptionUpsert(
 //     inflated by double-submits, so it can't play that role itself. This is not
 //     a revenue count — Stripe is.
 //   member_provisioned — "paid" vs "actually got access". A member whose
-//     SC/Circle/Auth0 provisioning silently fails looks identical to a happy one
+//     Beehiiv/Circle/Auth0 provisioning silently fails looks identical to a happy one
 //     in every revenue dashboard; they are the ones who file support tickets.
 async function emitProvisioningEvents(
   env: Env,

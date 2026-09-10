@@ -20,7 +20,7 @@
 //   - /api/beehiiv/webhook                       → persistFromBeehiiv +
 //                                                  deleteLocalSubscription
 //
-// All push paths soft-fail with a logged error — the SC subscription / Auth0
+// All push paths soft-fail with a logged error — the feed grant / Auth0
 // patch / Stripe webhook ack should never 500 because Beehiiv burped.
 
 import { makeTTLCache } from '../../shared/ttl-cache.js'
@@ -597,7 +597,7 @@ export async function applyPreferences(
 }
 
 // Soft-fail wrapper for activation / webhook paths. Logs and swallows so an
-// SC provisioning success / Stripe webhook ack isn't blocked by a Beehiiv
+// provisioning success / Stripe webhook ack isn't blocked by a Beehiiv
 // hiccup. Return value indicates whether the call threw, not what it returned —
 // pushes like syncSubscriberName answer false for a legitimate no-op, so `fn`
 // is typed loosely and its result deliberately discarded.

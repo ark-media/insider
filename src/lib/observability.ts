@@ -20,7 +20,7 @@
 //   - The same `email_sha256` is what the server-side revenue events key on
 //     (server/lib/analytics-server.ts), so browser intent and server outcome
 //     land on ONE person. It is also the universal join key across Beehiiv /
-//     Circle / Supporting Cast / Stripe in the warehouse (BI plan §2.6).
+//     Circle / Stripe in the warehouse (BI plan §2.6).
 //     Note it is pseudonymous, not anonymous — still an identifier.
 //   - Tier is sent as a person property so funnels can segment subscriber
 //     vs free without sending tier on every event.

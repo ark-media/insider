@@ -5,7 +5,7 @@
 // Each email is the single touchpoint for a new member: it carries the
 // set-password link (an Auth0 password-change ticket, for brand-new accounts)
 // and points at /welcome for feed + Fold setup. It replaces both the old
-// SC welcome email and Auth0's own password-reset email.
+// provider's own welcome email and Auth0's password-reset email.
 
 import type { GiftTerm } from './activation.js'
 import { greetingFirstName, splitFullName } from '../../shared/profile-name.js'

@@ -51,13 +51,13 @@ thin cover, and this is the disclosure most easily checked against reality.
 > providers, who process it only on our instructions and only to provide their
 > service to us:
 >
-> - **Payments and billing** — Stripe (payment processing), Supporting Cast
->   (private podcast feed subscriptions)
+> - **Payments and billing** — Stripe (payment processing)
 > - **Accounts and sign-in** — Auth0 by Okta
 > - **Email** — Beehiiv (newsletters), Resend (transactional email such as
 >   sign-in links and receipts)
 > - **The Fold** — Circle (the Fold, our members' app)
-> - **Podcast hosting and delivery** — Simplecast
+> - **Podcast hosting and delivery** — Beehiiv (including private
+>   member-only podcast feeds)
 > - **Analytics and product measurement** — PostHog (product analytics and
 >   session recording), Vercel (web analytics and performance)
 > - **Error monitoring** — Sentry

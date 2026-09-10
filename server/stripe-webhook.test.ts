@@ -144,11 +144,9 @@ async function dispatch(event: unknown, env: Record<string, string> = BASE_ENV) 
 
 // ===========================================================================
 describe('customer.subscription.updated — a scheduled cancel is not mirrored', () => {
-  // Supporting Cast held its own copy of the cancel date (ends_at / autorenew)
-  // so the feed could self-expire if the .deleted event were missed. Beehiiv's
-  // premium tier has no such field: the member holds the tier — and the feed —
-  // until the subscription is actually deleted, which is the event that drops
-  // it. So a scheduled cancel now writes nothing upstream at all.
+  // Beehiiv's premium tier carries no cancel date of its own: the member holds
+  // the tier — and the feed — until the subscription is actually deleted, which
+  // is the event that drops it. So a scheduled cancel writes nothing upstream.
   test('scheduled cancel → no upstream membership traffic', async () => {
     const res = await dispatch({
       type: 'customer.subscription.updated',
@@ -186,15 +184,15 @@ describe('customer.subscription.updated — a scheduled cancel is not mirrored',
 })
 
 describe('customer.subscription.deleted', () => {
-  test('acks 200 and issues no Supporting Cast teardown', async () => {
+  test('acks 200 and issues no upstream teardown call', async () => {
     // The revoke is the Beehiiv downgrade (skipped here — no DATABASE_URL), not
-    // a call keyed on SC metadata. Nothing may reach supportingcast.fm.
+    // a call keyed on subscription metadata.
     const res = await dispatch({
       type: 'customer.subscription.deleted',
       data: { object: makeSub({ status: 'canceled' }) },
     })
     expect(res.statusCode).toBe(200)
-    expect(fetchCalls.filter((c) => c.url.includes('supportingcast.fm'))).toEqual([])
+    expect(fetchCalls.filter((c) => c.url.includes('api.beehiiv.com'))).toEqual([])
   })
 })
 

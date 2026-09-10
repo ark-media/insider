@@ -1,5 +1,5 @@
 // Transactional email via Resend's HTTP API. Raw fetch keeps this consistent
-// with the other server-side third-party clients (sc-client, auth0) and avoids
+// with the other server-side third-party clients (beehiiv, circle, auth0) and avoids
 // pulling in an SDK.
 //
 // Soft-fail by design: every caller invokes this *after* the entitlement is

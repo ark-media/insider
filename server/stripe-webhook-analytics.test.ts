@@ -73,8 +73,6 @@ import { devApiPlugin } from './dev-api'
 // still must emit. No AUTH0_*/CIRCLE_* keys → syncEntitlement short-circuits, so
 // the only fetch traffic is SC and PostHog.
 const BASE_ENV = {
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-key',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
   STRIPE_WEBHOOK_SECRET: 'wh_test',

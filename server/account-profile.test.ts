@@ -96,10 +96,10 @@ type BeehiivCall = { url: string; method: string; body: unknown }
 let beehiivCalls: BeehiivCall[] = []
 let beehiivHasSubscriber = true
 
-// Supporting Cast is the third sink: its first_name is what the feed-setup
-// reminder cron greets from, so a save that skips it keeps that email wrong.
+// Beehiiv's first_name is what the feed-setup reminder cron greets from, so a
+// save that skips it keeps that email wrong.
 
-// Circle is the fourth, and the only one whose copy of the name is read by
+// Circle is the last, and the only one whose copy of the name is read by
 // other MEMBERS — a Circle record created without one shows the whole email
 // address instead.
 let circleCalls: BeehiivCall[] = []

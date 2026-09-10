@@ -198,8 +198,8 @@ describe('greetingFirstName', () => {
   })
 
   test('greets by the leading token when the field holds a whole name', () => {
-    // Supporting Cast's first_name carries whatever single hint created the
-    // user, so this is the shape that ships "Hi Hannah Waxman," in a reminder.
+    // A provider's first_name carries whatever single hint created the user,
+    // so this is the shape that ships "Hi Hannah Waxman," in a reminder.
     expect(greetingFirstName('Hannah Waxman', 'hw@example.com')).toBe('Hannah')
   })
 

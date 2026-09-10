@@ -236,7 +236,7 @@ describe('attributionFromMetadata', () => {
       attributionFromMetadata({
         tier: 'bundle',
         plan: 'yearly',
-        sc_subscription_id: '123',
+        beehiiv_premium: 'true',
         first_touch_source: 'newsletter',
         last_touch_medium: 'referral',
       }),
@@ -257,7 +257,7 @@ describe('sanitizeAttribution', () => {
     expect(
       sanitizeAttribution({
         first_touch_source: 'google',
-        sc_subscription_id: 'injected',
+        beehiiv_premium: 'injected',
         tier: 'bundle',
         __proto__: 'nope',
       }),

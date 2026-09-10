@@ -3,10 +3,10 @@
 //
 // The whole module exists because of one legacy behaviour: for most of this
 // site's life we *manufactured* a name whenever we didn't have one.
-// `findOrCreateAuth0User` wrote `given_name: email.split('@')[0]`, and
-// `findOrCreateScUser` wrote the same string into Supporting Cast's
-// `first_name`. So the migrated roster is not full of members with an empty
-// name — it is full of members whose name is literally "hannah.waxman8".
+// `findOrCreateAuth0User` writes `given_name: email.split('@')[0]` when it has
+// nothing better, and that value propagates outward to every store that greets
+// the member. So "no name" does not present as an empty field — it presents as
+// a member whose name is literally "hannah.waxman8".
 //
 // That makes `!givenName` the wrong test everywhere. Asking "do we have a real
 // name?" has to mean "do we have one a human typed?", and every caller — the
@@ -79,13 +79,11 @@ function localPartOf(email: string): string {
 
 /**
  * True when `value` is just the email's local part wearing a name's clothes —
- * the shape both `findOrCreateAuth0User` and `findOrCreateScUser` write when no
- * real name is known. Also true for a value that still contains '@', which is a
+ * the shape `findOrCreateAuth0User` writes when no real name is known. Also true for a value that still contains '@', which is a
  * whole address that leaked into a name field.
  *
  * This is the raw comparison, with no judgement about capitalization; the
- * backfill wants it this way to reject Supporting Cast's manufactured
- * `first_name` values. For the "should we prompt / can we greet?" question use
+ * backfill wants it this way to reject manufactured `first_name` values. For the "should we prompt / can we greet?" question use
  * `hasRealName`, which is stricter.
  */
 export function looksLikeEmailLocalPart(
@@ -145,7 +143,7 @@ export function greetingFirstName(
 ): string | undefined {
   if (!hasRealName({ givenName, familyName, email, setByMember })) return undefined
   // Take the leading token rather than the field verbatim: a "first name" field
-  // does not reliably hold one. Supporting Cast's `first_name` carries whatever
+  // does not reliably hold one. A provider's `first_name` carries whatever
   // single hint created the user, so a member provisioned from a Stripe customer
   // called "Hannah Waxman" has that whole string in it — and the tell is a
   // reminder email that opens "Hi Hannah Waxman,".

@@ -318,7 +318,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
       //   https://<APP_BASE_URL>/api/beehiiv/webhook?key=$BEEHIIV_WEBHOOK_SECRET
       // and subscribe to the subscription.* AND podcasts.private_feed.*
       // event types — the latter are what mirror private-feed activation
-      // (this endpoint replaced the separate Supporting Cast webhook, so
+      // (this endpoint is the single provider webhook, so
       // there is one secret and one registration).
       //
       // Caveat — query-string secret leakage. The `?key=` value appears in

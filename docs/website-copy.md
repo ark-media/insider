@@ -1,7 +1,7 @@
 <!-- Source of truth for Ark-Media-Website-Copy.docx (repo root). Extracted from the live code on 2026-07-30.
      Conventions: '# ' = page group (purple tab heading in the docx), '## Page   /route' = page,
      '### ' = on-page section, '- **LABEL**: copy' = one editable string, '> ' = context note.
-     {curly braces} are runtime values. Excludes external content: Simplecast episodes, Circle feed,
+     {curly braces} are runtime values. Excludes external content: Beehiiv episodes, Circle feed,
      FAQ answers, job listings, and newsletter posts. -->
 
 # Home & Shared Site Elements
@@ -20,7 +20,7 @@
 - **ERROR MESSAGE**: We couldn't load the latest episodes. Refresh to try again.
 - **NEW ROW BADGE**: New
 - **CARD CTA**: Play episode
-> Episode dates, show names, and episode titles come from Simplecast at runtime.
+> Episode dates, show names, and episode titles come from Beehiiv at runtime.
 
 ### Podcasts row
 - **EYEBROW**: Podcasts
@@ -376,7 +376,7 @@ single member only ever sees some of them.
 ### Show grid (one card per show)
 - **BADGE (PAID SHOW ONLY)**: Ark+
 - **CARD LINK**: Visit show →
-> Card titles come from the show data below; descriptions are the live Simplecast descriptions, falling back to the taglines below.
+> Card titles come from the show data below; descriptions are the live Beehiiv descriptions, falling back to the taglines below.
 
 ### Ark+ callout under the grid (non-members / signed-out only)
 - **LABEL**: Ark+

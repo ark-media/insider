@@ -10,8 +10,6 @@
 //     buyer ticked onto their Checkout Session, just before it is confirmed.
 //   POST /api/stripe/cancel-subscription   — cancel at period end.
 //   POST /api/stripe/reactivate-subscription — undo a pending cancel.
-//   GET  /api/stripe/subscription-status   — poll for activation after
-//     PaymentIntent confirm (the client races the webhook).
 //   GET  /api/stripe/my-subscription       — the signed-in member's cancel
 //     schedule, price and card on file, for the account page's plan card.
 //   POST /api/stripe/billing-portal        — a Customer Portal session scoped
@@ -20,7 +18,7 @@
 //     subscription becomes when they add the other axis: the Bundle price that
 //     REPLACES their current one, and the renewal date that doesn't move.
 //   POST /api/stripe/webhook               — server-to-server signal from
-//     Stripe; the source of truth for SC + entitlement state.
+//     Stripe; the source of truth for membership + entitlement state.
 
 import type Stripe from 'stripe'
 import { deriveEntitlements } from '../../entitlement.js'
@@ -262,8 +260,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // pre-set Customer. Stripe Tax needs the address for jurisdiction;
           // `name` defaults to 'never', which is why customer.name was null for
           // every direct subscriber — and since activation reads the name off
-          // the Customer, that null was what made Auth0, Supporting Cast, Circle
-          // and every welcome email fall back to the email local part.
+          // the Customer, that null was what made Auth0, Circle and every
+          // welcome email fall back to the email local part.
           customer_update: { address: 'auto', name: 'auto' },
           // Let the buyer redeem a promotion code in the modal, and let the
           // house sale ride the same rail: this is exclusive with a server-set
@@ -516,8 +514,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // scheduled (the sub stays `active` until the period ends); once it has
       // lapsed the member is no longer Ark+ and re-subscribes via checkout
       // instead. Unlike accept-retention-offer this attaches no coupon and
-      // burns no eligibility — it's a plain resume. The webhook's
-      // syncScCancelSchedule mirrors the cleared schedule back to SC.
+      // burns no eligibility — it's a plain resume. Nothing needs mirroring
+      // downstream: the Beehiiv grant is a boolean tier with no cancel schedule
+      // of its own, so clearing Stripe's is the whole operation.
       path: '/api/stripe/reactivate-subscription',
       method: 'POST',
       handler: async (req, _res, json) => {
@@ -723,63 +722,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           amountOff: offer.amountOff,
           durationMonths: offer.durationMonths,
           next_charge_at: periodEndIso(updated),
-        })
-      },
-    }),
-
-    defineRoute({
-      path: '/api/stripe/subscription-status',
-      handler: async (req, _res, json) => {
-        if (!stripe) return json(500, { error: 'not_configured' })
-        const url = new URL(req.url ?? '/', appBaseUrl)
-        const subId = url.searchParams.get('id')
-        if (!subId) return json(400, { error: 'id required' })
-
-        const sub = await stripe.subscriptions.retrieve(subId, {
-          expand: ['customer'],
-        })
-
-        // Authorize the caller in one of two ways:
-        //  1. A logged-in session whose email owns this subscription.
-        //  2. Possession of the Checkout Session that created it. New
-        //     subscribers may not have an Auth0 session yet (they just paid),
-        //     so they pass the `session_id` from the return_url — a
-        //     high-entropy id held only by the buyer.
-        // A self-asserted `?email=` is deliberately NOT accepted: the email is
-        // guessable, so trusting it was an IDOR (anyone could read another
-        // customer's status by pairing their email with a subscription id).
-        const auth0Email = await getSessionEmail(req, env)
-        const customer = sub.customer
-        const customerEmail =
-          typeof customer === 'object' && customer && !('deleted' in customer && customer.deleted)
-            ? (customer as Stripe.Customer).email?.toLowerCase() ?? null
-            : null
-
-        let authorized =
-          Boolean(auth0Email) && auth0Email === customerEmail
-        if (!authorized) {
-          const sessionId = url.searchParams.get('session_id')
-          if (sessionId) {
-            const cs = await stripe.checkout.sessions.retrieve(sessionId)
-            const csSubId =
-              typeof cs.subscription === 'string'
-                ? cs.subscription
-                : cs.subscription?.id ?? null
-            authorized = csSubId === subId
-          }
-        }
-        if (!authorized) return json(403, { error: 'Forbidden' })
-
-        json(200, {
-          status: sub.status,
-          // Provisioning is complete once ANY external-access axis is marked, not
-          // just SC: a Circle-only purchase never carries sc_subscription_id, so
-          // keying activation on it alone left the post-checkout poll spinning
-          // forever for Circle/Bundle buyers. Either axis marker means the webhook
-          // has provisioned what this tier grants.
-          activated:
-            Boolean(sub.metadata?.sc_subscription_id) ||
-            sub.metadata?.circle_provisioned === 'true',
         })
       },
     }),
@@ -1167,7 +1109,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           if (immediate) {
             // Release any prior pending change, then update the item in place
             // (preserves the item id) with exact prorations. The webhook derives
-            // the new tier from the price product and syncs SC/Circle/Neon.
+            // the new tier from the price product and syncs Beehiiv/Circle/Neon.
             await releaseScheduleIfAny(stripe, sub, env)
             const priceField = destinationPrice
             await stripe.subscriptions.update(sub.id, {

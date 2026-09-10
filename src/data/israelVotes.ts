@@ -8,8 +8,8 @@ import type { ShowSlug } from "./shows";
  * dates, no durations. Those are fetched from the podcast host at runtime
  * (`fetchEpisodeById`), the same as everywhere else on the site.
  *
- * This page used to embed `cdn.simplecast.com` mp3 links directly, which meant
- * the whole page silently went dead the moment the shows moved hosts. An
+ * This page used to embed the host's mp3 urls directly, which meant the whole
+ * page silently went dead the moment the shows moved hosts. An
  * episode is referenced here by its Beehiiv id — the host's own stable handle
  * for it, unaffected by renames — and nothing else.
  *
@@ -56,8 +56,7 @@ export const EXPLAINERS: Explainer[] = [
 
 // Ordering is editorial, not chronological — leave it alone unless Ava asks.
 //
-// One track was dropped when this list moved off the hardcoded Simplecast
-// urls: "Sneak Peek: Live with Tal Becker and Nadav Eyal", from the Call Me
+// One track was dropped when this list moved off the hardcoded audio urls: "Sneak Peek: Live with Tal Becker and Nadav Eyal", from the Call Me
 // Back AMA feed. That show is paid, so its audio can't be served from a public
 // page at all now that the API gates paid audio behind membership — and it has
 // no Beehiiv podcast configured to fetch from either.

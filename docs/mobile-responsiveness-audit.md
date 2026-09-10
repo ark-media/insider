@@ -264,7 +264,7 @@ errors in `src/lib/launchMode.tsx` — pre-existing, confirmed by stashing.)
   <img … className="h-full w-full object-contain …" />
 ```
 
-A **16:9 box** with `object-contain` on a **1:1 source** (Simplecast episode art is square).
+A **16:9 box** with `object-contain` on a **1:1 source** (episode art is square).
 Measured at 390px: box is 340×191, the image renders at 191×191, and **44% of every episode
 media box is empty navy**. Three cards on the home page → ~450px of pure dead space, plus the
 optical mess of a square floating in a wide letterbox.
@@ -377,7 +377,7 @@ dev`, so it could not have been verified locally before shipping. This approach 
 in the browser right now and works identically in dev and prod. Cost is 57 committed variant files
 (`public/` is 4.7 MB → 7.6 MB **on disk**, but what a phone *downloads* drops by ~95%).
 
-**Not covered:** episode thumbnails come from `image.simplecastcdn.com` and are outside this
+**Not covered:** episode thumbnails are served from the podcast host's CDN and are outside this
 pipeline. They render at 112px and are the largest remaining image cost on the home page.
 
 ### H5. Hero art is `hidden lg:block` — mobile gets a wall of text

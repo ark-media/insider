@@ -8,15 +8,11 @@
 // Two passes, in precedence order (first real name wins; a later pass never
 // overwrites an earlier, better one):
 //
-//   B. Stripe — customer.name, for anyone who ever checked out.
-//   C. Circle — community members, for Fold-first joiners. Lowest yield,
+//   A. Stripe — customer.name, for anyone who ever checked out.
+//   B. Circle — community members, for Fold-first joiners. Lowest yield,
 //      since most Circle members were created from a then-null Stripe name.
 //
-// (Pass A read the Supporting Cast roster, which was the highest-yield source
-// and is gone with the Beehiiv migration. The pass letters are left as B and C
-// so the console output still matches this comment.)
-//
-// Every candidate is filtered through shared/profile-name: all three systems
+// Every candidate is filtered through shared/profile-name: both systems
 // store a name we manufactured from the email local part when we had nothing,
 // so an unfiltered copy would just move junk from one store to another.
 //
@@ -46,7 +42,7 @@ import { updateCircleMemberName } from '../server/entitlement.js'
 import { hasRealName, splitFullName } from '../shared/profile-name.js'
 
 type Env = Record<string, string | undefined>
-type Source = 'supporting-cast' | 'stripe' | 'circle'
+type Source = 'stripe' | 'circle'
 type Candidate = { first: string; last: string; source: Source }
 
 // Auth0 Management sustains roughly 2 requests/second on a non-enterprise
@@ -123,7 +119,7 @@ async function main(): Promise<void> {
   // Say plainly which environment this run touches — this script is allowed to
   // write to production, so the operator has to be able to see that.
   console.log(apply ? '=== APPLY (writing names) ===' : '=== PREVIEW (no writes) ===')
-  console.log(`  Stripe:  ${stripeKey ? (stripeKey.startsWith('sk_test_') ? 'TEST mode' : 'LIVE mode') : '(not configured — skipping pass B)'}`)
+  console.log(`  Stripe:  ${stripeKey ? (stripeKey.startsWith('sk_test_') ? 'TEST mode' : 'LIVE mode') : '(not configured — skipping pass A)'}`)
   console.log(`  Auth0:   ${env.AUTH0_TENANT_DOMAIN ?? '(default domain)'}`)
   console.log(`  Beehiiv: ${env.BEEHIIV_PUBLICATION_ID_ARK_DAILY ?? '(not configured — no campaign sync)'}`)
   if (limit) console.log(`  Limit:   ${limit} candidate(s)`)
@@ -144,8 +140,8 @@ async function main(): Promise<void> {
     found.set(key, c)
   }
 
-  // --- Pass B: Stripe customers ----------------------------------------------
-  console.log('\nPass B — Stripe customers')
+  // --- Pass A: Stripe customers ----------------------------------------------
+  console.log('\nPass A — Stripe customers')
   if (!stripe) {
     console.log('  (STRIPE_SECRET_KEY unset — skipped)')
   } else {
@@ -162,8 +158,8 @@ async function main(): Promise<void> {
     console.log(`  scanned ${scanned}, usable names ${hits}`)
   }
 
-  // --- Pass C: Circle community members --------------------------------------
-  console.log('\nPass C — Circle community members')
+  // --- Pass B: Circle community members --------------------------------------
+  console.log('\nPass B — Circle community members')
   // CIRCLE_ADMIN_API_TOKEN, because the URL below is Admin **v2**. This used to
   // read CIRCLE_API_TOKEN on the grounds that server/entitlement.ts did — which
   // was true, and was the bug: that is an Admin v1 token, Circle 401s it on
@@ -206,7 +202,7 @@ async function main(): Promise<void> {
       // and exit 0, which is indistinguishable from "Circle had nothing to add"
       // — an operator would read a silently empty pass as a clean run.
       console.log(`  ! FAILED — ${err instanceof Error ? err.message : String(err)}`)
-      console.log('    Pass C contributed nothing; names from Circle are missing.')
+      console.log('    Pass B contributed nothing; names from Circle are missing.')
       passFailures.push('circle')
     }
   }
@@ -216,7 +212,7 @@ async function main(): Promise<void> {
   // Source breakdown describes what the three passes FOUND, so it always sums to
   // the candidate count — counting it at the write stage instead made a preview
   // run report "26 candidates / 0 from every source", which reads as a bug.
-  const bySource: Record<Source, number> = { 'supporting-cast': 0, stripe: 0, circle: 0 }
+  const bySource: Record<Source, number> = { stripe: 0, circle: 0 }
   for (const c of found.values()) bySource[c.source] += 1
 
   const summary = {
@@ -327,7 +323,6 @@ async function main(): Promise<void> {
 
   console.log('\n--- Summary ---')
   console.log(`  candidates found:   ${found.size}`)
-  console.log(`    from SC:          ${bySource['supporting-cast']}`)
   console.log(`    from Stripe:      ${bySource.stripe}`)
   console.log(`    from Circle:      ${bySource.circle}`)
   console.log(`  processed:          ${entries.length}`)

@@ -129,7 +129,7 @@ type CheckoutSessionResult =
 
 // Polls /api/auth/checkout-session — the endpoint sets the session cookie
 // and returns 200 once Stripe marks the subscription `active` AND we've
-// provisioned the member's SC + Auth0 records; it returns 202 while we're
+// provisioned the member's Beehiiv + Auth0 records; it returns 202 while we're
 // still waiting on Stripe's state transition. We poll because Stripe takes
 // a few hundred ms to flip the Checkout Session's subscription to active
 // after the payment confirms. credentials:'include' is required so the cookie

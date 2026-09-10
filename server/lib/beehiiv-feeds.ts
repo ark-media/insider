@@ -1,11 +1,10 @@
 // Beehiiv private podcast feeds — the paid member's Ark+ feed.
 //
-// Replaces the Supporting Cast feed lookup. One premium show, so a member has
-// at most one private feed, but the read is per (podcast, email) so a second
-// premium show is a config change rather than a rewrite.
+// One premium show, so a member has at most one private feed, but the read is
+// per (podcast, email) so a second premium show is a config change rather than
+// a rewrite.
 //
-// ⚠ EMAIL IS THE KEY. Supporting Cast keyed a feed on an opaque `sc_user_id`
-// that survived an address change; Beehiiv keys it on the email itself, and
+// ⚠ EMAIL IS THE KEY. Beehiiv keys a feed on the email itself, and
 // `beehiiv_subscription`'s primary key is the email too. There is no
 // email-change flow in the app today, so nothing is broken — but whoever adds
 // one must move the Beehiiv subscription in the same transaction, or the

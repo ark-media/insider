@@ -204,5 +204,5 @@ Also fixed an unrelated a11y bug found during the audit: four newsletter CTAs
 - Phase 0 before deletions. Phase 1 first (bug-surface payoff). Phase 2 next
   (biggest LOC, lowest risk, builds test infra the later phases lean on).
 - Run `bun test` after every step; each phase is independently shippable.
-- Do NOT merge the two tier sources (Simplecast authoritative vs app_metadata
+- Do NOT merge the two tier sources (Neon authoritative vs app_metadata
   mirror) — only dedup their resolution *code*.

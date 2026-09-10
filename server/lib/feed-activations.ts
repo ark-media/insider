@@ -10,7 +10,7 @@
 // write path (webhook) and read path (/api/me) key on the same value without a
 // functional index.
 //
-// Unlike Supporting Cast, Beehiiv also exposes `activated` on the feed GET, so
+// Beehiiv also exposes `activated` on the feed GET, so
 // this mirror is no longer the only signal — /api/me folds the live value in
 // too, and a missed webhook can't strand the display. What this table uniquely
 // holds is the optimistic `pending_at` marker and the bulk read for the cron.

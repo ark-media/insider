@@ -34,8 +34,6 @@ function makeReq(opts: { method?: string; url: string }): IncomingMessage {
 
 function buildHandler() {
   return createCatchAllHandler({
-    SC_NETWORK_ID: 'test-net',
-    SC_API_KEY: 'test-key',
     APP_BASE_URL: 'http://localhost:5173',
     BEEHIIV_API_KEY: 'test-token',
     BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
@@ -538,8 +536,6 @@ describe('createCatchAllHandler — fallback to url.pathname', () => {
   test('no _path on multi-segment pathname also works', async () => {
     // No matching podcast id env → handler short-circuits to {episodes:[]}.
     const handler = createCatchAllHandler({
-      SC_NETWORK_ID: 'test-net',
-      SC_API_KEY: 'test-key',
       APP_BASE_URL: 'http://localhost:5173',
     })
     const req = makeReq({

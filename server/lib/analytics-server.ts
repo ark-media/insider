@@ -23,7 +23,7 @@
 //      and inflated by double-submits. Conversion rate needs a reliable
 //      numerator in the same system as its denominator.
 //   2. Whether a member who paid actually GOT ACCESS. Stripe cannot know
-//      whether Supporting Cast, Circle and Auth0 provisioning succeeded; a
+//      whether Beehiiv, Circle and Auth0 provisioning succeeded; a
 //      payment succeeds, the member gets nothing, and Stripe shows a perfectly
 //      happy customer.
 //   3. Whether a gift was CLAIMED. Redemption happens in Neon, and the
@@ -35,7 +35,7 @@
 //      can be frozen the instant the webhook responds, dropping queued events
 //      unless every path remembers to await a shutdown. An awaited fetch has
 //      no such failure mode — the event is delivered before we ack Stripe.
-//   2. House convention. sc-client, email (Resend) and beehiiv-sync all speak
+//   2. House convention. email (Resend), circle and beehiiv-sync all speak
 //      raw fetch to their upstreams; the existing test harness asserts against
 //      a global fetch mock, so these events are testable with no new machinery.
 //   3. Bundle weight in the single Vercel function that serves the whole API.
@@ -65,8 +65,8 @@ type ServerEventMap = {
   // NOT for counting revenue (that's Stripe); for being the honest numerator
   // over the browser-only denominator in a conversion funnel.
   subscription_started_confirmed: SubscriptionProps
-  // Gap 2 — "paid" vs "actually got access". Emitted only after the SC / Circle
-  // / Auth0 fan-out has completed. `axes` is what the tier actually granted.
+  // Gap 2 — "paid" vs "actually got access". Emitted only after the Beehiiv /
+  // Circle / Auth0 fan-out has completed. `axes` is what the tier actually granted.
   member_provisioned: SubscriptionProps & { axes: string }
   // Gap 3 — a gift was claimed. Keyed on the RECIPIENT, so the follow-on
   // question ("does a gift recipient convert to paid?") is answerable by
@@ -143,7 +143,7 @@ export async function captureServerEvent<E extends ServerEvent>(
           // needing a separate PostHog project.
           environment: env.VERCEL_ENV || env.NODE_ENV || 'development',
           // Lets the warehouse stitch this person across Beehiiv / Circle /
-          // Supporting Cast / Stripe on the same key (BI plan §2.6).
+          // Stripe on the same key (BI plan §2.6).
           email_sha256: args.distinctId,
         },
         timestamp: new Date().toISOString(),

@@ -254,8 +254,8 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
       // feed URL, texts themselves the link, or links Spotify for the whole
       // network), so the setup hub shows the feed as done immediately and
       // across devices — the server-side replacement for the old localStorage
-      // marker. SC's `feed.activated` webhook remains authoritative and
-      // reconciles the row later.
+      // marker. Beehiiv's `podcasts.private_feed` webhook remains
+      // authoritative and reconciles the row later.
       path: '/api/me/feeds/setup',
       method: 'POST',
       handler: async (req, res, json) => {
@@ -324,7 +324,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // Neon decides premium eligibility (task 11): the premium newsletter
         // rides the arkPlus axis. A member who upgraded after their last login
         // is never stale here — the row is read live, keyed on their sub, with
-        // the transitional SC-by-email fallback covering a not-yet-written row.
+        // the by-email net covering a not-yet-written row.
         const resolved = await resolveMembership(req, env, { emailFallback: true, stripe })
         if (!resolved) return json(401, { error: 'unauthenticated' })
         const email = resolved.identity.email

@@ -9,7 +9,7 @@
 // can't silently leak `javascript:`/`data:` urls into the DOM.
 //
 // Why this exists alongside show-notes-renderer: Beehiiv newsletters are a
-// different shape from Simplecast show notes. They're Mailchimp-style
+// different shape from podcast show notes. They're Mailchimp-style
 // composed emails — share buttons, social-follow icons, banner imagery, a
 // promo block, a stack of episode cards (image + h3 + paragraphs), a
 // "listen on Spotify/Apple" footer, and a mailing address. Rendered with

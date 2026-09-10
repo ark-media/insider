@@ -1,8 +1,8 @@
 // Defensive date normalization for upstream-provider responses.
 //
-// Beehiiv, Circle, and Simplecast each have their own date conventions —
+// Beehiiv and Circle each have their own date conventions —
 // Beehiiv sometimes returns unix seconds, Circle returns ISO strings (mostly
-// well-formed), Simplecast returns ISO. Rather than `.slice(0, 10)` on a
+// well-formed). Rather than `.slice(0, 10)` on a
 // string we can't fully trust, we round-trip through Date and reject NaN.
 //
 // Returns 'YYYY-MM-DD' or null when the input doesn't parse.

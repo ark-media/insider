@@ -2,13 +2,13 @@
 // gate resolves the caller's identity, reads their membership row keyed on the
 // Auth0 `sub`, and derives entitlements from the row's `tier` via GRANTS. There
 // is exactly one place that answers "what can this request access," so the three
-// authorities that used to disagree by route (SC, Auth0 claim, Stripe) collapse
-// to one.
+// authorities that used to disagree by route (the feed provider, Auth0 claim,
+// Stripe) collapse to one.
 //
-// A transitional SC-by-email fallback (opt-in, default off) covers the arkPlus
-// axis for a just-paid member whose webhook hasn't written the row yet. It's a
-// cutover bridge (task 10) removed once the backfill is verified complete; the
-// content gates (task 11) run Neon-only.
+// An opt-in by-email net (step 2 below, default off) covers a just-paid member
+// whose session carries no `sub` yet. It is still a Neon read — it just reaches
+// the row by Stripe customer instead of by sub — so it is load-bearing, not a
+// cutover bridge. The content gates leave it off and run strictly on the sub.
 
 import type { IncomingMessage } from 'node:http'
 import type Stripe from 'stripe'

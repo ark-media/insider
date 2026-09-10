@@ -1,5 +1,4 @@
-// Unit tests for the member-initiated private-feed actions that replaced the
-// Supporting Cast setup-SMS route:
+// Unit tests for the member-initiated private-feed actions:
 //
 //   POST /api/me/feeds/email    → asks Beehiiv to email the member their feed
 //   GET  /api/me/feeds/spotify  → mints Beehiiv's auto-login and 302s into
