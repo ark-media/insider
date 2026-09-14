@@ -3,7 +3,7 @@
 // brand shell from welcome-email so it looks like the rest of the lifecycle.
 // Pure (no I/O) so it's trivially testable.
 
-import { BRAND_CYAN, esc, renderShell } from './welcome-email.js'
+import { BRAND_CYAN, esc, renderShell, supportLine } from './welcome-email.js'
 
 export type FeedReminderEmailParams = {
   firstName?: string
@@ -27,7 +27,7 @@ export function renderFeedReminderEmail(p: FeedReminderEmailParams): {
 
   const subject = started
     ? `You're ${remaining} ${showWord} away from the full network`
-    : 'Finish setting up your Ark+ feeds'
+    : 'Finish setting up your Ark+ membership'
 
   const headlineHtml = started
     ? `You're ${remaining} ${showWord} away.`
@@ -49,7 +49,11 @@ export function renderFeedReminderEmail(p: FeedReminderEmailParams): {
     bodyHtml,
     ctaHref: p.setupUrl,
     ctaLabel: started ? 'Add the rest' : 'Set up my feeds',
-    ctaFollowupHtml: `It takes about a minute. You can always change apps later from your account.`,
+    // The copy doc's check-in emails all close their instructions by naming the
+    // support desk. Same sentence, same address — see supportLine().
+    ctaFollowupHtml: `It takes about a minute, and you can always change apps later from your account. ${supportLine(
+      'If you run into any trouble',
+    )}`,
     footerHtml:
       'You’re getting this because your Ark+ feeds aren’t fully set up yet. Once they are, we’ll stop sending these. Need help? Just reply to this email.',
   })

@@ -243,11 +243,13 @@ describe('renderFeedReminderEmail', () => {
       total: 6,
       setupUrl,
     })
-    expect(subject).toBe('Finish setting up your Ark+ feeds')
+    expect(subject).toBe('Finish setting up your Ark+ membership')
     expect(html).toContain('Hi Ada,')
     expect(html).toContain('all 6 shows')
     expect(html).toContain(setupUrl)
     expect(html).toContain('Set up my feeds')
+    // The copy doc names the support desk in every check-in email.
+    expect(html).toContain('support@arkmedia.org')
   })
 
   test('partial setup → "N shows away" framing with correct pluralization', () => {

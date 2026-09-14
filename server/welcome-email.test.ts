@@ -1,11 +1,21 @@
 import { describe, test, expect } from 'bun:test'
 import {
+  ARK_PLUS_EXTRAS,
   FEED_INCLUDED,
+  SUPPORT_EMAIL,
+  networkShowBullets,
   renderAxisAddedEmail,
+  renderCircleWelcomeEmail,
   renderGiftRedemptionEmail,
   renderSubscriberWelcomeEmail,
 } from './lib/welcome-email'
 import { circleUrls } from '../src/config/urls'
+import { shows } from '../src/data/shows'
+
+const URLS = {
+  welcomeUrl: 'https://app.test/welcome',
+  setupUrl: 'https://app.test/setup',
+}
 
 describe('renderGiftRedemptionEmail', () => {
   test('single magic link: one CTA points at the claim link, no set-password step', () => {
@@ -61,91 +71,156 @@ describe('renderGiftRedemptionEmail', () => {
   })
 })
 
+describe('networkShowBullets', () => {
+  test('names every public network show, and never the members-only one', () => {
+    // The copy doc's "VISUAL BENEFITS LIST" — the shows an Ark+ membership makes
+    // ad-free and early. The premium show is delivered through the private feed
+    // and is not one of them, so it must not appear in this list.
+    const bullets = networkShowBullets().join('\n')
+    for (const show of shows) {
+      if (show.paid) expect(bullets).not.toContain(show.title)
+      else expect(bullets).toContain(show.title)
+    }
+  })
+
+  test('carries a one-line description per show, not just the name', () => {
+    const bullets = networkShowBullets()
+    const callMeBack = shows.find((s) => s.slug === 'call-me-back')!
+    expect(bullets.join('\n')).toContain(callMeBack.tagline)
+  })
+
+  test('no <img>: key art is still a design placeholder, and mail clients block images', () => {
+    expect(networkShowBullets().join('\n')).not.toContain('<img')
+  })
+})
+
 describe('renderSubscriberWelcomeEmail', () => {
   test('new account: set-password CTA carries the ticket URL', () => {
     const { subject, html } = renderSubscriberWelcomeEmail({
+      ...URLS,
       name: 'Casey Jones',
-      welcomeUrl: 'https://app.test/welcome',
       passwordSetupUrl: 'https://auth.test/u/reset?ticket=xyz',
       tier: 'ark-plus',
     })
-    expect(subject).toBe('Welcome to Ark+')
+    expect(subject).toBe('Welcome to Ark+, one quick step left')
     expect(html).toContain('Welcome to Ark+.')
     expect(html).toContain('Hi Casey,') // first name only
     expect(html).toContain('Set your password')
     expect(html).toContain('https://auth.test/u/reset?ticket=xyz')
-    expect(html).toContain('https://app.test/welcome')
+    // The setup step is still reachable from under the password CTA — this
+    // email replaces Auth0's reset mail, so both have to fit in it.
+    expect(html).toContain(URLS.welcomeUrl)
+    expect(html).toContain(URLS.setupUrl)
   })
 
   test('a name manufactured from the address falls back to "Hi there,"', () => {
     // The migrated roster is full of these, and without the email passed
     // alongside there is nothing to compare the name against — so it renders.
     const { html } = renderSubscriberWelcomeEmail({
+      ...URLS,
       name: 'hannah.waxman8',
       email: 'hannah.waxman8@gmail.com',
-      welcomeUrl: 'https://app.test/welcome',
       tier: 'ark-plus',
     })
     expect(html).toContain('Hi there,')
     expect(html).not.toContain('hannah.waxman8')
   })
 
-  test('existing account: log-in CTA, no ticket', () => {
-    const { html } = renderSubscriberWelcomeEmail({
-      welcomeUrl: 'https://app.test/welcome',
-      tier: 'ark-plus',
-    })
-    expect(html).toContain('Start listening')
-    expect(html).toContain('already have an Ark+ login')
+  test('existing account: the CTA is setup itself, and says no new account is needed', () => {
+    const { html } = renderSubscriberWelcomeEmail({ ...URLS, tier: 'ark-plus' })
+    expect(html).toContain('Finish setup')
+    expect(html).toContain(URLS.setupUrl)
+    expect(html).toContain('no new account to make')
     expect(html).not.toContain('Set your password')
     expect(html).toContain('Hi there,')
   })
 
-  test('ark-plus (feed-only): does not promise the Fold', () => {
+  test('every welcome carries the support address, not a placeholder', () => {
+    // [SUPPORT EMAIL PLACEHOLDER] in the copy doc. A shipped email must not.
+    for (const tier of ['ark-plus', 'bundle'] as const) {
+      const { html } = renderSubscriberWelcomeEmail({ ...URLS, tier })
+      expect(html).toContain(SUPPORT_EMAIL)
+      expect(html).toContain(`mailto:${SUPPORT_EMAIL}`)
+      expect(html).not.toContain('PLACEHOLDER')
+    }
+  })
+
+  test('ark-plus (feed-only): lists the network shows, and does not promise the Fold', () => {
     const { subject, html } = renderSubscriberWelcomeEmail({
-      welcomeUrl: 'https://app.test/welcome',
+      ...URLS,
       tier: 'ark-plus',
     })
-    expect(subject).toBe('Welcome to Ark+')
-    expect(html).toContain('Welcome to Ark+.')
-    // The feed blurb, asserted through the constant rather than a copy literal:
-    // what matters is that this tier gets the feed benefits and stops there.
-    expect(html).toContain(FEED_INCLUDED)
+    expect(subject).toBe('Welcome to Ark+, one quick step left')
+    expect(html).toContain('What you have access to')
+    expect(html).toContain(ARK_PLUS_EXTRAS)
+    for (const bullet of networkShowBullets()) expect(html).toContain(bullet)
     // A feed-only membership must not advertise access to the Fold it lacks.
     expect(html).not.toContain('Fold')
   })
 
-  test('bundle: adds the Fold on top of the feed', () => {
+  test('bundle: two setup steps — the feed and the Fold app', () => {
     const { subject, html } = renderSubscriberWelcomeEmail({
-      welcomeUrl: 'https://app.test/welcome',
+      ...URLS,
       tier: 'bundle',
     })
-    expect(subject).toBe('Welcome to Ark+ Bundle')
-    expect(html).toContain('Welcome to Ark+ Bundle.')
-    // Same feed blurb as ark-plus, with the Fold appended — the two
-    // assertions together are what "on top of the feed" means.
-    expect(html).toContain(FEED_INCLUDED)
-    expect(html).toContain('Fold')
+    expect(subject).toBe('Welcome to Ark+ and The Fold')
+    expect(html).toContain('Welcome to Ark+ and the Fold.')
+    expect(html).toContain('Getting started')
+    expect(html).toContain('There are two quick steps')
+    // Step one: the private feed. Step two: the app that IS the Fold.
+    expect(html).toContain(URLS.setupUrl)
+    expect(html).toContain(circleUrls.appStoreIos)
+    expect(html).toContain(circleUrls.appStoreAndroid)
+    // And the same show list as ark-plus, since the bundle includes the feed.
+    for (const bullet of networkShowBullets()) expect(html).toContain(bullet)
+  })
+})
+
+describe('renderCircleWelcomeEmail', () => {
+  test('Fold-first: the app is the setup step, and the feed is never mentioned', () => {
+    const { subject, html } = renderCircleWelcomeEmail({
+      welcomeUrl: URLS.welcomeUrl,
+    })
+    expect(subject).toBe('Welcome to The Fold')
+    expect(html).toContain('Welcome to the Fold.')
+    expect(html).toContain(circleUrls.appStoreIos)
+    expect(html).toContain(circleUrls.appStoreAndroid)
+    expect(html).toContain("What you'll find inside")
+    expect(html).toContain('Deborah Pardes')
+    expect(html).toContain(SUPPORT_EMAIL)
+    // No private feed on this membership, so no RSS/Spotify instructions.
+    expect(html).not.toContain('RSS')
+    expect(html).not.toContain('Spotify')
+  })
+
+  test('new account: set-password CTA carries the ticket URL', () => {
+    const { html } = renderCircleWelcomeEmail({
+      welcomeUrl: URLS.welcomeUrl,
+      passwordSetupUrl: 'https://auth.test/u/reset?ticket=xyz',
+    })
+    expect(html).toContain('Set your password')
+    expect(html).toContain('https://auth.test/u/reset?ticket=xyz')
   })
 })
 
 describe('renderAxisAddedEmail', () => {
   test('states the new price as the whole cost, and that nothing is due today', () => {
-    // The two things this email exists to say. "Covers everything" is what
-    // defuses the fear the price is charged ON TOP of the old one, and
-    // "nothing to pay today" is the answer to the question a member actually
-    // has — the change is settled on the next bill, so their card shows
-    // nothing and no one guesses why.
+    // The two things this email exists to say beyond the copy doc's version,
+    // which carries no price at all. "Covers everything" is what defuses the
+    // fear the price is charged ON TOP of the old one, and "nothing to pay
+    // today" is the answer to the question a member actually has — the change
+    // is settled on the next bill, so their card shows nothing and no one
+    // guesses why.
     const { subject, html } = renderAxisAddedEmail({
+      ...URLS,
       name: 'Alice Smith',
       email: 'alice@example.com',
       axis: 'circle',
-      welcomeUrl: 'https://app.test/welcome',
       price: '$25',
       plan: 'monthly',
       renewsOn: 'September 14, 2026',
     })
-    expect(subject).toContain('Fold')
+    expect(subject).toBe("You've added The Fold to your membership")
     expect(html).toContain('Hi Alice,')
     expect(html).toContain('$25 a month')
     expect(html).toContain('covers everything')
@@ -163,8 +238,8 @@ describe('renderAxisAddedEmail', () => {
     // months; "prorated", "invoice" and "billing period" are our machinery,
     // and they read as a company talking to itself.
     const { html } = renderAxisAddedEmail({
+      ...URLS,
       axis: 'circle',
-      welcomeUrl: 'https://app.test/welcome',
       price: '$25',
       plan: 'monthly',
       renewsOn: 'September 14, 2026',
@@ -176,8 +251,8 @@ describe('renderAxisAddedEmail', () => {
 
   test('yearly cadence is stated as a year, not a month', () => {
     const { html } = renderAxisAddedEmail({
+      ...URLS,
       axis: 'circle',
-      welcomeUrl: 'https://app.test/welcome',
       price: '$250',
       plan: 'yearly',
     })
@@ -191,8 +266,8 @@ describe('renderAxisAddedEmail', () => {
     // actually charged in. The email still has to say what their membership
     // covers, and still owes them the "nothing today" answer.
     const { html } = renderAxisAddedEmail({
+      ...URLS,
       axis: 'circle',
-      welcomeUrl: 'https://app.test/welcome',
       plan: 'monthly',
     })
     expect(html).toContain('covers everything')
@@ -209,15 +284,18 @@ describe('renderAxisAddedEmail', () => {
     // puts them in the Fold, and the profile is what makes them a person
     // in it rather than an email address.
     const { html } = renderAxisAddedEmail({
+      ...URLS,
       axis: 'circle',
-      welcomeUrl: 'https://app.test/welcome',
       price: '$25',
       plan: 'monthly',
     })
+    expect(html).toContain("there's just one more step")
     expect(html).toContain(circleUrls.appStoreIos)
     expect(html).toContain(circleUrls.appStoreAndroid)
     expect(html).toContain(circleUrls.webApp)
     expect(html).toContain(circleUrls.profileSettings)
+    expect(html).toContain("What you'll find inside")
+    expect(html).toContain(SUPPORT_EMAIL)
     // Text links, not the store badge lockups: SVG doesn't render in most mail
     // clients, and image blocking would leave the row empty in the rest.
     expect(html).not.toContain('<img')
@@ -225,14 +303,15 @@ describe('renderAxisAddedEmail', () => {
 
   test('adding Ark+: feed copy and the feed setup CTA', () => {
     const { subject, html } = renderAxisAddedEmail({
+      ...URLS,
       axis: 'ark-plus',
-      welcomeUrl: 'https://app.test/welcome',
       price: '$25',
       plan: 'monthly',
     })
     expect(subject).toContain('feed')
     expect(html).toContain(FEED_INCLUDED)
     expect(html).toContain('Set up your feed')
+    expect(html).toContain(URLS.setupUrl)
     expect(html).not.toContain('Enter the Fold')
     // The Fold app links belong to the axis that grants the Fold.
     expect(html).not.toContain(circleUrls.appStoreIos)

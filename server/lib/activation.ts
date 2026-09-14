@@ -367,6 +367,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
             name,
             email,
             welcomeUrl: `${baseUrl}/welcome`,
+            setupUrl: `${baseUrl}/setup`,
             passwordSetupUrl,
             tier: entitlements.circle ? 'bundle' : 'ark-plus',
           })
@@ -427,6 +428,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         email,
         axis,
         welcomeUrl: `${baseUrl}/welcome`,
+        setupUrl: `${baseUrl}/setup`,
         ...billingFactsFor(fresh),
       })
       // Keyed on the subscription AND the axis so a webhook retry collapses,

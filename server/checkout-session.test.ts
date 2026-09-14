@@ -503,7 +503,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     expect(emailCall).toBeDefined()
     const body = emailCall!.body as { to: string; subject: string; html: string }
     expect(body.to).toBe('user@example.com')
-    expect(body.subject).toBe('Welcome to Ark+')
+    expect(body.subject).toBe('Welcome to Ark+, one quick step left')
     expect(body.html).toContain('Welcome to Ark+.')
   })
 
