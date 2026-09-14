@@ -12,21 +12,22 @@
 // The Spotify hand-off exists because Open Access verifies that the click
 // originated on Beehiiv's own page: we cannot link a member straight at
 // Spotify. So we mint Beehiiv's auto-login server-side and 302 the member into
-// Beehiiv's `/oauth/spotify/authorize`, which runs the consent flow and sends
-// them back to us.
+// Beehiiv's `/oauth/spotify/authorize`, which runs the consent flow. It does
+// NOT send them back to us — see the note on the return URL below — so the
+// setup page opens this in a new tab.
 //
 // Both are cookie-authenticated mutations of a sort, so both carry the
 // same-origin guard and a per-member budget.
 
 import {
   buildSpotifyHandoff,
-  premiumPodcastIdFromEnv,
+  fetchPrivateFeeds,
   publicationIdFromEnv,
 } from '../lib/beehiiv-feeds.js'
 import { refreshSubscriptionFromBeehiiv } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
-import { fetchWithTimeout, isSameOrigin } from '../lib/http.js'
+import { fetchWithTimeout, isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { redactEmail } from '../../shared/validation.js'
@@ -158,11 +159,12 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         )
         if (!local) return json(409, { error: 'no_subscription' })
 
-        // Where Beehiiv sends the member once Spotify has been linked. Ending
-        // the round trip back on the setup page is the whole point of routing
-        // through our own server: the member never has to find their way home
-        // from Beehiiv, and the `spotify` marker lets the page confirm it and
-        // check the show off.
+        // Where we ASK Beehiiv to send the member once Spotify has been linked.
+        // It currently ignores this and dead-ends on its own publication root
+        // (see buildSpotifyHandoff) — which is why the setup page opens this
+        // route in a new tab and doesn't wait for the round trip. Kept as the
+        // better ending if Beehiiv starts honouring it; the `spotify` marker is
+        // what the page reads when it does.
         const handoff = await buildSpotifyHandoff(
           env,
           local.beehiivSubscriptionId,

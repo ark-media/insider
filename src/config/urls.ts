@@ -172,3 +172,16 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "youtube", url: "https://www.youtube.com/@AskAJew" },
   ],
 };
+
+/**
+ * Spotify's own "Your Library → Podcasts" shelf — where the feed setup page
+ * sends a member to follow the premium show once Open Access has linked their
+ * account.
+ *
+ * Deliberately the library and not the show: the premium feed is PRIVATE and
+ * per-member, so there is no one Spotify show page to link anybody at. Open
+ * Access drops each linked member's own feed into their own library, which is
+ * the only place it exists for them. Don't go looking for a show URL to
+ * hardcode here — there isn't one.
+ */
+export const spotifyLibraryUrl = "https://open.spotify.com/collection/podcasts";

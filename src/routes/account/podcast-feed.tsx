@@ -29,17 +29,20 @@ function PodcastsTab() {
 
   // Coming back from Beehiiv's Spotify consent flow.
   //
-  // The marker deliberately stays in the URL. It drives the confirmation the
-  // member sees, and holding that in component state instead made it vanish on
-  // a re-render — the URL is the one place that survives whatever the router
-  // and the auth refresh do to this subtree. It also says something that stays
-  // true on a reload.
+  // This is now the unlikely path: Beehiiv ignores the return URL we pass and
+  // dead-ends on its own publication root, so the hand-off opens in a new tab
+  // and the setup page confirms from its own state instead. The marker is kept
+  // because it costs nothing and is the better ending if Beehiiv ever honours
+  // `redirect_path` — see SPOTIFY_HANDOFF_PATH in FeedSetup.
   //
-  // The Spotify CTA already marks the show set up on click, but that request
-  // races the same-tab navigation away from the page and can be cancelled
-  // mid-flight, so redo it here: this is the path that is guaranteed to run.
-  // Marking is idempotent (it only ever flips a feed that isn't already set
-  // up), which is what makes it safe to leave the marker in the URL.
+  // It deliberately stays in the URL rather than being read into state: the URL
+  // is the one place that survives whatever the router and the auth refresh do
+  // to this subtree, and it stays true on a reload.
+  //
+  // The Spotify CTA already marks the show set up on click, but redo it here
+  // too — this is the path that is guaranteed to run. Marking is idempotent (it
+  // only ever flips a feed that isn't already set up), which is what makes it
+  // safe to leave the marker in the URL.
   const spotifyLinked = spotify === "linked";
   const marked = useRef(false);
   useEffect(() => {

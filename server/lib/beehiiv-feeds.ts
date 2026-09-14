@@ -193,9 +193,26 @@ export async function fetchPrivateFeed(
 //
 // This replaced an earlier hand-off that landed on Beehiiv's per-show "Add to
 // podcast app" page and left the member to find the Spotify button themselves.
-// Same credential, one fewer click, and — because of `redirect_path` — the
-// round trip now ends back on our own setup page instead of stranding them on
-// Beehiiv.
+// Same credential, one fewer click.
+//
+// ⚠ `redirect_path` CANNOT LEAVE BEEHIIV, whatever their docs say. It is a path
+// on the publication's own beehiiv domain, and an absolute URL is silently
+// collapsed to "/" — so the member ends the round trip on
+// `https://arkmedia.beehiiv.com/?connected=spotify`, not on us.
+//
+// Measured 2026-09-14, not inferred. `/authorize` 302s to Spotify with the
+// value sealed inside the encrypted `state` blob, and the ciphertext length
+// gives it away: a baseline of 545 bytes plus 19 bytes of framing plus the
+// STORED path. `/x` → 566 (19+2), `/account/podcast-feed?spotify=linked` → 600
+// (19+36, query and even a #fragment kept verbatim), while absolute URLs of 41,
+// 56 and 246 chars ALL → 565 (19+1, i.e. "/"). `//host/p`, `http://host/p` and
+// `https:/host/p` collapse the same way, and a bare `host/p` is kept with a "/"
+// PREPENDED — it only ever builds a same-host path. Re-run the probe before
+// believing any claim that this now works.
+//
+// We keep passing our own URL: it costs nothing today and starts working the
+// day Beehiiv honours it. Nothing depends on the round trip — the setup page
+// opens this in a NEW TAB and confirms from its own state.
 
 export type SpotifyHandoff = { url: string; subscriberId: string }
 
