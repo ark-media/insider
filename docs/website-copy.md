@@ -1319,14 +1319,9 @@ single member only ever sees some of them.
 
 ### Free-account dashboard
 - **PAGE TITLE**: You're signed in.
-- **LEDE**: Signed in as {email}. Manage what lands in your inbox, or join Ark+ for the private feed and the Fold.
-- **UPSELL CARD EYEBROW**: Become an Ark+ member
-- **UPSELL CARD HEADING**: Go deeper with Ark+.
-- **UPSELL LIST ITEM**: — Call Me Back AMA, the members-only show
-- **UPSELL LIST ITEM**: — Private podcast feed, ad-free
-- **UPSELL LIST ITEM**: — Members-only newsletter
-- **UPSELL LIST ITEM**: — The Fold in the app
-- **UPSELL CTA**: Become a member →
+- **LEDE**: Signed in as {email}. Manage what lands in your inbox, or join Ark+, the Fold, or both.
+- **SECTION LABEL**: Become a member
+- **PLANS**: the same three pricing cards as /plus (Ark+ · Ark+ & The Fold · The Fold) — copy lives under the /plus pricing section
 - **ACCOUNT CARD EYEBROW**: Your account
 - **LINK**: Newsletter preferences →
 - **BUTTON**: Sign out

@@ -66,7 +66,7 @@ function AccountLayout() {
       title={me.firstName ? `Welcome back, ${me.firstName}.` : "Welcome back."}
       lede={
         me.tier === "free"
-          ? `Signed in as ${me.email}. Manage what lands in your inbox, or join Ark+ for the private feed and the Fold.`
+          ? `Signed in as ${me.email}. Manage what lands in your inbox, or join Ark+, the Fold, or both.`
           : `Signed in as ${me.email}. Everything in your membership, in one place.`
       }
     >

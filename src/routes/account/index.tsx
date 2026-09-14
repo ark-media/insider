@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
 import { getMySubscription, type Me, type MySubscription } from "../../lib/auth";
-import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { ProductMarks } from "../../components/FoldLogo";
+import { PricingCards } from "../../components/PricingCards";
 import { useEntitlementOffers } from "../../components/account/useEntitlementOffers";
 import { PlanCard } from "../../components/account/PlanCard";
 import { ProfileNameCard } from "../../components/account/ProfileNameCard";
@@ -269,38 +269,23 @@ function AppDownloadLine() {
   );
 }
 
-// A signed-in reader with no membership. The mockup only covers a member, so
-// this keeps the existing upsell — restyled to the same card language as the
-// paid tab so the two don't look like different products.
+// A signed-in reader with no membership. They lack both axes, so the offer is
+// the whole catalog — Ark+, the Fold, and the Bundle that buys both — as the
+// same Stripe-priced cards /plus sells from, each opening checkout in place.
+// This used to be a single Ark+ card that listed the Fold as part of Ark+,
+// which it isn't, and left no way to reach the Fold or the Bundle from here.
 function FreeMembership({ me, onRefresh }: { me: Me; onRefresh: () => void }) {
   return (
     <section>
       <div className="page-section">
         <ProfileNameCard onSaved={onRefresh} promptOnly />
 
-        <div className="border border-cyan/40 bg-navy-800/40 p-8">
-          <div className="flex items-center gap-4">
-            <ArkPlusMark className="h-14 w-14" />
-            <div className="eyebrow">Become an Ark+ member</div>
-          </div>
-          <h2 className="mt-4 font-display text-[clamp(1.6rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
-            Go deeper with Ark+.
-          </h2>
-          <ul className="mt-6 space-y-2 text-body-sm text-fg">
-            <FeatureLine>Call Me Back AMA, the members-only show</FeatureLine>
-            <FeatureLine>Private podcast feed, ad-free</FeatureLine>
-            <FeatureLine>Members-only newsletter</FeatureLine>
-            <FeatureLine>The Fold, in the app</FeatureLine>
-          </ul>
-          <Link
-            to="/plus"
-            className="mt-8 inline-flex min-h-12 items-center justify-center border border-cyan bg-cyan px-6 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            Become a member →
-          </Link>
+        <h2 className="label text-cyan">Become a member</h2>
+        <div className="mt-6">
+          <PricingCards />
         </div>
 
-        <h2 className="mt-12 label text-cyan">Jump back in</h2>
+        <h2 className="mt-16 label text-cyan">Jump back in</h2>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           <JumpCard
             icon={<EnvelopeIcon />}
@@ -346,16 +331,5 @@ function EnvelopeIcon() {
       <rect x="2.5" y="4.5" width="19" height="15" rx="2" />
       <path d="m3.5 6.2 8.5 6 8.5-6" />
     </svg>
-  );
-}
-
-function FeatureLine({ children }: { children: ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span aria-hidden="true" className="text-cyan">
-        —
-      </span>
-      <span>{children}</span>
-    </li>
   );
 }
