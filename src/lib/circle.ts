@@ -65,11 +65,13 @@ async function getJsonAuthed<T>(url: string): Promise<T> {
 export type {
   ActivityDigest,
   CommunityFeedItem,
+  ShowcasePost,
   SuggestedSpace,
 } from "../../shared/community";
 import type {
   ActivityDigest,
   CommunityFeedItem,
+  ShowcasePost,
   SuggestedSpace,
 } from "../../shared/community";
 
@@ -124,6 +126,26 @@ export async function fetchSuggestedSpaces(): Promise<SuggestedSpace[]> {
   );
   // Throws on failure (handled upstream); a reachable-but-empty result honored.
   return data.spaces ?? [];
+}
+
+/**
+ * Real posts for the PUBLIC marketing showcase on /fold. Unlike every other
+ * fetcher here this one is unauthenticated — `/api/circle/showcase` is ungated
+ * by design (see server/circle-showcase.ts for what it withholds).
+ *
+ * Never throws: this feeds one marketing section, so a Circle outage should
+ * cost the visitor that section, not the page. The caller treats an empty
+ * array and a failure identically — hide the section.
+ */
+export async function fetchShowcasePosts(): Promise<ShowcasePost[]> {
+  try {
+    const data = await getJson<{ posts?: ShowcasePost[] }>(
+      "/api/circle/showcase",
+    );
+    return data.posts ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /**

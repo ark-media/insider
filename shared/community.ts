@@ -44,3 +44,34 @@ export type SuggestedSpace = {
   /** Deep link that lands the member in this space in the app. */
   href: string
 }
+
+/**
+ * A real Fold post, projected for the PUBLIC marketing showcase on /fold
+ * ("You might do inside the Fold app").
+ *
+ * Unlike CommunityFeedItem this crosses the members-only boundary: it is served
+ * ungated to logged-out visitors, so the projection deliberately narrows what
+ * leaves the community — allowlisted spaces only, surname reduced to an
+ * initial, location reduced to a city. See server/circle-showcase.ts.
+ */
+export type ShowcasePost = {
+  id: string
+  /** "Ava W." — the public page never carries a full surname. */
+  authorName: string
+  /** Circle avatar URL. Absent when the member has none. */
+  authorAvatarUrl?: string
+  /** City only, from the member's Circle profile. Absent when unset. */
+  authorLocation?: string
+  /** Space slug — stable key for the room chip. */
+  roomSlug: string
+  /** Space display name, e.g. "The Conversation". */
+  roomName: string
+  /** Post title, or the opening of the body when the post is untitled. */
+  text: string
+  replyCount: number
+  likeCount: number
+  /** ISO date */
+  publishedAt: string
+  /** Deep link into the post in Circle. */
+  href: string
+}

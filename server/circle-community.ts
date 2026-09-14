@@ -104,7 +104,7 @@ export type CircleFeedPost = {
   url?: string
 }
 
-function extractBodyHtml(body: CircleFeedPost['body']): string {
+export function extractBodyHtml(body: CircleFeedPost['body']): string {
   if (!body) return ''
   if (typeof body === 'string') return body
   if (typeof body.body === 'string') return body.body

@@ -417,3 +417,227 @@ describe('GET /api/circle/spaces', () => {
     expect(fetchCalls.length).toBe(0)
   })
 })
+
+// ---------------------------------------------------------------------------
+// /api/circle/showcase — the PUBLIC marketing grid on /fold
+//
+// The one Circle route with no gate, so what it must *not* do is as important
+// as what it returns: never read an off-allowlist space, never fail the page.
+// ---------------------------------------------------------------------------
+
+const SHOWCASE_PATH = '/api/circle/showcase'
+
+// Spaces payload covering the three allowlisted rooms plus the ones the
+// showcase must leave alone.
+const SHOWCASE_SPACES = {
+  records: [
+    { id: 10, slug: 'conversation', name: 'The Conversation' },
+    { id: 20, slug: 'ask-share', name: 'Ask & Share' },
+    { id: 30, slug: 'lounge', name: 'The Lounge' },
+    { id: 40, slug: 'say-hi', name: 'Introduce Yourself' },
+    { id: 50, slug: 'announcements', name: 'Announcements' },
+  ],
+}
+
+function showcasePost(
+  id: number,
+  spaceId: number,
+  spaceSlug: string,
+  spaceName: string,
+  publishedAt: string,
+) {
+  return {
+    id,
+    name: `Post ${id}`,
+    space_id: spaceId,
+    space_slug: spaceSlug,
+    space_name: spaceName,
+    status: 'published',
+    published_at: publishedAt,
+    user_name: 'Ava Weiner',
+    user_email: 'ava@arkmedia.org',
+    comments_count: 2,
+    likes_count: 0,
+    url: `https://thefold.arkmedia.org/c/${spaceSlug}/post-${id}`,
+  }
+}
+
+/** Serves spaces, per-space posts, and the member profile lookup. */
+function showcaseFetch(): FetchImpl {
+  return async (url) => {
+    if (url.includes('/community_members/search')) {
+      return new Response(
+        JSON.stringify({
+          avatar_url: 'https://app.circle.so/avatar.png',
+          flattened_profile_fields: {
+            location: 'New York City, New York, United States',
+          },
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes('/posts?space_id=10')) {
+      return new Response(
+        JSON.stringify({
+          records: [showcasePost(1, 10, 'conversation', 'The Conversation', '2026-09-08T00:00:00Z')],
+          has_next_page: false,
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes('/posts?space_id=20')) {
+      return new Response(
+        JSON.stringify({
+          records: [showcasePost(2, 20, 'ask-share', 'Ask & Share', '2026-09-10T00:00:00Z')],
+          has_next_page: false,
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes('/posts?space_id=30')) {
+      return new Response(
+        JSON.stringify({
+          records: [showcasePost(3, 30, 'lounge', 'The Lounge', '2026-09-09T00:00:00Z')],
+          has_next_page: false,
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes('/spaces')) {
+      return new Response(JSON.stringify(SHOWCASE_SPACES), { status: 200 })
+    }
+    throw new Error(`unexpected fetch: ${url}`)
+  }
+}
+
+describe('GET /api/circle/showcase', () => {
+  test('serves real posts to an unauthenticated visitor', async () => {
+    fetchImpl = showcaseFetch()
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    const res = makeRes()
+    // No cookie, no membership row staged — a logged-out visitor.
+    await handler(makeReq(SHOWCASE_PATH, ''), res)
+
+    expect(res.__status()).toBe(200)
+    const body = res.__json() as { posts: Array<Record<string, unknown>> }
+    expect(body.posts).toHaveLength(3)
+    // Newest first across all three rooms.
+    expect(body.posts.map((p) => p.roomSlug)).toEqual([
+      'ask-share',
+      'lounge',
+      'conversation',
+    ])
+    expect(body.posts[0]!.authorName).toBe('Ava W.')
+    expect(body.posts[0]!.authorLocation).toBe('New York City')
+    expect(body.posts[0]!.replyCount).toBe(2)
+  })
+
+  test('is edge-cacheable — unlike every gated Circle route', async () => {
+    fetchImpl = showcaseFetch()
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    const res = makeRes()
+    await handler(makeReq(SHOWCASE_PATH, ''), res)
+    expect(res.__header('cache-control')).toBe(
+      'public, s-maxage=300, stale-while-revalidate=600',
+    )
+  })
+
+  test('never reads a space outside the allowlist', async () => {
+    fetchImpl = showcaseFetch()
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    await handler(makeReq(SHOWCASE_PATH, ''), makeRes())
+
+    const postReads = fetchCalls.filter((c) => c.url.includes('/posts?space_id='))
+    expect(postReads).toHaveLength(3)
+    // say-hi (40) and announcements (50) are never fetched at all.
+    expect(postReads.some((c) => c.url.includes('space_id=40'))).toBe(false)
+    expect(postReads.some((c) => c.url.includes('space_id=50'))).toBe(false)
+  })
+
+  test('subtracts our own newsletter companion stubs', async () => {
+    companionRows = [{ circle_post_id: '2' }]
+    fetchImpl = showcaseFetch()
+    const handler = findHandler(
+      buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't', DATABASE_URL: 'postgres://stub' }),
+      SHOWCASE_PATH,
+    )
+    const res = makeRes()
+    await handler(makeReq(SHOWCASE_PATH, ''), res)
+    const body = res.__json() as { posts: Array<{ id: string }> }
+    expect(body.posts.map((p) => p.id)).not.toContain('2')
+    expect(body.posts).toHaveLength(2)
+  })
+
+  test('looks each author up once, not once per post', async () => {
+    fetchImpl = showcaseFetch()
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    await handler(makeReq(SHOWCASE_PATH, ''), makeRes())
+    const lookups = fetchCalls.filter((c) => c.url.includes('/community_members/search'))
+    expect(lookups).toHaveLength(1)
+  })
+
+  test('still renders the posts when the author lookup 404s', async () => {
+    const inner = showcaseFetch()
+    fetchImpl = async (url, init) => {
+      if (url.includes('/community_members/search')) {
+        return new Response('{"success":false}', { status: 404 })
+      }
+      return inner(url, init)
+    }
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    const res = makeRes()
+    await handler(makeReq(SHOWCASE_PATH, ''), res)
+    const body = res.__json() as { posts: Array<Record<string, unknown>> }
+    expect(body.posts).toHaveLength(3)
+    expect(body.posts[0]!.authorLocation).toBeUndefined()
+  })
+
+  test('returns { posts: [] } when token is unset, no upstream call', async () => {
+    const handler = findHandler(buildDeps({}), SHOWCASE_PATH)
+    const res = makeRes()
+    await handler(makeReq(SHOWCASE_PATH, ''), res)
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ posts: [] })
+    expect(fetchCalls.length).toBe(0)
+  })
+
+  test('degrades to empty (200, not 502) when Circle is down', async () => {
+    fetchImpl = async () => new Response('upstream boom', { status: 500 })
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    const res = makeRes()
+    await handler(makeReq(SHOWCASE_PATH, ''), res)
+    // 200: this feeds one marketing section, so the client hides the section
+    // rather than showing the whole page an error.
+    expect(res.__status()).toBe(200)
+    expect(res.__json()).toEqual({ posts: [] })
+  })
+
+  test('skips a renamed room instead of failing the grid', async () => {
+    const inner = showcaseFetch()
+    fetchImpl = async (url, init) => {
+      if (url.includes('/spaces')) {
+        return new Response(
+          JSON.stringify({
+            records: SHOWCASE_SPACES.records.filter((s) => s.slug !== 'lounge'),
+          }),
+          { status: 200 },
+        )
+      }
+      return inner(url, init)
+    }
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    const res = makeRes()
+    await handler(makeReq(SHOWCASE_PATH, ''), res)
+    const body = res.__json() as { posts: Array<{ roomSlug: string }> }
+    expect(body.posts.map((p) => p.roomSlug)).toEqual(['ask-share', 'conversation'])
+  })
+
+  test('rejects non-GET with 405', async () => {
+    const handler = findHandler(buildDeps({ CIRCLE_ADMIN_API_TOKEN: 't' }), SHOWCASE_PATH)
+    const req = makeReq(SHOWCASE_PATH, '')
+    ;(req as { method: string }).method = 'POST'
+    const res = makeRes()
+    await handler(req, res)
+    expect(res.__status()).toBe(405)
+  })
+})
