@@ -13,6 +13,7 @@ import {
   SUPPORT_EMAIL,
   esc,
   link,
+  networkShowBullets,
   renderShell,
   supportLine,
 } from './welcome-email.js'
@@ -81,6 +82,18 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
           'If you run into any trouble',
         )}`,
         sections: [
+          // The doc's VISUAL BENEFITS LIST. The paragraph above promises "every
+          // show in the network, not just Call Me Back" — this is the half that
+          // says which shows those are, which is the whole argument for moving.
+          // Only the 30-day stage carries it: by 60 days the pitch has already
+          // failed, and those emails escalate to what stops working instead.
+          //
+          // Same source as the welcome emails (src/data/shows.ts), so a show
+          // joining or leaving the network reaches both without a second edit.
+          {
+            heading: "What's waiting for you",
+            bullets: networkShowBullets(),
+          },
           {
             paragraphs: [
               `Your old Call Me Back feed will be turned off on <strong>${deadline}</strong>, so it&rsquo;s worth knocking this out now rather than later.`,

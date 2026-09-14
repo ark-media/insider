@@ -4,7 +4,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { renderMigrationCheckInEmail } from './lib/feed-migration-email'
-import { SUPPORT_EMAIL } from './lib/welcome-email'
+import { SUPPORT_EMAIL, networkShowBullets } from './lib/welcome-email'
 import type { MigrationStage } from '../shared/feed-migration'
 
 const BASE = {
@@ -67,6 +67,22 @@ describe('30-day check-in', () => {
     // switch-off date as a reason not to put it off.
     expect(html).not.toContain('at risk')
     expect(html).not.toContain('final reminder')
+  })
+
+  test('names the shows setup unlocks, from the same source as the welcomes', () => {
+    // The copy doc's VISUAL BENEFITS LIST. "Every show in the network" is the
+    // promise; this is the list that makes it concrete.
+    const { html } = renderMigrationCheckInEmail({ ...BASE, stage: 'check_in_30' })
+    for (const bullet of networkShowBullets()) expect(html).toContain(bullet)
+  })
+
+  test('the later stages do not repeat it', () => {
+    // By 60 days the pitch has already failed on this member — those emails
+    // escalate to what stops working instead of re-selling the catalogue.
+    for (const stage of ['check_in_60', 'final'] as MigrationStage[]) {
+      const { html } = renderMigrationCheckInEmail({ ...BASE, stage })
+      for (const bullet of networkShowBullets()) expect(html).not.toContain(bullet)
+    }
   })
 })
 
