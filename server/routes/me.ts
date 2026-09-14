@@ -3,8 +3,7 @@
 
 import { redactEmail } from '../../shared/validation.js'
 import {
-  fetchPrivateFeed,
-  premiumPodcastIdFromEnv,
+  fetchPrivateFeeds,
   type PrivateFeed,
 } from '../lib/beehiiv-feeds.js'
 import {
@@ -208,17 +207,16 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           return json(401, { error: 'membership_not_found' })
         }
 
-        // Render the private feed for the arkPlus axis, keyed on the session
-        // email (Beehiiv has no id of ours to key on). `fetchPrivateFeed` never
-        // throws and returns null for every "no feed" case, so a Beehiiv outage
-        // degrades to an empty list — entitlement came from Neon, and the
+        // The member's private feeds for the arkPlus axis, keyed on the session
+        // email (Beehiiv has no id of ours to key on). ALL premium shows, not
+        // one: the Plus tier entitles a member to every one of them and Beehiiv
+        // mints a feed per show, so reading a single configured id left the rest
+        // invisible. `fetchPrivateFeeds` never throws — a Beehiiv outage
+        // degrades to an empty list, because entitlement came from Neon and the
         // membership decision must never depend on Beehiiv being reachable.
-        const podcastId = premiumPodcastIdFromEnv(env)
-        const feeds: PrivateFeed[] = []
-        if (entitlements.arkPlus && podcastId) {
-          const feed = await fetchPrivateFeed(env, email, podcastId)
-          if (feed) feeds.push(feed)
-        }
+        const feeds: PrivateFeed[] = entitlements.arkPlus
+          ? await fetchPrivateFeeds(env, email)
+          : []
         const enriched = await enrichFeedsWithActivation(env, email, feeds)
 
         // First-login auto-subscribe to the free newsletter for a logged-in free

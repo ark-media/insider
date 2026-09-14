@@ -11,7 +11,6 @@ import { getDb } from '../lib/db.js'
 import { getMigrationConfig, getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
 import { runFeedMigrationReminders } from '../lib/feed-migration-reminders.js'
-import { premiumPodcastIdFromEnv } from '../lib/beehiiv-feeds.js'
 import {
   GIFT_EXPIRY_REMINDER_DAYS,
   runGiftExpiryReminders,
@@ -85,8 +84,6 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
 
         const sql = getDb(env)
         try {
-          const showId = premiumPodcastIdFromEnv(env)
-          if (!showId) return json(500, { error: 'not_configured' })
           const config = await getReminderConfig(sql, env)
           const summary = await runFeedSetupReminders({
             env,
@@ -94,7 +91,6 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             appBaseUrl,
             config,
             nowMs: Date.now(),
-            showId,
           })
           json(200, summary)
         } catch (err) {
@@ -123,15 +119,12 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
 
         const sql = getDb(env)
         try {
-          const showId = premiumPodcastIdFromEnv(env)
-          if (!showId) return json(500, { error: 'not_configured' })
           const summary = await runFeedMigrationReminders({
             env,
             sql,
             appBaseUrl,
             config: await getMigrationConfig(sql),
             nowMs: Date.now(),
-            showId,
           })
           json(200, summary)
         } catch (err) {

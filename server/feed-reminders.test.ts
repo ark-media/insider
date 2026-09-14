@@ -120,7 +120,7 @@ describe('evaluateReminder', () => {
   const cfg = { ...DEFAULT_REMINDER_CONFIG, enabled: true }
 
   test('feed not set up → candidate with doneCount 0', () => {
-    const c = evaluateReminder(member(), new Set(), false, cfg, NOW, SHOW)
+    const c = evaluateReminder(member(), new Set(), false, cfg, NOW, [SHOW])
     expect(c).not.toBeNull()
     expect(c).toMatchObject({
       email: 'a@x.com',
@@ -131,25 +131,25 @@ describe('evaluateReminder', () => {
   })
 
   test('feed set up → null (nothing to nudge)', () => {
-    const c = evaluateReminder(member(), new Set([SHOW]), false, cfg, NOW, SHOW)
+    const c = evaluateReminder(member(), new Set([SHOW]), false, cfg, NOW, [SHOW])
     expect(c).toBeNull()
   })
 
   test('a different show being set up does not count', () => {
     // Activation is keyed per show; another show's row must never suppress
     // this show's reminder.
-    const c = evaluateReminder(member(), new Set(['pod_other']), false, cfg, NOW, SHOW)
+    const c = evaluateReminder(member(), new Set(['pod_other']), false, cfg, NOW, [SHOW])
     expect(c).toMatchObject({ doneCount: 0, total: 1 })
   })
 
   test('already sent → null', () => {
-    const c = evaluateReminder(member(), new Set(), true, cfg, NOW, SHOW)
+    const c = evaluateReminder(member(), new Set(), true, cfg, NOW, [SHOW])
     expect(c).toBeNull()
   })
 
   test('out of window → null even with zero setup', () => {
     const old = member({ joined: new Date(NOW - 30 * DAY).toISOString() })
-    expect(evaluateReminder(old, new Set(), false, cfg, NOW, SHOW)).toBeNull()
+    expect(evaluateReminder(old, new Set(), false, cfg, NOW, [SHOW])).toBeNull()
   })
 
   test('normalizes email (trims + lowercases)', () => {
@@ -159,13 +159,13 @@ describe('evaluateReminder', () => {
       false,
       cfg,
       NOW,
-      SHOW,
+      [SHOW],
     )
     expect(c?.email).toBe('ada@x.com')
   })
 
   test('blank first name yields undefined (email falls back to "Hi there")', () => {
-    const c = evaluateReminder(member({ firstName: '   ' }), new Set(), false, cfg, NOW, SHOW)
+    const c = evaluateReminder(member({ firstName: '   ' }), new Set(), false, cfg, NOW, [SHOW])
     expect(c?.firstName).toBeUndefined()
   })
 
@@ -176,7 +176,7 @@ describe('evaluateReminder', () => {
       false,
       cfg,
       NOW,
-      SHOW,
+      [SHOW],
     )
     expect(c?.firstName).toBe('Ada')
   })
@@ -189,7 +189,7 @@ describe('evaluateReminder', () => {
       false,
       cfg,
       NOW,
-      SHOW,
+      [SHOW],
     )
     expect(c?.firstName).toBeUndefined()
   })

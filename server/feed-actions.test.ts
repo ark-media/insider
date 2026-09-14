@@ -153,6 +153,13 @@ const originalFetch = globalThis.fetch
 globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input.toString()
   fetchCalls.push({ url, method: init?.method ?? 'GET' })
+  // The publication's podcast list — how the premium show set is discovered.
+  if (url.includes('/podcasts?')) {
+    return new Response(
+      JSON.stringify({ data: [{ id: SHOW, status: 'live' }] }),
+      { status: 200 },
+    )
+  }
   if (url.includes('/jwt_token')) {
     return jwtStatus === 200
       ? new Response(JSON.stringify({ data: { jwt_token: fakeJwt() } }), { status: 200 })
@@ -160,6 +167,21 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestIni
   }
   if (url.includes('/private_feeds/') && url.endsWith('/emails')) {
     return new Response('{}', { status: feedEmailStatus })
+  }
+  // The member's feed for one show — read before sending, to check the
+  // requested show is actually theirs.
+  if (url.includes('/private_feeds/by_email/')) {
+    return new Response(
+      JSON.stringify({
+        data: {
+          id: 'pod_feed_abc',
+          url: 'https://rss.beehiiv.com/podcasts/x/private/tok.xml',
+          protocol_links: {},
+          show: { id: SHOW, title: 'Inside Call me Back' },
+        },
+      }),
+      { status: 200 },
+    )
   }
   // Subscription lookup by email, against the CONFIGURED publication.
   if (url.includes('/subscriptions/by_email/')) {

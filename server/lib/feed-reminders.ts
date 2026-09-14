@@ -18,6 +18,7 @@
 // to the roster query, per-candidate activation/ledger lookups, and send.
 
 import type { Sql } from './db.js'
+import { premiumShowIds } from './beehiiv-feeds.js'
 import { getActivatedFeeds, normalizeEmail } from './feed-activations.js'
 import { mailableStatus } from './beehiiv-status.js'
 import { renderFeedReminderEmail } from './feed-reminder-email.js'
@@ -123,15 +124,16 @@ export function evaluateReminder(
   alreadySent: boolean,
   config: ReminderConfig,
   nowMs: number,
-  showId: string,
+  premiumShowIds: string[],
 ): ReminderCandidate | null {
   if (alreadySent) return null
   if (!passesCheapGate(member, config, nowMs)) return null
-  // Exactly one premium show, so this is a boolean dressed as a count. Keeping
-  // the counts on the candidate means the email template and the ledger don't
-  // change shape if a second show ever lands.
-  const total = 1
-  const doneCount = activatedShowIds.has(showId) ? 1 : 0
+  // The counts the email actually says out loud ("2 of 4 set up"). They were
+  // always carried on the candidate for this moment — a second premium show
+  // landed, and neither the template nor the ledger had to change shape.
+  const total = premiumShowIds.length
+  if (total === 0) return null // nothing discovered to set up
+  const doneCount = premiumShowIds.filter((id) => activatedShowIds.has(id)).length
   if (doneCount >= total) return null // fully set up
   return {
     email: normalizeEmail(member.email),
@@ -214,15 +216,27 @@ export async function runFeedSetupReminders(deps: {
   appBaseUrl: string
   config: ReminderConfig
   nowMs: number
-  /** The premium show reminders are about. */
-  showId: string
 }): Promise<ReminderRunSummary> {
-  const { env, sql, appBaseUrl, config, nowMs, showId } = deps
+  const { env, sql, appBaseUrl, config, nowMs } = deps
   if (!config.enabled) {
     return { enabled: false, scanned: 0, eligible: 0, sent: 0, failed: 0 }
   }
 
   const members = await loadPremiumReaders(sql, config, nowMs)
+  // Which shows a member is expected to have set up. Discovered from Beehiiv
+  // rather than configured, and any address will do — whether a show is premium
+  // is a fact about the show, not about who asks. Resolved once per run; an
+  // empty roster means nothing to count against and nothing to send.
+  const premiumShows = members.length
+    ? await premiumShowIds(env, members[0]!.email)
+    : []
+  // Members to serve but nothing to serve them: Beehiiv is unreachable or
+  // misconfigured. Throw so the cron route 500s and the run is visible, rather
+  // than reporting a successful zero — the old code failed loudly on a missing
+  // show id and this is the same failure wearing different clothes.
+  if (members.length > 0 && premiumShows.length === 0) {
+    throw new Error('[feed-reminders] no premium shows discovered')
+  }
   const setupUrl = `${appBaseUrl}/account/podcast-feed`
   let eligible = 0
   let sent = 0
@@ -244,7 +258,7 @@ export async function runFeedSetupReminders(deps: {
       alreadySent,
       config,
       nowMs,
-      showId,
+      premiumShows,
     )
     if (!candidate) continue
     eligible++

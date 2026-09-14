@@ -115,6 +115,13 @@ const originalFetch = globalThis.fetch
 globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
   const url = typeof input === 'string' ? input : input.toString()
   if (url === AUTH0_TEST_JWKS_URL) return jwksResponse()
+  // The publication's podcast list — how the premium show set is discovered.
+  if (url.includes('/podcasts?')) {
+    return new Response(
+      JSON.stringify({ data: [{ id: SHOW_ID, status: 'live' }] }),
+      { status: 200 },
+    )
+  }
   if (url.includes('/private_feeds/by_email/')) {
     if (!hasPrivateFeed) return new Response('{"errors":[]}', { status: 404 })
     return new Response(

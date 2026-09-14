@@ -34,6 +34,7 @@ mock.module('@neondatabase/serverless', () =>
   neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
 )
 
+import { clearPremiumShowCache } from './lib/beehiiv-feeds'
 import { devApiPlugin } from './dev-api'
 
 // --- Plugin harness --------------------------------------------------------
@@ -44,7 +45,10 @@ const SHOW_ID = 'pod_premium-show'
 
 const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'https://ark.example',
-  BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: SHOW_ID,
+  // The premium show set is discovered from Beehiiv, so these two are what
+  // the run depends on — there is no show id to configure any more.
+  BEEHIIV_API_KEY: 'bk_test',
+  BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test',
   CRON_SECRET,
   RESEND_API_KEY: 'rk_test',
   DATABASE_URL: 'postgres://stub-feed-reminders-cron',
@@ -84,6 +88,13 @@ let resendStatus = 200
 globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input.toString()
   fetchCalls.push({ url, init })
+  // The publication's podcast list — how the premium show set is discovered.
+  if (url.includes('/podcasts?')) {
+    return new Response(
+      JSON.stringify({ data: [{ id: SHOW_ID, status: 'live' }] }),
+      { status: 200 },
+    )
+  }
   if (url.includes('api.resend.com')) {
     const ok = resendStatus >= 200 && resendStatus < 300
     return new Response(ok ? '{"id":"email_1"}' : '{"error":"boom"}', {
@@ -140,6 +151,10 @@ beforeEach(() => {
   fetchCalls = []
   nextSqlResult = () => []
   resendStatus = 200
+  // The discovered premium-show set is process-global with its own TTL, so a
+  // case that breaks the Beehiiv config would otherwise be answered from the
+  // previous case's cache.
+  clearPremiumShowCache()
 })
 
 afterAll(() => {
@@ -289,12 +304,12 @@ describe('feed-setup-reminders run', () => {
     expect(fetchCalls.some((c) => c.url.includes('resend'))).toBe(false)
   })
 
-  test('500 when the premium show is unconfigured', async () => {
+  test('500 when the premium shows cannot be discovered', async () => {
     // Without a show id there is nothing to ask "did they set it up?" about,
     // and every member would look un-activated. Refuse rather than mass-nudge.
     stageRun({ roster: [reader()] })
     const res = makeRes()
-    await runHandler(buildHandler(envWithout('BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK')), makeReq({}), res)
+    await runHandler(buildHandler(envWithout('BEEHIIV_API_KEY')), makeReq({}), res)
     expect(res.statusCode).toBe(500)
     expect(fetchCalls.some((c) => c.url.includes('resend'))).toBe(false)
   })

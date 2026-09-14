@@ -482,13 +482,16 @@ export async function persistFeedsSetUp(feedIds: string[]): Promise<void> {
 // instructions. Beehiiv owns the template and sends to the address on the
 // subscription, so this takes no arguments — the member can't send it anywhere
 // but their own inbox.
-export async function sendFeedEmail(): Promise<{ ok: boolean; error?: string }> {
+export async function sendFeedEmail(
+  /** Which show to send — the SHOW id, since a member has one feed per show. */
+  showId: string,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch("/api/me/feeds/email", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: "{}",
+      body: JSON.stringify({ show_id: showId }),
     });
     if (res.ok) return { ok: true };
     const body = (await res.json().catch(() => null)) as {

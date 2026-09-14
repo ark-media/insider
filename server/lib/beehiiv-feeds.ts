@@ -1,8 +1,9 @@
 // Beehiiv private podcast feeds — the paid member's Ark+ feed.
 //
-// One premium show, so a member has at most one private feed, but the read is
-// per (podcast, email) so a second premium show is a config change rather than
-// a rewrite.
+// A member holds one private feed per PREMIUM SHOW, and the publication carries
+// several. The premium set is discovered from Beehiiv rather than configured —
+// see the note on premiumShowsCache — so a new premium show reaches members on
+// its own.
 //
 // ⚠ EMAIL IS THE KEY. Beehiiv keys a feed on the email itself, and
 // `beehiiv_subscription`'s primary key is the email too. There is no
@@ -83,13 +84,56 @@ export function publicationIdFromEnv(env: Env): string | null {
   return id
 }
 
-// The one premium show. Its own env var rather than the slug-derived lookup in
-// routes/podcasts.ts, because that map is for public shows and this id is the
-// entitlement's subject.
-export function premiumPodcastIdFromEnv(env: Env): string | null {
-  const id = env.BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK
-  if (!id || !/^pod_[A-Za-z0-9-]+$/.test(id)) return null
-  return id
+// Every premium show on the publication — the set the arkPlus entitlement
+// covers, and therefore the set of private feeds a member gets.
+//
+// DISCOVERED, not configured. This used to be a single env var naming one show,
+// which quietly became wrong the day a second premium show was created: the
+// member held four feeds upstream and the app read one. Beehiiv answers the
+// question directly, so asking it beats maintaining a list — a new premium show
+// reaches members without a deploy or an env change.
+//
+// The signal is `private_feeds/by_email`, which is explicit and does not depend
+// on which email is asked:
+//   422 SHOW_IS_PUBLIC  → not a premium show
+//   200                 → premium, and this member has a feed
+//   404                 → premium, but no feed for this member (free, or not
+//                         yet minted). NOT a classification signal on its own.
+// `platform_links` correlates too (present on public shows, absent on premium),
+// but that is an inference from a missing key; the 422 is Beehiiv saying it.
+const PREMIUM_SHOWS_TTL_MS = 10 * 60_000
+const premiumShowsCache = makeTTLCache<string, string[]>(PREMIUM_SHOWS_TTL_MS)
+
+/** Resets the discovered premium-show set (unit tests only). */
+export function clearPremiumShowCache(): void {
+  premiumShowsCache.clear()
+}
+
+type PodcastListResponse = {
+  data?: Array<{ id?: string; status?: string }>
+}
+
+// Every live show on the publication, premium or not. `status` filters out
+// drafts: a show nobody can listen to yet has no business appearing in a
+// member's setup list, feed or no feed.
+async function listLiveShowIds(env: Env, pubId: string): Promise<string[]> {
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.beehiiv.com/v2/publications/${pubId}/podcasts?limit=100`,
+      { headers: { Authorization: `Bearer ${env.BEEHIIV_API_KEY}`, Accept: 'application/json' } },
+    )
+    if (!res.ok) {
+      console.error(`[beehiiv-feeds] podcast list ${res.status}: ${await res.text()}`)
+      return []
+    }
+    const body = (await res.json()) as PodcastListResponse
+    return (body.data ?? [])
+      .filter((p) => typeof p.id === 'string' && p.status === 'live')
+      .map((p) => p.id as string)
+  } catch (err) {
+    console.error('[beehiiv-feeds] podcast list failed:', err)
+    return []
+  }
 }
 
 // `/api/me` runs on every page load, so a per-member upstream call needs a
@@ -97,7 +141,7 @@ export function premiumPodcastIdFromEnv(env: Env): string | null {
 // next to the episode list, but not free. 60s is short enough that a
 // just-provisioned feed appears on the member's next reload.
 const FEED_CACHE_TTL_MS = 60_000
-const feedCache = makeTTLCache<string, { feed: PrivateFeed | null }>(FEED_CACHE_TTL_MS)
+const feedCache = makeTTLCache<string, { read: FeedRead }>(FEED_CACHE_TTL_MS)
 
 /** Resets the process-global feed cache (unit tests only). */
 export function clearPrivateFeedCache(): void {
@@ -105,81 +149,147 @@ export function clearPrivateFeedCache(): void {
 }
 
 /**
- * The member's private feed for one premium show, or null when they have none.
+ * One read of `private_feeds/by_email`, classified.
  *
- * Null covers every "no feed" case deliberately: both 404 variants (no
- * subscriber at all, and a subscriber who exists but isn't premium) differ only
- * in message text, so branching on the message would be brittle. Our own Neon
- * entitlement decides whether "no feed" is expected; this only reports.
+ * The three outcomes are kept apart because the caller needs them apart:
+ * `public` is a fact about the SHOW (and is how the premium set is discovered),
+ * while `none` is a fact about this member. Collapsing them — as this module
+ * did while there was only one configured show — makes it impossible to tell a
+ * public show from an entitled member with no feed.
  *
- * Throws nothing. A network error or 5xx logs and returns null — entitlement
- * came from Neon, so the membership decision never depends on Beehiiv being
- * reachable.
+ * Throws nothing. A network error or 5xx logs and reports `none`: entitlement
+ * comes from Neon, so no membership decision may depend on Beehiiv answering.
  */
-export async function fetchPrivateFeed(
+type FeedRead =
+  | { kind: 'feed'; feed: PrivateFeed }
+  | { kind: 'public' }
+  | { kind: 'none' }
+
+async function readPrivateFeed(
   env: Env,
   email: string,
   podcastId: string,
-): Promise<PrivateFeed | null> {
+): Promise<FeedRead> {
   const token = env.BEEHIIV_API_KEY
   const pubId = publicationIdFromEnv(env)
-  if (!token || !pubId) return null
+  if (!token || !pubId) return { kind: 'none' }
 
   const cacheKey = `${pubId}:${podcastId}:${email.toLowerCase()}`
   const cached = feedCache.get(cacheKey)
-  if (cached) return cached.feed
+  if (cached) return cached.read
 
   const url =
     `https://api.beehiiv.com/v2/publications/${pubId}` +
     `/podcasts/${podcastId}/private_feeds/by_email/${encodeURIComponent(email)}`
 
-  let feed: PrivateFeed | null = null
+  let read: FeedRead = { kind: 'none' }
   try {
     const res = await fetchWithTimeout(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     })
-    if (res.status === 404) {
-      feed = null
-    } else if (res.status === 422) {
-      // SHOW_IS_PUBLIC — the podcast isn't premium. That is a configuration
-      // alarm, not a member state: every entitled member silently loses their
-      // feed until someone re-checks the dashboard. Log loudly.
-      console.error(
-        `[beehiiv-feeds] 422 for podcast ${podcastId} — is the premium toggle off? ${await res.text()}`,
-      )
-      feed = null
+    if (res.status === 422) {
+      // SHOW_IS_PUBLIC. Expected while classifying — most shows on the
+      // publication are public — so it is the CALLER that decides whether this
+      // is news. An unexpected one (a show we had already classified premium)
+      // means the premium toggle went off, and fetchPrivateFeeds logs it.
+      await res.text()
+      read = { kind: 'public' }
+    } else if (res.status === 404) {
+      // No feed for this member on a premium show: free, or not yet minted.
+      read = { kind: 'none' }
     } else if (!res.ok) {
       console.error(
         `[beehiiv-feeds] feed lookup ${res.status} for ${redactEmail(email)}: ${await res.text()}`,
       )
-      feed = null
     } else {
       const body = (await res.json()) as FeedApiResponse
       const d = body.data
       if (d?.id && d.url) {
-        feed = {
-          id: d.id,
-          url: d.url,
-          protocolLinks: toStringMap(d.protocol_links),
-          activatedAt: toIsoInstant(d.activated),
-          revokedAt: toIsoInstant(d.revoked),
-          expiresAt: toIsoInstant(d.expires),
-          show: {
-            id: d.show?.id ?? podcastId,
-            title: d.show?.title ?? '',
-            description: d.show?.description ?? null,
-            artworkUrl: d.show?.artwork_url ?? null,
+        read = {
+          kind: 'feed',
+          feed: {
+            id: d.id,
+            url: d.url,
+            protocolLinks: toStringMap(d.protocol_links),
+            activatedAt: toIsoInstant(d.activated),
+            revokedAt: toIsoInstant(d.revoked),
+            expiresAt: toIsoInstant(d.expires),
+            show: {
+              id: d.show?.id ?? podcastId,
+              title: d.show?.title ?? '',
+              description: d.show?.description ?? null,
+              artworkUrl: d.show?.artwork_url ?? null,
+            },
           },
         }
       }
     }
   } catch (err) {
     console.error(`[beehiiv-feeds] feed lookup failed for ${redactEmail(email)}:`, err)
-    feed = null
   }
 
-  feedCache.set(cacheKey, { feed })
-  return feed
+  feedCache.set(cacheKey, { read })
+  return read
+}
+
+/**
+ * Every private feed this member holds, across every premium show.
+ *
+ * One membership, many feeds: the Beehiiv "Plus" tier entitles a member to all
+ * of them, and Beehiiv mints a feed per (show, member) without being asked. The
+ * shows are discovered on the way past — a cold cache probes every live show on
+ * the publication and remembers which ones answered anything but 422, so the
+ * classification costs nothing beyond the reads we wanted anyway.
+ *
+ * Returns [] rather than throwing on any failure, for the same reason
+ * readPrivateFeed does: Neon decides entitlement, this only reports.
+ */
+export async function fetchPrivateFeeds(
+  env: Env,
+  email: string,
+): Promise<PrivateFeed[]> {
+  const pubId = publicationIdFromEnv(env)
+  if (!env.BEEHIIV_API_KEY || !pubId) return []
+
+  const known = premiumShowsCache.get(pubId)
+  const candidates = known ?? (await listLiveShowIds(env, pubId))
+  if (candidates.length === 0) return []
+
+  const reads = await Promise.all(
+    candidates.map((id) => readPrivateFeed(env, email, id)),
+  )
+
+  // A show we already believed was premium answering 422 is a configuration
+  // alarm, not a discovery: every entitled member has silently lost that feed.
+  // On a cold pass it is just how public shows announce themselves.
+  const premium = candidates.filter((id, i) => {
+    if (reads[i]!.kind !== 'public') return true
+    if (known) {
+      console.error(
+        `[beehiiv-feeds] show ${id} now reports SHOW_IS_PUBLIC — premium toggle off?`,
+      )
+    }
+    return false
+  })
+  premiumShowsCache.set(pubId, premium)
+
+  return reads.flatMap((r) => (r.kind === 'feed' ? [r.feed] : []))
+}
+
+/**
+ * The premium show set alone, for callers that need the universe rather than
+ * one member's feeds (the reminder crons, which report "N of M set up").
+ *
+ * Needs an email only because the 422 signal rides on a by-email read; any
+ * address answers the same, since the classification is a fact about the show.
+ */
+export async function premiumShowIds(env: Env, email: string): Promise<string[]> {
+  const pubId = publicationIdFromEnv(env)
+  if (!pubId) return []
+  const known = premiumShowsCache.get(pubId)
+  if (known) return known
+  await fetchPrivateFeeds(env, email)
+  return premiumShowsCache.get(pubId) ?? []
 }
 
 // --- Spotify hand-off -----------------------------------------------------

@@ -82,11 +82,27 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         }
 
         const pubId = publicationIdFromEnv(env)
-        const podcastId = premiumPodcastIdFromEnv(env)
         const token = env.BEEHIIV_API_KEY
-        if (!pubId || !podcastId || !token) {
+        if (!pubId || !token) {
           return json(503, { error: 'feed_email_unavailable' })
         }
+
+        // Which show to send. The setup page has a row per premium show, so the
+        // id has to come from the click — but it is a caller-supplied id, so it
+        // is checked against the member's OWN feeds rather than trusted. An
+        // unknown id is 404, never a send for somebody else's show.
+        const body = await readJson<{ show_id?: unknown }>(req)
+        const requested = typeof body?.show_id === 'string' ? body.show_id : null
+        const feeds = await fetchPrivateFeeds(env, email)
+        if (feeds.length === 0) return json(409, { error: 'no_feed_yet' })
+        const podcastId = requested
+          ? feeds.find((f) => f.show.id === requested)?.show.id
+          : // No id supplied and exactly one feed: unambiguous, so send it.
+            // With several, silence is not a choice we get to make for them.
+            feeds.length === 1
+            ? feeds[0]!.show.id
+            : null
+        if (!podcastId) return json(404, { error: 'unknown_show' })
 
         try {
           const upstream = await fetchWithTimeout(

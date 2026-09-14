@@ -23,6 +23,7 @@ mock.module('@neondatabase/serverless', () =>
   neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
 )
 
+import { clearPremiumShowCache } from './lib/beehiiv-feeds'
 import { devApiPlugin } from './dev-api'
 import { MIGRATION_REMINDER_NO } from '../shared/feed-migration'
 
@@ -32,7 +33,10 @@ const SHOW_ID = 'pod_premium-show'
 
 const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'https://ark.example',
-  BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: SHOW_ID,
+  // The premium show set is discovered from Beehiiv, so these two are what
+  // the run depends on — there is no show id to configure any more.
+  BEEHIIV_API_KEY: 'bk_test',
+  BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test',
   CRON_SECRET,
   RESEND_API_KEY: 'rk_test',
   DATABASE_URL: 'postgres://stub-feed-migration-cron',
@@ -64,6 +68,13 @@ let resendStatus = 200
 globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input.toString()
   fetchCalls.push({ url, init })
+  // The publication's podcast list — how the premium show set is discovered.
+  if (url.includes('/podcasts?')) {
+    return new Response(
+      JSON.stringify({ data: [{ id: SHOW_ID, status: 'live' }] }),
+      { status: 200 },
+    )
+  }
   if (url.includes('api.resend.com')) {
     const ok = resendStatus >= 200 && resendStatus < 300
     return new Response(ok ? '{"id":"email_1"}' : '{"error":"boom"}', { status: resendStatus })
@@ -120,6 +131,10 @@ beforeEach(() => {
   fetchCalls = []
   nextSqlResult = () => []
   resendStatus = 200
+  // The discovered premium-show set is process-global with its own TTL, so a
+  // case that breaks the Beehiiv config would otherwise be answered from the
+  // previous case's cache.
+  clearPremiumShowCache()
 })
 
 afterAll(() => {
@@ -141,8 +156,12 @@ describe('guards', () => {
     expect(resendCalls()).toHaveLength(0)
   })
 
-  test('500 when CRON_SECRET, DATABASE_URL or the show id is unset', async () => {
-    for (const key of ['CRON_SECRET', 'DATABASE_URL', 'BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK']) {
+  test('500 when CRON_SECRET, DATABASE_URL or the Beehiiv key is unset', async () => {
+    for (const key of ['CRON_SECRET', 'DATABASE_URL', 'BEEHIIV_API_KEY']) {
+      // A roster per iteration: without the Beehiiv key the premium set can't
+      // be discovered, and that only matters — and only fails — when there is
+      // somebody to chase.
+      stageRun({})
       const res = makeRes()
       await runHandler(getHandler(envWithout(key)), req(), res)
       expect(res.statusCode).toBe(500)

@@ -76,7 +76,7 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 
 // Static imports AFTER mock.module so the plugin picks up the fakes.
 import { devApiPlugin } from './dev-api'
-import { clearPrivateFeedCache } from './lib/beehiiv-feeds'
+import { clearPremiumShowCache, clearPrivateFeedCache } from './lib/beehiiv-feeds'
 import { signCheckoutToken, signSessionToken } from './lib/session'
 import { CHECKOUT_COOKIE_NAME, SESSION_COOKIE_NAME } from './lib/cookies'
 
@@ -132,6 +132,13 @@ globalThis.fetch = (async (
   // JWKS endpoint (jose.createRemoteJWKSet).
   if (url === AUTH0_TEST_JWKS_URL) return jwksResponse()
 
+  // The publication's podcast list — how the premium show set is discovered.
+  if (url.includes('/podcasts?')) {
+    return new Response(
+      JSON.stringify({ data: [{ id: SHOW_ID, status: 'live' }] }),
+      { status: 200 },
+    )
+  }
   // Beehiiv private feed by email.
   const feedMatch = url.match(/\/private_feeds\/by_email\/([^/?]+)$/)
   if (feedMatch) {
@@ -193,6 +200,7 @@ beforeEach(() => {
   membershipRows = []
   stripeCustomers = []
   clearPrivateFeedCache()
+  clearPremiumShowCache()
   sqlCalls.length = 0
   nextSqlResult = () => []
   beehiivCalls = []

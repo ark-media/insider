@@ -573,7 +573,7 @@ function FeedUrlRow({
     if (emailState === "sending") return;
     setEmailState("sending");
     setEmailError(null);
-    const result = await sendFeedEmail();
+    const result = await sendFeedEmail(feed.id);
     if (result.ok) {
       setEmailState("sent");
       trackEvent("feed_activated", { app: "email", method: "email" });

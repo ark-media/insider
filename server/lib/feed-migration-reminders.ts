@@ -20,6 +20,7 @@
 // activation and ledger lookups, and the send.
 
 import type { Sql } from './db.js'
+import { premiumShowIds } from './beehiiv-feeds.js'
 import { getActivatedFeeds, normalizeEmail } from './feed-activations.js'
 import { mailableStatus } from './beehiiv-status.js'
 import { renderMigrationCheckInEmail } from './feed-migration-email.js'
@@ -113,14 +114,12 @@ export async function runFeedMigrationReminders(deps: {
   appBaseUrl: string
   config: MigrationConfig
   nowMs: number
-  /** The premium show the migration is about. */
-  showId: string
   /** Resolves a greeting name for an address, when one is held. */
   firstNameFor?: (email: string) => Promise<
     { firstName?: string; lastName?: string } | null
   >
 }): Promise<MigrationRunSummary> {
-  const { env, sql, appBaseUrl, config, nowMs, showId, firstNameFor } = deps
+  const { env, sql, appBaseUrl, config, nowMs, firstNameFor } = deps
 
   const stage = dueStage(config, nowMs)
   const idle = { scanned: 0, eligible: 0, sent: 0, failed: 0 }
@@ -131,6 +130,15 @@ export async function runFeedMigrationReminders(deps: {
 
   const reminderNo = MIGRATION_REMINDER_NO[stage]
   const readers = await loadMigratedReaders(sql, config)
+  // The premium set, discovered once per run — see runFeedSetupReminders.
+  const premiumShows = readers.length
+    ? await premiumShowIds(env, readers[0]!.email ?? '')
+    : []
+  // See runFeedSetupReminders: nothing discovered while there are readers to
+  // chase means the run is broken, and a silent zero would hide it.
+  if (readers.length > 0 && premiumShows.length === 0) {
+    throw new Error('[feed-migration] no premium shows discovered')
+  }
   const setupUrl = `${appBaseUrl}/setup`
   // The deadline reads as a calendar date — it is a date we chose, not an
   // instant, so it must render identically in every reader's zone. The
@@ -155,9 +163,11 @@ export async function runFeedMigrationReminders(deps: {
     if (await stageAlreadySent(sql, email, reminderNo)) continue
 
     // Still unset? The whole campaign is addressed to people who haven't
-    // finished, so this is the last and most important gate.
+    // finished, so this is the last and most important gate. ANY premium show
+    // in a podcast app proves they have moved off the old feed — which is what
+    // this campaign asks for — so one is enough to stop writing to them.
     const activated = new Set((await getActivatedFeeds(sql, email)).keys())
-    if (activated.has(showId)) continue
+    if (premiumShows.some((id) => activated.has(id))) continue
     eligible++
 
     const name = await firstNameFor?.(email)
