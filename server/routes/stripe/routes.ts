@@ -12,8 +12,10 @@
 //   POST /api/stripe/reactivate-subscription — undo a pending cancel.
 //   GET  /api/stripe/my-subscription       — the signed-in member's cancel
 //     schedule, price and card on file, for the account page's plan card.
-//   POST /api/stripe/billing-portal        — a Customer Portal session scoped
-//     to updating the card. Cancellation stays in our own flows.
+//   POST /api/stripe/card-setup-intent     — a SetupIntent that mounts Stripe's
+//     Payment Element on the billing page, to collect a replacement card.
+//   POST /api/stripe/update-card           — make that confirmed card the one
+//     the membership is billed to.
 //   GET  /api/stripe/bundle-upgrade-preview — what a single-axis member's
 //     subscription becomes when they add the other axis: the Bundle price that
 //     REPLACES their current one, and the renewal date that doesn't move.
@@ -69,6 +71,7 @@ import { getSessionEmail } from '../../lib/session.js'
 import { isValidEmail } from '../../../shared/validation.js'
 import { defineRoute, type Deps, type Route } from '../../lib/route.js'
 import {
+  cardOf,
   changeIsImmediate,
   coerceTier,
   customerIdOf,
@@ -122,6 +125,14 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   const consentLimiter = createRateLimiter({
     capacity: 30,
     refillPerSec: 30 / (60 * 60), // 30 per hour per source
+  })
+  // Per-member cap on card-update SetupIntents. A form that saves a card
+  // without charging it is the classic card-testing surface, and while this one
+  // sits behind a paid membership, nobody replacing their own card needs more
+  // than a few tries an hour — a typo'd number and a declined card included.
+  const cardSetupLimiter = createRateLimiter({
+    capacity: 10,
+    refillPerSec: 10 / (60 * 60), // 10 per hour
   })
 
   return [
@@ -809,14 +820,72 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     }),
 
     defineRoute({
-      // A Stripe Customer Portal session, for the one job the account page
-      // can't do itself: updating the card on file. Deliberately NOT the
-      // portal's full surface — cancellation, plan changes and debundling all
-      // run through our own flows (retention offers, the mission reminder, the
-      // cancellation survey), and a portal cancel would route straight past
-      // them. `flow_data` pins the session to the payment-method update and
-      // returns the member here when they're done.
-      path: '/api/stripe/billing-portal',
+      // Step one of replacing the card on file, on the billing page itself: a
+      // SetupIntent on the member's Stripe customer, whose client secret mounts
+      // the Payment Element. Confirming it saves the card and charges nothing;
+      // /api/stripe/update-card below is what points the membership at it.
+      //
+      // Cards only. The account page can only describe a card ("Visa ending
+      // 4242"), and a bank debit would bring a mandate and a redirect that this
+      // flow has no return leg for.
+      path: '/api/stripe/card-setup-intent',
+      method: 'POST',
+      handler: async (req, res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        if (!stripe) return json(500, { error: 'not_configured' })
+
+        const email = await getSessionEmail(req, env)
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const wait = cardSetupLimiter.take(email)
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, {
+            error: 'Too many attempts in a row. Please wait a few minutes and try again.',
+          })
+        }
+
+        const sub = await findLiveSubscription(stripe, email)
+        if (!sub) return json(404, { error: 'No active subscription found' })
+
+        try {
+          const intent = await stripe.setupIntents.create({
+            customer: customerIdOf(sub),
+            payment_method_types: ['card'],
+            usage: 'off_session',
+            metadata: { kind: 'card_update', subscription: sub.id },
+          })
+          return json(200, { clientSecret: intent.client_secret })
+        } catch (err) {
+          console.error('[stripe] card-setup-intent failed:', err)
+          return json(502, { error: 'Could not open the card form. Please try again.' })
+        }
+      },
+    }),
+
+    defineRoute({
+      // Step two: bill the membership to the card the member just confirmed.
+      //
+      // The body names only the SetupIntent, never a payment method, and the
+      // card is read off that intent after checking it belongs to the session
+      // member's own customer and actually succeeded. So a caller can't point
+      // someone's membership at a card they didn't just save, or at a card
+      // belonging to another customer.
+      //
+      // Three places name the card Stripe charges, and all three move:
+      //   - the subscription's default_payment_method, which Checkout set to the
+      //     original card and which wins while it's set;
+      //   - the customer's invoice default, the fallback when nothing else names
+      //     one;
+      //   - a pending change's schedule. Creating a schedule copies the
+      //     subscription's card into the schedule's default_settings, and Stripe
+      //     re-applies that to the subscription when the change lands — so
+      //     without this, a member with a debundle pending would be switched back
+      //     to the old card on the very date they're next charged.
+      //
+      // Every write is idempotent, so a member whose save failed partway can
+      // retry with the same intent and land in the same place.
+      path: '/api/stripe/update-card',
       method: 'POST',
       handler: async (req, _res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
@@ -825,25 +894,56 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
 
+        const body = (await readJson<{ setup_intent_id?: unknown }>(req)) ?? {}
+        const setupIntentId = body.setup_intent_id
+        if (typeof setupIntentId !== 'string' || !setupIntentId.startsWith('seti_')) {
+          return json(400, { error: 'setup_intent_id is required.' })
+        }
+
         const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
+        const customerId = customerIdOf(sub)
+
+        let intent: Stripe.SetupIntent
+        try {
+          intent = await stripe.setupIntents.retrieve(setupIntentId, {
+            expand: ['payment_method'],
+          })
+        } catch {
+          return json(404, { error: 'That card could not be found. Please try again.' })
+        }
+        const intentCustomer =
+          typeof intent.customer === 'string' ? intent.customer : intent.customer?.id
+        // Same answer as a missing intent: whether an id belongs to someone
+        // else is not something to confirm to the caller.
+        if (intentCustomer !== customerId) {
+          return json(404, { error: 'That card could not be found. Please try again.' })
+        }
+        const pm = intent.payment_method
+        if (intent.status !== 'succeeded' || !pm) {
+          return json(409, { error: 'That card has not been confirmed yet. Please try again.' })
+        }
+        const pmId = typeof pm === 'string' ? pm : pm.id
 
         try {
-          const session = await stripe.billingPortal.sessions.create({
-            customer: customerIdOf(sub),
-            return_url: `${appBaseUrl}/account`,
-            flow_data: {
-              type: 'payment_method_update',
-            },
+          const scheduleId = scheduleIdOf(sub)
+          if (scheduleId) {
+            await stripe.subscriptionSchedules.update(scheduleId, {
+              default_settings: { default_payment_method: pmId },
+            })
+          }
+          await stripe.subscriptions.update(sub.id, { default_payment_method: pmId })
+          await stripe.customers.update(customerId, {
+            invoice_settings: { default_payment_method: pmId },
           })
-          return json(200, { url: session.url })
         } catch (err) {
-          // The commonest cause is a Stripe account with no portal
-          // configuration saved yet, which is a dashboard setting rather than
-          // anything the member did. Say so plainly instead of "try again".
-          console.error('[stripe] billing-portal session failed:', err)
-          return json(502, { error: 'portal_unavailable' })
+          console.error('[stripe] update-card failed:', err)
+          return json(502, {
+            error: 'Your card was saved, but we could not switch your membership to it. Please try again.',
+          })
         }
+
+        json(200, { ok: true, card: typeof pm === 'string' ? null : cardOf(pm) })
       },
     }),
 

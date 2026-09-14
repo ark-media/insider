@@ -231,33 +231,63 @@ export async function getMySubscription(): Promise<MySubscription | null> {
   }
 }
 
-// Open a Stripe Customer Portal session for updating the card on file. Returns
-// the URL to send the member to, or an error to show in place. Scoped to the
-// payment method on purpose — cancelling and changing plans stay in our own
-// flows, which the portal would otherwise route around.
-export async function createBillingPortalSession(): Promise<
-  { ok: true; url: string } | { ok: false; error: string }
+// Replacing the card on file is two calls around Stripe's own confirmation:
+// this one returns the SetupIntent client secret that mounts the Payment
+// Element, and saveUpdatedCard below bills the membership to the card once
+// Stripe has confirmed it. The server's error strings are written for members,
+// so they're shown as-is; only a response without one gets the generic line.
+export async function createCardSetupIntent(): Promise<
+  { ok: true; clientSecret: string } | { ok: false; error: string }
 > {
   try {
-    const res = await fetch("/api/stripe/billing-portal", {
+    const res = await fetch("/api/stripe/card-setup-intent", {
       method: "POST",
       credentials: "include",
     });
     const body = (await res.json().catch(() => ({}))) as {
-      url?: string;
+      clientSecret?: string;
       error?: string;
     };
-    if (res.ok && body.url) return { ok: true, url: body.url };
-    return {
-      ok: false,
-      error:
-        body.error === "portal_unavailable"
-          ? "Card updates aren't available right now. Please contact us and we'll sort it out."
-          : "Could not open the card update page — please try again.",
-    };
+    if (res.ok && body.clientSecret) {
+      return { ok: true, clientSecret: body.clientSecret };
+    }
+    return { ok: false, error: memberFacingError(res.status, body.error) };
   } catch {
     return { ok: false, error: "Something went wrong — please try again." };
   }
+}
+
+// The card comes back so the page can name it straight away. It's null when
+// Stripe didn't return a readable card, which still means the save worked.
+export async function saveUpdatedCard(setupIntentId: string): Promise<
+  { ok: true; card: CardOnFile | null } | { ok: false; error: string }
+> {
+  try {
+    const res = await fetch("/api/stripe/update-card", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ setup_intent_id: setupIntentId }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      card?: CardOnFile | null;
+      error?: string;
+    };
+    if (res.ok && body.ok) return { ok: true, card: body.card ?? null };
+    return { ok: false, error: memberFacingError(res.status, body.error) };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
+  }
+}
+
+// The card routes answer 404, 409, 429 and 502 with a sentence written for the
+// member. Everything else is a machine code ("bad_origin", "not_configured") or
+// a malformed request, neither of which means anything to the person reading.
+function memberFacingError(status: number, error: string | undefined): string {
+  if (status === 401) return "Your session has expired. Sign in again to update your card.";
+  if (error && [404, 409, 429, 502].includes(status)) return error;
+  return "Could not update your card — please try again.";
 }
 
 // Prices behind the bundle "keep any services?" selector: the current bundle

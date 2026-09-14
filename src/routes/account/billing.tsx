@@ -3,11 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   getMySubscription,
   reactivateSubscription,
+  type CardOnFile,
 } from "../../lib/auth";
 import { isPaidMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { trackEvent } from "../../lib/analytics";
 import { formatTimestamp } from "../../../shared/format-date";
 import { CancelFlow } from "../../components/account/CancelFlow";
+import { PaymentMethodPanel } from "../../components/account/PaymentMethodPanel";
 
 export const Route = createFileRoute("/account/billing")({
   component: BillingPage,
@@ -45,6 +47,16 @@ function BillingPage() {
   // The member's billing cadence, passed to the cancel flow so it can branch
   // copy by monthly vs annual (Flows A/D). Null until loaded.
   const [plan, setPlan] = useState<"monthly" | "yearly" | null>(null);
+  // The card the membership bills to, for the payment-method panel.
+  const [card, setCard] = useState<CardOnFile | null>(null);
+  // Whether there's a subscription to put a card against. Undefined until the
+  // read settles; false for a gifted membership, which has no subscription and
+  // so no panel. A failed read (null from getMySubscription) counts as true:
+  // the card routes answer for themselves, and hiding the only way to fix a
+  // card because Stripe hiccuped once is the worse failure.
+  const [billsToCard, setBillsToCard] = useState<boolean | undefined>(
+    undefined,
+  );
   // The tier-aware cancel/debundle flow lives in <CancelFlow>; this just opens it.
   const [flowOpen, setFlowOpen] = useState(false);
 
@@ -66,12 +78,21 @@ function BillingPage() {
     if (!isPaidMember(state)) return;
     let active = true;
     void getMySubscription().then((s) => {
-      if (!active || !s) return; // null = read failed; leave the state alone
+      if (!active) return;
+      // null = read failed; leave the state alone (see billsToCard).
+      if (!s) {
+        setBillsToCard(true);
+        return;
+      }
       if (s.cancelAtPeriodEnd) setScheduledCancelAt(s.cancelAt);
       setPendingChange(Boolean(s.pendingChange));
       setScheduledTier(s.scheduledTier ?? null);
       setPeriodEnd(s.periodEnd ?? null);
       setPlan(s.plan ?? null);
+      setCard(s.card ?? null);
+      // Every live subscription has a current period; no subscription reports
+      // none. That's the one field here that tells the two apart.
+      setBillsToCard(Boolean(s.periodEnd));
     });
     return () => {
       active = false;
@@ -184,6 +205,16 @@ function BillingPage() {
                     periodEndLabel ? `, on ${periodEndLabel}` : ""
                   }.`}
             </p>
+          ) : null}
+          {billsToCard ? (
+            <div className="mb-6">
+              <PaymentMethodPanel
+                card={card}
+                // A membership that's set to end has no next charge to name.
+                nextChargeLabel={scheduledCancelAt ? null : periodEndLabel}
+                onCardChanged={setCard}
+              />
+            </div>
           ) : null}
           <div className="max-w-xl border border-rule bg-navy-800/40 p-8">
             <h2 className="label text-cyan">Cancel</h2>

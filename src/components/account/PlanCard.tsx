@@ -1,10 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
-import {
-  createBillingPortalSession,
-  type CardOnFile,
-  type MySubscription,
-} from "../../lib/auth";
+import type { MySubscription } from "../../lib/auth";
+import { cardLine } from "../../lib/card-on-file";
 import { formatMinor } from "../../lib/currency";
 import { formatTimestamp } from "../../../shared/format-date";
 import { TIERS } from "../../data/pricingTiers";
@@ -31,10 +27,6 @@ export function PlanCard({
   subscription: MySubscription | null;
   loading: boolean;
 }) {
-  const [portal, setPortal] = useState<
-    { kind: "idle" } | { kind: "opening" } | { kind: "error"; message: string }
-  >({ kind: "idle" });
-
   const meta = TIERS.find((t) => t.key === tier);
   const sub = subscription;
   // Only ever the interval we actually read. `plan` is null for an interval
@@ -53,18 +45,6 @@ export function PlanCard({
   // what's scheduled, so the label changes with it rather than always saying
   // "renews" over a date that is really an ending.
   const renewal = renewalCell(sub);
-
-  const onChangeCard = async () => {
-    setPortal({ kind: "opening" });
-    const result = await createBillingPortalSession();
-    if (result.ok) {
-      // A full navigation, not a new tab: the portal returns the member to
-      // /account when they're done, so this reads as one continuous errand.
-      window.location.href = result.url;
-      return;
-    }
-    setPortal({ kind: "error", message: result.error });
-  };
 
   return (
     <div className="border border-rule bg-navy-800/40">
@@ -104,26 +84,19 @@ export function PlanCard({
             <Cell
               label="Payment method"
               action={
-                <button
-                  type="button"
-                  onClick={onChangeCard}
-                  disabled={portal.kind === "opening"}
-                  className="text-body-sm font-semibold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                // The card form lives on the billing page, which leads with it.
+                <Link
+                  to="/account/billing"
+                  className="text-body-sm font-semibold text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
-                  {portal.kind === "opening" ? "Opening…" : "Change card"}
-                </button>
+                  Change card
+                </Link>
               }
             >
               {cardLine(sub.card)}
             </Cell>
           ) : null}
         </dl>
-      ) : null}
-
-      {portal.kind === "error" ? (
-        <p className="border-t border-rule px-6 py-3 text-body-sm text-danger sm:px-8" role="alert">
-          {portal.message}
-        </p>
       ) : null}
 
       <div className="flex flex-col gap-4 border-t border-rule p-6 sm:flex-row sm:items-center sm:p-8">
@@ -134,7 +107,7 @@ export function PlanCard({
           Manage billing →
         </Link>
         <p className="text-body-sm text-fg-muted">
-          Invoices, receipts, and cancellation.
+          Payment method and cancellation.
         </p>
       </div>
     </div>
@@ -159,19 +132,6 @@ function Cell({
       <dd className="mt-2 text-body-sm text-fg-strong">{children}</dd>
     </div>
   );
-}
-
-// "Visa ending 4242 · exp 04/28". The brand comes off Stripe lowercase
-// ('visa', 'amex'), and month is a plain number that has to be zero-padded to
-// look like an expiry rather than a typo.
-function cardLine(card: CardOnFile): string {
-  const brand = card.brand
-    .split(/[\s_]+/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-  const mm = String(card.expMonth).padStart(2, "0");
-  const yy = String(card.expYear).slice(-2);
-  return `${brand} ending ${card.last4} · exp ${mm}/${yy}`;
 }
 
 // What the date on this card actually means. A membership that's set to cancel

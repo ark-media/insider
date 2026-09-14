@@ -1368,6 +1368,28 @@ single member only ever sees some of them.
 - **BANNER (SCHEDULED TIER CHANGE)**: Your membership will change from {current tier} to {new tier} on {date}. You'll keep full access until then. (without a date: "…at the end of your current billing period. You'll keep full access until then.")
 - **BANNER (GENERIC PENDING CHANGE)**: A plan change is scheduled and will take effect at the end of your current billing period, on {date}. (", on {date}" omitted when unknown)
 
+### Payment method card
+Hidden for a membership with no subscription behind it (a gift). The card fields themselves are Stripe's Payment Element, so their labels and errors are Stripe's.
+- **CARD LABEL**: Payment method
+- **CARD ON FILE**: {Brand} ending {last4} · exp {MM}/{YY} (omitted when the method on file isn't a card)
+- **BODY (NEXT CHARGE KNOWN)**: Your next charge, on {date}, goes to this card.
+- **BODY (NO NEXT CHARGE)**: This is the card on file for your membership. (a membership set to cancel)
+- **BODY (NO CARD SHOWN)**: Update the card your membership is billed to.
+- **BUTTON**: Update card
+- **BUTTON (BUSY)**: Opening…
+- **FORM INTRO**: Your new card replaces the one ending {last4}, starting with your next charge on {date}. (no card shown: "Your new card becomes the one your membership is billed to…"; no next charge: the sentence ends after the card)
+- **FORM LOADING**: Loading the card form…
+- **BUTTON (SAVE)**: Save card
+- **BUTTON (SAVE, BUSY)**: Saving…
+- **BUTTON (DISMISS)**: Keep current card (no card shown: "Never mind")
+- **CONFIRMATION**: Card updated.
+- **ERROR (DECLINED / INVALID)**: Stripe's own message, e.g. "Your card has been declined."
+- **ERROR (NOT CONFIRMED)**: Your bank hasn't confirmed that card yet — please try again.
+- **ERROR (SAVED BUT NOT SWITCHED)**: Your card was saved, but we could not switch your membership to it. Please try again.
+- **ERROR (RATE LIMITED)**: Too many attempts in a row. Please wait a few minutes and try again.
+- **ERROR (SESSION EXPIRED)**: Your session has expired. Sign in again to update your card.
+- **ERROR (GENERIC)**: Could not update your card — please try again.
+
 ### Cancel card
 - **CARD LABEL**: Cancel
 - **BODY (CANCEL SCHEDULED)**: Your membership is set to cancel and won't renew.

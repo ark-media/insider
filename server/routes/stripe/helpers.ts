@@ -245,16 +245,22 @@ export async function readCardOnFile(
     }
 
     if (!pm && pmId) pm = await stripe.paymentMethods.retrieve(pmId)
-    const card = pm?.card
-    if (!card) return null
-    return {
-      brand: card.brand,
-      last4: card.last4,
-      expMonth: card.exp_month,
-      expYear: card.exp_year,
-    }
+    return pm ? cardOf(pm) : null
   } catch {
     return null
+  }
+}
+
+// The account page's view of a payment method, or null for anything that isn't
+// a card (Link, a bank debit) — there is no "ending 4242" to show for those.
+export function cardOf(pm: Stripe.PaymentMethod): CardOnFile | null {
+  const card = pm.card
+  if (!card) return null
+  return {
+    brand: card.brand,
+    last4: card.last4,
+    expMonth: card.exp_month,
+    expYear: card.exp_year,
   }
 }
 
