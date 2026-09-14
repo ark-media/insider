@@ -19,6 +19,7 @@
 
 import type { Sql } from './db.js'
 import { getActivatedFeeds, normalizeEmail } from './feed-activations.js'
+import { mailableStatus } from './beehiiv-status.js'
 import { renderFeedReminderEmail } from './feed-reminder-email.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
 import { sendEmail } from './email.js'
@@ -55,23 +56,12 @@ export function loadReminderConfigFromEnv(env: Env): ReminderConfig {
   }
 }
 
-// A premium reader we should not nudge. Beehiiv statuses where the record is
-// no longer receiving mail mean the reminder would bounce off a lapsed or
-// unsubscribed reader. Lowercased; unknown/blank statuses are treated as
-// eligible (fail-open, since the join-window gate already scopes to recent
-// members).
-const SKIP_STATUSES = new Set([
-  'inactive',
-  'unsubscribed',
-  'needs_attention',
-  'invalid',
-  'deleted',
-  'suspended',
-])
-
+// A premium reader we should not nudge — the shared Beehiiv rule, kept under
+// this module's own name because the cron and its tests have always called it
+// that. See lib/beehiiv-status.ts for the list, and for why an unknown status
+// fails open.
 export function memberStatusEligible(status: string | undefined): boolean {
-  if (!status) return true
-  return !SKIP_STATUSES.has(status.trim().toLowerCase())
+  return mailableStatus(status)
 }
 
 // Did this member join inside the reminder window — old enough to have had a

@@ -48,8 +48,8 @@ const BASE_ENV: Record<string, string> = {
   CRON_SECRET,
   RESEND_API_KEY: 'rk_test',
   DATABASE_URL: 'postgres://stub-feed-reminders-cron',
-  // Reminders are opt-in (DEFAULT_REMINDER_CONFIG.enabled is false); the run
-  // tests exercise the enabled path, so turn it on here. The disabled path has
+  // Reminders default to on now; set explicitly anyway so these tests don't
+  // silently change meaning if that default moves again. The disabled path has
   // its own test that overrides this to 'false'.
   FEED_REMINDER_ENABLED: 'true',
 }

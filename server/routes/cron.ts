@@ -8,8 +8,9 @@
 import { secretEquals } from '../lib/timing-safe.js'
 import { reconcileEntitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
-import { getReminderConfig } from '../lib/app-settings.js'
+import { getMigrationConfig, getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
+import { runFeedMigrationReminders } from '../lib/feed-migration-reminders.js'
 import { premiumPodcastIdFromEnv } from '../lib/beehiiv-feeds.js'
 import {
   GIFT_EXPIRY_REMINDER_DAYS,
@@ -99,6 +100,43 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         } catch (err) {
           console.error('[cron] feed-setup-reminders failed:', err)
           json(500, { error: 'reminder_run_failed' })
+        }
+      },
+    }),
+    defineRoute({
+      // The feed-migration check-in series: the escalating 30-day / 60-day /
+      // final notices sent to members carried over from the old Call Me Back
+      // feed who still haven't moved. Distinct from the reminder above — that
+      // one counts from a member's join date, this one from two fixed calendar
+      // dates. See shared/feed-migration.ts.
+      path: '/api/cron/feed-migration-reminders',
+      method: ['POST', 'GET'],
+      handler: async (req, _res, json) => {
+        const cronSecret = env.CRON_SECRET
+        if (!cronSecret) return json(500, { error: 'not_configured' })
+        if (!cronAuthorized(req, cronSecret)) {
+          return json(401, { error: 'unauthorized' })
+        }
+        if (!env.DATABASE_URL) {
+          return json(500, { error: 'not_configured' })
+        }
+
+        const sql = getDb(env)
+        try {
+          const showId = premiumPodcastIdFromEnv(env)
+          if (!showId) return json(500, { error: 'not_configured' })
+          const summary = await runFeedMigrationReminders({
+            env,
+            sql,
+            appBaseUrl,
+            config: await getMigrationConfig(sql),
+            nowMs: Date.now(),
+            showId,
+          })
+          json(200, summary)
+        } catch (err) {
+          console.error('[cron] feed-migration-reminders failed:', err)
+          json(500, { error: 'migration_run_failed' })
         }
       },
     }),

@@ -14,6 +14,7 @@ import type {
 } from "../../shared/cancellation";
 import type { NewsletterSlug } from "../data/newsletters";
 import type { ReminderConfig } from "../../shared/feed-reminder";
+import type { MigrationConfig } from "../../shared/feed-migration";
 import type { SupportSession } from "../../shared/support";
 import type {
   MemberDirectoryEntry,
@@ -23,7 +24,7 @@ import type {
 
 export type { Promo, BeehiivDraft, DiscussThread };
 export type { CancellationSummary, CancellationFilter };
-export type { ReminderConfig };
+export type { ReminderConfig, MigrationConfig };
 export type { SupportSession };
 export type { MemberDirectoryEntry, MemberDirectoryFilter, MemberDirectoryPage };
 
@@ -341,6 +342,30 @@ export async function saveReminderConfig(
   });
   if (!res.ok) throw new Error(await errorMessage(res));
   return ((await res.json()) as { config: ReminderConfig }).config;
+}
+
+// --- Feed-migration check-ins --------------------------------------------
+
+export async function fetchMigrationConfig(): Promise<MigrationConfig> {
+  const res = await fetch("/api/admin/feed-migration", {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { config: MigrationConfig }).config;
+}
+
+export async function saveMigrationConfig(
+  config: MigrationConfig,
+): Promise<MigrationConfig> {
+  const res = await fetch("/api/admin/feed-migration", {
+    method: "PUT",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { config: MigrationConfig }).config;
 }
 
 // --- Member directory ----------------------------------------------------

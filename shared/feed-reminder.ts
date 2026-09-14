@@ -16,12 +16,19 @@ export type ReminderConfig = {
 }
 
 export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
-  // Off by default: enabling requires an explicit opt-in (FEED_REMINDER_ENABLED
-  // or the admin config). This makes the safe ordering the default — the
-  // activation backfill must run first, otherwise members who set up their
-  // feeds before webhook tracking existed read as "0 set up" and get a spurious
-  // (one-time, irreversible) nudge on the cron's first run.
-  enabled: false,
+  // On. This was off for most of its life, guarding a specific hazard: the
+  // roster predated activation tracking, so members who had set their feeds up
+  // before the webhook existed read as "0 set up" and would have taken a
+  // spurious — one-time, irreversible — nudge on the cron's first run.
+  //
+  // That hazard is gone. The move to Beehiiv rebuilt the premium roster from
+  // scratch (migration 0023), and every activation since is recorded as it
+  // happens, so "no activation row" now means what it says. A member who reads
+  // as unset really is unset, and the nudge is the correct email to send them.
+  //
+  // The admin toggle and FEED_REMINDER_ENABLED still override this, so turning
+  // sends off is a switch rather than a deploy.
+  enabled: true,
   delayHours: 24,
   windowDays: 14,
   onlyIfNoneSetUp: true,

@@ -56,6 +56,10 @@
       "schedule": "0 15 * * *"
     },
     {
+      "path": "/api/cron/feed-migration-reminders",
+      "schedule": "30 15 * * *"
+    },
+    {
       "path": "/api/cron/gift-expiry-reminders",
       "schedule": "0 16 * * *"
     },
