@@ -54,6 +54,7 @@ import {
 } from '../../../shared/cancellation.js'
 import { listActiveCoupons } from '../../lib/stripe-promos.js'
 import {
+  formatMinorUnits,
   isSupportedCurrency,
   minorUnitFactors,
   resolveCatalogPrice,
@@ -67,7 +68,17 @@ import {
 } from '../../../shared/checkout-consent.js'
 import { getClientIp, isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
-import { getSessionEmail } from '../../lib/session.js'
+import { getSessionEmail, resolveRequestIdentity } from '../../lib/session.js'
+import { sendEmail } from '../../lib/email.js'
+import {
+  renderCancellationEmail,
+  renderDebundleEmail,
+  type CancellableTier,
+} from '../../lib/cancellation-email.js'
+import {
+  EMAIL_TIME_ZONE,
+  formatTimestampInZone,
+} from '../../../shared/format-date.js'
 import { isValidEmail } from '../../../shared/validation.js'
 import { defineRoute, type Deps, type Route } from '../../lib/route.js'
 import {
@@ -430,14 +441,18 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // cancel; debundles keep a product via change-tier), so win-back can
         // target it by email even after the membership row is torn down. The
         // returned id lets the client attach the member's reasons afterward.
+        // Derived outside the DB block because the confirmation email needs it
+        // too — which tier is being left decides the whole body of that email,
+        // and a Stripe-only preview env still sends it.
+        let canceledTier: string | null = null
+        try {
+          canceledTier = await tierFromSubscription(sub, stripe)
+        } catch (err) {
+          console.error('[stripe] cancel: tier derivation failed:', err)
+        }
+
         let surveyId: string | number | null = null
         if (env.DATABASE_URL) {
-          let canceledTier: string | null = null
-          try {
-            canceledTier = await tierFromSubscription(sub, stripe)
-          } catch (err) {
-            console.error('[stripe] cancel: tier derivation failed:', err)
-          }
           try {
             surveyId = await insertCancellationSurvey(getDb(env), {
               email: cancelEmail,
@@ -461,7 +476,53 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // Cancel at period end so they keep access until the billing cycle ends.
         await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true })
 
-        json(200, { ok: true, access_until: periodEndIso(sub), survey_id: surveyId })
+        const accessUntilIso = periodEndIso(sub)
+
+        // The confirmation email. Sent HERE rather than off
+        // customer.subscription.deleted, which is the other obvious hook and the
+        // wrong one: `.deleted` doesn't fire until the period actually ends,
+        // weeks later, by which time "you'll keep your benefits through <date>"
+        // is a sentence about the past. The member needs it now, at the moment
+        // they pressed the button.
+        //
+        // Strictly best-effort, and after the cancel has committed: a mail
+        // failure must never turn into "we couldn't cancel you". sendEmail
+        // already soft-fails, and the try/catch covers everything around it.
+        if (canceledTier && canceledTier !== 'free') {
+          try {
+            const identity = await resolveRequestIdentity(req, env)
+            const { subject, html } = renderCancellationEmail({
+              firstName: identity?.firstName ?? undefined,
+              tier: canceledTier as CancellableTier,
+              accessUntil:
+                formatTimestampInZone(accessUntilIso, EMAIL_TIME_ZONE, 'long', {
+                  withZoneLabel: true,
+                }) || null,
+              // [FEEDBACK LINK PLACEHOLDER]. The structured reasons survey is
+              // collected in-app right after this call returns; this is the
+              // second chance for someone who skipped it, so it goes to the
+              // desk a human reads rather than a form that needs a session.
+              feedbackUrl: `${appBaseUrl}/contact?topic=general`,
+              accountUrl: `${appBaseUrl}/account/billing`,
+            })
+            // Keyed on the subscription AND the date access ends, so a
+            // double-submit collapses while a cancel → reactivate → cancel
+            // still confirms the second time.
+            const sent = await sendEmail(env, {
+              to: cancelEmail,
+              subject,
+              html,
+              idempotencyKey: `cancel_${sub.id}_${accessUntilIso ?? 'na'}`,
+            })
+            if (!sent) {
+              console.error('[email] cancellation email did not send:', sub.id)
+            }
+          } catch (err) {
+            console.error('[email] cancellation email failed:', err)
+          }
+        }
+
+        json(200, { ok: true, access_until: accessUntilIso, survey_id: surveyId })
       },
     }),
 
@@ -1205,6 +1266,49 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
 
+        // The debundle notice. A debundle is a partial cancellation — one
+        // product stops, the other continues at a new price — and until now it
+        // was the only membership change that told the member nothing at all.
+        // Stripe's receipt for the new amount doesn't arrive until the next
+        // invoice, so without this the first signal is a smaller charge.
+        //
+        // Only for a real debundle: `isDebundle` is what distinguishes dropping
+        // a product from a plain upgrade or a PWYC amount change, both of which
+        // reach this same route and neither of which is losing anything.
+        // Best-effort, and always after the Stripe write has committed.
+        const notifyDebundle = async (effectiveIso: string | null) => {
+          if (!isDebundle) return
+          try {
+            const identity = await resolveRequestIdentity(req, env)
+            const { subject, html } = renderDebundleEmail({
+              firstName: identity?.firstName ?? undefined,
+              // retained_product names what was KEPT; the email is about what
+              // was removed, which is the other one.
+              removed: retainedProduct === 'kept-circle' ? 'ark-plus' : 'circle',
+              effectiveOn:
+                formatTimestampInZone(effectiveIso, EMAIL_TIME_ZONE, 'long', {
+                  withZoneLabel: true,
+                }) || null,
+              price: formatMinorUnits(amountCents, currency),
+              plan,
+              accountUrl: `${appBaseUrl}/account/billing`,
+            })
+            // Keyed on the subscription and the axis dropped, so a retry
+            // collapses while a later debundle of the other axis still sends.
+            const sent = await sendEmail(env, {
+              to: email,
+              subject,
+              html,
+              idempotencyKey: `debundle_${sub.id}_${retainedProduct}`,
+            })
+            if (!sent) {
+              console.error('[email] debundle email did not send:', sub.id)
+            }
+          } catch (err) {
+            console.error('[email] debundle email failed:', err)
+          }
+        }
+
         try {
           if (immediate) {
             // Release any prior pending change, then update the item in place
@@ -1229,6 +1333,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               await clearMembershipPending(getDb(env), customerId)
             }
             await recordDebundleWinBack()
+            // Immediate: the change is live now, so there is no future date.
+            await notifyDebundle(null)
             return json(200, { ok: true, changed: true, timing: 'immediate' })
           }
 
@@ -1286,11 +1392,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             })
           }
           await recordDebundleWinBack()
+          const effectiveAt = periodEndIso(sub)
+          await notifyDebundle(effectiveAt)
           return json(200, {
             ok: true,
             changed: true,
             timing: 'period_end',
-            effective_at: periodEndIso(sub),
+            effective_at: effectiveAt,
           })
         } catch (err) {
           console.error('[stripe] change-tier failed:', err)

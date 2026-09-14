@@ -26,6 +26,7 @@ import {
   createDevApiHarness,
   makeFakeReq,
   makeFakeRes as makeRes,
+  parseJsonInitBody,
   runMiddleware as runHandler,
   silenceExpectedConsole,
   type Middleware,
@@ -42,7 +43,13 @@ const stripeCalls: StripeCall[] = []
 // Per-test config: which customers match the email and which active sub (if
 // any) each customer has. A sub carries the current_period_end the route reads.
 let existingCustomers: Array<{ id: string; email: string }> = []
-let subsByCustomer: Record<string, Array<{ id: string; current_period_end: number }>> = {}
+let subsByCustomer: Record<
+  string,
+  // `tier` is stamped into the sub's metadata: tierFromSubscription falls back
+  // to it when the price product can't be read, which is what lets these tests
+  // choose which cancellation email is rendered without faking a product.
+  Array<{ id: string; current_period_end: number; tier?: string }>
+> = {}
 // Coupons returned by coupons.list — part of the shared stripe mock harness.
 let activeCoupons: Array<Record<string, unknown>> = []
 // current_period_end echoed back by subscriptions.update. 2030-01-01, fixed for
@@ -65,6 +72,7 @@ class FakeStripe {
         // These flows manage the member's live subscription; default to 'active'
         // so the (status-filtered) live-subscription lookup matches it.
         status: 'active',
+        metadata: s.tier ? { tier: s.tier } : {},
         items: { data: [{ current_period_end: s.current_period_end }] },
       }))
       return { data: subs }
@@ -101,6 +109,29 @@ const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
+  // Set so the cancellation confirmation actually renders and "sends" — the
+  // fetch mock below is what keeps that off the network.
+  RESEND_API_KEY: 'rk_test',
+}
+
+// --- Outbound fetch mock (Resend) -----------------------------------------
+type FetchCall = { url: string; init?: RequestInit }
+const originalFetch = globalThis.fetch
+let fetchCalls: FetchCall[] = []
+let resendStatus = 200
+
+globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input.toString()
+  fetchCalls.push({ url, init })
+  if (url.includes('api.resend.com')) {
+    const ok = resendStatus >= 200 && resendStatus < 300
+    return new Response(ok ? '{"id":"email_1"}' : '{"error":"boom"}', { status: resendStatus })
+  }
+  return new Response('{}', { status: 200 })
+}) as typeof fetch
+
+function resendCalls(): FetchCall[] {
+  return fetchCalls.filter((c) => c.url.includes('api.resend.com'))
 }
 
 function getHandler(path: string): Middleware {
@@ -119,6 +150,12 @@ beforeEach(() => {
   existingCustomers = []
   subsByCustomer = {}
   activeCoupons = []
+  fetchCalls = []
+  resendStatus = 200
+})
+
+afterAll(() => {
+  globalThis.fetch = originalFetch
 })
 
 // A signed ark_session cookie for `email`, so getSessionEmail authenticates.
@@ -275,6 +312,78 @@ describe('POST /api/stripe/cancellation-survey — accepted bodies', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({ ok: true })
+  })
+})
+
+// ===========================================================================
+// The cancellation confirmation email
+// ===========================================================================
+describe('POST /api/stripe/cancel-subscription — confirmation email', () => {
+  const PERIOD_END = 1893456000 // 2030-01-01
+
+  async function cancelAs(tier: string): Promise<FakeRes> {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = { cus_1: [{ id: 'sub_1', current_period_end: PERIOD_END, tier }] }
+    return post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+  }
+
+  test('sends at the moment of cancelling, not at period end', async () => {
+    // The copy promises benefits "through <date>". That sentence is only true
+    // while the date is in the future, which is why this hangs off the cancel
+    // request rather than customer.subscription.deleted — that event does not
+    // fire until the date has already passed.
+    const res = await cancelAs('ark-plus')
+    expect(res.statusCode).toBe(200)
+
+    const sends = resendCalls()
+    expect(sends).toHaveLength(1)
+    const body = parseJsonInitBody(sends[0]!.init) as Record<string, unknown>
+    expect(body.to).toBe('member@example.com')
+    expect(body.subject).toBe('Your Ark+ subscription has been canceled')
+    // The date access runs to, stated in ET and labelled as such. The period
+    // end is 2030-01-01 UTC, which is December 31 in New York — exactly the
+    // off-by-one a bare date would hide from a reader in another zone, and the
+    // reason these are rendered through formatTimestampInZone with the label.
+    expect(String(body.html)).toContain('December 31, 2029 ET')
+  })
+
+  test('the tier decides which of the three variants goes out', async () => {
+    await cancelAs('circle')
+    expect(
+      (parseJsonInitBody(resendCalls()[0]!.init) as Record<string, unknown>).subject,
+    ).toBe('Your Fold membership has been canceled')
+
+    fetchCalls = []
+    await cancelAs('bundle')
+    expect(
+      (parseJsonInitBody(resendCalls()[0]!.init) as Record<string, unknown>).subject,
+    ).toBe('Your Ark+ and Fold membership has been canceled')
+  })
+
+  test('a mail failure never fails the cancellation', async () => {
+    // The money operation has already committed by the time this runs. A Resend
+    // outage must degrade to "we didn't confirm it by email", never to "we
+    // couldn't cancel you".
+    resendStatus = 500
+    const res = await cancelAs('ark-plus')
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ ok: true })
+    const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
+    expect(update!.args[1]).toEqual({ cancel_at_period_end: true })
+  })
+
+  test('no email when there is no subscription to cancel', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {}
+    const res = await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+    expect(res.statusCode).toBe(404)
+    expect(resendCalls()).toHaveLength(0)
   })
 })
 

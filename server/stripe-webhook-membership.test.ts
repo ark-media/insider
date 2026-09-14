@@ -128,6 +128,9 @@ const ENV = {
   BEEHIIV_API_KEY: 'bh_key',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test',
   BEEHIIV_PREMIUM_TIER_ID: 'tier_plus',
+  // Set so the dunning email actually renders and "sends"; the fetch mock keeps
+  // it off the network like every other outbound call here.
+  RESEND_API_KEY: 'rk_test',
 }
 
 function getHandler(): Middleware {
@@ -150,7 +153,7 @@ async function runWebhook(): Promise<FakeRes> {
 }
 
 const globalFetch = globalThis.fetch
-const fetchCalls: Array<{ url: string; method: string }> = []
+const fetchCalls: Array<{ url: string; method: string; init?: RequestInit }> = []
 silenceExpectedConsole()
 beforeEach(() => {
   statements = []
@@ -163,10 +166,18 @@ beforeEach(() => {
   productEntitlements = { prod_arkplus: 'ark_plus', prod_circle: 'circle', prod_bundle: 'ark_plus,circle' }
   webhookEvent = null
   globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    fetchCalls.push({ url: String(input), method: (init?.method ?? 'GET').toUpperCase() })
+    fetchCalls.push({
+      url: String(input),
+      method: (init?.method ?? 'GET').toUpperCase(),
+      init,
+    })
     return new Response('{}', { status: 200 })
   }) as typeof fetch
 })
+
+function resendCalls() {
+  return fetchCalls.filter((c) => c.url.includes('api.resend.com'))
+}
 afterAll(() => {
   globalThis.fetch = globalFetch
 })
@@ -248,6 +259,67 @@ describe('webhook DB path — membership row', () => {
     expect(res.statusCode).toBe(200)
     const upd = statements.find((s) => s.text.includes('update membership set status'))
     expect(upd).toBeDefined()
+    expect(upd!.values).toContain('past_due')
+  })
+
+  test('invoice.payment_failed also emails the member, naming their tier', async () => {
+    // Without this the only signal a card failed is access disappearing weeks
+    // later, when Stripe gives up — by which point replacing the card no longer
+    // saves the membership.
+    priorRow = { tier: 'bundle', auth0_sub: 'auth0|abc' }
+    webhookEvent = {
+      type: 'invoice.payment_failed',
+      data: { object: { id: 'in_1', customer: 'cus_1', attempt_count: 1 } },
+    }
+    const res = await runWebhook()
+    expect(res.statusCode).toBe(200)
+
+    const sends = resendCalls()
+    expect(sends).toHaveLength(1)
+    const body = JSON.parse(String(sends[0]!.init?.body)) as Record<string, unknown>
+    expect(body.to).toBe('buyer@example.com')
+    expect(body.subject).toBe("We couldn't process your payment")
+    expect(String(body.html)).toContain('your Ark+ and Fold membership')
+    expect(String(body.html)).toContain('/account/billing')
+  })
+
+  test('an unreadable tier still sends, without naming a product', async () => {
+    // The membership row is where the tier comes from. Naming the wrong product
+    // to someone whose card just failed is worse than naming none.
+    priorRow = null
+    webhookEvent = {
+      type: 'invoice.payment_failed',
+      data: { object: { id: 'in_2', customer: 'cus_1', attempt_count: 1 } },
+    }
+    const res = await runWebhook()
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(String(resendCalls()[0]!.init?.body)) as Record<string, unknown>
+    expect(String(body.html)).toContain('for your membership')
+  })
+
+  test('a mail failure never 500s the webhook into a Stripe retry loop', async () => {
+    // The status write has already landed. Failing the response would make
+    // Stripe redeliver forever over an email that was never the point.
+    priorRow = { tier: 'ark-plus', auth0_sub: 'auth0|abc' }
+    webhookEvent = {
+      type: 'invoice.payment_failed',
+      data: { object: { id: 'in_3', customer: 'cus_1', attempt_count: 2 } },
+    }
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      fetchCalls.push({
+        url: String(input),
+        method: (init?.method ?? 'GET').toUpperCase(),
+        init,
+      })
+      if (String(input).includes('api.resend.com')) {
+        return new Response('{"error":"boom"}', { status: 500 })
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+
+    const res = await runWebhook()
+    expect(res.statusCode).toBe(200)
+    const upd = statements.find((s) => s.text.includes('update membership set status'))
     expect(upd!.values).toContain('past_due')
   })
 

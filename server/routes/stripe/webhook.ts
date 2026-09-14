@@ -3,6 +3,9 @@ import type Stripe from 'stripe'
 import { sendEmail } from '../../lib/email.js'
 import { signGiftClaimToken } from '../../lib/session.js'
 import { renderGiftRedemptionEmail } from '../../lib/welcome-email.js'
+import { renderPaymentFailedEmail } from '../../lib/payment-failed-email.js'
+import type { CancellableTier } from '../../lib/cancellation-email.js'
+import { greetingFirstName } from '../../../shared/profile-name.js'
 import {
   deriveEntitlements,
   emailForStripeCustomer,
@@ -195,8 +198,57 @@ export async function dispatchWebhookEvent(
       console.warn('[stripe] invoice.payment_failed', invoice.id)
       const customerId =
         typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id ?? null
+      let failedTier: CancellableTier | null = null
       if (customerId && env.DATABASE_URL) {
         await setMembershipStatusByCustomer(getDb(env), customerId, 'past_due')
+        // The membership row is also where the tier comes from for the email
+        // below. Reading it here rather than off the invoice keeps this away
+        // from Stripe's invoice→subscription shape, which has moved between
+        // API versions; the row is ours and its `tier` is the authority anyway.
+        try {
+          const row = await getMembershipByStripeCustomer(getDb(env), customerId)
+          const t = row?.tier
+          if (t === 'ark-plus' || t === 'circle' || t === 'bundle') failedTier = t
+        } catch (err) {
+          console.error('[stripe] payment_failed tier read failed:', err)
+        }
+      }
+
+      // Tell the member. Without this the only signal a card failed is access
+      // disappearing a few weeks later, when Stripe gives up and the
+      // subscription is cancelled — by which point the fix (a new card) no
+      // longer helps. Best-effort: this runs after the status write, and a mail
+      // failure must never 500 the webhook into a Stripe retry loop.
+      if (customerId) {
+        try {
+          const to = await emailForStripeCustomer(invoice.customer, stripe)
+          if (to) {
+            const { subject, html } = renderPaymentFailedEmail({
+              firstName: greetingFirstName(
+                invoice.customer_name ?? undefined,
+                to,
+                undefined,
+              ),
+              tier: failedTier,
+              updateCardUrl: `${env.APP_BASE_URL || 'http://localhost:5173'}/account/billing`,
+            })
+            // Keyed on the invoice AND the attempt: Stripe's Smart Retries fire
+            // this event once per attempt over ~three weeks, and each one is a
+            // fresh chance the member should hear about. Only a redelivery of
+            // the SAME attempt collapses.
+            const sent = await sendEmail(env, {
+              to,
+              subject,
+              html,
+              idempotencyKey: `payment_failed_${invoice.id}_${invoice.attempt_count ?? 0}`,
+            })
+            if (!sent) {
+              console.error('[email] payment-failed email did not send:', invoice.id)
+            }
+          }
+        } catch (err) {
+          console.error('[email] payment-failed email failed:', err)
+        }
       }
       // No dunning event here on purpose — Stripe's own Smart Retries reporting
       // covers failed payments and recovery rate. See lib/analytics-server.ts.

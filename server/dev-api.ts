@@ -30,6 +30,7 @@ import { circleRoutes } from './routes/circle.js'
 import { circleGateRoutes } from './routes/circle-gate.js'
 import { contactRoutes } from './routes/contact.js'
 import { cronRoutes } from './routes/cron.js'
+import { winbackRoutes } from './routes/winback.js'
 import { discussThreadsRoutes } from './routes/discuss-threads.js'
 import { faqRoutes } from './routes/faqs.js'
 import { giftRoutes } from './routes/gift.js'
@@ -77,6 +78,7 @@ function buildApi(env: Env): Api {
     ...contactRoutes(deps),
     ...supportRoutes(deps),
     ...cronRoutes(deps),
+    ...winbackRoutes(deps),
   ]
 
   return { appBaseUrl, routes }

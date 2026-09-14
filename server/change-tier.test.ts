@@ -12,7 +12,7 @@
 // session cookie driving the registered middleware). No DATABASE_URL, so the
 // membership pending writes are skipped — this exercises the Stripe side.
 
-import { describe, test, expect, beforeEach, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createDevApiHarness, type Middleware } from './test-utils'
@@ -35,6 +35,7 @@ let productEntitlements: Record<string, string> = {}
 // Makes the schedule write throw, so a test can watch what the handler leaves
 // behind when the change fails halfway.
 let scheduleUpdateFails = false
+let activeCoupons: Array<Record<string, unknown>> = []
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -110,6 +111,15 @@ class FakeStripe {
       return { id: 'price_dyn_1' }
     },
   }
+  // A debundle looks for an intro coupon before it writes anything. Empty by
+  // default, so pickIntroCoupon finds none and the schedule carries no discount
+  // — the discount itself has its own coverage in derive-save-offers.test.ts.
+  coupons = {
+    list: async (args?: { starting_after?: string }) => {
+      stripeCalls.push({ method: 'coupons.list', args: [args] })
+      return { data: activeCoupons, has_more: false }
+    },
+  }
   webhooks = {
     constructEvent: () => {
       throw new Error('not used in this file')
@@ -129,6 +139,27 @@ const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
+  // Set so the debundle notice actually renders and "sends"; the fetch mock
+  // below is what keeps that off the network.
+  RESEND_API_KEY: 'rk_test',
+}
+
+// --- Outbound fetch mock (Resend) -----------------------------------------
+const originalFetch = globalThis.fetch
+let fetchCalls: Array<{ url: string; init?: RequestInit }> = []
+
+globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input.toString()
+  fetchCalls.push({ url, init })
+  if (url.includes('api.resend.com')) {
+    return new Response('{"id":"email_1"}', { status: 200 })
+  }
+  return new Response('{}', { status: 200 })
+}) as typeof fetch
+
+function resendBody(): Record<string, unknown> | null {
+  const call = fetchCalls.find((c) => c.url.includes('api.resend.com'))
+  return call ? (JSON.parse(String(call.init?.body)) as Record<string, unknown>) : null
 }
 
 const PATH = '/api/stripe/change-tier'
@@ -246,6 +277,8 @@ beforeEach(() => {
   schedulePhases = []
   productEntitlements = {}
   scheduleUpdateFails = false
+  activeCoupons = []
+  fetchCalls = []
   // The resolver's price cache is module-level and `bun test` shares one
   // process. Clearing it keeps `prices.list` a reliable signal of whether the
   // catalog was actually consulted — which is what the ordering case below
@@ -350,4 +383,93 @@ describe('POST /api/stripe/change-tier', () => {
     )
     expect(res.statusCode).toBe(400)
   })
+})
+
+// ===========================================================================
+// The debundle notice
+//
+// A debundle is the one membership change that used to tell the member nothing:
+// one product stops, the other continues at a new price, and Stripe's receipt
+// for that price doesn't arrive until the next invoice.
+// ===========================================================================
+describe('POST /api/stripe/change-tier — debundle notice', () => {
+  function stageDebundle() {
+    withSub({ tier: 'bundle', amountCents: 2000 })
+    schedulePhases = [
+      {
+        start_date: NOW_SEC - 100,
+        end_date: NOW_SEC + 1000,
+        items: [{ price: 'price_bundle_monthly', quantity: 1 }],
+      },
+    ]
+  }
+
+  test('dropping the Fold names what stops, what continues, and the new price', async () => {
+    stageDebundle()
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().timing).toBe('period_end')
+
+    const body = resendBody()
+    expect(body).not.toBeNull()
+    expect(body!.to).toBe('member@example.com')
+    expect(body!.subject).toBe("You've removed The Fold from your membership")
+    // A debundle settles at the kept product's catalog floor ($8 monthly).
+    expect(String(body!.html)).toContain('$8 a month')
+    // What continues must be as loud as what stops, or this reads as a cancel.
+    expect(String(body!.html)).toContain('Ark+')
+  })
+
+  test('dropping Ark+ sends the other direction', async () => {
+    stageDebundle()
+    const res = await post(
+      { tier: 'circle', plan: 'monthly', retained_product: 'kept-circle' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(resendBody()!.subject).toBe("You've removed Ark+ from your membership")
+  })
+
+  test('a plain upgrade is not a debundle and sends nothing', async () => {
+    // Ark+ → Bundle gains an entitlement. The upgrade already has its own email
+    // (renderAxisAddedEmail, off the webhook); a "you removed something" notice
+    // here would be both wrong and a second message about one change.
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(resendBody()).toBeNull()
+  })
+
+  test('a PWYC amount change sends nothing — nothing was removed', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1500 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(resendBody()).toBeNull()
+  })
+
+  test('a failed change sends nothing', async () => {
+    // The notice is written after the Stripe write commits, so a change that
+    // never landed must not be announced.
+    stageDebundle()
+    scheduleUpdateFails = true
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(502)
+    expect(resendBody()).toBeNull()
+  })
+})
+
+afterAll(() => {
+  globalThis.fetch = originalFetch
 })

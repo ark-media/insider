@@ -6,8 +6,14 @@
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/handler?_path=$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/handler?_path=$1"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
@@ -17,9 +23,18 @@
           "key": "Content-Security-Policy-Report-Only",
           "value": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'sha256-Y7eLfIaiXmAbpKFja2p7/Aact57c95slZVu3auP0MCE=' https://js.stripe.com https://*.js.stripe.com https://pay.google.com https://us-assets.i.posthog.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' https://podcasts.beehiiv.com; connect-src 'self' https://api.stripe.com https://m.stripe.network https://r.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://m.stripe.network https://pay.google.com https://www.youtube-nocookie.com https://open.spotify.com; worker-src 'self' blob:; upgrade-insecure-requests"
         },
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "X-Frame-Options", "value": "DENY" },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
         {
           "key": "Strict-Transport-Security",
           "value": "max-age=63072000; includeSubDomains; preload"
@@ -43,6 +58,10 @@
     {
       "path": "/api/cron/gift-expiry-reminders",
       "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/cron/winback",
+      "schedule": "0 17 * * *"
     },
     {
       "path": "/api/cron/prune-webhook-events",

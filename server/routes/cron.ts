@@ -15,6 +15,8 @@ import {
   GIFT_EXPIRY_REMINDER_DAYS,
   runGiftExpiryReminders,
 } from '../lib/gift-expiry-reminders.js'
+import { runWinbackCampaign } from '../lib/winback.js'
+import { winbackUnsubUrl } from './winback.js'
 import { getAuth0NameProfile } from '../lib/auth0-user.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
@@ -144,6 +146,39 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         } catch (err) {
           console.error('[cron] gift-expiry-reminders failed:', err)
           json(500, { error: 'reminder_run_failed' })
+        }
+      },
+    }),
+    defineRoute({
+      // Invite members who left Ark+ six months ago to come back. Scans the
+      // cancellation record (which outlives the membership row), skips anyone
+      // who has resubscribed or opted out, sends a one-time Resend invitation,
+      // and records each send so nobody is mailed twice. See lib/winback.ts.
+      path: '/api/cron/winback',
+      method: ['POST', 'GET'],
+      handler: async (req, _res, json) => {
+        const cronSecret = env.CRON_SECRET
+        if (!cronSecret) return json(500, { error: 'not_configured' })
+        if (!cronAuthorized(req, cronSecret)) {
+          return json(401, { error: 'unauthorized' })
+        }
+        if (!env.DATABASE_URL) {
+          return json(500, { error: 'not_configured' })
+        }
+
+        const sql = getDb(env)
+        try {
+          const summary = await runWinbackCampaign({
+            env,
+            sql,
+            appBaseUrl,
+            nowMs: Date.now(),
+            unsubscribeUrlFor: (email) => winbackUnsubUrl(email, env, appBaseUrl),
+          })
+          json(200, summary)
+        } catch (err) {
+          console.error('[cron] winback failed:', err)
+          json(500, { error: 'winback_run_failed' })
         }
       },
     }),
