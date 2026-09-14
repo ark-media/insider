@@ -151,7 +151,7 @@ export function PublicMasthead() {
   // `max-sm:` transform below.
   const [hidden, setHidden] = useState(false);
   const lastScrollY = useRef(0);
-  const { state, signIn } = useSubscriberAuth();
+  const { state, signIn, signOut } = useSubscriberAuth();
   // Any paid tier counts as a subscriber for the nav (drives the mobile CTA and
   // the "Set up your feed" account link).
   const isSubscriber = state.kind === "member" && state.me.tier !== "free";
@@ -531,6 +531,23 @@ export function PublicMasthead() {
                   </Link>
                 );
               })}
+
+            {/* The drawer is the only nav on a phone, so it's the only place a
+                signed-in member can end their session without first walking
+                into /account. Last and quiet on purpose — it's an exit, not a
+                destination like the links above it. */}
+            {state.kind === "member" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  signOut();
+                }}
+                className="mt-6 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-muted transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Sign out
+              </button>
+            ) : null}
           </nav>
           </div>
         </div>,

@@ -15,7 +15,7 @@ export const Route = createFileRoute("/account/settings")({
 // This replaces /account/newsletters, which was a page of its own for a single
 // toggle.
 function SettingsTab() {
-  const { state, refresh, signOut } = useSubscriberAuth();
+  const { state, refresh } = useSubscriberAuth();
   if (state.kind !== "member") return null;
   const { me } = state;
 
@@ -46,14 +46,6 @@ function SettingsTab() {
                 signs in with Google has nothing here to reset. */}
             {me.passwordResettable ? <PasswordRow /> : null}
           </div>
-
-          <button
-            type="button"
-            onClick={signOut}
-            className="mt-6 inline-flex min-h-12 w-full items-center justify-center border border-rule-strong px-6 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:w-auto"
-          >
-            Sign out
-          </button>
         </div>
       </div>
     </section>

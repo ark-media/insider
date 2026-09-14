@@ -25,7 +25,7 @@ export const Route = createFileRoute("/account")({
 
 function AccountLayout() {
   const navigate = useNavigate();
-  const { state, authError, refresh, isAdmin } = useSubscriberAuth();
+  const { state, authError, refresh, isAdmin, signOut } = useSubscriberAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
@@ -68,6 +68,18 @@ function AccountLayout() {
         me.tier === "free"
           ? `Signed in as ${me.email}. Manage what lands in your inbox, or join Ark+, the Fold, or both.`
           : `Signed in as ${me.email}. Everything in your membership, in one place.`
+      }
+      // Sign out belongs next to the "Signed in as …" line that names the
+      // session it ends, and living in the shell puts it on every account tab
+      // rather than only on Settings, where it used to sit below the fold.
+      aside={
+        <button
+          type="button"
+          onClick={signOut}
+          className="inline-flex min-h-11 items-center border border-rule-strong px-4 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          Sign out
+        </button>
       }
     >
       <AccountTabs
