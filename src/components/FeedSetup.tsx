@@ -118,6 +118,28 @@ export function FeedSetup({
 }) {
   const { markFeedsSetUp } = useSubscriberAuth();
 
+  // Which show is expanded. One at a time, opening on the first one that still
+  // needs doing — the page is a checklist, and the useful default is "the next
+  // thing", not "everything at once" or "nothing".
+  //
+  // Computed once. Recomputing it from `feeds` on every render would yank the
+  // panel out from under a member the moment a feed flipped to set up, which is
+  // exactly when they may still be reading it.
+  const [openId, setOpenId] = useState<string | null>(
+    () => feeds.find((f) => !feedIsSetUp(f))?.id ?? null,
+  );
+
+  // Move to the next show still to do once one is finished, so a member with
+  // four of them is never left staring at a panel whose job is done. Wraps, so
+  // finishing the last one lands on any earlier straggler rather than nothing.
+  const advancePast = (feedId: string) => {
+    const from = feeds.findIndex((f) => f.id === feedId);
+    const next =
+      feeds.slice(from + 1).find((f) => !feedIsSetUp(f)) ??
+      feeds.find((f) => f.id !== feedId && !feedIsSetUp(f));
+    setOpenId(next?.id ?? null);
+  };
+
   return (
     <section>
       <div className="page-section">
@@ -148,13 +170,22 @@ export function FeedSetup({
                 markFeedsSetUp(feeds.map((f) => f.id));
               }}
             />
-            {feeds.map((feed) => (
-              <FeedBlock
-                key={feed.id}
-                feed={feed}
-                onActivate={() => markFeedsSetUp([feed.id])}
-              />
-            ))}
+            <ul className="mt-10">
+              {feeds.map((feed) => (
+                <FeedBlock
+                  key={feed.id}
+                  feed={feed}
+                  open={feed.id === openId}
+                  onToggle={() =>
+                    setOpenId(feed.id === openId ? null : feed.id)
+                  }
+                  onActivate={() => {
+                    markFeedsSetUp([feed.id]);
+                    advancePast(feed.id);
+                  }}
+                />
+              ))}
+            </ul>
           </>
         )}
       </div>
@@ -301,72 +332,120 @@ function SpotifyFollowPanel({ linked }: { linked: boolean }) {
   );
 }
 
+// One show, collapsed to a single row until it's the one being worked on.
+//
+// Four premium shows turned this page into four identical five-row stacks, and
+// the member's actual question — which of these have I still got to do? — was
+// somewhere off the bottom of the screen. Collapsed, the whole checklist and
+// its progress fit at a glance, and only the show in hand shows its apps.
+//
+// A disclosure rather than tabs on purpose: tabs would hide the checklist
+// state behind a click each, and these titles don't survive a tab strip at
+// phone width.
 function FeedBlock({
   feed,
+  open,
+  onToggle,
   onActivate,
 }: {
   feed: UserFeed;
+  open: boolean;
+  onToggle: () => void;
   onActivate: () => void;
 }) {
   // Which app's QR code is open, if any. Desktop-only affordance, but the
   // state is harmless on a phone, where the toggle is never rendered.
   const [qrApp, setQrApp] = useState<App | null>(null);
   const handheld = useHandheld();
+  const panelId = `${useId()}-feed`;
 
   const links = feed.protocolLinks ?? {};
   const apps = APPS.filter((a) => Boolean(links[a.protocolKey]));
+  const done = feedIsSetUp(feed);
 
   return (
-    <div className="mt-12">
-      <div className="flex items-center gap-4">
-        <div className="relative aspect-square w-14 shrink-0 overflow-hidden bg-navy-900 shadow-cover ring-1 ring-rule">
+    <li className="-mt-px border border-rule">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex w-full items-center gap-4 p-4 text-left transition hover:bg-fg-strong/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
+      >
+        <span className="relative block aspect-square w-12 shrink-0 overflow-hidden bg-navy-900 shadow-cover ring-1 ring-rule">
           {feed.image_url ? (
             <img
               src={feed.image_url}
               alt=""
-              width={112}
-              height={112}
+              width={96}
+              height={96}
               className="h-full w-full object-cover"
             />
           ) : (
-            <div
+            <span
               aria-hidden="true"
               className="flex h-full w-full items-center justify-center font-display text-xl font-bold text-cyan"
             >
               {feed.name.charAt(0)}
-            </div>
+            </span>
           )}
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-h4 truncate font-bold">{feed.name}</h3>
-          {feedIsSetUp(feed) ? (
-            <p className="mt-1 text-body-sm text-cyan">✓ Set up</p>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-display font-bold tracking-[0.04em] text-fg-strong">
+            {feed.name}
+          </span>
+          <span
+            className={`mt-0.5 block text-body-sm ${done ? "text-cyan" : "text-fg-muted"}`}
+          >
+            {done ? "✓ Set up" : "Not in an app yet"}
+          </span>
+        </span>
+        <Chevron open={open} />
+      </button>
+
+      {open ? (
+        <div id={panelId} className="border-t border-rule px-4 pb-5 pt-1">
+          {apps.length > 0 ? (
+            <ul className="mt-4">
+              {apps.map((app) => (
+                <AppRow
+                  key={app.key}
+                  app={app}
+                  url={links[app.protocolKey] as string}
+                  feedUrl={feed.url}
+                  handheld={handheld}
+                  qrOpen={qrApp?.key === app.key}
+                  onToggleQr={() => setQrApp(qrApp?.key === app.key ? null : app)}
+                  onOpen={() => {
+                    trackEvent("feed_activated", { app: app.key, method: "open" });
+                    onActivate();
+                  }}
+                />
+              ))}
+            </ul>
           ) : null}
+
+          <FeedUrlRow feed={feed} onActivate={onActivate} />
         </div>
-      </div>
-
-      {apps.length > 0 ? (
-        <ul className="mt-5">
-          {apps.map((app) => (
-            <AppRow
-              key={app.key}
-              app={app}
-              url={links[app.protocolKey] as string}
-              feedUrl={feed.url}
-              handheld={handheld}
-              qrOpen={qrApp?.key === app.key}
-              onToggleQr={() => setQrApp(qrApp?.key === app.key ? null : app)}
-              onOpen={() => {
-                trackEvent("feed_activated", { app: app.key, method: "open" });
-                onActivate();
-              }}
-            />
-          ))}
-        </ul>
       ) : null}
+    </li>
+  );
+}
 
-      <FeedUrlRow feed={feed} onActivate={onActivate} />
-    </div>
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+      className={`shrink-0 text-fg-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   );
 }
 

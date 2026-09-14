@@ -1,15 +1,18 @@
 /// <reference types="bun" />
-// The Spotify half of the private-feed setup page. Needs a real DOM because
-// what's being asserted is where a click goes and what appears after it, so
-// happy-dom is registered here. Bun's own `fetch` is preserved (happy-dom would
-// otherwise replace it) so this registration can't disturb the server tests.
+// The private-feed setup page. Needs a real DOM because what's being asserted
+// is where a click goes and what appears after it, so happy-dom is registered
+// here. Bun's own `fetch` is preserved (happy-dom would otherwise replace it)
+// so this registration can't disturb the server tests.
 //
-// Why this exists: the hand-off leaves for Beehiiv and never comes back
-// (Beehiiv's `redirect_path` can't leave its own domain — see
-// SPOTIFY_HANDOFF_PATH in FeedSetup), so two things have to hold or the flow
-// strands the member on beehiiv.com. The link must open in a NEW tab, and the
-// "now follow the show" step must appear on this page once they've been sent
-// off.
+// Two behaviours, both of which broke in front of a member:
+//
+// 1. The Spotify hand-off leaves for Beehiiv and never comes back (Beehiiv's
+//    `redirect_path` can't leave its domain — see SPOTIFY_HANDOFF_PATH), so the
+//    link must open in a NEW tab and the "now follow the show" step must appear
+//    on this page once they've been sent off.
+// 2. A member holds a feed per premium show, and four of them turned this page
+//    into an unreadable stack. Each show is a disclosure row: the checklist
+//    stays visible, one show is open, and finishing one moves to the next.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 const g = globalThis as unknown as {
@@ -51,6 +54,29 @@ const FEED: UserFeed = {
   url: "https://podcasts.beehiiv.com/feed/abc123",
   protocolLinks: { apple: "podcast://feed" },
 };
+
+function feed(id: string, name: string, extra: Partial<UserFeed> = {}): UserFeed {
+  return { ...FEED, id, name, ...extra };
+}
+
+/** The disclosure button for one show, by its title. */
+function showToggle(container: HTMLElement, name: string): HTMLButtonElement {
+  const buttons = [
+    ...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+  ];
+  const found = buttons.find((b) => b.textContent?.includes(name));
+  if (!found) throw new Error(`no disclosure row for "${name}"`);
+  return found;
+}
+
+const isOpen = (container: HTMLElement, name: string) =>
+  showToggle(container, name).getAttribute("aria-expanded") === "true";
+
+async function click(el: Element) {
+  await act(async () => {
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+}
 
 let mounted: { root: Root; container: HTMLElement } | null = null;
 
@@ -118,5 +144,65 @@ describe("FeedSetup — Spotify", () => {
 
     expect(followLink(container)).not.toBeNull();
     expect(container.textContent).toContain("Spotify is linked");
+  });
+});
+
+// Four premium shows made the flat list unreadable, so each show is a
+// disclosure row. What has to hold: the checklist stays visible, exactly one
+// show is expanded, and finishing one moves to the next thing to do.
+describe("FeedSetup — one show at a time", () => {
+  const FEEDS = [
+    feed("pod_a", "Alpha Show", { activated: true }),
+    feed("pod_b", "Bravo Show"),
+    feed("pod_c", "Charlie Show"),
+  ];
+
+  test("every show is listed, whether or not it's open", async () => {
+    const container = await render(<FeedSetup feeds={FEEDS} />);
+
+    for (const f of FEEDS) expect(container.textContent).toContain(f.name);
+    // The one already in an app says so without being opened.
+    expect(showToggle(container, "Alpha Show").textContent).toContain("Set up");
+  });
+
+  test("opens the first show that still needs doing, not the first show", async () => {
+    const container = await render(<FeedSetup feeds={FEEDS} />);
+
+    expect(isOpen(container, "Alpha Show")).toBe(false);
+    expect(isOpen(container, "Bravo Show")).toBe(true);
+    expect(isOpen(container, "Charlie Show")).toBe(false);
+  });
+
+  test("opening one closes the other", async () => {
+    const container = await render(<FeedSetup feeds={FEEDS} />);
+
+    await click(showToggle(container, "Charlie Show"));
+
+    expect(isOpen(container, "Charlie Show")).toBe(true);
+    expect(isOpen(container, "Bravo Show")).toBe(false);
+  });
+
+  test("a second click collapses it, leaving nothing open", async () => {
+    const container = await render(<FeedSetup feeds={FEEDS} />);
+
+    await click(showToggle(container, "Bravo Show"));
+
+    expect(isOpen(container, "Bravo Show")).toBe(false);
+  });
+
+  test("finishing a show moves on to the next one still to do", async () => {
+    const container = await render(<FeedSetup feeds={FEEDS} />);
+
+    // The desktop "open here" escape hatch inside the open show — one of the
+    // actions that counts a feed as set up.
+    const openHere = [
+      ...container.querySelectorAll<HTMLAnchorElement>('a[href="podcast://feed"]'),
+    ].at(-1);
+    if (!openHere) throw new Error("no app link in the open show");
+    await click(openHere);
+
+    expect(markedFeeds).toEqual([["pod_b"]]);
+    expect(isOpen(container, "Bravo Show")).toBe(false);
+    expect(isOpen(container, "Charlie Show")).toBe(true);
   });
 });
