@@ -11,7 +11,7 @@
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage } from 'node:http'
-import { createCatchAllHandler } from './dev-api'
+import { createCatchAllHandler } from './api'
 import { makeFakeRes as makeRes } from './test-utils'
 import { clearPodcastCaches } from './routes/podcasts'
 

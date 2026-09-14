@@ -94,7 +94,7 @@ describe('api/handler.ts module graph', () => {
   test('reaches the routes it is supposed to', () => {
     // A guard that silently walked nothing would pass every other assertion
     // here, so pin a floor and a couple of the files that must be in the graph.
-    expect(graph.files).toContain('server/dev-api.ts')
+    expect(graph.files).toContain('server/api.ts')
     expect(graph.files).toContain('server/routes/podcasts.ts')
     expect(graph.files).toContain('src/data/shows.ts')
     expect(graph.files.length).toBeGreaterThan(50)
