@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Link } from "@tanstack/react-router";
 import { PricingCards } from "./PricingCards";
 import { PricingComparison } from "./PricingComparison";
 import { trackEvent } from "../lib/analytics";
@@ -38,6 +39,19 @@ export function Pricing() {
       <section id="pricing" ref={sectionRef} className="relative">
         <div className="page-gutter pt-12 pb-16">
           <PricingCards />
+
+          <p className="mx-auto mt-10 max-w-xl text-center text-body-sm text-fg">
+            Buying for an institution? Schools, synagogues, and organizations
+            can purchase memberships on behalf of their people —{" "}
+            <Link
+              to="/contact"
+              search={{ topic: "institutions" }}
+              className="underline decoration-current underline-offset-[6px] transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              get in touch
+            </Link>{" "}
+            and we'll set it up.
+          </p>
         </div>
       </section>
 

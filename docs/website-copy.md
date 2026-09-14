@@ -605,6 +605,9 @@ single member only ever sees some of them.
 - **FULL-ACCESS BODY (MEMBER OWNS EVERYTHING)**: You already have full access — Ark+ and the Fold.
 - **FULL-ACCESS LINK**: Manage your membership →
 
+### Institutions & large groups (note under the pricing cards)
+- **BODY**: Buying for an institution? Schools, synagogues, and organizations can purchase memberships on behalf of their people — get in touch and we'll set it up. ("get in touch" links to /contact with the "Group & institutional subscriptions" topic preselected)
+
 ### Billing period toggle
 - **OPTION**: Monthly
 - **OPTION**: Annual
@@ -963,6 +966,7 @@ single member only ever sees some of them.
 - **TOPIC OPTION**: Listener questions
 - **TOPIC OPTION**: Press, interviews & media
 - **TOPIC OPTION**: Sponsorships & partnerships
+- **TOPIC OPTION**: Group & institutional subscriptions
 - **TOPIC OPTION**: Ark+ membership support
 - **FIELD LABEL**: Message
 - **PLACEHOLDER (MESSAGE)**: What's on your mind?

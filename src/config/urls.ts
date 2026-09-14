@@ -78,6 +78,11 @@ export const contactTopics = [
     email: contactEmails.partnerships,
   },
   {
+    value: "institutions",
+    label: "Group & institutional subscriptions",
+    email: contactEmails.partnerships,
+  },
+  {
     value: "support",
     label: "Membership and technical support",
     email: contactEmails.support,
