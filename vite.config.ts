@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 650,
       rolldownOptions: {
         output: {
-          advancedChunks: {
+          codeSplitting: {
             groups: [
               // PostHog + Sentry are ~200 kB of vendor code that every page
               // pulls in via lib/observability, and they change on their own
