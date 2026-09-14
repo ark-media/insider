@@ -57,7 +57,17 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
       handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
 
-        const resolved = await resolveMembership(req, env, { stripe })
+        // `emailFallback` matters here, not just `stripe`: the fallback only
+        // runs when BOTH are set. A member who has paid but not yet logged in
+        // through Auth0 carries a session with no `sub` (checkout mints it
+        // before provisioning stamps one), so the Neon-by-sub read misses and
+        // they resolve to 'free'. /api/me resolves the same caller as bundle
+        // and renders these buttons — without this the page offers a member
+        // something the route behind it refuses with not_entitled.
+        const resolved = await resolveMembership(req, env, {
+          emailFallback: true,
+          stripe,
+        })
         if (!resolved) return json(401, { error: 'unauthenticated' })
         if (!resolved.entitlements.arkPlus) return json(403, { error: 'not_entitled' })
         const email = resolved.identity.email
@@ -119,7 +129,10 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // arriving from our own page, not from an off-site link.
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
 
-        const resolved = await resolveMembership(req, env, { stripe })
+        const resolved = await resolveMembership(req, env, {
+          emailFallback: true,
+          stripe,
+        })
         if (!resolved) return json(401, { error: 'unauthenticated' })
         if (!resolved.entitlements.arkPlus) return json(403, { error: 'not_entitled' })
         const email = resolved.identity.email
