@@ -648,10 +648,6 @@ export function EmailForm({
   // draft so the slider doesn't twitch on every keystroke — it commits on blur.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  // Visual hint on the slider once the floor is in — a jump, then a pulsing
-  // ring — without changing the charged amount. Stripped on pointerdown.
-  const [nudge, setNudge] = useState(false);
-  const nudged = useRef(false);
   const intervalLabel = plan === "yearly" ? "year" : "month";
   const shortInterval = plan === "yearly" ? "yr" : "mo";
   const floorReady = floorMinor !== null;
@@ -667,17 +663,18 @@ export function EmailForm({
     setEditing(false);
   }
 
-  useEffect(() => {
-    if (!floorReady || nudged.current) return;
-    const reduceMotion =
-      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-    nudged.current = true;
-    if (reduceMotion) return;
-    setNudge(true);
-  }, [floorReady]);
+  // Visual hint on the slider once the floor is in — a jump, then a pulsing
+  // ring — without changing the charged amount. Stripped on pointerdown.
+  // Latched rather than read straight off `floorReady`, so it plays once: a
+  // currency the floor map doesn't cover would otherwise drop it back to
+  // "pending" and replay the hint on the way back. Reduced motion needs no
+  // check here — the media query in index.css kills these animations outright.
+  const [hint, setHint] = useState<"pending" | "on" | "done">("pending");
+  if (hint === "pending" && floorReady) setHint("on");
+  const nudge = hint === "on";
 
   const stopNudge = () => {
-    if (nudge) setNudge(false);
+    if (nudge) setHint("done");
   };
 
   // Everything below works in MAJOR units of the selected currency. The floor is
