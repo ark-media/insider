@@ -12,6 +12,7 @@ import {
   downgradeToFree,
   ensureSubscribedWithPremium,
   isReceivingEmails,
+  PremiumGrantIgnoredError,
   refreshSubscriptionFromBeehiiv,
   syncSubscriberName,
   tryPush,
@@ -255,6 +256,76 @@ describe('ensureSubscribedWithPremium', () => {
     await expect(
       ensureSubscribedWithPremium({ env: BASE_ENV, sql }, 'a@x.com'),
     ).rejects.toThrow(/missing id/)
+  })
+
+  // A tier id belonging to another publication is accepted and ignored by
+  // Beehiiv — 2xx, no error, record stays free. Silent before this guard: the
+  // grant reported success and the member paid for a feed that never existed.
+  test('throws when create 2xx’d without applying the tier', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = ({ url, method }) => {
+      if (method === 'GET') return jsonRes(404, { error: 'not found' })
+      if (method === 'POST') {
+        return jsonRes(200, beehiivSub({ id: 'sub_new', tier: 'free' }))
+      }
+      return jsonRes(500, { unexpected: url })
+    }
+    await expect(
+      ensureSubscribedWithPremium({ env: BASE_ENV, sql }, 'reader@example.com'),
+    ).rejects.toThrow(PremiumGrantIgnoredError)
+  })
+
+  test('throws when the upgrade PUT 2xx’d without applying the tier', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = ({ url, method }) => {
+      if (method === 'GET') {
+        return jsonRes(200, beehiivSub({ id: 'sub_old', tier: 'free' }))
+      }
+      if (method === 'PUT') {
+        return jsonRes(200, beehiivSub({ id: 'sub_old', tier: 'free' }))
+      }
+      return jsonRes(500, { unexpected: url })
+    }
+    await expect(
+      ensureSubscribedWithPremium({ env: BASE_ENV, sql }, 'reader@example.com'),
+    ).rejects.toThrow(PremiumGrantIgnoredError)
+  })
+
+  // Names both ids: the pairing IS the diagnosis, since the cause is almost
+  // always a publication/tier mismatch across environments.
+  test('the ignored-grant error names the publication and the tier', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = ({ url, method }) => {
+      if (method === 'GET') return jsonRes(404, {})
+      if (method === 'POST') return jsonRes(200, beehiivSub({ tier: 'free' }))
+      return jsonRes(500, { unexpected: url })
+    }
+    const err = await ensureSubscribedWithPremium(
+      { env: BASE_ENV, sql },
+      'reader@example.com',
+    ).catch((e: unknown) => e as Error)
+    expect(err.message).toContain(PUB_ID)
+    expect(err.message).toContain(PREMIUM_TIER)
+  })
+
+  // The mirror is a cache of Beehiiv, so it must record what Beehiiv actually
+  // says even on the failure path — that false row is what makes a silent
+  // misconfiguration visible in Neon afterwards.
+  test('still mirrors the truthful has_premium=false row before throwing', async () => {
+    const { sql, calls: sqlCalls } = makeSqlStub(emptyRows)
+    fetchHandler = ({ url, method }) => {
+      if (method === 'GET') return jsonRes(404, {})
+      if (method === 'POST') return jsonRes(200, beehiivSub({ tier: 'free' }))
+      return jsonRes(500, { unexpected: url })
+    }
+    await expect(
+      ensureSubscribedWithPremium({ env: BASE_ENV, sql }, 'reader@example.com'),
+    ).rejects.toThrow(PremiumGrantIgnoredError)
+    const upsert = sqlCalls.find((c) =>
+      c.sql.includes('insert into beehiiv_subscription'),
+    )
+    expect(upsert).toBeDefined()
+    expect(upsert!.values).toContain(false)
   })
 })
 

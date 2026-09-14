@@ -400,6 +400,10 @@ export async function ensureFreeSubscription(
 //     only mark the axis provisioned in the first case;
 //   - a Beehiiv API failure THROWS rather than being swallowed, so the Stripe
 //     webhook retries instead of acking a member into a feedless membership.
+//     "Failure" includes a 2xx that did not actually apply the tier: Beehiiv
+//     accepts a `premium_tier_ids` naming a tier from another publication and
+//     ignores it, so the response is only trustworthy once `hasPremium` is
+//     re-read off it. That case throws too (PremiumGrantIgnoredError).
 //
 // `sql` may be null where there is no Neon store to mirror into — the grant is
 // what matters, the local row is a cache of it.
@@ -432,7 +436,18 @@ export async function ensureSubscribedWithPremium(
   } else {
     result = existing
   }
+  // Mirror what Beehiiv actually says before judging it — a `has_premium: false`
+  // row is the truth, and the record that makes this diagnosable.
   if (deps.sql) await persistFromBeehiiv(deps.sql, cfg.pubId, result)
+  // The call returned 2xx but the tier is not on the record. Beehiiv answers
+  // 2xx and silently ignores `premium_tier_ids` holding a tier that belongs to
+  // a DIFFERENT publication, so a publication/tier mismatch in the environment
+  // lands here — indistinguishable, upstream, from success. Without this the
+  // function returns true, activation.ts stamps the axis provisioned, and the
+  // member is left paying for a feed that was never minted.
+  if (!result.hasPremium) {
+    throw new PremiumGrantIgnoredError(cfg.pubId, premiumTierId)
+  }
   return true
 }
 
@@ -525,6 +540,24 @@ export class PremiumNotConfiguredError extends Error {
   constructor() {
     super('BEEHIIV_PREMIUM_TIER_ID not set; cannot enable premium')
     this.name = 'PremiumNotConfiguredError'
+  }
+}
+
+// Thrown when the premium tier was sent and Beehiiv answered 2xx, but the
+// subscription came back WITHOUT it. Distinct from PremiumNotConfiguredError
+// (which means the tier id is missing entirely): here the id is present but
+// Beehiiv would not apply it — overwhelmingly because it belongs to a different
+// publication than the one being written to, i.e. BEEHIIV_PUBLICATION_ID_* and
+// BEEHIIV_PREMIUM_TIER_ID disagree. Both ids go in the message because that
+// pairing is the diagnosis, and the failure is otherwise invisible: Beehiiv
+// reports no error, and the member simply never gets a feed.
+export class PremiumGrantIgnoredError extends Error {
+  constructor(publicationId: string, premiumTierId: string) {
+    super(
+      `Beehiiv accepted the request but did not apply premium tier ${premiumTierId} ` +
+        `on publication ${publicationId} — do they belong to the same publication?`,
+    )
+    this.name = 'PremiumGrantIgnoredError'
   }
 }
 
