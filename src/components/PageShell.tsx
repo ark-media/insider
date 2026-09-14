@@ -6,6 +6,7 @@ export function PageShell({
   title,
   titleSrOnly = false,
   lede,
+  actions,
   aside,
   heroClassName,
   children,
@@ -25,6 +26,11 @@ export function PageShell({
    */
   titleSrOnly?: boolean;
   lede?: ReactNode;
+  /**
+   * Calls to action placed under the lede, inside the headline column — for
+   * pages whose hero has to convert, not just introduce (the Fold's join CTA).
+   */
+  actions?: ReactNode;
   // Optional content pinned to the right of the hero on desktop (e.g. app
   // download badges). Stacks below the title/lede on narrow screens.
   aside?: ReactNode;
@@ -61,6 +67,7 @@ export function PageShell({
                   {lede}
                 </p>
               ) : null}
+              {actions ? <div className="mt-8">{actions}</div> : null}
             </div>
             {aside ? <div className="shrink-0">{aside}</div> : null}
           </div>

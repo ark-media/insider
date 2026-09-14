@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { PageShell } from "../components/PageShell";
 import { ContentError } from "../components/ContentError";
@@ -6,10 +6,12 @@ import {
   fetchActivityDigest,
   fetchCommunityFeed,
   fetchEventStrip,
+  fetchShowcasePosts,
   fetchSuggestedSpaces,
   type ActivityDigest,
   type CommunityFeedItem,
   type EventStripItem,
+  type ShowcasePost,
   type SuggestedSpace,
 } from "../lib/circle";
 import { isCircleMember, useSubscriberAuth } from "../lib/subscriberAuth";
@@ -17,6 +19,12 @@ import { CommunityFeed } from "../components/community/CommunityFeed";
 import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
 import { FoldLogo } from "../components/FoldLogo";
+import { CheckoutModal } from "../components/CheckoutModal";
+import { PriceSkeleton } from "../components/PriceSkeleton";
+import { PlayGlyph } from "../components/PlayGlyph";
+import { trackEvent } from "../lib/analytics";
+import { formatMinor, toMajor } from "../lib/currency";
+import { usePricing } from "../lib/usePricing";
 
 export const Route = createFileRoute("/fold")({
   component: CommunityPage,
@@ -167,150 +175,527 @@ function SubscriberCommunity() {
     </PageShell>
   );
 }
+/* ---------------------------------------------------------------------------
+   Marketing showcase — the public /fold page, shown to anyone without Circle
+   access. It has one job: explain what the Fold is and sell a membership, so
+   every band ends within reach of a join CTA.
+
+   Prices are never hardcoded here: the Fold sells on the `circle` tier and the
+   amounts come from Stripe via /api/pricing, same as the /plus card grid.
+--------------------------------------------------------------------------- */
+
+// The join card leads with a monthly price, so checkout opens on the monthly
+// plan. Annual lives on /plus, linked under the card.
+const MARKETING_PLAN = "monthly" as const;
+
+// The hero headline runs to two full clauses, so it steps down from the default
+// text-h1 scale to keep the whole lockup — logo, headline, CTA — above the fold.
+const HERO_LINE = "text-[clamp(1.9rem,4vw,3rem)]";
 
 function MarketingShowcase() {
-  return (
-    <PageShell
-      brand={<FoldLogo className="h-9 sm:h-11" />}
-      title="Real People, Real Conversations, Real Connection"
-      lede="The Fold is where Ark listeners become part of the conversation. Join a private, thoughtful community for serious discussion, meaningful connection, and deeper engagement with the questions shaping Jewish life, Israel, and the world."
-      aside={<CommunityAppLinks />}
-      heroClassName="fold-bg grain-overlay overflow-hidden"
-    >
-      <section>
-        <div className="page-gutter flex flex-col gap-12 py-12 sm:py-16">
-          <FeatureBlock
-            no="01"
-            title="Call Me Back AMA"
-            kicker="Your questions, answered weekly by the Call Me Back team."
-            body="Submit what's on your mind. Every week, the people behind Call Me Back pick a handful of questions from the Fold and give you a real answer."
-            mockup={<QAScreen />}
-          />
-          <FeatureBlock
-            no="02"
-            flip
-            title="Connection in the Fold"
-            kicker="Join conversations with other members."
-            body="The Fold is a private space for thoughtful people who want to go deeper on Jewish life, Israel, politics, culture, and the questions shaping the Jewish world. It's a place for honest conversation, real connection, and learning from people who may see things differently, all in a space built to be constructive, welcoming, and respectful."
-            mockup={<FeedScreen />}
-          />
-          {/* Placeholders — the feature lineup isn't settled yet. Swap the title,
-              copy, and mockup as features are confirmed; drop the `badge` to
-              promote one to a finalized block. */}
-          <FeatureBlock
-            no="03"
-            badge="Coming soon"
-            title="Placeholder feature"
-            kicker="Another Fold feature will live here."
-            body="We're still settling the lineup. This slot is reserved for the next app feature once it's confirmed."
-            mockup={<PlaceholderScreen label="Feature 03" />}
-          />
-          <FeatureBlock
-            no="04"
-            flip
-            badge="Coming soon"
-            title="Placeholder feature"
-            kicker="And one more, to be decided."
-            body="A second reserved slot. Same pattern as the blocks above — headline, supporting line, and an app screen."
-            mockup={<PlaceholderScreen label="Feature 04" />}
-          />
-        </div>
-      </section>
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-    </PageShell>
+  const pricing = usePricing();
+  const data = pricing.status === "ready" ? pricing.data : null;
+  const currency = data?.currency ?? "usd";
+  const factor = data?.factor ?? 100;
+  const foldMinor = data?.tiers.circle?.monthly[currency] ?? null;
+  const bundleMinor = data?.tiers.bundle?.monthly[currency] ?? null;
+
+  const openCheckout = useCallback(() => {
+    trackEvent("checkout_opened", {
+      plan: MARKETING_PLAN,
+      tier: "circle",
+      amount: foldMinor !== null ? toMajor(foldMinor, factor) : null,
+      is_custom_amount: false,
+    });
+    setCheckoutOpen(true);
+  }, [foldMinor, factor]);
+
+  return (
+    <>
+      <PageShell
+        brand={
+          <div>
+            <FoldLogo className="h-9 sm:h-11" />
+            <p className="mt-7 label text-fg-muted">
+              Ark Media curates. The members make it valuable.
+            </p>
+          </div>
+        }
+        title={
+          <>
+            <span className={`${HERO_LINE} block`}>
+              A private community defined by{" "}
+              <span className="display text-cyan">a shared curiosity</span>{" "}
+              about the Jewish experience
+            </span>
+            <span className={`${HERO_LINE} mt-3 block`}>
+              <span className="display text-cyan">
+                and by great conversations with
+              </span>{" "}
+              people you haven't met yet…
+            </span>
+          </>
+        }
+        actions={
+          <button type="button" onClick={openCheckout} className={JOIN_PRIMARY}>
+            Join the Fold
+          </button>
+        }
+        aside={
+          // Art, not instruction — hidden on narrow screens the way the /plus
+          // hero hides its cover, so the headline and CTA own the first screen.
+          <div className="hidden lg:block">
+            <PhoneFrame className="w-[250px]">
+              <FeedScreen />
+            </PhoneFrame>
+          </div>
+        }
+        heroClassName="fold-bg grain-overlay overflow-hidden"
+      >
+        <WhatToPack />
+        <InviteVideo />
+        <InsideTheApp />
+        <ThreeRooms onJoin={openCheckout} />
+        <WhyDifferent />
+        <StatementBand />
+        <JoinCta
+          status={pricing.status}
+          foldMinor={foldMinor}
+          bundleMinor={bundleMinor}
+          currency={currency}
+          factor={factor}
+          onJoin={openCheckout}
+        />
+      </PageShell>
+
+      <CheckoutModal
+        open={checkoutOpen}
+        plan={MARKETING_PLAN}
+        tier="circle"
+        onClose={() => setCheckoutOpen(false)}
+      />
+    </>
   );
 }
 
-function FeatureBlock({
-  no,
-  title,
-  kicker,
-  body,
-  mockup,
-  flip,
-  badge,
-}: {
-  no: string;
-  title: string;
-  kicker: string;
-  body: string;
-  mockup: ReactNode;
-  flip?: boolean;
-  badge?: string;
-}) {
+/* --- Shared CTA styling ---------------------------------------------------
+   Both variants keep the site's button contract: filled cyan inverts to an
+   outline on hover, outlined cyan fills on hover. The class pairs matter —
+   light mode swaps the fill to a deep navy via `.bg-cyan.text-navy` and
+   `.hover\:bg-cyan.hover\:text-navy`, so don't split them apart.
+-------------------------------------------------------------------------- */
+
+const JOIN_BASE =
+  "inline-flex min-h-12 items-center justify-center px-6 button-text font-display font-bold tracking-cta transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+
+const JOIN_PRIMARY = `${JOIN_BASE} border border-cyan bg-cyan text-navy hover:bg-transparent hover:text-cyan`;
+
+const JOIN_SECONDARY = `${JOIN_BASE} border border-cyan text-cyan hover:bg-cyan hover:text-navy`;
+
+/* --- Before you arrive ---------------------------------------------------- */
+
+const PACKING_LIST = [
+  "Encounter people whose experiences and perspectives are different from your own.",
+  "Stay with important conversations long enough for them to deepen.",
+  "Get to know the people behind the ideas.",
+  "Bring your questions and convictions.",
+];
+
+function WhatToPack() {
   return (
-    <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-12 lg:gap-16">
-      <div className={flip ? "lg:order-2 lg:col-span-6" : "lg:col-span-6"}>
-        <div className="flex items-center gap-3">
-          <span className="display-upright text-[20px] text-cyan sm:text-[22px]">
-            {no}
-          </span>
-          {badge ? (
-            <span className="rounded-full border border-rule-strong px-2.5 py-0.5 label text-fg-muted">
-              {badge}
+    <section>
+      <div className="page-gutter grid gap-10 py-14 sm:py-20 lg:grid-cols-12 lg:gap-16">
+        <div className="lg:col-span-5">
+          <div className="label text-cyan">Before you arrive</div>
+          <h2 className="mt-6 display-upright text-[clamp(2rem,4vw,3.2rem)] text-fg-strong">
+            What to pack?
+          </h2>
+        </div>
+        <ul className="border-b border-rule lg:col-span-7">
+          {PACKING_LIST.map((item) => (
+            <li key={item} className="border-t border-rule py-6 text-body-lg">
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/* --- You are invited ------------------------------------------------------ */
+
+function InviteVideo() {
+  return (
+    <section>
+      <div className="page-gutter py-14 sm:py-20">
+        <h2 className="display-upright text-center text-[clamp(2rem,4.4vw,3.2rem)] text-fg-strong">
+          You are invited.
+        </h2>
+        {/* Placeholder frame until the captioned welcome video is supplied —
+            swap the inner block for the <video> and drop the caption. */}
+        <div className="mx-auto mt-10 flex aspect-video max-w-4xl flex-col items-center justify-center gap-5 border border-rule bg-navy-800/40">
+          <span
+            aria-hidden="true"
+            className="flex size-16 items-center justify-center rounded-full bg-cyan text-navy"
+          >
+            <span className="ml-1 block scale-[2.2]">
+              <PlayGlyph />
             </span>
+          </span>
+          <span className="meta px-6 text-center">
+            Welcome video — captioned, to be supplied
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* --- You might do inside the Fold app -------------------------------------
+   Real posts, pulled live from the three conversational rooms in Circle via
+   /api/circle/showcase. This grid used to be six hand-written samples with a
+   "names and avatars are placeholders" disclaimer; both are gone.
+
+   The cards deliberately do NOT link through to Circle. A visitor reading this
+   section is not a member yet, so a click would land them on Circle's own
+   login wall rather than our checkout — the Join CTAs are the way in.
+-------------------------------------------------------------------------- */
+
+function InsideTheApp() {
+  const [posts, setPosts] = useState<ShowcasePost[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    // fetchShowcasePosts never rejects — an outage arrives as an empty array.
+    void fetchShowcasePosts().then((p) => {
+      if (alive) setPosts(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Nothing real to show (still loading, Circle unreachable, or every room
+  // genuinely empty) → no section at all. An empty grid under "You might do"
+  // sells the community worse than silence does.
+  if (!posts || posts.length === 0) return null;
+
+  return (
+    <section>
+      <div className="page-gutter py-14 sm:py-20">
+        <h2 className="display-upright max-w-3xl text-[clamp(2rem,4.4vw,3.2rem)]">
+          <span className="block text-fg-strong">You might do</span>
+          <span className="mt-2 block text-cyan">inside the Fold app:</span>
+        </h2>
+        <p className="meta mt-6">Recent posts from inside the Fold</p>
+
+        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {posts.map((post) => (
+            <PostCard key={post.id} post={post} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The card's activity line. Replies are the signal worth leading with; likes
+ * stand in when a post has none yet. A post with neither renders an empty
+ * span, which keeps "Reply" pushed right by the row's justify-between.
+ */
+function activityLabel(post: ShowcasePost): string {
+  if (post.replyCount > 0) {
+    return post.replyCount === 1 ? "1 reply" : `${post.replyCount} replies`;
+  }
+  if (post.likeCount > 0) {
+    return post.likeCount === 1 ? "1 like" : `${post.likeCount} likes`;
+  }
+  return "";
+}
+
+function PostCard({ post }: { post: ShowcasePost }) {
+  return (
+    <article className="flex flex-col border border-rule bg-navy-800/40 p-6">
+      <div className="flex items-center gap-3">
+        <Avatar name={post.authorName} src={post.authorAvatarUrl} />
+        <div className="min-w-0">
+          <div className="text-h6">{post.authorName}</div>
+          {post.authorLocation ? (
+            <div className="text-body-sm">{post.authorLocation}</div>
           ) : null}
         </div>
-        <h2 className="mt-4 max-w-xl">
-          <span className="display-upright block text-[clamp(1.8rem,3.6vw,3rem)] text-fg-strong">
-            {title}
+      </div>
+
+      <div className="mt-4">
+        <RoomChip name={post.roomName} />
+      </div>
+
+      <p className="mt-4 grow text-body">{post.text}</p>
+
+      <div className="mt-6 flex items-center justify-between border-t border-rule pt-4 text-body-sm">
+        <span>{activityLabel(post)}</span>
+        {/* Illustrative app UI, not a control — the real Reply lives in the app. */}
+        <span>Reply</span>
+      </div>
+    </article>
+  );
+}
+
+/**
+ * The member's Circle avatar, falling back to their initial. Circle serves
+ * avatars from signed active_storage redirects, so a URL that has gone stale
+ * drops back to the initial rather than leaving a broken image on the page.
+ */
+function Avatar({ name, src }: { name: string; src?: string }) {
+  const [failed, setFailed] = useState(false);
+
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy-600/80 text-sm font-bold text-fg-strong"
+    >
+      {src && !failed ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          className="size-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        name.trim().charAt(0).toUpperCase()
+      )}
+    </span>
+  );
+}
+
+// Rooms read as outlined cyan tags, labelled with the space's own Circle name
+// so renaming a room in Circle renames it here.
+function RoomChip({ name }: { name: string }) {
+  return (
+    <span className="shrink-0 border border-cyan/40 px-2.5 py-1 label text-cyan">
+      {name}
+    </span>
+  );
+}
+
+/* --- Three rooms, one community ------------------------------------------- */
+
+const ROOMS = [
+  {
+    title: "The Conversation",
+    tagline: "Think together",
+    body: "Discussion, debate, reflection, and sensemaking.",
+  },
+  {
+    title: "Ask & Share",
+    tagline: "Help each other",
+    body: "Questions, recommendations, resources, and advice.",
+  },
+  {
+    title: "The Lounge",
+    tagline: "Enjoy each other",
+    body: "Culture, humor, personal stories, and everyday Jewish life.",
+  },
+];
+
+function ThreeRooms({ onJoin }: { onJoin: () => void }) {
+  return (
+    <section>
+      <div className="page-gutter py-14 sm:py-20">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="label text-cyan">Three rooms, one community</h2>
+          <button type="button" onClick={onJoin} className={JOIN_SECONDARY}>
+            Join the Fold
+          </button>
+        </div>
+
+        <div className="mt-10 grid gap-6 lg:grid-cols-3">
+          {ROOMS.map((room) => (
+            <div
+              key={room.title}
+              className="border border-rule bg-navy-800/40 p-7 sm:p-8"
+            >
+              <h3 className="display-upright text-[clamp(1.5rem,2.4vw,1.9rem)] text-fg-strong">
+                {room.title}
+              </h3>
+              <p className="mt-3 font-display text-lg italic text-cyan">
+                {room.tagline}
+              </p>
+              <p className="mt-4 text-body">{room.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* --- What makes the Fold different ---------------------------------------- */
+
+function WhyDifferent() {
+  return (
+    <section>
+      <div className="page-gutter grid gap-10 py-14 sm:py-20 lg:grid-cols-12 lg:gap-16">
+        <div className="lg:col-span-6">
+          <div className="label text-cyan">What makes the Fold different</div>
+          <h2 className="mt-6 max-w-md display-upright text-[clamp(2rem,4vw,3.2rem)] text-fg-strong">
+            Good conversation does not happen by accident.
+          </h2>
+        </div>
+
+        <div className="lg:col-span-6">
+          <p className="text-body-lg">
+            We're building the Fold with the same standards that shape Ark's
+            conversations: curiosity, substance, intellectual honesty, and the
+            ability to disagree in good faith.
+          </p>
+          <p className="mt-6 text-body-lg">
+            The Fold is for you if you care more about understanding than
+            winning.
+          </p>
+          <div className="mt-8 h-px bg-cyan" />
+          <p className="mt-8 font-display text-lg font-bold text-fg-strong">
+            We expect your grace and welcome your grit.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* --- Closing statement ----------------------------------------------------- */
+
+function StatementBand() {
+  return (
+    <section>
+      <div className="page-gutter py-16 sm:py-24">
+        {/* A statement, not a section heading — kept out of the outline so the
+            page's heading structure stays meaningful. */}
+        <p className="display-upright text-[clamp(1.5rem,3.6vw,3rem)] text-fg-strong">
+          <span className="block">There are more people worth knowing.</span>
+          <span className="mt-3 block">More perspectives worth hearing.</span>
+          <span className="display mt-3 block text-cyan">
+            More conversations worth having.
           </span>
-        </h2>
-        <p className="mt-6 max-w-md font-display text-[clamp(1.05rem,1.6vw,1.3rem)] font-bold leading-snug text-cyan">
-          {kicker}
         </p>
-        <p className="mt-4 max-w-md text-body-sm">{body}</p>
       </div>
-      <div
-        className={
-          flip
-            ? "flex justify-center lg:order-1 lg:col-span-6"
-            : "flex justify-center lg:col-span-6"
-        }
-      >
-        <PhoneFrame>{mockup}</PhoneFrame>
+    </section>
+  );
+}
+
+/* --- Join the Fold --------------------------------------------------------- */
+
+function JoinCta({
+  status,
+  foldMinor,
+  bundleMinor,
+  currency,
+  factor,
+  onJoin,
+}: {
+  status: "loading" | "error" | "ready";
+  foldMinor: number | null;
+  bundleMinor: number | null;
+  currency: string;
+  factor: number;
+  onJoin: () => void;
+}) {
+  // A pricing outage must not take the join CTA down with it — checkout fetches
+  // its own prices, so the card drops the amounts and keeps the button.
+  const priced = status !== "error";
+
+  return (
+    <section>
+      <div className="page-gutter py-14 text-center sm:py-20">
+        <div className="flex justify-center">
+          <FoldLogo className="h-10 sm:h-12" />
+        </div>
+        <h2 className="mt-8 display-upright text-[clamp(2rem,4.4vw,3.2rem)] text-fg-strong">
+          Join the Fold
+        </h2>
+        <p className="mx-auto mt-6 max-w-xl text-body-lg">
+          A private community from Ark Media, for people who take these
+          questions seriously.
+        </p>
+
+        <div className="mx-auto mt-12 max-w-2xl border border-rule bg-navy-800/40 p-7 text-left sm:p-9">
+          <div className="flex items-baseline justify-between gap-4">
+            <div className="label text-cyan">Membership</div>
+            {priced ? <div className="meta">Starting at</div> : null}
+          </div>
+
+          {priced ? (
+            <>
+              <div className="mt-5 flex items-baseline gap-2 text-fg-strong">
+                <span className="display-upright text-[clamp(2.4rem,6vw,3.2rem)] leading-none">
+                  {foldMinor !== null ? (
+                    formatMinor(foldMinor, currency, factor)
+                  ) : (
+                    <PriceSkeleton className="h-[0.7em] w-28" />
+                  )}
+                </span>
+                <span className="text-body-sm">/ month</span>
+              </div>
+
+              <div className="mt-6 border-t border-rule pt-6 text-body">
+                {bundleMinor !== null ? (
+                  <>
+                    <span className="font-bold text-fg-strong">
+                      {formatMinor(bundleMinor, currency, factor)} / month
+                    </span>{" "}
+                    when you bundle it with Ark+
+                  </>
+                ) : (
+                  <PriceSkeleton className="h-4 w-56" />
+                )}
+              </div>
+            </>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={onJoin}
+            className={`${JOIN_PRIMARY} mt-8 w-full`}
+          >
+            Join the Fold
+          </button>
+
+          <div className="mt-5 text-center">
+            <Link to="/plus" className="episode-action hover:underline">
+              See all membership options
+            </Link>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
 /* ---------------------------------------------------------------------------
-   App mockups. These render with fixed dark colors (not theme tokens) so they
-   read as real app screenshots in both the light and dark site themes. Swap the
-   inner screens for actual captures when we have them.
+   App mockup. Renders with fixed dark colors (not theme tokens) so it reads as
+   a real app screenshot in both the light and dark site themes. Swap the inner
+   screen for an actual capture when we have one.
 --------------------------------------------------------------------------- */
-
-function PhoneFrame({ children }: { children: ReactNode }) {
+function PhoneFrame({
+  children,
+  className = "w-[270px] sm:w-[300px]",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="relative isolate w-[270px] shrink-0 sm:w-[300px]">
+    <div className={`relative isolate shrink-0 ${className}`}>
       <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-cyan/10 blur-2xl" />
       <div className="relative aspect-[9/19] overflow-hidden rounded-[2.6rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
         <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
           {/* notch */}
           <div className="absolute left-1/2 top-[10px] z-20 h-[22px] w-[96px] -translate-x-1/2 rounded-full bg-black/70" />
           {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PlaceholderScreen({ label }: { label: string }) {
-  return (
-    <div className="flex h-full flex-col text-white">
-      <StatusBar />
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-dashed border-white/25 text-[18px] text-white/40">
-          +
-        </span>
-        <div>
-          <div className="text-[13px] font-bold text-white/80">{label}</div>
-          <div className="mt-1 text-[11px] text-white/45">Screen TBD</div>
-        </div>
-        <div className="mt-2 flex w-full max-w-[180px] flex-col gap-2">
-          <span className="h-2.5 w-full rounded-full bg-white/[0.06]" />
-          <span className="h-2.5 w-4/5 rounded-full bg-white/[0.06]" />
-          <span className="h-2.5 w-3/5 rounded-full bg-white/[0.06]" />
         </div>
       </div>
     </div>
@@ -350,90 +735,6 @@ function Initials({ name, bg }: { name: string; bg: string }) {
     >
       {initials}
     </span>
-  );
-}
-
-function QAScreen() {
-  return (
-    <div className="flex h-full flex-col text-white">
-      <StatusBar />
-      {/* header */}
-      <div className="mt-5 flex items-center gap-3 border-b border-white/10 px-5 pb-4">
-        <img
-          src="/hosts/dan-senor.jpg"
-          alt=""
-          className="h-9 w-9 rounded-full object-cover"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-bold text-white/95">
-            Call Me Back
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px] text-white/55">
-            <span className="inline-block h-[6px] w-[6px] rounded-full bg-[#3eb5f9]" />
-            Live Q&A · with Dan Senor
-          </div>
-        </div>
-        <span className="rounded-full bg-[#3eb5f9] px-2 py-[3px] text-[9px] font-bold uppercase tracking-wide text-[#0b153c]">
-          Live
-        </span>
-      </div>
-
-      {/* thread */}
-      <div className="flex flex-1 flex-col gap-3 overflow-hidden px-4 py-4">
-        <div className="flex items-start gap-2">
-          <Initials name="Rachel B" bg="#f2b705" />
-          <div className="rounded-2xl rounded-tl-sm bg-white/[0.07] px-3 py-2">
-            <div className="text-[10px] font-semibold text-white/60">
-              Rachel B.
-            </div>
-            <p className="mt-0.5 text-[11px] leading-snug text-white/90">
-              What are you watching for in tonight's coalition vote?
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-start gap-2">
-          <img
-            src="/hosts/dan-senor.jpg"
-            alt=""
-            className="mt-0.5 h-7 w-7 rounded-full object-cover"
-          />
-          <div className="rounded-2xl rounded-tl-sm border border-[#3eb5f9]/40 bg-[#3eb5f9]/[0.12] px-3 py-2">
-            <div className="text-[10px] font-bold text-[#3eb5f9]">
-              Dan Senor · Host
-            </div>
-            <p className="mt-0.5 text-[11px] leading-snug text-white/95">
-              Great question. Watch the smaller parties — that's where this
-              actually gets decided. I'll break it down on Thursday's show.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-start gap-2">
-          <Initials name="Yossi M" bg="#7bd389" />
-          <div className="rounded-2xl rounded-tl-sm bg-white/[0.07] px-3 py-2">
-            <div className="text-[10px] font-semibold text-white/60">
-              Yossi M.
-            </div>
-            <p className="mt-0.5 text-[11px] leading-snug text-white/90">
-              Any chance of a guest from the negotiating room?
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* composer */}
-      <div className="border-t border-white/10 px-4 py-3">
-        <div className="flex items-center gap-2 rounded-full bg-white/[0.08] px-3 py-2">
-          <span className="flex-1 text-[11px] text-white/45">
-            Ask a question…
-          </span>
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#3eb5f9] text-[12px] font-bold text-[#0b153c]">
-            ↑
-          </span>
-        </div>
-      </div>
-    </div>
   );
 }
 
