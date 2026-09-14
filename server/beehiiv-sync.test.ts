@@ -300,10 +300,10 @@ describe('ensureSubscribedWithPremium', () => {
       if (method === 'POST') return jsonRes(200, beehiivSub({ tier: 'free' }))
       return jsonRes(500, { unexpected: url })
     }
-    const err = await ensureSubscribedWithPremium(
+    const err = (await ensureSubscribedWithPremium(
       { env: BASE_ENV, sql },
       'reader@example.com',
-    ).catch((e: unknown) => e as Error)
+    ).catch((e: unknown) => e)) as Error
     expect(err.message).toContain(PUB_ID)
     expect(err.message).toContain(PREMIUM_TIER)
   })
