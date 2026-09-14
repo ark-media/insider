@@ -52,11 +52,12 @@ export type MigrationConfig = {
 
 export const DEFAULT_MIGRATION_CONFIG: MigrationConfig = {
   enabled: true,
-  // INFERRED, and the one value here worth confirming in /admin before the
-  // first check-in is due: the Beehiiv feed migration shipped and deployed on
-  // this date. If Ark+ "launched" to members on a different day, the two
-  // check-ins are counted from the wrong start.
-  launchDate: '2026-09-10',
+  // The day Ark+ launched to members — confirmed, not the Beehiiv deploy date
+  // it was first guessed from. Everything about the campaign hangs off it: both
+  // check-ins count from here, and it is the cutoff that decides who is in the
+  // cohort at all (premium access predating the end of this day = carried over
+  // from the old feed). Moving it moves all three sends.
+  launchDate: '2026-10-05',
   // "Your old Call Me Back feed will be turned off at the end of 2026" — the
   // campaign copy states this date to members, so the two move together.
   deadlineDate: '2026-12-31',

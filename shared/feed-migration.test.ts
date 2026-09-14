@@ -88,6 +88,29 @@ describe('dueStage', () => {
   })
 })
 
+describe('the shipped defaults', () => {
+  test('send on the three real dates', () => {
+    // The dates members actually receive these on. Spelled out rather than
+    // recomputed from the config, so a change to the launch date or an offset
+    // has to be made here too — deliberately, and visibly in the diff.
+    const dates = migrationSchedule(DEFAULT_MIGRATION_CONFIG).map((s) =>
+      new Date(s.dueMs).toISOString().slice(0, 10),
+    )
+    expect(dates).toEqual(['2026-11-04', '2026-12-04', '2026-12-26'])
+  })
+
+  test('the series runs in order and finishes before the switch-off', () => {
+    const schedule = migrationSchedule(DEFAULT_MIGRATION_CONFIG)
+    expect(schedule.map((s) => s.stage)).toEqual([
+      'check_in_30',
+      'check_in_60',
+      'final',
+    ])
+    const deadline = calendarDateMs(DEFAULT_MIGRATION_CONFIG.deadlineDate)!
+    for (const s of schedule) expect(s.dueMs).toBeLessThan(deadline)
+  })
+})
+
 describe('validateMigrationConfig', () => {
   test('accepts the defaults it ships with', () => {
     const v = validateMigrationConfig(DEFAULT_MIGRATION_CONFIG)
