@@ -51,18 +51,24 @@ function sendHtml(res: ServerResponse, status: number, body: string): void {
   res.end(body)
 }
 
+// Standalone markup — this page is reached from the win-back email by someone
+// with no session, so it never boots the SPA and can't read the member's theme
+// preference. It is pinned to the same light palette as the email that links
+// here (see the shell in server/lib/welcome-email.ts), so the click doesn't
+// land on a page that looks like a different product.
 function page(title: string, message: string): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
     <title>${title}</title>
   </head>
-  <body style="margin:0;background:#070b22;color:rgba(255,255,255,0.85);font:400 16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body style="margin:0;background:#eef3fc;color:#373f5f;font:400 16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <main style="max-width:520px;margin:0 auto;padding:64px 24px;">
-      <p style="margin:0 0 24px;font:800 20px system-ui;color:#fff;">Ark<span style="color:#3eb5f9;">+</span></p>
-      <h1 style="margin:0 0 12px;font:700 24px/1.25 system-ui;color:#fff;">${title}</h1>
+      <p style="margin:0 0 24px;font:800 20px system-ui;color:#0b153c;">Ark<span style="color:#0a6fad;">+</span></p>
+      <h1 style="margin:0 0 12px;font:700 24px/1.25 system-ui;color:#0b153c;">${title}</h1>
       <p style="margin:0;">${message}</p>
     </main>
   </body>
