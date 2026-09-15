@@ -169,12 +169,41 @@ async function openConfirm() {
   });
 }
 
+// Presses the switch. Adding the Fold asks the member to confirm they're 18
+// first and won't move until they have, so every path through the switch ticks
+// that box — the refusal itself is tested on its own below.
+async function confirmSwitch() {
+  await act(async () => {
+    document.body
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')
+      ?.click();
+  });
+  await act(async () => {
+    buttonWith("Switch to")?.click();
+  });
+}
+
 beforeEach(() => {
   previewReply = { status: 200, preview: preview() };
   changeReply = { status: 200, body: { ok: true, changed: true, timing: "immediate" } };
   changePosts = [];
   stubFetch();
 });
+
+// The mirror of arkPlusMember: a Fold SUBSCRIPTION with no Ark+, so the row CTA
+// offers the bundle switch in the other direction.
+function foldMember(): Me {
+  return {
+    email: "member@example.com",
+    tier: "circle",
+    entitlements: { arkPlus: false, circle: true },
+    feeds: [],
+    axes: {
+      arkPlus: axis(),
+      circle: axis({ active: true, source: "subscription", renewsAt: "2026-10-01T00:00:00.000Z" }),
+    },
+  };
+}
 
 // A member on the Bundle: both axes live, nothing left to add.
 function bundleMember(): Me {
@@ -267,9 +296,7 @@ describe("bundle switch — a failed switch", () => {
   test("keeps the panel and the numbers on screen", async () => {
     changeReply = { status: 502, body: { ok: false, error: "Could not change your plan." } };
     await openConfirm();
-    await act(async () => {
-      buttonWith("Switch to")?.click();
-    });
+    await confirmSwitch();
     expect(text()).toContain("Could not change your plan.");
     // Both still there: the panel, and the price it quoted.
     expect(text()).toContain("Add the Fold to your membership");
@@ -278,12 +305,60 @@ describe("bundle switch — a failed switch", () => {
 
 })
 
-describe("bundle switch — the success banner", () => {
-  test("a monthly member is told the settlement in months", async () => {
+describe("bundle switch — the 18+ confirmation", () => {
+  // The Fold is adults-only. The checkout modals ask inside the terms box they
+  // already require; there is no terms box here, so on this surface it's a box
+  // of its own.
+  test("adding the Fold won't move until the member confirms their age", async () => {
     await openConfirm();
+    expect(text()).toContain("I confirm that I am 18 years or older.");
+
     await act(async () => {
       buttonWith("Switch to")?.click();
     });
+    // Nothing was sent, and the panel says why rather than going quiet.
+    expect(changePosts).toEqual([]);
+    expect(text()).toContain("Please tick the box above to continue.");
+    expect(text()).toContain("Add the Fold to your membership");
+  });
+
+  test("the sentence the member ticked goes up with the change", async () => {
+    await openConfirm();
+    await confirmSwitch();
+    expect(changePosts).toHaveLength(1);
+    expect(changePosts[0]!.age_statement).toBe(
+      "I confirm that I am 18 years or older.",
+    );
+  });
+
+  test("adding Ark+ to a membership that already has the Fold asks nothing", async () => {
+    // The member is already inside the community — there is nothing this
+    // switch grants them that they haven't already got.
+    await render(
+      <ThemeProvider>
+        <SubscriberAuthProvider>
+          <Harness me={foldMember()} />
+        </SubscriberAuthProvider>
+      </ThemeProvider>,
+    );
+    await act(async () => {
+      buttonWith("Add Ark+")?.click();
+    });
+    expect(text()).toContain("Add Ark+ to your membership");
+    expect(text()).not.toContain("18 years or older");
+
+    await act(async () => {
+      buttonWith("Switch to")?.click();
+    });
+    expect(changePosts).toHaveLength(1);
+    expect(changePosts[0]!.age_statement).toBeUndefined();
+  });
+});
+
+describe("bundle switch — the success banner", () => {
+  test("a monthly member is told the settlement in months", async () => {
+    await openConfirm();
+    await confirmSwitch();
     expect(text()).toContain("Nothing to pay today.");
     expect(text()).toContain("the rest of this month");
   });
@@ -291,9 +366,7 @@ describe("bundle switch — the success banner", () => {
   test("a yearly member is not told about a month", async () => {
     previewReply = { status: 200, preview: preview({ plan: "yearly", currentCents: 8000, bundleCents: 25_000 }) };
     await openConfirm();
-    await act(async () => {
-      buttonWith("Switch to")?.click();
-    });
+    await confirmSwitch();
     expect(text()).toContain("the rest of this year");
     expect(text()).not.toContain("the rest of this month");
   });
@@ -304,9 +377,7 @@ describe("bundle switch — the success banner", () => {
     // the banner used to contradict it.
     previewReply = { status: 200, preview: preview({ currentCents: 4000, bundleCents: 2500 }) };
     await openConfirm();
-    await act(async () => {
-      buttonWith("Switch to")?.click();
-    });
+    await confirmSwitch();
     expect(text()).toContain("credit for what you've already paid");
     expect(text()).not.toContain("with the difference");
   });

@@ -26,7 +26,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   TERMS_STATEMENT,
+  ageAttestationFor,
   renewalStatement,
+  termsStatement,
+  type AgeAttestation,
 } from "../../shared/checkout-consent";
 import { CheckoutConsent } from "./CheckoutConsent";
 import { useCheckoutConsent, type Renewal } from "../lib/checkoutConsent";
@@ -63,8 +66,14 @@ afterEach(async () => {
 // so a test can also catch a second charge slipping through.
 let paid: string[] = [];
 
-function Harness({ renewal }: { renewal: Renewal | null }) {
-  const consent = useCheckoutConsent(renewal);
+function Harness({
+  renewal,
+  age = null,
+}: {
+  renewal: Renewal | null;
+  age?: AgeAttestation | null;
+}) {
+  const consent = useCheckoutConsent(renewal, age);
   return (
     <form
       onSubmit={(e) => {
@@ -73,10 +82,55 @@ function Harness({ renewal }: { renewal: Renewal | null }) {
         paid.push("charged");
       }}
     >
-      <CheckoutConsent renewal={renewal} consent={consent} />
+      <CheckoutConsent renewal={renewal} age={age} consent={consent} />
       <button type="submit">Pay</button>
     </form>
   );
+}
+
+// What the last submit posted to /api/stripe/record-consent. Separate from
+// Harness because only two tests want the write: the rest would send a relative
+// URL to bun's real fetch, which rejects it — swallowed by recordConsent (by
+// design) but noisy, and noise in a passing suite is how a real failure hides.
+let recorded: string[] = [];
+
+afterEach(() => {
+  recorded = [];
+});
+
+function RecordingHarness({
+  renewal,
+  age = null,
+}: {
+  renewal: Renewal | null;
+  age?: AgeAttestation | null;
+}) {
+  const consent = useCheckoutConsent(renewal, age);
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!consent.confirm()) return;
+        void consent.record("cs_test_123");
+      }}
+    >
+      <CheckoutConsent renewal={renewal} age={age} consent={consent} />
+      <button type="submit">Pay</button>
+    </form>
+  );
+}
+
+function captureConsentWrites() {
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (String(url).includes("record-consent")) {
+      recorded = JSON.parse(String(init?.body)).statements;
+    }
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  return () => {
+    globalThis.fetch = real;
+  };
 }
 
 afterEach(() => {
@@ -147,6 +201,85 @@ describe("CheckoutConsent copy", () => {
     const { container } = await render(<Harness renewal={null} />);
     expect(boxes(container)).toHaveLength(1);
     expect(labels(container)).toEqual([TERMS_STATEMENT]);
+  });
+});
+
+describe("CheckoutConsent 18+ clause", () => {
+  // The Fold is adults-only, so anything that grants it asks — inside the terms
+  // sentence, which is already required, rather than as a third tick.
+  test("a Fold purchase confirms 18+ in the same sentence and the same box", async () => {
+    const { container } = await render(<Harness renewal={monthly} age="self" />);
+    expect(labels(container)[0]).toBe(termsStatement("self"));
+    expect(labels(container)[0]).toContain(
+      "I confirm that I am 18 years or older.",
+    );
+    // One clause, not one more thing to tick: still terms + renewal.
+    expect(boxes(container)).toHaveLength(2);
+  });
+
+  test("a gift asks the giver about the recipient, not about themselves", async () => {
+    const { container } = await render(
+      <Harness renewal={null} age="recipient" />,
+    );
+    expect(labels(container)[0]).toBe(termsStatement("recipient"));
+    expect(labels(container)[0]).toContain(
+      "I confirm the recipient is 18 years or older.",
+    );
+    // The giver may never be in the Fold; the person being given it will be.
+    expect(labels(container)[0]).not.toContain("I am 18");
+  });
+
+  test("Ark+ is not asked at all", async () => {
+    const { container } = await render(<Harness renewal={monthly} />);
+    expect(labels(container)[0]).toBe(TERMS_STATEMENT);
+    expect(labels(container)[0]).not.toContain("18");
+  });
+
+  test("the tiers that carry the Fold are the tiers that ask", () => {
+    expect(ageAttestationFor("bundle", "self")).toBe("self");
+    expect(ageAttestationFor("circle", "self")).toBe("self");
+    expect(ageAttestationFor("circle", "recipient")).toBe("recipient");
+    expect(ageAttestationFor("ark-plus", "self")).toBeNull();
+  });
+
+  test("the policy links still open in a new tab with the clause appended", async () => {
+    const { container } = await render(<Harness renewal={monthly} age="self" />);
+    const links = Array.from(container.querySelectorAll("a"));
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([
+      "/terms",
+      "/privacy",
+    ]);
+  });
+
+  test("what is recorded is the sentence that was ticked, clause included", async () => {
+    const restore = captureConsentWrites();
+    try {
+      const { container } = await render(
+        <RecordingHarness renewal={monthly} age="self" />,
+      );
+      await click(boxes(container)[0]);
+      await click(boxes(container)[1]);
+      await pay(container);
+      expect(recorded).toEqual([
+        termsStatement("self"),
+        renewalStatement("$8.00", "per month"),
+      ]);
+      expect(recorded[0]).toBe(labels(container)[0]);
+    } finally {
+      restore();
+    }
+  });
+
+  test("an unasked purchase records no age claim", async () => {
+    const restore = captureConsentWrites();
+    try {
+      const { container } = await render(<RecordingHarness renewal={null} />);
+      await click(boxes(container)[0]);
+      await pay(container);
+      expect(recorded).toEqual([TERMS_STATEMENT]);
+    } finally {
+      restore();
+    }
   });
 });
 

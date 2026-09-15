@@ -386,6 +386,84 @@ describe('POST /api/stripe/change-tier', () => {
 })
 
 // ===========================================================================
+// The 18+ attestation
+//
+// Adding the Fold from the account page asks the member to confirm they're 18,
+// and the sentence they ticked is stamped on the subscription — the same
+// metadata keys the checkout paths write on their Checkout Session, because
+// this route has no Session to write to.
+//
+// Recorded, never enforced: the browser requires the tick, the server does not
+// refuse a change that arrives without one. An upgrade is not the place to
+// discover a member can't use the membership they already have.
+// ===========================================================================
+describe('POST /api/stripe/change-tier — 18+ attestation', () => {
+  const STATEMENT = 'I confirm that I am 18 years or older.'
+
+  function subMetadata(): Record<string, string> {
+    const upd = stripeCalls.find((c) => c.method === 'subscriptions.update')
+    return (upd!.args[1] as { metadata: Record<string, string> }).metadata
+  }
+
+  test('the sentence the member ticked is stamped on the subscription', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly', age_statement: STATEMENT },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    // Gaining the Fold is always the immediate branch, which is the only one
+    // that writes subscription metadata.
+    expect(res.__json().timing).toBe('immediate')
+
+    const meta = subMetadata()
+    expect(meta.consent_statement_1).toBe(STATEMENT)
+    // Our clock, not the browser's — as on the checkout path.
+    expect(Date.parse(meta.consent_accepted_at ?? '')).not.toBeNaN()
+    // And the change itself still recorded what it always did.
+    expect(meta.tier).toBe('bundle')
+  })
+
+  test('a change that asked nothing writes no age keys', async () => {
+    // Absence has to keep meaning "never asked". A PWYC tweak or a plan switch
+    // that writes an empty/false value here would make the record unreadable.
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1500 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(subMetadata().consent_statement_1).toBeUndefined()
+    expect(subMetadata().consent_accepted_at).toBeUndefined()
+  })
+
+  test('the switch still goes through when no attestation is sent', async () => {
+    // The deliberate non-gate: this is a collection, not a refusal.
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(subMetadata().tier).toBe('bundle')
+    expect(subMetadata().consent_statement_1).toBeUndefined()
+  })
+
+  test('an oversized statement is dropped rather than sent to Stripe', async () => {
+    // The string arrives from a client we don't trust to be terse, and Stripe
+    // caps a metadata value at 500 characters — a rejected update would fail
+    // the whole upgrade over the bookkeeping half of it.
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly', age_statement: 'x'.repeat(401) },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(subMetadata().consent_statement_1).toBeUndefined()
+  })
+})
+
+// ===========================================================================
 // The debundle notice
 //
 // A debundle is the one membership change that used to tell the member nothing:

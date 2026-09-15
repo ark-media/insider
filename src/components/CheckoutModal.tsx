@@ -12,7 +12,10 @@ import { CheckoutConsent } from "./CheckoutConsent";
 import { PromoBanner, PromoCode } from "./PromoCode";
 import { fetchActivePromo, type PromoInfo } from "../lib/promo";
 import { useCheckoutConsent, type Renewal } from "../lib/checkoutConsent";
-import { billingPeriod } from "../../shared/checkout-consent";
+import {
+  ageAttestationFor,
+  billingPeriod,
+} from "../../shared/checkout-consent";
 import { Modal } from "./Modal";
 import { CurrencySelect } from "./CurrencySelect";
 import { LoadingRow } from "./Spinner";
@@ -491,6 +494,7 @@ export function CheckoutModal({
         >
           <CheckoutForm
             plan={plan}
+            tier={tier}
             checkoutSessionId={step.checkoutSessionId}
             email={step.email}
             promo={promo}
@@ -981,6 +985,7 @@ function renewalDisclosure(
 // server-side when the Session was created), so this screen is payment-only.
 function CheckoutForm({
   plan,
+  tier,
   checkoutSessionId,
   email,
   promo,
@@ -991,6 +996,10 @@ function CheckoutForm({
   onAlreadySubscribed,
 }: {
   plan: Plan;
+  // Only used to decide whether the terms box carries the 18+ clause — what is
+  // sold and what it costs were settled server-side when the Session was
+  // created. Both tiers that include the Fold ask; Ark+ doesn't.
+  tier: Tier;
   checkoutSessionId: string;
   email: string;
   promo: PromoInfo | null;
@@ -1019,7 +1028,9 @@ function CheckoutForm({
     checkoutState.type === "success" ? checkoutState.checkout : null,
     plan,
   );
-  const consent = useCheckoutConsent(renewal);
+  // "self": the person paying is the person who'll be in the Fold. A gift is
+  // the other case, and it asks its own question (GiftCheckoutModal).
+  const consent = useCheckoutConsent(renewal, ageAttestationFor(tier, "self"));
   const consentRef = useRef<HTMLDivElement>(null);
 
   // Send an unaccepted buyer to the box that's still empty. Both pay paths use
@@ -1274,7 +1285,11 @@ function CheckoutForm({
           </p>
         ) : null}
         <div ref={consentRef}>
-          <CheckoutConsent renewal={renewal} consent={consent} />
+          <CheckoutConsent
+            renewal={renewal}
+            age={ageAttestationFor(tier, "self")}
+            consent={consent}
+          />
         </div>
         <button
           type="submit"

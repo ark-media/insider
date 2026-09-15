@@ -130,13 +130,17 @@ export function useEntitlementOffers({
   // so the axis they're adding rides that same subscription — D9's "switch to
   // Bundle via change-tier" rather than a second standalone sub billed
   // alongside it. Gaining an entitlement is immediate + prorated server-side.
-  const confirmBundle = async () => {
+  const confirmBundle = async (ageStatement: string | null) => {
     if (bundle.kind !== "confirm") return;
     const { axis, preview } = bundle;
     setBundle({ kind: "working", axis, preview });
     const r = await changeTier({
       tier: "bundle",
       plan: preview.plan,
+      // The sentence the member just ticked, recorded on the subscription the
+      // switch lands on. This route has no Checkout Session to stamp, so the
+      // subscription is where the attestation lives — see change-tier.
+      ageStatement,
     });
     if (r.ok) {
       setBundle({
@@ -249,6 +253,10 @@ export function useEntitlementOffers({
       <BundleConfirm
         axis={bundle.axis}
         alreadyActive={axes[bundle.axis].active}
+        // Only the direction that puts the member IN the Fold asks. Adding Ark+
+        // to a membership that already has the Fold reaches nothing new, and a
+        // member already inside it has nothing left to confirm.
+        age={bundle.axis === "circle" ? "self" : null}
         preview={bundle.preview}
         working={bundle.kind === "working"}
         error={bundle.kind === "error" ? bundle.message : null}

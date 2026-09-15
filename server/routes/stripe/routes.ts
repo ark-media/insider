@@ -1120,6 +1120,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             custom_amount_cents?: number
             retained_product?: unknown
             offer_outcome?: unknown
+            age_statement?: unknown
           }>(req)) ?? {}
         if (body.plan !== 'monthly' && body.plan !== 'yearly') {
           return json(400, { error: 'plan must be "monthly" or "yearly"' })
@@ -1133,6 +1134,24 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             error: 'Too many changes in a row. Please wait a moment and try again.',
           })
         }
+        // The 18+ sentence the member ticked when this change is what puts them
+        // in the Fold (src/components/account/BundleConfirm). Recorded, not
+        // enforced: the browser is what requires the tick, and this route does
+        // not refuse a change that arrives without one — an upgrade is not the
+        // place to discover a member can no longer use their own membership.
+        //
+        // Stamped on the subscription because that is the only durable Stripe
+        // object this route touches; the checkout paths use their Checkout
+        // Session, under the same keys, so both read back the same way. Bounded
+        // like every other recorded statement — Stripe caps a metadata value at
+        // 500 characters and this one arrives from the browser.
+        const ageStatement =
+          typeof body.age_statement === 'string' &&
+          body.age_statement.trim() !== '' &&
+          body.age_statement.length <= MAX_CONSENT_STATEMENT_LEN
+            ? body.age_statement
+            : null
+
         // A debundle (bundle → single product) passes retained_product so the
         // win-back record captures what was kept; a plain upgrade/PWYC omits it.
         const retainedProduct = isRetainedProduct(body.retained_product)
@@ -1327,6 +1346,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 plan,
                 amount_cents: String(amountCents),
                 currency,
+                // Gaining an entitlement is always the immediate branch, so a
+                // Fold-granting switch can only land here — the period-end
+                // branch is losing one, which asks nothing.
+                ...(ageStatement
+                  ? {
+                      [consentStatementKey(0)]: ageStatement,
+                      [CONSENT_ACCEPTED_AT_KEY]: new Date().toISOString(),
+                    }
+                  : {}),
               },
             })
             if (env.DATABASE_URL) {

@@ -1,6 +1,10 @@
 import { type ReactNode } from "react";
 import type { CheckoutConsentState, Renewal } from "../lib/checkoutConsent";
-import { renewalStatement } from "../../shared/checkout-consent";
+import {
+  AGE_STATEMENT,
+  renewalStatement,
+  type AgeAttestation,
+} from "../../shared/checkout-consent";
 
 /**
  * The two consent checkboxes that sit directly above a checkout's pay button,
@@ -18,13 +22,19 @@ import { renewalStatement } from "../../shared/checkout-consent";
  * prop rather than something inferred from the Checkout Session, so a
  * subscription can never quietly lose its renewal disclosure because Stripe
  * returned a null `recurring`.
+ *
+ * `age` is the 18+ confirmation the Fold requires, and it is a CLAUSE of the
+ * terms box rather than a box of its own — see AgeAttestation in
+ * shared/checkout-consent. Null for anything that doesn't grant the Fold.
  */
 
 export function CheckoutConsent({
   renewal,
+  age = null,
   consent,
 }: {
   renewal: Renewal | null;
+  age?: AgeAttestation | null;
   consent: CheckoutConsentState;
 }) {
   const { value, setValue, error } = consent;
@@ -48,6 +58,11 @@ export function CheckoutConsent({
       >
         I agree to the <LegalLink to="/terms">Terms of Service</LegalLink> and
         acknowledge the <LegalLink to="/privacy">Privacy Policy</LegalLink>.
+        {/* Appended with its own leading space rather than as JSX text, which
+            would be swallowed at the end of a line: the label's textContent has
+            to equal termsStatement(age) character for character, because that
+            string is what we stamp on the Session as what was agreed to. */}
+        {age === null ? null : ` ${AGE_STATEMENT[age]}`}
       </ConsentCheckbox>
       {renewal ? (
         <ConsentCheckbox

@@ -14,11 +14,61 @@
 //   3. the tests that pin both.
 // The labels render the two policy names as links, so the component builds the
 // same sentence out of JSX; a test asserts its textContent still equals
-// TERMS_STATEMENT exactly.
+// termsStatement(age) exactly, age clause included.
 // ---------------------------------------------------------------------------
 
 export const TERMS_STATEMENT =
   'I agree to the Terms of Service and acknowledge the Privacy Policy.'
+
+/**
+ * Who the 18+ clause is about.
+ *
+ * The Fold is an adults-only community, so every purchase that grants the
+ * `circle` axis asks for an age confirmation. It rides INSIDE the terms
+ * sentence rather than arriving as a third box: a buyer who won't tick the
+ * terms can't pay anyway, so a separate tick would add a click without adding a
+ * decision — and the combined sentence is what gets stamped on the Session, so
+ * the record still names exactly what was confirmed.
+ *
+ * Two strings rather than one with the pronoun swapped, because they are not
+ * the same record. 'self' is a buyer attesting about themselves. 'recipient' is
+ * a giver attesting about someone else, who is the person that will actually be
+ * in the Fold — a weaker claim, and one that must never be read back as if the
+ * member had made it.
+ */
+export type AgeAttestation = 'self' | 'recipient'
+
+export const AGE_STATEMENT: Record<AgeAttestation, string> = {
+  self: 'I confirm that I am 18 years or older.',
+  recipient: 'I confirm the recipient is 18 years or older.',
+}
+
+/**
+ * The terms sentence for a purchase, with the age clause when the tier carries
+ * the Fold. Null `age` is the plain sentence — Ark+ has nothing to confirm.
+ */
+export function termsStatement(age: AgeAttestation | null): string {
+  return age === null
+    ? TERMS_STATEMENT
+    : `${TERMS_STATEMENT} ${AGE_STATEMENT[age]}`
+}
+
+/** The tiers a buyer can put in a cart — gift and subscription alike. */
+export type PurchasableTier = 'ark-plus' | 'circle' | 'bundle'
+
+/**
+ * Whether this purchase asks about age, and on whose behalf. The single place
+ * that knows which tiers include the Fold: a fourth tier, or a fourth door onto
+ * the Fold, changes this function and nothing else. `who` is the caller's to
+ * say — only it knows whether the person at the keyboard is the one who'll be
+ * in the community.
+ */
+export function ageAttestationFor(
+  tier: PurchasableTier,
+  who: AgeAttestation,
+): AgeAttestation | null {
+  return tier === 'circle' || tier === 'bundle' ? who : null
+}
 
 /**
  * `amount` is Stripe's own formatted, localized string for the next renewal

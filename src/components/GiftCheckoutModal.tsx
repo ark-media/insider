@@ -11,6 +11,7 @@ import { CheckoutConsent } from "./CheckoutConsent";
 import { PromoCode } from "./PromoCode";
 import { fetchActivePromo, type PromoInfo } from "../lib/promo";
 import { useCheckoutConsent } from "../lib/checkoutConsent";
+import { ageAttestationFor } from "../../shared/checkout-consent";
 import { Modal } from "./Modal";
 import { LoadingRow } from "./Spinner";
 import { CurrencySelect } from "./CurrencySelect";
@@ -370,7 +371,13 @@ function GiftPaymentForm({
   const submittedRef = useRef(false);
   // A gift is charged once, so there is no renewal to disclose — only the
   // Terms box. Hooks run ahead of the loading/error returns below.
-  const consent = useCheckoutConsent(null);
+  //
+  // "recipient", not "self": on a gift that carries the Fold, the person who
+  // ends up in the community is the one being given it, so the giver is asked
+  // about THEM. A first-person "I am 18 or older" here would record the age of
+  // someone who may never open the door it unlocks.
+  const age = ageAttestationFor(input.tier, "recipient");
+  const consent = useCheckoutConsent(null, age);
 
   if (checkoutState.type === "loading") {
     return <LoadingRow label="Loading secure checkout…" />;
@@ -479,7 +486,7 @@ function GiftPaymentForm({
             <span className="font-semibold text-fg-strong">{total}</span>
           </div>
         </div>
-        <CheckoutConsent renewal={null} consent={consent} />
+        <CheckoutConsent renewal={null} age={age} consent={consent} />
         <button
           type="submit"
           disabled={submitting}

@@ -426,6 +426,10 @@ export async function changeTier(input: {
   // On a debundle, whether a save offer was shown-and-declined first, so the
   // win-back record reads 'declined' vs 'not_offered' like the full-cancel path.
   offerOutcome?: "declined" | "not_offered";
+  // The 18+ sentence the member ticked when this change is what grants them the
+  // Fold, recorded on the subscription. Omitted for every other change — a
+  // missing key reads as "never asked", which is the truth for a PWYC tweak.
+  ageStatement?: string | null;
 }): Promise<{
   ok: boolean;
   changed?: boolean;
@@ -444,6 +448,7 @@ export async function changeTier(input: {
         custom_amount_cents: input.customAmountCents,
         retained_product: input.retainedProduct,
         offer_outcome: input.offerOutcome,
+        age_statement: input.ageStatement ?? undefined,
       }),
     });
     return (await res.json()) as {

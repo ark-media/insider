@@ -1,7 +1,8 @@
 import { useState } from "react";
 import {
-  TERMS_STATEMENT,
   renewalStatement,
+  termsStatement,
+  type AgeAttestation,
 } from "../../shared/checkout-consent";
 
 // The state behind the checkout consent boxes, and the call that makes the
@@ -33,10 +34,14 @@ type ConsentValue = { terms: boolean; renewal: boolean };
 
 const NO_CONSENT: ConsentValue = { terms: false, renewal: false };
 
-function consentStatements(renewal: Renewal | null): string[] {
+function consentStatements(
+  renewal: Renewal | null,
+  age: AgeAttestation | null,
+): string[] {
+  const terms = termsStatement(age);
   return renewal === null
-    ? [TERMS_STATEMENT]
-    : [TERMS_STATEMENT, renewalStatement(renewal.amount, renewal.period)];
+    ? [terms]
+    : [terms, renewalStatement(renewal.amount, renewal.period)];
 }
 
 export type CheckoutConsentState = {
@@ -89,8 +94,15 @@ async function recordConsent(
   }
 }
 
+/**
+ * `age` is the 18+ clause carried inside the terms sentence, or null for a
+ * purchase that doesn't reach the Fold. Callers derive it with
+ * ageAttestationFor(tier, who) rather than deciding per-surface, so the same
+ * tier can't ask on one screen and not another.
+ */
 export function useCheckoutConsent(
   renewal: Renewal | null,
+  age: AgeAttestation | null = null,
 ): CheckoutConsentState {
   const [value, setValue] = useState(NO_CONSENT);
   const [error, setError] = useState<null | "missing" | "changed">(null);
@@ -126,6 +138,6 @@ export function useCheckoutConsent(
       return true;
     },
     record: (checkoutSessionId) =>
-      recordConsent(checkoutSessionId, consentStatements(renewal)),
+      recordConsent(checkoutSessionId, consentStatements(renewal, age)),
   };
 }
