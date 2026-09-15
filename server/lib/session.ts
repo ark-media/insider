@@ -582,3 +582,104 @@ export async function requireAdmin(
   }
   return null
 }
+
+// --- email auto-login link -----------------------------------------------
+//
+// Lifecycle emails (welcome, axis-added, feed reminders, feed migration) point
+// members at pages that require a session — /setup most of all. The recipient
+// usually opens them on a device that has never held an `ark_session` cookie,
+// so without this the link lands them on a sign-in wall at best. The link
+// therefore carries `?lt=<this token>`; /api/auth/email-login verifies it,
+// mints the same session the OAuth callback would, and 302s on to the
+// destination with the token stripped from the URL.
+//
+// Deliberately NOT a bearer of anything but identity: it re-states the email
+// and Auth0 sub we already resolved when sending, and grants no roles. Admin
+// is never conferred by an emailed link — an admin who clicks one gets an
+// ordinary member session and signs in normally for /admin.
+//
+// Same 14-day lifetime as the gift claim link, and for the same reason: this is
+// a standing credential sitting in an inbox, so its life is the delivery
+// window, not the membership's. After that the route falls through to the
+// normal Auth0 login carrying the same destination as returnTo, so an expired
+// link still gets the member where they were going — just with a sign-in step.
+const EMAIL_LOGIN_ISSUER = 'ark-insider'
+const EMAIL_LOGIN_AUDIENCE = 'email-login'
+const EMAIL_LOGIN_TTL_SEC = 14 * 24 * 60 * 60
+
+export type EmailLoginToken = {
+  email: string
+  // The Auth0 `sub`, when provisioning resolved one. Carried so the minted
+  // session can read the member's Neon row by sub like every other login path;
+  // absent, the by-email net still covers it.
+  sub?: string
+  givenName?: string
+  familyName?: string
+}
+
+export async function signEmailLoginToken(
+  claim: EmailLoginToken,
+  env: Env,
+): Promise<string> {
+  const secret = env.SESSION_SECRET
+  if (!secret) throw new Error('SESSION_SECRET not configured')
+  return signHs256(
+    {
+      email: claim.email,
+      ...(claim.sub ? { sub: claim.sub } : {}),
+      ...(claim.givenName ? { given_name: claim.givenName } : {}),
+      ...(claim.familyName ? { family_name: claim.familyName } : {}),
+    },
+    {
+      issuer: EMAIL_LOGIN_ISSUER,
+      audience: EMAIL_LOGIN_AUDIENCE,
+      ttl: `${EMAIL_LOGIN_TTL_SEC}s`,
+      secret,
+    },
+  )
+}
+
+export async function verifyEmailLoginToken(
+  token: string,
+  env: Env,
+): Promise<EmailLoginToken | null> {
+  const payload = await verifyHs256(token, {
+    issuer: EMAIL_LOGIN_ISSUER,
+    audience: EMAIL_LOGIN_AUDIENCE,
+    secret: env.SESSION_SECRET,
+  })
+  const email = payload?.email as string | undefined
+  if (!email) return null
+  return {
+    email,
+    sub: (payload?.sub as string | undefined) ?? undefined,
+    givenName: (payload?.given_name as string | undefined) ?? undefined,
+    familyName: (payload?.family_name as string | undefined) ?? undefined,
+  }
+}
+
+// Build the auto-login URL for an email CTA: the /api/auth/email-login route
+// carrying the signed token plus where to land afterwards. `path` is an
+// app-relative path ("/setup"); the route re-validates it with safeReturnTo, so
+// a tampered `to` can only ever point at another page on our own origin.
+//
+// Soft-fails to the plain URL. Every caller is mid-send on an email whose
+// membership is already provisioned — a missing SESSION_SECRET should cost the
+// recipient one sign-in step, not the entire email.
+export async function emailLoginUrl(
+  baseUrl: string,
+  path: string,
+  claim: EmailLoginToken,
+  env: Env,
+): Promise<string> {
+  const plain = `${baseUrl}${path}`
+  if (!claim.email) return plain
+  try {
+    const token = await signEmailLoginToken(claim, env)
+    const params = new URLSearchParams({ lt: token, to: path })
+    return `${baseUrl}/api/auth/email-login?${params.toString()}`
+  } catch (err) {
+    console.error('[email-login] could not sign auto-login link:', err)
+    return plain
+  }
+}

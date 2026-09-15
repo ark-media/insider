@@ -24,6 +24,7 @@ import { mailableStatus } from './beehiiv-status.js'
 import { renderFeedReminderEmail } from './feed-reminder-email.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
 import { sendEmail } from './email.js'
+import { emailLoginUrl } from './session.js'
 import {
   DEFAULT_REMINDER_CONFIG,
   type ReminderConfig,
@@ -237,7 +238,6 @@ export async function runFeedSetupReminders(deps: {
   if (members.length > 0 && premiumShows.length === 0) {
     throw new Error('[feed-reminders] no premium shows discovered')
   }
-  const setupUrl = `${appBaseUrl}/account/podcast-feed`
   let eligible = 0
   let sent = 0
   let failed = 0
@@ -263,6 +263,15 @@ export async function runFeedSetupReminders(deps: {
     if (!candidate) continue
     eligible++
 
+    // Per-recipient: the link signs them in on whatever device opens the mail.
+    // Email only — loadPremiumReaders reads beehiiv_subscription, which holds no
+    // Auth0 sub, so the session resolves its membership by the by-email path.
+    const setupUrl = await emailLoginUrl(
+      appBaseUrl,
+      '/account/podcast-feed',
+      { email: candidate.email },
+      env,
+    )
     const { subject, html } = renderFeedReminderEmail({
       firstName: candidate.firstName,
       doneCount: candidate.doneCount,

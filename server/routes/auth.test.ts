@@ -8,7 +8,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { authRoutes, safeReturnTo } from './auth'
 import type { Deps, Handler } from '../lib/route.js'
 import { AUTH_TXN_COOKIE_NAME, SESSION_COOKIE_NAME } from '../lib/cookies'
-import { signAuthTxnToken } from '../lib/session'
+import {
+  emailLoginUrl,
+  signAuthTxnToken,
+  signEmailLoginToken,
+  signSessionToken,
+  verifyEmailLoginToken,
+  verifySessionToken,
+} from '../lib/session'
 
 const APP = 'http://localhost:5173'
 
@@ -234,5 +241,186 @@ describe('POST /api/signout', () => {
     const res = makeRes()
     await route({}, '/api/signout')(makeReq({ method: 'GET', url: '/api/signout' }), res)
     expect(res.statusCode).toBe(405)
+  })
+})
+
+// --- GET /api/auth/email-login -------------------------------------------
+//
+// The auto-login link every lifecycle email now carries. These pin the three
+// branches that matter: a good token mints a session and forwards, a bad one
+// degrades to the normal login rather than an error, and an existing session
+// for the same person is left alone (re-minting would strip a real login back
+// down to the bare email the reminder crons know).
+
+describe('GET /api/auth/email-login', () => {
+  const PATH = '/api/auth/email-login'
+
+  async function link(claim: Parameters<typeof signEmailLoginToken>[0]) {
+    return signEmailLoginToken(claim, CONFIGURED)
+  }
+
+  function setCookies(res: ReturnType<typeof makeRes>): string[] {
+    const raw = res.getHeader('Set-Cookie')
+    return Array.isArray(raw) ? raw : raw ? [String(raw)] : []
+  }
+
+  test('a valid token mints a session and forwards to the destination', async () => {
+    const lt = await link({ email: 'member@example.com', sub: 'auth0|abc' })
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeReq({ url: `${PATH}?lt=${encodeURIComponent(lt)}&to=%2Fsetup` }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Location')).toBe('/setup')
+    // The token must not survive into the address bar.
+    expect(String(res.getHeader('Location'))).not.toContain('lt=')
+
+    const cookies = setCookies(res)
+    expect(cookies.some((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))).toBe(true)
+    // The JS-readable companion is what tells the SPA to call /api/me at all —
+    // without it the page renders as a guest despite the session cookie.
+    expect(cookies.some((c) => c.startsWith('ark_session_present='))).toBe(true)
+  })
+
+  test('the minted session carries the email, sub and name from the token', async () => {
+    const lt = await link({
+      email: 'member@example.com',
+      sub: 'auth0|abc',
+      givenName: 'Ada',
+      familyName: 'Lovelace',
+    })
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeReq({ url: `${PATH}?lt=${encodeURIComponent(lt)}&to=%2Fsetup` }),
+      res,
+    )
+
+    const cookie = setCookies(res).find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))!
+    const token = cookie.slice(`${SESSION_COOKIE_NAME}=`.length).split(';')[0]!
+    const profile = await verifySessionToken(token, CONFIGURED)
+    expect(profile?.email).toBe('member@example.com')
+    expect(profile?.sub).toBe('auth0|abc')
+    expect(profile?.givenName).toBe('Ada')
+    // An emailed link never confers admin, whoever clicks it.
+    expect(profile?.roles).toEqual([])
+  })
+
+  test('a missing or forged token falls through to the normal login, keeping the destination', async () => {
+    for (const query of ['', '?to=%2Fsetup', '?lt=not-a-jwt&to=%2Fsetup']) {
+      const res = makeRes()
+      await route(CONFIGURED, PATH)(makeReq({ url: PATH + query }), res)
+      expect(res.statusCode).toBe(302)
+      const location = String(res.getHeader('Location'))
+      expect(location).toStartWith('/api/auth/login?returnTo=')
+      expect(setCookies(res)).toEqual([])
+    }
+    // The destination survives the fallback, so an expired link still lands the
+    // member where they were going — just behind a sign-in.
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(makeReq({ url: `${PATH}?to=%2Fsetup` }), res)
+    expect(res.getHeader('Location')).toBe(
+      `/api/auth/login?returnTo=${encodeURIComponent('/setup')}`,
+    )
+  })
+
+  test('a token signed with another secret is rejected', async () => {
+    const lt = await signEmailLoginToken(
+      { email: 'member@example.com' },
+      { SESSION_SECRET: 'a-different-secret-32-chars-long-aa' },
+    )
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeReq({ url: `${PATH}?lt=${encodeURIComponent(lt)}&to=%2Fsetup` }),
+      res,
+    )
+    expect(String(res.getHeader('Location'))).toStartWith('/api/auth/login?')
+    expect(setCookies(res)).toEqual([])
+  })
+
+  test('an off-origin destination is refused, not emitted as a redirect', async () => {
+    const lt = await link({ email: 'member@example.com' })
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeReq({ url: `${PATH}?lt=${encodeURIComponent(lt)}&to=https%3A%2F%2Fevil.com` }),
+      res,
+    )
+    expect(res.getHeader('Location')).toBe('/')
+  })
+
+  test('an existing session for the same member is kept, not re-minted', async () => {
+    // The reminder crons know only an email, so re-minting here would drop the
+    // sub and name a real login had put in the cookie.
+    const existing = await signSessionToken(
+      {
+        email: 'member@example.com',
+        roles: [],
+        sub: 'auth0|abc',
+        givenName: 'Ada',
+      },
+      CONFIGURED,
+    )
+    const lt = await link({ email: 'MEMBER@example.com' })
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeReq({
+        url: `${PATH}?lt=${encodeURIComponent(lt)}&to=%2Fsetup`,
+        cookie: `${SESSION_COOKIE_NAME}=${existing}`,
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Location')).toBe('/setup')
+    expect(setCookies(res)).toEqual([])
+  })
+
+  test('a link addressed to someone else re-mints — the addressee wins', async () => {
+    const existing = await signSessionToken(
+      { email: 'first@example.com', roles: [], sub: 'auth0|first' },
+      CONFIGURED,
+    )
+    const lt = await link({ email: 'second@example.com', sub: 'auth0|second' })
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeReq({
+        url: `${PATH}?lt=${encodeURIComponent(lt)}&to=%2Fsetup`,
+        cookie: `${SESSION_COOKIE_NAME}=${existing}`,
+      }),
+      res,
+    )
+
+    const cookie = setCookies(res).find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))!
+    const token = cookie.slice(`${SESSION_COOKIE_NAME}=`.length).split(';')[0]!
+    expect((await verifySessionToken(token, CONFIGURED))?.email).toBe(
+      'second@example.com',
+    )
+  })
+})
+
+describe('emailLoginUrl', () => {
+  test('wraps the destination in a verifiable auto-login link', async () => {
+    const url = await emailLoginUrl(
+      APP,
+      '/setup',
+      { email: 'member@example.com', sub: 'auth0|abc' },
+      CONFIGURED,
+    )
+    const parsed = new URL(url)
+    expect(parsed.pathname).toBe('/api/auth/email-login')
+    expect(parsed.searchParams.get('to')).toBe('/setup')
+
+    const claim = await verifyEmailLoginToken(parsed.searchParams.get('lt')!, CONFIGURED)
+    expect(claim?.email).toBe('member@example.com')
+    expect(claim?.sub).toBe('auth0|abc')
+  })
+
+  test('soft-fails to the plain URL when no secret is configured', async () => {
+    // The membership is already provisioned by the time any of this runs — a
+    // missing secret should cost one sign-in step, not the whole email.
+    expect(await emailLoginUrl(APP, '/setup', { email: 'm@example.com' }, {})).toBe(
+      `${APP}/setup`,
+    )
   })
 })

@@ -42,6 +42,7 @@ import {
   signSessionToken,
   verifyAuth0BearerProfile,
   verifyAuthTxnToken,
+  verifyEmailLoginToken,
   type SessionProfile,
 } from '../lib/session.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
@@ -223,6 +224,66 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         json(200, { ok: true })
       },
     }),
+
+    // --- Email auto-login link -------------------------------------------
+    //
+    // Lifecycle emails link here rather than straight at /setup: the recipient
+    // is usually opening the mail on a device that has never held a session, so
+    // a bare link lands them on a sign-in wall (or, before this existed, on the
+    // /plus sales page). Verify the signed `lt`, mint the same `ark_session`
+    // the OAuth callback would, and 302 on to `to` with the token stripped from
+    // the address bar.
+    //
+    // A bad or expired token is NOT an error page — it falls through to the
+    // normal Auth0 login carrying the same destination as returnTo, so the
+    // member still gets where they were going with one extra step. That is also
+    // what a link-scanner pre-fetching the URL gets: a session cookie in its own
+    // jar, which grants it nothing it can act on, and consumes nothing (the
+    // token stays valid for the real recipient).
+    //
+    // Roles are deliberately empty — see signEmailLoginToken. An emailed link
+    // never confers admin.
+    {
+      path: '/api/auth/email-login',
+      handler: async (req, res) => {
+        const url = new URL(req.url ?? '/', appBaseUrl)
+        const dest = safeReturnTo(url.searchParams.get('to'), appBaseUrl)
+        const lt = url.searchParams.get('lt')
+
+        const claim = lt ? await verifyEmailLoginToken(lt, env) : null
+        if (!claim) {
+          return redirect(
+            res,
+            `/api/auth/login?returnTo=${encodeURIComponent(dest)}`,
+          )
+        }
+
+        // Already signed in as the same person — keep the session we have and
+        // just forward. The token carries only what the sender knew (and the
+        // reminder crons read from a table that holds no Auth0 sub or name at
+        // all), so re-minting here would strip a real login back down to an
+        // email, degrading the greeting and the sub-keyed membership read until
+        // their next sign-in. A DIFFERENT email still re-mints: that is a
+        // household sharing a browser, and the link's addressee should win.
+        const current = await getSessionProfile(req, env)
+        if (current && current.email.toLowerCase() === claim.email.toLowerCase()) {
+          return redirect(res, dest)
+        }
+
+        const sessionToken = await signSessionToken(
+          {
+            email: claim.email,
+            roles: [],
+            givenName: claim.givenName,
+            familyName: claim.familyName,
+            ...(claim.sub ? { sub: claim.sub } : {}),
+          },
+          env,
+        )
+        setSessionCookies(res, sessionToken, env)
+        redirect(res, dest)
+      },
+    },
 
     // --- Server-side OAuth login (BFF) -----------------------------------
     //

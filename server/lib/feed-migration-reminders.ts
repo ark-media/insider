@@ -26,6 +26,7 @@ import { mailableStatus } from './beehiiv-status.js'
 import { renderMigrationCheckInEmail } from './feed-migration-email.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
 import { sendEmail } from './email.js'
+import { emailLoginUrl } from './session.js'
 import {
   EMAIL_TIME_ZONE,
   calendarDaysUntilInZone,
@@ -139,7 +140,6 @@ export async function runFeedMigrationReminders(deps: {
   if (readers.length > 0 && premiumShows.length === 0) {
     throw new Error('[feed-migration] no premium shows discovered')
   }
-  const setupUrl = `${appBaseUrl}/setup`
   // The deadline reads as a calendar date — it is a date we chose, not an
   // instant, so it must render identically in every reader's zone. The
   // countdown beside it is counted in EMAIL_TIME_ZONE so the two agree.
@@ -171,6 +171,10 @@ export async function runFeedMigrationReminders(deps: {
     eligible++
 
     const name = await firstNameFor?.(email)
+    // Per-recipient: the link signs them in on whatever device opens the mail.
+    // Email only — this campaign reads from beehiiv_subscription, which holds no
+    // Auth0 sub, so the session resolves its membership by the by-email path.
+    const setupUrl = await emailLoginUrl(appBaseUrl, '/setup', { email }, env)
     const { subject, html } = renderMigrationCheckInEmail({
       firstName: greetingFirstName(name?.firstName, email, name?.lastName),
       stage,

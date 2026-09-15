@@ -5,18 +5,24 @@ import { Breadcrumbs } from "../components/Breadcrumbs";
 import { PageShell } from "../components/PageShell";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 
-// The component's own gate redirects guests and free users to /plus.
+// The component's own gate sends guests to sign in and free users to /plus.
 export const Route = createFileRoute("/setup")({
   component: SetupPage,
 });
 
 function SetupPage() {
   const navigate = useNavigate();
-  const { state } = useSubscriberAuth();
+  const { state, signIn } = useSubscriberAuth();
 
   useEffect(() => {
     if (state.kind === "guest") {
-      void navigate({ to: "/plus" });
+      // A guest here is overwhelmingly a member whose browser has no session
+      // yet — this page is the destination of the welcome email and every feed
+      // reminder, opened on whatever device happens to have the inbox. Send
+      // them to sign in (returnTo defaults to this path, so they land right
+      // back here), the way /welcome does. It used to redirect to /plus, which
+      // pitched a membership to someone who had just bought one.
+      signIn();
       return;
     }
     // Free accounts have no private feed to set up. Send them to the upgrade
@@ -24,7 +30,7 @@ function SetupPage() {
     if (state.kind === "member" && !isArkPlusMember(state)) {
       void navigate({ to: "/plus" });
     }
-  }, [state, navigate]);
+  }, [state, navigate, signIn]);
 
   if (state.kind === "loading") {
     return (

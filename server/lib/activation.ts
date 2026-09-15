@@ -39,6 +39,7 @@ import { formatMinorUnits } from './pricing.js'
 import { EMAIL_TIME_ZONE, formatTimestampInZone } from '../../shared/format-date.js'
 import { redactEmail } from '../../shared/validation.js'
 import { splitFullName } from '../../shared/profile-name.js'
+import { emailLoginUrl } from './session.js'
 
 type Env = Record<string, string>
 type Plan = 'monthly' | 'yearly'
@@ -235,8 +236,25 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     const userId = auth0Result?.userId ?? null
     let passwordSetupUrl: string | undefined
     if (auth0Result?.created && userId) {
+      // Auth0 redirects here once the password is set, and that redirect is a
+      // plain browser navigation — it carries no `ark_session`. Without the
+      // auto-login token the brand-new member finishes the CTA and is bounced
+      // straight back to a login prompt. The ticket is already a credential
+      // (it sets the account password), so carrying one inside it costs nothing.
+      const { first, last } = splitFullName(name)
+      const resultUrl = await emailLoginUrl(
+        baseUrl,
+        '/welcome',
+        {
+          email,
+          sub: userId,
+          ...(first ? { givenName: first } : {}),
+          ...(last ? { familyName: last } : {}),
+        },
+        env,
+      )
       passwordSetupUrl =
-        (await createAuth0PasswordChangeTicket(userId, `${baseUrl}/welcome`, env)) ??
+        (await createAuth0PasswordChangeTicket(userId, resultUrl, env)) ??
         undefined
       if (!passwordSetupUrl) {
         console.error('[auth0] new member created but password-change ticket failed:', redactEmail(email))
@@ -310,6 +328,25 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       passwordSetupUrl = login.passwordSetupUrl
     }
 
+    // Every link in a lifecycle email points at a session-gated page, and the
+    // recipient is usually opening the mail somewhere that has never held an
+    // `ark_session`. Wrap each one in an auto-login link so the click lands
+    // them signed in. Soft-fails to the plain URL (see emailLoginUrl).
+    const loginLink = (path: string): Promise<string> => {
+      const { first, last } = splitFullName(name)
+      return emailLoginUrl(
+        baseUrl,
+        path,
+        {
+          email,
+          ...(auth0Sub ? { sub: auth0Sub } : {}),
+          ...(first ? { givenName: first } : {}),
+          ...(last ? { familyName: last } : {}),
+        },
+        env,
+      )
+    }
+
     // Circle (circle axis): create the member pre-SSO, stamp auth0_sub, add to
     // the access group. Soft — a Circle hiccup must not fail the whole webhook.
     let circleProvisioned = fresh.metadata?.circle_provisioned === 'true'
@@ -362,19 +399,23 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       // the subscriber template but branch on tier for accurate copy;
       // Circle-only gets the Fold-first copy. Soft-fail: the membership is
       // already provisioned.
+      const [welcomeUrl, setupUrl] = await Promise.all([
+        loginLink('/welcome'),
+        loginLink('/setup'),
+      ])
       const { subject, html } = entitlements.arkPlus
         ? renderSubscriberWelcomeEmail({
             name,
             email,
-            welcomeUrl: `${baseUrl}/welcome`,
-            setupUrl: `${baseUrl}/setup`,
+            welcomeUrl,
+            setupUrl,
             passwordSetupUrl,
             tier: entitlements.circle ? 'bundle' : 'ark-plus',
           })
         : renderCircleWelcomeEmail({
             name,
             email,
-            welcomeUrl: `${baseUrl}/welcome`,
+            welcomeUrl,
             passwordSetupUrl,
           })
       // Idempotency-keyed on the subscription so two callers on different
@@ -423,12 +464,16 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       // Circle wins when both landed at once: its copy is the one that names the
       // Fold, and the price sentence covers the whole Bundle either way.
       const axis = addingCircle && circleProvisioned ? 'circle' : 'ark-plus'
+      const [welcomeUrl, setupUrl] = await Promise.all([
+        loginLink('/welcome'),
+        loginLink('/setup'),
+      ])
       const { subject, html } = renderAxisAddedEmail({
         name,
         email,
         axis,
-        welcomeUrl: `${baseUrl}/welcome`,
-        setupUrl: `${baseUrl}/setup`,
+        welcomeUrl,
+        setupUrl,
         ...billingFactsFor(fresh),
       })
       // Keyed on the subscription AND the axis so a webhook retry collapses,
