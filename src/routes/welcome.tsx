@@ -135,31 +135,34 @@ function WelcomePage() {
         </div>
       </section>
 
-      {/* The best moment we get to ask for a name: they're already working a
-          setup list, so it reads as part of finishing rather than a form we
-          sprang on them. Deliberately not a numbered step — the steps are
-          entitlement-driven and settle before the profile fetch lands, and
-          renumbering them mid-load would be worse than sitting outside the
-          count. Renders nothing for the members we already have a name for —
-          which excludes anyone whose stored name is the email local part we
-          manufactured for them, since the server judges that as no name at all
-          (shared/profile-name.ts). */}
-      <section>
-        <div className="page-gutter pt-2">
-          <ProfileNameCard promptOnly />
-        </div>
-      </section>
-
       <section>
         <div className="page-section">
-          <div className={`grid grid-cols-1 gap-6 ${gridCols}`}>
-            {steps.map((step, i) => (
-              <WelcomeStep
-                key={step.title}
-                n={String(i + 1).padStart(2, "0")}
-                {...step}
-              />
-            ))}
+          {/* Shares the steps' band rather than claiming a section of its own:
+              every non-hero section draws a zebra rule (index.css), and this
+              one renders nothing for the members we already have a name for —
+              leaving an empty strip between two rules. Spacing rides on the
+              flex gap so the null case collapses cleanly.
+
+              The best moment we get to ask for a name: they're already working
+              a setup list, so it reads as part of finishing rather than a form
+              we sprang on them. Deliberately not a numbered step — the steps
+              are entitlement-driven and settle before the profile fetch lands,
+              and renumbering them mid-load would be worse than sitting outside
+              the count. "Already have a name" excludes anyone whose stored name
+              is the email local part we manufactured for them, since the server
+              judges that as no name at all (shared/profile-name.ts). */}
+          <div className="flex flex-col gap-10">
+            <ProfileNameCard promptOnly />
+
+            <div className={`grid grid-cols-1 gap-6 ${gridCols}`}>
+              {steps.map((step, i) => (
+                <WelcomeStep
+                  key={step.title}
+                  n={String(i + 1).padStart(2, "0")}
+                  {...step}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </section>
