@@ -26,12 +26,15 @@ export type CreateGiftResponse = {
   currency: string;
 };
 
-// USD anchors per tier + term (D1). Page display only — the modal shows the
-// localized total from the Stripe session's currency_options.
+// USD anchors per tier + term (D1), priced off each tier's subscription price:
+// 1yr is the tier's yearly price, 6mo is its monthly price ×6. Page display
+// only — the modal shows the localized total from the Stripe session's
+// currency_options, and the charge comes from the gift_<tier>_<term> Price.
+// Mirror any change in scripts/stripe-catalog.ts GIFT_TERM_MULTIPLE / CATALOG.
 export const GIFT_PRICE_DOLLARS: Record<GiftTier, Record<GiftTerm, number>> = {
   "ark-plus": { "6mo": 48, "1yr": 80 },
-  circle: { "6mo": 48, "1yr": 80 },
-  bundle: { "6mo": 75, "1yr": 130 },
+  circle: { "6mo": 114, "1yr": 190 },
+  bundle: { "6mo": 150, "1yr": 250 },
 };
 
 export const GIFT_TIER_LABEL: Record<GiftTier, string> = {

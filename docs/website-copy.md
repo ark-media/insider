@@ -759,7 +759,7 @@ single member only ever sees some of them.
 - **SECTION LABEL**: Choose a length
 - **TERM LABEL**: 6 months
 - **TERM LABEL**: 1 year
-- **PRICE (PER OPTION)**: ${price} (Ark+ $48 / $80 · The Fold $48 / $80 · Bundle $75 / $130)
+- **PRICE (PER OPTION)**: ${price} (Ark+ $48 / $80 · The Fold $114 / $190 · Bundle $150 / $250)
 
 ### Gift form — from / to
 - **SECTION LABEL**: From

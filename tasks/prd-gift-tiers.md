@@ -11,12 +11,12 @@
 
 ## Decisions
 
-- **D1 — Gift pricing per tier (RESOLVED).** USD anchors, `currency_options` for the rest:
-  | Tier | 6mo | 1yr |
-  |------|-----|-----|
-  | Ark+ | $48 | $80 |
-  | Community | $48 | $80 |
-  | Bundle | $75 | $130 |
+- **D1 — Gift pricing per tier (RESOLVED; re-priced 2026-09-15).** Derived from each tier's subscription price rather than hand-set: **1yr = the tier's yearly price** (monthly ×10), **6mo = the tier's monthly price ×6** (six months at the plain monthly rate, no annual discount). USD anchors below, `currency_options` for the rest — the other 39 currencies are the tier's localized monthly base × the same multiple.
+  | Tier | monthly sub | 6mo | 1yr |
+  |------|-------------|-----|-----|
+  | Ark+ | $8 | $48 | $80 |
+  | The Fold | $19 | $114 | $190 |
+  | Bundle | $25 | $150 | $250 |
 - **D2 — Product structure.** Recommended: 3 one-time gift products mirroring subscriptions, with lookup keys `gift_<tier>_6mo` / `gift_<tier>_1yr`. Confirm naming.
 - **D3 — Bundle-gift entitlement on redemption.** A gift-activated (non-subscription) Bundle grants both `ark_plus` and `circle` axes.
 - **D4 — Gift stacking model.** Stack **per entitlement axis**. Replace the single `gift_expires_at` column with `ark_plus_gift_expires_at` + `circle_gift_expires_at`; derive `tier` from which axes are live. Each gift extends only the axes it covers; Bundle extends both. Same-axis gift term → extend expiry (existing `fromMs` logic, per-axis); no axis yet → start term from today.
@@ -24,7 +24,7 @@
   - **Axis the recipient lacks** → grant a fresh term on that axis (or stack onto a live gift term, per D4).
   - **Axis covered by a live *single-axis* or *exact-tier* paid sub** → **extend** that subscription by the gift term (defer billing): monthly → pause `term` of charges (`pause_collection`); annual → push the renewal / period end out by `term`. No credit.
   - **Single-axis gift landing entirely inside a Bundle sub** (nothing to add, can't pause part of a bundle) → **credit the full gift amount** to the Stripe customer balance; no new access.
-  - Worked examples: *Bundle 1yr ($130) → Ark+ subscriber* = grant Circle 1yr **+** extend the Ark+ sub +1yr = a full bundle year (the bundle price **is** the price of both axes for a year; the discount vs two standalone gifts is intended, not over-delivery). *Ark+ 1yr ($80) → Bundle holder* = credit $80. *Bundle 1yr → Bundle subscriber* = extend the bundle +1yr.
+  - Worked examples: *Bundle 1yr ($250) → Ark+ subscriber* = grant Circle 1yr **+** extend the Ark+ sub +1yr = a full bundle year (the bundle price **is** the price of both axes for a year; the discount vs two standalone gifts is intended, not over-delivery). *Ark+ 1yr ($80) → Bundle holder* = credit $80. *Bundle 1yr → Bundle subscriber* = extend the bundle +1yr.
   - This supersedes the earlier Basis-B *credit-the-remainder* model: credit is now the **fallback** for the bundle-subset case only, never the primary path.
 - **D10 — N1 credit currency (RESOLVED, catalog-denominated, no FX).** The bundle-subset credit (D5 case 3) is denominated from the **gift catalog in the recipient's *subscription* currency**, not the currency the giver paid in. Resolve `giftPrice[recipientSubCurrency]` via the same per-currency resolver (T2.1 `currency_options`) and post it as a customer-balance transaction in that currency (Stripe balances are multi-currency; same-currency credit auto-applies to the next invoice before the card). **No live FX** — giver-paid and recipient-credited are two independent catalog anchors for the same gift SKU, and the small anchor spread is the same one already absorbed across the per-currency subscription model. Guaranteed to resolve by the `SUPPORTED_CURRENCIES == CURRENCIES` invariant; assert loudly in the N1 path if the recipient's sub currency is somehow absent.
 

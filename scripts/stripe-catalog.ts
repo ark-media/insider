@@ -140,45 +140,55 @@ const CATALOG: ProductDef[] = [
 
 // --- Gift catalog ----------------------------------------------------------
 
-// Gifts are one-time purchases, priced INDEPENDENTLY of the subscription tiers
-// (tasks/prd-gift-tiers.md D1). USD anchors are hand-set charm prices; the other
-// 39 currencies scale the axis's localized monthly base by (giftUsd /
-// tierMonthlyUsd), so a localized gift floor tracks localized subscription
-// pricing without being derived from a subscription Price object at runtime.
-//   | Tier      | 6mo | 1yr  |
-//   | Ark+      | $48 | $80  |
-//   | The Fold  | $48 | $80  |
-//   | Bundle    | $75 | $130 |
+// Gifts are one-time purchases priced off the subscription tier they grant, so
+// a gift can't drift from what the same access costs as a subscription:
+//   1yr = the tier's yearly price (monthly ×10, the same 10:1 anchor pricesFor
+//         uses) — a gifted year costs exactly what a subscribed year costs
+//   6mo = the tier's monthly price ×6 — six months at the plain monthly rate,
+//         with no annual discount
+//   | Tier      | 6mo  | 1yr  |
+//   | Ark+      | $48  | $80  |
+//   | The Fold  | $114 | $190 |
+//   | Bundle    | $150 | $250 |
+// Keep src/lib/gift.ts GIFT_PRICE_DOLLARS (the /plus/gift display copy) in sync.
 type GiftTerm = '6mo' | '1yr'
 const GIFT_TERMS = ['6mo', '1yr'] as const
+
+// What each term costs as a multiple of the tier's MONTHLY price.
+const GIFT_TERM_MULTIPLE: Record<GiftTerm, number> = { '6mo': 6, '1yr': 10 }
 
 type GiftProductDef = {
   catalogKey: string // gift_ark_plus | gift_circle | gift_bundle
   name: string
   description: string
   entitlements: string // ark_plus | circle | ark_plus,circle
-  tierMonthlyUsdMinor: number // the axis's monthly USD base, to localize non-USD amounts
-  anchors: Record<GiftTerm, number> // USD minor-unit anchors per term
+  tierCatalogKey: string // the CATALOG tier whose price this gift mirrors
 }
 
-// Per-currency amounts for a gift term: USD is the exact charm anchor; the rest
-// scale the axis's localized monthly base by (anchor / tierMonthly).
-function giftAmountsFor(tierMonthlyUsdMinor: number, usdAnchorMinor: number): Amounts {
-  const monthly = amountsFor(tierMonthlyUsdMinor, 'month')
-  const scale = usdAnchorMinor / tierMonthlyUsdMinor
+// Per-currency amounts for a gift term: every currency is the tier's localized
+// monthly base scaled by the term multiple, so a localized gift floor tracks
+// localized subscription pricing across all 40 currencies. USD is computed
+// exactly (never a rounded scale), which is what makes a 1yr gift land on the
+// tier's yearly price to the cent.
+function giftAmountsFor(tierMonthlyUsdMinor: number, multiple: number): Amounts {
+  const monthScale = tierMonthlyUsdMinor / BASE_MONTHLY_MINOR.usd
   const out = {} as Amounts
-  for (const cur of CURRENCIES) out[cur] = Math.round(monthly[cur] * scale)
-  out.usd = usdAnchorMinor // exact anchor, never a rounded scale
+  for (const cur of CURRENCIES) {
+    out[cur] = Math.round(BASE_MONTHLY_MINOR[cur] * monthScale * multiple)
+  }
+  out.usd = tierMonthlyUsdMinor * multiple
   return out
 }
 
 // One-time (recurring: undefined) prices for a gift product, lookup-keyed
 // gift_<tier>_<term>.
 function giftPricesFor(def: GiftProductDef): PriceDef[] {
+  const tier = CATALOG.find((d) => d.catalogKey === def.tierCatalogKey)
+  if (!tier) throw new Error(`${def.catalogKey}: no catalog tier "${def.tierCatalogKey}"`)
   return GIFT_TERMS.map((term) => ({
     lookup_key: `${def.catalogKey}_${term}`,
     interval: undefined,
-    amounts: giftAmountsFor(def.tierMonthlyUsdMinor, def.anchors[term]),
+    amounts: giftAmountsFor(tier.usdMonthlyMinor, GIFT_TERM_MULTIPLE[term]),
   }))
 }
 
@@ -188,24 +198,21 @@ const GIFT_CATALOG: GiftProductDef[] = [
     name: 'Ark+ Gift',
     description: 'Gift a private ad-free podcast feed.',
     entitlements: 'ark_plus',
-    tierMonthlyUsdMinor: 800,
-    anchors: { '6mo': 4800, '1yr': 8000 },
+    tierCatalogKey: 'ark_plus',
   },
   {
     catalogKey: 'gift_circle',
     name: 'The Fold Gift',
     description: 'Gift access to the Fold (Circle).',
     entitlements: 'circle',
-    tierMonthlyUsdMinor: 800,
-    anchors: { '6mo': 4800, '1yr': 8000 },
+    tierCatalogKey: 'circle',
   },
   {
     catalogKey: 'gift_bundle',
     name: 'Ark+ & The Fold Gift',
     description: 'Gift the private ad-free feed and access to the Fold.',
     entitlements: 'ark_plus,circle',
-    tierMonthlyUsdMinor: 1300,
-    anchors: { '6mo': 7500, '1yr': 13000 },
+    tierCatalogKey: 'bundle',
   },
 ]
 
