@@ -117,6 +117,31 @@ afterEach(async () => {
   markedFeeds = [];
 });
 
+// A member reaches this page before Beehiiv has minted their feeds — it mints
+// them seconds after the membership lands — so the empty state is the first
+// thing many new members see. It has to say which of the two situations they're
+// in: still coming, or genuinely not there.
+describe("FeedSetup — no feeds yet", () => {
+  test("says they're on the way while the page is still polling", async () => {
+    const container = await render(<FeedSetup feeds={[]} provisioning />);
+
+    expect(container.textContent).toContain("Setting up your private feeds");
+    expect(container.textContent).not.toContain("No private feeds");
+  });
+
+  test("stops promising them once the poll has given up", async () => {
+    const container = await render(<FeedSetup feeds={[]} />);
+
+    expect(container.textContent).toContain(
+      "No private feeds on your membership yet",
+    );
+    // The membership is fine and the page says so — the feed is the only thing
+    // missing, and there's a way to ask about it from here.
+    expect(container.textContent).toContain("Your membership is active");
+    expect(container.textContent).toContain("hit Help");
+  });
+});
+
 describe("FeedSetup — Spotify", () => {
   test("hands off in a new tab, so the member keeps this page", async () => {
     const container = await render(<FeedSetup feeds={[FEED]} />);

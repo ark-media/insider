@@ -414,6 +414,28 @@ describe('GET /api/me with Auth0 bearer', () => {
     })
   })
 
+  test('a feed minted after the first read shows up on the next one', async () => {
+    // The live sequence a new member walks through: the premium tier lands,
+    // they arrive on the setup page, and Beehiiv mints the feeds seconds later
+    // (measured 35s, 2026-09-15). The first read 404s. That answer must not be
+    // cached, or the member — and the page polling on their behalf — keeps
+    // being told they have no feeds for the rest of the cache window.
+    membershipRows = [arkPlusRow('auth0|minting@x.com')]
+    const token = await signAuth0Token({ email: 'minting@x.com' })
+    const handler = buildHandler()
+
+    const first = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), first)
+    expect((first.__json() as { feeds: unknown[] }).feeds).toEqual([])
+
+    privateFeedByEmail.set('minting@x.com', { token: 'tok' })
+
+    const second = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), second)
+    const feeds = (second.__json() as { feeds: Array<{ id: string }> }).feeds
+    expect(feeds.map((f) => f.id)).toEqual([SHOW_ID])
+  })
+
   test('a Beehiiv outage never costs a member their membership', async () => {
     // Entitlement came from Neon; the feed lookup is decoration. A 500 upstream
     // must degrade to "no feed yet", not to "not a member" and not to a 500.

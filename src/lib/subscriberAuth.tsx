@@ -71,6 +71,11 @@ type SubscriberAuthValue = {
 
 const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
 
+// Floor between refocus revalidations. The staleness this exists to catch is
+// measured in minutes, so there is nothing to gain from re-asking on every
+// alt-tab — and a page that needs the answer sooner polls on its own.
+const REVALIDATE_FLOOR_MS = 10_000;
+
 export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   // Seed from the JS-readable presence hint so a guest renders immediately
   // without a flash of "loading", and a likely-member shows the spinner while
@@ -107,6 +112,31 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   // (the guest short-circuit), which is the intended one-shot resolution.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => void refresh(), [refresh]);
+
+  // Re-resolve it when the member comes back to the tab.
+  //
+  // Everything membership-shaped in the app reads this one snapshot, and until
+  // now it was taken once and never questioned — so a server-side change after
+  // load (private feeds finishing minting, a tier change, a cancel landing)
+  // stayed invisible until a full reload. That is what put "No private feeds on
+  // your membership yet" in front of a member who had them: the answer changed
+  // 35 seconds after the page had stopped asking.
+  //
+  // Refetching under a member's feet is safe here by construction: the feed
+  // setup page picks its open panel once (FeedSetup's `openId`) rather than
+  // deriving it from each render's feeds, and the "I've set this one up" markers
+  // are persisted server-side, so neither is lost to a refresh.
+  useEffect(() => {
+    let lastAt = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastAt < REVALIDATE_FLOOR_MS) return;
+      lastAt = Date.now();
+      void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refresh]);
 
   // Resolve admin status from the server (authoritative — it re-verifies the
   // session's role). Only a member session can be admin.

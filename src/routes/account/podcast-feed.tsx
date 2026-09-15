@@ -1,7 +1,23 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FeedSetup } from "../../components/FeedSetup";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
+
+// Beehiiv mints the private feeds a short while AFTER the premium tier is
+// applied — measured 35s on a live signup (see the cache note in
+// server/lib/beehiiv-feeds.ts) — and a member who has just paid reaches this
+// page well inside that window. /api/me is fetched once, on mount, so without
+// a poll every new member meets an empty checklist and is left to work out
+// that reloading fixes it.
+//
+// Bounded on purpose. Past the window the feeds are not "on their way" any
+// more, and saying so is better than a spinner that never resolves.
+//
+// Counted in ticks the member was actually here for, not wall time: the
+// Spotify hand-off opens in another tab, and a window that expired while this
+// one sat in the background would give up without ever having looked.
+const FEED_POLL_INTERVAL_MS = 5_000;
+const FEED_POLL_TICKS = 24; // ~2 minutes of visible time
 
 type PodcastFeedSearch = { spotify?: "linked" };
 
@@ -19,7 +35,7 @@ export const Route = createFileRoute("/account/podcast-feed")({
 function PodcastsTab() {
   const navigate = useNavigate();
   const { spotify } = Route.useSearch();
-  const { state, markFeedsSetUp } = useSubscriberAuth();
+  const { state, markFeedsSetUp, refresh } = useSubscriberAuth();
 
   useEffect(() => {
     if (state.kind === "member" && !isArkPlusMember(state)) {
@@ -51,7 +67,36 @@ function PodcastsTab() {
     markFeedsSetUp(state.me.feeds.map((f) => f.id));
   }, [spotifyLinked, state, markFeedsSetUp]);
 
+  // Entitled but holding nothing: the feeds are still being minted upstream.
+  // Re-read /api/me until they land, then stop — `waiting` flips false the
+  // moment one arrives, which tears the interval down.
+  const waiting =
+    state.kind === "member" &&
+    state.me.entitlements.arkPlus &&
+    state.me.feeds.length === 0;
+  const [pollExhausted, setPollExhausted] = useState(false);
+  useEffect(() => {
+    if (!waiting) return;
+    let ticks = 0;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (++ticks > FEED_POLL_TICKS) {
+        clearInterval(id);
+        setPollExhausted(true);
+        return;
+      }
+      void refresh();
+    }, FEED_POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [waiting, refresh]);
+
   if (state.kind !== "member" || !state.me.entitlements.arkPlus) return null;
 
-  return <FeedSetup feeds={state.me.feeds} spotifyLinked={spotifyLinked} />;
+  return (
+    <FeedSetup
+      feeds={state.me.feeds}
+      spotifyLinked={spotifyLinked}
+      provisioning={waiting && !pollExhausted}
+    />
+  );
 }

@@ -138,8 +138,10 @@ async function listLiveShowIds(env: Env, pubId: string): Promise<string[]> {
 
 // `/api/me` runs on every page load, so a per-member upstream call needs a
 // floor. Measured 290–390ms warm / ~950ms cold against the live API — small
-// next to the episode list, but not free. 60s is short enough that a
-// just-provisioned feed appears on the member's next reload.
+// next to the episode list, but not free.
+//
+// Only an ANSWER is cached — a feed, or a public show. A `none` read is not;
+// see the note at the cache write.
 const FEED_CACHE_TTL_MS = 60_000
 const feedCache = makeTTLCache<string, { read: FeedRead }>(FEED_CACHE_TTL_MS)
 
@@ -228,7 +230,19 @@ async function readPrivateFeed(
     console.error(`[beehiiv-feeds] feed lookup failed for ${redactEmail(email)}:`, err)
   }
 
-  feedCache.set(cacheKey, { read })
+  // A `none` read is deliberately NOT cached. It is the answer for an entitled
+  // member whose feed Beehiiv hasn't minted yet, and Beehiiv mints
+  // ASYNCHRONOUSLY: measured on a live signup 2026-09-15, the premium tier
+  // landed at 12:03:39Z (beehiiv_subscription.premium_since) and all four feeds
+  // were created at 12:04:14Z — 35 seconds later. A member who has just paid is
+  // on the setup page inside that window, so the first read is a 404, and
+  // holding it for 60s is what kept "No private feeds on your membership yet"
+  // on screen through the next reload as well. The setup page polls while it
+  // holds no feeds, so this read has to be able to change its mind.
+  //
+  // The cost is bounded: only a member with no feed re-probes, the page paces
+  // those probes, and entitlement never depended on this answer anyway.
+  if (read.kind !== 'none') feedCache.set(cacheKey, { read })
   return read
 }
 

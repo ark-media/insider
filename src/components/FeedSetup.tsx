@@ -106,8 +106,16 @@ function useHandheld(): boolean {
 export function FeedSetup({
   feeds,
   spotifyLinked = false,
+  provisioning = false,
 }: {
   feeds: UserFeed[];
+  /**
+   * The member is entitled to feeds but holds none yet, and the page is still
+   * polling for them (Beehiiv mints them seconds after the membership lands —
+   * see FEED_POLL_WINDOW_MS in the route). Only changes what the empty state
+   * says: that they're on their way, rather than that there are none.
+   */
+  provisioning?: boolean;
   /**
    * The member came back from Beehiiv's Spotify consent flow carrying its
    * marker. Beehiiv doesn't honour the return URL today (see
@@ -156,8 +164,12 @@ export function FeedSetup({
 
         {feeds.length === 0 ? (
           <div className="mt-10 border border-rule bg-navy-900/60 p-6 text-body-sm text-fg">
-            No private feeds on your membership yet. If you just joined, give it
-            a minute and refresh — they appear here automatically.
+            {provisioning
+              ? "Setting up your private feeds. This takes up to a minute — they'll appear here on their own, so you don't need to reload."
+              : // Two minutes of polling found nothing, so "give it a minute"
+                // would be the wrong advice. Points at the Help button, which
+                // is on this page, rather than at a link that leaves it.
+                "No private feeds on your membership yet. Your membership is active — reload the page, and if they still don't appear, hit Help and we'll sort it out."}
           </div>
         ) : (
           <>
