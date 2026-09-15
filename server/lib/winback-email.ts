@@ -4,7 +4,12 @@
 // Copy is the "Lifecycle Emails & Member Communications" doc, "Ark+ 180 Day
 // Winback". Pure (no I/O) so it's trivially testable.
 
-import { ARK_MEDIA_TEAM, esc, renderShell } from './welcome-email.js'
+import {
+  ARK_MEDIA_TEAM,
+  BRAND_FG_MUTED,
+  esc,
+  renderShell,
+} from './welcome-email.js'
 import { shows } from '../../src/data/shows.js'
 
 // The members-only show, named as the app names it. The doc calls it "Inside
@@ -61,7 +66,7 @@ export function renderWinbackEmail(p: WinbackEmailParams): {
       },
     ],
     signoffHtml: `Hope to see you again soon.<br />&mdash; ${ARK_MEDIA_TEAM}`,
-    footerHtml: `You’re getting this because you were an Ark+ member. <a href="${p.unsubscribeUrl}" style="color:rgba(255,255,255,0.62);">Unsubscribe from win-back emails</a>.`,
+    footerHtml: `You’re getting this because you were an Ark+ member. <a href="${p.unsubscribeUrl}" style="color:${BRAND_FG_MUTED};">Unsubscribe from win-back emails</a>.`,
   })
 
   return { subject: 'We saved your seat', html }

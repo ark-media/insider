@@ -36,15 +36,21 @@ const GIFT_LABEL: Record<GiftTerm, string> = {
 // Shared brand shell
 // ---------------------------------------------------------------------------
 
-const NAVY_900 = '#070b22'
-const NAVY_800 = '#101736'
-const CYAN = '#3eb5f9'
+// The site can flip between themes; an email cannot, so the shell is pinned to
+// the light palette — these are the [data-theme="light"] tokens from
+// src/index.css, flattened to solid hex because Outlook drops rgba() colours.
+const PAPER = '#eef3fc' // --color-navy-900 (light): the page canvas
+const SURFACE = '#ffffff' // --color-navy-800 (light): the card
+const INK = '#0b153c' // --color-navy: wordmark and headings
+const CYAN = '#0a6fad' // --color-cyan (light): brand #3eb5f9 fails AA on white
 // Exported for other emails (e.g. the feed-setup reminder) that reuse the
 // shell and need the brand cyan for inline links.
 export const BRAND_CYAN = CYAN
-const RULE = 'rgba(255,255,255,0.12)'
-const FG = 'rgba(255,255,255,0.85)'
-const FG_MUTED = 'rgba(255,255,255,0.62)'
+// Same, for the footer's small-print links.
+export const BRAND_FG_MUTED = '#686e86'
+const RULE = '#dddee4' // --color-rule, over the card
+const FG = '#373f5f' // --color-fg (10.3:1 on the card)
+const FG_MUTED = BRAND_FG_MUTED // --color-fg-muted (5.0:1 on the card)
 
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
@@ -94,7 +100,7 @@ type ShellParams = {
 
 function renderSection(s: EmailSection): string {
   const heading = s.heading
-    ? `<p style="margin:0 0 12px;font:700 15px/1.5 ${FONT};color:#ffffff;">${s.heading}</p>`
+    ? `<p style="margin:0 0 12px;font:700 15px/1.5 ${FONT};color:${INK};">${s.heading}</p>`
     : ''
   const intro = s.intro
     ? `<p style="margin:0 0 12px;font:400 15px/1.65 ${FONT};color:${FG};">${s.intro}</p>`
@@ -131,22 +137,30 @@ export function renderShell(p: ShellParams): string {
             </tr>`
     : ''
   return `<!doctype html>
-<html>
-  <body style="margin:0;padding:0;background:${NAVY_900};">
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <style>
+      :root { color-scheme: light; supported-color-schemes: light; }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:${PAPER};">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${p.preheader}</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${NAVY_900};padding:32px 16px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:${NAVY_800};border:1px solid ${RULE};border-radius:12px;overflow:hidden;">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:${SURFACE};border:1px solid ${RULE};border-radius:12px;overflow:hidden;">
             <tr>
               <td style="padding:32px 40px 8px;">
-                <p style="margin:0;font:800 20px ${FONT};color:#ffffff;">Ark<span style="color:${CYAN};">+</span></p>
+                <p style="margin:0;font:800 20px ${FONT};color:${INK};">Ark<span style="color:${CYAN};">+</span></p>
               </td>
             </tr>
             <tr>
               <td style="padding:16px 40px 0;">
                 <p style="margin:0 0 8px;font:600 11px ${FONT};letter-spacing:0.18em;text-transform:uppercase;color:${CYAN};">${p.eyebrow}</p>
-                <h1 style="margin:0 0 20px;font:700 26px/1.2 ${FONT};color:#ffffff;">${p.headlineHtml}</h1>
+                <h1 style="margin:0 0 20px;font:700 26px/1.2 ${FONT};color:${INK};">${p.headlineHtml}</h1>
                 <p style="margin:0 0 20px;font:400 15px/1.65 ${FONT};color:${FG};">${p.greetingHtml}</p>
                 <p style="margin:0 0 28px;font:400 15px/1.65 ${FONT};color:${FG};">${p.bodyHtml}</p>${bodySecond}
               </td>
@@ -156,7 +170,7 @@ export function renderShell(p: ShellParams): string {
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
                     <td style="border-radius:6px;background:${CYAN};">
-                      <a href="${p.ctaHref}" style="display:inline-block;padding:14px 32px;font:700 13px ${FONT};letter-spacing:0.08em;text-transform:uppercase;color:${NAVY_900};text-decoration:none;">${p.ctaLabel} &rarr;</a>
+                      <a href="${p.ctaHref}" style="display:inline-block;padding:14px 32px;font:700 13px ${FONT};letter-spacing:0.08em;text-transform:uppercase;color:${SURFACE};text-decoration:none;">${p.ctaLabel} &rarr;</a>
                     </td>
                   </tr>
                 </table>
@@ -444,7 +458,7 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
     ? `
             <tr>
               <td style="padding:0 0 28px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${CYAN};background:${NAVY_900};border-radius:6px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:3px solid ${CYAN};background:${PAPER};border-radius:6px;">
                   <tr>
                     <td style="padding:16px 20px;">
                       <p style="margin:0 0 6px;font:600 11px ${FONT};letter-spacing:0.16em;text-transform:uppercase;color:${CYAN};">A note from ${giver ? esc(giver) : 'the sender'}</p>
