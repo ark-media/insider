@@ -356,8 +356,12 @@ function InviteVideo() {
 
 /* --- You might do inside the Fold app -------------------------------------
    Real posts, pulled live from the three conversational rooms in Circle via
-   /api/circle/showcase. This grid used to be six hand-written samples with a
-   "names and avatars are placeholders" disclaimer; both are gone.
+   /api/circle/showcase. The grid used to be six hand-written samples.
+
+   The "placeholders" caption below is deliberate and stays, even though the
+   names and avatars under it are now real members. Hannah's call. Don't
+   "correct" it to match the data — if it changes, it changes because the copy
+   owner changed it.
 
    The cards deliberately do NOT link through to Circle. A visitor reading this
    section is not a member yet, so a click would land them on Circle's own
@@ -390,7 +394,7 @@ function InsideTheApp() {
           <span className="block text-fg-strong">You might do</span>
           <span className="mt-2 block text-cyan">inside the Fold app:</span>
         </h2>
-        <p className="meta mt-6">Recent posts from inside the Fold</p>
+        <p className="meta mt-6">Member names and avatars are placeholders</p>
 
         <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => (
