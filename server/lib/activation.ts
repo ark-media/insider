@@ -20,7 +20,6 @@ import {
   type Tier,
 } from '../entitlement.js'
 import {
-  createAuth0PasswordChangeTicket,
   findOrCreateAuth0User,
 } from './auth0-user.js'
 import {
@@ -214,53 +213,32 @@ export type Activator = {
 export function createActivator(env: Env, stripe: Stripe | null): Activator {
   const provisionInFlight = new Map<string, Promise<MembershipProvisionResult>>()
 
-  // Create the Auth0 login for a paid member (any tier), suppressing Auth0's own
-  // reset email — the single welcome email carries the set-password link. Soft-
-  // fails to a null userId so an Auth0 outage can't block the paid product; the
-  // webhook then can't write a membership row and retries. Runs for every paid
-  // tier, not just Ark+ — a Circle-only buyer needs a login to SSO into what
-  // they bought (§8 risk 6).
+  // Create the Auth0 login for a paid member (any tier). Soft-fails to a null
+  // userId so an Auth0 outage can't block the paid product; the webhook then
+  // can't write a membership row and retries. Runs for every paid tier, not
+  // just Ark+ — a Circle-only buyer needs a login to SSO into what they bought
+  // (§8 risk 6).
+  //
+  // A brand-new account used to leave here with an Auth0 password-change ticket,
+  // which was the welcome email's CTA and the only way in. Password sign-in is
+  // gone from the login page (auth0/README.md), so there is nothing to mint: the
+  // member is provisioned on the Database connection, and the login page mails
+  // them a code against that address. The welcome email's own auto-login link
+  // (`loginLink` below) is what carries them in on the first click.
   const ensureAuth0Login = async (
     email: string,
     name: string | undefined,
-    baseUrl: string,
-  ): Promise<{ userId: string | null; created: boolean; passwordSetupUrl?: string }> => {
+  ): Promise<{ userId: string | null; created: boolean }> => {
     let auth0Result: Awaited<ReturnType<typeof findOrCreateAuth0User>> = null
     try {
-      auth0Result = await findOrCreateAuth0User(email, name, env, {
-        emailPasswordReset: false,
-      })
+      auth0Result = await findOrCreateAuth0User(email, name, env)
     } catch (err) {
       console.error('[auth0] findOrCreateAuth0User failed:', err)
     }
-    const userId = auth0Result?.userId ?? null
-    let passwordSetupUrl: string | undefined
-    if (auth0Result?.created && userId) {
-      // Auth0 redirects here once the password is set, and that redirect is a
-      // plain browser navigation — it carries no `ark_session`. Without the
-      // auto-login token the brand-new member finishes the CTA and is bounced
-      // straight back to a login prompt. The ticket is already a credential
-      // (it sets the account password), so carrying one inside it costs nothing.
-      const { first, last } = splitFullName(name)
-      const resultUrl = await emailLoginUrl(
-        baseUrl,
-        '/welcome',
-        {
-          email,
-          sub: userId,
-          ...(first ? { givenName: first } : {}),
-          ...(last ? { familyName: last } : {}),
-        },
-        env,
-      )
-      passwordSetupUrl =
-        (await createAuth0PasswordChangeTicket(userId, resultUrl, env)) ??
-        undefined
-      if (!passwordSetupUrl) {
-        console.error('[auth0] new member created but password-change ticket failed:', redactEmail(email))
-      }
+    return {
+      userId: auth0Result?.userId ?? null,
+      created: auth0Result?.created ?? false,
     }
-    return { userId, created: auth0Result?.created ?? false, passwordSetupUrl }
   }
 
   // Provision the arkPlus axis: create (or upgrade) the member's Beehiiv
@@ -321,11 +299,11 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
 
     // Auth0 login for every paid tier. Reuse an already-stamped login.
     let auth0Sub: string | null = fresh.metadata?.auth0_user_id ?? null
-    let passwordSetupUrl: string | undefined
+    let isNewAccount = false
     if (!auth0Sub) {
-      const login = await ensureAuth0Login(email, name, baseUrl)
+      const login = await ensureAuth0Login(email, name)
       auth0Sub = login.userId
-      passwordSetupUrl = login.passwordSetupUrl
+      isNewAccount = login.created
     }
 
     // Every link in a lifecycle email points at a session-gated page, and the
@@ -409,14 +387,14 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
             email,
             welcomeUrl,
             setupUrl,
-            passwordSetupUrl,
+            isNewAccount,
             tier: entitlements.circle ? 'bundle' : 'ark-plus',
           })
         : renderCircleWelcomeEmail({
             name,
             email,
             welcomeUrl,
-            passwordSetupUrl,
+            isNewAccount,
           })
       // Idempotency-keyed on the subscription so two callers on different
       // instances (webhook + post-checkout route) collapse to one welcome email

@@ -31,7 +31,7 @@ describe('renderGiftRedemptionEmail', () => {
     expect(subject).toContain('Bob')
     expect(html).toContain('Start your membership')
     expect(html).toContain('https://app.test/redeem?mt=jwt.abc.def')
-    expect(html).not.toContain('Set your password')
+    expect(html).not.toMatch(/password/i)
     // Auto-login promise, not a "sign in first" instruction.
     expect(html).toContain('signed in automatically')
   })
@@ -95,20 +95,22 @@ describe('networkShowBullets', () => {
 })
 
 describe('renderSubscriberWelcomeEmail', () => {
-  test('new account: set-password CTA carries the ticket URL', () => {
+  test('new account: CTA is setup, and says the link signs them in', () => {
     const { subject, html } = renderSubscriberWelcomeEmail({
       ...URLS,
       name: 'Casey Jones',
-      passwordSetupUrl: 'https://auth.test/u/reset?ticket=xyz',
+      isNewAccount: true,
       tier: 'ark-plus',
     })
     expect(subject).toBe('Welcome to Ark+, one quick step left')
     expect(html).toContain('Welcome to Ark+.')
     expect(html).toContain('Hi Casey,') // first name only
-    expect(html).toContain('Set your password')
-    expect(html).toContain('https://auth.test/u/reset?ticket=xyz')
-    // The setup step is still reachable from under the password CTA — this
-    // email replaces Auth0's reset mail, so both have to fit in it.
+    // Member-facing copy never mentions a password, in any direction: not as a
+    // thing to set, and not as a thing they don't need. See welcome-email.ts.
+    expect(html).not.toMatch(/password/i)
+    expect(html).toContain('That link signs you in automatically')
+    // The caller wraps setupUrl in an auto-login link, which is what makes a
+    // CTA reachable for an account that has never signed in.
     expect(html).toContain(URLS.welcomeUrl)
     expect(html).toContain(URLS.setupUrl)
   })
@@ -131,7 +133,7 @@ describe('renderSubscriberWelcomeEmail', () => {
     expect(html).toContain('Finish setup')
     expect(html).toContain(URLS.setupUrl)
     expect(html).toContain('no new account to make')
-    expect(html).not.toContain('Set your password')
+    expect(html).not.toMatch(/password/i)
     expect(html).toContain('Hi there,')
   })
 
@@ -193,13 +195,15 @@ describe('renderCircleWelcomeEmail', () => {
     expect(html).not.toContain('Spotify')
   })
 
-  test('new account: set-password CTA carries the ticket URL', () => {
+  test('new account: CTA is the Fold, and says the link signs them in', () => {
     const { html } = renderCircleWelcomeEmail({
       welcomeUrl: URLS.welcomeUrl,
-      passwordSetupUrl: 'https://auth.test/u/reset?ticket=xyz',
+      isNewAccount: true,
     })
-    expect(html).toContain('Set your password')
-    expect(html).toContain('https://auth.test/u/reset?ticket=xyz')
+    expect(html).not.toMatch(/password/i)
+    expect(html).toContain('Enter the Fold')
+    expect(html).toContain('That link signs you in automatically')
+    expect(html).toContain(URLS.welcomeUrl)
   })
 })
 
@@ -230,7 +234,7 @@ describe('renderAxisAddedEmail', () => {
     // Not a first-purchase welcome, and never a set-password email: this member
     // has had a login since the day they first subscribed.
     expect(html).not.toContain('Welcome to Ark+')
-    expect(html).not.toContain('Set your password')
+    expect(html).not.toMatch(/password/i)
   })
 
   test('speaks in bills and months, never in our billing vocabulary', () => {

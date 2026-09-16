@@ -73,10 +73,6 @@ export type Me = {
   // Present on every /api/me response (computed server-side). Optional-typed only
   // to stay resilient to a stale cached response; the UI guards for it.
   axes?: { arkPlus: AxisAccess; circle: AxisAccess };
-  // True only for accounts that actually hold a password (the Auth0 database
-  // connection). Settings hides the password row entirely otherwise — a member
-  // who signs in with Google has nothing to reset.
-  passwordResettable?: boolean;
   feeds: UserFeed[];
 };
 

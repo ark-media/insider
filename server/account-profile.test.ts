@@ -521,17 +521,12 @@ describe('rate limiting', () => {
 
 const PROVISION_EMAIL = 'buyer@example.com'
 
-// The gift path's flag; also keeps these off the change_password email, which
-// goes through a different Auth0 client entirely.
-const NO_RESET = { emailPasswordReset: false }
-
 describe('new account', () => {
   test('writes the hint as given/family name', async () => {
-    const res = await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV, NO_RESET)
+    const res = await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
     expect(res).toEqual({
       userId: 'auth0|new-1',
       created: true,
-      passwordResetSent: false,
     })
     expect(creates[0]).toMatchObject({
       email: PROVISION_EMAIL,
@@ -543,7 +538,7 @@ describe('new account', () => {
   test('leaves the name unset when there is no hint', async () => {
     // Never fall back to the email local part: that is what filled the migrated
     // roster with members called "hannah.waxman8".
-    await findOrCreateAuth0User(PROVISION_EMAIL, undefined, BASE_ENV, NO_RESET)
+    await findOrCreateAuth0User(PROVISION_EMAIL, undefined, BASE_ENV)
     expect(creates[0]).not.toHaveProperty('given_name')
     expect(creates[0]).not.toHaveProperty('family_name')
   })
@@ -555,7 +550,7 @@ describe('existing account', () => {
     // read only on the create branch, so their existing login kept no name and
     // /account went on prompting them for one.
     byEmail = [{ user_id: 'auth0|existing', email: PROVISION_EMAIL }]
-    const res = await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV, NO_RESET)
+    const res = await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
     expect(res?.created).toBe(false)
     expect(updates).toHaveLength(1)
     expect(updates[0].userId).toBe('auth0|existing')
@@ -569,7 +564,7 @@ describe('existing account', () => {
     byEmail = [
       { user_id: 'auth0|existing', email: PROVISION_EMAIL, given_name: 'buyer' },
     ]
-    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV, NO_RESET)
+    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
     expect(updates[0].body).toMatchObject({ given_name: 'Hannah' })
   })
 
@@ -582,7 +577,7 @@ describe('existing account', () => {
         family_name: 'Lovelace',
       },
     ]
-    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV, NO_RESET)
+    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
     expect(updates).toHaveLength(0)
   })
 
@@ -597,7 +592,7 @@ describe('existing account', () => {
         app_metadata: { name_set_by_member: true },
       },
     ]
-    await findOrCreateAuth0User('sarah@gmail.com', 'Sarah Smith', BASE_ENV, NO_RESET)
+    await findOrCreateAuth0User('sarah@gmail.com', 'Sarah Smith', BASE_ENV)
     expect(updates).toHaveLength(0)
   })
 
@@ -605,13 +600,13 @@ describe('existing account', () => {
     // A name off a billing form is still a guess — it stays subject to the
     // manufactured-name heuristic, so it must not claim provenance.
     byEmail = [{ user_id: 'auth0|existing', email: PROVISION_EMAIL }]
-    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV, NO_RESET)
+    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
     expect(updates[0].body).not.toHaveProperty('app_metadata')
   })
 
   test('ignores a hint that is itself manufactured', async () => {
     byEmail = [{ user_id: 'auth0|existing', email: PROVISION_EMAIL }]
-    await findOrCreateAuth0User(PROVISION_EMAIL, 'buyer', BASE_ENV, NO_RESET)
+    await findOrCreateAuth0User(PROVISION_EMAIL, 'buyer', BASE_ENV)
     expect(updates).toHaveLength(0)
   })
 
@@ -619,11 +614,10 @@ describe('existing account', () => {
     // Soft-fail: a name is not worth failing provisioning over.
     byEmail = [{ user_id: 'auth0|existing', email: PROVISION_EMAIL }]
     updateRejects = true
-    const res = await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV, NO_RESET)
+    const res = await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
     expect(res).toEqual({
       userId: 'auth0|existing',
       created: false,
-      passwordResetSent: false,
     })
   })
 })

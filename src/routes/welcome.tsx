@@ -3,7 +3,7 @@ import {
   Link,
   type LinkProps,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { CommunityAppLinks } from "../components/CommunityAppLinks";
 import { ProfileNameCard } from "../components/account/ProfileNameCard";
 import {
@@ -15,8 +15,8 @@ import {
 export const Route = createFileRoute("/welcome")({
   component: WelcomePage,
   // `claimed=1` marks the new-account landing right after a gift magic-link
-  // claim: the recipient was just auto-logged-in with no password, so we offer
-  // an optional "set a password" step here.
+  // claim: the recipient was just auto-logged-in and the link is now spent, so
+  // we add a step telling them how to get back in next time.
   validateSearch: (search: Record<string, unknown>): { claimed?: boolean } => {
     return search.claimed === true || search.claimed === "1" || search.claimed === "true"
       ? { claimed: true }
@@ -101,13 +101,15 @@ function WelcomePage() {
     });
   }
 
-  // Gift recipients arrive via a magic link with no password. Offer to set one
-  // so they can sign in with email + password later instead of the link/Google.
+  // Gift recipients arrive via a one-time magic link, so the obvious worry is
+  // what happens when it's spent. There is nothing for them to set up — the
+  // login page mails a code on demand — so this step exists to say so rather
+  // than to ask for an action. Member-facing copy never raises the idea of a
+  // password, here or anywhere: see the note in welcome-email.ts.
   if (claimed) {
     steps.push({
-      title: "Set a password (optional)",
-      body: "You're signed in — no password needed. Prefer one? Set a password so you can sign in without Google or your gift link next time.",
-      slot: <SetPasswordButton />,
+      title: "Getting back in next time",
+      body: "Your gift link only works once. Next time, choose “Email me a code” and we'll send a one-time code to this address — or use Continue with Google if this is your Google address.",
     });
   }
 
@@ -208,51 +210,6 @@ function WelcomeHeadline({
     <>
       Welcome to <span className="display text-cyan">Ark+</span>.
     </>
-  );
-}
-
-// Kicks off Auth0's set-password ticket for the (already logged-in) recipient,
-// then redirects to it. Result URL brings them back to /welcome?claimed=1.
-function SetPasswordButton() {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const onClick = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const res = await fetch("/api/account/password-setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-      });
-      const data = (await res.json().catch(() => ({}))) as { url?: string };
-      if (res.ok && data.url) {
-        window.location.assign(data.url);
-        return;
-      }
-      setErr("Couldn't start password setup. Please try again.");
-    } catch {
-      setErr("Network error. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const cls =
-    "mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50";
-
-  return (
-    <div>
-      <button type="button" onClick={onClick} disabled={busy} className={cls}>
-        {busy ? "Opening…" : "Set a password"} →
-      </button>
-      {err ? (
-        <p role="alert" className="mt-3 text-body-sm text-danger">
-          {err}
-        </p>
-      ) : null}
-    </div>
   );
 }
 

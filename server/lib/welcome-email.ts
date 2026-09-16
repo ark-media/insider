@@ -9,13 +9,14 @@
 //   VISUAL BENEFITS LIST        → the text half (show + one-liner) from
 //                                 src/data/shows.ts. See networkShowBullets().
 //
-// The welcome emails also carry the set-password link (an Auth0 password-change
-// ticket, for brand-new accounts). That branch is not in the copy doc, which
-// assumes the account already exists — but it is load-bearing: this email
-// replaces Auth0's own password-reset mail, so a new account must be able to
-// reach a password from it. Every such account therefore gets the doc's copy
-// with the doc's CTA swapped for "Set your password", and the setup step
-// restated underneath it.
+// Brand-new accounts used to get a different CTA here: an Auth0 password-change
+// ticket labelled "Set your password", because a new account had no way in
+// otherwise. Password sign-in was removed from the login page on 2026-09-16, so
+// that ticket would now hand members a credential they can never sign in with.
+// Both kinds of account now get the doc's own CTA, which `activation.ts` already
+// wraps in an auto-login link — the click lands a new member signed in, with no
+// credential to create. `isNewAccount` survives only to pick the sentence
+// underneath it: the two cases still need different reassurance.
 
 import type { GiftTerm } from './activation.js'
 import { greetingFirstName, splitFullName } from '../../shared/profile-name.js'
@@ -294,14 +295,19 @@ function arkPlusSetupStep(setupUrl: string, lead: string): string {
 
 // The sentence that precedes the support line in every welcome follow-up.
 //
-// A brand-new account has the password ticket as its CTA, so the doc's own
-// setup step has to be reachable from underneath it — that is what the welcome
-// page is. An existing account is told, once, that no new login is involved:
-// the CTA lands on a signed-in page, and "do I need another account?" is the
-// question that otherwise stops them there.
+// Both cases now share a CTA, so this is the only place they differ. A new
+// account is told the link signs them in, which is what stops someone who has
+// just been told they have an account from hunting for a credential. An existing
+// account is told the opposite thing — that there is no new account to make —
+// for the same reason, one step earlier.
+//
+// Neither sentence names a password, and no member-facing copy anywhere does.
+// Sign-in is an emailed code or Google; a member who never had a password does
+// not need to hear that one is absent, and raising it only invites the hunt
+// this sentence exists to prevent.
 function ctaPrelude(isNewAccount: boolean, welcomeUrl: string): string {
   return isNewAccount
-    ? `Once you've set a password you'll land on ${link(welcomeUrl, 'your welcome page')}, which walks you through the rest. `
+    ? `That link signs you in automatically. ${link(welcomeUrl, 'Your welcome page')} walks you through the rest. `
     : 'Sign in with the login you already have — no new account to make. '
 }
 
@@ -333,11 +339,12 @@ export type SubscriberWelcomeEmailParams = {
   email?: string
   welcomeUrl: string
   // The feed-setup page (/setup). The doc points every Ark+ instruction at
-  // arkmedia.org/setup; the welcome page is where a brand-new account lands
-  // after setting a password, and it links on to the same place.
+  // arkmedia.org/setup; the welcome page covers the same ground for someone
+  // who has just been provisioned, and links on to this.
   setupUrl: string
-  // Present only for brand-new accounts: an Auth0 password-change ticket URL.
-  passwordSetupUrl?: string
+  // Whether this membership just created the Auth0 account. Picks the sentence
+  // under the CTA (ctaPrelude), nothing else.
+  isNewAccount?: boolean
   // Which feed tier this is. 'bundle' also carries the Fold (Circle), so its
   // copy adds the Fold on top of the feed; 'ark-plus' is feed-only.
   tier: 'ark-plus' | 'bundle'
@@ -349,13 +356,13 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
 } {
   const first = firstName(p.name, p.email)
   const includesCommunity = p.tier === 'bundle'
-  const isNewAccount = Boolean(p.passwordSetupUrl)
+  const isNewAccount = Boolean(p.isNewAccount)
 
-  // A brand-new account has to reach a password before anything else works, so
-  // the CTA is the ticket and the doc's setup step moves into the follow-up.
-  // An existing account gets the doc's flow unchanged: the CTA is setup itself.
-  const ctaHref = isNewAccount ? p.passwordSetupUrl! : p.setupUrl
-  const ctaLabel = isNewAccount ? 'Set your password' : 'Finish setup'
+  // One CTA for both: setup is the first thing either kind of account needs,
+  // and the caller's auto-login wrapper is what makes it reachable for an
+  // account that has never signed in.
+  const ctaHref = p.setupUrl
+  const ctaLabel = 'Finish setup'
   const prelude = ctaPrelude(isNewAccount, p.welcomeUrl)
 
   const arkPlusStep = arkPlusSetupStep(
@@ -432,7 +439,7 @@ export type GiftRedemptionEmailParams = {
   message?: string
   // The single magic link (/redeem?mt=…). One click logs the recipient in,
   // redeems the gift, and drops them into the welcome flow — no separate
-  // sign-in or set-password step, and no Auth0 email.
+  // sign-in step, and no Auth0 email.
   claimUrl: string
 }
 
@@ -480,7 +487,7 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
     footerHtml: `Gifts are one-time — once claimed, your access runs for ${termLabel} and won't auto-renew. Redeem whenever you like; there's no deadline. Need help? Just reply to this email.`,
     ctaHref: p.claimUrl,
     ctaLabel: 'Start your membership',
-    ctaFollowupHtml: `You'll be signed in automatically — no password needed. You can set one anytime from your welcome page.`,
+    ctaFollowupHtml: `You'll be signed in automatically. Next time, sign in with a one-time code we email you, or with Google.`,
   })
 
   return { subject, html }
@@ -495,19 +502,21 @@ export type CircleWelcomeEmailParams = {
   // The member's address — required for the name check, see firstName().
   email?: string
   welcomeUrl: string
-  // Present only for brand-new accounts: an Auth0 password-change ticket URL.
-  passwordSetupUrl?: string
+  // Whether this membership just created the Auth0 account. Picks the sentence
+  // under the CTA (ctaPrelude), nothing else.
+  isNewAccount?: boolean
 }
 
 // A Circle-only membership grants the Fold, not the private podcast feed —
-// so this copy is Fold-first and drops the feed-setup language. The CTA
-// still routes brand-new accounts through set-password before the Fold.
+// so this copy is Fold-first and drops the feed-setup language. Every account
+// goes straight to the Fold; the caller's auto-login wrapper carries a
+// brand-new one in without a credential.
 export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
   subject: string
   html: string
 } {
   const first = firstName(p.name, p.email)
-  const isNewAccount = Boolean(p.passwordSetupUrl)
+  const isNewAccount = Boolean(p.isNewAccount)
   // Only the new-account half of ctaPrelude is wanted here: the body above
   // already told an existing member to sign in with the account they have, and
   // saying it twice in four lines reads as a warning rather than reassurance.
@@ -519,8 +528,8 @@ export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
     greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
     bodyHtml: "You're in! Thank you for joining the Fold.",
     bodySecondHtml: foldAppLinks("If you haven't already, download"),
-    ctaHref: isNewAccount ? p.passwordSetupUrl! : p.welcomeUrl,
-    ctaLabel: isNewAccount ? 'Set your password' : 'Enter the Fold',
+    ctaHref: p.welcomeUrl,
+    ctaLabel: 'Enter the Fold',
     ctaFollowupHtml: `${prelude}${supportLine('If you run into any trouble getting set up')}`,
     sections: [foldInsideSection()],
     signoffHtml: `Thank you for being part of this.<br />${ARK_MEDIA_TEAM}`,
@@ -647,8 +656,6 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
       bodySecondHtml: `${priceSentence}${billSentence}`,
       ctaHref: p.setupUrl,
       ctaLabel: 'Set up your feed',
-      // No set-password branch: by construction this member already has a login —
-      // it's what made the change an upgrade instead of a first purchase.
       ctaFollowupHtml:
         `Depending on how you listen, you'll add a private RSS feed for each show or ` +
         `connect to Spotify — the step by step instructions are at ` +

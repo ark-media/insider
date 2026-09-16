@@ -1291,12 +1291,11 @@ single member only ever sees some of them.
 - **STEP CTA (NOTIFICATIONS)**: Newsletter preferences →
 
 ### Gift-claimed extra step (arriving from a claimed gift)
-- **STEP TITLE**: Set a password (optional)
-- **STEP BODY**: You're signed in — no password needed. Prefer one? Set a password so you can sign in without Google or your gift link next time.
-- **BUTTON**: Set a password →
-- **BUTTON (BUSY)**: Opening… →
-- **ERROR (SETUP FAILED)**: Couldn't start password setup. Please try again.
-- **ERROR (NETWORK)**: Network error. Please try again.
+- **STEP TITLE**: Getting back in next time
+- **STEP BODY**: Your gift link only works once. Next time, choose “Email me a code” and we'll send a one-time code to this address — or use Continue with Google if this is your Google address.
+
+(No button: the step is informational. Sign-in is an emailed one-time code or
+Google, and member-facing copy never mentions passwords in either direction.)
 
 ### Footer
 - **HELP LINE**: A welcome email is on its way. Need help? Contact us. ("Contact us." links to /contact)

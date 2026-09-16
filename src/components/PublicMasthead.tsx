@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { Link, useLocation } from "@tanstack/react-router";
 import { ArkLogo } from "./ArkLogo";
 import { Spinner } from "./Spinner";
-import { EmailCodeSignIn } from "./EmailCodeSignIn";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { shows } from "../data/shows";
 
@@ -361,22 +360,6 @@ export function PublicMasthead() {
                 >
                   Sign in
                 </button>
-                {/* The escape hatch for the members a password won't let in:
-                    anyone provisioned without one (everyone is — they pick it
-                    from a reset email they may never open), and anyone whose
-                    Google address isn't the address they subscribed with.
-
-                    It has to be here. Auth0 renders no passwordless option of
-                    its own beside the password box (see EmailCodeSignIn), and
-                    the drawer that carries this on mobile sits behind an
-                    sm:hidden button — so without this, desktop visitors cannot
-                    reach the connection at all.
-
-                    Still a text link, not a button: the "single primary
-                    action" rule for this slot holds, and the comment above
-                    about not opening a second door applies to Sign up, not to
-                    a second route through the same door. */}
-                <EmailCodeSignIn returnTo="/account" />
               </div>
             )}
           </div>
@@ -498,26 +481,16 @@ export function PublicMasthead() {
               // Subscribe (above) is the primary CTA in this menu; Sign in is
               // the only secondary action — signing up happens through checkout,
               // so a separate "Sign up" button was a second door to the same place.
-              // The code option rides along only here, in the dropdown.
-              // The collapsed top bar keeps its single Sign in button — it's a
-              // 44px slot next to the subscribe CTA, and a second control there
-              // would be the "second door" problem again.
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileOpen(false);
-                    signIn("/account");
-                  }}
-                  className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
-                >
-                  Sign in
-                </button>
-                <EmailCodeSignIn
-                  returnTo="/account"
-                  className="mb-3 justify-center"
-                />
-              </>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  signIn("/account");
+                }}
+                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              >
+                Sign in
+              </button>
             )}
             {navItems
               // Pills already render in the top bar at every breakpoint;

@@ -1,11 +1,16 @@
 // Auth0 user creation after a successful payment. The clients live in
-// ../auth0.ts; this module does the find-or-create dance and gets a first-login
-// path to the new member — either Auth0's own password-reset email (default)
-// or, for the gift flow, a password-change ticket URL the caller embeds in its
-// own welcome email.
+// ../auth0.ts; this module does the find-or-create dance.
+//
+// It used to also hand back a first-login path — Auth0's own password-reset
+// email, or a password-change ticket for the gift flow. Neither exists now:
+// password sign-in was removed from the login page on 2026-09-16 (see
+// auth0/README.md), so a credential minted here would be one the member could
+// never use. The account is created on the Database connection and the login
+// page mails a one-time code against that address; callers carry members in
+// with the auto-login links in their own email (server/lib/session.ts).
 
 import crypto from 'node:crypto'
-import { getAuthenticationClient, getManagementClient } from '../auth0.js'
+import { getManagementClient } from '../auth0.js'
 import {
   MAX_NAME_PART_LEN,
   hasRealName,
@@ -30,34 +35,25 @@ function nameSetByMember(user: { app_metadata?: unknown }): boolean {
 
 type Env = Record<string, string>
 
-// `created` distinguishes a brand-new account (we just issued the
-// password-reset email) from a pre-existing one (no email was sent because
-// the user already has a login). `passwordResetSent` reports whether the
-// reset email actually went out — false means the account exists but cannot
-// be logged into yet, which callers should surface for manual support.
+// `created` distinguishes a brand-new account from a pre-existing one. Callers
+// use it to pick welcome-email copy — a new member needs telling that the link
+// signs them in, an existing one that there is no second account.
 export type Auth0UserResult = {
   userId: string
   created: boolean
-  passwordResetSent: boolean
 }
 
 export async function findOrCreateAuth0User(
   email: string,
   nameHint: string | undefined,
   env: Env,
-  // The gift path passes { emailPasswordReset: false } because it sends its
-  // own branded welcome email carrying a password-change ticket instead — see
-  // createAuth0PasswordChangeTicket below. The subscription path leaves this
-  // default so its change_password email keeps going out.
-  //
   // `emailVerified` creates the account with email_verified:true. The gift
   // magic-link flow sets it: the recipient clicked a link delivered to their
   // inbox, which proves control of the address — and creating the user
   // pre-verified suppresses Auth0's own "Verify your email" message (which
   // otherwise fires on every email_verified:false creation).
-  opts: { emailPasswordReset?: boolean; emailVerified?: boolean } = {},
+  opts: { emailVerified?: boolean } = {},
 ): Promise<Auth0UserResult | null> {
-  const emailPasswordReset = opts.emailPasswordReset ?? true
   const mgmt = getManagementClient(env)
   if (!mgmt) return null
 
@@ -95,7 +91,7 @@ export async function findOrCreateAuth0User(
       // throwing. A name is not worth failing provisioning over.
       await updateAuth0Name(env, found.user_id, { givenName, familyName })
     }
-    return { userId: found.user_id, created: false, passwordResetSent: false }
+    return { userId: found.user_id, created: false }
   }
 
   // Create Auth0 user with a random temporary password — the password-change
@@ -122,28 +118,11 @@ export async function findOrCreateAuth0User(
     return null
   }
 
-  // Caller opted out of the Auth0 email (it will deliver the password-change
-  // link itself). The account exists with only a temp password; the caller is
-  // responsible for getting a set-password link to the user.
-  if (!emailPasswordReset) {
-    return { userId, created: true, passwordResetSent: false }
-  }
-
-  // The user record exists but has only the random temp password. Without
-  // the change_password email going through, they have no way to sign in —
-  // surface this so the caller can flag for manual support resend.
-  let passwordResetSent = false
-  try {
-    await getAuthenticationClient(env).database.changePassword({
-      email,
-      connection: 'Username-Password-Authentication',
-    })
-    passwordResetSent = true
-  } catch (err) {
-    console.error('[auth0] change_password email failed:', err)
-  }
-
-  return { userId, created: true, passwordResetSent }
+  // The record carries only a random temp password, and nothing will ever ask
+  // for it: the member signs in with an emailed code against this address, or
+  // with Google if it matches. What this account exists for is to be the
+  // canonical identity the post-login action links those logins into.
+  return { userId, created: true }
 }
 
 // Look up a user's email and name by their Auth0 `sub`/user_id via the
@@ -240,54 +219,3 @@ export async function updateAuth0Name(
   }
 }
 
-// Mints a password-change ticket (a self-contained URL) via the Management API
-// instead of triggering Auth0's own email. Used by the gift flow so the
-// set-password link can ride inside our single branded welcome email. The M2M
-// app must hold the `create:user_tickets` scope. `resultUrl` is where Auth0
-// redirects after the password is set. Returns the ticket URL, or null on any
-// failure (caller soft-fails — the gift is already granted).
-export async function createAuth0PasswordChangeTicket(
-  userId: string,
-  resultUrl: string,
-  env: Env,
-): Promise<string | null> {
-  const mgmt = getManagementClient(env)
-  if (!mgmt) return null
-
-  try {
-    const ticket = await mgmt.tickets.changePassword({
-      user_id: userId,
-      result_url: resultUrl,
-      mark_email_as_verified: true,
-    })
-    return ticket.ticket ?? null
-  } catch (err) {
-    console.error('[auth0] password-change ticket failed:', err)
-    return null
-  }
-}
-
-// Send Auth0's own branded "reset your password" email to a member who asked
-// for one from the account page. Distinct from createAuth0PasswordChangeTicket
-// above: that one mints a URL for us to put inside our own email, which is
-// right when we're already sending one (the gift welcome). Here the member is
-// sitting on the account page and nothing else is going out, so Auth0's email
-// — whose template is configured on the login client — is the whole delivery.
-//
-// Returns false on any failure so the caller can say so, rather than claiming
-// an email is on its way when nothing was sent.
-export async function sendAuth0PasswordResetEmail(
-  email: string,
-  env: Env,
-): Promise<boolean> {
-  try {
-    await getAuthenticationClient(env).database.changePassword({
-      email,
-      connection: 'Username-Password-Authentication',
-    })
-    return true
-  } catch (err) {
-    console.error('[auth0] password reset email failed:', err)
-    return false
-  }
-}

@@ -79,7 +79,8 @@ on every login.
 
 ## Passwordless email (the "email me a code" option)
 
-The third way into the site, alongside password and Google. It is Auth0's
+The way into the site for members without Google, now that the password
+option has been removed from the login page. It is Auth0's
 **email OTP** passwordless connection: the member types their address and Auth0
 emails them a one-time code.
 
@@ -90,17 +91,27 @@ be opened in the same browser that asked for it. Switching the tenant to Classic
 to get a clickable link would cost us the New Universal Login page and its
 branding, so we take the code.
 
-**Auth0 will not offer it on the login page by itself.** This is the part that
-is easy to get wrong. Per
+**Auth0 only offers it because the password option is gone.** This is the part
+that is easy to get wrong, in both directions. Per
 [Passwordless with Universal Login](https://auth0.com/docs/authenticate/passwordless/passwordless-with-universal-login),
 when an application has **both** a database connection and a passwordless one,
-New Universal Login never renders a passwordless choice next to the password
-form — the app has to ask for it by passing `connection=email` to `/authorize`.
+New Universal Login renders no passwordless choice next to the password form;
 Auth0's stated reason is that a passwordless connection signs people up on
 sight, so offering it beside a password box could silently create a duplicate
-account for anyone whose email misses the database. The upshot: the connection
-being enabled does nothing on its own, and **the entry point has to live in our
-UI**.
+account for anyone whose email misses the database.
+
+We lived with that for a day (2026-09-16): the connection was enabled, did
+nothing on its own, and we carried our own "Email me a code instead" link on
+four surfaces to reach it. Then the password option was taken off the login
+page, which leaves the passwordless connection unshadowed — Auth0 now renders
+the code prompt itself, so those links were removed again (they were duplicating
+a choice the widget already offers).
+
+⚠️ **This is conditional, not permanent.** Put password login back in front of
+members and the code prompt disappears from the widget on the same day, silently
+— nothing errors, the option simply stops being drawn, and the only way back is
+`connection=email` from our own UI. If you re-enable the database connection for
+this application, restore an entry point in the same change.
 
 Setup (Auth0 Dashboard):
 
@@ -146,11 +157,13 @@ Setup (Auth0 Dashboard):
    application unless we want Fold members signing in that way too — the Fold
    gate in this action keys on client id and keeps working either way.
 
-The app side is wired: `/api/auth/login?connection=email`
-(`server/routes/auth.ts`) opens that prompt directly, and
+The app side is still wired even though nothing in the UI calls it now:
+`/api/auth/login?connection=email` (`server/routes/auth.ts`, allowlisted in
+`LOGIN_CONNECTIONS`) opens that prompt directly, and
 `signIn(returnTo, { connection: "email" })` in `src/lib/subscriberAuth.tsx` is
-the client-side spelling. Per the note above these are **required**, not a
-shortcut — nothing reaches the passwordless connection without them.
+the client-side spelling. Kept deliberately, for two reasons: it is the link
+support hands a member who is stuck, and it is the thing to re-mount in the UI
+if password login ever returns to the login page.
 
 ## Behavior notes / gotchas
 

@@ -60,11 +60,11 @@ export const supportAliases: Alias[] = [
   },
 
   // --- Sign-in. `locked` appears once — in the Spotify payment answer — so
-  //     "locked out" lands on Spotify without this. `password` used to be
-  //     absent too; the current corpus puts it in the Fold access answer ("either
-  //     Continue with Google or your email and password"), which is the WRONG
-  //     answer to "I forgot my password", so the binding matters more now, not
-  //     less.
+  //     "locked out" lands on Spotify without this. `password` needs binding for
+  //     the opposite reason it used to: the corpus no longer mentions passwords
+  //     at all (sign-in is Google or an emailed code since 2026-09-16), so
+  //     "I forgot my password" has nothing to match on and would fall through
+  //     to whatever scores next. Members will keep using the word for years.
   {
     phrases: [
       "cant log in", "can not log in", "cannot log in", "cant sign in", "cant login",

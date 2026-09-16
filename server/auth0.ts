@@ -4,25 +4,20 @@
 //   - ManagementClient for the Management API (users, roles, jobs, tickets).
 //     It manages the M2M client-credentials token itself, so there's no
 //     hand-rolled token fetch/cache here anymore.
-//   - AuthenticationClient for the one Authentication-API call we make
-//     (dbconnections/change_password), which lives on the custom login domain.
 //
-// Domain split (load-bearing): the public login domain is custom
-// (auth.ark-plus.xyz) and is used for JWKS, the ID-token issuer, and the
-// change_password email. The Management API lives on the native tenant domain
-// (e.g. foo.us.auth0.com), resolved from env.AUTH0_TENANT_DOMAIN. Keeping two
-// factories ensures the two domains can't be accidentally collapsed.
+// There was also an AuthenticationClient here, for the one Authentication-API
+// call we made: dbconnections/change_password. Password sign-in was removed
+// from the login page on 2026-09-16, so nothing sends that email any more.
+//
+// Domain split (still load-bearing): the public login domain is custom
+// (auth.ark-plus.xyz) and is used for JWKS and the ID-token issuer. The
+// Management API lives on the native tenant domain (e.g. foo.us.auth0.com),
+// resolved from env.AUTH0_TENANT_DOMAIN — the two must not be collapsed.
 // ---------------------------------------------------------------------------
 
-import { AuthenticationClient, ManagementClient } from 'auth0'
+import { ManagementClient } from 'auth0'
 
 export const AUTH0_DOMAIN = 'https://auth.ark-plus.xyz'
-
-// Public (PKCE) client on the login domain — the one whose branded
-// change_password email template is configured. Used only by the
-// AuthenticationClient below. Overridable per environment via
-// AUTH0_LOGIN_CLIENT_ID (e.g. a separate staging tenant); defaults to prod.
-const DEFAULT_AUTH0_LOGIN_CLIENT_ID = '1T1u9VRHbSWxOwy8OX5PVYw9BdPNtAvp'
 
 type Env = Record<string, string>
 
@@ -53,18 +48,3 @@ export function getManagementClient(env: Env): ManagementClient | null {
   return client
 }
 
-let cachedAuth: { key: string; client: AuthenticationClient } | null = null
-
-// Authentication API client pointed at the custom login domain. Used only for
-// the change_password email (see lib/auth0-user.ts). The client_id is the
-// public login client (env-overridable); no secret is needed for that endpoint.
-export function getAuthenticationClient(env: Env): AuthenticationClient {
-  const domain = hostOf(AUTH0_DOMAIN)
-  const clientId = env.AUTH0_LOGIN_CLIENT_ID || DEFAULT_AUTH0_LOGIN_CLIENT_ID
-  const key = `${domain}:${clientId}`
-  if (cachedAuth?.key === key) return cachedAuth.client
-
-  const client = new AuthenticationClient({ domain, clientId })
-  cachedAuth = { key, client }
-  return client
-}

@@ -7,7 +7,6 @@ import {
   type RedeemGiftResult,
 } from "../lib/gift";
 import { trackEvent } from "../lib/analytics";
-import { EmailCodeSignIn } from "../components/EmailCodeSignIn";
 
 // Where a recipient lands from the gift email's link. Two shapes:
 //   ?mt=…    — the single-email magic link. One click (POST /api/gift/claim)
@@ -247,12 +246,6 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
           <button type="button" onClick={() => signIn()} className={primaryCta}>
             Sign in to claim →
           </button>
-          {/* Gift recipients are the likeliest people on the site to have no
-              password: they're provisioned at claim time and may never open the
-              set-a-password email. */}
-          <div className="mt-2">
-            <EmailCodeSignIn />
-          </div>
         </div>
       </Card>
     );

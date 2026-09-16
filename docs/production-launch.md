@@ -64,20 +64,26 @@ you get the value; "Scope" = server-only vs shipped to browser.
 | `AUTH0_WEB_CLIENT_ID` / `AUTH0_WEB_CLIENT_SECRET` | server | Regular Web App (confidential) — the BFF login client. |
 | `AUTH0_MANAGEMENT_CLIENT_ID` / `AUTH0_MANAGEMENT_CLIENT_SECRET` | server | M2M app ("Ark Plus M2M") authorized for the Management API. |
 | `AUTH0_TENANT_DOMAIN` | server | **Native** tenant domain (e.g. `https://ark-media.us.auth0.com`) — Management API lives here, **not** on `auth.ark-plus.xyz`. |
-| `AUTH0_LOGIN_CLIENT_ID` | server (optional) | Overrides the public login client used for `change_password` email; defaults to prod client in `server/auth0.ts`. |
 
 **Auth0 tenant setup (one-time, dashboard — not env):**
 1. Custom login domain `auth.ark-plus.xyz` verified; JWKS + ID-token issuer point here.
 2. Database connection `Username-Password-Authentication` → **Disable Sign Ups = ON**
-   (the Post-Login action only gates *social* connections).
+   (the Post-Login action gates the social and passwordless connections).
+   The connection still backs every member's canonical account — it is just no
+   longer offered as a way to *sign in*. See `auth0/README.md`.
+2b. **Authentication Profile = Identifier First**, Passwordless → Email enabled
+   with **Verification Method = OTP**, and its **Disable Sign Ups = OFF**
+   (deliberately the opposite of the database connection — `auth0/README.md`
+   explains why, and why no code email is sent if you get it wrong).
 3. Google social connection configured.
 4. **Post-Login Action** deployed from `auth0/actions/post-login.js` (account
    linking + signup gate + claims). Its **Secrets**: `AUTH0_TENANT_DOMAIN`,
    `MGMT_CLIENT_ID`, `MGMT_CLIENT_SECRET`.
 5. **M2M scopes** (Management API): `read:users`, `update:users`, `delete:users`,
-   `read:roles`, `create:users`, `update:users_app_metadata`, and
-   `create:user_tickets` (needed to mint set-password links). `update:users`
+   `read:roles`, `create:users`, and `update:users_app_metadata`. `update:users`
    (not just `update:users_app_metadata`) is required for identity linking.
+   `create:user_tickets` is no longer needed — nothing mints set-password
+   links since password sign-in was removed.
 6. Admin role assigned to the two admin accounts (ava@…, hannah.waxman8@…).
 7. **Prod callback/allowed URLs** on the Web App include `APP_BASE_URL` +
    `/api/auth/callback` (and logout return URL).
@@ -179,8 +185,9 @@ Regenerate all shared secrets for prod: `SESSION_SECRET`, `CHECKOUT_SESSION_SECR
 - [ ] Neon migrations through `0015` applied to prod.
 - [ ] Stripe live webhook shows a successful test delivery; a real test purchase
       provisions Auth0 user + Neon `membership` + Circle access.
-- [ ] Auth0 prod login round-trips (email/password **and** Google, incl. the
-      account-linking path).
+- [ ] Auth0 prod login round-trips (**emailed one-time code** and Google, incl.
+      the account-linking path). There is no password option: confirm the login
+      page offers exactly those two.
 - [ ] Cron routes return 200 only with the correct `CRON_SECRET`.
 - [ ] Resend domain verified; a test send lands (not spam).
 - [ ] `VITE_GATE_PASSWORD` decision made (empty = public).
@@ -195,5 +202,4 @@ Regenerate all shared secrets for prod: `SESSION_SECRET`, `CHECKOUT_SESSION_SECR
 - **Email ownership — Beehiiv vs Resend.** Beehiiv sends the feed-delivery mail
   (`POST /api/me/feeds/email`) and the newsletters; Resend sends our own
   transactional mail. Confirm the split is deliberate before any launch blast, so
-  the "set your password" email and Beehiiv's own feed mail don't collide or
-  double-send.
+  our welcome email and Beehiiv's own feed mail don't collide or double-send.

@@ -701,7 +701,7 @@ values
     15,
     $C$Getting Started$C$,
     $Q$How do I access The Fold App?$Q$,
-    $A$<p>If your subscription includes The Fold, log in to your Ark Media account and follow the link to access The Fold App. Sign in using the same email address and login method you use for your Ark Media account, either <strong>Continue with Google</strong> or your email and password.</p><p>If you purchased Ark+ through Apple, The Fold access is not included. You'll need to purchase a separate subscription for The Fold through the Ark Media website.</p>$A$
+    $A$<p>If your subscription includes The Fold, log in to your Ark Media account and follow the link to access The Fold App. Sign in using the same email address you use for your Ark Media account, either <strong>Continue with Google</strong> or <strong>Email me a code</strong>, which sends a one-time code to your inbox.</p><p>If you purchased Ark+ through Apple, The Fold access is not included. You'll need to purchase a separate subscription for The Fold through the Ark Media website.</p>$A$
   ),
   (
     16,

@@ -229,12 +229,17 @@ const ARKPLUS_AXES = { arkPlus: SUB_ARKPLUS_AXIS, circle: FREE_AXIS }
 // rather than repeating the pair twelve times.
 const NO_NAME = { firstName: null }
 
-// `passwordResettable` says whether the account holds a password at all, from
+// KEPT AS A REGRESSION GUARD: `passwordResettable` was removed from the /api/me
+// contract when password sign-in was retired (2026-09-16). These spreads are now
+// empty so the shape assertions below stay exact — if the field ever comes back
+// without a decision, these tests fail rather than silently accepting it.
+//
+// Historical note: it said whether the account holds a password at all, from
 // the primary Auth0 sub's connection prefix. signAuth0TestToken subjects every
 // bearer as `auth0|<email>` (the database connection), so bearer-authenticated
 // responses report true; a checkout token carries no sub and reports false.
-const DB_IDENTITY = { passwordResettable: true }
-const NO_PASSWORD = { passwordResettable: false }
+const DB_IDENTITY = {}
+const NO_PASSWORD = {}
 
 // ===========================================================================
 // Auth + transport

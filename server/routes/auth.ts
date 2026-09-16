@@ -14,8 +14,6 @@
 import type Stripe from 'stripe'
 import * as client from 'openid-client'
 import {
-  createAuth0PasswordChangeTicket,
-  findOrCreateAuth0User,
 } from '../lib/auth0-user.js'
 import { tierFromSubscription } from './stripe/webhook.js'
 import { AUTH0_DOMAIN } from '../auth0.js'
@@ -31,12 +29,11 @@ import {
   setCheckoutCookies,
   setSessionCookies,
 } from '../lib/cookies.js'
-import { isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
+import { makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getOidcConfig, OidcNotConfiguredError } from '../lib/oidc.js'
 import {
   getSessionProfile,
-  sessionName,
   signAuthTxnToken,
   signCheckoutToken,
   signSessionToken,
@@ -83,9 +80,14 @@ export function safeReturnTo(
 }
 
 // Connections a caller may aim the login at with ?connection=. When it's set
-// Auth0 skips its own picker and opens that connection's prompt directly —
-// which is how "Email me a sign-in code" lands on the passwordless code field
-// instead of the password form.
+// Auth0 skips its own picker and opens that connection's prompt directly.
+//
+// Nothing in the UI passes it today: with password login off the login page,
+// Auth0 renders the emailed-code prompt itself, so the links that used to
+// supply it were removed (auth0/README.md). Kept anyway — it's the deep link
+// support hands a stuck member, and the hook to re-mount in the UI if password
+// login ever comes back, which is the moment Auth0 stops drawing the code
+// option of its own accord.
 //
 // Allowlisted rather than forwarded verbatim: `connection` decides which
 // credential Auth0 will accept for the session, so an arbitrary query-string
@@ -462,41 +464,5 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         redirect(res, appBaseUrl)
       },
     },
-
-    // Mint a set-password link for the logged-in user, on demand. Gift
-    // recipients arrive via a magic link with no password (they can sign in
-    // with the link or Google); this lets them optionally set one from the
-    // welcome flow so they can log in with email + password later. Returns the
-    // Auth0 change-password ticket URL for the client to redirect to; the
-    // ticket also marks the email verified.
-    defineRoute({
-      path: '/api/account/password-setup',
-      method: 'POST',
-      handler: async (req, _res, json) => {
-        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
-
-        const session = await getSessionProfile(req, env)
-        if (!session) return json(401, { error: 'unauthenticated' })
-
-        // Prefer the sub carried in the session; fall back to an email lookup
-        // (never creates — the caller is already logged in).
-        let sub = session.sub ?? null
-        if (!sub) {
-          const auth0 = await findOrCreateAuth0User(session.email, sessionName(session), env, {
-            emailPasswordReset: false,
-          })
-          sub = auth0?.userId ?? null
-        }
-        if (!sub) return json(502, { error: 'could_not_resolve_account' })
-
-        const url = await createAuth0PasswordChangeTicket(
-          sub,
-          `${appBaseUrl}/welcome?claimed=1`,
-          env,
-        )
-        if (!url) return json(502, { error: 'ticket_failed' })
-        return json(200, { url })
-      },
-    }),
   ]
 }

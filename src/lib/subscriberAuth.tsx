@@ -42,14 +42,15 @@ export function isPaidMember(state: SubscriberAuthState): boolean {
   );
 }
 
-// Which Auth0 connection to open directly, skipping Auth0's picker. "email"
-// is the passwordless one — Auth0 emails a one-time code, no password needed,
-// which is the sign-in route for members who never set one (they're
-// provisioned by the webhook and pick a password from a reset email, if ever).
-// Omit it to land on the normal page, where password, Google, and the emailed
-// code sit side by side. Must stay in sync with the server's allowlist
-// (LOGIN_CONNECTIONS in server/routes/auth.ts) — a value missing from it is
-// dropped there, not honored.
+// Which Auth0 connection to open directly, skipping Auth0's picker. Omit it to
+// land on the normal login page, which since password login was removed offers
+// Google and the emailed one-time code.
+//
+// No caller passes this today — Auth0 draws the code option itself now, so the
+// links that used to are gone. Retained as the counterpart to the server's
+// allowlist (LOGIN_CONNECTIONS in server/routes/auth.ts, which is what actually
+// enforces this set) for support deep links and for the day password login
+// returns, since that is when Auth0 stops offering the code prompt.
 type SignInConnection =
   | "email"
   | "google-oauth2"

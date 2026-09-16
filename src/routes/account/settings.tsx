@@ -1,7 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
-import { requestPasswordReset } from "../../lib/profile";
 import { EmailPreferences } from "../../components/account/EmailPreferences";
 import { ProfileNameCard } from "../../components/account/ProfileNameCard";
 
@@ -41,10 +39,6 @@ function SettingsTab() {
               <div className="eyebrow text-fg-muted">Email</div>
               <p className="mt-2 text-body text-fg-strong">{me.email}</p>
             </div>
-
-            {/* Only for accounts that have a password at all — a member who
-                signs in with Google has nothing here to reset. */}
-            {me.passwordResettable ? <PasswordRow /> : null}
           </div>
         </div>
       </div>
@@ -52,52 +46,3 @@ function SettingsTab() {
   );
 }
 
-function PasswordRow() {
-  const [status, setStatus] = useState<
-    | { kind: "idle" }
-    | { kind: "sending" }
-    | { kind: "sent" }
-    | { kind: "error"; message: string }
-  >({ kind: "idle" });
-
-  const send = async () => {
-    setStatus({ kind: "sending" });
-    const result = await requestPasswordReset();
-    setStatus(
-      result.ok ? { kind: "sent" } : { kind: "error", message: result.error },
-    );
-  };
-
-  return (
-    <div className="p-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <div className="eyebrow text-fg-muted">Password</div>
-          <p className="mt-2 text-body text-fg-strong" aria-hidden="true">
-            ••••••••
-          </p>
-        </div>
-        {status.kind === "sent" ? null : (
-          <button
-            type="button"
-            onClick={() => void send()}
-            disabled={status.kind === "sending"}
-            className="text-body-sm text-cyan underline underline-offset-4 transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-          >
-            {status.kind === "sending" ? "Sending…" : "Send a reset link"}
-          </button>
-        )}
-      </div>
-      {status.kind === "sent" ? (
-        <p className="mt-2 text-body-sm text-cyan" aria-live="polite">
-          Check your inbox — we've emailed you a link to set a new password.
-        </p>
-      ) : null}
-      {status.kind === "error" ? (
-        <p className="mt-2 text-body-sm text-danger" role="alert">
-          {status.message}
-        </p>
-      ) : null}
-    </div>
-  );
-}
