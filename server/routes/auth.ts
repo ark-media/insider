@@ -82,6 +82,27 @@ export function safeReturnTo(
   }
 }
 
+// Connections a caller may aim the login at with ?connection=. When it's set
+// Auth0 skips its own picker and opens that connection's prompt directly —
+// which is how "Email me a sign-in code" lands on the passwordless code field
+// instead of the password form.
+//
+// Allowlisted rather than forwarded verbatim: `connection` decides which
+// credential Auth0 will accept for the session, so an arbitrary query-string
+// value would let a crafted link aim a login at any connection the tenant
+// happens to have enabled, including one whose gates we haven't thought
+// about. Only the three we deliberately offer are honored; anything else is
+// dropped and Auth0 falls back to the normal picker.
+const LOGIN_CONNECTIONS = new Set([
+  'email', // passwordless — Auth0 emails a one-time code
+  'google-oauth2',
+  'Username-Password-Authentication',
+])
+
+export function loginConnection(raw: string | null | undefined): string | null {
+  return raw && LOGIN_CONNECTIONS.has(raw) ? raw : null
+}
+
 function redirect(res: import('node:http').ServerResponse, location: string): void {
   res.statusCode = 302
   res.setHeader('Location', location)
@@ -298,6 +319,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         const returnTo = safeReturnTo(url.searchParams.get('returnTo'), appBaseUrl)
         const screenHint = url.searchParams.get('screen_hint')
         const loginHint = url.searchParams.get('login_hint')
+        const connection = loginConnection(url.searchParams.get('connection'))
 
         const config = await loadOidcConfig(env, res)
         if (!config) return
@@ -320,6 +342,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           nonce,
           ...(screenHint === 'signup' ? { screen_hint: 'signup' } : {}),
           ...(loginHint ? { login_hint: loginHint } : {}),
+          ...(connection ? { connection } : {}),
         })
 
         redirect(res, authUrl.href)

@@ -5,7 +5,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { authRoutes, safeReturnTo } from './auth'
+import { authRoutes, loginConnection, safeReturnTo } from './auth'
 import type { Deps, Handler } from '../lib/route.js'
 import { AUTH_TXN_COOKIE_NAME, SESSION_COOKIE_NAME } from '../lib/cookies'
 import {
@@ -75,6 +75,28 @@ describe('GET /api/auth/login', () => {
     await route({}, '/api/auth/login')(makeReq({ url: '/api/auth/login' }), res)
     expect(res.statusCode).toBe(500)
     expect(JSON.parse(res.body).error).toBe('auth_not_configured')
+  })
+})
+
+describe('loginConnection', () => {
+  test('honors the connections we actually offer', () => {
+    expect(loginConnection('email')).toBe('email')
+    expect(loginConnection('google-oauth2')).toBe('google-oauth2')
+    expect(loginConnection('Username-Password-Authentication')).toBe(
+      'Username-Password-Authentication',
+    )
+  })
+
+  test('drops anything else rather than forwarding it to Auth0', () => {
+    // A connection we haven't vetted — enabled in the tenant or not, a crafted
+    // link must not be able to choose which credential Auth0 accepts.
+    expect(loginConnection('sms')).toBeNull()
+    expect(loginConnection('some-enterprise-conn')).toBeNull()
+    // Auth0 connection names are case-sensitive; near-misses aren't honored.
+    expect(loginConnection('Email')).toBeNull()
+    expect(loginConnection('')).toBeNull()
+    expect(loginConnection(null)).toBeNull()
+    expect(loginConnection(undefined)).toBeNull()
   })
 })
 
