@@ -1,0 +1,140 @@
+name: Deploy to production
+
+# The only thing in this repo that moves ark-plus.xyz.
+#
+# Vercel's Production Branch for the `arkmedia` project is `production`, not
+# `main`, so merging to main produces a preview build (staging) and nothing
+# else. This workflow fast-forwards `production` to the ref you dispatch it
+# with; the resulting push reaches Vercel as a normal GitHub webhook, and
+# Vercel builds that commit with production environment variables and
+# re-aliases ark-plus.xyz.
+#
+# Why a git push rather than `vercel deploy --prod`: production ends up
+# recorded in the repo, the build runs with the production env scope by
+# construction, and no VERCEL_TOKEN has to live in repo secrets. The Vercel
+# dashboard's Redeploy and Instant Rollback buttons keep working on top of it.
+#
+# Note on GITHUB_TOKEN: a push made with it deliberately does not start other
+# Actions workflows, but it does deliver the push webhook to installed apps
+# like Vercel, so the deploy still fires. If that ever changes, swap in a PAT
+# or a Vercel deploy hook.
+#
+# Approval gate:
+#   The job targets the `production` GitHub Environment. Add required
+#   reviewers in Settings -> Environments -> production to make every run
+#   pause for a click before it pushes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or commit to ship'
+        required: false
+        default: 'main'
+        type: string
+      force:
+        description: 'Allow a non-fast-forward push (rollback / sideways move)'
+        required: false
+        default: false
+        type: boolean
+
+# A second run queues behind the first rather than racing it onto the branch.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Fast-forward production
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      # Full history: the fast-forward check needs both branches' ancestry.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Inputs go through the environment, never string-interpolated into the
+      # shell, so a branch name can't smuggle in commands.
+      - name: Resolve the commit to ship
+        id: target
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse --verify "origin/${REF}^{commit}" 2>/dev/null \
+            || git rev-parse --verify "${REF}^{commit}")
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Shipping $(git log -1 --format='%h %s' "${sha}")"
+
+      # The operator sees exactly what production gains before it lands. On a
+      # non-fast-forward this is also where they find out what it would lose.
+      - name: Show what this changes
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Shipping to production"
+            echo
+            echo '```'
+            git log -1 --format='%H%n%an, %ad%n%s' --date=short "${SHA}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if ! git rev-parse --verify --quiet origin/production >/dev/null; then
+            echo "production branch does not exist yet; it will be created here."
+            exit 0
+          fi
+
+          # git log exits 0 on an empty range, so test the output, not $?.
+          ahead=$(git log --oneline "origin/production..${SHA}")
+          {
+            echo "### Commits production gains"
+            echo '```'
+            echo "${ahead:-(none - production is already at this commit)}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Anything listed here is live right now and would be dropped.
+          behind=$(git log --oneline "${SHA}..origin/production")
+          if [ -n "$behind" ]; then
+            {
+              echo "### :warning: Commits production LOSES"
+              echo '```'
+              echo "$behind"
+              echo '```'
+              echo "This push is not a fast-forward and will be rejected"
+              echo "unless it was dispatched with force: true."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Push to the production branch
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE" = "true" ]; then
+            echo "Force push requested — production may move backwards."
+            git push --force origin "${SHA}:refs/heads/production"
+          else
+            # Without --force this is rejected unless it is a clean
+            # fast-forward, which is the guard against shipping a branch that
+            # is missing work already live.
+            git push origin "${SHA}:refs/heads/production"
+          fi
+
+      - name: Where to watch it
+        run: |
+          {
+            echo
+            echo "Vercel is building the \`production\` branch now."
+            echo "Build: https://vercel.com/hannah-waxman/arkmedia/deployments"
+            echo "Live: https://ark-plus.xyz"
+          } >> "$GITHUB_STEP_SUMMARY"

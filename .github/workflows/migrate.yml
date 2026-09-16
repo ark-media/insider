@@ -3,7 +3,10 @@ name: Migrate database
 # Runs Neon Postgres migrations against the production database.
 #
 # Triggers:
-#   • push to main when migrations/, the runner, or this workflow change
+#   • push to `production` when migrations/, the runner, or this workflow
+#     change — that is the branch a production deploy fast-forwards, so the
+#     schema moves at the same moment the code does. Merging to main is a
+#     staging-only event and deliberately never touches the prod database.
 #   • manual dispatch (Actions tab → Run workflow), useful for re-runs
 #
 # Approval gate:
@@ -15,10 +18,14 @@ name: Migrate database
 # Why path-filtered: the migration runner is idempotent (a run with nothing
 # pending is a clean no-op), but each push would still queue an approval. The
 # filter scopes approval requests to commits that actually change schema.
+#
+# Ordering caveat: this and the Vercel production build both start from the
+# same push, so they race. Required reviewers on the `production-db`
+# environment are the lever for holding one back when an order is needed.
 
 on:
   push:
-    branches: [main]
+    branches: [production]
     paths:
       - 'migrations/**'
       - 'scripts/migrate.ts'
