@@ -866,7 +866,7 @@ single member only ever sees some of them.
 ### Properties cards
 - **SECTION HEADING**: Properties
 - **CARD 1 EYEBROW / TITLE**: Podcast network — Ark Media podcasts
-- **CARD 1 BODY**: Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, Ark News Daily, Chosen People Problems, and Call Me Back AMA.
+- **CARD 1 BODY**: Four shows — Call Me Back, For Heaven's Sake, Ark News Daily, and Chosen People Problems.
 - **CARD 2 EYEBROW / TITLE**: Newsroom — Newsletters
 - **CARD 2 BODY**: Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to Ark+ subscribers.
 - **CARD 3 EYEBROW / TITLE**: Members' app — The Fold
@@ -877,8 +877,7 @@ single member only ever sees some of them.
 
 ### Shows by name
 - **SECTION HEADING**: Shows by name
-- **ROW TEXT**: {show title} · {show cadence} (from the show data)
-- **ROW SUFFIX (PAID SHOWS ONLY)**: · Ark+ only
+- **ROW TEXT**: {show title} · {show cadence} (from the show data; free shows only)
 
 ## Hosts (index)   /hosts
 ### Page header
@@ -894,14 +893,14 @@ single member only ever sees some of them.
 - **BREADCRUMBS**: Home / Hosts / {host name}
 - **TITLE / LEDE**: {host name} / {host role}
 - **SECTION EYEBROW**: Bio
-- **SECTION EYEBROW (IF HOST HAS SHOWS)**: Shows
+- **SECTION EYEBROW (IF HOST HAS SHOWS)**: Shows (free shows only)
 - **SHOW CARD CTA**: Visit show →
 
 ## Host data (src/data/hosts.ts)
 ### Dan Senor
 - **ROLE**: Host, Call Me Back
 - **SHORT BIO**: Author of The Genius of Israel and Start-Up Nation. Former foreign policy advisor.
-- **LONG BIO**: Dan Senor is the host of Call Me Back and Call Me Back AMA. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.
+- **LONG BIO**: Dan Senor is the host of Call Me Back. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.
 
 ### Donniel Hartman
 - **ROLE**: Host, For Heaven's Sake

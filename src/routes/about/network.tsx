@@ -7,6 +7,9 @@ export const Route = createFileRoute("/about/network")({
   component: NetworkPage,
 });
 
+// The paid show lives under /plus, not in the public network listing.
+const publicShows = shows.filter((show) => !show.paid);
+
 type NetworkProperty = {
   title: string;
   kind: "Podcast network" | "Newsroom" | "Members' app" | "Membership";
@@ -19,7 +22,7 @@ const properties: NetworkProperty[] = [
     title: "Ark Media podcasts",
     kind: "Podcast network",
     description:
-      "Four free shows and one members-only feed — Call Me Back, For Heaven's Sake, Ark News Daily, Chosen People Problems, and Call Me Back AMA.",
+      "Four shows — Call Me Back, For Heaven's Sake, Ark News Daily, and Chosen People Problems.",
     to: "/podcasts",
   },
   {
@@ -96,7 +99,7 @@ function NetworkPage() {
             Shows by name
           </h2>
           <ul className="mt-8 divide-y divide-rule border-y border-rule">
-            {shows.map((s) => (
+            {publicShows.map((s) => (
               <li key={s.slug} className="py-5">
                 <Link
                   to={s.route}
@@ -105,10 +108,7 @@ function NetworkPage() {
                   <span className="font-display text-[18px] leading-[1.2] text-fg-strong group-hover:text-cyan">
                     {s.title}
                   </span>
-                  <span className="meta">
-                    {s.cadence}
-                    {s.paid ? " · Ark+ only" : ""}
-                  </span>
+                  <span className="meta">{s.cadence}</span>
                 </Link>
               </li>
             ))}
