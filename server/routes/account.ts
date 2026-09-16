@@ -2,7 +2,7 @@
 //
 // Names live on the Auth0 user (`given_name`/`family_name`), not in Neon: the
 // membership table is deliberately an opaque ledger keyed on the Auth0 `sub`
-// with no PII (migrations/0010_membership.sql), and a name is PII. Auth0 is
+// with no PII (migrations/0001_initial_schema.sql), and a name is PII. Auth0 is
 // already the identity store and already held these fields, so it's the honest
 // home rather than a new column.
 //

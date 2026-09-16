@@ -1,4 +1,4 @@
-// Neon `membership` + `gift` access (migration 0010). Neon is the single
+// Neon `membership` + `gift` access (migrations/0001_initial_schema.sql). Neon is the single
 // entitlement authority (tasks/entitlement-tiers.md §3): the webhook writes here
 // and every server-side gate reads a resolver over it. Keyed on the Auth0 `sub`
 // (opaque, no PII); entitlements are derived from `tier` via GRANTS, never

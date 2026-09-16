@@ -6,7 +6,7 @@
 // Addressing a reminder is the awkward part: `membership` is keyed on the Auth0
 // sub and stores no email. The premium newsletter mirror
 // (`beehiiv_subscription`) is what makes it possible — it is keyed on email,
-// marks premium, and stamps `premium_since` (migration 0023) as the join
+// marks premium, and stamps `premium_since` as the join
 // clock.
 //
 // One premium show means `total` is always 1, so "partially set up" is not a

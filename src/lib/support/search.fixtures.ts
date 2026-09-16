@@ -6,10 +6,11 @@
 // fails loudly instead of quietly testing yesterday's corpus.
 //
 // Content comes from the newest migration that reseeds `faqs`; keys come from
-// the newest one that backfills `faqs.key`. Any later migration that rewrites
-// rows BY KEY (the Fold rename, 0021) is then replayed on top, in file order —
-// otherwise a corpus edit that doesn't reseed the whole table would leave these
-// fixtures testing copy the database no longer holds.
+// the newest one that backfills `faqs.key`. Today both blocks live in the
+// squashed 0001_initial_schema.sql, but the resolution stays general on
+// purpose: any LATER migration that rewrites rows BY KEY is replayed on top, in
+// file order — otherwise a corpus edit that doesn't reseed the whole table
+// would leave these fixtures testing copy the database no longer holds.
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'

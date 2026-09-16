@@ -22,7 +22,7 @@ export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   // spurious — one-time, irreversible — nudge on the cron's first run.
   //
   // That hazard is gone. The move to Beehiiv rebuilt the premium roster from
-  // scratch (migration 0023), and every activation since is recorded as it
+  // scratch when we moved to Beehiiv, and every activation since is recorded as it
   // happens, so "no activation row" now means what it says. A member who reads
   // as unset really is unset, and the nudge is the correct email to send them.
   //

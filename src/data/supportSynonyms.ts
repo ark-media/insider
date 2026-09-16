@@ -61,7 +61,7 @@ export const supportAliases: Alias[] = [
 
   // --- Sign-in. `locked` appears once — in the Spotify payment answer — so
   //     "locked out" lands on Spotify without this. `password` used to be
-  //     absent too; migration 0022 put it in the Fold access answer ("either
+  //     absent too; the current corpus puts it in the Fold access answer ("either
   //     Continue with Google or your email and password"), which is the WRONG
   //     answer to "I forgot my password", so the binding matters more now, not
   //     less.
@@ -83,9 +83,9 @@ export const supportAliases: Alias[] = [
     intent: "apple-questions",
   },
 
-  // --- Ads and missing episodes. The corpus dropped its dedicated
-  //     "why can't I see subscriber-only episodes" answer in migration 0018,
-  //     so this intent carries curated triage copy of its own.
+  // --- Ads and missing episodes. The corpus has no dedicated
+  //     "why can't I see subscriber-only episodes" answer, so this intent
+  //     carries curated triage copy of its own.
   {
     phrases: [
       "ads", "advertisements", "commercials", "still hearing ads", "skip ads",

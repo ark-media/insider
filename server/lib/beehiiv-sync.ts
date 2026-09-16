@@ -281,7 +281,7 @@ async function upsertLocalSubscription(
   // `premium_since` stamps the false → true transition and is then left alone
   // (so it keeps meaning "when they started paying", not "when we last
   // synced"), and is cleared on a downgrade so a re-subscribe re-stamps. It is
-  // the reminder cron's join clock — see migration 0023.
+  // the reminder cron's join clock — see migrations/0001_initial_schema.sql.
   await sql`
     insert into beehiiv_subscription
       (email, publication_id, beehiiv_subscription_id, status, has_premium, premium_since, updated_at)

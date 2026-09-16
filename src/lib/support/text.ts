@@ -4,8 +4,9 @@
 // happy-dom, and it must never import src/lib/richTextPreview.ts (which uses
 // DOMParser). Everything here operates on strings.
 //
-// The shape of this file is dictated by the corpus it indexes. Measured over
-// the 33 seeded FAQs (migrations/0018_faq_content_refresh.sql):
+// The shape of this file is dictated by the corpus it indexes. Measured over a
+// 33-FAQ corpus as seeded at the time (it is 32 today; see
+// migrations/0001_initial_schema.sql), and the observations below still hold:
 //
 //   * `subscription` appears in 28 of 33 documents. The corpus is topically
 //     homogeneous, so the discriminating power lives in rare terms and the

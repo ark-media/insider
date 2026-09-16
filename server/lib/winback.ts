@@ -6,7 +6,7 @@
 // The roster is `cancellation_survey`, not `membership`: a member who cancelled
 // has no membership row (subscription.deleted deletes it), and the survey row is
 // exactly the durable, email-keyed record that outlives it — which is what
-// migration 0012 added `canceled_tier` / `retained_product` for.
+// its `canceled_tier` / `retained_product` columns are for.
 //
 // Three things disqualify a candidate, and they are checked in that order
 // because each is cheaper than the next:

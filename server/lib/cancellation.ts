@@ -64,12 +64,11 @@ export type SurveyId = string | number
 
 // Insert one survey row, returning its id. Callers decide whether a failure here
 // is fatal — a cancel shouldn't be blocked by an analytics write, but an accept
-// records the row the window check reads. The once-ever unique index
-// (migrations/0003) was relaxed in 0011 so a member can re-accept across time, so
-// there is no ON CONFLICT arbiter here; the accept endpoint's read-then-write
-// window guard prevents a within-window repeat, and a rare raced double-accept
-// only writes a duplicate analytics row (harmless — the window still blocks the
-// next attempt).
+// records the row the window check reads. There is deliberately no unique index
+// on accepts — a member can re-accept across time — so there is no ON CONFLICT
+// arbiter here; the accept endpoint's read-then-write window guard prevents a
+// within-window repeat, and a rare raced double-accept only writes a duplicate
+// analytics row (harmless — the window still blocks the next attempt).
 export async function insertCancellationSurvey(
   sql: Sql,
   input: CancellationSurveyInput,

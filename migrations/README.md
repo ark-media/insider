@@ -63,15 +63,41 @@ workflow manually from the Actions tab. Same approval gate.
 After this, every PR that touches `migrations/` triggers a queued approval on
 merge — you click "Approve and deploy" on the workflow run to apply.
 
+## The squashed baseline
+
+`0001_initial_schema.sql` is the whole schema. The former 0001–0025 sequence
+was collapsed into it before launch: it creates exactly the 17 tables the
+application reads and writes, with exactly the columns and indexes it uses, and
+seeds the 2 careers and 32 FAQs. Nothing that was later dropped (the soft-launch
+flag, the Supporting Cast mirror, the single-column gift expiry, the superseded
+FAQ corpora) is reproduced.
+
+The squash was verified against production: applying this one file to an empty
+database yields a schema byte-identical to prod's — 121 columns and 30 indexes,
+matching — and the same seed rows.
+
+**Adopting it on a database that already ran 0001–0025** (dev and prod both
+did) means baselining the ledger, because `0001_initial_schema.sql` is already
+recorded by name — `migrate` is a no-op there, and `migrate:status` would
+report drift on 0001 plus 22 orphans. The schema already matches, so only the
+ledger needs rewriting:
+
+```sql
+delete from _migrations;
+insert into _migrations (name, sha256)
+values ('0001_initial_schema.sql', '<sha256 of the file>');
+```
+
+Get the hash with `shasum -a 256 migrations/0001_initial_schema.sql`. A brand
+new database needs none of this — just `bun run migrate`.
+
 ## Conventions
 
 - Files are named `NNNN_short_description.sql` (four-digit zero-padded
   sequence). Order matters: the runner applies them in lexicographic order.
-- **Use `IF NOT EXISTS` for tables, indexes, and columns.** This codebase's
-  prod DB pre-dates the migration system, so the first migration must be safe
-  to apply against a DB where some tables already exist. Future migrations
-  inherit the convention for consistency and so a partially-applied migration
-  can be re-run.
+- **Use `IF NOT EXISTS` for tables, indexes, and columns**, and keep seeds
+  idempotent, so a file can be safely re-applied — a partially-applied
+  migration can then just be re-run.
 - Each file runs in a single transaction. If any statement fails, nothing
   in that file is committed and `_migrations` is not updated. Statements
   that cannot run inside a transaction (`CREATE INDEX CONCURRENTLY`,
@@ -81,6 +107,11 @@ merge — you click "Approve and deploy" on the workflow run to apply.
 - **No down migrations.** Pre-launch, breaking changes get a new forward
   migration, not a rollback. Add a `_down` companion only if a real rollback
   story emerges.
+- **`faqs` content lives here, and a test parses it.**
+  `src/lib/support/search.fixtures.ts` reads the newest migration containing
+  `insert into faqs (display_order, category, question, answer)` and the newest
+  containing `update faqs set key = v.key`, so a future FAQ migration must keep
+  those two statement shapes and the `$C$`/`$Q$`/`$A$` dollar-quoting.
 - Don't edit a migration after it has been applied to any environment.
   Create a new one instead. The runner records each file's sha256 on apply
   and `bun run migrate:status` flags any file whose hash diverges from
