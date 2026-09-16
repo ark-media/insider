@@ -1,0 +1,147 @@
+// HTTP helpers shared by every route in server/routes. Kept tiny on purpose
+// — anything that needs more shape goes in its own module.
+
+import type { IncomingMessage, ServerResponse } from 'node:http'
+
+export type JsonRes = (status: number, body: unknown) => void
+
+export function makeJsonRes(res: ServerResponse): JsonRes {
+  return (status, body) => {
+    res.statusCode = status
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify(body))
+  }
+}
+
+// Sends a CSV download: text/csv with a content-disposition so the browser
+// saves it as `filename` rather than rendering it inline. Always status 200.
+export function sendCsv(res: ServerResponse, filename: string, body: string): void {
+  res.statusCode = 200
+  res.setHeader('content-type', 'text/csv; charset=utf-8')
+  res.setHeader('content-disposition', `attachment; filename="${filename}"`)
+  res.end(body)
+}
+
+// Thrown by readBody when a request exceeds the byte cap. The catch-all maps
+// it to a 413 instead of buffering an unbounded body into memory.
+export class PayloadTooLargeError extends Error {
+  constructor() {
+    super('Request body too large')
+    this.name = 'PayloadTooLargeError'
+  }
+}
+
+// Generous cap that bounds per-request memory without rejecting any legitimate
+// payload — our own POSTs (contact, subscribe, sms, newsletter prefs) are a few
+// KB, and Stripe webhook events stay well under this. Aborts as soon as the cap
+// is crossed, so a malicious large body can't OOM the function instance.
+const MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MiB
+
+export async function readBody(
+  req: IncomingMessage,
+  maxBytes: number = MAX_BODY_BYTES,
+): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  let total = 0
+  for await (const chunk of req) {
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    total += buf.length
+    if (total > maxBytes) throw new PayloadTooLargeError()
+    chunks.push(buf)
+  }
+  return Buffer.concat(chunks)
+}
+
+// Default budget for a call to a third party on the request path. Long enough
+// to absorb a slow-but-working upstream, short enough that a black-holing one
+// can't pin a function instance until Vercel's max duration kills it.
+const DEFAULT_FETCH_TIMEOUT_MS = 8000
+
+// `fetch` with a deadline. Node's fetch waits indefinitely for response headers,
+// so without this our availability is coupled to the SLOWEST of five third
+// parties: a degraded upstream behind an unauthenticated endpoint (episodes,
+// Fold feed, newsletter posts) exhausts concurrent function slots and takes
+// the whole API down with it, checkout and the Stripe webhook included.
+//
+// Rejects with a TimeoutError, which every existing call site already handles —
+// they all treat an upstream failure as soft-fail or a 502.
+export function fetchWithTimeout(
+  input: string | URL,
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  return fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+}
+
+// Cache directive for a read route.
+//
+// The rule that matters: a shared cache (Vercel's edge) keys on the URL, and
+// nothing else unless you add `Vary`. So this has to describe the RESOURCE —
+// "can this URL hand different readers different bodies?" — and never the
+// reader who happens to be asking.
+//
+// Deriving it from the reader is the subtle way to get it wrong, and it is the
+// bug this helper replaced: a route that marked member responses `private` but
+// let non-member responses be shared-cached looked airtight per request, and
+// still broke, because an anonymous request stored ITS reduced body under the
+// shared key. The next member to ask for the same URL was served that reduced
+// body straight from the edge — no audio on a paid show, the preview instead of
+// the paid newsletter — with nothing in the response to say why.
+//
+// `Vary: Cookie` does not rescue it: session cookies are per-reader (and the
+// header carries analytics cookies besides), so the cache would fragment to one
+// entry per person, which is worse than not caching. The way to get shared
+// caching back for gated content is to split it into two resources — a public
+// one everyone may read, and a private one that never enters a shared cache —
+// not to describe one mixed resource more precisely.
+//
+// The options are a union rather than a `{ gated, maxAgeSec }` pair because a
+// gated resource has no shared-cache lifetime to state: it is never stored. A
+// caller that hands one over is either confused about that or reading the wrong
+// resource, and the type is the cheapest place to say so.
+export function setReadCacheControl(
+  res: ServerResponse,
+  opts: { gated: true } | { gated: false; maxAgeSec: number },
+): void {
+  if (opts.gated) {
+    res.setHeader('cache-control', 'private, no-store')
+    return
+  }
+  res.setHeader(
+    'cache-control',
+    `public, s-maxage=${opts.maxAgeSec}, stale-while-revalidate=${opts.maxAgeSec * 6}`,
+  )
+}
+
+// CSRF defense for cookie-authenticated mutations. Now that the session rides
+// an httpOnly cookie (auto-attached by the browser), a cross-site page could
+// otherwise trigger state-changing requests. SameSite=Lax already blocks the
+// cookie on cross-site POST/PUT/DELETE; this is belt-and-suspenders: reject
+// when an Origin header is present and doesn't match our own. Absent Origin
+// (non-browser callers, same-origin GET) is allowed — those carry no ambient
+// cross-site cookie to abuse.
+export function isSameOrigin(req: IncomingMessage, appBaseUrl: string): boolean {
+  const origin = req.headers.origin
+  if (!origin) return true
+  return origin === appBaseUrl
+}
+
+export async function readJson<T = unknown>(req: IncomingMessage): Promise<T | null> {
+  const buf = await readBody(req)
+  if (!buf.length) return null
+  try {
+    return JSON.parse(buf.toString('utf8')) as T
+  } catch {
+    return null
+  }
+}
+
+// Extracts the leftmost x-forwarded-for entry (Vercel sets this — the original
+// client; downstream proxies append themselves to the right), falling back to
+// the socket address for the dev server. Used as the per-client rate-limit key.
+export function getClientIp(req: IncomingMessage): string {
+  const xff = req.headers['x-forwarded-for']
+  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]!.trim()
+  if (Array.isArray(xff) && xff.length > 0) return xff[0]!
+  return req.socket?.remoteAddress ?? 'unknown'
+}

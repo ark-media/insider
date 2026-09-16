@@ -1,0 +1,133 @@
+// Auth tests for the entitlement-reconcile cron. The reconcile itself needs
+// Stripe + Auth0 + Circle and is covered elsewhere; here we pin the gate that
+// keeps the endpoint from being publicly invokable. With `stripe: null` the
+// handler bails with a 500 immediately *after* the auth check passes, so a
+// valid secret is observable as that 500 without any network.
+
+import { describe, test, expect } from 'bun:test'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { cronRoutes } from './cron'
+import type { Deps, Handler } from '../lib/route.js'
+
+const PATH = '/api/cron/reconcile-entitlements'
+const PRUNE_PATH = '/api/cron/prune-webhook-events'
+const SECRET = 'cron-secret-value'
+
+function deps(env: Record<string, string>): Deps {
+  return {
+    env,
+    stripe: null,
+    appBaseUrl: 'http://localhost:5173',
+    activator: {} as Deps['activator'],
+  }
+}
+
+function route(env: Record<string, string>, path = PATH): Handler {
+  const handler = cronRoutes(deps(env)).find((r) => r.path === path)?.handler
+  if (!handler) throw new Error(`route ${path} not found`)
+  return handler
+}
+
+function makeReq(opts: { method?: string; auth?: string; url?: string }): IncomingMessage {
+  const headers: Record<string, string> = {}
+  if (opts.auth !== undefined) headers.authorization = opts.auth
+  return {
+    method: opts.method ?? 'POST',
+    url: opts.url ?? PATH,
+    headers,
+  } as unknown as IncomingMessage
+}
+
+function makeRes() {
+  const res = {
+    statusCode: 200,
+    body: '',
+    setHeader() {},
+    end(chunk?: string) {
+      if (chunk) res.body += chunk
+    },
+  }
+  return res as typeof res & ServerResponse
+}
+
+async function call(env: Record<string, string>, req: IncomingMessage, path = PATH) {
+  const res = makeRes()
+  await route(env, path)(req, res)
+  return res
+}
+
+describe('GET/POST /api/cron/reconcile-entitlements (auth gate)', () => {
+  test('405s on a disallowed method', async () => {
+    const res = await call({ CRON_SECRET: SECRET }, makeReq({ method: 'PUT', auth: `Bearer ${SECRET}` }))
+    expect(res.statusCode).toBe(405)
+  })
+
+  test('500s (not open) when CRON_SECRET is unset', async () => {
+    const res = await call({}, makeReq({ auth: `Bearer whatever` }))
+    expect(res.statusCode).toBe(500)
+    expect(JSON.parse(res.body).error).toBe('not_configured')
+  })
+
+  test('401s when the Authorization header is missing', async () => {
+    const res = await call({ CRON_SECRET: SECRET }, makeReq({}))
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('401s on a wrong secret of equal length', async () => {
+    const wrong = 'x'.repeat(`Bearer ${SECRET}`.length - 'Bearer '.length)
+    const res = await call({ CRON_SECRET: SECRET }, makeReq({ auth: `Bearer ${wrong}` }))
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('401s on a secret that is a prefix (length mismatch)', async () => {
+    const res = await call({ CRON_SECRET: SECRET }, makeReq({ auth: `Bearer ${SECRET.slice(0, -1)}` }))
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('passes auth with the correct secret (then 500s on missing Stripe) — GET and POST', async () => {
+    for (const method of ['GET', 'POST']) {
+      const res = await call({ CRON_SECRET: SECRET }, makeReq({ method, auth: `Bearer ${SECRET}` }))
+      // Reaching the Stripe check proves the constant-time compare accepted the
+      // secret; a failed auth would have returned 401 first.
+      expect(res.statusCode).toBe(500)
+      expect(JSON.parse(res.body).error).toBe('not_configured')
+    }
+  })
+})
+
+describe('GET/POST /api/cron/prune-webhook-events (auth gate)', () => {
+  const req = (opts: { method?: string; auth?: string }) =>
+    makeReq({ ...opts, url: PRUNE_PATH })
+
+  test('405s on a disallowed method', async () => {
+    const res = await call({ CRON_SECRET: SECRET }, req({ method: 'PUT', auth: `Bearer ${SECRET}` }), PRUNE_PATH)
+    expect(res.statusCode).toBe(405)
+  })
+
+  test('500s (not open) when CRON_SECRET is unset', async () => {
+    const res = await call({}, req({ auth: `Bearer whatever` }), PRUNE_PATH)
+    expect(res.statusCode).toBe(500)
+    expect(JSON.parse(res.body).error).toBe('not_configured')
+  })
+
+  test('401s when the Authorization header is missing', async () => {
+    const res = await call({ CRON_SECRET: SECRET }, req({}), PRUNE_PATH)
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('401s on a wrong secret of equal length', async () => {
+    const wrong = 'x'.repeat(`Bearer ${SECRET}`.length - 'Bearer '.length)
+    const res = await call({ CRON_SECRET: SECRET }, req({ auth: `Bearer ${wrong}` }), PRUNE_PATH)
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('passes auth with the correct secret (then 500s on missing DATABASE_URL) — GET and POST', async () => {
+    for (const method of ['GET', 'POST']) {
+      // Reaching the DATABASE_URL check proves the constant-time compare
+      // accepted the secret; a failed auth would have returned 401 first.
+      const res = await call({ CRON_SECRET: SECRET }, req({ method, auth: `Bearer ${SECRET}` }), PRUNE_PATH)
+      expect(res.statusCode).toBe(500)
+      expect(JSON.parse(res.body).error).toBe('not_configured')
+    }
+  })
+})

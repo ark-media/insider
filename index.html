@@ -2,15 +2,30 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="src/assets/favicon.png"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Exo:ital,wght@0,200..900;1,200..900&family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400;1,700&display=swap"
-      rel="stylesheet"
+    <title>Ark Media — Connecting Jewish Voices, Near and Far</title>
+    <meta
+      name="description"
+      content="Ark Media is a podcast network focused on spirited debate and learning about Jewish life,
+      Israel, the Middle East, and our larger geopolitics."
     />
-    <title>The Insider · Call Me Back · Ark Media</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("ark.theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          if (theme === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

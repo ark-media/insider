@@ -1,0 +1,208 @@
+import type { NewsletterSlug } from "../data/newsletters";
+import {
+  classifyLiveUpcoming,
+  type ArkEvent,
+  type EventWithStatus,
+} from "../data/events";
+import { circleUrls, newsletterCircleSpaces } from "../config/urls";
+
+/**
+ * Circle headless client.
+ *
+ * The /fold subscriber feed reads `fetchEventStrip` / `fetchCommunityFeed`
+ * / `fetchSuggestedSpaces`, which proxy the `/api/circle/community-*` server
+ * routes (real Circle Admin v2 reads, projected to the stable client shapes)
+ * and fall back to local mock data when the server has no Admin API token.
+ * The mock keeps local dev and unit tests working without a token and
+ * preserves the v1→v2 contract:
+ * only the data source behind these functions changes, never their shapes.
+ */
+
+const FAKE_LATENCY_MS = 80;
+
+function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms + Math.random() * 40));
+}
+
+/**
+ * GET + parse JSON. THROWS on a network/parse/non-2xx failure so the /fold
+ * UI can show an error+retry instead of silently degrading; a successful empty
+ * response is a genuine empty state. Public endpoints; no credentials so they
+ * stay edge-cacheable.
+ */
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} failed (${res.status})`);
+  return (await res.json()) as T;
+}
+
+/**
+ * Like `getJson` but attaches the member session via credentials so the
+ * httpOnly session cookie rides along. Used for member-gated endpoints (the
+ * curated feed). Throws on failure (see `getJson`).
+ */
+async function getJsonAuthed<T>(url: string): Promise<T> {
+  const res = await fetch(url, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`${url} failed (${res.status})`);
+  return (await res.json()) as T;
+}
+
+// ---------------------------------------------------------------------------
+// Subscriber Fold feed (v1)
+//
+// These power the signed-in Ark+ subscriber's /fold feed. Their return
+// shapes are the v1→v2 contract: v1 projects the admin/mock data path below;
+// v2 swaps the backing source to authenticated per-member Circle reads without
+// changing these types or the UI that consumes them. The UI only ever sees
+// these projections — never the raw `CommunityBroadcast` shape.
+// ---------------------------------------------------------------------------
+
+// The feed/digest/space DTOs live in shared/ so the Node server can produce
+// them without importing browser-coupled client code. Re-exported here so
+// client callers keep importing them from "../lib/circle".
+export type {
+  ActivityDigest,
+  CommunityFeedItem,
+  ShowcasePost,
+  SuggestedSpace,
+} from "../../shared/community";
+import type {
+  ActivityDigest,
+  CommunityFeedItem,
+  ShowcasePost,
+  SuggestedSpace,
+} from "../../shared/community";
+
+/** A live/upcoming event for the strip, with its derived status. */
+export type EventStripItem = EventWithStatus;
+
+/**
+ * Live + upcoming events for the strip, classified against the current instant.
+ * Re-derives each call so polling reflects an event going live. Real Circle
+ * events come from `/api/circle/community-events`; throws on failure.
+ */
+export async function fetchEventStrip(): Promise<EventStripItem[]> {
+  const data = await getJson<{ events?: ArkEvent[] }>(
+    "/api/circle/community-events",
+  );
+  // Throws on failure (handled upstream); a reachable-but-empty result is
+  // honored as a genuinely empty calendar.
+  return classifyLiveUpcoming(data.events ?? [], new Date());
+}
+
+/**
+ * Feed posts. v1: curated, editorially-permissioned highlights (same for every
+ * subscriber) from a real Circle space via `/api/circle/community-feed`. v2:
+ * the member's joined-space personalized feed. Falls back to mock highlights.
+ */
+export async function fetchCommunityFeed(): Promise<CommunityFeedItem[]> {
+  // Member-gated endpoint → authenticated fetch. Throws on failure (handled
+  // upstream); a reachable result (even empty) is honored, so the empty state
+  // can render in a real deployment.
+  const data = await getJsonAuthed<{ items?: CommunityFeedItem[] }>(
+    "/api/circle/community-feed",
+  );
+  return data.items ?? [];
+}
+
+/**
+ * Per-member activity digest. v1 returns null (no per-member reads yet); v2
+ * returns real unread/reply/mention counts.
+ */
+export async function fetchActivityDigest(): Promise<ActivityDigest | null> {
+  await jitter();
+  return null;
+}
+
+/**
+ * Spaces to suggest in the empty-state nudge. Real member-facing spaces come
+ * from `/api/circle/spaces`; falls back to mock spaces. Always non-empty.
+ */
+export async function fetchSuggestedSpaces(): Promise<SuggestedSpace[]> {
+  const data = await getJson<{ spaces?: SuggestedSpace[] }>(
+    "/api/circle/spaces",
+  );
+  // Throws on failure (handled upstream); a reachable-but-empty result honored.
+  return data.spaces ?? [];
+}
+
+/**
+ * Real posts for the PUBLIC marketing showcase on /fold. Unlike every other
+ * fetcher here this one is unauthenticated — `/api/circle/showcase` is ungated
+ * by design (see server/circle-showcase.ts for what it withholds).
+ *
+ * Never throws: this feeds one marketing section, so a Circle outage should
+ * cost the visitor that section, not the page. The caller treats an empty
+ * array and a failure identically — hide the section.
+ */
+export async function fetchShowcasePosts(): Promise<ShowcasePost[]> {
+  try {
+    const data = await getJson<{ posts?: ShowcasePost[] }>(
+      "/api/circle/showcase",
+    );
+    return data.posts ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Deep link to the events space in the Fold, where every event lives.
+ * Circle's per-event URLs are opaque, hash-suffixed slugs that aren't derivable
+ * from our event ids, so v1 lands the member on the events space rather than a
+ * fabricated permalink. The real implementation will call Circle's deep-link
+ * endpoint for a signed per-event URL.
+ */
+export function circleEventLink(): string {
+  return circleUrls.eventsSpace;
+}
+
+/** Universal app-open link — used by /account "Open in app" buttons. */
+export const CIRCLE_OPEN_LINKS = {
+  ios: circleUrls.appStoreIos,
+  android: circleUrls.appStoreAndroid,
+  web: circleUrls.webApp,
+};
+
+/**
+ * Build the comment URL for a newsletter post — the post's Circle space.
+ * Circle owns auth (SSO against our Auth0 tenant), so a signed-in member lands
+ * on the discussion and a signed-out one is bounced through Auth0 first.
+ */
+export function newsletterCommentUrl(slug: NewsletterSlug): string {
+  return newsletterCircleSpaces[slug];
+}
+
+/**
+ * The store links worth putting in front of *this* visitor.
+ *
+ * A phone gets the one store it can actually install from — offering an iPhone
+ * a Google Play badge is noise. Anything else gets both, since a desktop
+ * browser tells us nothing about which phone they'll reach for. iPadOS 13+
+ * reports itself as "Macintosh", so touch points are what separate an iPad
+ * from a Mac.
+ */
+export function circleAppDownloads(): {
+  platform: "ios" | "android";
+  label: string;
+  href: string;
+}[] {
+  const ios = {
+    platform: "ios" as const,
+    label: "iOS",
+    href: circleUrls.appStoreIos,
+  };
+  const android = {
+    platform: "android" as const,
+    label: "Android",
+    href: circleUrls.appStoreAndroid,
+  };
+  if (typeof navigator === "undefined") return [ios, android];
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/i.test(ua)) return [ios];
+  if (ua.includes("Macintosh") && navigator.maxTouchPoints > 1) return [ios];
+  if (/Android/i.test(ua)) return [android];
+  return [ios, android];
+}

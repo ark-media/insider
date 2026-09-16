@@ -1,0 +1,299 @@
+import {
+  createFileRoute,
+  Link,
+  type LinkProps,
+} from "@tanstack/react-router";
+import { useEffect, useState, type ReactNode } from "react";
+import { CommunityAppLinks } from "../components/CommunityAppLinks";
+import { ProfileNameCard } from "../components/account/ProfileNameCard";
+import {
+  isArkPlusMember,
+  isCircleMember,
+  useSubscriberAuth,
+} from "../lib/subscriberAuth";
+
+export const Route = createFileRoute("/welcome")({
+  component: WelcomePage,
+  // `claimed=1` marks the new-account landing right after a gift magic-link
+  // claim: the recipient was just auto-logged-in with no password, so we offer
+  // an optional "set a password" step here.
+  validateSearch: (search: Record<string, unknown>): { claimed?: boolean } => {
+    return search.claimed === true || search.claimed === "1" || search.claimed === "true"
+      ? { claimed: true }
+      : {};
+  },
+});
+
+type StepDef = {
+  title: string;
+  body?: string;
+  cta?: string;
+  /**
+   * Typed as the route union, not `string`.
+   *
+   * As a plain string it widened past the literal union at the `<Link to>` call
+   * site, so `tsc` happily accepted a step pointing at /account/newsletters
+   * after that page was folded into /account/settings — a 404 on the last step
+   * of every new member's onboarding, in the flow least likely to be re-walked
+   * by whoever deleted the route.
+   */
+  href?: LinkProps["to"];
+  slot?: ReactNode;
+};
+
+const COUNT_WORD: Record<number, string> = {
+  1: "One thing",
+  2: "Two things",
+  3: "Three things",
+};
+
+function WelcomePage() {
+  const { state, signIn } = useSubscriberAuth();
+  const { claimed } = Route.useSearch();
+
+  // /welcome is a post-membership page — a guest has no membership to welcome.
+  // Bounce them through sign-in (returnTo defaults to the current path+search,
+  // so a member whose session lapsed lands right back here once authenticated).
+  useEffect(() => {
+    if (state.kind === "guest") signIn();
+  }, [state, signIn]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900">
+        <p className="text-fg-muted">Loading…</p>
+      </div>
+    );
+  }
+  // The redirect is in flight; render nothing rather than flashing the page.
+  if (state.kind === "guest") return null;
+
+  // The two core steps are entitlement-driven, not tier-driven: `arkPlus` (Ark+
+  // or Bundle) buys the private feed; `circle` (the Fold or Bundle) buys the
+  // Fold app. A Bundle member holds both axes, so both steps show — no
+  // per-tier branching needed.
+  const arkPlus = isArkPlusMember(state);
+  const circle = isCircleMember(state);
+
+  // /welcome is reached right after checkout, and the membership webhook can lag
+  // a minute (the hero copy says so). Until /api/me reports at least one axis we
+  // can't tell what was bought, so fall back to showing every step rather than
+  // an empty page — better to over-offer than to hide something they paid for.
+  const known = arkPlus || circle;
+  const showCommunity = known ? circle : true;
+  const showFeeds = known ? arkPlus : true;
+
+  // Feeds before the app on purpose: feed setup stays in this browser, while
+  // the app links hand the member off to the App Store / Play Store. Anything
+  // we ask for after that hand-off is unlikely to get done.
+  const steps: StepDef[] = [];
+  if (showFeeds) {
+    steps.push({
+      title: "Set up your private podcast feeds",
+      cta: "Set up your feeds",
+      href: "/account/podcast-feed",
+    });
+  }
+  if (showCommunity) {
+    steps.push({
+      title: "Download the Fold app",
+      slot: <CommunityAppLinks className="mt-6" />,
+    });
+  }
+
+  // Gift recipients arrive via a magic link with no password. Offer to set one
+  // so they can sign in with email + password later instead of the link/Google.
+  if (claimed) {
+    steps.push({
+      title: "Set a password (optional)",
+      body: "You're signed in — no password needed. Prefer one? Set a password so you can sign in without Google or your gift link next time.",
+      slot: <SetPasswordButton />,
+    });
+  }
+
+  const gridCols =
+    steps.length >= 3
+      ? "lg:grid-cols-3"
+      : steps.length === 2
+        ? "lg:grid-cols-2"
+        : "max-w-xl";
+  const countWord = COUNT_WORD[steps.length] ?? `${steps.length} things`;
+
+  return (
+    <main className="relative">
+      <section className="section-hero relative">
+        <div className="page-gutter pt-10 pb-10 sm:pt-16">
+          <h1 className="max-w-3xl text-fg-strong">
+            <span className="display-upright block text-[clamp(2.2rem,5vw,4rem)] leading-[1.05]">
+              <WelcomeHeadline feeds={showFeeds} community={showCommunity} />
+            </span>
+          </h1>
+          <p className="mt-8 max-w-2xl text-body-lg">
+            {countWord} to do, and then you're set. Your membership is active
+            now.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <div className="page-section">
+          {/* Shares the steps' band rather than claiming a section of its own:
+              every non-hero section draws a zebra rule (index.css), and this
+              one renders nothing for the members we already have a name for —
+              leaving an empty strip between two rules. Spacing rides on the
+              flex gap so the null case collapses cleanly.
+
+              The best moment we get to ask for a name: they're already working
+              a setup list, so it reads as part of finishing rather than a form
+              we sprang on them. Deliberately not a numbered step — the steps
+              are entitlement-driven and settle before the profile fetch lands,
+              and renumbering them mid-load would be worse than sitting outside
+              the count. "Already have a name" excludes anyone whose stored name
+              is the email local part we manufactured for them, since the server
+              judges that as no name at all (shared/profile-name.ts). */}
+          <div className="flex flex-col gap-10">
+            <ProfileNameCard promptOnly />
+
+            <div className={`grid grid-cols-1 gap-6 ${gridCols}`}>
+              {steps.map((step, i) => (
+                <WelcomeStep
+                  key={step.title}
+                  n={String(i + 1).padStart(2, "0")}
+                  {...step}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="page-gutter py-8">
+          <p className="text-body-sm">
+            A welcome email is on its way. Need help?{" "}
+            <Link to="/contact" className="text-cyan underline-offset-4 hover:underline">
+              Contact us.
+            </Link>
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+// Headline tracks what the member actually bought: both axes read as the
+// Bundle, otherwise the single tier they hold. The brand word is cyan.
+function WelcomeHeadline({
+  feeds,
+  community,
+}: {
+  feeds: boolean;
+  community: boolean;
+}) {
+  if (feeds && community) {
+    return (
+      <>
+        Welcome to <span className="display text-cyan">Ark+ &amp; The Fold</span>.
+      </>
+    );
+  }
+  if (community) {
+    return (
+      <>
+        Welcome to the <span className="display text-cyan">Fold</span>.
+      </>
+    );
+  }
+  return (
+    <>
+      Welcome to <span className="display text-cyan">Ark+</span>.
+    </>
+  );
+}
+
+// Kicks off Auth0's set-password ticket for the (already logged-in) recipient,
+// then redirects to it. Result URL brings them back to /welcome?claimed=1.
+function SetPasswordButton() {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onClick = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/account/password-setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      const data = (await res.json().catch(() => ({}))) as { url?: string };
+      if (res.ok && data.url) {
+        window.location.assign(data.url);
+        return;
+      }
+      setErr("Couldn't start password setup. Please try again.");
+    } catch {
+      setErr("Network error. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cls =
+    "mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:cursor-not-allowed disabled:opacity-50";
+
+  return (
+    <div>
+      <button type="button" onClick={onClick} disabled={busy} className={cls}>
+        {busy ? "Opening…" : "Set a password"} →
+      </button>
+      {err ? (
+        <p role="alert" className="mt-3 text-body-sm text-danger">
+          {err}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function WelcomeStep({
+  n,
+  title,
+  body,
+  cta,
+  href,
+  slot,
+}: {
+  n: string;
+  title: string;
+  body?: string;
+  cta?: string;
+  href?: LinkProps["to"];
+  // When provided, render this custom action node instead of a single CTA
+  // (used by the Fold step for its App Store / Google Play / web links).
+  slot?: ReactNode;
+}) {
+  const ctaCls =
+    "mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
+
+  return (
+    <div className="border border-rule bg-navy-800/40 p-8">
+      <div className="label text-cyan">
+        Step {n}
+      </div>
+      <h2 className="mt-4 font-display text-[22px] leading-[1.15] text-fg-strong">
+        {title}
+      </h2>
+      <p className="mt-4 text-body-sm text-fg">{body}</p>
+      {/* Every off-site link on this page goes through `slot` (the Fold step's
+          store buttons), so the CTA is always an internal route. */}
+      {slot ? (
+        slot
+      ) : href ? (
+        <Link to={href} className={ctaCls}>
+          {cta} →
+        </Link>
+      ) : null}
+    </div>
+  );
+}

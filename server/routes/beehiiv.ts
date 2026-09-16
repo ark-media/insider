@@ -1,0 +1,524 @@
+// Beehiiv API v2 — Posts
+//
+// Pulls confirmed (published) posts from a Beehiiv publication and projects
+// them to NewsletterPosts. Used by public newsletter pages whose source is
+// `beehiivSource`. The API key is a server-side secret (BEEHIIV_API_KEY).
+// Each newsletter slug maps to a publication id resolved from env via
+// BEEHIIV_PUBLICATION_ID_<SLUG_UPPER>.
+
+import { secretEquals } from '../lib/timing-safe.js'
+import { isValidEmail } from '../../shared/validation.js'
+import {
+  isPublishedBeehiivPost,
+  projectBeehiivPost,
+  type BeehiivPost,
+} from '../beehiiv-posts.js'
+import type {
+  NewsletterPost,
+  NewsletterSlug,
+} from '../../src/data/newsletters.js'
+import {
+  deleteLocalSubscription,
+  getLocalSubscription,
+  persistFromBeehiiv,
+  type BeehiivSubscription,
+} from '../lib/beehiiv-sync.js'
+import { getDb, type Sql } from '../lib/db.js'
+import {
+  recordFeedActivated,
+  recordFeedRevoked,
+} from '../lib/feed-activations.js'
+import { fetchAuth0EmailVerified } from '../entitlement.js'
+import { resolveMembership } from '../lib/entitlement-resolver.js'
+import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
+import {
+  fetchWithTimeout,
+  getClientIp,
+  readBody,
+  readJson,
+  setReadCacheControl,
+} from '../lib/http.js'
+import { createRateLimiter } from '../lib/rate-limit.js'
+import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
+import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { isNewsletterSlug, resolveBeehiivPublicationId } from './newsletter-slugs.js'
+
+// Cache the raw upstream Beehiiv response keyed by publication id. Two slugs
+// can map to the same publication (e.g. ark-daily and members-letter sharing
+// one publication with audience-tiered posts), so caching at the publication
+// level — not the slug level — lets both surfaces share one upstream fetch.
+// Projection (audience filtering, free vs. premium body) then runs per
+// request against this raw data, since it varies with the reader's tier.
+const BEEHIIV_RAW_CACHE_TTL_MS = 5 * 60 * 1000
+const beehiivRawCache = makeTTLCache<string, BeehiivPost[]>(
+  BEEHIIV_RAW_CACHE_TTL_MS,
+)
+
+// newsletter slug → author fallback for posts whose Beehiiv `authors[]` is
+// empty. Beehiiv usually populates authors, so this is just safety-net copy.
+const BEEHIIV_AUTHOR_FALLBACK: Partial<Record<NewsletterSlug, string>> = {
+  'ark-daily': 'Ark Media newsroom',
+  'members-letter': 'Ark Media editorial',
+}
+
+async function fetchBeehiivRaw(
+  publicationId: string,
+  token: string,
+): Promise<BeehiivPost[]> {
+  const cached = beehiivRawCache.get(publicationId)
+  if (cached) return cached
+  // Beehiiv publication ids carry a stable `pub_` prefix. Validate before
+  // interpolating into the upstream URL.
+  if (!/^pub_[A-Za-z0-9-]+$/.test(publicationId)) return []
+
+  // v2 returns paginated results; 50 is plenty for the "Recent issues" list.
+  // Both `expand[]` variants are requested so the same cache entry serves
+  // members (premium body) and non-members (above-divider preview). The
+  // route handler decides which body to project per request — premium HTML
+  // never leaves the server for an unauthenticated reader.
+  const url =
+    `https://api.beehiiv.com/v2/publications/${publicationId}/posts` +
+    `?status=confirmed&limit=50` +
+    `&expand[]=free_web_content&expand[]=premium_web_content`
+  const res = await fetchWithTimeout(url, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  })
+  if (!res.ok) {
+    throw new Error(`Beehiiv ${res.status}: ${await res.text()}`)
+  }
+  const body = (await res.json()) as { data?: BeehiivPost[] }
+  const posts = body.data ?? []
+  beehiivRawCache.set(publicationId, posts)
+  return posts
+}
+
+// Each newsletter slug owns a slice of the publication's posts based on the
+// post's `audience`. A single publication can host both surfaces — ark-daily
+// (free + both) and members-letter (premium + both). `both` posts appear on
+// both surfaces, rendered differently per surface (preview-only on ark-daily,
+// full-for-members + paywall-for-others on members-letter).
+function postBelongsToNewsletter(
+  p: BeehiivPost,
+  newsletterSlug: NewsletterSlug,
+): boolean {
+  const audience = (p.audience ?? 'free').toLowerCase()
+  if (newsletterSlug === 'members-letter') {
+    return audience === 'premium' || audience === 'both'
+  }
+  return audience !== 'premium'
+}
+
+async function buildBeehiivPosts(
+  newsletterSlug: NewsletterSlug,
+  token: string,
+  env: Env,
+  isMember: boolean,
+): Promise<NewsletterPost[]> {
+  const publicationId = resolveBeehiivPublicationId(env, newsletterSlug)
+  if (!publicationId) return []
+  const raw = await fetchBeehiivRaw(publicationId, token)
+  const authorFallback = BEEHIIV_AUTHOR_FALLBACK[newsletterSlug] ?? ''
+  const view: 'free' | 'premium' = isMember ? 'premium' : 'free'
+
+  return raw
+    .filter(isPublishedBeehiivPost)
+    .filter((p) => postBelongsToNewsletter(p, newsletterSlug))
+    .map((p) => projectBeehiivPost(p, newsletterSlug, authorFallback, view))
+    .filter((p): p is NewsletterPost => p !== null)
+    .sort(
+      (a, b) =>
+        b.publishedAt.localeCompare(a.publishedAt) ||
+        a.slug.localeCompare(b.slug),
+    )
+}
+
+// Best-effort enrichment: attach `discussUrl` to each post whose Beehiiv id
+// has a matching mapping row. Runs after the cache so a mapping created in
+// /admin shows up on the next request even while the upstream Beehiiv list
+// is still cached. Soft-fails — a DB hiccup hides the buttons, not the posts.
+async function enrichWithDiscussUrls(
+  posts: NewsletterPost[],
+  newsletterSlug: NewsletterSlug,
+  env: Env,
+): Promise<NewsletterPost[]> {
+  if (!env.DATABASE_URL) return posts
+  try {
+    const sql = getDb(env)
+    const threads = await listDiscussThreadsByNewsletter(sql, newsletterSlug)
+    if (threads.length === 0) return posts
+    const byPostId = new Map(threads.map((t) => [t.beehiivPostId, t.circleThreadUrl]))
+    return posts.map((p) =>
+      p.beehiivPostId && byPostId.has(p.beehiivPostId)
+        ? { ...p, discussUrl: byPostId.get(p.beehiivPostId) }
+        : p,
+    )
+  } catch (err) {
+    console.error('[beehiiv] discuss-thread join failed:', err)
+    return posts
+  }
+}
+
+// Best-effort detection of Beehiiv's "already subscribed" error so we can show
+// a friendlier message. With `reactivate_existing: true`, Beehiiv usually
+// returns 201 even for existing emails — this is a safety net for cases where
+// it doesn't (e.g. status: 'blocked' or 'spam_reported' subscribers).
+function isAlreadySubscribedError(body: string): boolean {
+  const lower = body.toLowerCase()
+  return (
+    lower.includes('already') ||
+    lower.includes('exists') ||
+    lower.includes('duplicate')
+  )
+}
+
+async function createBeehiivSubscription(
+  publicationId: string,
+  token: string,
+  email: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (!/^pub_[A-Za-z0-9-]+$/.test(publicationId)) {
+    return { ok: false, status: 500, error: 'invalid_publication_id' }
+  }
+  const url = `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions`
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      email,
+      // Deliberately false. This endpoint is unauthenticated and accepts any
+      // address with no proof of control, so reactivating would let anyone
+      // silently re-subscribe a person who chose to unsubscribe — overriding a
+      // recorded opt-out, which is a consent problem (CAN-SPAM / GDPR) rather
+      // than a convenience one. A genuine returning reader can subscribe again
+      // from Beehiiv's own confirmed flow.
+      reactivate_existing: false,
+      // Tag the source so we can distinguish site signups in Beehiiv.
+      utm_source: 'insider-site',
+    }),
+  })
+  if (res.ok) return { ok: true }
+  const text = await res.text().catch(() => '')
+  console.error(`[beehiiv] subscribe ${res.status}: ${text}`)
+  if (res.status >= 400 && res.status < 500) {
+    if (isAlreadySubscribedError(text)) {
+      return { ok: false, status: 409, error: 'already_subscribed' }
+    }
+    // Generic client error — don't leak upstream messages.
+    return { ok: false, status: 400, error: 'subscribe_rejected' }
+  }
+  return { ok: false, status: 502, error: 'beehiiv_unavailable' }
+}
+
+export function beehiivRoutes({ env }: Deps): Route[] {
+  // Per-IP cap on subscribe attempts. 10-token burst then ~12/min steady
+  // state — leaves room for typo corrections without letting a script
+  // enumerate or spam-subscribe arbitrary addresses.
+  const subscribeLimiter = createRateLimiter({
+    capacity: 10,
+    refillPerSec: 0.2,
+  })
+
+  return [
+    defineRoute({
+      path: '/api/beehiiv/posts',
+      method: 'GET',
+      handler: async (req, res, json) => {
+        const url = new URL(req.url ?? '', 'http://x')
+        const slug = url.searchParams.get('newsletter')
+        if (!slug) return json(400, { error: 'missing `newsletter`' })
+        if (!isNewsletterSlug(slug)) {
+          return json(400, { error: 'invalid `newsletter`' })
+        }
+
+        // The premium newsletter body rides the arkPlus axis; resolve it from
+        // Neon (the authority). Anonymous readers resolve to non-member and keep
+        // the shared-cacheable above-divider preview.
+        const resolved = await resolveMembership(req, env)
+        const isMember = resolved?.entitlements.arkPlus ?? false
+
+        // Both surfaces project a membership-dependent body — `view` is
+        // 'premium' for a member and 'free' for everyone else, and `both`
+        // -audience posts appear on ark-daily as well as members-letter — so
+        // neither slug may enter a shared cache under this url.
+        //
+        // This used to be decided per caller: member responses were `private`
+        // and anonymous ones were share-cached. That reads as safe and isn't.
+        // The anonymous response is the PREVIEW, and once the edge held it, the
+        // next member to open the newsletter was served the preview of the
+        // thing they pay for. Gating on the resource costs anonymous readers
+        // the edge hit; `beehiivRawCache` still spares Beehiiv the round-trip,
+        // and an anonymous request resolves no identity so it never reaches
+        // Neon either.
+        setReadCacheControl(res, { gated: true })
+
+        const token = env.BEEHIIV_API_KEY
+        if (!token) return json(200, { posts: [] })
+
+        try {
+          const posts = await buildBeehiivPosts(slug, token, env, isMember)
+          const enriched = await enrichWithDiscussUrls(posts, slug, env)
+          json(200, { posts: enriched })
+        } catch (err) {
+          console.error('[beehiiv] posts fetch failed:', err)
+          json(502, { error: 'beehiiv_unavailable' })
+        }
+      },
+    }),
+    defineRoute({
+      path: '/api/beehiiv/subscribe',
+      method: 'POST',
+      handler: async (req, res, json) => {
+        const wait = subscribeLimiter.take(getClientIp(req))
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'too_many_requests' })
+        }
+
+        const body = await readJson<{ newsletter?: unknown; email?: unknown }>(req)
+        const slug = typeof body?.newsletter === 'string' ? body.newsletter : null
+        const email = typeof body?.email === 'string' ? body.email.trim() : ''
+        if (!slug || !isNewsletterSlug(slug)) {
+          return json(400, { error: 'invalid `newsletter`' })
+        }
+        if (!isValidEmail(email)) {
+          return json(400, { error: 'invalid_email' })
+        }
+
+        const token = env.BEEHIIV_API_KEY
+        const publicationId = resolveBeehiivPublicationId(env, slug)
+        if (!token || !publicationId) {
+          console.error('[beehiiv] subscribe missing config', {
+            hasToken: !!token,
+            hasPublicationId: !!publicationId,
+            slug,
+          })
+          return json(503, { error: 'beehiiv_not_configured' })
+        }
+
+        try {
+          const result = await createBeehiivSubscription(publicationId, token, email)
+          if (result.ok) return json(200, { ok: true })
+          return json(result.status, { error: result.error })
+        } catch (err) {
+          console.error('[beehiiv] subscribe failed:', err)
+          json(502, { error: 'beehiiv_unavailable' })
+        }
+      },
+    }),
+    defineRoute({
+      // Inbound webhook from Beehiiv.
+      //
+      // Auth: Beehiiv doesn't publish a documented HMAC signature scheme,
+      // so we gate the route with a shared secret in the query string
+      // (`?key=…`). Register the URL in Beehiiv as
+      //   https://<APP_BASE_URL>/api/beehiiv/webhook?key=$BEEHIIV_WEBHOOK_SECRET
+      // and subscribe to the subscription.* AND podcasts.private_feed.*
+      // event types — the latter are what mirror private-feed activation
+      // (this endpoint is the single provider webhook, so
+      // there is one secret and one registration).
+      //
+      // Caveat — query-string secret leakage. The `?key=` value appears in
+      // upstream HTTP access logs (Vercel / CDN / proxy) more than headers
+      // would. We accept the trade-off because (a) Beehiiv's webhook
+      // configuration doesn't support custom headers, and (b) the impact of
+      // a leaked secret is bounded by the second-layer check below: we only
+      // persist events for emails our application already knows about
+      // (existing mirror row or Auth0 user). A leaked key still lets an
+      // attacker replay events, but only for our real readers — not inject
+      // ghost subscribers.
+      path: '/api/beehiiv/webhook',
+      method: 'POST',
+      handler: async (req, _res, json) => {
+        const secret = env.BEEHIIV_WEBHOOK_SECRET
+        if (!secret) return json(500, { error: 'not_configured' })
+        const url = new URL(req.url ?? '', 'http://x')
+        if (!secretEquals(url.searchParams.get('key') ?? '', secret)) {
+          return json(401, { error: 'unauthorized' })
+        }
+
+        if (!env.DATABASE_URL) return json(200, { received: true })
+        const sql = getDb(env)
+
+        // Beehiiv POSTs raw JSON. Parse it ourselves so the constant-time key
+        // check above can run before we touch the body.
+        const raw = await readBody(req)
+        let event: BeehiivWebhookEvent
+        try {
+          event = JSON.parse(raw.toString('utf8')) as BeehiivWebhookEvent
+        } catch {
+          return json(400, { error: 'invalid_json' })
+        }
+
+        const publicationId =
+          env.BEEHIIV_PUBLICATION_ID_ARK_DAILY ||
+          env.BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER ||
+          ''
+        // Idempotency: skip only events already fully PROCESSED. We READ the
+        // ledger here and WRITE it after the handler succeeds — never before.
+        // Claiming the id up front would mean a handler that throws leaves the
+        // id recorded, so Beehiiv's retry gets deduped and the event is lost
+        // (a dropped access_revoked would keep a lapsed member "activated").
+        // A missing uid just skips dedupe; every write is an idempotent upsert,
+        // so reprocessing is harmless.
+        const eventId = event.uid ? String(event.uid) : null
+        if (eventId !== null) {
+          try {
+            const seen = await sql`
+              select 1 from beehiiv_webhook_events where id = ${eventId} limit 1`
+            if (seen.length > 0) return json(200, { received: true, deduped: true })
+          } catch (err) {
+            console.error('[beehiiv] webhook idempotency read failed:', err)
+          }
+        }
+
+        try {
+          await handleBeehiivWebhook(sql, env, event, publicationId)
+        } catch (err) {
+          console.error('[beehiiv] webhook handler failed:', err)
+          return json(500, { error: 'webhook_handler_failed' })
+        }
+
+        // Processing succeeded — record the delivery so a retry of THIS one is
+        // deduped. Best-effort: a failed ledger write only means a later
+        // duplicate is reprocessed, which is strictly safer than dropping an
+        // unprocessed event.
+        if (eventId !== null) {
+          try {
+            await sql`
+              insert into beehiiv_webhook_events (id, type)
+              values (${eventId}, ${event.event_type ?? ''})
+              on conflict (id) do nothing`
+          } catch (err) {
+            console.error('[beehiiv] webhook idempotency ledger write failed:', err)
+          }
+        }
+        return json(200, { received: true })
+      },
+    }),
+  ]
+}
+
+// --- Webhook event dispatch ----------------------------------------------
+
+type BeehiivWebhookEvent = {
+  event_type?: string
+  // Delivery id, used for the idempotency ledger. Absent on some event types,
+  // which just skips dedupe (every write below is an idempotent upsert).
+  uid?: string
+  data?: {
+    id?: string
+    email?: string
+    status?: string
+    subscription_tier?: 'free' | 'premium'
+    subscription_premium_tier_names?: string[]
+    // `podcasts.private_feed.*` events only. Note the email is nested under
+    // `subscription`, NOT top-level like the subscription events — reading
+    // `data.email` here would silently drop every feed event.
+    subscription?: { email?: string }
+    show?: { id?: string }
+    activated?: number | string | null
+    revoked?: number | string | null
+  }
+}
+
+// Soft check: do we know this reader? We accept either an existing mirror
+// row OR an Auth0 user. This bounds the blast radius of a leaked webhook
+// secret — an attacker can replay events, but only for real readers.
+async function isKnownReader(
+  sql: Sql,
+  env: Env,
+  email: string,
+): Promise<boolean> {
+  const local = await getLocalSubscription(sql, email)
+  if (local) return true
+  // Not in the mirror yet — accept if Auth0 has a user for this email. This is
+  // an existence check (email-verification lookup), not an entitlement read, so
+  // it survives the Auth0-entitlement removal (task 5). Returns null on lookup
+  // failure or no user; a non-null result means a real Auth0 user exists.
+  return (await fetchAuth0EmailVerified(env, email)) !== null
+}
+
+// Beehiiv reports feed timestamps as unix seconds; the mirror stores instants.
+function feedTimestamp(raw: number | string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null
+  const n = typeof raw === 'string' ? Number(raw) : raw
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null
+  const d = new Date(n * 1000)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+// `podcasts.private_feed.activated` / `.access_revoked` / `.deactivated`.
+// Returns true when the event was ours to handle, so the caller knows not to
+// fall through to the subscription mirror.
+async function handlePrivateFeedEvent(
+  sql: Sql,
+  env: Env,
+  event: BeehiivWebhookEvent,
+  type: string,
+): Promise<boolean> {
+  if (!type.startsWith('podcasts.private_feed')) return false
+
+  // Email is nested under `subscription`, show under `show` — both differ from
+  // the subscription events' top-level shape.
+  const email = event.data?.subscription?.email?.trim()
+  const showId = event.data?.show?.id?.trim()
+  if (!email || !showId) {
+    console.warn('[beehiiv] private_feed webhook missing email or show id', { type })
+    return true
+  }
+
+  // Same secret-leak bound as the subscription path: only readers we know.
+  if (!(await isKnownReader(sql, env, email))) return true
+
+  // Keyed on the SHOW id, never the feed token — `pod_feed_<uuid>` rotates on
+  // reissue and would reset the member's setup state.
+  if (type.endsWith('.activated')) {
+    await recordFeedActivated(sql, email, showId, feedTimestamp(event.data?.activated))
+  } else if (type.endsWith('.access_revoked') || type.endsWith('.deactivated')) {
+    await recordFeedRevoked(sql, email, showId, feedTimestamp(event.data?.revoked))
+  }
+  return true
+}
+
+async function handleBeehiivWebhook(
+  sql: Sql,
+  env: Env,
+  event: BeehiivWebhookEvent,
+  publicationId: string,
+): Promise<void> {
+  const type = event.event_type ?? ''
+
+  // Dispatch the podcast events FIRST: they carry the reader's email nested
+  // under `data.subscription`, so the `data.email` guard below would drop them.
+  if (await handlePrivateFeedEvent(sql, env, event, type)) return
+
+  const data = event.data
+  if (!data?.email || !data.id) return
+
+  // Reject events for readers we don't recognize. Failing closed here is
+  // intentional — see the route comment on secret-leak mitigation.
+  if (!(await isKnownReader(sql, env, data.email))) return
+
+  if (type === 'subscription.deleted') {
+    await deleteLocalSubscription(sql, data.email)
+    return
+  }
+
+  // For everything else (created, confirmed, upgraded, downgraded, paused,
+  // resumed) Beehiiv has already applied the change — we just mirror the
+  // resulting subscription state via the same projection the push paths use.
+  if (!publicationId) return
+  const sub: BeehiivSubscription = {
+    id: data.id,
+    email: data.email,
+    status: data.status ?? 'active',
+    hasPremium:
+      data.subscription_tier === 'premium' ||
+      (data.subscription_premium_tier_names ?? []).length > 0,
+  }
+  await persistFromBeehiiv(sql, publicationId, sub)
+}

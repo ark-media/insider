@@ -14,6 +14,11 @@ import {
 } from 'bun:test'
 import { Readable } from 'node:stream'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import {
+  createDevApiHarness,
+  silenceExpectedConsole,
+  type Middleware,
+} from './test-utils'
 
 // ---------------------------------------------------------------------------
 // Stripe mock
@@ -29,10 +34,24 @@ type FakePI = {
   metadata: Record<string, string>
 }
 
+type FakeSession = {
+  id: string
+  client_secret: string
+  status?: string
+  metadata: Record<string, string>
+  payment_intent: FakePI | string | null
+}
+
 let existingCustomer: { id: string; email: string } | null = null
 let nextPIStatus: FakePI['status'] = 'succeeded'
 let retrievedPI: FakePI | null = null
+let retrievedSession: FakeSession | null = null
 let webhookEvent: unknown = null
+
+// Coupons returned by stripe.coupons.list. The gift route no longer reads them
+// (discounts arrive by code); the stub stays so a regression that reaches for
+// the catalog shows up as a recorded call.
+let availableCoupons: Array<Record<string, unknown>> = []
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -75,6 +94,23 @@ class FakeStripe {
       return { id, metadata: args.metadata }
     },
   }
+  checkout = {
+    sessions: {
+      create: async (args: Record<string, unknown>) => {
+        stripeCalls.push({ method: 'checkout.sessions.create', args: [args] })
+        return {
+          id: 'cs_test_1',
+          client_secret: 'cs_test_1_secret_ABC',
+        }
+      },
+      retrieve: async (id: string, opts?: unknown) => {
+        stripeCalls.push({ method: 'checkout.sessions.retrieve', args: [id, opts] })
+        if (!retrievedSession)
+          throw new Error('retrievedSession not configured for this test')
+        return retrievedSession
+      },
+    },
+  }
   webhooks = {
     constructEvent: (_raw: unknown, _sig: string, _secret: string) => {
       if (!webhookEvent) throw new Error('webhookEvent not configured for this test')
@@ -87,53 +123,52 @@ class FakeStripe {
     retrieve: async () => ({}),
     list: async () => ({ data: [] }),
   }
+  coupons = {
+    list: async (args: { limit: number; starting_after?: string }) => {
+      stripeCalls.push({ method: 'coupons.list', args: [args] })
+      return { data: availableCoupons, has_more: false }
+    },
+  }
+  prices = {
+    // The gift checkout resolves the one-time gift Price by lookup_key. Return a
+    // canned price whose USD unit_amount matches the term ($48 6mo / $80 1yr) and
+    // carries currency_options for EVERY supported currency (resolveGiftPrice
+    // throws on a missing one).
+    list: async (args: { lookup_keys?: string[] }) => {
+      stripeCalls.push({ method: 'prices.list', args: [args] })
+      const key = args.lookup_keys?.[0] ?? ''
+      const unit = key.endsWith('_6mo') ? 4800 : 8000
+      const currency_options: Record<string, { unit_amount: number }> = {}
+      for (const c of SUPPORTED_CURRENCIES) currency_options[c] = { unit_amount: unit }
+      return {
+        data: [{ id: `price_${key}`, product: 'prod_gift', unit_amount: unit, currency_options }],
+      }
+    },
+  }
 }
 
 mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 
 // Static import AFTER mock.module so the plugin picks up the fake Stripe.
 import { devApiPlugin } from './dev-api'
+import { giftTokenForPaymentIntent } from './routes/stripe/webhook'
+import { signGiftClaimToken, verifyGiftClaimToken } from './lib/session'
+import { SUPPORTED_CURRENCIES } from './lib/pricing'
 
 // ---------------------------------------------------------------------------
 // Plugin harness
 // ---------------------------------------------------------------------------
-type Middleware = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: (err?: unknown) => void,
-) => void
-
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
-  SC_NETWORK_ID: 'test-net',
-  SC_API_KEY: 'test-key',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
   STRIPE_WEBHOOK_SECRET: 'wh_test',
-  SC_SUBSCRIPTION_PRICE_ID_GIFT_6MO: '111',
-  SC_SUBSCRIPTION_PRICE_ID_GIFT_1YR: '222',
-}
-
-function buildHandlers(envOverrides: Record<string, string> = {}): Map<string, Middleware> {
-  const handlers = new Map<string, Middleware>()
-  const fakeServer = {
-    middlewares: {
-      use(path: string, handler: Middleware) {
-        handlers.set(path, handler)
-      },
-    },
-  }
-  const plugin = devApiPlugin({ ...BASE_ENV, ...envOverrides })
-  const configure = plugin.configureServer as unknown as (s: unknown) => void
-  configure(fakeServer)
-  return handlers
 }
 
 function getHandler(path: string, envOverrides?: Record<string, string>): Middleware {
-  const handlers = buildHandlers(envOverrides)
-  const h = handlers.get(path)
-  if (!h) throw new Error(`handler not registered for ${path}`)
-  return h
+  return createDevApiHarness(
+    devApiPlugin({ ...BASE_ENV, ...envOverrides }),
+  ).getHandler(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +278,8 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestIni
   return fetchImpl(url, init)
 }) as typeof fetch
 
+silenceExpectedConsole()
+
 afterAll(() => {
   globalThis.fetch = originalFetch
 })
@@ -253,12 +290,15 @@ beforeEach(() => {
   existingCustomer = null
   nextPIStatus = 'succeeded'
   retrievedPI = null
+  retrievedSession = null
   webhookEvent = null
+  availableCoupons = []
   fetchImpl = async () => new Response('{}', { status: 200 })
 })
 
 const CREATE_PATH = '/api/gift/create-checkout'
 const STATUS_PATH = '/api/gift/status'
+const CLAIM_PATH = '/api/gift/claim'
 const WEBHOOK_PATH = '/api/stripe/webhook'
 
 // ===========================================================================
@@ -281,7 +321,7 @@ describe('POST /api/gift/create-checkout — validation', () => {
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(500)
-    expect((res.__json() as { error: string }).error).toMatch(/stripe_secret_key/i)
+    expect((res.__json() as { error: string }).error).toBe('not_configured')
   })
 
   test('400 when giver_email missing', async () => {
@@ -342,8 +382,33 @@ describe('POST /api/gift/create-checkout — validation', () => {
   })
 })
 
+// Pulls the typed args off the recorded checkout.sessions.create call.
+type SessionArgs = {
+  mode: string
+  ui_mode: string
+  customer: string
+  currency: string
+  adaptive_pricing?: { enabled: boolean }
+  automatic_tax: { enabled: boolean }
+  consent_collection?: { terms_of_service: string }
+  customer_update: { address: string }
+  line_items: Array<{ quantity: number; price: string }>
+  payment_intent_data: {
+    receipt_email: string
+    description: string
+    metadata: Record<string, string>
+  }
+  metadata: Record<string, string>
+}
+
+function sessionCreateArgs(): SessionArgs {
+  const call = stripeCalls.find((c) => c.method === 'checkout.sessions.create')
+  expect(call).toBeDefined()
+  return call!.args[0] as SessionArgs
+}
+
 describe('POST /api/gift/create-checkout — happy paths', () => {
-  test('1yr: creates new Stripe customer + PI with $80 and full metadata', async () => {
+  test('1yr: creates new Stripe customer + payment-mode Session with the $80 gift Price (USD), per-currency, and full PI metadata', async () => {
     const h = getHandler(CREATE_PATH)
     const req = makeReq({
       body: {
@@ -360,14 +425,12 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
 
     expect(res.statusCode).toBe(200)
     const body = res.__json() as {
-      payment_intent_id: string
+      checkout_session_id: string
       client_secret: string
-      amount_cents: number
       term: string
     }
-    expect(body.payment_intent_id).toBe('pi_test_1')
-    expect(body.client_secret).toBe('pi_test_1_secret_ABC')
-    expect(body.amount_cents).toBe(8000)
+    expect(body.checkout_session_id).toBe('cs_test_1')
+    expect(body.client_secret).toBe('cs_test_1_secret_ABC')
     expect(body.term).toBe('1yr')
 
     // Verify customer lookup + create
@@ -378,28 +441,49 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     const createCustomerCall = stripeCalls.find((c) => c.method === 'customers.create')
     expect(createCustomerCall).toBeDefined()
 
-    // Verify PI create args
-    const piCall = stripeCalls.find((c) => c.method === 'paymentIntents.create')
-    expect(piCall).toBeDefined()
-    const piArgs = piCall!.args[0] as {
-      amount: number
-      currency: string
-      customer: string
-      metadata: Record<string, string>
-    }
-    expect(piArgs.amount).toBe(8000)
-    expect(piArgs.currency).toBe('usd')
-    expect(piArgs.customer).toBe('cus_new')
-    expect(piArgs.metadata.kind).toBe('gift')
-    expect(piArgs.metadata.term).toBe('1yr')
-    expect(piArgs.metadata.giver_email).toBe('giver@example.com')
-    expect(piArgs.metadata.giver_name).toBe('Bob')
-    expect(piArgs.metadata.recipient_email).toBe('recip@example.com')
-    expect(piArgs.metadata.recipient_name).toBe('Alice')
-    expect(piArgs.metadata.message).toBe('Happy birthday')
+    // No bare PaymentIntent — gifts route through a Checkout Session.
+    expect(stripeCalls.some((c) => c.method === 'paymentIntents.create')).toBe(false)
+
+    // Verify Checkout Session create args
+    const args = sessionCreateArgs()
+    expect(args.mode).toBe('payment')
+    expect(args.ui_mode).toBe('elements')
+    expect(args.customer).toBe('cus_new')
+    // Per-currency model replaced Adaptive Pricing: no adaptive_pricing flag; the
+    // session's currency selects the gift Price's currency_options amount.
+    expect(args.adaptive_pricing).toBeUndefined()
+    expect(args.currency).toBe('usd')
+    // Stripe Tax on the one-time gift session, with the address saved back to
+    // the pre-set customer (feeds the tax jurisdiction).
+    expect(args.automatic_tax).toEqual({ enabled: true })
+    // No Stripe-collected consent: the gift form carries its own Terms
+    // checkbox and records the acceptance via /api/stripe/record-consent.
+    expect(args.consent_collection).toBeUndefined()
+    expect(args.customer_update).toEqual({ address: 'auto' })
+    expect(args.line_items[0].quantity).toBe(1)
+    // The persistent one-time gift Price, resolved by lookup_key (default tier
+    // Ark+, 1yr term → gift_ark_plus_1yr).
+    expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
+
+    // Gift metadata lives on the PaymentIntent (payment_intent_data) so the
+    // existing payment_intent.succeeded webhook activates it unchanged.
+    const pid = args.payment_intent_data
+    expect(pid.receipt_email).toBe('giver@example.com')
+    expect(pid.metadata.kind).toBe('gift')
+    expect(pid.metadata.tier).toBe('ark-plus')
+    expect(pid.metadata.term).toBe('1yr')
+    expect(pid.metadata.currency).toBe('usd')
+    expect(pid.metadata.giver_email).toBe('giver@example.com')
+    expect(pid.metadata.giver_name).toBe('Bob')
+    expect(pid.metadata.recipient_email).toBe('recip@example.com')
+    expect(pid.metadata.recipient_name).toBe('Alice')
+    expect(pid.metadata.message).toBe('Happy birthday')
+
+    // Session-level metadata carries giver_email for the /status ownership check.
+    expect(args.metadata.giver_email).toBe('giver@example.com')
   })
 
-  test('6mo: amount is $48', async () => {
+  test('6mo: resolves the $48 gift Price', async () => {
     const h = getHandler(CREATE_PATH)
     const req = makeReq({
       body: {
@@ -411,11 +495,27 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(200)
-    expect((res.__json() as { amount_cents: number }).amount_cents).toBe(4800)
-    const piArgs = stripeCalls.find((c) => c.method === 'paymentIntents.create')!
-      .args[0] as { amount: number; metadata: { term: string } }
-    expect(piArgs.amount).toBe(4800)
-    expect(piArgs.metadata.term).toBe('6mo')
+    const args = sessionCreateArgs()
+    expect(args.line_items[0].price).toBe('price_gift_ark_plus_6mo')
+    expect(args.payment_intent_data.metadata.term).toBe('6mo')
+  })
+
+  test('tier param routes to the Bundle gift Price', async () => {
+    const h = getHandler(CREATE_PATH)
+    const req = makeReq({
+      body: {
+        giver_email: 'g@x.com',
+        recipient_email: 'r@x.com',
+        tier: 'bundle',
+        term: '1yr',
+      },
+    })
+    const res = makeRes()
+    await runHandler(h, req, res)
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs()
+    expect(args.line_items[0].price).toBe('price_gift_bundle_1yr')
+    expect(args.payment_intent_data.metadata.tier).toBe('bundle')
   })
 
   test('reuses existing Stripe customer by email (no customers.create)', async () => {
@@ -432,9 +532,7 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(200)
     expect(stripeCalls.some((c) => c.method === 'customers.create')).toBe(false)
-    const piArgs = stripeCalls.find((c) => c.method === 'paymentIntents.create')!
-      .args[0] as { customer: string }
-    expect(piArgs.customer).toBe('cus_existing')
+    expect(sessionCreateArgs().customer).toBe('cus_existing')
   })
 
   test('normalizes emails to lowercase', async () => {
@@ -449,16 +547,97 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(200)
-    const piArgs = stripeCalls.find((c) => c.method === 'paymentIntents.create')!
-      .args[0] as { metadata: Record<string, string> }
-    expect(piArgs.metadata.giver_email).toBe('giver@example.com')
-    expect(piArgs.metadata.recipient_email).toBe('recip@example.com')
+    const args = sessionCreateArgs()
+    expect(args.payment_intent_data.metadata.giver_email).toBe('giver@example.com')
+    expect(args.payment_intent_data.metadata.recipient_email).toBe('recip@example.com')
+    expect(args.metadata.giver_email).toBe('giver@example.com')
+  })
+})
+
+// ===========================================================================
+// POST /api/gift/create-checkout — discounts
+// ===========================================================================
+// A discount reaches a gift Session by code, never as a server-set `discounts`
+// array. The Session carries allow_promotion_codes so the giver has a field to
+// type into, and Stripe refuses both parameters on one Session ("You may only
+// specify one of these parameters"). The house sale is resolved by
+// /api/promo/active and applied in the browser — which is why this route no
+// longer reads the coupon catalog at all.
+
+type SessionWithDiscounts = SessionArgs & {
+  discounts?: Array<{ coupon: string }>
+  allow_promotion_codes?: boolean
+}
+
+function couponLike(
+  id: string,
+  fields: {
+    percent_off?: number | null
+    amount_off?: number | null
+    currency?: string | null
+    metadata?: Record<string, string>
+  },
+): Record<string, unknown> {
+  return {
+    id,
+    valid: true,
+    name: null,
+    percent_off: fields.percent_off ?? null,
+    amount_off: fields.amount_off ?? null,
+    currency: fields.currency ?? null,
+    metadata: fields.metadata ?? {},
+  }
+}
+
+async function postGift1yr(): Promise<FakeRes> {
+  const h = getHandler(CREATE_PATH)
+  const req = makeReq({
+    body: { giver_email: 'g@x.com', recipient_email: 'r@x.com', term: '1yr' },
+  })
+  const res = makeRes()
+  await runHandler(h, req, res)
+  return res
+}
+
+describe('POST /api/gift/create-checkout — discounts', () => {
+  test('the Session takes promotion codes, not a server-set discount', async () => {
+    availableCoupons = [
+      couponLike('coupon_pct20', { percent_off: 20, metadata: { auto_apply: 'true' } }),
+    ]
+    const res = await postGift1yr()
+    expect(res.statusCode).toBe(200)
+    const args = sessionCreateArgs() as SessionWithDiscounts
+    expect(args.allow_promotion_codes).toBe(true)
+    expect(args.discounts).toBeUndefined()
+    // Source price is still the full $80 gift Price — Stripe discounts it.
+    expect(args.line_items[0].price).toBe('price_gift_ark_plus_1yr')
+  })
+
+  test('never reads the coupon catalog — the browser applies the code', async () => {
+    availableCoupons = [
+      couponLike('coupon_pct20', { percent_off: 20, metadata: { auto_apply: 'true' } }),
+    ]
+    await postGift1yr()
+    expect(stripeCalls.some((c) => c.method === 'coupons.list')).toBe(false)
   })
 })
 
 // ===========================================================================
 // GET /api/gift/status
 // ===========================================================================
+
+function buildStatusSession(
+  piMetadata: Record<string, string>,
+  status: FakePI['status'] = 'succeeded',
+): FakeSession {
+  return {
+    id: 'cs_1',
+    client_secret: 's',
+    status: 'complete',
+    metadata: { giver_email: 'g@x.com', kind: 'gift' },
+    payment_intent: { id: 'pi_1', client_secret: 's', status, metadata: piMetadata },
+  }
+}
 
 describe('GET /api/gift/status', () => {
   test('400 when id is missing', async () => {
@@ -470,47 +649,32 @@ describe('GET /api/gift/status', () => {
   })
 
   test('403 when giver_email param is missing', async () => {
-    retrievedPI = {
-      id: 'pi_1',
-      client_secret: 's',
-      status: 'succeeded',
-      metadata: { giver_email: 'g@x.com', kind: 'gift' },
-    }
+    retrievedSession = buildStatusSession({ giver_email: 'g@x.com', kind: 'gift' })
     const h = getHandler(STATUS_PATH)
-    const req = makeReq({ method: 'GET', url: `${STATUS_PATH}?id=pi_1` })
+    const req = makeReq({ method: 'GET', url: `${STATUS_PATH}?id=cs_1` })
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(403)
   })
 
-  test('403 when email does not match PI giver', async () => {
-    retrievedPI = {
-      id: 'pi_1',
-      client_secret: 's',
-      status: 'succeeded',
-      metadata: { giver_email: 'g@x.com', kind: 'gift' },
-    }
+  test('403 when email does not match Session giver', async () => {
+    retrievedSession = buildStatusSession({ giver_email: 'g@x.com', kind: 'gift' })
     const h = getHandler(STATUS_PATH)
     const req = makeReq({
       method: 'GET',
-      url: `${STATUS_PATH}?id=pi_1&email=attacker@x.com`,
+      url: `${STATUS_PATH}?id=cs_1&email=attacker@x.com`,
     })
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(403)
   })
 
-  test('200 activated=false when sc_subscription_id not set', async () => {
-    retrievedPI = {
-      id: 'pi_1',
-      client_secret: 's',
-      status: 'succeeded',
-      metadata: { giver_email: 'g@x.com', kind: 'gift' },
-    }
+  test('200 activated=false when gift_token not set', async () => {
+    retrievedSession = buildStatusSession({ giver_email: 'g@x.com', kind: 'gift' })
     const h = getHandler(STATUS_PATH)
     const req = makeReq({
       method: 'GET',
-      url: `${STATUS_PATH}?id=pi_1&email=g@x.com`,
+      url: `${STATUS_PATH}?id=cs_1&email=g@x.com`,
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -518,21 +682,16 @@ describe('GET /api/gift/status', () => {
     expect(res.__json()).toEqual({ status: 'succeeded', activated: false })
   })
 
-  test('200 activated=true when sc_subscription_id is set', async () => {
-    retrievedPI = {
-      id: 'pi_1',
-      client_secret: 's',
-      status: 'succeeded',
-      metadata: {
-        giver_email: 'g@x.com',
-        kind: 'gift',
-        sc_subscription_id: '999',
-      },
-    }
+  test('200 activated=true when gift_token is stamped on the PaymentIntent', async () => {
+    retrievedSession = buildStatusSession({
+      giver_email: 'g@x.com',
+      kind: 'gift',
+      gift_token: 'tok_abc',
+    })
     const h = getHandler(STATUS_PATH)
     const req = makeReq({
       method: 'GET',
-      url: `${STATUS_PATH}?id=pi_1&email=g@x.com`,
+      url: `${STATUS_PATH}?id=cs_1&email=g@x.com`,
     })
     const res = makeRes()
     await runHandler(h, req, res)
@@ -563,8 +722,8 @@ function buildGiftPI(overrides: Partial<FakePI['metadata']> = {}): FakePI {
   }
 }
 
-async function runWebhook(): Promise<FakeRes> {
-  const h = getHandler(WEBHOOK_PATH)
+async function runWebhook(envOverrides?: Record<string, string>): Promise<FakeRes> {
+  const h = getHandler(WEBHOOK_PATH, envOverrides)
   const req = makeReq({
     method: 'POST',
     url: WEBHOOK_PATH,
@@ -576,169 +735,77 @@ async function runWebhook(): Promise<FakeRes> {
   return res
 }
 
-describe('Webhook — gift activation', () => {
-  test('new recipient: creates SC user with custom_1/custom_2, creates 1yr subscription, sends welcome email, stamps PI metadata', async () => {
-    const pi = buildGiftPI({ term: '1yr' })
-    webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+describe('Webhook — gift purchase (redemption model)', () => {
+  // A gift now grants nothing at purchase (§3): the webhook writes a pending
+  // gift row (skipped here — no DB) and emails the recipient a claim link, never
+  // touching the feed provider. Redemption (POST /api/gift/redeem) writes the row.
 
-    // SC: recipient does not exist on /users/search, /users POST returns new id
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(JSON.stringify({ users: [] }), { status: 200 })
-      }
-      if (url.endsWith('/users') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ user: { id: 555 } }), { status: 200 })
-      }
-      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-        return new Response(
-          JSON.stringify({ subscription: { id: 777 } }),
-          { status: 200 },
-        )
-      }
-      if (url.endsWith('/send_welcome_email')) {
-        return new Response('{}', { status: 200 })
-      }
+  test('stamps the gift_token on the PI and emails a single magic link — no Beehiiv/Auth0 calls', async () => {
+    const pi = buildGiftPI({ term: '1yr', giver_name: 'Bob', message: 'Enjoy' })
+    webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+    retrievedPI = pi
+
+    fetchImpl = async (url) => {
+      if (url.startsWith('https://api.resend.com'))
+        return new Response(JSON.stringify({ id: 'email_1' }), { status: 200 })
       return new Response('{}', { status: 200 })
     }
 
-    const res = await runWebhook()
+    const res = await runWebhook({ RESEND_API_KEY: 'rk_test' })
     expect(res.statusCode).toBe(200)
 
-    // Verify POST /users with gift metadata
-    const createUser = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/users'),
-    )
-    expect(createUser).toBeDefined()
-    const createBody = createUser!.body as {
-      email: string
-      first_name: string
-      custom_1: string
-      custom_2: string
-    }
-    expect(createBody.email).toBe('recip@x.com')
-    expect(createBody.first_name).toBe('Alice')
-    expect(createBody.custom_1).toBe('gift')
-    const gift = JSON.parse(createBody.custom_2) as Record<string, unknown>
-    expect(gift.giverEmail).toBe('giver@x.com')
-    expect(gift.giverName).toBe('Bob')
-    expect(gift.term).toBe('1yr')
-    expect(gift.orderId).toBe('pi_gift_1')
-    expect(gift.message).toBe('Enjoy')
-    expect(typeof gift.purchasedAt).toBe('string')
+    // No provisioning at purchase time — not SC, and crucially not Auth0 (an
+    // Auth0 account created here is what triggered the extra "verify email").
+    expect(fetchCalls.some((c) => c.url.includes('/users'))).toBe(false)
+    expect(fetchCalls.some((c) => c.url.endsWith('/subscriptions'))).toBe(false)
+    expect(fetchCalls.some((c) => c.url.includes('/api/v2/'))).toBe(false)
 
-    // Verify POST /subscriptions with GIFT_1YR price + ends_at ~365 days out
-    const subCall = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/subscriptions'),
-    )
-    expect(subCall).toBeDefined()
-    const subBody = subCall!.body as {
-      user_id: number
-      subscription_price_id: number
-      ends_at: string
-    }
-    expect(subBody.user_id).toBe(555)
-    expect(subBody.subscription_price_id).toBe(222) // GIFT_1YR
-    const endsAt = new Date(subBody.ends_at).getTime()
-    const expected = Date.now() + 365 * 24 * 60 * 60 * 1000
-    expect(Math.abs(endsAt - expected)).toBeLessThan(60_000) // within 1 minute
-
-    // Verify welcome email fired
-    expect(
-      fetchCalls.some(
-        (c) => c.method === 'POST' && c.url.endsWith('/users/555/send_welcome_email'),
-      ),
-    ).toBe(true)
-
-    // Verify Stripe PI metadata stamped with sc_user_id + sc_subscription_id
+    // gift_token stamped on the PI (idempotency + link source), kind preserved.
+    const token = giftTokenForPaymentIntent('pi_gift_1', {
+      SESSION_SECRET: BASE_ENV.SESSION_SECRET,
+    })
     const update = stripeCalls.find((c) => c.method === 'paymentIntents.update')
     expect(update).toBeDefined()
     const md = (update!.args[1] as { metadata: Record<string, string> }).metadata
-    expect(md.sc_user_id).toBe('555')
-    expect(md.sc_subscription_id).toBe('777')
-    expect(md.kind).toBe('gift') // existing metadata preserved
-  })
+    expect(md.gift_token).toBe(token)
+    expect(md.kind).toBe('gift')
 
-  test('6mo: uses GIFT_6MO price id and ~182-day ends_at', async () => {
-    const pi = buildGiftPI({ term: '6mo' })
-    webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
-
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search'))
-        return new Response(JSON.stringify({ users: [] }), { status: 200 })
-      if (url.endsWith('/users') && init?.method === 'POST')
-        return new Response(JSON.stringify({ user: { id: 1 } }), { status: 200 })
-      if (url.endsWith('/subscriptions') && init?.method === 'POST')
-        return new Response(JSON.stringify({ subscription: { id: 2 } }), {
-          status: 200,
-        })
-      return new Response('{}', { status: 200 })
-    }
-
-    const res = await runWebhook()
-    expect(res.statusCode).toBe(200)
-
-    const subBody = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/subscriptions'),
-    )!.body as { subscription_price_id: number; ends_at: string }
-    expect(subBody.subscription_price_id).toBe(111) // GIFT_6MO
-    const endsAt = new Date(subBody.ends_at).getTime()
-    const expected = Date.now() + 182 * 24 * 60 * 60 * 1000
-    expect(Math.abs(endsAt - expected)).toBeLessThan(60_000)
-  })
-
-  test('existing recipient: PATCHes custom_1/custom_2 (does not POST /users)', async () => {
-    const pi = buildGiftPI()
-    webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
-
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search')) {
-        return new Response(
-          JSON.stringify({ users: [{ id: 999, email: 'recip@x.com' }] }),
-          { status: 200 },
-        )
-      }
-      if (url.match(/\/users\/999$/) && init?.method === 'PATCH') {
-        return new Response(JSON.stringify({ user: { id: 999 } }), { status: 200 })
-      }
-      if (url.endsWith('/subscriptions') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ subscription: { id: 2 } }), {
-          status: 200,
-        })
-      }
-      return new Response('{}', { status: 200 })
-    }
-
-    const res = await runWebhook()
-    expect(res.statusCode).toBe(200)
-
-    // No POST /users
-    expect(
-      fetchCalls.some((c) => c.method === 'POST' && c.url.endsWith('/users')),
-    ).toBe(false)
-    // PATCH /users/999 with gift metadata
-    const patchCall = fetchCalls.find(
-      (c) => c.method === 'PATCH' && c.url.endsWith('/users/999'),
+    // Exactly one email, carrying the single /redeem?mt=… magic link.
+    const emailCalls = fetchCalls.filter(
+      (c) => c.method === 'POST' && c.url.startsWith('https://api.resend.com'),
     )
-    expect(patchCall).toBeDefined()
-    const patchBody = patchCall!.body as { custom_1: string; custom_2: string }
-    expect(patchBody.custom_1).toBe('gift')
-    expect(JSON.parse(patchBody.custom_2).term).toBe('1yr')
+    expect(emailCalls.length).toBe(1)
+    const body = emailCalls[0]!.body as { to: string; subject: string; html: string }
+    expect(body.to).toBe('recip@x.com')
+    expect(body.subject).toContain('Bob')
+    expect(body.html).toContain('1 year')
+    expect(body.html).toContain('Start your membership')
+
+    // The link's mt token round-trips to this gift + recipient.
+    const m = body.html.match(/\/redeem\?mt=([^"&\s]+)/)
+    expect(m).not.toBeNull()
+    const claim = await verifyGiftClaimToken(decodeURIComponent(m![1]!), {
+      SESSION_SECRET: BASE_ENV.SESSION_SECRET,
+    })
+    expect(claim?.giftToken).toBe(token)
+    expect(claim?.email).toBe('recip@x.com')
   })
 
-  test('idempotent: PI already has sc_subscription_id — no SC calls', async () => {
-    const pi = buildGiftPI()
-    pi.metadata.sc_subscription_id = '777'
+  test('idempotent: a PI already carrying the derived gift_token does not resend', async () => {
+    const token = giftTokenForPaymentIntent('pi_gift_1', {
+      SESSION_SECRET: BASE_ENV.SESSION_SECRET,
+    })
+    const pi = buildGiftPI({ term: '1yr', gift_token: token })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+    retrievedPI = pi
 
-    const res = await runWebhook()
+    const res = await runWebhook({ RESEND_API_KEY: 'rk_test' })
     expect(res.statusCode).toBe(200)
-    // No SC fetch calls at all
-    expect(fetchCalls.length).toBe(0)
-    // No Stripe update either
     expect(stripeCalls.some((c) => c.method === 'paymentIntents.update')).toBe(false)
+    expect(fetchCalls.some((c) => c.url.startsWith('https://api.resend.com'))).toBe(false)
   })
 
-  test('non-gift PI (no kind=gift metadata) — no SC calls', async () => {
+  test('non-gift PI (no kind=gift metadata) — no work', async () => {
     const pi: FakePI = {
       id: 'pi_other',
       client_secret: 's',
@@ -753,27 +820,76 @@ describe('Webhook — gift activation', () => {
     expect(stripeCalls.some((c) => c.method === 'paymentIntents.update')).toBe(false)
   })
 
-  test('falls back to email prefix when recipient_name is missing', async () => {
-    const pi = buildGiftPI()
-    pi.metadata.recipient_name = ''
+  test('malformed gift PI (bad term) → 500 so Stripe retries', async () => {
+    const pi = buildGiftPI({ term: 'lifetime' })
     webhookEvent = { type: 'payment_intent.succeeded', data: { object: pi } }
+    retrievedPI = pi
 
-    fetchImpl = async (url, init) => {
-      if (url.endsWith('/users/search'))
-        return new Response(JSON.stringify({ users: [] }), { status: 200 })
-      if (url.endsWith('/users') && init?.method === 'POST')
-        return new Response(JSON.stringify({ user: { id: 1 } }), { status: 200 })
-      if (url.endsWith('/subscriptions') && init?.method === 'POST')
-        return new Response(JSON.stringify({ subscription: { id: 2 } }), {
-          status: 200,
-        })
-      return new Response('{}', { status: 200 })
-    }
+    const res = await runWebhook()
+    expect(res.statusCode).toBe(500)
+  })
+})
 
-    await runWebhook()
-    const createUser = fetchCalls.find(
-      (c) => c.method === 'POST' && c.url.endsWith('/users'),
-    )!
-    expect((createUser.body as { first_name: string }).first_name).toBe('recip')
+describe('giftTokenForPaymentIntent', () => {
+  test('is deterministic and high-entropy for a given PI + secret', () => {
+    const env = { SESSION_SECRET: BASE_ENV.SESSION_SECRET }
+    const a = giftTokenForPaymentIntent('pi_abc', env)
+    const b = giftTokenForPaymentIntent('pi_abc', env)
+    expect(a).toBe(b) // deterministic → idempotent retries
+    expect(a).not.toBe(giftTokenForPaymentIntent('pi_xyz', env)) // per-PI
+    expect(a.length).toBeGreaterThan(20) // not guessable from the PI id
+  })
+})
+
+describe('gift claim (magic-link) token', () => {
+  const env = { SESSION_SECRET: BASE_ENV.SESSION_SECRET }
+
+  test('round-trips giftToken + email + name', async () => {
+    const mt = await signGiftClaimToken(
+      { giftToken: 'gt_1', email: 'r@x.com', name: 'Rae' },
+      env,
+    )
+    expect(await verifyGiftClaimToken(mt, env)).toEqual({
+      giftToken: 'gt_1',
+      email: 'r@x.com',
+      name: 'Rae',
+    })
+  })
+
+  test('rejects a token signed with a different secret', async () => {
+    const mt = await signGiftClaimToken({ giftToken: 'gt_1', email: 'r@x.com' }, env)
+    expect(
+      await verifyGiftClaimToken(mt, {
+        SESSION_SECRET: 'another-secret-0123456789abcdef0123456789',
+      }),
+    ).toBeNull()
+  })
+})
+
+describe('POST /api/gift/claim — guards', () => {
+  test('500 when the database is not configured', async () => {
+    const h = getHandler(CLAIM_PATH)
+    const res = makeRes()
+    await runHandler(h, makeReq({ method: 'POST', body: { mt: 'x' } }), res)
+    expect(res.statusCode).toBe(500)
+    expect((res.__json() as { error: string }).error).toBe('database_not_configured')
+  })
+
+  test('400 when mt is missing', async () => {
+    const h = getHandler(CLAIM_PATH, { DATABASE_URL: 'postgres://x' })
+    const res = makeRes()
+    await runHandler(h, makeReq({ method: 'POST', body: {} }), res)
+    expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toBe('token required')
+  })
+
+  test('400 expired_link on an unverifiable mt (before any DB call)', async () => {
+    const h = getHandler(CLAIM_PATH, { DATABASE_URL: 'postgres://x' })
+    const res = makeRes()
+    await runHandler(h, makeReq({ method: 'POST', body: { mt: 'not-a-token' } }), res)
+    expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toBe('expired_link')
+    // Never reached Stripe or the DB — verification fails first.
+    expect(stripeCalls.length).toBe(0)
   })
 })

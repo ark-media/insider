@@ -1,0 +1,811 @@
+import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  getShow,
+  showAtmosphere,
+  type Show,
+  type ShowSlug,
+} from "../data/shows";
+import { episodeImage, type Episode } from "../data/episodes";
+import { contributorsForShow, hostsForShow } from "../data/hosts";
+import type { Host } from "../data/hosts";
+import { listEpisodes } from "../lib/podcasts";
+import { useAsyncResource } from "../lib/useAsyncResource";
+import { ContentError } from "./ContentError";
+import { useShowDescription } from "../lib/useShowDescription";
+import { EpisodeMeta } from "./EpisodeMeta";
+import { PlayGlyph } from "./PlayGlyph";
+import { AudioPlayer } from "./AudioPlayer";
+import { PageShell, PlaceholderSection } from "./PageShell";
+import { Breadcrumbs } from "./Breadcrumbs";
+import { HostArtwork } from "./HostArtwork";
+import { ShowCover } from "./ShowCover";
+import { PORTRAIT_SIZES } from "../lib/images";
+import { ListenLinks } from "./ListenLinks";
+import { ArkPlusMark } from "./ArkPlusMark";
+import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
+import { trackEvent } from "../lib/analytics";
+
+export function ShowPage({ slug }: { slug: ShowSlug }) {
+  const show = getShow(slug);
+  if (!show) {
+    return (
+      <PageShell
+        breadcrumbs={
+          <Breadcrumbs
+            items={[
+              { label: "Home", to: "/" },
+              { label: "Podcasts", to: "/podcasts" },
+              { label: "Not found" },
+            ]}
+          />
+        }
+        title="Show not found"
+        lede="We couldn't find that show."
+      >
+        <PlaceholderSection
+          title="Looking for a show?"
+          body="Browse all of our podcasts from the hub."
+        />
+      </PageShell>
+    );
+  }
+
+  return show.paid ? <PaidShowPage show={show} /> : <PublicShowPage show={show} />;
+}
+
+function PublicShowPage({ show }: { show: Show }) {
+  const { status, data: episodes, retry } = useAsyncResource(
+    () => listEpisodes(show.slug),
+    [show.slug],
+  );
+
+  return (
+    <main className="relative">
+      <ShowHero show={show} />
+
+      <EpisodeBrowser
+        show={show}
+        episodes={episodes}
+        error={status === "error"}
+        onRetry={retry}
+      />
+
+      <ShowPeopleSections show={show} />
+    </main>
+  );
+}
+
+function PaidShowPage({ show }: { show: Show }) {
+  const { state } = useSubscriberAuth();
+  const isMember = state.kind === "member";
+
+  // Only fetch for members; non-members see the join CTA, not the browser. The
+  // hook re-runs (and resets to loading) when membership flips, so a stale list
+  // from a prior session can't flash.
+  const { status, data: episodes, retry } = useAsyncResource(
+    () => (isMember ? listEpisodes(show.slug) : Promise.resolve<Episode[]>([])),
+    [show.slug, isMember],
+  );
+
+  return (
+    <main className="relative">
+      <ShowHero show={show} />
+
+      {isMember ? (
+        <EpisodeBrowser
+          show={show}
+          episodes={episodes}
+          error={status === "error"}
+          onRetry={retry}
+          headerLink={
+            <Link
+              to="/account/podcast-feed"
+              className="whitespace-nowrap label text-fg-muted transition hover:text-cyan"
+            >
+              Set up private feed →
+            </Link>
+          }
+        />
+      ) : (
+        <PaidShowJoinCta show={show} />
+      )}
+      <ShowPeopleSections show={show} />
+    </main>
+  );
+}
+
+function PaidShowJoinCta({ show }: { show: Show }) {
+  return (
+    <section>
+      <div className="page-section">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+          <div className="lg:col-span-7">
+            <div className="flex items-center gap-4">
+              <ArkPlusMark className="h-14 w-14" />
+              <div className="label text-cyan">
+                This episode is exclusively available to Ark+ members
+              </div>
+            </div>
+            <h2 className="mt-6 max-w-2xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
+              Join Ark+ to listen to {show.title}.
+            </h2>
+            <p className="mt-4 max-w-2xl text-body-lg">
+            Subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
+            </p>
+          </div>
+          <div className="lg:col-span-5">
+            <div className="border border-rule bg-navy-800/40 p-8">
+              <div className="label text-cyan">
+                Get Ark+
+              </div>
+              <p className="mt-4 text-body-sm text-fg">
+                Full access to {show.title} plus everything else in Ark+.
+              </p>
+              <Link
+                to="/plus"
+                className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
+              >
+                See Ark+ membership
+                <span aria-hidden="true">→</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ShowHero({ show }: { show: Show }) {
+  // Prefer the live Beehiiv show description; fall back to the hand-written
+  // tagline while loading, when the show has no Beehiiv podcast, or on
+  // failure.
+  const description = useShowDescription(show.slug) || show.tagline;
+
+  return (
+    <section className={`section-hero relative ${showAtmosphere(show.slug)}`}>
+      <div className="page-gutter pt-8 pb-8 sm:pt-12">
+        <Breadcrumbs
+          className="rise rise-1 mb-6"
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Podcasts", to: "/podcasts" },
+            { label: show.shortTitle },
+          ]}
+        />
+        {/* The album-header pattern: cover and copy are one unit, not two
+            columns of a page grid. The cover is `shrink-0` at a fixed size and
+            the copy takes what's left, so the two stay a fixed gap apart at any
+            width instead of the cover drifting in an empty column. Art first in
+            the DOM, so the phone stack needs no order overrides. */}
+        <div className="mt-10 flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
+          <div className="shrink-0">
+            <ShowArtwork show={show} />
+          </div>
+          {/* `min-w-0` so a long unbroken word in the description can't widen
+              this flex item and squeeze the cover. */}
+          <div className="min-w-0 flex-1">
+            <h1 className="rise rise-2 max-w-3xl text-fg-strong">
+              <span className="display-upright block text-[clamp(2.4rem,5vw,3.8rem)] leading-[1.02]">
+                {show.title}
+              </span>
+            </h1>
+            {show.hosts.length > 0 ? (
+              <p className="rise rise-3 mt-5 meta text-fg-muted">
+                with {show.hosts.join(" · ")}
+              </p>
+            ) : null}
+            <p className="rise rise-4 mt-6 max-w-2xl text-body-lg">
+              {description}
+            </p>
+            <ListenLinks listen={show.listen} className="mt-8" />
+            {/* Paid shows already give non-members a dedicated join CTA in place
+                of the episode list — don't stack a second one here. */}
+            {show.paid ? null : <ShowUpsell />}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Ark+ pitch shown on every free show's hero. The benefits named here are the
+// membership-wide ones — not per-show extras, since only Call Me Back has a
+// paid feed. Members already have all of it, so they never see this; the root
+// blocks rendering while /api/me is in flight, so the tier is settled by the
+// time this runs and no upsell flashes at a member.
+function ShowUpsell() {
+  const { state } = useSubscriberAuth();
+  if (isArkPlusMember(state)) return null;
+
+  return (
+    <div className="rise rise-4 mt-10 border-t border-fg-strong/10 pt-8">
+      <div className="flex items-center gap-4">
+        <ArkPlusMark className="h-12 w-12" alt="Ark+" />
+        <div className="label text-cyan">
+          Want more?
+        </div>
+      </div>
+      <p className="mt-3 max-w-xl text-body-lg">
+        <span className="font-display text-[18px]">Ark+</span> subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
+      </p>
+      <Link
+        to="/plus"
+        className="mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-4 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+      >
+        Join Ark+ →
+      </Link>
+    </div>
+  );
+}
+
+function ShowArtwork({ show }: { show: Show }) {
+  return (
+    <ShowCover
+      show={show}
+      priority
+      // A fixed square beside the title, not a fluid column — the cover is an
+      // identifier here, not the hero image. `w-[240px]` rather than a max-width
+      // at lg because the flex parent is `shrink-0`: the size is the size.
+      sizes="(min-width: 1024px) 240px, (min-width: 640px) 260px, 220px"
+      className="w-full max-w-[220px] border border-rule shadow-cover sm:max-w-[260px] lg:w-[240px] lg:max-w-none"
+    />
+  );
+}
+
+// How many rows to reveal per "Show more" press (search results).
+const ARCHIVE_PAGE_SIZE = 8;
+
+// Owns the show's episode-listening experience: an in-place player plus the
+// grid and archive that feed it. Any episode is playable without leaving the
+// page — clicking Play swaps the player's source to that episode and scrolls
+// it into view (the Crooked-style "listen here, browse here" model). The
+// player defaults to the latest episode; the grid and archive skip whatever
+// the player is showing only by skipping the latest, so the layout stays
+// stable as the selection changes.
+function EpisodeBrowser({
+  show,
+  episodes,
+  error,
+  onRetry,
+  headerLink,
+}: {
+  show: Show;
+  episodes: Episode[] | null;
+  error?: boolean;
+  onRetry?: () => void;
+  headerLink?: ReactNode;
+}) {
+  // Reset the player selection when navigating between shows so an episode
+  // chosen on one show can't linger in the player on the next.
+  const [selected, setSelected] = useState<{ slug: ShowSlug; id: string | null }>(
+    { slug: show.slug, id: null },
+  );
+  if (selected.slug !== show.slug) {
+    setSelected({ slug: show.slug, id: null });
+  }
+  const [query, setQuery] = useState("");
+  const playerRef = useRef<HTMLDivElement>(null);
+
+  // The newest episode and the one the player opens on are not always the same
+  // episode: the player needs audio, and the newest drop can be sitting there
+  // without an `audioUrl` for a while after it's announced. Keep them apart —
+  // `newest` is what "Latest episode / New" is allowed to describe.
+  const newest = episodes?.[0] ?? null;
+  const featuredEpisode = episodes?.find((ep) => Boolean(ep.audioUrl)) ?? null;
+  const remaining = (episodes ?? []).filter(
+    (ep) => ep.slug !== featuredEpisode?.slug,
+  );
+  const latest = remaining.slice(0, 3);
+  const archive = remaining.slice(3);
+
+  const selectedEpisode =
+    (selected.id ? episodes?.find((ep) => ep.id === selected.id) : null) ??
+    featuredEpisode;
+  const activeId = selectedEpisode?.id ?? null;
+  // Against `newest`, not `featuredEpisode`: when the newest episode has no
+  // audio yet, the player opens on the one below it, and calling that "Latest
+  // episode" with a "New" badge puts the label on the wrong episode while the
+  // real newest sits in the grid underneath.
+  const isLatest = Boolean(newest) && selectedEpisode?.slug === newest?.slug;
+
+  function play(ep: Episode) {
+    // Needs audio to play at all, and an id to be the selected episode.
+    if (!ep.audioUrl || !ep.id) return;
+    // Single chokepoint for every Play button (grid, archive, upsell row).
+    trackEvent("episode_play_clicked", { show: show.slug, episode: ep.slug });
+    setSelected({ slug: show.slug, id: ep.id });
+    playerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const matches = searching
+    ? remaining.filter(
+        (ep) =>
+          ep.title.toLowerCase().includes(q) ||
+          (ep.guests?.some((g) => g.toLowerCase().includes(q)) ?? false),
+      )
+    : [];
+
+  return (
+    <>
+      <div ref={playerRef}>
+        {selectedEpisode ? (
+          <ShowPlayer
+            episode={selectedEpisode}
+            show={show}
+            isLatest={isLatest}
+          />
+        ) : null}
+      </div>
+
+      <section>
+        <div className="page-section">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="episode-label">
+              {featuredEpisode ? "More episodes" : "Latest episodes"}
+            </div>
+            <div className="flex items-center gap-5">
+              {episodes && episodes.length > 4 ? (
+                <EpisodeSearch value={query} onChange={setQuery} />
+              ) : null}
+              {headerLink}
+            </div>
+          </div>
+
+          {error ? (
+            <div className="mt-8">
+              <ContentError
+                message="We couldn't load episodes. Refresh to try again."
+                onRetry={onRetry ?? (() => {})}
+              />
+            </div>
+          ) : episodes === null ? (
+            <p className="mt-8 text-body-sm">Loading episodes…</p>
+          ) : remaining.length === 0 ? (
+            <p className="mt-8 text-body-sm">
+              {featuredEpisode
+                ? "That's the only episode so far — more coming soon."
+                : "No episodes yet — check back soon."}
+            </p>
+          ) : searching ? (
+            <EpisodeList
+              show={show}
+              episodes={matches}
+              onPlay={play}
+              activeId={activeId}
+              label={`${matches.length} ${
+                matches.length === 1 ? "result" : "results"
+              } for “${query.trim()}”`}
+              emptyLabel={`No episodes match “${query.trim()}”.`}
+            />
+          ) : (
+            <>
+              <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+                {latest.map((ep) => (
+                  <EpisodeCard
+                    key={ep.slug}
+                    show={show}
+                    episode={ep}
+                    onPlay={() => play(ep)}
+                    isActive={Boolean(ep.id) && ep.id === activeId}
+                  />
+                ))}
+              </div>
+              {archive.length > 0 ? (
+                <EpisodeList
+                  show={show}
+                  episodes={archive}
+                  onPlay={play}
+                  activeId={activeId}
+                  label="All episodes"
+                  maxVisibleRows={4}
+                />
+              ) : null}
+            </>
+          )}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function EpisodeSearch({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex items-center">
+      <span className="sr-only">Search episodes</span>
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search episodes"
+        className="w-full min-w-[12rem] border border-rule bg-navy-800/40 px-3 py-1.5 text-body-sm text-fg placeholder:text-fg-muted transition focus:border-cyan focus-visible:outline-none sm:w-56"
+      />
+    </label>
+  );
+}
+
+// A flat episode list used for both the back catalog and search results.
+// Search results paginate via "Show more". The back catalog passes
+// maxVisibleRows to become a fixed-height scroll box sized to exactly that
+// many rows instead.
+function EpisodeList({
+  show,
+  episodes,
+  onPlay,
+  activeId,
+  label,
+  emptyLabel,
+  maxVisibleRows,
+}: {
+  show: Show;
+  episodes: Episode[];
+  onPlay: (ep: Episode) => void;
+  activeId: string | null;
+  label: string;
+  emptyLabel?: string;
+  maxVisibleRows?: number;
+}) {
+  const [visible, setVisible] = useState(ARCHIVE_PAGE_SIZE);
+
+  // When capped, the list scrolls inside a box sized to maxVisibleRows. The
+  // height is measured from the rendered rows so it tracks whatever the real
+  // row height is rather than assuming a fixed pixel value. We track the raw
+  // measurement and derive the applied height — when the list shrinks below
+  // the cap, `scrollable` flips false and we render with no maxHeight without
+  // needing a state reset in the effect.
+  const scrollable =
+    maxVisibleRows != null && episodes.length > maxVisibleRows;
+  const listRef = useRef<HTMLUListElement>(null);
+  const [measuredHeight, setMeasuredHeight] = useState<number>();
+  useEffect(() => {
+    if (!scrollable) return;
+    const ul = listRef.current;
+    if (!ul) return;
+    const rows = Array.from(ul.children).slice(
+      0,
+      maxVisibleRows,
+    ) as HTMLElement[];
+    // Add the ul's own top/bottom border so the scroll box doesn't clip its
+    // bottom rule. Derived from computed style rather than hardcoded so a
+    // theme change to border thickness doesn't silently break the math.
+    const cs = window.getComputedStyle(ul);
+    const borderY =
+      (parseFloat(cs.borderTopWidth) || 0) +
+      (parseFloat(cs.borderBottomWidth) || 0);
+    setMeasuredHeight(
+      rows.reduce((h, row) => h + row.offsetHeight, 0) + borderY,
+    );
+  }, [scrollable, maxVisibleRows, episodes]);
+  const maxHeight = scrollable ? measuredHeight : undefined;
+
+  const shown =
+    maxVisibleRows != null ? episodes : episodes.slice(0, visible);
+
+  return (
+    <div id="all-episodes" className="mt-16">
+      <div className="label text-fg-muted">
+        {label}
+      </div>
+      {episodes.length === 0 ? (
+        <p className="mt-6 text-body-sm">
+          {emptyLabel ?? "No episodes."}
+        </p>
+      ) : (
+        <>
+          <ul
+            ref={listRef}
+            style={maxHeight != null ? { maxHeight } : undefined}
+            className={`mt-6 divide-y divide-rule border-y border-rule${
+              scrollable ? " overflow-y-auto" : ""
+            }`}
+          >
+            {shown.map((ep) => (
+              <EpisodeRow
+                key={ep.slug}
+                show={show}
+                episode={ep}
+                onPlay={onPlay}
+                isActive={Boolean(ep.id) && ep.id === activeId}
+              />
+            ))}
+          </ul>
+          {maxVisibleRows == null && episodes.length > visible ? (
+            <button
+              type="button"
+              onClick={() => setVisible((v) => v + ARCHIVE_PAGE_SIZE)}
+              className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-4 py-2 label text-fg transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              Show more episodes
+              <span aria-hidden="true">↓</span>
+            </button>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+function EpisodeRow({
+  show,
+  episode,
+  onPlay,
+  isActive,
+}: {
+  show: Show;
+  episode: Episode;
+  onPlay: (ep: Episode) => void;
+  isActive: boolean;
+}) {
+  const image = episodeImage(episode, show);
+  return (
+    <li
+      className={`group flex items-center gap-4 py-4 transition ${
+        isActive ? "text-cyan" : "text-fg"
+      }`}
+    >
+      {episode.audioUrl ? (
+        <button
+          type="button"
+          onClick={() => onPlay(episode)}
+          aria-label={`Play ${episode.title}`}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-rule-strong text-fg-muted transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          {isActive ? <EqualizerGlyph /> : <PlayGlyph />}
+        </button>
+      ) : (
+        <span className="h-8 w-8 shrink-0" aria-hidden="true" />
+      )}
+      {image ? (
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: show.slug, episode: episode.slug } as never}
+          className="hidden aspect-video w-20 shrink-0 overflow-hidden border border-rule bg-navy-900 p-1 sm:block"
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-contain"
+          />
+        </Link>
+      ) : null}
+      <Link
+        to="/podcasts/$show/$episode"
+        params={{ show: show.slug, episode: episode.slug } as never}
+        className="min-w-0 flex-1 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+      >
+        <span
+          className="line-clamp-1 text-body-sm font-display tracking-[-0.005em]"
+          title={episode.title}
+        >
+          {episode.title}
+        </span>
+        {episode.guests && episode.guests.length > 0 ? (
+          <span className="mt-0.5 block truncate text-body-sm">
+            With {episode.guests.join(", ")}
+          </span>
+        ) : null}
+      </Link>
+      <span className="meta shrink-0">
+        <EpisodeMeta episode={episode} />
+      </span>
+    </li>
+  );
+}
+
+function EpisodeCard({
+  show,
+  episode,
+  onPlay,
+  isActive,
+}: {
+  show: Show;
+  episode: Episode;
+  onPlay: () => void;
+  isActive: boolean;
+}) {
+  const image = episodeImage(episode, show);
+  return (
+    <div
+      className={`group flex h-full flex-col border bg-navy-800/40 p-6 transition ${
+        isActive ? "border-cyan" : "border-rule"
+      }`}
+    >
+      {image ? (
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: show.slug, episode: episode.slug } as never}
+          className="-mx-6 -mt-6 mb-6 block aspect-video overflow-hidden border-b border-rule bg-navy-900 p-2"
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-contain transition group-hover:opacity-95"
+          />
+        </Link>
+      ) : null}
+      <div className="flex items-center justify-between gap-3">
+        <div className="episode-meta text-cyan">
+          <EpisodeMeta episode={episode} />
+        </div>
+        {isActive ? (
+          <span className="inline-flex shrink-0 items-center gap-1.5 label tracking-[0.14em] text-cyan">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan" aria-hidden="true" />
+            Now playing
+          </span>
+        ) : null}
+      </div>
+      <Link
+        to="/podcasts/$show/$episode"
+        params={{ show: show.slug, episode: episode.slug } as never}
+        className="mt-4 line-clamp-2 text-h4 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        title={episode.title}
+      >
+        {episode.title}
+      </Link>
+      {episode.guests && episode.guests.length > 0 ? (
+        <p className="mt-2 meta tracking-[0.14em]">
+          With {episode.guests.join(", ")}
+        </p>
+      ) : null}
+      <p className="mt-3 line-clamp-3 text-body-sm">
+        {episode.description}
+      </p>
+      <div className="mt-auto flex items-center gap-4 pt-6">
+        {episode.audioUrl ? (
+          <button
+            type="button"
+            onClick={onPlay}
+            className="button-text inline-flex items-center gap-2 border border-cyan px-3 py-2 text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            <PlayGlyph />
+            Play
+          </button>
+        ) : null}
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: show.slug, episode: episode.slug } as never}
+          className="episode-action transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          View episode →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function ShowPlayer({
+  episode,
+  show,
+  isLatest,
+}: {
+  episode: Episode;
+  show: Show;
+  isLatest: boolean;
+}) {
+  return (
+    <section>
+      <div className="page-section">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="episode-label">
+            {isLatest ? "Latest episode" : "Now playing"}
+          </div>
+          {isLatest ? (
+            <span className="border border-cyan px-2.5 py-1 label font-bold tracking-[0.14em] text-cyan">
+              New
+            </span>
+          ) : null}
+        </div>
+        <h2
+          className="mt-5 max-w-3xl font-display text-[clamp(1.35rem,2.4vw,1.875rem)] leading-[1.2] text-fg-strong"
+          title={episode.title}
+        >
+          {episode.title}
+        </h2>
+        <div className="episode-meta mt-3">
+          <EpisodeMeta episode={episode} />
+        </div>
+        <Link
+          to="/podcasts/$show/$episode"
+          params={{ show: episode.showSlug, episode: episode.slug } as never}
+          className="episode-action mt-3 inline-block transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+        >
+          View episode →
+        </Link>
+        <AudioPlayer
+          key={episode.id}
+          className="mt-8"
+          src={episode.audioUrl!}
+          title={episode.title}
+          artworkUrl={episodeImage(episode, show)}
+          fallbackDurationMinutes={episode.durationMinutes}
+        />
+      </div>
+    </section>
+  );
+}
+
+function EqualizerGlyph() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="1" y="4" width="1.6" height="5" rx="0.5" />
+      <rect x="4.2" y="1.5" width="1.6" height="7.5" rx="0.5" />
+      <rect x="7.4" y="3" width="1.6" height="6" rx="0.5" />
+    </svg>
+  );
+}
+
+function ShowPeopleSections({ show }: { show: Show }) {
+  const showHosts = hostsForShow(show.slug);
+  const showContributors = contributorsForShow(show.slug);
+  if (showHosts.length === 0 && showContributors.length === 0) return null;
+
+  return (
+    <>
+      {showHosts.length > 0 ? (
+        <PeopleSection title="Hosts" people={showHosts} />
+      ) : null}
+      {showContributors.length > 0 ? (
+        <PeopleSection title="Contributors" people={showContributors} />
+      ) : null}
+    </>
+  );
+}
+
+function PeopleSection({ title, people }: { title: string; people: Host[] }) {
+  return (
+    <section>
+      <div className="page-section">
+        <div className="label text-cyan">
+          {title}
+        </div>
+        <div className="mt-10 grid grid-cols-2 gap-x-8 gap-y-12 sm:grid-cols-3 lg:grid-cols-4">
+          {people.map((h, i) => (
+            <Link
+              key={h.slug}
+              to="/hosts/$slug"
+              params={{ slug: h.slug } as never}
+              className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
+            >
+              <HostArtwork
+                initials={h.initials}
+                role={h.role}
+                photo={h.headshot}
+                name={h.name}
+                sizes={PORTRAIT_SIZES}
+                className="max-w-[200px]"
+                variant={i % 2 === 0 ? "primary" : "secondary"}
+              />
+              <h3 className="mt-5 text-h3 leading-tight transition group-hover:text-cyan">
+                {h.name}
+              </h3>
+              <p className="mt-2 max-w-sm text-body-sm">
+                {h.shortBio}
+              </p>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}

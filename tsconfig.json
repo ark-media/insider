@@ -1,4 +1,17 @@
 {
+  /* No sources of its own — `tsc -b` only builds the referenced projects. But
+     @vercel/node type-checks `api/handler.ts` and everything it pulls in
+     against the nearest tsconfig, which is this one, and it forces
+     `strict: false` whenever `module` is left unset. Under TypeScript 6
+     (strict on by default) that quietly downgrades the whole server graph and
+     fills the build log with narrowing errors the real build never sees, so
+     spell the server's module + strictness out here. */
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "skipLibCheck": true
+  },
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },

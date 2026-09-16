@@ -1,0 +1,375 @@
+// Tier-aware activation (task 4). Exercises createActivator's
+// activateMembershipForStripeSub directly with a hand-rolled fake Stripe and a
+// global fetch mock for the Beehiiv + Circle HTTP calls. Auth0 is left
+// unconfigured (no AUTH0_MANAGEMENT_* env) so the management client is
+// unavailable and the login soft-fails to a null sub — orthogonal to what these
+// assert. No DATABASE_URL either, so the Beehiiv grant runs without a Neon
+// mirror to write, which is exactly the shape the no-DB webhook branch uses.
+
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import type Stripe from 'stripe'
+import { createActivator } from './lib/activation'
+import { silenceExpectedConsole } from './test-utils'
+
+const PUB_ID = 'pub_test'
+const PREMIUM_TIER_ID = 'tier_plus'
+
+const ENV = {
+  BEEHIIV_API_KEY: 'bh_key',
+  BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,
+  BEEHIIV_PREMIUM_TIER_ID: PREMIUM_TIER_ID,
+  CIRCLE_ADMIN_API_TOKEN: 'circle_tok',
+  CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: '122218',
+  APP_BASE_URL: 'https://app.test',
+}
+
+// The same env with Resend configured, for the cases that assert on the email
+// that goes out. ENV deliberately leaves it unset so every other case stays
+// send-free.
+const EMAIL_ENV = { ...ENV, RESEND_API_KEY: 'resend_key' }
+
+// --- Fake Stripe ------------------------------------------------------------
+// A single mutable metadata bag; subscriptions.update merges into it so the
+// activator's re-reads see the just-stamped markers.
+function makeFakeStripe(
+  initialMeta: Record<string, string> = {},
+  subOverrides: Record<string, unknown> = {},
+) {
+  const meta: Record<string, string> = { plan: 'yearly', ...initialMeta }
+  const sub = {
+    id: 'sub_1',
+    customer: 'cus_1',
+    // A realistic money shape: the axis-added email reads the item price and
+    // the sub's currency to state what the member now pays.
+    currency: 'usd',
+    items: {
+      data: [
+        {
+          id: 'si_1',
+          price: {
+            id: 'price_bundle_monthly',
+            currency: 'usd',
+            unit_amount: 2500,
+            recurring: { interval: 'month' },
+          },
+          current_period_end: 1_789_000_000,
+        },
+      ],
+    },
+    ...subOverrides,
+    get metadata() {
+      return { ...meta }
+    },
+  }
+  const stripe = {
+    subscriptions: {
+      retrieve: async (_id: string) => ({ ...sub, metadata: { ...meta } }),
+      update: async (_id: string, args: { metadata: Record<string, string> }) => {
+        Object.assign(meta, args.metadata)
+        return { ...sub, metadata: { ...meta } }
+      },
+    },
+    customers: {
+      retrieve: async (id: string) => ({ id, email: 'buyer@example.com', name: 'Buyer One' }),
+    },
+  }
+  return { stripe: stripe as unknown as Stripe, sub: sub as unknown as Stripe.Subscription, meta }
+}
+
+// --- fetch mock -------------------------------------------------------------
+let fetchUrls: Array<{ method: string; url: string; body?: string }> = []
+// Resend sends, captured by body so a test can assert WHICH email went out.
+let sentEmails: Array<{ subject: string; html: string }> = []
+const realFetch = globalThis.fetch
+
+function installFetch() {
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = String(input)
+    const method = (init?.method ?? 'GET').toUpperCase()
+    fetchUrls.push({ method, url, body: init?.body ? String(init.body) : undefined })
+    if (url.includes('api.resend.com')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { subject: string; html: string }
+      sentEmails.push({ subject: body.subject, html: body.html })
+      return new Response(JSON.stringify({ id: 'email_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })
+
+    // Beehiiv: no subscriber yet, so the grant creates one on the Plus tier.
+    if (url.includes('/subscriptions/by_email/')) return json({ error: 'not found' }, 404)
+    if (url.includes('api.beehiiv.com') && url.endsWith('/subscriptions')) {
+      return json({
+        data: {
+          id: 'sub_bh_1',
+          email: 'buyer@example.com',
+          status: 'active',
+          subscription_tier: 'premium',
+          subscription_premium_tier_names: ['Plus'],
+        },
+      })
+    }
+    // Circle: member create, profile-field stamp, access-group add
+    if (url.endsWith('/community_members') && !url.includes('access_groups'))
+      return json({ id: 42 }, 201)
+    if (url.includes('/community_members/') && method === 'PUT') return json({ ok: true })
+    if (url.includes('access_groups') && url.includes('community_members'))
+      return json({ ok: true })
+    return json({ ok: true })
+  }) as typeof fetch
+}
+
+silenceExpectedConsole()
+
+beforeEach(() => {
+  fetchUrls = []
+  sentEmails = []
+  installFetch()
+})
+
+afterAll(() => {
+  globalThis.fetch = realFetch
+})
+
+// The arkPlus grant: a Beehiiv subscriber created (or updated) onto the premium
+// tier. Both shapes carry the tier id in the body, which is the thing that
+// actually buys the member their feed.
+const beehiivPremiumGrant = () =>
+  fetchUrls.some(
+    (c) =>
+      c.url.includes('api.beehiiv.com') &&
+      (c.method === 'POST' || c.method === 'PUT') &&
+      (c.body ?? '').includes(PREMIUM_TIER_ID),
+  )
+const circleGroupPost = () =>
+  fetchUrls.some(
+    (c) =>
+      c.method === 'POST' && c.url.includes('access_groups') && c.url.includes('community_members'),
+  )
+const circleMemberCreate = () =>
+  fetchUrls.some(
+    (c) =>
+      c.method === 'POST' &&
+      c.url.endsWith('/community_members') &&
+      !c.url.includes('access_groups'),
+  )
+
+describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
+  test('circle-only: provisions Circle, never grants the Beehiiv premium tier', async () => {
+    const { stripe, sub, meta } = makeFakeStripe()
+    const activator = createActivator(ENV, stripe)
+    const result = await activator.activateMembershipForStripeSub(sub, 'circle')
+
+    expect(beehiivPremiumGrant()).toBe(false)
+    expect(circleMemberCreate()).toBe(true)
+    expect(circleGroupPost()).toBe(true)
+    expect(meta.beehiiv_premium).toBeUndefined()
+    expect(result.tier).toBe('circle')
+  })
+
+  test('ark-plus: grants the Beehiiv premium tier, never touches Circle', async () => {
+    const { stripe, sub, meta } = makeFakeStripe()
+    const activator = createActivator(ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'ark-plus')
+
+    expect(beehiivPremiumGrant()).toBe(true)
+    expect(circleGroupPost()).toBe(false)
+    expect(circleMemberCreate()).toBe(false)
+    // The marker is what stops a redelivery re-granting and re-announcing.
+    expect(meta.beehiiv_premium).toBe('true')
+  })
+
+  test('bundle: provisions both axes', async () => {
+    const { stripe, sub, meta } = makeFakeStripe()
+    const activator = createActivator(ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(beehiivPremiumGrant()).toBe(true)
+    expect(circleGroupPost()).toBe(true)
+    expect(meta.beehiiv_premium).toBe('true')
+  })
+
+  test('a failed Beehiiv grant leaves the sub unmarked so the retry re-grants', async () => {
+    // The premium tier IS the feed now, so a grant that doesn't land must not be
+    // acked as provisioned — the webhook has to see an unstamped sub and retry.
+    const { stripe, sub, meta } = makeFakeStripe()
+    const passthrough = globalThis.fetch
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(input).includes('api.beehiiv.com') && String(input).endsWith('/subscriptions')) {
+        return new Response('upstream boom', { status: 500 })
+      }
+      return passthrough(input, init)
+    }) as typeof fetch
+
+    const activator = createActivator(ENV, stripe)
+    await expect(
+      activator.activateMembershipForStripeSub(sub, 'ark-plus'),
+    ).rejects.toThrow(/Beehiiv create 500/)
+    expect(meta.beehiiv_premium).toBeUndefined()
+  })
+
+  test('an unconfigured Beehiiv does not fake the grant', async () => {
+    // Preview/test environments with no Beehiiv credentials still provision the
+    // rest of the membership, but must not claim an axis they never granted.
+    const { stripe, sub, meta } = makeFakeStripe()
+    const { BEEHIIV_API_KEY: _key, ...noBeehiiv } = ENV
+    const activator = createActivator(noBeehiiv, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'ark-plus')
+
+    expect(beehiivPremiumGrant()).toBe(false)
+    expect(meta.beehiiv_premium).toBeUndefined()
+  })
+
+  test('adding an axis emails the upgrade, not the welcome — with the new price', async () => {
+    // An Ark+ member adding the Fold: they were provisioned long ago, so
+    // `wasUnprovisioned` is false and the welcome email is (correctly) skipped.
+    // Until this email existed that left the upgrade entirely silent — no
+    // pointer to the Fold, and no notice of the new recurring price, which
+    // Stripe's own receipt doesn't carry until the next invoice.
+    const { stripe, sub } = makeFakeStripe({
+      beehiiv_premium: 'true',
+      auth0_user_id: 'auth0|abc',
+      amount_cents: '2500',
+      currency: 'usd',
+      plan: 'monthly',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(circleGroupPost()).toBe(true)
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].subject).toContain('Fold')
+    expect(sentEmails[0].subject).not.toContain('Welcome')
+    // The price is read off the metadata change-tier stamps, in the currency
+    // the subscription actually bills in.
+    expect(sentEmails[0].html).toContain('$25')
+  })
+
+  test('a non-USD sub is priced from the metadata, not the USD base', async () => {
+    // A EUR subscription on a catalog price whose `unit_amount` is the USD
+    // base: quoting that as euros would be wrong money, so the amount comes
+    // from the `amount_cents`/`currency` pair change-tier stamps.
+    const { stripe, sub } = makeFakeStripe(
+      {
+        beehiiv_premium: 'true',
+        auth0_user_id: 'auth0|abc',
+        amount_cents: '2300',
+        currency: 'eur',
+      },
+      { currency: 'eur' },
+    )
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].html).toContain('€23')
+    expect(sentEmails[0].html).not.toContain('$25')
+  })
+
+  test('a first purchase still gets the welcome email, not the upgrade one', async () => {
+    const { stripe, sub } = makeFakeStripe()
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].subject).toContain('Welcome')
+  })
+
+  test('a first purchase records which axes its welcome covered', async () => {
+    const { stripe, sub, meta } = makeFakeStripe()
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    // The stamp is what a later delivery compares against to tell a genuine
+    // upgrade from the rest of this same purchase.
+    expect(meta.welcomed_axes).toBe('ark_plus,circle')
+  })
+
+  test('a repaired half-provisioned first purchase does not send the upgrade email', async () => {
+    // A Bundle buyer whose Circle add failed on the first delivery: the Beehiiv
+    // grant and Auth0 were stamped and the welcome went out, so the redelivery that
+    // finally lands Circle is "adding circle" by every marker the activator
+    // has. It is not an upgrade — they bought the Fold that morning and have
+    // already been welcomed for it — and an email saying "You just added the
+    // the Fold. Nothing to pay today" would be false twice over.
+    const { stripe, sub } = makeFakeStripe({
+      beehiiv_premium: 'true',
+      auth0_user_id: 'auth0|abc',
+      welcomed_axes: 'ark_plus,circle',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    // Circle really is provisioned by this pass — the silence is the point.
+    expect(circleGroupPost()).toBe(true)
+    expect(sentEmails.length).toBe(0)
+  })
+
+  test('a member welcomed for Ark+ alone still hears about gaining the Fold', async () => {
+    const { stripe, sub, meta } = makeFakeStripe({
+      beehiiv_premium: 'true',
+      auth0_user_id: 'auth0|abc',
+      welcomed_axes: 'ark_plus',
+      amount_cents: '2500',
+      currency: 'usd',
+      plan: 'monthly',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(1)
+    // The upgrade path records what it announced. Only the first activation
+    // used to write this, so the stamp stayed at `ark_plus` for the rest of the
+    // membership's life and no later read could tell that the Fold had already
+    // been announced.
+    expect(meta.welcomed_axes).toBe('ark_plus,circle')
+    expect(sentEmails[0].subject).toContain('Fold')
+  })
+
+  test('an upgrade that has already been announced is not announced again', async () => {
+    // The pass above, delivered twice. Only possible because the first pass
+    // extends the stamp: replay it against the metadata that pass left behind
+    // and the second delivery has to be silent.
+    const { stripe, sub } = makeFakeStripe({
+      beehiiv_premium: 'true',
+      auth0_user_id: 'auth0|abc',
+      circle_provisioned: 'true',
+      welcomed_axes: 'ark_plus,circle',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(0)
+  })
+
+  test('a redelivery that adds no axis sends nothing', async () => {
+    // Both axes already carry their markers, so the fan-out is a no-op — and a
+    // no-op must not re-announce an upgrade the member made weeks ago.
+    const { stripe, sub } = makeFakeStripe({
+      beehiiv_premium: 'true',
+      auth0_user_id: 'auth0|abc',
+      circle_provisioned: 'true',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(sentEmails.length).toBe(0)
+  })
+
+  test('idempotent: a sub already marked provisioned makes no Beehiiv/Circle calls', async () => {
+    const { stripe, sub } = makeFakeStripe({
+      beehiiv_premium: 'true',
+      auth0_user_id: 'auth0|abc',
+    })
+    const activator = createActivator(ENV, stripe)
+    const result = await activator.activateMembershipForStripeSub(sub, 'ark-plus')
+
+    expect(fetchUrls.length).toBe(0)
+    expect(result.auth0Sub).toBe('auth0|abc')
+  })
+})

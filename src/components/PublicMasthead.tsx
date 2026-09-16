@@ -1,0 +1,842 @@
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Link, useLocation } from "@tanstack/react-router";
+import { ArkLogo } from "./ArkLogo";
+import { Spinner } from "./Spinner";
+import { useSubscriberAuth } from "../lib/subscriberAuth";
+import { shows } from "../data/shows";
+
+// Nav order per Figma IA spec: Podcasts | The Fold | Newsletters | Israel
+// Votes | Subscribe | About | Account. Israel Votes renders as a pill for
+// campaign emphasis; Account is a plain link straight to /account (no menu —
+// everything it used to list is a tab on that page, Admin included).
+//
+// Items render in array order — reorder here, the nav reflows. Each item's
+// variant chooses the renderer (text link / pill / menu). `hideWhen` removes
+// the item for the named tier ('subscriber' = hide from paid; 'nonSubscriber'
+// = hide from guests + free users). Items with `children` open a dropdown;
+// the parent link stays clickable.
+type NavVariant = "text" | "pill" | "menu";
+type NavChild = {
+  label: string;
+  to: string;
+  hash?: string;
+  description?: string;
+  paid?: boolean;
+  /** A shortcut to a page that another nav item owns — doesn't light up this parent. */
+  crossLink?: boolean;
+};
+type NavItem = {
+  label: string;
+  to: string;
+  variant: NavVariant;
+  matchPrefix?: string;
+  hideWhen?: "subscriber" | "nonSubscriber" | "fullMember" | "nonFullMember";
+  children?: NavChild[];
+};
+
+const podcastChildren: NavChild[] = [
+  { label: "All", to: "/podcasts" },
+  ...shows.map((show) => ({
+    label: show.title,
+    to: show.route,
+    description: show.cadence,
+    paid: show.paid,
+  })),
+];
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    variant: "menu",
+    label: "Podcasts",
+    to: "/podcasts",
+    matchPrefix: "/podcasts",
+    children: podcastChildren,
+  },
+  // Visible to everyone — the page itself shows a "Join Ark+" CTA to
+  // non-subscribers in place of the members-only Fold app links. Book Club
+  // hangs off this menu rather than owning a top-level tab: it's a Fold
+  // activity, and the parent still links straight to /fold.
+  {
+    variant: "menu",
+    label: "The Fold",
+    to: "/fold",
+    matchPrefix: "/fold",
+    children: [
+      { label: "Overview", to: "/fold" },
+      { label: "Book Club", to: "/book-club" },
+    ],
+  },
+  { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
+  // One landing page to browse membership (/plus); gifting lives in this
+  // dropdown rather than as its own tab. Hidden from full-bundle members —
+  // they already have Ark+ and the Fold — and the full-member-only "Gift" tab
+  // below keeps gifting reachable for them.
+  {
+    variant: "menu",
+    label: "Subscribe",
+    to: "/plus",
+    hideWhen: "fullMember",
+    children: [
+      { label: "Membership", to: "/plus" },
+      { label: "Gift", to: "/plus/gift" },
+    ],
+  },
+  // Anyone (guest, member, or full member) can buy a gift, but full-bundle
+  // members lose the Subscribe menu above — surface Gift as its own tab for
+  // them only, so gifting stays in the main nav at every tier.
+  {
+    variant: "text",
+    label: "Gift",
+    to: "/plus/gift",
+    hideWhen: "nonFullMember",
+  },
+  {
+    variant: "menu",
+    label: "About",
+    to: "/about",
+    matchPrefix: "/about",
+    children: [
+      { label: "Careers", to: "/careers" },
+      { label: "Get in touch", to: "/contact" },
+    ],
+  },
+  // Hidden for now — page still lives at /israel-votes; restore when ready.
+  // { variant: "text", label: "Israel Votes", to: "/israel-votes" },
+];
+
+// Admin isn't a masthead tab: it lives with the member's own sections, in the
+// /account tab bar (see AccountTabs), so the public nav stays the same shape
+// for staff as it is for everyone else.
+
+// Focus-trap selector for the mobile drawer (mirrors Modal.tsx).
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function isActive(pathname: string, item: Pick<NavItem, "to" | "matchPrefix" | "children">) {
+  if (item.matchPrefix && pathname.startsWith(item.matchPrefix)) return true;
+  if (pathname === item.to) return true;
+  if (
+    item.children?.some(
+      (c) =>
+        !c.crossLink && (pathname === c.to || pathname.startsWith(`${c.to}/`)),
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+// Nav visibility flags. `isSubscriber` = any paid member (Ark+, Circle, or
+// Bundle). `isFullMember` = owns both axes (Ark+ AND the Fold), so there's
+// nothing left to subscribe to — the "Subscribe" tab is hidden for them.
+function visibleNavItems(flags: {
+  isSubscriber: boolean;
+  isFullMember: boolean;
+}): NavItem[] {
+  return NAV_ITEMS.filter((item) => {
+    if (item.hideWhen === "subscriber") return !flags.isSubscriber;
+    if (item.hideWhen === "nonSubscriber") return flags.isSubscriber;
+    if (item.hideWhen === "fullMember") return !flags.isFullMember;
+    if (item.hideWhen === "nonFullMember") return flags.isFullMember;
+    return true;
+  });
+}
+
+export function PublicMasthead() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Hide-on-scroll: the masthead tucks up out of view when the reader scrolls
+  // down (reclaiming its ~96px on the phone) and reappears the instant they
+  // scroll back up. The visual hide is gated to mobile — see the header's
+  // `max-sm:` transform below.
+  const [hidden, setHidden] = useState(false);
+  const lastScrollY = useRef(0);
+  const { state, signIn, signOut } = useSubscriberAuth();
+  // Any paid tier counts as a subscriber for the nav (drives the mobile CTA and
+  // the "Set up your feed" account link).
+  const isSubscriber = state.kind === "member" && state.me.tier !== "free";
+  // Owns both axes (Ark+ AND the Fold) — nothing left to buy, so the
+  // "Subscribe" menu is hidden (a standalone "Gift" tab replaces it for them).
+  const isFullMember =
+    state.kind === "member" &&
+    state.me.entitlements.arkPlus &&
+    state.me.entitlements.circle;
+  // The subscribe / conversion CTA, surfaced identically in the top bar and the
+  // pulldown. Only meaningful for non-subscribers, and only once auth has
+  // resolved (so it never flashes).
+  const showSubscribe = !isSubscriber && state.kind !== "loading";
+  const navItems = visibleNavItems({ isSubscriber, isFullMember });
+  const headerRef = useRef<HTMLElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const location = useLocation();
+
+  // Publish masthead height so hash links (e.g. /plus#pricing) scroll clear of
+  // the sticky header — paired with --ann-height from AnnouncementBanner.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const el = headerRef.current;
+    if (!el) return;
+    const apply = () =>
+      root.style.setProperty("--masthead-height", `${el.offsetHeight}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--masthead-height");
+    };
+  }, []);
+
+  // Reveal on scroll-up, hide on scroll-down. An open drawer forces the
+  // masthead visible — hiding it would yank the open panel off-screen.
+  // rAF-throttled; a small threshold ignores scroll jitter.
+  useEffect(() => {
+    // While the drawer is open the masthead is force-shown at render (see
+    // `effectiveHidden`), so there's nothing to track — skip the scroll
+    // listener entirely.
+    if (mobileOpen) return;
+    let ticking = false;
+    const threshold = 8;
+    const update = () => {
+      ticking = false;
+      const y = Math.max(0, window.scrollY);
+      const delta = y - lastScrollY.current;
+      if (Math.abs(delta) < threshold) return;
+      // Never hide near the top of the page; only when scrolling down past the
+      // masthead's own height.
+      const revealZone = headerRef.current?.offsetHeight ?? 96;
+      setHidden(y > revealZone && delta > 0);
+      lastScrollY.current = y;
+    };
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    };
+    lastScrollY.current = Math.max(0, window.scrollY);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [mobileOpen]);
+
+  // Mobile drawer: lock background scroll, trap focus inside the panel, close on
+  // Escape, and restore focus to the menu button on close (mirrors Modal.tsx).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const menuButton = menuButtonRef.current;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMobileOpen(false);
+        return;
+      }
+      if (e.key === "Tab" && drawerRef.current) {
+        const focusable =
+          drawerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
+        if (focusable.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
+    // Focus the first control in the drawer once it's on screen.
+    requestAnimationFrame(() => {
+      drawerRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    });
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevBodyOverflow;
+      menuButton?.focus();
+    };
+  }, [mobileOpen]);
+
+  // An open menu lives inside <header>, so the masthead must stay visible while
+  // one is open — otherwise hiding it would yank the panel off-screen. Derive
+  // that here rather than forcing state from an effect.
+  const effectiveHidden = hidden && !mobileOpen;
+
+  return (
+    <header
+      ref={headerRef}
+      className={`sticky top-[var(--ann-height,0px)] z-20 border-b border-rule-soft bg-navy-900 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform motion-reduce:transition-none ${
+        effectiveHidden ? "max-sm:-translate-y-full" : "translate-y-0"
+      }`}
+    >
+      <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-6 pt-6 pb-4 sm:px-10 sm:pt-8">
+        <Link
+          to="/"
+          aria-label="Ark Media — home"
+          className="group flex items-center gap-3 text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
+        >
+          <ArkLogo className="h-[22px] sm:h-[30px]" />
+        </Link>
+
+        <nav
+          aria-label="Primary"
+          className="flex items-center gap-1 text-[13px] text-fg-muted sm:gap-6"
+        >
+          {navItems.map((item) => {
+            switch (item.variant) {
+              case "menu":
+                return (
+                  <NavMenu
+                    key={item.to}
+                    item={item}
+                    pathname={location.pathname}
+                  />
+                );
+              case "pill":
+                return (
+                  <NavPillLink
+                    key={item.to}
+                    item={item}
+                    pathname={location.pathname}
+                  />
+                );
+              case "text":
+                return (
+                  <NavTextLink
+                    key={item.to}
+                    item={item}
+                    pathname={location.pathname}
+                  />
+                );
+            }
+          })}
+
+          <div className="relative">
+            {state.kind === "loading" ? (
+              <button
+                type="button"
+                disabled
+                aria-label="Loading account state"
+                className="hidden min-h-11 items-center border border-rule-strong px-4 opacity-60 sm:inline-flex"
+              >
+                <Spinner className="inline-block h-3 w-3" />
+              </button>
+            ) : state.kind === "member" ? (
+              /* Straight to /account — no menu. The tab bar there already lists
+                 every section the dropdown used to duplicate (Membership,
+                 Podcasts, the Fold, Settings, and Admin for staff), and Sign
+                 out lives on the Settings tab. */
+              <Link
+                to="/account"
+                aria-current={
+                  location.pathname.startsWith("/account") ? "page" : undefined
+                }
+                className="hidden min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:inline-flex"
+              >
+                Account
+              </Link>
+            ) : (
+              <div className="hidden items-center gap-2 sm:flex">
+                {/* Sign in is the only auth action here: signing up happens
+                    through checkout, so a separate "Sign up" button was a
+                    second door to the same place (Ava, Aug 2026).
+
+                    Signing in from the masthead is a "go to my stuff" intent,
+                    so it lands on /account rather than returning to the page
+                    they happened to be reading. Contextual sign-ins (checkout,
+                    /redeem, /welcome) still return to themselves. */}
+                <button
+                  type="button"
+                  onClick={() => signIn("/account")}
+                  className="inline-flex min-h-11 items-center border border-rule-strong px-4 font-display text-[12px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                >
+                  Sign in
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Persistent subscribe CTA in the collapsed top bar so non-subscribers
+              can convert in one tap without opening the (long) pulldown. Hidden
+              for paid members and while auth resolves. */}
+          {showSubscribe ? (
+            <Link
+              to="/plus"
+              hash="pricing"
+              className="inline-flex min-h-11 items-center whitespace-nowrap border border-cyan bg-cyan px-3 font-display text-[11px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
+            >
+              Subscribe
+            </Link>
+          ) : null}
+
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Menu"
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-nav"
+            className="ml-1 inline-flex min-h-11 min-w-11 items-center justify-center text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="square"
+            >
+              <path d="M3 6h14" />
+              <path d="M3 14h14" />
+            </svg>
+          </button>
+        </nav>
+      </div>
+
+      {createPortal(
+        <div className="sm:hidden">
+          {/* Scrim — dims the page and closes the drawer on tap. */}
+          <div
+            aria-hidden="true"
+            onClick={() => setMobileOpen(false)}
+            className={`fixed inset-0 z-[55] bg-navy-900/80 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${
+              mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          />
+          {/* Right-side drawer. Portaled to <body> so the header's transform
+              can't trap its fixed positioning; `inert` when closed keeps its
+              links out of the tab order and the a11y tree. */}
+          <div
+            ref={drawerRef}
+            id="mobile-nav"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            inert={!mobileOpen}
+            className={`fixed inset-y-0 right-0 z-[60] flex w-[min(88vw,360px)] flex-col border-l border-rule bg-navy-900 shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${
+              mobileOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-rule px-6 py-4">
+              <span className="eyebrow text-fg-muted">Menu</span>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close menu"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center text-fg-strong transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="square"
+                >
+                  <path d="M4 4l12 12M16 4L4 16" />
+                </svg>
+              </button>
+            </div>
+          <nav
+            aria-label="Primary mobile"
+            className="flex flex-1 flex-col overflow-y-auto px-6 py-4"
+          >
+            {/* Subscribe is the primary action in the pulldown — full-width and
+                first, above account/auth, so it's unmissable once the menu is
+                open. Sign in below is styled as secondary so it doesn't
+                compete. */}
+            {showSubscribe ? (
+              <Link
+                to="/plus"
+                hash="pricing"
+                onClick={() => setMobileOpen(false)}
+                className="mb-3 inline-flex min-h-12 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[14px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Subscribe
+              </Link>
+            ) : null}
+            {/* Account button is hidden in the top bar on mobile (Israel Votes
+                takes that slot); surface it as the first item here. */}
+            {state.kind === "member" ? (
+              <Link
+                to="/account"
+                onClick={() => setMobileOpen(false)}
+                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              >
+                Account
+              </Link>
+            ) : (
+              // Subscribe (above) is the primary CTA in this menu; Sign in is
+              // the only secondary action — signing up happens through checkout,
+              // so a separate "Sign up" button was a second door to the same place.
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  signIn("/account");
+                }}
+                className="mb-3 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-strong transition hover:border-cyan hover:text-cyan"
+              >
+                Sign in
+              </button>
+            )}
+            {navItems
+              // Pills already render in the top bar at every breakpoint;
+              // skip them in the dropdown so they don't appear twice.
+              .filter((item) => item.variant !== "pill")
+              .map((item) => {
+                const active = isActive(location.pathname, item);
+                if (item.variant === "menu") {
+                  return (
+                    <MobileNavSection
+                      key={item.to}
+                      item={item}
+                      active={active}
+                      pathname={location.pathname}
+                      drawerOpen={mobileOpen}
+                      onNavigate={() => setMobileOpen(false)}
+                    />
+                  );
+                }
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex min-h-11 items-center justify-between border-b border-rule-soft py-3 text-[14px] transition last:border-b-0 ${
+                      active ? "text-cyan" : "text-fg hover:text-fg-strong"
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    <span
+                      aria-hidden="true"
+                      className={`text-[12px] tracking-eyebrow ${
+                        active ? "text-cyan" : "text-fg-faint"
+                      }`}
+                    >
+                      →
+                    </span>
+                  </Link>
+                );
+              })}
+
+            {/* The drawer is the only nav on a phone, so it's the only place a
+                signed-in member can end their session without first walking
+                into /account. Last and quiet on purpose — it's an exit, not a
+                destination like the links above it. */}
+            {state.kind === "member" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  signOut();
+                }}
+                className="mt-6 inline-flex min-h-11 items-center justify-center border border-rule-strong px-4 font-display text-[13px] font-bold uppercase tracking-button text-fg-muted transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Sign out
+              </button>
+            ) : null}
+          </nav>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+    </header>
+  );
+}
+
+function NavMenu({ item, pathname }: { item: NavItem; pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const [syncedPathname, setSyncedPathname] = useState(pathname);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<number | null>(null);
+  const menuId = useId();
+  const active = isActive(pathname, item);
+  const children = item.children ?? [];
+  const hasDescriptions = children.some((c) => c.description);
+
+  // Close the dropdown when the route changes — navigating away should
+  // dismiss the menu. Done during render rather than in an effect to avoid a
+  // cascading re-render.
+  if (syncedPathname !== pathname) {
+    setSyncedPathname(pathname);
+    setOpen(false);
+  }
+
+  const cancelClose = () => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 120);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onDown = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
+
+  useEffect(() => () => cancelClose(), []);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative hidden sm:block"
+      onMouseEnter={() => {
+        cancelClose();
+        setOpen(true);
+      }}
+      onMouseLeave={scheduleClose}
+      onFocus={() => {
+        cancelClose();
+        setOpen(true);
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          scheduleClose();
+        }
+      }}
+    >
+      <Link
+        to={item.to}
+        aria-current={active ? "page" : undefined}
+        aria-expanded={open}
+        aria-controls={menuId}
+        className={`relative inline-flex min-h-11 items-center py-2 transition hover:text-fg-strong ${
+          active ? "text-fg-strong" : ""
+        }`}
+      >
+        {item.label}
+        {active ? (
+          <span
+            aria-hidden="true"
+            className="absolute bottom-1 left-0 right-0 h-px bg-cyan"
+          />
+        ) : null}
+      </Link>
+      {open ? (
+        <div
+          id={menuId}
+          className={`absolute left-0 top-full z-30 mt-1 border border-rule bg-navy-900 p-2 shadow-xl ${
+            hasDescriptions ? "w-72" : "w-56"
+          }`}
+        >
+          {children.map((child) => {
+            const childActive =
+              pathname === child.to || pathname.startsWith(`${child.to}/`);
+            return (
+              <Link
+                key={child.hash ? `${child.to}#${child.hash}` : child.to}
+                to={child.to}
+                hash={child.hash}
+                aria-current={childActive ? "page" : undefined}
+                className={`flex items-start justify-between gap-3 border-b border-rule-soft px-3 py-3 text-[13px] transition last:border-b-0 hover:bg-navy-800/60 ${
+                  childActive ? "text-cyan" : "text-fg hover:text-fg-strong"
+                }`}
+              >
+                <span className="flex-1">
+                  <span className="block font-display text-[13px] leading-tight text-fg-strong">
+                    {child.label}
+                  </span>
+                  {child.description ? (
+                    <span className="mt-0.5 block text-[11px] leading-snug text-fg-muted">
+                      {child.description}
+                    </span>
+                  ) : null}
+                </span>
+                {child.paid ? (
+                  <span className="mt-0.5 border border-cyan/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-button text-cyan">
+                    Ark+
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MobileNavSection({
+  item,
+  active,
+  pathname,
+  drawerOpen,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  pathname: string;
+  drawerOpen: boolean;
+  onNavigate: () => void;
+}) {
+  // Submenus start collapsed — the chevron button discloses them; the label
+  // itself still navigates to the section's landing page. State resets on
+  // every drawer toggle (render-time sync, mirroring NavMenu) so reopening
+  // the drawer never restores a stale expansion.
+  const [open, setOpen] = useState(false);
+  const [syncedDrawerOpen, setSyncedDrawerOpen] = useState(drawerOpen);
+  const listId = useId();
+  if (syncedDrawerOpen !== drawerOpen) {
+    setSyncedDrawerOpen(drawerOpen);
+    setOpen(false);
+  }
+  const children = item.children ?? [];
+  return (
+    <div className="border-b border-rule-soft py-1 last:border-b-0">
+      <div className="flex items-center justify-between">
+        <Link
+          to={item.to}
+          aria-current={active ? "page" : undefined}
+          onClick={onNavigate}
+          className={`flex min-h-11 flex-1 items-center py-3 text-[14px] transition ${
+            active ? "text-cyan" : "text-fg hover:text-fg-strong"
+          }`}
+        >
+          {item.label}
+        </Link>
+        {children.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-label={`${open ? "Hide" : "Show"} ${item.label} links`}
+            className={`inline-flex min-h-11 min-w-11 items-center justify-center transition hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+              active ? "text-cyan" : "text-fg-faint"
+            }`}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="square"
+              className={`transition-transform duration-200 motion-reduce:transition-none ${
+                open ? "rotate-180" : ""
+              }`}
+            >
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+      {open && children.length > 0 ? (
+        <ul id={listId} className="mb-2 ml-3 border-l border-rule-soft pl-3">
+          {children.map((child) => {
+            const childActive =
+              pathname === child.to || pathname.startsWith(`${child.to}/`);
+            return (
+              <li key={child.hash ? `${child.to}#${child.hash}` : child.to}>
+                <Link
+                  to={child.to}
+                  hash={child.hash}
+                  aria-current={childActive ? "page" : undefined}
+                  onClick={onNavigate}
+                  className={`flex min-h-10 items-center justify-between py-2 text-[13px] transition ${
+                    childActive ? "text-cyan" : "text-fg-muted hover:text-fg-strong"
+                  }`}
+                >
+                  <span>{child.label}</span>
+                  {child.paid ? (
+                    <span className="border border-cyan/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-button text-cyan">
+                      Ark+
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function NavTextLink({
+  item,
+  pathname,
+}: {
+  item: NavItem;
+  pathname: string;
+}) {
+  const active = isActive(pathname, item);
+  return (
+    <Link
+      to={item.to}
+      aria-current={active ? "page" : undefined}
+      className={`relative hidden min-h-11 items-center py-2 transition hover:text-fg-strong sm:inline-flex ${
+        active ? "text-fg-strong" : ""
+      }`}
+    >
+      {item.label}
+      {active ? (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-1 left-0 right-0 h-px bg-cyan"
+        />
+      ) : null}
+    </Link>
+  );
+}
+
+// Visible at all breakpoints (campaign emphasis); rendered as a solid pill
+// rather than the underline-on-active treatment that text links use.
+function NavPillLink({
+  item,
+  pathname,
+}: {
+  item: NavItem;
+  pathname: string;
+}) {
+  const active = isActive(pathname, item);
+  return (
+    <Link
+      to={item.to}
+      aria-current={active ? "page" : undefined}
+      className={`inline-flex min-h-11 items-center px-3 font-display text-[11px] font-bold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:px-4 sm:text-[12px] ${
+        active
+          ? "bg-cyan text-navy"
+          : "bg-fg-strong text-navy-900 hover:bg-cyan hover:text-navy"
+      }`}
+    >
+      {item.label}
+    </Link>
+  );
+}

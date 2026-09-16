@@ -1,34 +1,329 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Exo", "Arial Narrow", system-ui, sans-serif;
-  --font-sans: "Lato", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
 
-  /* Brandbook primaries */
+  /* Brandbook primaries — fixed across themes */
   --color-navy: #0b153c;
   --color-cyan: #3eb5f9;
 
-  /* Brandbook secondary navy scale */
+  /* Brandbook secondary navy scale — these names are kept for compatibility,
+     but the values flip in light mode (see [data-theme="light"] below).
+     Semantically: 900 = deepest page bg, 800 = surface, 700 = elevated surface, etc. */
   --color-navy-900: #070b22;
   --color-navy-800: #101736;
   --color-navy-700: #1a244e;
   --color-navy-600: #253368;
   --color-navy-500: #304181;
 
+  /* Ark News Daily — show-specific brand palette (purple). Also flips in light. */
+  --color-and-purple-900: #1f0828;
+  --color-and-purple-800: #2c0d39;
+  --color-and-purple-700: #41124f;
+  --color-and-purple-600: #4d1758;
+  --color-and-purple-500: #5d1d68;
+
   --color-ink: #0b153c;
   --color-paper: #f5f7fb;
-  --color-rule: rgba(255, 255, 255, 0.1);
 
-  /* Accent signal red from brandbook (use sparingly for alerts only) */
+  /* Semantic foregrounds — minimum AA contrast on the active page bg.
+     Use text-fg-strong / text-fg / text-fg-muted / text-fg-faint
+     instead of text-white/N for any text content. */
+  --color-fg-strong: rgb(255 255 255 / 0.96);
+  --color-fg: rgb(255 255 255 / 0.85);
+  --color-fg-muted: rgb(255 255 255 / 0.7);
+  --color-fg-faint: rgb(255 255 255 / 0.55);
+  --color-fg-placeholder: rgb(255 255 255 / 0.4);
+
+  /* Rule / divider / decorative scale — never apply to text */
+  --color-rule: rgb(255 255 255 / 0.12);
+  --color-rule-soft: rgb(255 255 255 / 0.08);
+  --color-rule-strong: rgb(255 255 255 / 0.2);
+
+  /* Brand danger (alerts, errors). signal = brandbook red. */
   --color-signal: #eb0102;
+  --color-danger: #ff7a7a;
+  --color-danger-strong: #ff5a5a;
+
+  /* Founding Member — the only warm accent on the site. Reserved for the
+     patron tier so it stays a signal rather than decoration. Deliberately
+     off the cyan/navy axis: the badge should feel like a struck medal, not
+     another UI state. */
+  --color-founding: #e0b357;
+
+  /* Editorial shadow tokens — for cover artwork and floating chips */
+  --shadow-cover: 0 40px 100px -30px rgb(0 0 0 / 0.7), 0 8px 30px -10px rgb(0 0 0 / 0.5);
+  --shadow-float: 0 20px 50px -20px rgb(0 0 0 / 0.8);
+
+  /* Typographic tracking tokens */
+  --tracking-eyebrow: 0.22em;
+  --tracking-button: 0.18em;
+  --tracking-cta: 0.08em;
+
+  /* Type scale — 14px floor for accessibility */
+  --text-xs: 0.875rem; /* 14px — labels, meta, buttons */
+  --text-sm: 0.9375rem; /* 15px — secondary body */
+  --text-base: 1rem; /* 16px — default body */
+  --text-lg: 1.125rem; /* 18px — lede */
+  --text-xl: 1.25rem; /* 20px — card titles */
+  --text-2xl: 1.5rem; /* 24px */
+  --text-3xl: 2rem; /* 32px — section headings */
+
+  /* Layout spacing — page gutters and section rhythm */
+  --spacing-gutter: 1.5rem; /* 24px — mobile horizontal inset */
+  --spacing-gutter-lg: 2rem; /* 32px — sm+ horizontal inset */
+  --spacing-section-y: 2.5rem; /* 40px — default section padding */
+  --spacing-section-y-lg: 3rem; /* 48px — hero / feature sections */
+  --spacing-stack: 1.5rem; /* 24px — block gaps */
+  --spacing-stack-lg: 2rem; /* 32px — grid gaps */
+
+  /* Zebra stripe — the lifted alternate band between full-bleed sections */
+  --color-stripe-alt: color-mix(in srgb, var(--color-navy-800) 40%, var(--color-navy-900));
+}
+
+/* Light theme — inverts the surface convention from dark mode.
+   In dark mode 900 is the deepest page bg and 800/700 are lighter elevated surfaces.
+   In light mode, page bg becomes a soft tinted paper and 800/700 become *crisp white*
+   elevated cards with real shadow — the editorial print convention. This creates
+   actual depth instead of cards-blending-into-page.
+   --color-cyan is darkened (~5.4:1 on paper) because brand cyan #3eb5f9 fails AA
+   on white. Brand primaries --color-navy / --color-paper stay fixed so cyan-on-navy
+   accents look identical across themes. */
+[data-theme="light"] {
+  --color-cyan: #0a6fad;
+
+  /* 900 = page paper — a luminous cool-newsprint canvas. Lighter than a flat grey
+     but still tinted enough that true-white cards (800/700) read as elevated. The
+     hue is pulled toward the brand navy (not neutral grey) so the page reads as a
+     navy-family paper, echoing the dark theme's identity in daytime.
+     800 = card surface (true white). Cards use bg-navy-800/40 — 40% white over the
+     newsprint canvas, plus a soft layered card shadow + navy hairline, lands a
+     clean editorial lift.
+     700 = elevated/popover surface (true white).
+     600/500 = decorative borders, chips, and progress fills — pulled from a cool
+     navy-grey scale so dividers feel crisp instead of washed-out. */
+  --color-navy-900: #eef3fc;
+  --color-navy-800: #ffffff;
+  --color-navy-700: #ffffff;
+  --color-navy-600: #cad5e4;
+  --color-navy-500: #8ca1bf;
+
+  /* Ark News Daily — light orchid paper. Same inversion: page is tinted, cards are white. */
+  --color-and-purple-900: #e8d7f0;
+  --color-and-purple-800: #ffffff;
+  --color-and-purple-700: #ffffff;
+  --color-and-purple-600: #d6bbe1;
+  --color-and-purple-500: #b894c8;
+
+  --color-fg-strong: rgb(11 21 60 / 0.96);
+  --color-fg: rgb(11 21 60 / 0.82);
+  --color-fg-muted: rgb(11 21 60 / 0.62);
+  --color-fg-faint: rgb(11 21 60 / 0.48);
+  --color-fg-placeholder: rgb(11 21 60 / 0.36);
+
+  --color-rule: rgb(11 21 60 / 0.14);
+  --color-rule-soft: rgb(11 21 60 / 0.08);
+  --color-rule-strong: rgb(11 21 60 / 0.24);
+
+  --color-signal: #c4151b;
+  --color-danger: #c4151b;
+  --color-danger-strong: #9f0e14;
+
+  /* Darkened to hold AA as text on white — the dark-theme gold is ~2:1 here. */
+  --color-founding: #8a6410;
+
+  /* Editorial shadows — present enough to lift cards off the paper, soft enough
+     to feel printed rather than digital. Layered for depth realism. */
+  --shadow-cover:
+    0 30px 60px -25px rgb(11 21 60 / 0.28),
+    0 12px 30px -12px rgb(11 21 60 / 0.18),
+    0 2px 6px -2px rgb(11 21 60 / 0.08);
+  --shadow-float:
+    0 18px 40px -18px rgb(11 21 60 / 0.22),
+    0 4px 10px -4px rgb(11 21 60 / 0.1);
+}
+
+@utility eyebrow {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  color: var(--color-cyan);
+}
+
+/* Section labels, breadcrumbs — uppercase UI chrome, not headings */
+@utility label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+}
+
+@utility meta {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-button);
+  color: var(--color-fg-muted);
+}
+
+@utility button-text {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-button);
+  line-height: 1;
+}
+
+/* Headings — Helvetica Neue display */
+@utility text-h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.6rem);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  color: var(--color-fg-strong);
+}
+
+@utility text-h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  color: var(--color-fg-strong);
+}
+
+@utility text-h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  color: var(--color-fg-strong);
+}
+
+@utility text-h4 {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: 1.25;
+  color: var(--color-fg-strong);
+}
+
+@utility text-h5 {
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-fg-strong);
+}
+
+@utility text-h6 {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-fg-strong);
+}
+
+/* Body copy — Helvetica Neue */
+@utility text-body-lg {
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--color-fg);
+}
+
+@utility text-body {
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--color-fg);
+}
+
+@utility text-body-sm {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--color-fg-muted);
+}
+
+/* Show / episode UI — alias legacy utilities to the type scale */
+@utility episode-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-cyan);
+}
+
+@utility episode-meta {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-fg-muted);
+}
+
+@utility episode-action {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-cyan);
+}
+
+/* Page layout — tokenised gutters and section padding.
+   Use .page-gutter for horizontal containment only; .page-section adds vertical rhythm. */
+.page-gutter {
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: var(--spacing-gutter);
+}
+
+.page-section {
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: var(--spacing-gutter);
+  padding-block: var(--spacing-section-y);
+}
+
+@media (width >= 40rem) {
+  .page-gutter,
+  .page-section {
+    padding-inline: var(--spacing-gutter-lg);
+  }
+}
+
+/* Skip-to-content link — visually hidden until focused */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.75rem 1rem;
+  background: var(--color-cyan);
+  color: var(--color-navy);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-button);
+  transform: translateY(-110%);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
 }
 
 :root {
   font-family: var(--font-sans);
-  color: #eaf0ff;
+  color: var(--color-fg-strong);
   background: var(--color-navy-900);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  color-scheme: dark;
+  /* Sticky announcement + masthead — hash links scroll to content below both. */
+  scroll-padding-top: calc(var(--ann-height, 0px) + var(--masthead-height, 5.5rem));
+}
+
+[data-theme="light"] {
+  color-scheme: light;
 }
 
 body {
@@ -42,7 +337,7 @@ body {
   color: var(--color-navy);
 }
 
-/* Exo display utilities */
+/* Display utilities */
 .display {
   font-family: var(--font-display);
   font-weight: 900;
@@ -57,20 +352,59 @@ body {
   line-height: 0.9;
 }
 
-/* The INSIDE tab motif — echoes the podcast cover */
-.inside-tab {
-  display: inline-block;
-  background: var(--color-cyan);
-  color: var(--color-navy);
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-style: italic;
-  text-transform: uppercase;
-  padding: 0.35em 0.7em 0.25em;
-  letter-spacing: 0.02em;
-  transform: rotate(-2.5deg);
-  transform-origin: left bottom;
-  box-shadow: 0 6px 0 0 rgba(0, 0, 0, 0.15);
+/* Page backdrop applied to the root app container.
+   Dark: the flat deep-navy paper (unchanged behaviour).
+   Light: a luminous paper wash with a cyan "dawn" glow in the upper-right — the
+   daytime echo of the dark theme's atmospheric hero. The wash is sized to the top
+   ~860px and anchored top, so it brightens the masthead + hero, then settles into
+   the flat newsprint canvas exactly where the first content section begins. Content
+   sections paint solid bg-navy-900 over it, so there are no full-bleed seams. */
+
+/* Page section zebra striping — alternates the page canvas and a lifted stripe
+   on every route. #main-content.page-stripes is set in __root.tsx; heroes opt
+   out via .section-hero so show washes and page intros keep their own bg. */
+#main-content.page-stripes > main > :is(section, article):not(.section-hero),
+#main-content.page-stripes > :is(section, article):not(.section-hero) {
+  border-top: 1px solid var(--color-rule);
+}
+
+#main-content.page-stripes
+  > main
+  > :is(section, article):not(.section-hero):nth-child(
+    odd of :is(section, article):not(.section-hero)
+  ),
+#main-content.page-stripes
+  > :is(section, article):not(.section-hero):nth-child(
+    odd of :is(section, article):not(.section-hero)
+  ) {
+  background-color: var(--color-navy-900);
+}
+
+#main-content.page-stripes
+  > main
+  > :is(section, article):not(.section-hero):nth-child(
+    even of :is(section, article):not(.section-hero)
+  ),
+#main-content.page-stripes
+  > :is(section, article):not(.section-hero):nth-child(
+    even of :is(section, article):not(.section-hero)
+  ) {
+  background-color: var(--color-stripe-alt);
+}
+
+.bg-app {
+  background-color: var(--color-navy-900);
+}
+[data-theme="light"] .bg-app {
+  background-color: var(--color-navy-900);
+  background-image:
+    radial-gradient(52% 48% at 88% -4%, rgba(62, 181, 249, 0.30) 0%, transparent 62%),
+    radial-gradient(48% 44% at 14% -6%, rgba(11, 21, 60, 0.07) 0%, transparent 60%),
+    radial-gradient(70% 60% at 50% -16%, rgba(255, 255, 255, 0.95) 0%, transparent 58%),
+    linear-gradient(180deg, #f7fafe 0%, #eef3fc 44%, var(--color-navy-900) 86%);
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: 100% 860px;
 }
 
 /* Ark wave backdrop — a restrained version of the brandbook background */
@@ -79,6 +413,210 @@ body {
     radial-gradient(ellipse 55% 45% at 78% 25%, rgba(62, 181, 249, 0.28) 0%, transparent 60%),
     radial-gradient(ellipse 45% 55% at 20% 85%, rgba(62, 181, 249, 0.14) 0%, transparent 65%),
     linear-gradient(180deg, #070b22 0%, #0b153c 55%, #070b22 100%);
+}
+[data-theme="light"] .ark-bg {
+  background:
+    radial-gradient(ellipse 60% 52% at 82% 14%, rgba(62, 181, 249, 0.40) 0%, transparent 62%),
+    radial-gradient(ellipse 48% 52% at 12% 88%, rgba(11, 21, 60, 0.12) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 42% 28%, rgba(255, 255, 255, 0.92) 0%, transparent 62%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(11, 21, 60, 0.10) 0%, transparent 60%),
+    linear-gradient(180deg, #f5f8fe 0%, #edf2fb 48%, #e4ecf7 100%);
+}
+
+/* Ark News Daily backdrop — show-specific purple wash */
+.and-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(125, 40, 145, 0.55) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.12) 0%, transparent 65%),
+    linear-gradient(180deg, #1f0828 0%, #41124f 55%, #1f0828 100%);
+}
+[data-theme="light"] .and-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(125, 40, 145, 0.34) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.18) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(31, 8, 40, 0.08) 0%, transparent 60%),
+    linear-gradient(180deg, #f0e2f6 0%, #ecdcf3 48%, #e6d3ee 100%);
+}
+
+/* Per-show brand washes. Each mirrors the .and-bg composition (a hero-corner
+   primary glow, a small cyan accent that keeps every show in the Ark family,
+   and a deep/luminous base for dark/light) so the set reads as one system with
+   distinct identities. Mapped to slugs by showAtmosphere() in data/shows.ts. */
+
+/* Call Me Back — sapphire / royal blue (the flagship) */
+.cmb-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(46, 102, 240, 0.42) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.14) 0%, transparent 65%),
+    linear-gradient(180deg, #060d28 0%, #112a63 55%, #060d28 100%);
+}
+[data-theme="light"] .cmb-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(46, 102, 240, 0.24) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.18) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(6, 13, 40, 0.07) 0%, transparent 60%),
+    linear-gradient(180deg, #e7eefc 0%, #dfe8fb 48%, #d6e1f7 100%);
+}
+
+/* Inside Call Me Back — indigo/violet (the premium companion to CMB) */
+.icmb-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(99, 80, 230, 0.44) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.12) 0%, transparent 65%),
+    linear-gradient(180deg, #0a0a2c 0%, #241a5e 55%, #0a0a2c 100%);
+}
+[data-theme="light"] .icmb-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(99, 80, 230, 0.26) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.18) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(10, 10, 44, 0.08) 0%, transparent 60%),
+    linear-gradient(180deg, #e9e6fb 0%, #e3def9 48%, #dad3f5 100%);
+}
+
+/* For Heaven's Sake — vermilion / orange-red (matches the cover's swooshes) */
+.fhs-bg {
+  background:
+    radial-gradient(ellipse 60% 55% at 25% 35%, rgba(228, 78, 30, 0.42) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 45% at 80% 80%, rgba(62, 181, 249, 0.10) 0%, transparent 65%),
+    linear-gradient(180deg, #160805 0%, #3a160c 55%, #160805 100%);
+}
+[data-theme="light"] .fhs-bg {
+  background:
+    radial-gradient(ellipse 62% 58% at 22% 28%, rgba(228, 78, 30, 0.22) 0%, transparent 64%),
+    radial-gradient(ellipse 55% 45% at 82% 84%, rgba(62, 181, 249, 0.14) 0%, transparent 64%),
+    radial-gradient(ellipse 90% 65% at 55% 38%, rgba(255, 255, 255, 0.72) 0%, transparent 64%),
+    radial-gradient(ellipse 120% 90% at 50% 120%, rgba(40, 14, 8, 0.07) 0%, transparent 60%),
+    linear-gradient(180deg, #fdeee6 0%, #fbe6da 48%, #f8dccd 100%);
+}
+
+/* The Fold — the one backdrop in the family that is a supplied brand image
+   rather than hand-authored gradients (Ark's "The Fold Bg 01/02"). The sails in
+   the logo are amber over teal, and the artwork is the same gesture blown up,
+   so the Fold reads as its own product rather than another show wash.
+
+   The image's dark mass sits on the LEFT, which is where the hero puts its h1
+   and lede — so the copy lands on the quiet side and the bright streak falls
+   behind the app-badge column on the right. `background-position: right center`
+   keeps that relationship when `cover` crops on narrow viewports (a `center`
+   crop would walk the streak under the headline). The scrim on top is the
+   guardrail for the stacked mobile layout, where the lede does end up over the
+   brighter half. */
+.fold-bg {
+  background-image:
+    linear-gradient(90deg, rgba(7, 11, 34, 0.92) 0%, rgba(7, 11, 34, 0.55) 45%, rgba(7, 11, 34, 0.12) 100%),
+    url("/fold/hero-dark.jpg");
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: cover;
+  background-color: var(--color-navy-900);
+}
+[data-theme="light"] .fold-bg {
+  background-image:
+    linear-gradient(90deg, rgba(255, 253, 250, 0.88) 0%, rgba(255, 253, 250, 0.5) 45%, rgba(255, 253, 250, 0.1) 100%),
+    url("/fold/hero-light.jpg");
+}
+
+/* Below `lg` the hero stacks: the lede goes full-width and runs straight
+   through the bright streak the horizontal scrim was shaped to leave alone. Flatten
+   the scrim to an even veil at those widths — the artwork still reads, the copy
+   keeps its contrast. */
+@media (width < 64rem) {
+  .fold-bg {
+    background-image:
+      linear-gradient(90deg, rgba(7, 11, 34, 0.9) 0%, rgba(7, 11, 34, 0.82) 100%),
+      url("/fold/hero-dark.jpg");
+  }
+  [data-theme="light"] .fold-bg {
+    background-image:
+      linear-gradient(90deg, rgba(255, 253, 250, 0.86) 0%, rgba(255, 253, 250, 0.78) 100%),
+      url("/fold/hero-light.jpg");
+  }
+}
+
+/* Top fade for the bespoke show washes — let each colored wash emerge from the
+   masthead's navy instead of butting against it with a hard seam. The overlay
+   sits above the wash but behind the hero content (z-index/isolation), and melts
+   the first ~170px down into the page's navy-900 (which flips to the light paper
+   token in light mode, so the blend holds in both themes). The house ark-bg is
+   excluded: its base already starts at navy-900, so it has no seam to soften. */
+.and-bg,
+.cmb-bg,
+.icmb-bg,
+.fhs-bg,
+.fold-bg {
+  isolation: isolate;
+}
+.and-bg::before,
+.cmb-bg::before,
+.icmb-bg::before,
+.fhs-bg::before,
+.fold-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 170px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--color-navy-900) 0%, transparent 100%);
+}
+
+/* Editorial card lift — only in light mode, only on the card-pattern utilities the
+   codebase actually uses (bg-navy-800/40, /50, /60). On luminous paper, the lift
+   comes from a thin navy-tinted hairline doing most of the edge definition + a
+   soft, diffuse shadow for depth. The hairline (1px box-shadow ring at ~6% navy)
+   is what makes the card edge feel "drawn" like the efficio reference rather than
+   floating in a halo. The selector matches the Tailwind opacity variants without
+   affecting full-bleed bg-navy-800 sections (mobile menu) which
+   intentionally span edge to edge. */
+[data-theme="light"] [class*="bg-navy-800/"]:not([class*="hover:bg-navy-800"]),
+[data-theme="light"] [class*="bg-navy-700/"]:not([class*="hover:bg-navy-700"]) {
+  box-shadow:
+    0 0 0 1px rgb(11 21 60 / 0.06),
+    0 1px 0 rgb(255 255 255 / 0.95) inset,
+    0 1px 2px rgb(11 21 60 / 0.04),
+    0 14px 32px -18px rgb(11 21 60 / 0.18);
+}
+
+/* Cyan-on-paper contrast.
+   In light mode --color-cyan is the darkened #0a6fad so cyan *text* (eyebrows, links,
+   "Voices") and *borders* clear AA as ink on paper. As a button FILL with the hardcoded
+   navy label, though, cyan reads poorly — so filled cyan controls get an explicit deep
+   navy-blue (~9:1 with white). The fill is pulled toward the brand navy #0b153c rather
+   than staying a pure dark cyan, so the primary CTA reads as a rich navy-blue (the
+   brandbook "cyan + navy" fused) instead of a muddy teal. Written as literal values,
+   NOT the --color-cyan token, so the button contrast can never depend on how/when the
+   theme variable resolves. Dividers / dots / the eyebrow rule are bg-cyan with no text,
+   so they keep the token.
+   The :not(:hover) qualifier is critical — without it, this override's specificity
+   beats Tailwind's hover:* rules and the button has no visible hover state. Scoping to
+   the resting state lets each button's declared hover intent (invert to fg-strong, or
+   reveal as outlined cyan) come through unblocked. */
+[data-theme="light"] .bg-cyan.text-navy:not(:hover),
+[data-theme="light"] .hover\:bg-cyan.hover\:text-navy:hover {
+  background-color: #0d3e74;
+  border-color: #0d3e74;
+  color: #fff;
+}
+[data-theme="light"] .skip-link {
+  background: #0d3e74;
+  color: #fff;
+}
+[data-theme="light"] ::selection {
+  background: #0d3e74;
+  color: #fff;
+}
+/* Hero-scale italic accent words ("experience", "Voices", "unusually good", "terms")
+   use a punchier, more vivid cyan in light mode — the deep AA-safe token reads as
+   muddy teal at display size. Only the .display class qualifies (the giant italic
+   accent), so this never touches body links, the eyebrow utility, or any text that
+   needs the stricter 4.5:1 AA-normal contrast. Display text is ≫24px bold italic,
+   so the 3:1 AA-large threshold is the right bar (~3.1:1 here). */
+[data-theme="light"] .display.text-cyan,
+[data-theme="light"] .display-upright.text-cyan {
+  color: #1992d4;
 }
 
 /* Subtle grain to kill banding on the gradients */
@@ -94,11 +632,20 @@ body {
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
+[data-theme="light"] .grain-overlay::after {
+  opacity: 0.06;
+  mix-blend-mode: multiply;
+}
 
 /* Rising cyan divider hairlines */
 .hairline {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(62, 181, 249, 0.45), transparent);
+}
+/* Bright cyan at 45% disappears on luminous paper. Light mode uses the deep cyan
+   token at full opacity instead — same brand color family, present without shouting. */
+[data-theme="light"] .hairline {
+  background: linear-gradient(90deg, transparent, rgba(10, 111, 173, 0.55), transparent);
 }
 
 @keyframes rise {
@@ -112,18 +659,265 @@ body {
 .rise-4 { animation-delay: 0.42s; }
 .rise-5 { animation-delay: 0.58s; }
 
-@keyframes marquee {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
+/* Editorial hairline that draws in from the left */
+@keyframes draw-rule {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
 }
-.marquee-track { animation: marquee 48s linear infinite; }
+.draw-rule {
+  transform-origin: left;
+  animation: draw-rule 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 
-@keyframes blink {
-  0%, 60%, 100% { opacity: 1; }
-  30% { opacity: 0.15; }
+/* SVG checkmark stroke draw-in */
+@keyframes draw-check {
+  from { stroke-dashoffset: 32; }
+  to   { stroke-dashoffset: 0; }
 }
-.live-dot { animation: blink 2.4s ease-in-out infinite; }
+.draw-check {
+  stroke-dasharray: 32;
+  stroke-dashoffset: 32;
+  animation: draw-check 0.7s cubic-bezier(0.65, 0, 0.35, 1) 0.15s forwards;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .rise, .marquee-track, .live-dot { animation: none; }
+  .rise, .draw-rule, .draw-check, .animate-spin {
+    animation: none !important;
+  }
+  .draw-rule { transform: scaleX(1); }
+  .draw-check { stroke-dashoffset: 0; }
 }
+
+/* ── Pay-what-you-choose amount slider ─────────────────────────────────────
+   The native <input type="range"> restyled to a refined, premium control: a
+   rounded cyan-fill track and a clean circular handle ringed in the surface
+   colour so it lifts off the track. --pct (0–100%, set inline from the
+   component) paints the filled portion up to the thumb. Fully themed via tokens,
+   so it inverts correctly in light mode. */
+.pwyc-slider {
+  --track-h: 0.375rem; /* 6px */
+  --thumb-d: 1.25rem;  /* 20px */
+  --thumb-ring: color-mix(in srgb, var(--color-cyan) 20%, transparent);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: var(--thumb-d);
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+/* Track — WebKit / Blink. The fill is a cyan segment sized by --pct over a
+   faint rule-coloured groove. */
+.pwyc-slider::-webkit-slider-runnable-track {
+  height: var(--track-h);
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--color-cyan), var(--color-cyan)) left center /
+      var(--pct, 0%) 100% no-repeat,
+    var(--color-rule-strong);
+  transition: background-size 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Track — Firefox (progress is a separate element there) */
+.pwyc-slider::-moz-range-track {
+  height: var(--track-h);
+  border-radius: 999px;
+  background: var(--color-rule-strong);
+}
+.pwyc-slider::-moz-range-progress {
+  height: var(--track-h);
+  border-radius: 999px;
+  background: var(--color-cyan);
+}
+
+/* Thumb — a solid cyan disc ringed in the surface colour, with a soft shadow so
+   it reads as a physical handle floating above the track. Shared look
+   duplicated for each engine (vendor pseudo-elements can't be grouped). */
+.pwyc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--thumb-d);
+  height: var(--thumb-d);
+  margin-top: calc((var(--track-h) - var(--thumb-d)) / 2);
+  border-radius: 999px;
+  border: 3px solid var(--color-navy-800);
+  background: var(--color-cyan);
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.4);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pwyc-slider::-moz-range-thumb {
+  width: var(--thumb-d);
+  height: var(--thumb-d);
+  border-radius: 999px;
+  border: 3px solid var(--color-navy-800);
+  background: var(--color-cyan);
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.4);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Tap-to-type amount field auto-sizes to its content via a field-sizing hint
+   where supported, so the big hero number never leaves a long empty caret run. */
+.pwyc-amount-input {
+  field-sizing: content;
+  min-width: 2ch;
+  max-width: 100%;
+}
+/* Trim the native number spinners — the slider is the coarse control. */
+.pwyc-amount-input::-webkit-outer-spin-button,
+.pwyc-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pwyc-amount-input {
+  -moz-appearance: textfield;
+}
+
+/* Idle hint: one large jump (visual only — the charged amount stays at the
+   floor), then a gentle pulsing cyan ring on the lever until the buyer
+   touches it. .pwyc-slider--nudge is added once the floor has loaded and
+   stripped on first pointerdown. */
+@keyframes pwyc-nudge-thumb {
+  0%, 100% { transform: translateX(0) scale(1); }
+  35%, 52% { transform: translateX(48px) scale(1.12); }
+}
+@keyframes pwyc-nudge-fill {
+  0%, 100% { background-size: var(--pct, 0%) 100%, auto; }
+  35%, 52% { background-size: 14% 100%, auto; }
+}
+@keyframes pwyc-pulse-ring {
+  0%, 100% {
+    box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.4),
+      0 0 0 3px color-mix(in srgb, var(--color-cyan) 28%, transparent);
+  }
+  50% {
+    box-shadow: 0 2px 8px -1px rgb(0 0 0 / 0.45),
+      0 0 0 10px color-mix(in srgb, var(--color-cyan) 42%, transparent);
+  }
+}
+.pwyc-slider--nudge::-webkit-slider-thumb {
+  animation:
+    pwyc-nudge-thumb 1.05s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both,
+    pwyc-pulse-ring 1.8s 1.33s ease-in-out infinite;
+  transition: none;
+}
+.pwyc-slider--nudge::-moz-range-thumb {
+  animation:
+    pwyc-nudge-thumb 1.05s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both,
+    pwyc-pulse-ring 1.8s 1.33s ease-in-out infinite;
+  transition: none;
+}
+.pwyc-slider--nudge::-webkit-slider-runnable-track {
+  animation: pwyc-nudge-fill 1.05s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: none;
+}
+/* Grabbing the thumb cancels the hint in the same frame as the pointerdown
+   (React state that removes the class lands a frame later). */
+.pwyc-slider--nudge:active::-webkit-slider-thumb,
+.pwyc-slider--nudge:active::-moz-range-thumb {
+  animation: none;
+}
+.pwyc-slider--nudge:active::-webkit-slider-runnable-track {
+  animation: none;
+}
+
+/* Hover — a soft cyan halo blooms around the cap */
+.pwyc-slider:hover::-webkit-slider-thumb {
+  box-shadow: 0 2px 8px -1px rgb(0 0 0 / 0.5), 0 0 0 6px var(--thumb-ring);
+}
+.pwyc-slider:hover::-moz-range-thumb {
+  box-shadow: 0 2px 8px -1px rgb(0 0 0 / 0.5), 0 0 0 6px var(--thumb-ring);
+}
+
+/* Active — cap presses in and grabs */
+.pwyc-slider:active { cursor: grabbing; }
+.pwyc-slider:active::-webkit-slider-thumb {
+  transform: scale(1.08);
+  box-shadow: 0 3px 10px -1px rgb(0 0 0 / 0.55), 0 0 0 8px var(--thumb-ring);
+}
+.pwyc-slider:active::-moz-range-thumb {
+  transform: scale(1.08);
+  box-shadow: 0 3px 10px -1px rgb(0 0 0 / 0.55), 0 0 0 8px var(--thumb-ring);
+}
+
+/* Keyboard focus — a crisp cyan ring (native outline is suppressed above) */
+.pwyc-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.45),
+    0 0 0 3px color-mix(in srgb, var(--color-cyan) 55%, transparent);
+}
+.pwyc-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 2px 6px -1px rgb(0 0 0 / 0.45),
+    0 0 0 3px color-mix(in srgb, var(--color-cyan) 55%, transparent);
+}
+
+.pwyc-slider:disabled { cursor: not-allowed; opacity: 0.45; }
+.pwyc-slider:disabled::-webkit-slider-thumb { box-shadow: none; }
+.pwyc-slider:disabled::-moz-range-thumb { box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pwyc-slider::-webkit-slider-runnable-track,
+  .pwyc-slider::-webkit-slider-thumb,
+  .pwyc-slider::-moz-range-thumb {
+    transition: none;
+  }
+  .pwyc-slider--nudge::-webkit-slider-thumb,
+  .pwyc-slider--nudge::-moz-range-thumb,
+  .pwyc-slider--nudge::-webkit-slider-runnable-track {
+    animation: none !important;
+  }
+}
+
+/* --- Episode audio scrubber -------------------------------------------------
+   Unlike .pwyc-slider this input draws nothing: it is stretched invisibly over
+   the waveform in <AudioPlayer>, which paints the played/unplayed bars and the
+   playhead itself. Keeping a real range underneath means native pointer drag,
+   arrow keys and screen-reader value announcements come for free. Vendor
+   pseudo-elements can't be grouped, so each engine's rules are written out. */
+.audio-scrub {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+.audio-scrub::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+.audio-scrub::-moz-range-track {
+  height: 100%;
+  background: transparent;
+  border: 0;
+}
+
+/* The thumb is the grab target, not a visual — the cyan playhead is a sibling
+   div. It still needs a non-zero width or Firefox won't drag. */
+.audio-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 2px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+.audio-scrub::-moz-range-thumb {
+  width: 2px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Disabled = metadata hasn't loaded yet, so there's nothing to seek within. */
+.audio-scrub:disabled { cursor: default; }

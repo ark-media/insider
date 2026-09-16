@@ -1,0 +1,319 @@
+// Unit tests for the pure promo builder + serializer.
+
+import { describe, test, expect } from 'bun:test'
+import type Stripe from 'stripe'
+import { buildPromo, minimumsByCurrency, serializeCoupon } from './admin-promos'
+
+// Coupon metadata is typed `"" | MetadataParam`; in these tests we always set
+// it to a record, so narrow it for readable assertions.
+const meta = (m: unknown): Record<string, string> => m as Record<string, string>
+
+describe('buildPromo', () => {
+  test('rejects non-objects and unknown discount types', () => {
+    expect(buildPromo(null).ok).toBe(false)
+    expect(buildPromo({ discountType: 'nope' }).ok).toBe(false)
+  })
+
+  test('percent discount with bounds', () => {
+    const r = buildPromo({ discountType: 'percent', percentOff: 25, duration: 'once', autoApply: true, code: 'SPRING' })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.coupon.percent_off).toBe(25)
+      expect(meta(r.value.coupon.metadata).auto_apply).toBe('true')
+    }
+    expect(buildPromo({ discountType: 'percent', percentOff: 0, duration: 'once' }).ok).toBe(false)
+    expect(buildPromo({ discountType: 'percent', percentOff: 101, duration: 'once' }).ok).toBe(false)
+  })
+
+  test('amount discount is USD cents', () => {
+    const r = buildPromo({ discountType: 'amount', amountOffCents: 600, duration: 'forever' })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.coupon.amount_off).toBe(600)
+      expect(r.value.coupon.currency).toBe('usd')
+    }
+    expect(buildPromo({ discountType: 'amount', amountOffCents: 0, duration: 'once' }).ok).toBe(false)
+    expect(buildPromo({ discountType: 'amount', amountOffCents: 1.5, duration: 'once' }).ok).toBe(false)
+  })
+
+  test('repeating duration requires months', () => {
+    expect(buildPromo({ discountType: 'percent', percentOff: 10, duration: 'repeating' }).ok).toBe(false)
+    const r = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'repeating', durationInMonths: 3 })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.coupon.duration_in_months).toBe(3)
+  })
+
+  test('plan targeting via metadata', () => {
+    const both = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once' })
+    if (both.ok) expect(meta(both.value.coupon.metadata).plan).toBeUndefined()
+    const yearly = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', plan: 'yearly' })
+    if (yearly.ok) expect(meta(yearly.value.coupon.metadata).plan).toBe('yearly')
+    expect(buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', plan: 'weekly' }).ok).toBe(false)
+  })
+
+  test('auto_apply defaults to false', () => {
+    const r = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once' })
+    if (r.ok) expect(meta(r.value.coupon.metadata).auto_apply).toBe('false')
+  })
+
+  test('code is validated and upper-cased', () => {
+    const r = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', code: 'spring60' })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.code).toBe('SPRING60')
+    expect(buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', code: 'has spaces' }).ok).toBe(false)
+  })
+
+  test('an auto-apply promo must carry a code', () => {
+    // Checkout reaches every promo by code now (the Session allows promotion
+    // codes rather than carrying a server-set discount), so a codeless
+    // auto-apply coupon would be created inert — discounting nobody, silently.
+    const r = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', autoApply: true })
+    expect(r).toEqual({
+      ok: false,
+      error: 'An auto-apply promo needs a code — checkout applies it by code.',
+    })
+    // A promo nobody auto-applies is still fine without one: retention offers
+    // are attached to a subscription by coupon id, never typed.
+    expect(buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once' }).ok).toBe(true)
+  })
+
+  test('redeemBy must be a future date and becomes unix seconds', () => {
+    expect(buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', redeemBy: '2000-01-01' }).ok).toBe(false)
+    const future = new Date(Date.now() + 86_400_000).toISOString()
+    const r = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', redeemBy: future })
+    if (r.ok) expect(r.value.coupon.redeem_by).toBe(Math.floor(Date.parse(future) / 1000))
+  })
+
+  test('maxRedemptions must be a positive integer', () => {
+    expect(buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', maxRedemptions: 0 }).ok).toBe(false)
+    const r = buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', maxRedemptions: 50 })
+    if (r.ok) expect(r.value.coupon.max_redemptions).toBe(50)
+  })
+})
+
+describe('buildPromo — per-buyer limits', () => {
+  const base = { discountType: 'percent', percentOff: 10, duration: 'once', code: 'SPRING' }
+
+  test('carries first-time, per-code redemptions, expiry and minimum spend', () => {
+    const expires = new Date(Date.now() + 86_400_000).toISOString()
+    const r = buildPromo({
+      ...base,
+      firstTimeOnly: true,
+      codeMaxRedemptions: 20,
+      codeExpiresAt: expires,
+      minimumAmountCents: 5000,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.restrictions).toEqual({
+        firstTimeTransaction: true,
+        maxRedemptions: 20,
+        expiresAt: Math.floor(Date.parse(expires) / 1000),
+        minimumAmountCents: 5000,
+      })
+    }
+  })
+
+  test("a code can't outlive or outspend the coupon behind it", () => {
+    // Stripe rejects both outright; catching them here avoids creating a coupon
+    // and rolling it back.
+    const soon = new Date(Date.now() + 86_400_000).toISOString()
+    const later = new Date(Date.now() + 2 * 86_400_000).toISOString()
+    expect(
+      buildPromo({ ...base, maxRedemptions: 10, codeMaxRedemptions: 50 }),
+    ).toEqual({
+      ok: false,
+      error: "A code can't be redeemed more times than the promo itself allows.",
+    })
+    expect(buildPromo({ ...base, redeemBy: soon, codeExpiresAt: later })).toEqual({
+      ok: false,
+      error: "A code can't outlive the promo's own redeem-by date.",
+    })
+    // Within the coupon's own limits, both are fine.
+    expect(buildPromo({ ...base, maxRedemptions: 50, codeMaxRedemptions: 10 }).ok).toBe(true)
+    expect(buildPromo({ ...base, redeemBy: later, codeExpiresAt: soon }).ok).toBe(true)
+  })
+
+  test('per-buyer limits require a code to hang them on', () => {
+    // They are checked when a code is redeemed, so a codeless promo can't have
+    // them — silently dropping them would be worse than refusing.
+    expect(buildPromo({ discountType: 'percent', percentOff: 10, duration: 'once', firstTimeOnly: true })).toEqual({
+      ok: false,
+      error: 'Per-buyer limits need a code — they are checked when it is redeemed.',
+    })
+  })
+
+  test('rejects nonsense amounts and dates', () => {
+    expect(buildPromo({ ...base, codeMaxRedemptions: 0 }).ok).toBe(false)
+    expect(buildPromo({ ...base, minimumAmountCents: -1 }).ok).toBe(false)
+    expect(buildPromo({ ...base, minimumAmountCents: 12.5 }).ok).toBe(false)
+    expect(buildPromo({ ...base, codeExpiresAt: '2000-01-01' }).ok).toBe(false)
+    expect(buildPromo({ ...base, codeExpiresAt: 'not a date' }).ok).toBe(false)
+  })
+})
+
+describe('minimumsByCurrency', () => {
+  // A minimum stated only in USD makes the code unredeemable everywhere else:
+  // Stripe requires the charge currency to be one of the code's own. So it is
+  // restated in every currency, scaled off the catalog's own floors.
+  const floors = { usd: 8000, gbp: 6000, jpy: 12000, eur: 7000 }
+
+  test('scales the USD figure by each currency\'s catalog ratio', () => {
+    // USD is deliberately absent: Stripe fills it in from
+    // minimum_amount_currency and errors if we send it as an option too.
+    expect(minimumsByCurrency(16000, floors)).toEqual({
+      gbp: { minimum_amount: 12000 },
+      jpy: { minimum_amount: 24000 },
+      eur: { minimum_amount: 14000 },
+    })
+  })
+
+  test('covers every other currency, never rounding one down to zero', () => {
+    // A currency whose floor rounds the minimum away must still be listed —
+    // omitting it would take the code away from those buyers entirely.
+    const out = minimumsByCurrency(1, { usd: 8000, jpy: 1 })
+    expect(Object.keys(out)).toEqual(['jpy'])
+    expect(out.jpy.minimum_amount).toBe(1)
+  })
+})
+
+describe('serializeCoupon', () => {
+  test('flattens metadata flags and normalizes redeem_by', () => {
+    const coupon = {
+      id: 'co_1',
+      name: 'Spring',
+      valid: true,
+      percent_off: 20,
+      amount_off: null,
+      currency: null,
+      duration: 'once',
+      duration_in_months: null,
+      metadata: { auto_apply: 'true', plan: 'yearly' },
+      max_redemptions: 100,
+      times_redeemed: 5,
+      redeem_by: 1_800_000_000,
+    } as unknown as Stripe.Coupon
+
+    const promotionCode = {
+      code: 'SPRING60',
+      max_redemptions: 20,
+      times_redeemed: 3,
+      expires_at: 1_700_000_000,
+      restrictions: { first_time_transaction: true, minimum_amount: 5000 },
+    } as unknown as Stripe.PromotionCode
+
+    const v = serializeCoupon(coupon, promotionCode)
+    expect(v).toMatchObject({
+      id: 'co_1',
+      kind: 'percent',
+      percentOff: 20,
+      autoApply: true,
+      plan: 'yearly',
+      maxRedemptions: 100,
+      timesRedeemed: 5,
+      code: 'SPRING60',
+      // The code's own limits, which are the per-buyer ones.
+      codeMaxRedemptions: 20,
+      codeTimesRedeemed: 3,
+      firstTimeOnly: true,
+      minimumAmountCents: 5000,
+    })
+    expect(v.redeemBy).toBe(new Date(1_800_000_000 * 1000).toISOString())
+    expect(v.codeExpiresAt).toBe(new Date(1_700_000_000 * 1000).toISOString())
+  })
+
+  test('a coupon with no code reports no per-buyer limits', () => {
+    const coupon = {
+      id: 'co_2',
+      name: null,
+      valid: true,
+      percent_off: 10,
+      amount_off: null,
+      currency: null,
+      duration: 'once',
+      duration_in_months: null,
+      metadata: {},
+      max_redemptions: null,
+      times_redeemed: 0,
+      redeem_by: null,
+    } as unknown as Stripe.Coupon
+
+    expect(serializeCoupon(coupon, null)).toMatchObject({
+      code: null,
+      codeMaxRedemptions: null,
+      codeTimesRedeemed: null,
+      codeExpiresAt: null,
+      firstTimeOnly: false,
+      minimumAmountCents: null,
+    })
+  })
+
+  test('a retention offer must name the save it fills', () => {
+    const r = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'repeating',
+      durationInMonths: 6,
+      retentionOffer: true,
+    })
+    // Without offer_kind the coupon would be flagged but unreachable — inert.
+    expect(r).toEqual({ ok: false, error: 'Choose where this retention offer appears.' })
+  })
+
+  test('a retention offer can never run forever', () => {
+    const r = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'forever',
+      retentionOffer: true,
+      offerKind: 'supporter_coupon',
+    })
+    expect(r).toEqual({
+      ok: false,
+      error: 'A retention offer must run for a set number of months.',
+    })
+  })
+
+  test('rejects an unknown save slot, and a slot on a checkout promo', () => {
+    const unknown = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'once',
+      retentionOffer: true,
+      offerKind: 'nope',
+    })
+    expect(unknown).toEqual({ ok: false, error: 'Unknown cancel-flow save slot.' })
+
+    const onCheckout = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'once',
+      offerKind: 'supporter_coupon',
+    })
+    expect(onCheckout).toEqual({
+      ok: false,
+      error: 'Only a retention offer can target a cancel-flow save.',
+    })
+  })
+
+  test('tags a valid retention offer with its slot', () => {
+    const r = buildPromo({
+      discountType: 'percent',
+      percentOff: 20,
+      duration: 'repeating',
+      durationInMonths: 6,
+      plan: 'monthly',
+      retentionOffer: true,
+      offerKind: 'supporter_coupon',
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.coupon.metadata).toEqual({
+      auto_apply: 'false',
+      retention_offer: 'true',
+      offer_kind: 'supporter_coupon',
+      plan: 'monthly',
+    })
+    expect(r.value.coupon.duration_in_months).toBe(6)
+  })
+})

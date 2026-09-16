@@ -1,0 +1,45 @@
+name: Dependency audit
+
+# Fails if any production dependency has a known vulnerability advisory.
+# pnpm audit resolves from pnpm-lock.yaml alone, so no install step is needed.
+#
+# Triggers:
+#   • PRs and pushes to main that change the dependency tree
+#   • weekly schedule — advisories are published against versions we already
+#     have, so dep-change triggers alone would miss them
+#   • manual dispatch (Actions tab → Run workflow)
+#
+# Dev-only findings don't fail the build (--prod); they never ship to Vercel.
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Audit production dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Reads the pnpm version from the packageManager field in package.json.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Audit
+        run: pnpm audit --prod

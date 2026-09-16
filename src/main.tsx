@@ -1,19 +1,22 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ClerkProvider } from '@clerk/react'
+import { RouterProvider } from '@tanstack/react-router'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import './index.css'
-import App from './App.tsx'
+import { router } from './router'
 import { Gate } from './Gate.tsx'
+import { initObservability } from './lib/observability'
+import { ThemeProvider } from './lib/theme.tsx'
+
+initObservability()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ClerkProvider
-      publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}
-      afterSignOutUrl="/"
-    >
+    <ThemeProvider>
       <Gate>
-        <App />
+        <RouterProvider router={router} />
       </Gate>
-    </ClerkProvider>
+      <SpeedInsights />
+    </ThemeProvider>
   </StrictMode>,
 )
