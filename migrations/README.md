@@ -23,45 +23,41 @@ needs DDL privileges in that database.
 
 ## Where migrations run
 
-Three environments, three workflows:
+| Where | Database | How |
+| --- | --- | --- |
+| Local | `ark-insider-dev` | `bun run migrate` with `.env` |
+| Staging (`main`) | `ark-insider-dev` | CI on merge, `preview` environment |
+| Production (`production`) | `ark-insider-prod` | CI on push, `production` environment, approval required |
 
-**Local development → a separate `ark-insider-dev` Neon project.** Don't point
-local dev at the prod DB; you'll trip over your own schema changes. The dev
-project is fully isolated (separate compute, separate storage, separate
-billing line) — its pooled connection string is what your local `.env`
-`DATABASE_URL` should point at. After cloning, run `bun run migrate` once
-to bring the schema up to date.
+**Local and staging share `ark-insider-dev`.** A migration you apply locally
+is live on staging too, and it will be a no-op when your merge reaches CI.
+Grab the dev pooled URL from the Neon console (switch to the `Hannah` org →
+`ark-insider-dev` → Connection string → pooled).
 
-The dev project lives in the same `Hannah` Neon org as prod; grab its
-pooled URL from the console (Branches → `main` → Connection string → pick
-the pooled endpoint).
+**CI.** `.github/workflows/migrate.yml` runs `bun run migrate` on pushes to
+`main` and `production` that touch `migrations/`, the runner, or the workflow
+itself. The branch picks the GitHub Environment, and the environment supplies
+`DATABASE_URL`. The full picture, including how this lines up with Vercel, is
+in `docs/deploys.md`.
 
-**CI → production Neon main branch via GitHub Action.** Schema changes land
-in `migrations/` on a feature branch, get reviewed in a PR, and merge to
-`main`. `.github/workflows/migrate.yml` then runs `bun run migrate` against
-the prod DB, gated by the `production-db` Environment (required reviewers
-configured in repo settings). The action is path-filtered, so it only fires
-when something under `migrations/` (or the runner itself) changes.
+**Manual re-run → `workflow_dispatch`.** If a migration needs to re-run (e.g.
+someone applied it by hand and didn't record it), trigger the workflow from
+the Actions tab, dispatching from the branch whose database you mean. Only
+`main` and `production` are accepted.
 
-**Production manual override → `workflow_dispatch`.** If a migration needs to
-re-run (e.g. someone applied it by hand and didn't record it), trigger the
-workflow manually from the Actions tab. Same approval gate.
+### Environment setup
 
-### One-time setup for the prod CI flow
+Both environments exist and are configured (2026-09-16):
 
-1. **Add the secret.** Repo Settings → Secrets and variables → Actions →
-   New repository secret: `DATABASE_URL` = the prod Neon pooled URL.
-2. **Create the environment.** Repo Settings → Environments → New
-   environment: `production-db`. Add yourself as a required reviewer.
-3. **Move the secret onto the environment** (required — repo-level secrets
-   are readable from any workflow run, bypassing the approval gate;
-   environment secrets are only readable from runs that have been approved
-   for `production-db`): Settings → Environments → `production-db` →
-   Environment secrets → add `DATABASE_URL` there and remove the repo-level
-   one.
+- **`preview`** — secret `DATABASE_URL` = `ark-insider-dev` pooled URL. No
+  reviewers, so merges migrate staging immediately.
+- **`production`** — secret `DATABASE_URL` = `ark-insider-prod` pooled URL.
+  Required reviewer, so every run pauses for "Approve and deploy".
 
-After this, every PR that touches `migrations/` triggers a queued approval on
-merge — you click "Approve and deploy" on the workflow run to apply.
+Keep the secrets on the **environments**, never at repo level: a repo-level
+secret is readable from any workflow run and would bypass the approval gate.
+GitHub can't see Vercel's variables, so a rotated database password has to be
+updated in both places.
 
 ## The squashed baseline
 
@@ -76,8 +72,8 @@ The squash was verified against production: applying this one file to an empty
 database yields a schema byte-identical to prod's — 121 columns and 30 indexes,
 matching — and the same seed rows.
 
-**Adopting it on a database that already ran 0001–0025** (dev and prod both
-did) means baselining the ledger, because `0001_initial_schema.sql` is already
+**Adopting it on a database that already ran 0001–0025** means baselining the
+ledger (dev and prod both were, on 2026-09-16), because `0001_initial_schema.sql` is already
 recorded by name — `migrate` is a no-op there, and `migrate:status` would
 report drift on 0001 plus 22 orphans. The schema already matches, so only the
 ledger needs rewriting:

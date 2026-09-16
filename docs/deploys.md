@@ -15,6 +15,13 @@ production env vars land, flip arkmedia → Settings → Git → Production Bran
 to `production`, and from that moment merges to main become preview builds and
 `ark-plus.xyz` only moves via the Deploy to production workflow.
 
+**Before that flip, give Vercel Production its own `DATABASE_URL`** pointing at
+`ark-insider-prod`. Today one shared value serves Preview and Production and it
+points at `ark-insider-dev`, which is right for staging but not for prod. The
+`production` GitHub Environment already points at `ark-insider-prod`, so
+without the split, a production deploy would run against dev while its
+migrations land on prod.
+
 Until the flip, running that workflow pushes the `production` branch but Vercel
 builds it as a *preview*, because it is not the Production Branch yet.
 
@@ -47,17 +54,20 @@ stable alias:
 Vercel Authentication is on for all non-custom domains, so that URL asks for a
 Vercel login. Team members get in; the public does not.
 
-**Staging currently runs against production data.** All 40 environment
-variables on the project target production and preview with the same value, so
-a preview build talks to the prod Neon database, live Stripe, prod Auth0 and
-prod Beehiiv. Until that is split, treat staging as a production mirror: safe
-to look at, not safe to click through a checkout or a cancellation on.
+**Staging shares every environment variable with production.** All 40 on the
+project target production and preview with the same value. For
+`DATABASE_URL` that value is `ark-insider-dev` — confirmed 2026-09-16 by
+matching the FAQ row ids ark-plus.xyz serves against each database — so
+staging's data is already the dev database, and `ark-insider-prod` is not wired
+into Vercel at all yet. The rest (live Stripe, prod Auth0, prod Beehiiv) still
+point wherever production does, so treat staging as safe to look at, not safe
+to click through a checkout or a cancellation on.
 
 Splitting it means giving these a preview-scoped value of their own:
 
 | Variable | Preview should point at |
 | --- | --- |
-| `DATABASE_URL` | the `ark-insider-dev` Neon project |
+| `DATABASE_URL` | the `ark-insider-dev` Neon project (already true — the split is giving *Production* `ark-insider-prod`) |
 | `STRIPE_SECRET_KEY`, `VITE_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` | the Stripe test catalog |
 | `APP_BASE_URL` | the staging origin — it drives every OAuth `redirect_uri` |
 | Auth0 client/tenant vars | plus the staging callback URL added to the Auth0 app |
@@ -93,21 +103,30 @@ database the moment they diverge.
 
 ## Database migrations
 
-`migrate.yml` runs on pushes to `production` that touch `migrations/`, so the
-schema moves with the deploy rather than on merge to `main`. Merging to main no
-longer migrates anything — that holds now, and keeps holding after the
-Production Branch flip.
+`migrate.yml` runs on any push to `main` or `production` that touches
+`migrations/`, and the branch picks the database:
+
+| Push to | GitHub Environment | `DATABASE_URL` | Gate |
+| --- | --- | --- | --- |
+| `main` | `preview` | `ark-insider-dev` | none — migrates on merge |
+| `production` | `production` | `ark-insider-prod` | required reviewer |
+
+Each environment holds its own `DATABASE_URL` secret, meant to mirror the
+Vercel environment of the same name. **GitHub Actions cannot read Vercel's
+variables** — the two are set separately, so when one changes, change both.
+(Vercel won't hand them back either: they're Sensitive, and `vercel env pull`
+returns them empty.)
+
+A manual dispatch follows the same rule: run it from `production` to migrate
+prod, from `main` to migrate staging. Any other branch is skipped, so an
+unmerged migration can't reach a shared database.
 
 The migration and the Vercel build both start from the same push and race each
-other. Required reviewers on the `production-db` environment are the lever for
-holding one back when an order is needed.
+other. The required reviewer on `production` is the lever for holding one back
+when an order is needed. `preview` deliberately has none.
 
-Two things are unconfigured on that environment today and will fail the next
-migration run:
-
-- no `DATABASE_URL` secret (Settings → Environments → production-db → secrets)
-- no required reviewers, so the approval gate the workflow describes isn't
-  actually gating anything
+`ark-insider-dev` is also what local `.env` points at, so a migration you apply
+locally lands on staging too.
 
 ## Ownership of each piece
 
@@ -117,6 +136,7 @@ migration run:
 | Preview auth | Vercel → arkmedia → Settings → Deployment Protection |
 | Production deploy | `.github/workflows/deploy-production.yml` |
 | Schema | `.github/workflows/migrate.yml` |
+| Per-branch `DATABASE_URL` + prod approval | GitHub → Settings → Environments → `preview` / `production` |
 | Cron jobs | `vercel.json` — they run on production deployments only, so staging never fires them |
 
 `scripts/vercel-ignore-build.sh` is left over from the earlier
