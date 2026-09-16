@@ -10,7 +10,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "sanitize-html>htmlparser2": "^9.1.0"
+    }
   },
   "scripts": {
     "dev": "vite",
@@ -42,7 +45,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "sanitize-html": "2.17.1",
+    "sanitize-html": "2.17.7",
     "stripe": "22.3.2",
     "tailwindcss": "^4.3.3"
   },
