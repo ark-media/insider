@@ -181,7 +181,9 @@ function cmdCreate(rawName: string | undefined): void {
 function newPool(): Pool {
   const url = process.env.DATABASE_URL
   if (!url) {
-    console.error('DATABASE_URL is not set. Add it to .env (use the pooled URL).')
+    console.error(
+      'DATABASE_URL is not set. Use the DIRECT (unpooled) URL — see migrations/README.md.',
+    )
     process.exit(1)
   }
   return new Pool({ connectionString: url })

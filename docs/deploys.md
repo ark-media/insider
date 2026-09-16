@@ -111,9 +111,12 @@ database the moment they diverge.
 | `main` | `preview` | `ark-insider-dev` | none — migrates on merge |
 | `production` | `production` | `ark-insider-prod` | required reviewer |
 
-Each environment holds its own `DATABASE_URL` secret, meant to mirror the
-Vercel environment of the same name. **GitHub Actions cannot read Vercel's
-variables** — the two are set separately, so when one changes, change both.
+Each environment holds its own `DATABASE_URL` secret, pointing at the same
+database as the Vercel environment of the same name — but on Neon's **direct**
+host, where Vercel uses the pooled one. The runner holds a session-level
+advisory lock, which the pooler doesn't support (see `migrations/README.md`).
+**GitHub Actions cannot read Vercel's variables** — the two are set
+separately, so when a password rotates, change both.
 (Vercel won't hand them back either: they're Sensitive, and `vercel env pull`
 returns them empty.)
 

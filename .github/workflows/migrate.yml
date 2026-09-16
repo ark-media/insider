@@ -5,9 +5,11 @@ name: Migrate database
 #   push to main        ->  `preview` environment     ->  ark-insider-dev
 #   push to production  ->  `production` environment  ->  ark-insider-prod
 #
-# Each GitHub Environment holds its own DATABASE_URL secret, mirroring the
-# Vercel environment of the same name, so the schema a build runs against is
-# the schema its branch migrated. main is staging (a Vercel preview build once
+# Each GitHub Environment holds its own DATABASE_URL secret: the same database
+# as the Vercel environment of the same name, so the schema a build runs
+# against is the schema its branch migrated. It must be Neon's DIRECT host, not
+# the `-pooler` one Vercel uses — the runner holds a session-level advisory
+# lock, and the pooler (transaction mode) can't keep one. main is staging (a Vercel preview build once
 # the Production Branch is flipped to `production`), so a merge migrates the
 # staging database straight away. production is what "Deploy to production"
 # fast-forwards, so prod's schema moves at the same moment its code does.

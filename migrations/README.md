@@ -1,14 +1,14 @@
 # Migrations
 
 SQL migrations for the Neon Postgres database. The runner is `scripts/migrate.ts`
-— a thin wrapper around `@neondatabase/serverless`'s pooled client. There is no
+— a thin wrapper around `@neondatabase/serverless`'s `Pool` client. There is no
 ORM; migrations are plain SQL.
 
 ## Usage
 
 ```bash
-# Apply all pending migrations (against $DATABASE_URL).
-bun run migrate
+# Apply all pending migrations (against $DATABASE_URL — the DIRECT url, see below).
+DATABASE_URL="<direct url>" bun run migrate
 
 # Show which migrations have been applied and which are pending.
 bun run migrate:status
@@ -17,22 +17,33 @@ bun run migrate:status
 bun run migrate:create add-foo-table
 ```
 
-`DATABASE_URL` must be set — use a pooled connection string (`…-pooler.…`),
-same as the runtime. Migrations run with the same credentials, so the role
+**Migrations need the direct connection string, not the pooled one.** The
+runner holds a session-level advisory lock for the whole run, and Neon's pooler
+(PgBouncer in transaction mode) doesn't support those: the lock and its unlock
+can land on different server connections, leaving the lock held and the next
+run hung. Neon's own guidance is the same — schema migrations use a direct
+connection.
+
+The direct URL is the pooled one with `-pooler` removed from the host
+(`ep-foo-pooler.c-7…` → `ep-foo.c-7…`), or Neon console → Connection string
+with connection pooling switched off. The app itself keeps the pooled URL.
+
+`.env` holds the pooled URL for the dev server, so override it for migrations
+— a variable set in the shell takes precedence over `.env` under Bun. The role
 needs DDL privileges in that database.
 
 ## Where migrations run
 
 | Where | Database | How |
 | --- | --- | --- |
-| Local | `ark-insider-dev` | `bun run migrate` with `.env` |
+| Local | `ark-insider-dev` | `DATABASE_URL="<dev direct url>" bun run migrate` |
 | Staging (`main`) | `ark-insider-dev` | CI on merge, `preview` environment |
 | Production (`production`) | `ark-insider-prod` | CI on push, `production` environment, approval required |
 
 **Local and staging share `ark-insider-dev`.** A migration you apply locally
 is live on staging too, and it will be a no-op when your merge reaches CI.
-Grab the dev pooled URL from the Neon console (switch to the `Hannah` org →
-`ark-insider-dev` → Connection string → pooled).
+Grab the dev direct URL from the Neon console (switch to the `Hannah` org →
+`ark-insider-dev` → Connection string → pooling off).
 
 **CI.** `.github/workflows/migrate.yml` runs `bun run migrate` on pushes to
 `main` and `production` that touch `migrations/`, the runner, or the workflow
@@ -49,15 +60,16 @@ the Actions tab, dispatching from the branch whose database you mean. Only
 
 Both environments exist and are configured (2026-09-16):
 
-- **`preview`** — secret `DATABASE_URL` = `ark-insider-dev` pooled URL. No
+- **`preview`** — secret `DATABASE_URL` = `ark-insider-dev` direct URL. No
   reviewers, so merges migrate staging immediately.
-- **`production`** — secret `DATABASE_URL` = `ark-insider-prod` pooled URL.
+- **`production`** — secret `DATABASE_URL` = `ark-insider-prod` direct URL.
   Required reviewer, so every run pauses for "Approve and deploy".
 
 Keep the secrets on the **environments**, never at repo level: a repo-level
 secret is readable from any workflow run and would bypass the approval gate.
-GitHub can't see Vercel's variables, so a rotated database password has to be
-updated in both places.
+These are the same databases Vercel's `DATABASE_URL` points at, but on the
+direct host where Vercel uses the pooled one. GitHub can't see Vercel's
+variables, so a rotated database password has to be updated in both places.
 
 ## The squashed baseline
 
@@ -118,7 +130,8 @@ new database needs none of this — just `bun run migrate`.
 `bun run migrate` acquires a Postgres advisory lock (`pg_advisory_lock`) for
 the duration of the apply loop, so two concurrent invocations against the
 same database serialize through the DB rather than racing on the pending
-set. The CI concurrency group only protects the GitHub Action — the
+set. It is a session-level lock, which is why the runner needs the direct
+connection string (see Usage). The CI concurrency group only protects the GitHub Action — the
 advisory lock is what defends against a local-dev run colliding with the
 CI run.
 
