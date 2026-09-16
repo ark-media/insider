@@ -361,6 +361,22 @@ export function PublicMasthead() {
                 >
                   Sign in
                 </button>
+                {/* The escape hatch for the members a password won't let in:
+                    anyone provisioned without one (everyone is — they pick it
+                    from a reset email they may never open), and anyone whose
+                    Google address isn't the address they subscribed with.
+
+                    It has to be here. Auth0 renders no passwordless option of
+                    its own beside the password box (see EmailCodeSignIn), and
+                    the drawer that carries this on mobile sits behind an
+                    sm:hidden button — so without this, desktop visitors cannot
+                    reach the connection at all.
+
+                    Still a text link, not a button: the "single primary
+                    action" rule for this slot holds, and the comment above
+                    about not opening a second door applies to Sign up, not to
+                    a second route through the same door. */}
+                <EmailCodeSignIn returnTo="/account" />
               </div>
             )}
           </div>
