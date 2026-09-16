@@ -14,13 +14,14 @@
  *      that lives in Neon, task 5).
  *
  *   2. Signup gate. Self-signup on the Database connection is disabled in the
- *      dashboard, but social and passwordless connections JIT-provision a new
- *      user on first login with no toggle to stop it. So a login on either with
- *      NO matching Database account is a self-signup: reject it and delete the
- *      orphan record Auth0 created before this action ran. This is the ONLY
- *      thing standing between a stranger who requests an email code and an
- *      account on our tenant — the passwordless connection will mail a code to
- *      any address typed into the login box.
+ *      dashboard, but Google JIT-provisions a new user on first login with no
+ *      toggle to stop it. So a login with NO matching Database account is a
+ *      self-signup: reject it and delete the orphan record Auth0 created before
+ *      this action ran. The passwordless connection has signups disabled too,
+ *      and members' `email` identities are created and linked at provisioning
+ *      (server/lib/auth0-user.ts), so a code login normally arrives already
+ *      linked. The gate covers it anyway, in case that toggle is turned off
+ *      again, which would let Auth0 mail a code to any address.
  *
  *   3. The Fold (Circle) login gate. Circle's Custom SSO points at its own
  *      Auth0 Application; when the login is for THAT client, refuse it unless
@@ -151,10 +152,10 @@ exports.onExecutePostLogin = async (event, api) => {
 
     // No Database account → genuine self-signup. Block and clean up the orphan
     // record Auth0 JIT-created on this login. On the passwordless connection
-    // this is the common case for a stranger: anyone can type an address and
-    // receive a code, so a correct code proves control of the mailbox and
-    // nothing about membership. The delete keeps those from accumulating as
-    // real users on the tenant.
+    // this only happens if its signups toggle is off: then anyone can type an
+    // address and receive a code, so a correct code proves control of the
+    // mailbox and nothing about membership. The delete keeps those from
+    // accumulating as real users on the tenant.
     //
     // We deliberately do NOT require the Database account's own email_verified
     // flag. Members are provisioned by the webhook with email_verified:false

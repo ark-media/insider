@@ -25,9 +25,13 @@ let auth0User: Auth0User | null = { email: 'member@x.com' }
 let auth0Throws = false
 let updates: { userId: string; body: Record<string, unknown> }[] = []
 let updateRejects = false
-// findOrCreateAuth0User's two calls: the by-email lookup and the create.
-let byEmail: (Auth0User & { user_id?: string })[] = []
+// findOrCreateAuth0User's calls: the by-email lookup, the creates (Database
+// account, then the code-login identity), and the link between them.
+type Identity = { connection: string; provider?: string; user_id?: string }
+let byEmail: (Auth0User & { user_id?: string; identities?: Identity[] })[] = []
 let creates: Record<string, unknown>[] = []
+let links: { primaryId: string; body: Record<string, unknown> }[] = []
+let linkRejects = false
 
 mock.module('auth0', () => ({
   ManagementClient: class {
@@ -44,7 +48,19 @@ mock.module('auth0', () => ({
       listUsersByEmail: async () => byEmail,
       create: async (body: Record<string, unknown>) => {
         creates.push(body)
-        return { user_id: 'auth0|new-1' }
+        return body.connection === 'email'
+          ? {
+              user_id: 'email|code-1',
+              identities: [{ connection: 'email', provider: 'email', user_id: 'code-1' }],
+            }
+          : { user_id: 'auth0|new-1' }
+      },
+      identities: {
+        link: async (primaryId: string, body: Record<string, unknown>) => {
+          if (linkRejects) throw new Error('409 identity already linked')
+          links.push({ primaryId, body })
+          return []
+        },
       },
     }
   },
@@ -68,7 +84,7 @@ const sqlCalls: SqlCall[] = []
 mock.module('@neondatabase/serverless', () => neonMockModule(sqlCalls, () => []))
 
 import { devApiPlugin } from './dev-api'
-import { findOrCreateAuth0User } from './lib/auth0-user'
+import { ensureEmailCodeLogin, findOrCreateAuth0User } from './lib/auth0-user'
 import { signSessionToken } from './lib/session'
 import { SESSION_COOKIE_NAME } from './lib/cookies'
 
@@ -154,6 +170,8 @@ beforeEach(() => {
   circleHasMember = true
   byEmail = []
   creates = []
+  links = []
+  linkRejects = false
   sqlCalls.length = 0
 })
 
@@ -164,6 +182,7 @@ afterAll(() => {
   // later suite's "Auth0 has no such user" case find one.
   byEmail = []
   creates = []
+  links = []
 })
 
 // The rate limiters live at module scope and are keyed on the Auth0 sub, so
@@ -619,5 +638,98 @@ describe('existing account', () => {
       userId: 'auth0|existing',
       created: false,
     })
+  })
+})
+
+// ===========================================================================
+// The code-login identity
+//
+// The passwordless connection has signups disabled, so Auth0 refuses to send a
+// code to any address without an `email` identity, before a code even exists.
+// Provisioning therefore has to create that identity and link it into the
+// Database account; otherwise a member's "send me a code" fails with nothing
+// in their inbox.
+// ===========================================================================
+
+const DB_IDENTITY: Identity = {
+  connection: 'Username-Password-Authentication',
+  provider: 'auth0',
+  user_id: 'existing',
+}
+
+describe('code-login identity', () => {
+  test('a new account gets one, linked into it', async () => {
+    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
+    expect(creates).toHaveLength(2)
+    expect(creates[1]).toEqual({
+      connection: 'email',
+      email: PROVISION_EMAIL,
+      email_verified: true,
+      verify_email: false,
+    })
+    expect(links).toEqual([
+      { primaryId: 'auth0|new-1', body: { provider: 'email', user_id: 'code-1' } },
+    ])
+  })
+
+  test('an existing account without one gets one', async () => {
+    // Every member provisioned before this step existed.
+    byEmail = [
+      { user_id: 'auth0|existing', email: PROVISION_EMAIL, identities: [DB_IDENTITY] },
+    ]
+    await findOrCreateAuth0User(PROVISION_EMAIL, undefined, BASE_ENV)
+    expect(creates).toEqual([expect.objectContaining({ connection: 'email' })])
+    expect(links[0]?.primaryId).toBe('auth0|existing')
+  })
+
+  test('an account that already has one costs no calls', async () => {
+    byEmail = [
+      {
+        user_id: 'auth0|existing',
+        email: PROVISION_EMAIL,
+        identities: [DB_IDENTITY, { connection: 'email', provider: 'email', user_id: 'old' }],
+      },
+    ]
+    await findOrCreateAuth0User(PROVISION_EMAIL, undefined, BASE_ENV)
+    expect(creates).toHaveLength(0)
+    expect(links).toHaveLength(0)
+  })
+
+  test('a standalone code record is linked, not duplicated', async () => {
+    // Left behind when a create succeeded and the link didn't. The connection
+    // holds one record per address, so a second create would 409.
+    byEmail = [
+      {
+        user_id: 'email|stray',
+        email: PROVISION_EMAIL,
+        identities: [{ connection: 'email', provider: 'email', user_id: 'stray' }],
+      },
+      { user_id: 'auth0|existing', email: PROVISION_EMAIL, identities: [DB_IDENTITY] },
+    ]
+    const res = await findOrCreateAuth0User(PROVISION_EMAIL, undefined, BASE_ENV)
+    // The stray record sorts first, and must still not become the member's sub.
+    expect(res?.userId).toBe('auth0|existing')
+    expect(creates).toHaveLength(0)
+    expect(links).toEqual([
+      { primaryId: 'auth0|existing', body: { provider: 'email', user_id: 'stray' } },
+    ])
+  })
+
+  test('a failed link does not fail provisioning', async () => {
+    // The member still has Google, and the backfill script retries.
+    linkRejects = true
+    const res = await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
+    expect(res).toEqual({ userId: 'auth0|new-1', created: true })
+  })
+
+  test('ensureEmailCodeLogin reports whether the member is covered', async () => {
+    byEmail = [
+      { user_id: 'auth0|existing', email: PROVISION_EMAIL, identities: [DB_IDENTITY] },
+    ]
+    expect(await ensureEmailCodeLogin(BASE_ENV, PROVISION_EMAIL)).toBe(true)
+    // No Database account means no member to attach it to.
+    byEmail = []
+    expect(await ensureEmailCodeLogin(BASE_ENV, PROVISION_EMAIL)).toBe(false)
+    expect(links).toHaveLength(1)
   })
 })

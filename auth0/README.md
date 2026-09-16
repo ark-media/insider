@@ -21,9 +21,9 @@ have to be resolved against the same (primary) user, so they live together:
    session.
 2. **Signup gate** — a login on either of those with no matching Database
    account is a self-signup: it's rejected and the JIT-provisioned orphan is
-   deleted. On the passwordless connection this is the *only* thing stopping a
-   stranger from ending up with a tenant account, since anyone can type an
-   address into the login box and be mailed a code.
+   deleted. For Google this is the only barrier. The passwordless connection
+   has its own ("Disable Sign Ups", below), so there the gate is a backstop in
+   case that toggle is ever turned off.
 3. **Claims** — sets `…/email`, `…/given_name`, `…/family_name`,
    `…/name_set_by_member`, `…/roles` (namespace and names from
    `shared/auth0-claims.ts`), resolved from the primary user. There is **no**
@@ -37,6 +37,9 @@ The activation webhook creates every paying/gift member on the
 (`server/lib/auth0-user.ts` → `findOrCreateAuth0User`), and stamps
 `app_metadata.tier` via the Management API (`server/entitlement.ts`). So "does a
 Database account exist for this email?" is exactly "is this a real member?".
+The same step creates the member's passwordless `email` identity and links it
+into that account (see *Passwordless email*), so a code login never reaches the
+linking branch at all — it is already linked.
 
 ### Why the Management API calls are unavoidable
 
@@ -127,27 +130,47 @@ Setup (Auth0 Dashboard):
    login page.)
 4. Fill in *From*, *Subject*, and the message template so the code email matches
    the rest of our lifecycle mail, and set the OTP expiry/length.
-5. **Authentication → Passwordless → Email → Settings → Disable Sign Ups must be
-   OFF.** This reads like it contradicts step 1 of Deploy/setup above, where the
-   *Database* connection needs it ON. Both are right, and the distinction is the
-   whole design: the Database toggle is what stops a stranger creating a
-   password account, while the passwordless connection **must** be allowed to
-   create the throwaway `email` identity, because that identity *is* the
-   mechanism — with signups disabled there is nothing to send a code to, and
-   Auth0 rejects the request outright:
+5. **Authentication → Passwordless → Email → Settings → Disable Sign Ups is
+   ON**, and that only works because we create every member's `email` identity
+   ourselves. With signups disabled, Auth0 will send a code only to an address
+   that already has an `email` identity. Anyone else is refused before a code
+   exists:
 
    ```
    POST /passwordless/start → 400
    {"error":"bad.connection","error_description":"Public signup is disabled"}
    ```
 
-   No code is generated, so **no email is ever sent** — which looks exactly like
-   an email-delivery problem and isn't one. If the code never arrives, check
-   this before you touch the email provider. What makes leaving it off safe is
-   the gate in this action: a non-member who enters a correct code is denied and
-   their JIT record deleted (post-login.js — the `!primary` branch). Note the
-   delete is best-effort (`.catch(() => {})`), so a Management API failure
-   leaves an orphan behind — denied access, but still a record.
+   (In the tenant logs: *Failed Login — Public signup is disabled*, connection
+   `email`.) No code is generated, so **no email is ever sent**, which looks
+   exactly like an email-delivery problem and isn't one. Strangers hitting this
+   is the point. A *member* hitting it means their identity is missing.
+
+   Provisioning creates it: `linkEmailCodeLogin` in `server/lib/auth0-user.ts`
+   runs inside `findOrCreateAuth0User`, adds a record on the `email` connection
+   and links it into the Database account. That covers every webhook and gift
+   member, and repairs an older member the next time they're provisioned.
+   Anyone else (members provisioned before 2026-09-16, and staff, admins or
+   comps created by hand in the dashboard) needs the backfill, which is safe to
+   re-run:
+
+   ```
+   bun run scripts/backfill-email-code-login.ts            # preview
+   bun run scripts/backfill-email-code-login.ts --apply
+   bun run scripts/backfill-email-code-login.ts --apply --email someone@x.com
+   ```
+
+   **Testing with your own account won't catch a gap:** once your identity
+   exists, your codes keep arriving whatever the toggle says. To see who's
+   covered, run the preview.
+
+   Why ON rather than OFF: with signups allowed, the connection mails a code to
+   any address typed into the login box, and it puts a "Don't have an account?
+   Sign up" link on the login page that can't be hidden. It ran OFF on
+   2026-09-15, relying on the post-login gate to deny non-members after they
+   entered their code. That gate is still in place (post-login.js, the
+   `!primary` branch), so flipping the toggle back OFF is a safe fallback, just
+   a noisier one.
 
 6. Enable the connection for the website's application — **ArkPlus** (Regular
    Web Application, client id `1T1u9VRHbSWx0wy80X5PVYw9BdPNtAvp`, i.e.
@@ -172,13 +195,10 @@ if password login ever returns to the login page.
   stranger. Inherent to using email as the join key — document it for support.
   The passwordless connection is the workaround to hand support: a member who
   signs in with the code sent to their *subscription* address always matches.
-- **Non-members still receive a code.** The passwordless connection mails an OTP
-  to any address typed into the login box, before this action ever runs; the
-  rejection only happens after they enter it. So a stranger's experience is
-  "code arrives → code works → *Membership is required to sign in*", and anyone
-  can make Auth0 send mail to an arbitrary address (Auth0 rate-limits this, we
-  don't). Accepted tradeoff of the connection, but worth knowing when a support
-  ticket describes it.
+- **Non-members get no code.** With signups disabled on the passwordless
+  connection, a stranger's code request is refused and nothing is mailed; the
+  login page shows an error instead. "I never got my code" from a *member*
+  therefore means a missing `email` identity. Run the backfill with `--email`.
 - **A member with no password has a way in.** Members are provisioned without
   one and set it from a reset email they may never open; gift recipients are
   provisioned at claim time. Before this connection existed their only options

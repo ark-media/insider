@@ -5,11 +5,13 @@
 // email, or a password-change ticket for the gift flow. Neither exists now:
 // password sign-in was removed from the login page on 2026-09-16 (see
 // auth0/README.md), so a credential minted here would be one the member could
-// never use. The account is created on the Database connection and the login
-// page mails a one-time code against that address; callers carry members in
-// with the auto-login links in their own email (server/lib/session.ts).
+// never use. The account is created on the Database connection, with the
+// passwordless `email` identity the login page's code prompt signs in against
+// linked into it; callers carry members in with the auto-login links in their
+// own email (server/lib/session.ts).
 
 import crypto from 'node:crypto'
+import type { ManagementClient } from 'auth0'
 import { getManagementClient } from '../auth0.js'
 import {
   MAX_NAME_PART_LEN,
@@ -34,6 +36,95 @@ function nameSetByMember(user: { app_metadata?: unknown }): boolean {
 }
 
 type Env = Record<string, string>
+
+const DB_CONNECTION = 'Username-Password-Authentication'
+// The passwordless connection behind the login page's emailed code.
+const EMAIL_CODE_CONNECTION = 'email'
+
+type Auth0Record = {
+  user_id?: string
+  identities?: { connection?: string; user_id?: string | number }[]
+}
+
+function identityOn(user: Auth0Record, connection: string) {
+  return (user.identities ?? []).find((i) => i.connection === connection)
+}
+
+// Gives a member's Database account the passwordless `email` identity that a
+// code sign-in authenticates as.
+//
+// The passwordless connection runs with "Disable Sign Ups" ON, so Auth0 won't
+// mail a code to any address someone types into the login box. The cost is
+// that it refuses every address with no `email` identity yet, before a code
+// exists ("Public signup is disabled" in the logs, which to the member looks
+// like an email that never came). So unlike Google's, this identity can't wait
+// for the first login to create it. It is made here and linked into the
+// Database account, which is where a code login then lands.
+//
+// `records` is everything Auth0 holds for the address. Idempotent: an account
+// already carrying the identity costs no calls, and a standalone `email` record
+// left by an earlier half-finished run is linked rather than duplicated. Soft-
+// fails like the name write: the member still has Google, and the next
+// provisioning or scripts/backfill-email-code-login.ts tries again.
+async function linkEmailCodeLogin(
+  mgmt: ManagementClient,
+  email: string,
+  records: Auth0Record[],
+): Promise<boolean> {
+  const primary = records.find((u) => identityOn(u, DB_CONNECTION))
+  if (!primary?.user_id) return false
+  if (identityOn(primary, EMAIL_CODE_CONNECTION)) return true
+
+  try {
+    const standalone = records.find(
+      (u) => u !== primary && identityOn(u, EMAIL_CODE_CONNECTION),
+    )
+    let secondaryId = standalone
+      ? identityOn(standalone, EMAIL_CODE_CONNECTION)?.user_id
+      : undefined
+    if (secondaryId === undefined) {
+      const created = await mgmt.users.create({
+        connection: EMAIL_CODE_CONNECTION,
+        email,
+        // This identity can only ever authenticate by entering a code mailed to
+        // this address, which is the verification. Leaving it false would also
+        // have Auth0 send a "verify your email" message on creation.
+        email_verified: true,
+        verify_email: false,
+      })
+      secondaryId = identityOn(created, EMAIL_CODE_CONNECTION)?.user_id
+    }
+    if (secondaryId === undefined) {
+      console.error('[auth0] email code identity has no user_id')
+      return false
+    }
+    await mgmt.users.identities.link(primary.user_id, {
+      provider: 'email',
+      user_id: String(secondaryId),
+    })
+    return true
+  } catch (err) {
+    console.error('[auth0] email code identity provisioning failed:', err)
+    return false
+  }
+}
+
+// The same, for a member whose records haven't been fetched yet. The backfill
+// script's entry point; returns false on any failure, including the lookup.
+export async function ensureEmailCodeLogin(
+  env: Env,
+  email: string,
+): Promise<boolean> {
+  const mgmt = getManagementClient(env)
+  if (!mgmt) return false
+  try {
+    const records = await mgmt.users.listUsersByEmail({ email })
+    return await linkEmailCodeLogin(mgmt, email, records)
+  } catch (err) {
+    console.error('[auth0] email code identity lookup failed:', err)
+    return false
+  }
+}
 
 // `created` distinguishes a brand-new account from a pre-existing one. Callers
 // use it to pick welcome-email copy — a new member needs telling that the link
@@ -78,7 +169,9 @@ export async function findOrCreateAuth0User(
   // write is deliberately NOT flagged setByMember, because a name harvested from
   // a billing form is still a guess and should stay subject to the heuristic.
   const existing = await mgmt.users.listUsersByEmail({ email })
-  const found = existing[0]
+  // Prefer the Database account: a standalone `email` record can briefly share
+  // the address (see linkEmailCodeLogin), and it is never the member's sub.
+  const found = existing.find((u) => identityOn(u, DB_CONNECTION)) ?? existing[0]
   if (found?.user_id) {
     const storedIsReal = hasRealName({
       givenName: found.given_name,
@@ -91,11 +184,13 @@ export async function findOrCreateAuth0User(
       // throwing. A name is not worth failing provisioning over.
       await updateAuth0Name(env, found.user_id, { givenName, familyName })
     }
+    // Also repairs members provisioned before this step existed.
+    await linkEmailCodeLogin(mgmt, email, existing)
     return { userId: found.user_id, created: false }
   }
 
-  // Create Auth0 user with a random temporary password — the password-change
-  // email below is how they'll actually log in for the first time.
+  // Auth0 requires a password on a Database account; nobody will ever use this
+  // one (see the note below).
   const tempPassword = `Tmp-${crypto.randomBytes(16).toString('hex')}`
 
   let userId: string | undefined
@@ -121,7 +216,11 @@ export async function findOrCreateAuth0User(
   // The record carries only a random temp password, and nothing will ever ask
   // for it: the member signs in with an emailed code against this address, or
   // with Google if it matches. What this account exists for is to be the
-  // canonical identity the post-login action links those logins into.
+  // canonical identity those logins land on — the code identity linked here,
+  // Google's by the post-login action on first use.
+  await linkEmailCodeLogin(mgmt, email, [
+    { user_id: userId, identities: [{ connection: DB_CONNECTION }] },
+  ])
   return { userId, created: true }
 }
 
