@@ -158,6 +158,13 @@ interface EventMap {
   // hand-off to Circle's own paid signup; that is wrong. Every purchase
   // transacts through our Stripe checkout — there is no other buy path.)
   circle_join_clicked: void
+  // The Fold login gate turned someone away and landed them on /plus?from=fold
+  // (auth0/actions/post-login.js). `audience` is what they were actually
+  // missing — a session, the axis on top of Ark+, or a membership at all — which
+  // is the difference between a sign-in problem and a sales one.
+  fold_gate_bounced: {
+    audience: 'guest' | 'no-membership' | 'ark-plus-only' | 'member'
+  }
 
   // --- Attribution: outbound traffic we send off-domain ---
   // One generic event behind <OutboundLink>, rather than a bespoke event per
