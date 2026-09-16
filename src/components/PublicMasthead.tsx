@@ -22,7 +22,6 @@ type NavChild = {
   to: string;
   hash?: string;
   description?: string;
-  paid?: boolean;
   /** A shortcut to a page that another nav item owns — doesn't light up this parent. */
   crossLink?: boolean;
 };
@@ -37,12 +36,14 @@ type NavItem = {
 
 const podcastChildren: NavChild[] = [
   { label: "All", to: "/podcasts" },
-  ...shows.map((show) => ({
-    label: show.title,
-    to: show.route,
-    description: show.cadence,
-    paid: show.paid,
-  })),
+  // The paid show lives under /plus, so the podcast menu lists public shows only.
+  ...shows
+    .filter((show) => !show.paid)
+    .map((show) => ({
+      label: show.title,
+      to: show.route,
+      description: show.cadence,
+    })),
 ];
 
 const NAV_ITEMS: NavItem[] = [
@@ -676,11 +677,6 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string }) {
                     </span>
                   ) : null}
                 </span>
-                {child.paid ? (
-                  <span className="mt-0.5 border border-cyan/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-button text-cyan">
-                    Ark+
-                  </span>
-                ) : null}
               </Link>
             );
           })}
@@ -769,16 +765,11 @@ function MobileNavSection({
                   hash={child.hash}
                   aria-current={childActive ? "page" : undefined}
                   onClick={onNavigate}
-                  className={`flex min-h-10 items-center justify-between py-2 text-[13px] transition ${
+                  className={`flex min-h-10 items-center py-2 text-[13px] transition ${
                     childActive ? "text-cyan" : "text-fg-muted hover:text-fg-strong"
                   }`}
                 >
                   <span>{child.label}</span>
-                  {child.paid ? (
-                    <span className="border border-cyan/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-button text-cyan">
-                      Ark+
-                    </span>
-                  ) : null}
                 </Link>
               </li>
             );

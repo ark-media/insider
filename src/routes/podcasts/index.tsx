@@ -14,12 +14,15 @@ import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 const BROWSE_GRID_SIZES =
   "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
 
+// The paid show lives under /plus, not in the public podcast browse grid.
+const publicShows = shows.filter((show) => !show.paid);
+
 export const Route = createFileRoute("/podcasts/")({
   component: ShowsHub,
 });
 
 function ShowsHub() {
-  const descriptions = useShowDescriptions(shows.map((s) => s.slug));
+  const descriptions = useShowDescriptions(publicShows.map((s) => s.slug));
   return (
     <PageShell
       title="News, debate, history, and everything in between."
@@ -29,17 +32,12 @@ function ShowsHub() {
       <section>
         <div className="page-section">
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {shows.map((show) => (
+            {publicShows.map((show) => (
               <Link
                 key={show.slug}
                 to={show.route}
                 className="group relative block overflow-hidden border border-rule bg-navy-800/40 transition hover:border-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
-                {show.paid ? (
-                  <span className="label absolute right-4 top-4 z-10 border border-cyan/60 bg-navy-900/80 px-2 py-0.5 text-cyan backdrop-blur-sm">
-                    Ark+
-                  </span>
-                ) : null}
                 <ShowCover
                   show={show}
                   sizes={BROWSE_GRID_SIZES}

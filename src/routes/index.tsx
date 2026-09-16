@@ -467,11 +467,14 @@ function AlsoFromArkMedia() {
   );
 }
 
+// The paid show lives under /plus, not in the public podcast grid.
+const publicShows = shows.filter((show) => !show.paid);
+
 function HomePage() {
   const { gift } = Route.useSearch();
   const navigate = useNavigate();
   const { state } = useSubscriberAuth();
-  const descriptions = useShowDescriptions(shows.map((s) => s.slug));
+  const descriptions = useShowDescriptions(publicShows.map((s) => s.slug));
   const isSubscriber = isArkPlusMember(state);
   return (
     <main className="relative">
@@ -536,7 +539,7 @@ function HomePage() {
           </div>
 
           <div className="mt-10 grid grid-cols-2 gap-4">
-            {shows.map((show) => (
+            {publicShows.map((show) => (
               <LinkCard
                 key={show.slug}
                 to={show.route}
