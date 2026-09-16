@@ -40,6 +40,7 @@ import {
   snapStep,
 } from "../lib/pwycSlider";
 import { ProductMarks } from "./FoldLogo";
+import { EmailCodeSignIn } from "./EmailCodeSignIn";
 import type { ProductMark } from "../data/pricingTiers";
 
 type Plan = "monthly" | "yearly";
@@ -542,6 +543,10 @@ export function CheckoutModal({
             >
               Close
             </button>
+            {/* Someone who just tried to buy a membership they already have is
+                often here because they couldn't get in. Hand them the door that
+                doesn't need a password they may never have set. */}
+            <EmailCodeSignIn returnTo="/account" loginHint={step.email} />
           </div>
         </>
       ) : null}

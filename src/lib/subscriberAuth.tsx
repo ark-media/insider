@@ -42,7 +42,24 @@ export function isPaidMember(state: SubscriberAuthState): boolean {
   );
 }
 
-type SignInOpts = { signup?: boolean; loginHint?: string };
+// Which Auth0 connection to open directly, skipping Auth0's picker. "email"
+// is the passwordless one — Auth0 emails a one-time code, no password needed,
+// which is the sign-in route for members who never set one (they're
+// provisioned by the webhook and pick a password from a reset email, if ever).
+// Omit it to land on the normal page, where password, Google, and the emailed
+// code sit side by side. Must stay in sync with the server's allowlist
+// (LOGIN_CONNECTIONS in server/routes/auth.ts) — a value missing from it is
+// dropped there, not honored.
+type SignInConnection =
+  | "email"
+  | "google-oauth2"
+  | "Username-Password-Authentication";
+
+type SignInOpts = {
+  signup?: boolean;
+  loginHint?: string;
+  connection?: SignInConnection;
+};
 
 type SubscriberAuthValue = {
   state: SubscriberAuthState;
@@ -201,6 +218,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     );
     if (opts?.signup) params.set("screen_hint", "signup");
     if (opts?.loginHint) params.set("login_hint", opts.loginHint);
+    if (opts?.connection) params.set("connection", opts.connection);
     // Fired just before navigating to Auth0; PostHog flushes its queue via
     // sendBeacon on pagehide, so the event survives the redirect.
     trackEvent("login_initiated", { intent: opts?.signup ? "signup" : "login" });

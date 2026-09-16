@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { Spinner } from "./Spinner";
 import { StatusPage, HomeButton } from "./StatusPage";
+import { EmailCodeSignIn } from "./EmailCodeSignIn";
 
 // Client-side gate for the back office. This is UX only — every admin API
 // endpoint independently re-verifies the "admin" role server-side, so a
@@ -25,13 +26,19 @@ export function AdminGuard({ children }: { children: ReactNode }) {
         message="You need to sign in with an admin account to access the back office."
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => signIn("/admin")}
-              className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-            >
-              Sign in
-            </button>
+            {/* StatusPage lays its actions out as a wrapping row, so the
+                code link is stacked under Sign in here rather than becoming a
+                third sibling between the two buttons. */}
+            <div className="flex flex-col items-start gap-1">
+              <button
+                type="button"
+                onClick={() => signIn("/admin")}
+                className="inline-flex min-h-11 items-center justify-center border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                Sign in
+              </button>
+              <EmailCodeSignIn returnTo="/admin" />
+            </div>
             <HomeButton />
           </>
         }

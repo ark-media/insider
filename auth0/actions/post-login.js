@@ -3,19 +3,24 @@
  *
  * This is the SINGLE Post-Login action in the Login flow. It does four things:
  *
- *   1. Account linking. When a member logs in with a social connection (Google)
- *      for the first time, link that identity into the canonical Database
- *      account (Username-Password-Authentication) and make the Database account
- *      primary for the session. Members are always provisioned on the Database
- *      connection by the activation webhook (server/lib/auth0-user.ts) before
- *      they ever log in, so the Database record is the source of truth for
- *      roles (Auth0 holds no entitlement — that lives in Neon, task 5).
+ *   1. Account linking. When a member logs in with any connection other than
+ *      the Database one — Google, or the passwordless `email` connection that
+ *      backs "email me a sign-in code" — for the first time, link that identity
+ *      into the canonical Database account (Username-Password-Authentication)
+ *      and make the Database account primary for the session. Members are
+ *      always provisioned on the Database connection by the activation webhook
+ *      (server/lib/auth0-user.ts) before they ever log in, so the Database
+ *      record is the source of truth for roles (Auth0 holds no entitlement —
+ *      that lives in Neon, task 5).
  *
  *   2. Signup gate. Self-signup on the Database connection is disabled in the
- *      dashboard, but social connections JIT-provision a new user on first
- *      login with no toggle to stop it. So a social login with NO matching
- *      Database account is a self-signup: reject it and delete the orphan
- *      record Auth0 created before this action ran.
+ *      dashboard, but social and passwordless connections JIT-provision a new
+ *      user on first login with no toggle to stop it. So a login on either with
+ *      NO matching Database account is a self-signup: reject it and delete the
+ *      orphan record Auth0 created before this action ran. This is the ONLY
+ *      thing standing between a stranger who requests an email code and an
+ *      account on our tenant — the passwordless connection will mail a code to
+ *      any address typed into the login box.
  *
  *   3. The Fold (Circle) login gate. Circle's Custom SSO points at its own
  *      Auth0 Application; when the login is for THAT client, refuse it unless
@@ -30,9 +35,9 @@
  *   4. Claims. Set the email / name / name-provenance / roles custom claims the
  *      app reads. These MUST be resolved from the primary (Database) user:
  *      after api.authentication.setPrimaryUser(), event.user /
- *      event.authorization still reference the secondary social user for the
- *      rest of this run, so reading roles off `event` would be wrong on the
- *      linking login.
+ *      event.authorization still reference the secondary (Google /
+ *      passwordless) user for the rest of this run, so reading roles off
+ *      `event` would be wrong on the linking login.
  *      Auth0 carries NO entitlement (task 5): there is no tier claim — access is
  *      a live Neon read on the sub, so nothing here reflects membership.
  *
@@ -69,7 +74,7 @@
  *
  * M2M scopes required: read:users, update:users, delete:users, read:roles, and
  * read:users_app_metadata (users-by-email omits app_metadata without it, which
- * silently costs the name_set_by_member claim on the social-linking login only).
+ * silently costs the name_set_by_member claim on the linking login only).
  *
  * Claim namespace must match AUTH0_CLAIM_NAMESPACE in shared/auth0-claims.ts.
  * ---------------------------------------------------------------------------
@@ -104,20 +109,29 @@ function appBase(event) {
 
 exports.onExecutePostLogin = async (event, api) => {
   // The user who just authenticated, and their roles, are the defaults used
-  // for both the Database-login and already-linked-social cases.
+  // for both the Database-login and already-linked cases.
   let resolved = event.user;
   let roles = event.authorization?.roles ?? [];
 
-  const isSocial = event.connection.strategy !== 'auth0';
+  // Everything that isn't the Database connection: Google (strategy
+  // 'google-oauth2') and passwordless email (strategy 'email'). Both arrive as
+  // their own JIT-created user record and both need linking into the member's
+  // Database account, so they take the same branch.
+  const isNonDatabase = event.connection.strategy !== 'auth0';
   const alreadyLinked = (event.user.identities || []).some(
     (i) => i.connection === DB_CONNECTION,
   );
 
-  // --- Account linking + signup gate (unlinked social logins only) ---------
-  if (isSocial && !alreadyLinked) {
+  // --- Account linking + signup gate (unlinked non-Database logins) --------
+  if (isNonDatabase && !alreadyLinked) {
     const email = event.user.email;
     // Only act on a verified email, or linking could attach to someone else's
     // account (or a self-signup could slip through with a spoofed address).
+    // Both connections that reach here satisfy this on their own: Google
+    // asserts the flag, and Auth0 sets email_verified:true on the passwordless
+    // record once the emailed code is entered (which is the whole proof that
+    // login offers). Kept as a guard rather than an assumption — it is what
+    // makes the users-by-email lookup below safe to trust.
     if (!email || event.user.email_verified !== true) {
       return api.access.deny('A verified email is required to sign in.');
     }
@@ -136,17 +150,22 @@ exports.onExecutePostLogin = async (event, api) => {
     );
 
     // No Database account → genuine self-signup. Block and clean up the orphan
-    // record Auth0 JIT-created on this login.
+    // record Auth0 JIT-created on this login. On the passwordless connection
+    // this is the common case for a stranger: anyone can type an address and
+    // receive a code, so a correct code proves control of the mailbox and
+    // nothing about membership. The delete keeps those from accumulating as
+    // real users on the tenant.
     //
     // We deliberately do NOT require the Database account's own email_verified
     // flag. Members are provisioned by the webhook with email_verified:false
     // (findOrCreateAuth0User) and set a password via the reset email rather than
     // verifying, so a member who signs in with Google *before* doing that reset
     // still has an unverified Database account — requiring it here would reject
-    // them as self-signups and delete their social identity. Linking is already
-    // safe without it: the check above proved the *social* email is verified,
-    // and users-by-email only returns records with that exact email, so Google
-    // has confirmed the person controls the address the Database account uses.
+    // them as self-signups and delete their incoming identity. Linking is
+    // already safe without it: the check above proved the *incoming* email is
+    // verified, and users-by-email only returns records with that exact email,
+    // so Google (or the emailed code) has confirmed the person controls the
+    // address the Database account uses.
     if (!primary) {
       await deleteUser(event, token, event.user.user_id).catch(() => {});
       return api.access.deny(
@@ -154,23 +173,25 @@ exports.onExecutePostLogin = async (event, api) => {
       );
     }
 
-    // Link this social identity into the Database account; keep DB primary.
-    const social = event.user.identities[0]; // the connection we just used
+    // Link this identity into the Database account; keep DB primary. Provider
+    // is 'google-oauth2' or 'email' depending on how they signed in; the link
+    // API takes the same { provider, user_id } shape for both.
+    const secondary = event.user.identities[0]; // the connection we just used
     try {
       await linkIdentity(event, token, primary.user_id, {
-        provider: social.provider,
-        user_id: social.user_id,
+        provider: secondary.provider,
+        user_id: secondary.user_id,
       });
     } catch (_err) {
-      // Fail closed rather than leave an unlinked orphan social account.
+      // Fail closed rather than leave an unlinked orphan account.
       return api.access.deny('Could not link your account. Please contact support.');
     }
 
     // Continue the session as the Database account (carries tier + roles).
     api.authentication.setPrimaryUser(primary.user_id);
 
-    // event.* still references the secondary social user for the rest of this
-    // run, so resolve claims from the primary directly.
+    // event.* still references the secondary (Google / passwordless) user for
+    // the rest of this run, so resolve claims from the primary directly.
     resolved = primary;
     const primaryRoles = await userRoles(event, token, primary.user_id).catch(() => null);
     if (primaryRoles) roles = primaryRoles;
@@ -182,8 +203,8 @@ exports.onExecutePostLogin = async (event, api) => {
   // authenticated, and the two applications were a single Auth0 client until
   // this shipped. `resolved.user_id` — not event.user.user_id — is the key: the
   // membership row is keyed on the DATABASE account's sub, which on the
-  // social-linking path above is `primary`, and reading the secondary social
-  // sub here would find no row and turn a paying member away.
+  // linking path above is `primary`, and reading the secondary sub here would
+  // find no row and turn a paying member away.
   const circleClientId = event.secrets.CIRCLE_CLIENT_ID;
   if (!circleClientId) {
     console.warn('[circle-gate] CIRCLE_CLIENT_ID unset — Fold SSO is ungated');
@@ -218,9 +239,9 @@ exports.onExecutePostLogin = async (event, api) => {
   api.accessToken.setCustomClaim(`${NS}/email`, resolved.email);
 
   // Name rides the token so the app never spends a Management API read to greet
-  // someone. Read from `resolved`, not `event.user` — on the social-linking path
-  // above, event.user is still the secondary social record for the rest of this
-  // run, which is why the email claim resolves the same way. Claims must be
+  // someone. Read from `resolved`, not `event.user` — on the linking path
+  // above, event.user is still the secondary record for the rest of this run,
+  // which is why the email claim resolves the same way. Claims must be
   // namespaced; Auth0 silently drops a bare `name`.
   if (resolved.given_name) {
     api.accessToken.setCustomClaim(`${NS}/given_name`, resolved.given_name);
@@ -247,7 +268,7 @@ exports.onExecutePostLogin = async (event, api) => {
   //
   // `resolved`, not `event.user`, for the usual reason — but note this one is
   // the reverse of the others: the flag lives on the DATABASE account (the sub
-  // the profile save targets), so on the social-linking login it is only ever
+  // the profile save targets), so on the linking login it is only ever
   // on `primary`. users-by-email returns app_metadata, provided the M2M client
   // holds read:users_app_metadata (see the scope list above).
   api.accessToken.setCustomClaim(
