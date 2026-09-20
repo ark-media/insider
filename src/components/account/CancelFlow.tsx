@@ -5,7 +5,7 @@ import { trackEvent } from "../../lib/analytics";
 import { applyCouponDiscount, formatCouponDiscount } from "../../lib/currency";
 import { continuationCopy, introTerm, usd } from "../../lib/debundleCopy";
 import {
-  CANCELLATION_REASONS,
+  CANCELLATION_SURVEYS,
   OTHER_REASON_SLUG,
 } from "../../../shared/cancellation";
 import { formatTimestamp } from "../../../shared/format-date";
@@ -559,6 +559,11 @@ export function CancelFlow({
     else onClose();
   };
 
+  // Which post-cancel survey to ask. Keyed off the tier the member arrived on:
+  // a bundle member who keeps neither product (Flow E) gets the bundle survey,
+  // and the debundle flows (C/D) never reach this screen.
+  const survey = CANCELLATION_SURVEYS[tier];
+
   const heading = (text: string) => (
     <h2
       ref={headingRef}
@@ -783,31 +788,41 @@ export function CancelFlow({
         </>
       ) : screen === "survey" ? (
         // Post-cancel: the subscription is already cancelled; ask why (optional).
+        // The questions follow what was cancelled — the bundle survey asks the
+        // shared reasons once, then one sub-question per product.
         <>
-          {heading("Your subscription has been cancelled")}
-          <p className="mt-4 text-body-sm text-fg">
-            Help us improve by letting us know why you're cancelling
-          </p>
-          <fieldset className="mt-6">
-            <legend className="sr-only">Reasons for cancelling</legend>
-            <div className="flex flex-col gap-3">
-              {CANCELLATION_REASONS.map((r) => (
-                <label
-                  key={r.slug}
-                  className="flex cursor-pointer items-start gap-3 text-body-sm text-fg"
-                >
-                  <input
-                    type="checkbox"
-                    value={r.slug}
-                    checked={reasons.has(r.slug)}
-                    onChange={() => toggleReason(r.slug)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  />
-                  <span>{r.label}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          {heading(survey.heading)}
+          <p className="mt-4 text-body-sm text-fg">{survey.prompt}</p>
+          {survey.groups.map((group) => (
+            <fieldset key={group.question ?? "main"} className="mt-6">
+              {/* A sub-question doubles as the group's legend; the opening
+                  group has none, so it gets a screen-reader-only one. */}
+              <legend
+                className={group.question ? "text-body-sm text-fg-strong" : "sr-only"}
+              >
+                {group.question ?? "Reasons for cancelling"}
+              </legend>
+              <div
+                className={`flex flex-col gap-3 ${group.question ? "mt-3" : ""}`}
+              >
+                {group.reasons.map((r) => (
+                  <label
+                    key={r.slug}
+                    className="flex cursor-pointer items-start gap-3 text-body-sm text-fg"
+                  >
+                    <input
+                      type="checkbox"
+                      value={r.slug}
+                      checked={reasons.has(r.slug)}
+                      onChange={() => toggleReason(r.slug)}
+                      className="mt-1 h-4 w-4 shrink-0 accent-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    />
+                    <span>{r.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ))}
           {reasons.has(OTHER_REASON_SLUG) ? (
             <>
               <label

@@ -7,36 +7,148 @@ export type CancellationReason = {
   label: string
 }
 
-// Final list (from the product cancellation-flows design). Order is the display
-// order. The survey is multi-select (checkboxes), so a member can pick several;
-// `other` pairs with the free-text note ("please tell us more").
-export const CANCELLATION_REASONS: readonly CancellationReason[] = [
-  {
-    slug: 'finished_series',
-    label: 'I subscribed for specific episodes or a series and finished them.',
-  },
-  { slug: 'not_listening', label: "I'm not listening regularly." },
-  { slug: 'too_expensive', label: "It's too expensive for me right now." },
-  { slug: 'cutting_back', label: "I'm cutting back on subscriptions." },
-  {
-    slug: 'content_mismatch',
-    label: "The content or topics weren't what I expected.",
-  },
-  {
-    slug: 'support_only',
-    label:
-      "I subscribed mainly to support Ark Media and don't need an ongoing subscription",
-  },
-  {
-    slug: 'technical_issues',
-    label: 'I had trouble accessing the content or using my podcast app.',
-  },
-  { slug: 'other', label: 'Other (please tell us more).' },
-] as const
+// Every reason slug a survey can store, with its label. One map so a slug that
+// appears in more than one survey (price, cutting back, other) reads the same
+// wherever it surfaces — the survey itself, the admin table, the CSV. The order
+// here is the admin filter's display order: Ark+ reasons, Fold reasons, then the
+// ones every survey asks.
+const REASON_LABELS = {
+  finished_series:
+    'I subscribed for specific episodes or a series and finished them.',
+  not_listening: "I'm not listening regularly.",
+  content_mismatch: "The content or topics weren't what I expected.",
+  support_only:
+    "I subscribed mainly to support Ark Media and don't need an ongoing subscription",
+  technical_issues: 'I had trouble accessing the content or using my podcast app.',
+  fold_low_usage: "I wasn't spending enough time in The Fold.",
+  fold_no_connection:
+    'It was hard to find people or conversations I connected with.',
+  fold_overwhelming: 'There was too much going on to keep up with.',
+  fold_technical_issues:
+    'I had trouble with the app, login, or accessing the community.',
+  fold_culture_mismatch:
+    "The conversations or community culture weren't the right fit for me.",
+  too_expensive: "It's too expensive for me right now.",
+  cutting_back: "I'm cutting back on subscriptions.",
+  other: 'Other (please tell us more).',
+} as const
+
+type ReasonSlug = keyof typeof REASON_LABELS
+
+// Build a survey's reason list from slugs, so each survey states its own display
+// order (the shared reasons sit in a different place in each) without restating
+// any label.
+function reasons(...slugs: ReasonSlug[]): readonly CancellationReason[] {
+  return slugs.map((slug) => ({ slug, label: REASON_LABELS[slug] }))
+}
+
+// Every known reason, in admin display order. This is the validation set (any
+// survey's slug is valid on any submit) and the admin filter's option list.
+export const CANCELLATION_REASONS: readonly CancellationReason[] = reasons(
+  ...(Object.keys(REASON_LABELS) as ReasonSlug[]),
+)
 
 const REASON_SLUGS: ReadonlySet<string> = new Set(
   CANCELLATION_REASONS.map((r) => r.slug),
 )
+
+// One block of checkboxes. `question` is the sub-question above it, or null for
+// the block that follows the survey's prompt directly (every survey opens with
+// one of those; only the bundle adds per-product sub-questions after it).
+type CancellationSurveyGroup = {
+  question: string | null
+  reasons: readonly CancellationReason[]
+}
+
+// A post-cancel survey: what the member just cancelled, and what we ask about
+// it. The survey is multi-select (checkboxes) across all of its groups, so a
+// member can pick several; `other` pairs with the free-text note.
+export type CancellationSurvey = {
+  heading: string
+  prompt: string
+  groups: readonly CancellationSurveyGroup[]
+}
+
+// The prompt is the same in all three surveys.
+const SURVEY_PROMPT = "Help us improve by letting us know why you're cancelling."
+
+// Keyed by the tier the member cancelled: Ark+ and the Fold each ask about the
+// one product, the bundle asks the shared reasons once and then splits the
+// product-specific ones under their own sub-questions. Debundles (dropping one
+// half of a bundle) never reach a survey.
+export const CANCELLATION_SURVEYS: Record<
+  'ark-plus' | 'circle' | 'bundle',
+  CancellationSurvey
+> = {
+  'ark-plus': {
+    heading: 'Your Ark+ subscription has been cancelled',
+    prompt: SURVEY_PROMPT,
+    groups: [
+      {
+        question: null,
+        reasons: reasons(
+          'finished_series',
+          'not_listening',
+          'too_expensive',
+          'cutting_back',
+          'content_mismatch',
+          'support_only',
+          'technical_issues',
+          'other',
+        ),
+      },
+    ],
+  },
+  circle: {
+    heading: 'Your subscription to The Fold has been cancelled',
+    prompt: SURVEY_PROMPT,
+    groups: [
+      {
+        question: null,
+        reasons: reasons(
+          'fold_low_usage',
+          'too_expensive',
+          'cutting_back',
+          'fold_no_connection',
+          'fold_overwhelming',
+          'fold_technical_issues',
+          'fold_culture_mismatch',
+          'other',
+        ),
+      },
+    ],
+  },
+  bundle: {
+    heading: 'Your subscription has been cancelled',
+    prompt: SURVEY_PROMPT,
+    groups: [
+      {
+        question: null,
+        reasons: reasons('too_expensive', 'cutting_back', 'other'),
+      },
+      {
+        question: 'What made you decide to cancel Ark+?',
+        reasons: reasons(
+          'finished_series',
+          'not_listening',
+          'content_mismatch',
+          'support_only',
+          'technical_issues',
+        ),
+      },
+      {
+        question: 'What made you decide to cancel The Fold?',
+        reasons: reasons(
+          'fold_low_usage',
+          'fold_no_connection',
+          'fold_overwhelming',
+          'fold_technical_issues',
+          'fold_culture_mismatch',
+        ),
+      },
+    ],
+  },
+}
 
 // The slug whose selection means "see my free-text note for the real reason".
 export const OTHER_REASON_SLUG = 'other'
@@ -100,7 +212,7 @@ export const MAX_CANCELLATION_NOTE_LEN = 2000
 // (an accepted row).
 export function reasonLabel(slug: string | null): string | null {
   if (!slug) return null
-  return CANCELLATION_REASONS.find((r) => r.slug === slug)?.label ?? slug
+  return REASON_LABELS[slug as ReasonSlug] ?? slug
 }
 
 // What the member was left with after a cancel/debundle, recorded on the
