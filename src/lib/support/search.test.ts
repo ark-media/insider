@@ -49,8 +49,8 @@ const RANK_1: [query: string, faqKey: string][] = [
   ['change my card', 'change-payment-method'],
 
   // Apple and the mirror pair the bigram layer exists for. The "community"
-  // phrasings stay alongside the "fold" ones on purpose: the product was
-  // renamed, the members who learned the old word were not.
+  // phrasings stay alongside the "fold" ones on purpose: members still search
+  // for the word they learned first.
   ['move from apple to the website', 'move-apple-to-website'],
   ['switch to apple and keep community', 'switch-to-apple-keep-community'],
   ['switch to apple and keep the fold', 'switch-to-apple-keep-community'],
@@ -141,7 +141,7 @@ const UNANSWERABLE: [query: string, intent: string][] = [
   ['can you send me an invoice', 'billing-receipt'],
   ['is there a free trial', 'no-trial'],
   // NOT billing-refund. A student asking what it costs has never paid us
-  // anything, and was being answered with "a refund or a charge I don't
+  // anything. Pay-what-you-can, not "a refund or a charge I don't
   // recognise / we'll need to look at your account".
   ['do you have a student discount', 'concession-pricing'],
   ['is there a group rate', 'concession-pricing'],

@@ -49,8 +49,8 @@ type Tier = "ark-plus" | "circle" | "bundle";
 // of the plan's floor so they hold in any currency (a fixed "$3,600" is
 // meaningless in ¥ or ₪). SLIDER_MAX = the top of the *drag range* (not a hard
 // cap — the field accepts up to INPUT_MAX beyond it). ~14.4× the floor mirrors
-// the $250 → $3,600 USD range (bundle yearly); ~400× mirrors the old $50k typed
-// ceiling. The curve/snap math lives in ../lib/pwycSlider.
+// the $250 → $3,600 USD range (bundle yearly); ~400× is the typed ceiling.
+// The curve/snap math lives in ../lib/pwycSlider.
 const SLIDER_MAX_MULTIPLE = 14.4;
 const INPUT_MAX_MULTIPLE = 400;
 
@@ -204,9 +204,9 @@ async function pollForCheckoutSession(
   return { kind: "timeout" };
 }
 
-// `tier` is required, not defaulted. It used to default to "ark-plus", so an
-// entry point that forgot the prop silently sold — and priced — the wrong thing
-// instead of failing. The type system is the only thing that catches that.
+// `tier` is required, not defaulted. An entry point that forgot the prop must
+// fail at compile time rather than silently selling — and pricing — the wrong
+// thing. The type system is the only thing that catches that.
 export function CheckoutModal({
   open,
   plan,

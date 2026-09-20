@@ -1,11 +1,10 @@
 -- 0002_faq_drop_password_signin.sql
 --
 -- The Fold-access answer told members to sign in "either Continue with Google
--- or your email and password". Password sign-in was removed from the Auth0
--- login page on 2026-09-16 (auth0/README.md): the login page now offers Google
--- and an emailed one-time code, and nothing else. The answer as written sends a
--- member hunting for a credential that no longer exists — and names one they
--- may never have had, which the rest of the product's copy is careful not to do.
+-- or your email and password". The login page offers Google and an emailed
+-- one-time code, and nothing else. The answer as written sends a member
+-- hunting for a credential that does not exist — and names one they may never
+-- have had, which the rest of the product's copy is careful not to do.
 --
 -- Addressed BY KEY rather than by display_order or question text. `faqs.key` is
 -- the stable handle (0001 backfills it, faqs_key_idx makes it unique); an admin

@@ -1,9 +1,7 @@
 // The single entitlement resolver. Neon is the authority (§3): every server-side
 // gate resolves the caller's identity, reads their membership row keyed on the
 // Auth0 `sub`, and derives entitlements from the row's `tier` via GRANTS. There
-// is exactly one place that answers "what can this request access," so the three
-// authorities that used to disagree by route (the feed provider, Auth0 claim,
-// Stripe) collapse to one.
+// is exactly one place that answers "what can this request access."
 //
 // An opt-in by-email net (step 2 below, default off) covers a just-paid member
 // whose session carries no `sub` yet. It is still a Neon read — it just reaches

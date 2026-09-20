@@ -156,8 +156,8 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           currency,
           // The persistent one-time gift Price (its currency_options carry every
           // supported currency). Fixed amount — no PWYC uplift, so no inline
-          // price_data — and reusing the catalog Price avoids the product sprawl
-          // the old product_data-per-checkout pattern caused.
+          // price_data — and reusing the catalog Price keeps one product per
+          // gift SKU.
           line_items: [{ price: gift.priceId, quantity: 1 }],
           // Stripe Tax: compute and add tax on top of the (exclusive) price.
           // Works for one-time payment-mode sessions too; the calculated tax
@@ -536,7 +536,7 @@ async function redeemGiftForRecipient(
   // premium tier is a boolean, the Circle group-add a no-op if present), so a
   // concurrent redeem that also grants is harmless — but if it THROWS (a
   // Beehiiv/Circle outage) the gift is still PENDING and the recipient can
-  // retry. Claiming first (the old order) would burn the gift on any transient
+  // retry. Claiming first would burn the gift on any transient
   // provisioning failure.
   let grant: {
     arkPlusEndsAt: string | null
@@ -706,8 +706,7 @@ async function extendSubscription(
 
 // The billing currency of the recipient's live subscription — the only currency a
 // customer-balance credit can be drawn against. Falls back to USD if the sub
-// can't be read (a credit still lands; worst case it's mis-denominated, same as
-// the old behavior).
+// can't be read (a credit still lands; worst case it's mis-denominated).
 async function subscriptionCurrency(
   stripe: Stripe,
   membership: MembershipRow,

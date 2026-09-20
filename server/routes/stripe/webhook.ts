@@ -101,8 +101,8 @@ function serializeByCustomer<T>(customerId: string, fn: () => Promise<T>): Promi
   // The caller still gets the real error, from `next`.
   //
   // The next waiter only needs to know the previous call finished, which is all
-  // `settled` says. Store and compare the same promise — comparing the stored
-  // value against `next` never matched, so entries were never cleared.
+  // `settled` says. Store and compare the same promise, or entries are never
+  // cleared.
   const settled = next.then(
     () => {},
     () => {},

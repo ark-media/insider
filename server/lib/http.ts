@@ -80,13 +80,13 @@ export function fetchWithTimeout(
 // "can this URL hand different readers different bodies?" — and never the
 // reader who happens to be asking.
 //
-// Deriving it from the reader is the subtle way to get it wrong, and it is the
-// bug this helper replaced: a route that marked member responses `private` but
-// let non-member responses be shared-cached looked airtight per request, and
-// still broke, because an anonymous request stored ITS reduced body under the
-// shared key. The next member to ask for the same URL was served that reduced
-// body straight from the edge — no audio on a paid show, the preview instead of
-// the paid newsletter — with nothing in the response to say why.
+// Deriving it from the reader is the subtle way to get it wrong: a route that
+// marked member responses `private` but let non-member responses be
+// share-cached looks airtight per request, and still breaks, because an
+// anonymous request stores ITS reduced body under the shared key. The next
+// member to ask for the same URL is served that reduced body straight from the
+// edge — no audio on a paid show, the preview instead of the paid newsletter —
+// with nothing in the response to say why.
 //
 // `Vary: Cookie` does not rescue it: session cookies are per-reader (and the
 // header carries analytics cookies besides), so the cache would fragment to one

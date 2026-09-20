@@ -69,7 +69,7 @@ export const newsletters: Newsletter[] = [
   },
 ];
 
-/** Beehiiv publication slugs — not post slugs. Used to redirect legacy URLs. */
+/** Beehiiv publication slugs — not post slugs. Redirects those newsletter URLs. */
 export function isNewsletterPublicationSlug(s: string): s is NewsletterSlug {
   return s === "ark-daily" || s === "members-letter";
 }

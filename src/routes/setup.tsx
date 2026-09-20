@@ -20,8 +20,7 @@ function SetupPage() {
       // yet — this page is the destination of the welcome email and every feed
       // reminder, opened on whatever device happens to have the inbox. Send
       // them to sign in (returnTo defaults to this path, so they land right
-      // back here), the way /welcome does. It used to redirect to /plus, which
-      // pitched a membership to someone who had just bought one.
+      // back here), the way /welcome does.
       signIn();
       return;
     }

@@ -2,7 +2,7 @@
 // writes the name on the Auth0 user, then re-mints the session cookie so the
 // greeting updates without a re-login.
 //
-// `needsName` is the server's judgement, not `!givenName`: for most migrated
+// `needsName` is the server's judgement, not `!givenName`: for many
 // members the stored name is one we manufactured from their email address
 // ("hannah.waxman8"), which is why the client must never make this call itself.
 

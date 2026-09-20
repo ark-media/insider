@@ -555,8 +555,8 @@ describe('new account', () => {
   })
 
   test('leaves the name unset when there is no hint', async () => {
-    // Never fall back to the email local part: that is what filled the migrated
-    // roster with members called "hannah.waxman8".
+    // Never fall back to the email local part: that would fill Auth0 with
+    // members called "hannah.waxman8".
     await findOrCreateAuth0User(PROVISION_EMAIL, undefined, BASE_ENV)
     expect(creates[0]).not.toHaveProperty('given_name')
     expect(creates[0]).not.toHaveProperty('family_name')

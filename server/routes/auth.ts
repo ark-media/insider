@@ -1,11 +1,9 @@
 // Auth/session routes.
 //
-//   POST /api/auth/checkout-session — brand-new subscribers don't have an
-//     Auth0 password yet; the webhook will send them a password-reset email
-//     so they can pick one for future logins. To get them into /setup
-//     immediately without round-tripping through that email, we provision
-//     their account synchronously and hand back a short-lived HS256 JWT
-//     usable as a Bearer token. The other routes accept either Auth0 RS256
+//   POST /api/auth/checkout-session — brand-new subscribers need a session
+//     immediately, before the welcome email's auto-login link is opened. We
+//     provision their account synchronously and hand back a short-lived HS256
+//     JWT usable as a Bearer token. The other routes accept either Auth0 RS256
 //     tokens or this token (see lib/session.ts).
 //   POST /api/signout — clears the checkout-session cookies. The client
 //     calls this before Auth0 logout so brand-new subscribers fully sign
@@ -13,8 +11,6 @@
 
 import type Stripe from 'stripe'
 import * as client from 'openid-client'
-import {
-} from '../lib/auth0-user.js'
 import { tierFromSubscription } from './stripe/webhook.js'
 import { AUTH0_DOMAIN } from '../auth0.js'
 import { AUTH0_AUDIENCE } from '../../shared/auth0-claims.js'
@@ -82,12 +78,8 @@ export function safeReturnTo(
 // Connections a caller may aim the login at with ?connection=. When it's set
 // Auth0 skips its own picker and opens that connection's prompt directly.
 //
-// Nothing in the UI passes it today: with password login off the login page,
-// Auth0 renders the emailed-code prompt itself, so the links that used to
-// supply it were removed (auth0/README.md). Kept anyway — it's the deep link
-// support hands a stuck member, and the hook to re-mount in the UI if password
-// login ever comes back, which is the moment Auth0 stops drawing the code
-// option of its own accord.
+// Nothing in the UI passes it today: Auth0 renders the emailed-code prompt
+// itself. Kept as the deep link support hands a stuck member.
 //
 // Allowlisted rather than forwarded verbatim: `connection` decides which
 // credential Auth0 will accept for the session, so an arbitrary query-string

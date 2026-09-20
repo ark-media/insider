@@ -207,8 +207,7 @@ describe("entitlement gating", () => {
  * Nothing else catches this. `navigate({ to: action.to as never })` in
  * SupportPanel erases the route-literal check at the one call site that would
  * have enforced it, so a topic can point at a deleted page and typecheck,
- * build, and render a button that dead-ends — which is exactly what happened
- * when /account/newsletters was folded into /account/settings.
+ * build, and render a button that dead-ends.
  *
  * The route table is read as text rather than imported: importing
  * routeTree.gen.ts pulls in every page component (and a DOM) for what is a

@@ -87,11 +87,9 @@ export function publicationIdFromEnv(env: Env): string | null {
 // Every premium show on the publication — the set the arkPlus entitlement
 // covers, and therefore the set of private feeds a member gets.
 //
-// DISCOVERED, not configured. This used to be a single env var naming one show,
-// which quietly became wrong the day a second premium show was created: the
-// member held four feeds upstream and the app read one. Beehiiv answers the
-// question directly, so asking it beats maintaining a list — a new premium show
-// reaches members without a deploy or an env change.
+// DISCOVERED, not configured. Beehiiv answers the question directly, so asking
+// it beats maintaining a list — a new premium show reaches members without a
+// deploy or an env change.
 //
 // The signal is `private_feeds/by_email`, which is explicit and does not depend
 // on which email is asked:

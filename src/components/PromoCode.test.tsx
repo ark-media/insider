@@ -330,7 +330,7 @@ describe("PromoCode", () => {
   test("the yearly plan is valued over more than one invoice too", async () => {
     // The reason the horizon is two years rather than one: a one-year horizon
     // spans a single yearly invoice, and every discount on that plan collapses
-    // back to what it takes off today — the comparison this replaced. Here
+    // back to what it takes off today. Here
     // ONEOFF25 takes $25 off the only invoice it touches, against $20 off each
     // of the two the sale reaches.
     const fake = fakeCheckout({ interval: "year", intervalCount: 1 });

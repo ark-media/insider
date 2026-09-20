@@ -9,9 +9,8 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 // When someone without the `circle` entitlement opens a Fold link, the Auth0
 // post-login Action (auth0/actions/post-login.js) abandons the login
 // transaction and sends them here — `/plus?from=fold` — so Circle never gets a
-// callback and never auto-provisions them a member. Until this notice existed
-// they landed on a cold pricing page with no idea why they'd been bounced out
-// of a link they'd just clicked.
+// callback and never auto-provisions them a member. The notice explains why
+// they were bounced out of a link they'd just clicked.
 //
 // The Action denies for two different people, and they need opposite
 // instructions, so the notice reads the session rather than the query param

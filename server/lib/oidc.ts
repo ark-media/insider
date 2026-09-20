@@ -6,7 +6,7 @@
 // metadata + confidential-client credentials.
 //
 // Confidential client: this is a *Regular Web Application* in Auth0 (has a
-// client secret), distinct from the old public SPA client. It needs:
+// client secret). It needs:
 //   AUTH0_WEB_CLIENT_ID, AUTH0_WEB_CLIENT_SECRET
 
 import * as client from 'openid-client'

@@ -210,11 +210,11 @@ export type MySubscription = {
 // see the cancel option again after a reload.
 //
 // NULL means the read failed, and callers must keep it distinguishable from a
-// healthy subscription. This used to degrade to `{cancelAtPeriodEnd:false}`,
-// which is byte-for-byte what a live, uncancelled subscription looks like — so
-// a Stripe outage rendered a confident "Active" badge to a member whose
+// healthy subscription. Degrading into `{cancelAtPeriodEnd:false}` is
+// byte-for-byte what a live, uncancelled subscription looks like — so a Stripe
+// outage would render a confident "Active" badge to a member whose
 // subscription may in fact have been set to cancel. Degrading gracefully is
-// still right; degrading INTO an assertion is not.
+// right; degrading INTO an assertion is not.
 export async function getMySubscription(): Promise<MySubscription | null> {
   try {
     const res = await fetch("/api/stripe/my-subscription", {
@@ -459,12 +459,12 @@ export async function changeTier(input: {
   }
 }
 
-// Persist the optimistic "these feeds are set up" marker server-side (replaces
-// the old localStorage record), so it survives reloads and follows the member
-// across devices while Beehiiv's activation webhook catches up. Fire-and-
-// forget: failures are swallowed because the in-memory optimistic state still
-// stands and the webhook remains authoritative — a persistence blip must never
-// surface an error on a setup click. Ids are SHOW ids (see UserFeed.id).
+// Persist the optimistic "these feeds are set up" marker server-side so it
+// survives reloads and follows the member across devices while Beehiiv's
+// activation webhook catches up. Fire-and-forget: failures are swallowed
+// because the in-memory optimistic state still stands and the webhook remains
+// authoritative — a persistence blip must never surface an error on a setup
+// click. Ids are SHOW ids (see UserFeed.id).
 export async function persistFeedsSetUp(feedIds: string[]): Promise<void> {
   if (feedIds.length === 0) return;
   try {

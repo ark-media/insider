@@ -1,10 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// Legacy redirect: /shows/$show → /podcasts/$show. `inside-call-me-back` moved
-// out of /shows entirely and lives under /plus, so it gets its own
-// destination. Every other slug is forwarded through to its /podcasts/<slug>
-// equivalent — including unknown slugs, which then 404 against the new
-// hierarchy rather than the old one.
+// Redirect: /shows/$show → /podcasts/$show. `inside-call-me-back` lives under
+// /plus, so it gets its own destination. Every other slug is forwarded to
+// /podcasts/<slug> — including unknown slugs, which then 404 there.
 export const Route = createFileRoute("/shows/$show")({
   beforeLoad: ({ params }) => {
     const dest =

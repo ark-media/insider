@@ -12,9 +12,9 @@
 //   B. Circle — community members, for Fold-first joiners. Lowest yield,
 //      since most Circle members were created from a then-null Stripe name.
 //
-// Every candidate is filtered through shared/profile-name: both systems
-// store a name we manufactured from the email local part when we had nothing,
-// so an unfiltered copy would just move junk from one store to another.
+// Every candidate is filtered through shared/profile-name: both systems can
+// hold the email local part as a name, so an unfiltered copy would just move
+// junk from one store to another.
 //
 // Writes go to Auth0 (given_name/family_name — the name's home; Neon stores no
 // PII), to Beehiiv custom fields (what campaigns actually personalize from), and
@@ -23,8 +23,8 @@
 // email address as its first_name.
 //
 // NOTE: unlike scripts/backfill-membership.ts, this deliberately does NOT refuse
-// to run against live Stripe — the whole point is to repair real migrated
-// members. It prints which environment it is pointed at instead; read the banner
+// to run against live Stripe — the whole point is to repair real member names.
+// It prints which environment it is pointed at instead; read the banner
 // before typing --apply.
 //
 // Usage (Bun auto-loads .env):
@@ -160,10 +160,8 @@ async function main(): Promise<void> {
 
   // --- Pass B: Circle community members --------------------------------------
   console.log('\nPass B — Circle community members')
-  // CIRCLE_ADMIN_API_TOKEN, because the URL below is Admin **v2**. This used to
-  // read CIRCLE_API_TOKEN on the grounds that server/entitlement.ts did — which
-  // was true, and was the bug: that is an Admin v1 token, Circle 401s it on
-  // /api/admin/v2/*, and this pass threw on its first page every time it ran.
+  // CIRCLE_ADMIN_API_TOKEN, because the URL below is Admin **v2**. The v1
+  // token (CIRCLE_API_TOKEN) 401s on /api/admin/v2/*.
   const circleToken = env.CIRCLE_ADMIN_API_TOKEN
   if (!circleToken) {
     console.log('  (CIRCLE_ADMIN_API_TOKEN unset — skipped)')
@@ -198,9 +196,10 @@ async function main(): Promise<void> {
       }
       console.log(`  scanned ${scanned}, usable names ${hits}`)
     } catch (err) {
-      // Loud, and flagged in the summary. A 401 here used to print as "skipped"
-      // and exit 0, which is indistinguishable from "Circle had nothing to add"
-      // — an operator would read a silently empty pass as a clean run.
+      // Loud, and flagged in the summary. A 401 here must not print as
+      // "skipped" and exit 0, which is indistinguishable from "Circle had
+      // nothing to add" — an operator would read a silently empty pass as a
+      // clean run.
       console.log(`  ! FAILED — ${err instanceof Error ? err.message : String(err)}`)
       console.log('    Pass B contributed nothing; names from Circle are missing.')
       passFailures.push('circle')

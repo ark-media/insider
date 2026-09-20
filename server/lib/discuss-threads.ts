@@ -20,10 +20,7 @@ import { fetchWithTimeout } from "./http.js"
 // today; write-side bindings stay separate so we can target whichever space
 // hosts public-facing discussion threads per newsletter without coupling the
 // two paths. Space slugs map to space IDs via Circle's /spaces endpoint.
-// INTERIM, both of them: the rebuilt Fold dropped the per-newsletter
-// spaces these named (`ark-daily`, `inside-call-me-back`), so every thread
-// creation was failing the space lookup. `conversation` is the only space among
-// the eight that hosts discussion; the redesign may split them again.
+// `conversation` is the space among the eight that hosts discussion.
 // One consequence to keep in view: the Fold highlights feed reads that
 // same space, so it filters these threads back out by id — see
 // listCompanionCirclePostIds below.

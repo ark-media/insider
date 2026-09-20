@@ -108,8 +108,7 @@ export function pickOfferCoupon<T extends RetentionCouponLike>(
 }
 
 // Flatten a coupon into the client-facing offer DTO. `kind` describes the save
-// this coupon backs (defaults to the legacy single-coupon case, an Ark+
-// supporter rate). `currentPriceCents` is the list price the coupon discounts (the member's
+// this coupon backs (defaults to an Ark+ supporter rate). `currentPriceCents` is the list price the coupon discounts (the member's
 // current plan), so the card can render the design's struck-through
 // "$8 $6/month" pair; omit it and the card falls back to the bare discount.
 export function toRetentionOffer(
@@ -322,9 +321,7 @@ async function deriveEligibleOffers(
 // discount on the bundle can beat without giving both away for the price of
 // one. So the save is priced into the exit instead — the kept product lands on
 // the debundle_intro rate (see debundlePricePreview) — and both flows go
-// straight to the confirm screen. Flow C previously reused the Ark+ *cancel*
-// offers here, which quoted standalone Ark+ prices to a bundle member and, on
-// accept, changed the bundle's cadence without ever debundling.
+// straight to the confirm screen.
 export async function deriveSaveOffers(
   stripe: Stripe,
   intent: SaveIntent,

@@ -211,7 +211,7 @@ describe('runGiftExpiryReminders', () => {
     expect(sent.size).toBe(0)
   })
 
-  test('greets the recipient by name — the reminder used to always say "Hi there,"', async () => {
+  test('greets the recipient by name', async () => {
     const { sent } = baseDeps()
     const htmls: string[] = []
     const rows = [row({ auth0_sub: 'auth0|a', ark_plus_gift_expires_at: inDays(5) })]

@@ -48,9 +48,7 @@ export function decimalsForCurrency(currency: string, factor: number): number {
 }
 
 // A MINOR-unit amount as a currency string. Formatting lives in shared/ because
-// the emails quote the same prices the site does, and the two used to render
-// them differently — see the header there for what a Canadian member was
-// reading.
+// the emails quote the same prices the site does.
 export function formatMinor(
   minor: number,
   currency: string,

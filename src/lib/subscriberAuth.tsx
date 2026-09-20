@@ -43,14 +43,13 @@ export function isPaidMember(state: SubscriberAuthState): boolean {
 }
 
 // Which Auth0 connection to open directly, skipping Auth0's picker. Omit it to
-// land on the normal login page, which since password login was removed offers
-// Google and the emailed one-time code.
+// land on the normal login page, which offers Google and the emailed one-time
+// code.
 //
-// No caller passes this today — Auth0 draws the code option itself now, so the
-// links that used to are gone. Retained as the counterpart to the server's
-// allowlist (LOGIN_CONNECTIONS in server/routes/auth.ts, which is what actually
-// enforces this set) for support deep links and for the day password login
-// returns, since that is when Auth0 stops offering the code prompt.
+// No caller passes this today — Auth0 draws the code option itself. Retained as
+// the counterpart to the server's allowlist (LOGIN_CONNECTIONS in
+// server/routes/auth.ts, which is what actually enforces this set) for support
+// deep links.
 type SignInConnection =
   | "email"
   | "google-oauth2"
@@ -133,12 +132,11 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
 
   // Re-resolve it when the member comes back to the tab.
   //
-  // Everything membership-shaped in the app reads this one snapshot, and until
-  // now it was taken once and never questioned — so a server-side change after
-  // load (private feeds finishing minting, a tier change, a cancel landing)
-  // stayed invisible until a full reload. That is what put "No private feeds on
-  // your membership yet" in front of a member who had them: the answer changed
-  // 35 seconds after the page had stopped asking.
+  // Everything membership-shaped in the app reads this one snapshot. A
+  // server-side change after load (private feeds finishing minting, a tier
+  // change, a cancel landing) would stay invisible until a full reload
+  // otherwise — "No private feeds on your membership yet" in front of a member
+  // who had them.
   //
   // Refetching under a member's feet is safe here by construction: the feed
   // setup page picks its open panel once (FeedSetup's `openId`) rather than

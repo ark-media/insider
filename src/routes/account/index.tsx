@@ -272,8 +272,6 @@ function AppDownloadLine() {
 // A signed-in reader with no membership. They lack both axes, so the offer is
 // the whole catalog — Ark+, the Fold, and the Bundle that buys both — as the
 // same Stripe-priced cards /plus sells from, each opening checkout in place.
-// This used to be a single Ark+ card that listed the Fold as part of Ark+,
-// which it isn't, and left no way to reach the Fold or the Bundle from here.
 function FreeMembership({ me, onRefresh }: { me: Me; onRefresh: () => void }) {
   return (
     <section>

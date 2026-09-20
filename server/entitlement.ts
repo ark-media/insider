@@ -182,15 +182,9 @@ async function fetchAuth0SubsForEmail(
 //
 // Every call below is Admin **v2** and authenticates with CIRCLE_ADMIN_API_TOKEN,
 // with ONE deliberate exception: createCircleMemberV1, which is v1 + the v1
-// token because `skip_invitation` exists nowhere else.
-//
-// They all used to send CIRCLE_API_TOKEN, which is an Admin **v1** token —
-// perfectly valid, but only against /api/v1/*. As a Bearer on /api/admin/v2/*
-// Circle answers 401 to all of it, so the entire Circle axis was failing
-// silently: `provisionCircleMember` returned 'error' and the subscriber access
-// group sat at zero members while people were paying for the Fold. The two
-// tokens are distinct on purpose (they are two different APIs); a call site just
-// has to hold the one for the version it is calling.
+// token because `skip_invitation` exists nowhere else. The two tokens are
+// distinct on purpose (they are two different APIs); a call site has to hold
+// the one for the version it is calling.
 
 const CIRCLE_API = 'https://app.circle.so/api/admin/v2'
 // Admin v1, used for exactly one call — see createCircleMemberV1.
@@ -513,19 +507,12 @@ async function stampCircleAuth0Sub(
 // Push a member's name onto their Circle profile — the Fold's copy of the
 // one thing every other store already hears about.
 //
-// PUT /api/account/profile fans an edited name out to Auth0 (its home) and
-// Beehiiv. Circle was missing from that list, so a member who fixed their name
-// with us still read as their old one in the Fold. Not a cosmetic gap: where we
-// hold no name at all, Circle fills `first_name` with the whole email address,
-// so that member appears to everyone else as "someone@example.com".
+// PUT /api/account/profile fans an edited name out to Auth0 (its home),
+// Beehiiv, and Circle. Soft by construction — returns false rather than
+// throwing. Every caller is downstream of a save the member has already seen
+// succeed, so a Circle hiccup must never surface as a failed save.
 //
-// Soft by construction — returns false rather than throwing. Every caller is
-// downstream of a save the member has already seen succeed, so a Circle hiccup
-// must never surface as a failed save.
-// CIRCLE_ADMIN_API_TOKEN — which is now what every Circle call in this file
-// uses. This function was for a while the only one that did, and the pairing it
-// was tested with (admin token + v2 search + v2 PUT) is the one the rest of the
-// file was corrected to:
+// CIRCLE_ADMIN_API_TOKEN, same as every other Circle call in this file:
 //
 //   Bearer <v1 token>    → /api/admin/v2/community_members/search  401
 //   Bearer <admin token> → /api/admin/v2/community_members/search  200
@@ -645,8 +632,8 @@ export function tierFromEntitlements(ent: Entitlements): Tier {
 // The entitlement axes a membership row grants RIGHT NOW — the union of:
 //   - base axes: a row with a live subscription grants its tier's axes (dunning
 //     rows still grant; a full cancel deletes the row). A row with NO
-//     subscription and NO gift term is a comp / staff / legacy grant — perpetual
-//     access to its tier (matching the pre-per-axis "non-free tier = live").
+//     subscription and NO gift term is a comp / staff grant — perpetual
+//     access to its tier.
 //   - gift axes: each per-axis gift expiry still in the future grants that axis.
 // A gift-only row has no subscription and at least one gift expiry, so its axes
 // come purely from the two gift expiries. This is the single predicate behind the

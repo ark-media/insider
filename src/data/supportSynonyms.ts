@@ -60,11 +60,11 @@ export const supportAliases: Alias[] = [
   },
 
   // --- Sign-in. `locked` appears once — in the Spotify payment answer — so
-  //     "locked out" lands on Spotify without this. `password` needs binding for
-  //     the opposite reason it used to: the corpus no longer mentions passwords
-  //     at all (sign-in is Google or an emailed code since 2026-09-16), so
-  //     "I forgot my password" has nothing to match on and would fall through
-  //     to whatever scores next. Members will keep using the word for years.
+  //     "locked out" lands on Spotify without this. `password` needs binding
+  //     because the corpus does not mention passwords at all (sign-in is
+  //     Google or an emailed code), so "I forgot my password" has nothing to
+  //     match on and would fall through to whatever scores next. Members will
+  //     keep using the word for years.
   {
     phrases: [
       "cant log in", "can not log in", "cannot log in", "cant sign in", "cant login",
@@ -140,10 +140,9 @@ export const supportAliases: Alias[] = [
     intent: "community-access",
   },
   // "Is it included?" and "how do I get in?" are one topic with two answers,
-  // and the topic's primary is the how-do-I-get-in one. Before the rename the
-  // inclusion question outranked it on the corpus alone — its own title read
-  // "Is the Community App included?". The corpus says "Fold" now, so the legacy
-  // wording has nothing of its own left to match and needs the binding.
+  // and the topic's primary is the how-do-I-get-in one. The corpus says "Fold",
+  // so "community app" wording has nothing of its own left to match and needs
+  // the binding.
   {
     phrases: [
       "is the fold included", "is the community app included", "is the app included",
@@ -156,7 +155,7 @@ export const supportAliases: Alias[] = [
   // 0022 reworded its question to "What does a subscription to The Fold
   // include?", so the natural "what does a fold subscription include" no longer
   // matches it verbatim and the Ark+ includes answer takes the top slot. Bind
-  // the phrasings members actually use — including the legacy "community" ones,
+  // the phrasings members actually use — including "community" ones,
   // which have nothing left in the corpus to match.
   {
     phrases: [

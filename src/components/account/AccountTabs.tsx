@@ -9,10 +9,9 @@ import { Link } from "@tanstack/react-router";
 // and the Fold needs the Circle axis, so a free reader sees Membership and
 // Settings alone rather than two tabs that redirect them away.
 //
-// Admin is the one tab that leaves the section: it used to sit in the
-// masthead, where it put a staff-only door in the public nav. It's a
-// "somewhere I go as this signed-in person" link like the rest of these, so it
-// rides along at the end of the bar for admins only.
+// Admin is the one tab that leaves the section. It's a "somewhere I go as this
+// signed-in person" link like the rest of these, so it rides along at the end
+// of the bar for admins only.
 
 type TabPath =
   | "/account"

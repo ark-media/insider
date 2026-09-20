@@ -10,12 +10,9 @@ import {
  * The two consent checkboxes that sit directly above a checkout's pay button,
  * and the state machine behind them.
  *
- * They replaced Stripe's own consent_collection + TermsElement, which recorded
- * the acceptance for us but could only ever be one box saying one thing (and
- * only for accounts in the Terms Element beta, on top of a Dashboard terms URL).
- * Counsel wants the auto-renewal named separately and ticked separately, so the
- * boxes are ours — and with them the obligation to record the acceptance, which
- * POST /api/stripe/record-consent does before the charge.
+ * Counsel wants the auto-renewal named separately and ticked separately, so
+ * the boxes are ours — and with them the obligation to record the acceptance,
+ * which POST /api/stripe/record-consent does before the charge.
  *
  * `renewal` is null for a one-time purchase (a gift), which has nothing to
  * renew: the second box is not rendered and not required. It is an explicit

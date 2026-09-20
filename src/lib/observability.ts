@@ -12,9 +12,7 @@
 //     globally if you decide the trade-off later). Stripe Elements render in
 //     a cross-origin iframe so they're naturally outside replay scope.
 //   - Emails sent to PostHog are SHA-256-hashed in the browser — INCLUDING the
-//     distinct_id, which is the hash itself rather than the address. (It was
-//     previously the plaintext email, which quietly contradicted the paragraph
-//     above and made every PostHog person record a piece of PII.) Sentry
+//     distinct_id, which is the hash itself rather than the address. Sentry
 //     continues to receive the real email because it's the support-debugging
 //     channel and stays in a per-org backend, not a public dashboard.
 //   - The same `email_sha256` is what the server-side revenue events key on
@@ -162,8 +160,7 @@ export function identifyUser(opts: {
   if (!posthogReady) return
   const { set, setOnce } = splitTouchProperties(getAttribution())
   // The hash is async and IS the distinct_id, so there is nothing to identify
-  // with until it resolves — unlike the previous version, which identified
-  // immediately on the plaintext email and patched the hash in afterwards.
+  // with until it resolves.
   void hashEmail(opts.email).then((hash) => {
     posthog.identify(
       hash,
