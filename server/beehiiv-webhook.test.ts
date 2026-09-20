@@ -263,6 +263,54 @@ describe('webhook event dispatch', () => {
     expect(upsert!.values).toContain(true)
   })
 
+  // Replay: the only thing a delivery carries that identifies it is `uid`, and
+  // the ledger is keyed on it. A delivery already processed is acknowledged and
+  // does nothing — and is recorded only AFTER its handler succeeded, so a
+  // failed one is still Beehiiv's to retry.
+  test('a replayed delivery (uid already in the ledger) is acknowledged and changes nothing', async () => {
+    nextSqlResult = (sql) =>
+      sql.includes('from beehiiv_webhook_events') ? [{ '?column?': 1 }] : []
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({
+        body: {
+          uid: 'evt_replayed',
+          event_type: 'subscription.deleted',
+          data: { id: 'sub_x', email: 'a@x.com' },
+        },
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ received: true, deduped: true })
+    expect(sqlCalls).toHaveLength(1)
+    expect(sqlCalls.some((c) => c.sql.includes('beehiiv_subscription'))).toBe(false)
+  })
+
+  test('a first delivery is written to the ledger under its uid once it has been handled', async () => {
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({
+        body: {
+          uid: 'evt_first',
+          event_type: 'subscription.deleted',
+          data: { id: 'sub_x', email: 'a@x.com' },
+        },
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    const ledger = sqlCalls.filter((c) => c.sql.includes('insert into beehiiv_webhook_events'))
+    expect(ledger).toHaveLength(1)
+    expect(ledger[0]!.values).toContain('evt_first')
+    // After every other statement, never before.
+    expect(sqlCalls.at(-1)).toBe(ledger[0]!)
+  })
+
   test('unknown reader → no writes (mirror miss + Auth0 miss)', async () => {
     // No local row, Auth0 returns no user.
     nextSqlResult = () => []

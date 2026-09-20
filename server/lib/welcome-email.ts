@@ -439,6 +439,41 @@ export type GiftRedemptionEmailParams = {
   claimUrl: string
 }
 
+// The giver's name as it may appear in the SUBJECT line.
+//
+// Everything else in this email goes through esc() into HTML, where the worst a
+// hostile name can do is look odd. The subject is different on all three counts:
+// it is a mail header (a newline in it is a header-injection attempt, whatever
+// the transport does about it later), it is what the recipient judges the email
+// by before opening it, and it is sent from OUR domain with our reputation
+// behind it — while `giver_name` is free text typed by an unauthenticated buyer
+// into a form that mails any address they choose. Left alone that is a relay for
+// "Your account is locked, visit evil.example" under our From line.
+//
+// So the subject gets the name and nothing but: controls and line breaks out,
+// whitespace collapsed, anything link-shaped removed (schemes, `www.`, and bare
+// `domain.tld/…` — mail clients autolink all three), and a hard cap, cut on a
+// code point rather than a UTF-16 unit so an emoji at the boundary isn't halved
+// into a lone surrogate. A name with nothing left falls back to the no-name
+// subject rather than sending "  sent you Ark+".
+const SUBJECT_NAME_MAX = 60
+
+function subjectName(raw: string | undefined): string {
+  if (!raw) return ''
+  const cleaned = raw
+    .replace(/[\p{Cc}\u2028\u2029\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]+/gu, ' ')
+    .replace(/(?:https?:\/\/|www\.)\S+/gi, ' ')
+    .replace(/[a-z0-9-]{2,}(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:[/?#]\S*)?/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return Array.from(cleaned).slice(0, SUBJECT_NAME_MAX).join('').trim()
+}
+
+// The checkout route refuses a longer note, and Stripe metadata (which is how
+// the note reaches the webhook) can't hold one either — this is the renderer
+// not taking either of those on trust.
+const GIFT_MESSAGE_MAX = 500
+
 // A gift now grants nothing until the recipient redeems it (§3): this email
 // carries the claim link rather than announcing an already-active membership.
 // The term clock starts at redemption, so the copy avoids promising a start date.
@@ -452,12 +487,18 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
   const giver = p.giverName?.trim()
   const first = firstName(p.recipientName, p.recipientEmail)
 
-  const subject = giver ? `${giver} sent you Ark+` : `You've been gifted Ark+`
+  const giverInSubject = subjectName(giver)
+  const subject = giverInSubject
+    ? `${giverInSubject} sent you Ark+`
+    : `You've been gifted Ark+`
   const headlineHtml = giver
     ? `${esc(giver)} gifted you ${termLabel} of Ark+.`
     : `You've been gifted ${termLabel} of Ark+.`
 
-  const messageBlockHtml = p.message?.trim()
+  const message = Array.from(p.message?.trim() ?? '')
+    .slice(0, GIFT_MESSAGE_MAX)
+    .join('')
+  const messageBlockHtml = message
     ? `
             <tr>
               <td style="padding:0 0 28px;">
@@ -465,7 +506,7 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
                   <tr>
                     <td style="padding:16px 20px;">
                       <p style="margin:0 0 6px;font:600 11px ${FONT};letter-spacing:0.16em;text-transform:uppercase;color:${CYAN};">A note from ${giver ? esc(giver) : 'the sender'}</p>
-                      <p style="margin:0;font:italic 15px/1.6 ${FONT};color:${FG};">${esc(p.message.trim())}</p>
+                      <p style="margin:0;font:italic 15px/1.6 ${FONT};color:${FG};">${esc(message)}</p>
                     </td>
                   </tr>
                 </table>

@@ -21,11 +21,17 @@ import {
   type Tier,
 } from '../entitlement.js'
 import { isSupportedCurrency, resolveGiftPrice, type PricedTier } from '../lib/pricing.js'
-import { coerceTier, releaseScheduleIfAny } from './stripe/helpers.js'
+import { MAX_NAME_LEN, coerceTier, releaseScheduleIfAny } from './stripe/helpers.js'
 import { findOrCreateAuth0User } from '../lib/auth0-user.js'
-import { ensureSubscribedWithPremium, tryPush } from '../lib/beehiiv-sync.js'
+import {
+  downgradeToFree,
+  ensureSubscribedWithPremium,
+  tryPush,
+} from '../lib/beehiiv-sync.js'
+import { resolveEntitlementsForSub } from '../lib/entitlement-resolver.js'
 import { getDb } from '../lib/db.js'
 import { sanitizeAttribution } from '../../shared/attribution.js'
+import { isValidEmail } from '../../shared/validation.js'
 import { splitFullName } from '../../shared/profile-name.js'
 import { captureServerEvent, emailDistinctId } from '../lib/analytics-server.js'
 import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
@@ -38,10 +44,11 @@ import {
   type MembershipRow,
 } from '../lib/membership.js'
 import { setSessionCookies } from '../lib/cookies.js'
-import { createRateLimiter } from '../lib/rate-limit.js'
+import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import {
   getSessionProfile,
+  resolveRequestIdentity,
   sessionName,
   signSessionToken,
   verifyGiftClaimToken,
@@ -53,6 +60,29 @@ import type Stripe from 'stripe'
 // inactive one gets a gift term. Mirrors the checkout guard's live set; gift
 // rows themselves carry status 'active'.
 const LIVE_MEMBERSHIP_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid'])
+
+// Characters with no place in a name: the C0/C1 controls, the Unicode line and
+// paragraph separators, and the bidi marks/overrides that make one string
+// display as another. The same class /api/account/profile refuses (see
+// CONTROL_CHARS in routes/account.ts for why it is not all of \p{Cf}). Both gift
+// names travel further than a profile name does — into Stripe metadata, a
+// Customer record, and an email sent from our domain to an address the buyer
+// chose — so they are refused here rather than cleaned up downstream.
+const NAME_CONTROL_CHARS =
+  /[\p{Cc}\u2028\u2029\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/u
+
+// A gift name as the rest of the flow should see it, or null when it can't be
+// accepted. Absent and blank are both fine (names are optional) and come back
+// as ''. Checked BEFORE trimming or collapsing anything: whitespace handling
+// would quietly rewrite an embedded newline into a space and turn a
+// header-injection attempt into a plausible name.
+function cleanGiftName(raw: unknown): string | null {
+  if (raw == null) return ''
+  if (typeof raw !== 'string') return null
+  if (NAME_CONTROL_CHARS.test(raw)) return null
+  const value = raw.trim()
+  return value.length > MAX_NAME_LEN ? null : value
+}
 
 export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
   // Each create-checkout call provisions a Stripe Checkout Session (and its
@@ -68,13 +98,31 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
   //     many identities it invents. Vercel overwrites x-forwarded-for with the
   //     real client IP (it does not forward external values), so this key can't
   //     be spoofed in production.
-  const giftLimiter = createRateLimiter({
+  //
+  // Shared (Neon-backed) rather than in-process: an in-memory bucket is one per
+  // function instance and empties on a cold start, so a script fanned out across
+  // instances multiplied both caps.
+  const giftLimiter = createSharedRateLimiter(env, {
+    name: 'gift-checkout-email',
     capacity: 5,
     refillPerSec: 5 / (60 * 60), // 5 per hour
   })
-  const giftIpLimiter = createRateLimiter({
+  const giftIpLimiter = createSharedRateLimiter(env, {
+    name: 'gift-checkout-ip',
     capacity: 15,
     refillPerSec: 15 / (60 * 60), // 15 per hour per source
+  })
+  // The status poll retrieves a Checkout Session from Stripe on every call, and
+  // it does so BEFORE it can know whether the caller owns that session — the
+  // ownership proof is on the session. So an anonymous loop over it is a loop
+  // over the Stripe API on our key. The gift modal polls once a second and
+  // gives up after 15 attempts, so one purchase spends 15 tokens at most; the
+  // bucket holds four purchases' worth for a shared address (an office NAT)
+  // and refills a whole purchase every 30 seconds.
+  const giftStatusLimiter = createSharedRateLimiter(env, {
+    name: 'gift-status-ip',
+    capacity: 60,
+    refillPerSec: 0.5,
   })
 
   return [
@@ -101,6 +149,22 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const recipientEmail = body.recipient_email?.trim().toLowerCase()
         if (!giverEmail) return json(400, { error: 'Your email is required.' })
         if (!recipientEmail) return json(400, { error: "Recipient's email is required." })
+        // Same checks the subscription checkout applies to its one address and
+        // name, on all four of ours. Both addresses get mail from our domain on
+        // the strength of this request alone (a receipt, a claim link), and both
+        // names are printed in it.
+        if (!isValidEmail(giverEmail)) {
+          return json(400, { error: 'Please enter a valid email.' })
+        }
+        if (!isValidEmail(recipientEmail)) {
+          return json(400, { error: "Please enter a valid email for the recipient." })
+        }
+        const giverName = cleanGiftName(body.giver_name)
+        const recipientName = cleanGiftName(body.recipient_name)
+        if (giverName === null) return json(400, { error: 'Your name is not valid.' })
+        if (recipientName === null) {
+          return json(400, { error: "The recipient's name is not valid." })
+        }
         if (body.term !== '6mo' && body.term !== '1yr') {
           return json(400, { error: 'term must be "6mo" or "1yr"' })
         }
@@ -118,7 +182,8 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
 
         const clientIp = getClientIp(req)
         const wait =
-          giftIpLimiter.take(clientIp) ?? giftLimiter.take(`${clientIp}|${giverEmail}`)
+          (await giftIpLimiter.take(clientIp)) ??
+          (await giftLimiter.take(`${clientIp}|${giverEmail}`))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, {
@@ -137,12 +202,36 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // code the giver redeems is reflected there and nowhere else.
         const gift = await resolveGiftPrice(stripe, tier, term)
 
-        const existing = await stripe.customers.list({ email: giverEmail, limit: 1 })
+        // An existing Customer is reused only for a caller who is durably
+        // signed in AS the giver address. `giver_email` is otherwise free text
+        // from an anonymous form, and a Customer is not a neutral container: it
+        // holds a saved card, a balance (a credited gift lands there), a billing
+        // address and an invoice history. Attaching a stranger's Session to one
+        // on the strength of knowing its email hands them a view of that — and
+        // `customer_update.address` below would then let them overwrite its
+        // billing address, which is what Stripe Tax reads for the owner's own
+        // renewals.
+        //
+        // `source === 'auth0'` is the durable login; a 'checkout' identity is
+        // the short-lived token minted from an address typed into a checkout
+        // form, which proves nothing about the inbox. Everyone else gets a fresh
+        // Customer. The duplicate is the cheap side of the trade — every lookup
+        // in the app already copes with several Customers per email.
+        //
+        // giverEmail is already lowercased, which matters to the lookup:
+        // `customers.list({ email })` is an exact, case-sensitive match.
+        const identity = await resolveRequestIdentity(req, env)
+        const isGiver =
+          identity?.source === 'auth0' &&
+          identity.email.trim().toLowerCase() === giverEmail
+        const owned = isGiver
+          ? (await stripe.customers.list({ email: giverEmail, limit: 1 })).data[0]
+          : undefined
         const customer =
-          existing.data[0] ??
+          owned ??
           (await stripe.customers.create({
             email: giverEmail,
-            name: body.giver_name,
+            name: giverName || undefined,
           }))
 
         const session = await stripe.checkout.sessions.create({
@@ -165,7 +254,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           automatic_tax: { enabled: true },
           // Persist the billing address the giver enters (BillingAddressElement)
           // back onto the pre-set Customer — required when a customer is
-          // attached, and it feeds the tax jurisdiction.
+          // attached, and it feeds the tax jurisdiction. Safe to write through
+          // because `customer` is only ever one this call just created or the
+          // signed-in giver's own (see above) — never one found by email alone.
           customer_update: { address: 'auto' },
           // Gift buyers get the same promo-code field as members, so the
           // Session carries `allow_promotion_codes` rather than a server-set
@@ -187,9 +278,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
               term,
               currency,
               giver_email: giverEmail,
-              giver_name: body.giver_name ?? '',
+              giver_name: giverName,
               recipient_email: recipientEmail,
-              recipient_name: body.recipient_name ?? '',
+              recipient_name: recipientName,
               message: body.message ?? '',
               // Acquisition channel for the GIVER, forwarded from the browser
               // (BI plan §4.1) so `gift_purchased_confirmed` is attributable.
@@ -222,11 +313,18 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
 
     defineRoute({
       path: '/api/gift/status',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '/', appBaseUrl)
         const sessionId = url.searchParams.get('id')
         if (!sessionId) return json(400, { error: 'id required' })
+
+        // After the cheap validation, before the Stripe call it exists to bound.
+        const wait = await giftStatusLimiter.take(getClientIp(req))
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'Too many requests. Please wait a moment.' })
+        }
 
         const emailParam = url.searchParams.get('email')?.trim().toLowerCase()
         const session = await stripe.checkout.sessions.retrieve(sessionId, {
@@ -368,6 +466,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
             givenName: claimName.first,
             familyName: claimName.last,
             sub: auth0Sub,
+            // A session bought with an emailed link, like the lifecycle emails'
+            // auto-login: enough to land signed in and set up feeds, not enough
+            // to change billing until they sign in for real (guards.ts).
+            via: 'email_link',
           },
           env,
         )
@@ -506,7 +608,10 @@ export function planGiftRedemption(
 //
 // Bundle-on-Ark+-subscriber grants a Circle term AND extends the Ark+ sub by the
 // term. The gift flips to redeemed once, atomically.
-async function redeemGiftForRecipient(
+//
+// Exported for the race test (gift-redeem-race.test.ts); the routes above are
+// its only callers.
+export async function redeemGiftForRecipient(
   {
     sql,
     stripe,
@@ -558,7 +663,10 @@ async function redeemGiftForRecipient(
   // row upsert. A lost race means another redeem already granted (idempotent) and
   // upserted, so bail without touching the row or crediting twice.
   const claimed = await markGiftRedeemed(sql, token, auth0Sub)
-  if (!claimed) return { ok: false, error: 'already_redeemed' }
+  if (!claimed) {
+    await undoLostRaceGrant({ sql, env }, token, recipient, plan)
+    return { ok: false, error: 'already_redeemed' }
+  }
 
   // The row's per-axis expiries. A null is preserved by the upsert's coalesce, so
   // a single-axis gift never clears the other axis's term or a live sub's fields.
@@ -664,6 +772,54 @@ async function redeemGiftForRecipient(
   })
 
   return { ok: true, applied, expiresAt }
+}
+
+// Take back what a redeem granted before it lost the claim.
+//
+// Granting before claiming is deliberate (see above) and has one cost: the call
+// that loses `markGiftRedeemed` has already put its recipient on Beehiiv premium
+// and/or in the Circle group, with no membership row behind either. Nothing else
+// notices until the nightly reconciler, so for up to a day a bearer of someone
+// else's gift token keeps the feed for the price of losing a race — and the race
+// is theirs to stage.
+//
+// Who won decides what "undo" means:
+//   - the SAME account (a double-click, a retried request, two tabs): the grant
+//     this call made IS the winner's grant, idempotently. Taking it back would
+//     strip a recipient of the gift they just redeemed, and reading their row to
+//     find out isn't safe either — the winner upserts it AFTER claiming, so from
+//     here it may not exist yet. `redeemed_by` is written by the claim itself,
+//     which is why it is what's read.
+//   - anyone else (or the gift was voided mid-flight): the winner's redemption
+//     never touches this account's row, so the row is the truth. Re-sync each
+//     axis THIS call granted to what the row says, and no other — an axis the
+//     loser holds through their own subscription or an earlier gift stays.
+//
+// Best effort. The caller is answering 409 regardless, and a failure here leaves
+// exactly the state the reconciler already exists to clean up.
+async function undoLostRaceGrant(
+  { sql, env }: { sql: ReturnType<typeof getDb>; env: Deps['env'] },
+  token: string,
+  recipient: { email: string; auth0Sub: string },
+  plan: GiftRedemptionPlan,
+): Promise<void> {
+  if (!plan.grantArkPlus && !plan.grantCircle) return
+  try {
+    const gift = await getGiftByToken(sql, token)
+    if (gift?.status === 'redeemed' && gift.redeemed_by === recipient.auth0Sub) return
+
+    const actual = await resolveEntitlementsForSub(recipient.auth0Sub, env)
+    if (plan.grantCircle) {
+      await syncEntitlement(env, recipient.email, actual.tier)
+    }
+    if (plan.grantArkPlus && !actual.entitlements.arkPlus) {
+      await tryPush('downgrade (gift redeem lost the claim)', () =>
+        downgradeToFree({ env, sql }, recipient.email),
+      )
+    }
+  } catch (err) {
+    console.error('[gift] could not undo the grant of a redeem that lost its claim:', err)
+  }
 }
 
 // T5.4 — extend a live subscription by a gift term, term-faithfully (a year is a

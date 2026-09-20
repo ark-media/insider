@@ -152,7 +152,12 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 // Static import AFTER mock.module so the plugin picks up the fake Stripe.
 import { devApiPlugin } from './dev-api'
 import { giftTokenForPaymentIntent } from './routes/stripe/webhook'
-import { signGiftClaimToken, verifyGiftClaimToken } from './lib/session'
+import {
+  signCheckoutToken,
+  signGiftClaimToken,
+  signSessionToken,
+  verifyGiftClaimToken,
+} from './lib/session'
 import { SUPPORTED_CURRENCIES } from './lib/pricing'
 
 // ---------------------------------------------------------------------------
@@ -407,6 +412,50 @@ function sessionCreateArgs(): SessionArgs {
   return call!.args[0] as SessionArgs
 }
 
+describe('POST /api/gift/create-checkout — email + name validation', () => {
+  const valid = {
+    giver_email: 'giver@example.com',
+    recipient_email: 'recip@example.com',
+    term: '1yr',
+  }
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['a giver_email that is not an address', { giver_email: 'not-an-email' }],
+    ['a giver_email with a space in it', { giver_email: 'a b@example.com' }],
+    ['a recipient_email that is not an address', { recipient_email: 'recip@' }],
+    ['a giver_name over the length cap', { giver_name: 'x'.repeat(251) }],
+    ['a recipient_name over the length cap', { recipient_name: 'x'.repeat(251) }],
+    ['a newline in giver_name', { giver_name: 'Bob\r\nBcc: victim@example.com' }],
+    ['a control character in recipient_name', { recipient_name: 'Al\u0000ice' }],
+    ['a bidi override in giver_name', { giver_name: 'Bob\u202Egpj.exe' }],
+    ['a giver_name that is not a string', { giver_name: { $ne: '' } }],
+  ]
+  for (const [label, override] of cases) {
+    test(`400 on ${label}, before any Stripe call`, async () => {
+      const res = makeRes()
+      await runHandler(
+        getHandler(CREATE_PATH),
+        makeReq({ body: { ...valid, ...override } }),
+        res,
+      )
+      expect(res.statusCode).toBe(400)
+      expect(stripeCalls).toHaveLength(0)
+    })
+  }
+
+  test('names are optional, and are trimmed on their way into the metadata', async () => {
+    const res = makeRes()
+    await runHandler(
+      getHandler(CREATE_PATH),
+      makeReq({ body: { ...valid, giver_name: '  Bob  ' } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    const meta = sessionCreateArgs().payment_intent_data.metadata
+    expect(meta.giver_name).toBe('Bob')
+    expect(meta.recipient_name).toBe('')
+  })
+})
+
 describe('POST /api/gift/create-checkout — happy paths', () => {
   test('1yr: creates new Stripe customer + payment-mode Session with the $80 gift Price (USD), per-currency, and full PI metadata', async () => {
     const h = getHandler(CREATE_PATH)
@@ -433,10 +482,8 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     expect(body.client_secret).toBe('cs_test_1_secret_ABC')
     expect(body.term).toBe('1yr')
 
-    // Verify customer lookup + create
-    const listCall = stripeCalls.find((c) => c.method === 'customers.list')
-    expect(listCall).toBeDefined()
-    expect((listCall!.args[0] as { email: string }).email).toBe('giver@example.com')
+    // An anonymous buyer always gets a fresh customer — no lookup by email.
+    expect(stripeCalls.some((c) => c.method === 'customers.list')).toBe(false)
 
     const createCustomerCall = stripeCalls.find((c) => c.method === 'customers.create')
     expect(createCustomerCall).toBeDefined()
@@ -518,21 +565,85 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
     expect(args.payment_intent_data.metadata.tier).toBe('bundle')
   })
 
-  test('reuses existing Stripe customer by email (no customers.create)', async () => {
-    existingCustomer = { id: 'cus_existing', email: 'giver@example.com' }
-    const h = getHandler(CREATE_PATH)
-    const req = makeReq({
-      body: {
-        giver_email: 'giver@example.com',
-        recipient_email: 'r@x.com',
-        term: '1yr',
-      },
+  // A Customer carries a saved card, a balance, a billing address and an invoice
+  // history, and `customer_update.address` writes through to it. `giver_email`
+  // is free text from an anonymous form, so an existing Customer is only ever
+  // reused for a caller durably signed in AS that address.
+  describe('existing Stripe customer reuse', () => {
+    const giftBody = {
+      giver_email: 'giver@example.com',
+      recipient_email: 'r@x.com',
+      term: '1yr',
+    }
+    const sessionCookie = async (email: string) =>
+      `ark_session=${await signSessionToken({ email, roles: [] }, BASE_ENV)}`
+
+    test('anonymous request: never attached to the existing customer, never looked up', async () => {
+      existingCustomer = { id: 'cus_existing', email: 'giver@example.com' }
+      const res = makeRes()
+      await runHandler(getHandler(CREATE_PATH), makeReq({ body: giftBody }), res)
+
+      expect(res.statusCode).toBe(200)
+      expect(stripeCalls.some((c) => c.method === 'customers.list')).toBe(false)
+      expect(sessionCreateArgs().customer).toBe('cus_new')
+      const created = stripeCalls.find((c) => c.method === 'customers.create')
+      expect((created!.args[0] as { email: string }).email).toBe('giver@example.com')
     })
-    const res = makeRes()
-    await runHandler(h, req, res)
-    expect(res.statusCode).toBe(200)
-    expect(stripeCalls.some((c) => c.method === 'customers.create')).toBe(false)
-    expect(sessionCreateArgs().customer).toBe('cus_existing')
+
+    test('signed in as the giver (any casing): reuses their customer, no customers.create', async () => {
+      existingCustomer = { id: 'cus_existing', email: 'giver@example.com' }
+      const res = makeRes()
+      await runHandler(
+        getHandler(CREATE_PATH),
+        makeReq({
+          body: { ...giftBody, giver_email: 'Giver@Example.com' },
+          headers: { cookie: await sessionCookie('GIVER@example.com') },
+        }),
+        res,
+      )
+
+      expect(res.statusCode).toBe(200)
+      expect(stripeCalls.some((c) => c.method === 'customers.create')).toBe(false)
+      expect(sessionCreateArgs().customer).toBe('cus_existing')
+    })
+
+    test("signed in as someone else: the giver address's customer is not touched", async () => {
+      existingCustomer = { id: 'cus_existing', email: 'giver@example.com' }
+      const res = makeRes()
+      await runHandler(
+        getHandler(CREATE_PATH),
+        makeReq({
+          body: giftBody,
+          headers: { cookie: await sessionCookie('attacker@example.com') },
+        }),
+        res,
+      )
+
+      expect(res.statusCode).toBe(200)
+      expect(stripeCalls.some((c) => c.method === 'customers.list')).toBe(false)
+      expect(sessionCreateArgs().customer).toBe('cus_new')
+    })
+
+    test('a checkout token for the giver address is not a durable login', async () => {
+      // Minted from an address typed into a checkout form — it proves nothing
+      // about who controls the inbox.
+      existingCustomer = { id: 'cus_existing', email: 'giver@example.com' }
+      const checkoutEnv = {
+        ...BASE_ENV,
+        CHECKOUT_SESSION_SECRET: 'checkout-secret-0123456789abcdef0123456789',
+      }
+      const token = await signCheckoutToken('giver@example.com', checkoutEnv)
+      const res = makeRes()
+      await runHandler(
+        getHandler(CREATE_PATH, checkoutEnv),
+        makeReq({ body: giftBody, headers: { cookie: `ark_checkout=${token}` } }),
+        res,
+      )
+
+      expect(res.statusCode).toBe(200)
+      expect(stripeCalls.some((c) => c.method === 'customers.list')).toBe(false)
+      expect(sessionCreateArgs().customer).toBe('cus_new')
+    })
   })
 
   test('normalizes emails to lowercase', async () => {
@@ -646,6 +757,33 @@ describe('GET /api/gift/status', () => {
     const res = makeRes()
     await runHandler(h, req, res)
     expect(res.statusCode).toBe(400)
+  })
+
+  test('429 once one address has spent its polls — and Stripe is not called for it', async () => {
+    retrievedSession = buildStatusSession({ giver_email: 'g@x.com', kind: 'gift' })
+    // One handler = one limiter; a fresh x-forwarded-for keeps this bucket apart
+    // from every other test's 127.0.0.1.
+    const h = getHandler(STATUS_PATH)
+    const poll = async () => {
+      const res = makeRes()
+      await runHandler(
+        h,
+        makeReq({
+          method: 'GET',
+          url: `${STATUS_PATH}?id=cs_1&email=g@x.com`,
+          headers: { 'x-forwarded-for': '203.0.113.9' },
+        }),
+        res,
+      )
+      return res
+    }
+    for (let i = 0; i < 60; i++) expect((await poll()).statusCode).toBe(200)
+
+    stripeCalls.length = 0
+    const limited = await poll()
+    expect(limited.statusCode).toBe(429)
+    expect(Number(limited.__header('retry-after'))).toBeGreaterThan(0)
+    expect(stripeCalls).toHaveLength(0)
   })
 
   test('403 when giver_email param is missing', async () => {

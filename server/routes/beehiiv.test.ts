@@ -304,6 +304,41 @@ describe('POST /api/beehiiv/subscribe — upstream error mapping', () => {
   })
 })
 
+describe('POST /api/beehiiv/subscribe — logging', () => {
+  test('an address quoted back in the upstream error is masked in the log', async () => {
+    fetchImpl = async () =>
+      new Response(
+        '{"errors":[{"detail":"reader.name@example.com is blocked"}]}',
+        { status: 400 },
+      )
+    const logged: string[] = []
+    const original = console.error
+    console.error = (...args: unknown[]) => {
+      logged.push(args.map(String).join(' '))
+    }
+    try {
+      const handler = findHandler(buildDeps(VALID_ENV), SUBSCRIBE_PATH)
+      const res = makeRes()
+      await handler(
+        makeReq(SUBSCRIBE_PATH, {
+          newsletter: 'ark-daily',
+          email: 'reader.name@example.com',
+        }),
+        res,
+      )
+      expect(res.__status()).toBe(400)
+    } finally {
+      console.error = original
+    }
+
+    const line = logged.find((l) => l.includes('[beehiiv] subscribe 400'))
+    expect(line).toBeDefined()
+    expect(line).not.toContain('reader.name')
+    expect(line).toContain('r***@example.com')
+    expect(line).toContain('is blocked')
+  })
+})
+
 describe('POST /api/beehiiv/subscribe — rate limiting', () => {
   test('returns 429 with retry-after after burst is exhausted', async () => {
     fetchImpl = async () => new Response('{}', { status: 201 })

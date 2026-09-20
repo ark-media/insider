@@ -91,6 +91,50 @@ describe('projectBeehiivPost', () => {
     expect(out!.body).not.toContain('SECRET')
   })
 
+  // `content_html` is the whole post with no free/premium split, so on a gated
+  // post it can be the very text the paywall withholds. When Beehiiv omits
+  // `free.web` (nothing above the divider) the free view must come back empty
+  // rather than fall through to it.
+  for (const audience of ['premium', 'both'] as const) {
+    test(`free view of an audience=${audience} post never falls back to content_html`, () => {
+      const out = projectBeehiivPost(
+        {
+          ...base,
+          audience,
+          preview_text: undefined,
+          subtitle: undefined,
+          content: { premium: { web: '<p>SECRET premium body.</p>' } },
+          content_html: '<p>SECRET full body in the flat field.</p>',
+        },
+        'members-letter',
+        'Author',
+      )
+      expect(String(out!.bodyHtml)).toBe('')
+      expect(out!.body).toBe('')
+      // The excerpt's last fallback is the body, so it must stay empty too.
+      expect(out!.excerpt).not.toContain('SECRET')
+    })
+  }
+
+  test('free view of an audience=free post still reads the flat content_html', () => {
+    const out = projectBeehiivPost(
+      { ...base, content: undefined, content_html: '<p>Older flat body.</p>' },
+      'ark-daily',
+      'Author',
+    )
+    expect(out!.bodyHtml).toContain('Older flat body')
+  })
+
+  test('a member still gets content_html when it is all a gated post has', () => {
+    const out = projectBeehiivPost(
+      { ...base, audience: 'premium', content: undefined, content_html: '<p>Flat premium body.</p>' },
+      'members-letter',
+      'Author',
+      'premium',
+    )
+    expect(out!.bodyHtml).toContain('Flat premium body')
+  })
+
   test('projects the premium body when view=premium', () => {
     const out = projectBeehiivPost(
       { ...base, audience: 'premium' },

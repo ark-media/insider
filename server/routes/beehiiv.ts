@@ -7,7 +7,7 @@
 // BEEHIIV_PUBLICATION_ID_<SLUG_UPPER>.
 
 import { secretEquals } from '../lib/timing-safe.js'
-import { isValidEmail } from '../../shared/validation.js'
+import { isValidEmail, redactEmail } from '../../shared/validation.js'
 import {
   isPublishedBeehiivPost,
   projectBeehiivPost,
@@ -38,7 +38,7 @@ import {
   readJson,
   setReadCacheControl,
 } from '../lib/http.js'
-import { createRateLimiter } from '../lib/rate-limit.js'
+import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug, resolveBeehiivPublicationId } from './newsletter-slugs.js'
@@ -202,7 +202,12 @@ async function createBeehiivSubscription(
   })
   if (res.ok) return { ok: true }
   const text = await res.text().catch(() => '')
-  console.error(`[beehiiv] subscribe ${res.status}: ${text}`)
+  // Beehiiv's error bodies quote the address they are complaining about, and
+  // this one was typed by an anonymous visitor — so it is masked on its way into
+  // the log, wherever in the text it turns up.
+  console.error(
+    `[beehiiv] subscribe ${res.status}: ${text.replace(/[^\s@"'<>]+@[^\s@"'<>]+/g, redactEmail)}`,
+  )
   if (res.status >= 400 && res.status < 500) {
     if (isAlreadySubscribedError(text)) {
       return { ok: false, status: 409, error: 'already_subscribed' }
@@ -217,7 +222,13 @@ export function beehiivRoutes({ env }: Deps): Route[] {
   // Per-IP cap on subscribe attempts. 10-token burst then ~12/min steady
   // state — leaves room for typo corrections without letting a script
   // enumerate or spam-subscribe arbitrary addresses.
-  const subscribeLimiter = createRateLimiter({
+  //
+  // Shared (Neon-backed), not in-process: the route is unauthenticated and every
+  // call it lets through makes Beehiiv send mail to an address the caller chose,
+  // so a per-instance bucket — multiplied by however many instances a script
+  // fans out across, and refilled by every cold start — was not the cap above.
+  const subscribeLimiter = createSharedRateLimiter(env, {
+    name: 'beehiiv-subscribe-ip',
     capacity: 10,
     refillPerSec: 0.2,
   })
@@ -268,7 +279,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
       path: '/api/beehiiv/subscribe',
       method: 'POST',
       handler: async (req, res, json) => {
-        const wait = subscribeLimiter.take(getClientIp(req))
+        const wait = await subscribeLimiter.take(getClientIp(req))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })

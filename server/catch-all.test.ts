@@ -189,6 +189,11 @@ describe('createCatchAllHandler — dispatch via _path query param', () => {
           JSON.stringify({
             data: {
               id: '2d482aab-31dd-4d0f-a858-5cc0cb9c7360',
+              // The route only serves a published episode that says it belongs
+              // to the show it was asked under (see podcasts-episode.test.ts).
+              status: 'published',
+              displayed_date: 1_750_000_000,
+              show: { id: 'pod_cmb' },
               description: '<p>Short blurb.</p>',
               show_notes:
                 '<p>Full notes <a href="https://example.com">link</a><script>alert(1)</script></p>',
@@ -860,10 +865,10 @@ describe('paid shows never enter a shared cache', () => {
   for (const path of ['podcasts/episodes', 'podcasts/episode']) {
     test(`${path} is private for a paid show even when the caller gets no audio`, async () => {
       // The regression. This response is the STRIPPED one — the reader proved
-      // no membership, so the audio url was withheld. It used to be marked
-      // `public, s-maxage=300`, which let the edge keep it and hand it to the
-      // next reader who asked for the same url, member or not. Whether a body
-      // is shared-cacheable is a property of the url, not of who fetched it.
+      // no membership, so the audio url was withheld. Whether a body is
+      // shared-cacheable is a property of the url, not of who fetched it:
+      // marking this `public` would let the edge keep it and hand it to the
+      // next reader who asked for the same url, member or not.
       fetchImpl = async () =>
         new Response(JSON.stringify({ data: [] }), { status: 200 })
 
