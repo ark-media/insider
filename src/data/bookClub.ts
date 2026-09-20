@@ -9,8 +9,12 @@
 // it, and PA-API access is gated behind ongoing qualifying sales.
 //
 // Covers: drop a portrait image in `public/book-club/` and set `coverArt`.
-// Picks without one render a branded placeholder (see BookCover), which is the
-// v1 state until Dan's real selections and art land.
+// Picks without one render a branded placeholder (see BookCover).
+//
+// The club hasn't started yet, so the catalogue below is the first four picks
+// and every one of them is still ahead of us: `getUpcomingPicks()` carries the
+// page for now, and `getPastPicks()` fills in on its own as months fall behind
+// the featured pick. Nothing has to move between arrays by hand.
 // ---------------------------------------------------------------------------
 
 /** Amazon Associates tracking tag. Placeholder — replace with the real tag
@@ -20,6 +24,8 @@ const ARK_ASSOC_TAG = "arkmedia-20";
 export type BookClubPick = {
   slug: string;
   title: string;
+  /** The book's subtitle, shown under the title where there's room for it. */
+  subtitle?: string;
   author: string;
   /** Pick month as `YYYY-MM`. Drives ordering and the "July '26 Pick" badge. */
   month: string;
@@ -50,54 +56,47 @@ export function formatPickMonth(month: string): string {
   return `${name} '${year.slice(2)}`;
 }
 
-// Placeholder catalogue — real titles, so the page reads honestly, but Dan's
-// notes and the featured selection are stand-ins to be swapped before launch.
+// Dan's first four picks. Titles, authors and ASINs are final; the notes are
+// drafts in Dan's voice and stay marked PLACEHOLDER until he writes his own.
 const bookClubPicks: BookClubPick[] = [
   {
-    slug: "the-power-broker",
-    title: "The Power Broker",
-    author: "Robert A. Caro",
-    month: "2026-07",
+    slug: "the-pity-of-it-all",
+    title: "The Pity of It All",
+    subtitle: "A Portrait of the German-Jewish Epoch, 1743–1933",
+    author: "Amos Elon",
+    month: "2026-10",
     danNote:
-      "PLACEHOLDER — Caro's study of how power actually accrues and gets spent. I keep coming back to it whenever I want to understand the machinery behind the headlines. We'll take it slow.",
-    amazonAsin: "0394720245",
+      "PLACEHOLDER — two centuries of German Jews building a country's culture while being told they could never quite belong to it. Elon writes the whole arc without ever letting you forget how it ends. I can't think of a better book to start with.",
+    amazonAsin: "0312422814",
     featured: true,
   },
   {
-    slug: "thinking-fast-and-slow",
-    title: "Thinking, Fast and Slow",
-    author: "Daniel Kahneman",
-    month: "2026-06",
+    slug: "the-cauldron",
+    title: "The Cauldron",
+    subtitle: "The Making of the Modern Middle East",
+    author: "Simon Sebag Montefiore",
+    month: "2026-11",
     danNote:
-      "PLACEHOLDER — the book that reframed how I read every poll, every forecast, every gut call. A useful antidote to a news cycle built on snap judgments.",
-    amazonAsin: "0374533555",
+      "PLACEHOLDER — the long backstory to almost everything we cover on Call Me Back, told by someone who can move a century along without losing the people inside it. Read this and the headlines stop arriving out of nowhere.",
+    amazonAsin: "0593805054",
   },
   {
-    slug: "the-looming-tower",
-    title: "The Looming Tower",
-    author: "Lawrence Wright",
-    month: "2026-05",
+    slug: "submission",
+    title: "Submission",
+    author: "Michel Houellebecq",
+    month: "2026-12",
     danNote:
-      "PLACEHOLDER — narrative history at its best, and essential context for so much of what we talk about on the show.",
-    amazonAsin: "1400030846",
+      "PLACEHOLDER — a novel about a France too tired to argue for itself. Plenty of people in the Fold will hate it, which is exactly why it's here: fiction gets at the mood underneath the politics in a way reporting rarely does.",
+    amazonAsin: "1250097347",
   },
   {
-    slug: "team-of-rivals",
-    title: "Team of Rivals",
-    author: "Doris Kearns Goodwin",
-    month: "2026-04",
+    slug: "american-pastoral",
+    title: "American Pastoral",
+    author: "Philip Roth",
+    month: "2027-01",
     danNote:
-      "PLACEHOLDER — leadership under impossible pressure. Worth reading for the temperament alone.",
-    amazonAsin: "0743270754",
-  },
-  {
-    slug: "sapiens",
-    title: "Sapiens",
-    author: "Yuval Noah Harari",
-    month: "2026-03",
-    danNote:
-      "PLACEHOLDER — a big, argumentative sweep of a book. The Fold had plenty to disagree with, which is exactly the point.",
-    amazonAsin: "0062316095",
+      "PLACEHOLDER — Roth on a man who did everything right and watched the ground open under him anyway. Assimilation, political violence, and what parents owe their children. We'll have plenty to argue about.",
+    amazonAsin: "0375701427",
   },
 ];
 
@@ -146,9 +145,20 @@ export function getCurrentPick(): BookClubPick | undefined {
   return bookClubPicks.find((b) => b.featured) ?? bookClubPicks[0];
 }
 
-/** Every non-featured pick, newest month first. */
-export function getPastPicks(): BookClubPick[] {
+/** Picks scheduled after the featured one, in the order we'll read them. */
+export function getUpcomingPicks(): BookClubPick[] {
+  const current = getCurrentPick();
+  if (!current) return [];
   return bookClubPicks
-    .filter((b) => !b.featured)
+    .filter((b) => b !== current && b.month > current.month)
+    .sort((a, b) => a.month.localeCompare(b.month));
+}
+
+/** Picks already read — everything before the featured one, newest month first. */
+export function getPastPicks(): BookClubPick[] {
+  const current = getCurrentPick();
+  if (!current) return [];
+  return bookClubPicks
+    .filter((b) => b !== current && b.month < current.month)
     .sort((a, b) => b.month.localeCompare(a.month));
 }

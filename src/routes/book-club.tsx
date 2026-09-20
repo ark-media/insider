@@ -6,6 +6,7 @@ import {
   formatPickMonth,
   getCurrentPick,
   getPastPicks,
+  getUpcomingPicks,
   type AuthoredBook,
   type BookClubPick,
 } from "../data/bookClub";
@@ -43,8 +44,58 @@ function BuyOnAmazon({
   );
 }
 
+/* A grid of covers, each opening the pick detail modal. Used twice: once for
+   what's coming and once for what's been read. */
+function PickShelf({
+  eyebrow,
+  heading,
+  picks,
+  onSelect,
+}: {
+  eyebrow: string;
+  heading: string;
+  picks: BookClubPick[];
+  onSelect: (pick: BookClubPick) => void;
+}) {
+  return (
+    <section className="relative border-t border-rule-soft">
+      <div className="page-gutter pt-12 pb-16">
+        <div className="eyebrow text-cyan">{eyebrow}</div>
+        <h2 className="mt-5 max-w-2xl text-fg-strong">
+          <span className="display-upright block text-[clamp(1.7rem,3.5vw,2.8rem)]">
+            {heading}
+          </span>
+        </h2>
+
+        <ul className="mt-10 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
+          {picks.map((book) => (
+            <li key={book.slug}>
+              <button
+                type="button"
+                onClick={() => onSelect(book)}
+                aria-label={`${book.title} by ${book.author} — view details and buy`}
+                className="group relative block w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                <BookCover
+                  book={book}
+                  className="w-full transition group-hover:opacity-90"
+                />
+                {/* Month ribbon, overlaid on the cover's lower edge. */}
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-cyan/95 px-2 py-2 text-center font-display text-[12px] font-bold uppercase tracking-button text-navy sm:text-[13px]">
+                  {formatPickMonth(book.month)} Pick
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 function BookClubPage() {
   const current = getCurrentPick();
+  const upcoming = getUpcomingPicks();
   const past = getPastPicks();
   const [selected, setSelected] = useState<BookClubPick | null>(null);
 
@@ -83,6 +134,11 @@ function BookClubPage() {
                     {current.title}
                   </span>
                 </h2>
+                {current.subtitle ? (
+                  <p className="mt-3 max-w-xl text-body-lg text-fg-muted">
+                    {current.subtitle}
+                  </p>
+                ) : null}
                 <p className="mt-2 text-body-lg text-fg-muted">
                   {current.author}
                 </p>
@@ -108,40 +164,24 @@ function BookClubPage() {
         </section>
       ) : null}
 
-      {/* Past picks */}
-      {past.length > 0 ? (
-        <section className="relative border-t border-rule-soft">
-          <div className="page-gutter pt-12 pb-16">
-            <div className="eyebrow text-cyan">The shelf</div>
-            <h2 className="mt-5 max-w-2xl text-fg-strong">
-              <span className="display-upright block text-[clamp(1.7rem,3.5vw,2.8rem)]">
-                Every pick so far.
-              </span>
-            </h2>
+      {/* What's next — the months already chosen, in reading order. */}
+      {upcoming.length > 0 ? (
+        <PickShelf
+          eyebrow="On deck"
+          heading="What we're reading next."
+          picks={upcoming}
+          onSelect={setSelected}
+        />
+      ) : null}
 
-            <ul className="mt-10 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
-              {past.map((book) => (
-                <li key={book.slug}>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(book)}
-                    aria-label={`${book.title} by ${book.author} — view details and buy`}
-                    className="group relative block w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  >
-                    <BookCover
-                      book={book}
-                      className="w-full transition group-hover:opacity-90"
-                    />
-                    {/* Month ribbon, overlaid on the cover's lower edge. */}
-                    <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-cyan/95 px-2 py-2 text-center font-display text-[12px] font-bold uppercase tracking-button text-navy sm:text-[13px]">
-                      {formatPickMonth(book.month)} Pick
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
+      {/* Past picks — empty until a month falls behind the featured pick. */}
+      {past.length > 0 ? (
+        <PickShelf
+          eyebrow="The shelf"
+          heading="Every pick so far."
+          picks={past}
+          onSelect={setSelected}
+        />
       ) : null}
 
       {/* Books by Dan — his own titles, shown outside the monthly rotation. */}
@@ -206,6 +246,11 @@ function BookClubPage() {
               >
                 {selected.title}
               </h2>
+              {selected.subtitle ? (
+                <p className="mt-3 text-body-sm text-fg-muted">
+                  {selected.subtitle}
+                </p>
+              ) : null}
               <p className="mt-2 text-body-lg text-fg-muted">
                 {selected.author}
               </p>
