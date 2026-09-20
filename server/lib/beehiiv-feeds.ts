@@ -317,24 +317,14 @@ export async function premiumShowIds(env: Env, email: string): Promise<string[]>
 // podcast app" page and left the member to find the Spotify button themselves.
 // Same credential, one fewer click.
 //
-// ⚠ `redirect_path` CANNOT LEAVE BEEHIIV, whatever their docs say. It is a path
-// on the publication's own beehiiv domain, and an absolute URL is silently
-// collapsed to "/" — so the member ends the round trip on
-// `https://arkmedia.beehiiv.com/?connected=spotify`, not on us.
-//
-// Measured 2026-09-14, not inferred. `/authorize` 302s to Spotify with the
-// value sealed inside the encrypted `state` blob, and the ciphertext length
-// gives it away: a baseline of 545 bytes plus 19 bytes of framing plus the
-// STORED path. `/x` → 566 (19+2), `/account/podcast-feed?spotify=linked` → 600
-// (19+36, query and even a #fragment kept verbatim), while absolute URLs of 41,
-// 56 and 246 chars ALL → 565 (19+1, i.e. "/"). `//host/p`, `http://host/p` and
-// `https:/host/p` collapse the same way, and a bare `host/p` is kept with a "/"
-// PREPENDED — it only ever builds a same-host path. Re-run the probe before
-// believing any claim that this now works.
-//
-// We keep passing our own URL: it costs nothing today and starts working the
-// day Beehiiv honours it. Nothing depends on the round trip — the setup page
-// opens this in a NEW TAB and confirms from its own state.
+// `redirect_path` is stored in the encrypted OAuth `state` blob. HTTPS absolute
+// URLs survive verbatim as of 2026-09-20 (re-measured with
+// scripts/beehiiv-redirect-path-probe.ts) — which is why the setup page is a
+// same-tab round trip that comes back to
+// `${APP_BASE_URL}/account/podcast-feed?spotify=linked`. HTTP and
+// protocol-relative URLs still collapse to "/". Re-run the probe if Beehiiv's
+// behaviour is in doubt; if absolute URLs shrink to 1 character again, the
+// hand-off has to go back to a new tab.
 
 export type SpotifyHandoff = { url: string; subscriberId: string }
 
