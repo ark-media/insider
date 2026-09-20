@@ -5,11 +5,14 @@
 //     mailto: links on /contact so visitors never see the raw addresses.
 //
 // Validation is strict and the body is HTML-escaped before it goes into the
-// email, since every field is attacker-controlled. Rate-limited per IP to keep
-// the form from being used as a spam relay.
+// email, since every field is attacker-controlled. Same-origin only, rate-limited
+// per IP, and capped per day across ALL callers, to keep the form from being
+// used as a spam relay into our own inboxes. Both limits are the shared
+// (Neon-backed) kind: each call sends mail, and an in-memory bucket is one per
+// function instance.
 
-import { getClientIp, readJson } from '../lib/http.js'
-import { createRateLimiter } from '../lib/rate-limit.js'
+import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
+import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { sendEmail } from '../lib/email.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { contactTopics } from '../../src/config/urls.js'
@@ -17,20 +20,58 @@ import { escapeHtml, isValidEmail } from '../../shared/validation.js'
 
 const NAME_MAX = 200
 const MESSAGE_MAX = 5000
+// The sender's name rides in the subject so the inbox is scannable, but only a
+// tidy slice of it: a subject is a header, and a 200-character name is not one.
+const SUBJECT_NAME_MAX = 80
+
+// The whole site's contact mail for a day. Far above any honest day's volume;
+// low enough that a distributed flood (many IPs, each inside its own budget)
+// runs out before it buries the inboxes or the Resend quota.
+const DAILY_CEILING = 200
+const DAILY_KEY = 'all'
+
+// The name as it appears in the subject line. Control characters — CR, LF and
+// tab among them — become spaces so nothing typed into the form can break out of
+// the header or fold it, runs of whitespace collapse, and the result is capped.
+// The body shows the full (escaped) name; this is only the subject's copy.
+export function subjectSafeName(name: string): string {
+  const flat = name
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return flat.length > SUBJECT_NAME_MAX ? `${flat.slice(0, SUBJECT_NAME_MAX - 1)}…` : flat
+}
 
 const topicsByValue = new Map(contactTopics.map((t) => [t.value, t]))
 
-export function contactRoutes({ env }: Deps): Route[] {
+export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
   // A contact form is low-frequency per person: 5-message burst, then ~1 every
   // 10s. Enough for an honest sender who fixes a typo; too slow to relay spam.
-  const limiter = createRateLimiter({ capacity: 5, refillPerSec: 0.1 })
+  const limiter = createSharedRateLimiter(env, {
+    name: 'contact-ip',
+    capacity: 5,
+    refillPerSec: 0.1,
+  })
+  // One bucket for everyone (constant key), refilling over a day.
+  const dailyLimiter = createSharedRateLimiter(env, {
+    name: 'contact-daily',
+    capacity: DAILY_CEILING,
+    refillPerSec: DAILY_CEILING / 86_400,
+  })
 
   return [
     defineRoute({
       path: '/api/contact',
       method: 'POST',
       handler: async (req, res, json) => {
-        const wait = limiter.take(getClientIp(req))
+        // This sends mail and has no business being called from anywhere but
+        // the site itself. Same check as /api/support/log.
+        if (!isSameOrigin(req, appBaseUrl)) {
+          return json(403, { error: 'bad_origin' })
+        }
+
+        const wait = await limiter.take(getClientIp(req))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })
@@ -70,6 +111,17 @@ export function contactRoutes({ env }: Deps): Route[] {
           return json(400, { error: 'invalid_message' })
         }
 
+        // Spent only by a submission that is about to send: junk that failed
+        // validation above, and the honeypot, must not be able to drain the
+        // day's budget for everyone else. The refusal is byte-for-byte the
+        // per-IP one — same status, same body, and no retry-after that would
+        // give the day-long refill away — so a caller can't tell which limit
+        // they hit, or that a global one exists.
+        if ((await dailyLimiter.take(DAILY_KEY)) !== null) {
+          console.warn('[contact] daily send ceiling reached; refusing submission')
+          return json(429, { error: 'too_many_requests' })
+        }
+
         const html =
           `<p><strong>From:</strong> ${escapeHtml(name)} ` +
           `(${escapeHtml(email)})</p>` +
@@ -79,7 +131,7 @@ export function contactRoutes({ env }: Deps): Route[] {
 
         const sent = await sendEmail(env, {
           to: topic.email,
-          subject: `[Contact — ${topic.label}] ${name}`,
+          subject: `[Contact — ${topic.label}] ${subjectSafeName(name) || '(no name)'}`,
           html,
           replyTo: email,
         })

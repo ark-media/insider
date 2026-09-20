@@ -156,6 +156,15 @@ export function validateCareerInput(raw: unknown): ValidationResult {
 
 type Row = Record<string, unknown>
 
+// The stored apply URL, put back through the write-path check — see
+// readActionUrl in lib/announcements.ts. It becomes the Apply button's href, so
+// a scheme other than http(s)/mailto must never reach the client, however it
+// got into the row. A value that fails reads as "no apply link".
+function readApplyUrl(raw: unknown): string | null {
+  const url = normalizeApplyUrl(raw == null ? null : String(raw))
+  return typeof url === 'string' ? url : null
+}
+
 function mapRow(r: Row): Career {
   return {
     id: String(r.id),
@@ -169,7 +178,7 @@ function mapRow(r: Row): Career {
     // stored HTML shouldn't be trusted just because the normal write path
     // validates it.
     description: sanitizeRichText(String(r.description)),
-    applyUrl: r.apply_url == null ? null : String(r.apply_url),
+    applyUrl: readApplyUrl(r.apply_url),
     enabled: Boolean(r.enabled),
     displayOrder: Number(r.display_order),
     createdAt: new Date(r.created_at as string).toISOString(),

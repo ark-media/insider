@@ -12,6 +12,7 @@
 
 import { readJson, setReadCacheControl } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { getDb } from '../lib/db.js'
 import { getOpenHouseConfig, setOpenHouseConfig } from '../lib/app-settings.js'
 import {
@@ -89,6 +90,10 @@ export function openHouseRoutes({ env, appBaseUrl }: Deps): Route[] {
           if (!v.ok) return json(400, { error: v.error })
           await setOpenHouseConfig(sql, v.value)
           configCache.clear()
+          await logAdminAction(env, admin, req, {
+            action: 'open_houses.update',
+            summary: `sessions=${v.value.sessions.length}`,
+          })
           return json(200, { config: v.value })
         }
         return json(405, { error: 'Method Not Allowed' })

@@ -8,6 +8,7 @@
 
 import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { getDb } from '../lib/db.js'
 import {
   createAnnouncement,
@@ -17,9 +18,11 @@ import {
   updateAnnouncement,
   validateAnnouncementInput,
   type Announcement,
+  type AnnouncementInput,
 } from '../lib/announcements.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { defineRoute } from '../lib/route.js'
+import { isUuid } from './discuss-threads.js'
 import type { Deps, Route } from '../lib/route.js'
 
 // The public banner is fetched on every page load by every visitor. This
@@ -29,6 +32,13 @@ import type { Deps, Route } from '../lib/route.js'
 const ACTIVE_TTL_MS = 60_000
 const ACTIVE_KEY = 'active'
 const activeCache = makeTTLCache<string, { announcement: Announcement | null }>(ACTIVE_TTL_MS)
+
+// What the audit trail keeps of a banner save: whether it's live and when. The
+// body is public marketing copy but it's also arbitrary HTML, and the row itself
+// holds the current text — the trail only needs to place the change.
+function announcementSummary(a: AnnouncementInput): string {
+  return `enabled=${a.enabled} window=${a.startsAt}..${a.endsAt}`
+}
 
 export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
@@ -62,6 +72,9 @@ export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
 
         const sql = getDb(env)
         const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id')
+        // A junk `?id=` would reach Postgres as a bad uuid cast and come back as
+        // the catch-all's 500. Same check, same answer as discuss-threads.
+        if (id !== null && !isUuid(id)) return json(400, { error: 'invalid id format' })
 
         if (req.method === 'GET') {
           return json(200, { announcements: await listAnnouncements(sql) })
@@ -71,6 +84,11 @@ export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
           if (!v.ok) return json(400, { error: v.error })
           const announcement = await createAnnouncement(sql, v.value)
           activeCache.clear()
+          await logAdminAction(env, admin, req, {
+            action: 'announcement.create',
+            targetId: announcement.id,
+            summary: announcementSummary(v.value),
+          })
           return json(200, { announcement })
         }
         // PUT (full replace) — the editor always submits the whole record.
@@ -81,6 +99,11 @@ export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
           const updated = await updateAnnouncement(sql, id, v.value)
           if (!updated) return json(404, { error: 'not_found' })
           activeCache.clear()
+          await logAdminAction(env, admin, req, {
+            action: 'announcement.update',
+            targetId: id,
+            summary: announcementSummary(v.value),
+          })
           return json(200, { announcement: updated })
         }
         if (req.method === 'DELETE') {
@@ -88,6 +111,10 @@ export function announcementRoutes({ env, appBaseUrl }: Deps): Route[] {
           const ok = await deleteAnnouncement(sql, id)
           if (!ok) return json(404, { error: 'not_found' })
           activeCache.clear()
+          await logAdminAction(env, admin, req, {
+            action: 'announcement.delete',
+            targetId: id,
+          })
           return json(200, { ok: true })
         }
         return json(405, { error: 'Method Not Allowed' })

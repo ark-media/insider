@@ -2,7 +2,10 @@
 // (list/get/create/update/delete) run against the real DB, not here.
 
 import { describe, test, expect } from 'bun:test'
+import type { Sql } from './db'
 import {
+  getEnabledCareerBySlug,
+  listEnabledCareers,
   slugify,
   normalizeApplyUrl,
   sanitizeCareerDescription,
@@ -99,5 +102,42 @@ describe('validateCareerInput', () => {
   test('rejects a bad apply URL and non-integer order', () => {
     expect(validateCareerInput({ ...valid, applyUrl: 'not a url' }).ok).toBe(false)
     expect(validateCareerInput({ ...valid, displayOrder: 1.5 }).ok).toBe(false)
+  })
+})
+
+// Same reasoning as the announcement banner's action URL: validated on write,
+// but it becomes the Apply button's href, so the read projection checks again.
+describe('apply URL is re-validated on read', () => {
+  const row = (applyUrl: unknown) => ({
+    id: 'c-1', slug: 'senior-producer', title: 'Senior Producer', team: null, location: null,
+    employment_type: null, summary: 'Lead production.', description: '<p>Do great work.</p>',
+    apply_url: applyUrl, enabled: true, display_order: 0,
+    created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z',
+  })
+  // The accessors use `sql` as a tagged template plus `sql.unsafe` for the
+  // column list.
+  const sqlReturning = (rows: unknown[]) =>
+    Object.assign(() => Promise.resolve(rows), { unsafe: (s: string) => s }) as unknown as Sql
+
+  test.each<[unknown, string | null]>([
+    ['javascript:alert(1)', null],
+    ['data:text/html,<script>alert(1)</script>', null],
+    ['/relative/path', null],
+    ['https://apply.example/role', 'https://apply.example/role'],
+    ['mailto:jobs@ark.example', 'mailto:jobs@ark.example'],
+    [null, null],
+  ])('stored %p is served as %p', async (stored, served) => {
+    const [listed] = await listEnabledCareers(sqlReturning([row(stored)]))
+    expect(listed.applyUrl).toBe(served)
+    const detail = await getEnabledCareerBySlug(sqlReturning([row(stored)]), 'senior-producer')
+    expect(detail?.applyUrl).toBe(served)
+  })
+
+  test('a bad URL drops the apply link, not the posting', async () => {
+    const detail = await getEnabledCareerBySlug(
+      sqlReturning([row('javascript:alert(1)')]),
+      'senior-producer',
+    )
+    expect(detail).toMatchObject({ slug: 'senior-producer', applyUrl: null })
   })
 })

@@ -8,10 +8,14 @@
 //
 // All but /me require the Auth0 "admin" role (server/lib/session.ts). Promos
 // stay Stripe-native — Stripe is the source of truth; checkout auto-applies.
+//
+// Promo create/delete and the cancellations CSV export each leave a row in the
+// admin audit log (server/lib/admin-audit.ts).
 
 import { readJson, sendCsv } from '../lib/http.js'
 import { requireAdmin } from '../lib/session.js'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { listActiveCoupons, listPromotionCodes } from '../lib/stripe-promos.js'
 import { buildPromo, minimumsByCurrency, serializeCoupon } from '../lib/admin-promos.js'
 import { getDb } from '../lib/db.js'
@@ -34,6 +38,29 @@ import type { Deps, Route } from '../lib/route.js'
 // Date-stamped export filename, e.g. cancellations-2026-06-10.csv.
 function csvFilename(): string {
   return `cancellations-${new Date().toISOString().slice(0, 10)}.csv`
+}
+
+// The audit-log summary for a promo: what identifies it (`label` — the code
+// buyers type on create, the coupon's display name on delete, where the code is
+// already out of reach), what it takes off, and for how long. Those are what
+// someone reading the trail later needs to judge it: "100% off forever" should
+// be findable. Nothing here is secret — a promo code is published by design.
+function promoSummary(
+  coupon: Pick<
+    Stripe.CouponCreateParams,
+    'percent_off' | 'amount_off' | 'currency' | 'duration' | 'duration_in_months'
+  >,
+  label: string,
+): string {
+  const discount =
+    coupon.percent_off != null
+      ? `${coupon.percent_off}% off`
+      : `${coupon.amount_off ?? '?'} ${coupon.currency ?? ''} off`.replace(/\s+/g, ' ')
+  const duration =
+    coupon.duration === 'repeating'
+      ? `repeating x${coupon.duration_in_months ?? '?'}mo`
+      : (coupon.duration ?? 'once')
+  return `${label} ${discount} duration=${duration}`
 }
 
 export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
@@ -131,13 +158,43 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
               return json(409, { error: `Could not create promo code: ${msg}` })
             }
           }
+          await logAdminAction(env, admin, req, {
+            action: 'promo.create',
+            targetId: coupon.id,
+            summary: promoSummary(built.value.coupon, `code=${built.value.code ?? '(none)'}`),
+          })
           return json(200, { promo: serializeCoupon(coupon, promotionCode) })
         }
 
         if (req.method === 'DELETE') {
           const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id')
           if (!id) return json(400, { error: 'id required' })
+          // Read before it's gone, so the trail says WHAT was deleted and not
+          // just an opaque coupon id. Best effort: a failed read must not block
+          // the delete the admin asked for.
+          let doomed: Stripe.Coupon | null = null
+          try {
+            doomed = await stripe.coupons.retrieve(id)
+          } catch {
+            doomed = null
+          }
           await stripe.coupons.del(id)
+          await logAdminAction(env, admin, req, {
+            action: 'promo.delete',
+            targetId: id,
+            summary: doomed
+              ? promoSummary(
+                  {
+                    percent_off: doomed.percent_off ?? undefined,
+                    amount_off: doomed.amount_off ?? undefined,
+                    currency: doomed.currency ?? undefined,
+                    duration: doomed.duration,
+                    duration_in_months: doomed.duration_in_months ?? undefined,
+                  },
+                  `name=${doomed.name ?? '(none)'}`,
+                )
+              : null,
+          })
           return json(200, { ok: true })
         }
 
@@ -175,6 +232,12 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         const sql = getDb(env)
         if (wantsCsv) {
           const rows = await getCancellationRows(sql, filter)
+          // A bulk read of member data leaving the site. The trail records the
+          // filter and the size of the export — never the rows.
+          await logAdminAction(env, admin, req, {
+            action: 'cancellations.export',
+            summary: `format=csv outcome=${outcome ?? 'any'} reason=${reason ?? 'any'} rows=${rows.length}`,
+          })
           return sendCsv(res, csvFilename(), cancellationRowsToCsv(rows))
         }
         return json(200, await getCancellationSummary(sql, { filter }))

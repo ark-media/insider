@@ -13,9 +13,15 @@
 //     ?offset=      page offset over the (tier-filtered) membership list.
 //
 // Admin-gated like the rest of the back office. Stripe is required (email source).
+//
+// Every page served is a read of member names and emails, so each one leaves a
+// row in the admin audit log: the filters and how many members came back. Not
+// the email searched for, and not the members — the trail is for spotting
+// someone walking the whole directory, not a second copy of it.
 
 import type Stripe from 'stripe'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { getDb } from '../lib/db.js'
 import {
   getMembershipsByStripeCustomers,
@@ -169,6 +175,10 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
           const members = entries
             .filter((e) => tierParam === null || e.tier === tierParam)
             .filter(matchesActivation)
+          await logAdminAction(env, admin, req, {
+            action: 'members.search',
+            summary: `by=email tier=${tierParam ?? 'any'} activation=${activationParam ?? 'any'} rows=${members.length}`,
+          })
           return json(200, {
             members,
             hasMore: false,
@@ -200,6 +210,10 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         const members = pageRows
           .map((r, i) => toEntry(r, infos[i], activatedEmails, secretKey))
           .filter(matchesActivation) // tier already filtered in SQL
+        await logAdminAction(env, admin, req, {
+          action: 'members.list',
+          summary: `tier=${tierParam ?? 'any'} activation=${activationParam ?? 'any'} offset=${offset} rows=${members.length}`,
+        })
         return json(200, {
           members,
           hasMore,

@@ -9,8 +9,9 @@
 // rate-limited per IP, same-origin only, strict validation, generic errors.
 
 import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
-import { createRateLimiter } from '../lib/rate-limit.js'
+import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { getDb } from '../lib/db.js'
 import { resolveRequestIdentity } from '../lib/session.js'
 import {
@@ -26,7 +27,15 @@ export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
   // per message: roughly a dozen interactions, then a slow trickle. Generous
   // enough for someone genuinely working through a problem, far too slow to be
   // worth using as a write amplifier.
-  const limiter = createRateLimiter({ capacity: 30, refillPerSec: 0.2 })
+  //
+  // Shared across function instances (Neon-backed): this is a public,
+  // unauthenticated write, and a per-instance bucket multiplies by however many
+  // instances a script can fan out across.
+  const limiter = createSharedRateLimiter(env, {
+    name: 'support-log',
+    capacity: 30,
+    refillPerSec: 0.2,
+  })
 
   return [
     defineRoute({
@@ -39,7 +48,7 @@ export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(403, { error: 'bad_origin' })
         }
 
-        const wait = limiter.take(getClientIp(req))
+        const wait = await limiter.take(getClientIp(req))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })
@@ -53,7 +62,10 @@ export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (!env.DATABASE_URL) return json(200, { ok: true })
 
         // Identity comes from the session cookie, never from the request body —
-        // otherwise anyone could attribute a session to any email.
+        // otherwise anyone could attribute a session to any email. It is also
+        // what authorises an update to a session already attributed to a member:
+        // recordSupportSession ignores a write to such a row from anyone else,
+        // and we answer OK either way so the caller can't probe for it.
         const identity = await resolveRequestIdentity(req, env).catch(() => null)
 
         try {
@@ -84,6 +96,12 @@ export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
           getDb(env),
           Number.isFinite(parsed) ? parsed : SUPPORT_SESSIONS_DEFAULT_LIMIT,
         )
+        // Sessions carry member emails and whatever they typed into the widget —
+        // a bulk read of member data, so it goes in the trail (size only).
+        await logAdminAction(env, admin, req, {
+          action: 'support_conversations.read',
+          summary: `rows=${sessions.length}`,
+        })
         return json(200, { sessions })
       },
     }),
