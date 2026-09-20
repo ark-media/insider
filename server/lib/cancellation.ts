@@ -90,13 +90,17 @@ export async function insertCancellationSurvey(
 }
 
 // Attach the member's checked reasons + free-text note to an existing survey row
-// after a cancel has already committed (survey-after-cancel). Idempotent-ish:
-// re-submitting just overwrites. Two guards, both authz (not update targets):
-//   - email so a member can only annotate their own row;
-//   - offer_outcome in ('declined','not_offered') so a crafted survey_id can't
-//     point at an 'accepted' row, whose empty reasons the retention-window read
-//     (hasAcceptedRetention) depends on. Cancel and debundle rows share these two
-//     outcomes; both are the member's own, so annotating either is harmless.
+// after the change has already committed (survey-after-cancel). Idempotent-ish:
+// re-submitting just overwrites. `email` is the authorization: a member can only
+// annotate a row that is already their own, and reasons/note are display-only
+// columns — nothing reads them to decide entitlement or eligibility.
+//
+// There used to be a second clause, offer_outcome in ('declined','not_offered'),
+// meant to keep a crafted survey_id off an 'accepted' row. It guarded nothing:
+// hasAcceptedRetention reads offer_outcome and coupon_id, never reasons. What it
+// did do was silently drop the reasons of every debundler who took the intro
+// rate — that row is written 'accepted' precisely so the coupon spends the
+// retention window — which is the whole population the debundle survey asks.
 export async function updateCancellationSurveyReasons(
   sql: Sql,
   input: { id: SurveyId; email: string; reasons: string[]; note: string | null },
@@ -105,8 +109,7 @@ export async function updateCancellationSurveyReasons(
     update cancellation_survey
       set reasons = ${input.reasons}, note = ${input.note}
     where id = ${input.id}
-      and email = ${input.email}
-      and offer_outcome in ('declined', 'not_offered')`
+      and email = ${input.email}`
 }
 
 // Has this email accepted a promotional coupon within the rolling eligibility
