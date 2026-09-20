@@ -103,9 +103,8 @@ export const circleUrls = {
    * The events space, where every event lives in the app. Post URLs are opaque
    * hash-suffixed slugs that aren't derivable from our own ids, so this
    * deep-links to the space itself rather than a fabricated per-event
-   * permalink. The space slug is read from Circle's own `spaces` list, not
-   * guessed — the rebuilt Fold dropped the hash suffixes the old slugs
-   * carried (`events-71d23b` → `events`).
+   *   permalink. The space slug is read from Circle's own `spaces` list, not
+   * guessed (`events`, not a hash-suffixed slug).
    */
   eventsSpace: "https://thefold.arkmedia.org/c/events",
   /**

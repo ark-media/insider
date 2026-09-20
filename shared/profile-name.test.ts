@@ -153,9 +153,8 @@ describe('hasRealName', () => {
   })
 
   test('a whole address is never a name, however it is capitalized or supplied', () => {
-    // The gift form's recipient_name is free text a giver types, and the
-    // capitalization rule used to rescue anything with an uppercase letter in
-    // it — rendering "Hi Hannah@example.com," in the welcome email.
+    // The gift form's recipient_name is free text a giver types, and an
+    // address in this field is never a name.
     expect(hasRealName({ givenName: 'Hannah@example.com', email: 'h@x.com' })).toBe(
       false,
     )

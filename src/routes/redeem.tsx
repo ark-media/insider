@@ -12,7 +12,7 @@ import { trackEvent } from "../lib/analytics";
 //   ?mt=…    — the single-email magic link. One click (POST /api/gift/claim)
 //              creates/logs-in the recipient and redeems, then routes to the
 //              welcome flow. No prior sign-in. This is the normal path.
-//   ?token=… — the legacy/fallback claim token. Requires a signed-in session
+//   ?token=… — the fallback claim token. Requires a signed-in session
 //              (the server keys the grant on the recipient's Auth0 sub), so
 //              guests sign in first and return here.
 export const Route = createFileRoute("/redeem")({

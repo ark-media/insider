@@ -316,7 +316,7 @@ export type CancellationRow = {
   offerOutcome: string
   couponId: string | null
   // The tier that was cancelled/debundled from, and what the member kept. Null
-  // on older rows written before 0012 and on accept rows (a stay, not a cancel).
+  // on accept rows (a stay, not a cancel) and on rows that never recorded one.
   canceledTier: string | null
   retainedProduct: string | null
   createdAt: string

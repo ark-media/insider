@@ -2,8 +2,8 @@
 // Unit tests for server/routes/stripe/helpers.ts.
 //
 // Narrow on purpose: this pins planFromSubscription's documented contract,
-// which promises `null` for a subscription with no usable items but used to
-// throw when `items` was absent from the payload entirely. Callers sit on the
+// which promises `null` for a subscription with no usable items, including
+// when `items` is absent from the payload entirely. Callers sit on the
 // Stripe webhook and on request paths where a throw becomes a 5xx — and on the
 // webhook specifically, a 5xx traps the event in Stripe's retry loop.
 

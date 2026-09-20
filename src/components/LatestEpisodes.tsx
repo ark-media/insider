@@ -28,8 +28,7 @@ function LatestEpisodeCard({
   return (
     // Horizontal row on phones (square thumb left, copy right), stacking into the
     // three-up card only once the grid does at `md`. Episode art is square, so the
-    // media box is square too — it used to be `aspect-video` with `object-contain`,
-    // which letterboxed the art and left 44% of every box as dead navy.
+    // media box is square too.
     <article className="flex h-full overflow-hidden border border-rule bg-navy-800/40 md:flex-col">
       <Link
         to="/podcasts/$show/$episode"

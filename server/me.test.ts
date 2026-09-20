@@ -4,7 +4,7 @@
 // Beehiiv, keyed on the session email. Two healthy outcomes:
 //   - live arkPlus row → 200 { tier: 'ark-plus', feeds: [the private feed] }
 //   - no row on a durable Auth0 session → 200 { tier: 'free', feeds: [] }
-// The legacy 401 stays only for the checkout-cookie path (issued post-payment,
+// A 401 is reserved for the checkout-cookie path (issued post-payment,
 // so no entitlement there is a provisioning gap, not a free user).
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
@@ -229,18 +229,6 @@ const ARKPLUS_AXES = { arkPlus: SUB_ARKPLUS_AXIS, circle: FREE_AXIS }
 // rather than repeating the pair twelve times.
 const NO_NAME = { firstName: null }
 
-// KEPT AS A REGRESSION GUARD: `passwordResettable` was removed from the /api/me
-// contract when password sign-in was retired (2026-09-16). These spreads are now
-// empty so the shape assertions below stay exact — if the field ever comes back
-// without a decision, these tests fail rather than silently accepting it.
-//
-// Historical note: it said whether the account holds a password at all, from
-// the primary Auth0 sub's connection prefix. signAuth0TestToken subjects every
-// bearer as `auth0|<email>` (the database connection), so bearer-authenticated
-// responses report true; a checkout token carries no sub and reports false.
-const DB_IDENTITY = {}
-const NO_PASSWORD = {}
-
 // ===========================================================================
 // Auth + transport
 // ===========================================================================
@@ -277,7 +265,6 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'free@x.com',
       tier: 'free',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -296,7 +283,6 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'paid@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [
@@ -328,7 +314,6 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'upgraded@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -363,8 +348,8 @@ describe('GET /api/me with Auth0 bearer', () => {
 
   test('Auth0 bearer with no membership row → 200 free', async () => {
     // Neon is authoritative: no row on a durable login is a logged-in free
-    // user. The legacy 401 now applies only to the checkout cookie
-    // (post-payment), not to an Auth0 session.
+    // user. The 401 applies only to the checkout cookie (post-payment), not
+    // to an Auth0 session.
     const token = await signAuth0Token({ email: 'gone@x.com' })
     const handler = buildHandler()
     const res = makeRes()
@@ -374,7 +359,6 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'gone@x.com',
       tier: 'free',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -391,7 +375,6 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'unknown-tier@x.com',
       tier: 'free',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -412,7 +395,6 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'newpaid@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -455,7 +437,6 @@ describe('GET /api/me with Auth0 bearer', () => {
       email: 'oops@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -501,7 +482,6 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'fresh@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
-      ...NO_PASSWORD,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -519,7 +499,6 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'member@x.com',
       tier: 'ark-plus',
       ...NO_NAME,
-      ...NO_PASSWORD,
       entitlements: { arkPlus: true, circle: false },
       axes: ARKPLUS_AXES,
       feeds: [],
@@ -535,7 +514,6 @@ describe('GET /api/me with checkout-cookie session', () => {
       email: 'freebie@x.com',
       tier: 'free',
       ...NO_NAME,
-      ...NO_PASSWORD,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -560,8 +538,8 @@ describe('GET /api/me with checkout-cookie session', () => {
   })
 
   test('a name manufactured from the email never reaches the client', async () => {
-    // The shape findOrCreateAuth0User used to write. It must resolve to "no
-    // name", or the greeting reads "Hi hannah.waxman8,".
+    // An email-local-part given_name must resolve to "no name", or the
+    // greeting reads "Hi hannah.waxman8,".
     const token = await signSessionToken(
       { email: 'hannah.waxman8@x.com', roles: [], givenName: 'hannah.waxman8' },
       BASE_ENV,
@@ -671,7 +649,6 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
       email: 'newfree@x.com',
       tier: 'free',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],
@@ -725,7 +702,6 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
       email: 'unlucky@x.com',
       tier: 'free',
       ...NO_NAME,
-      ...DB_IDENTITY,
       entitlements: { arkPlus: false, circle: false },
       axes: FREE_AXES,
       feeds: [],

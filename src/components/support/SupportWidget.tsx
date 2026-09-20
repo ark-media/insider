@@ -85,8 +85,8 @@ export function SupportWidget() {
         // cards' "Subscribe annually", the FAQ rows — run the full width of the
         // column, and a labelled launcher sat across the middle of them. A
         // 48px square still overlaps the last inch of a full-width control,
-        // which is the accepted cost of a floating launcher, but it no longer
-        // lands on the words.
+        // which is the accepted cost of a floating launcher, but it doesn't
+        // land on the words.
         className="fixed bottom-4 right-4 z-[45] inline-flex size-12 items-center justify-center gap-2 border border-cyan bg-cyan button-text text-navy shadow-2xl transition hover:bg-navy-900 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan motion-reduce:transition-none sm:size-auto sm:min-h-12 sm:px-4"
       >
         <svg

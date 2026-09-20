@@ -1,14 +1,10 @@
 // Auth0 user creation after a successful payment. The clients live in
 // ../auth0.ts; this module does the find-or-create dance.
 //
-// It used to also hand back a first-login path — Auth0's own password-reset
-// email, or a password-change ticket for the gift flow. Neither exists now:
-// password sign-in was removed from the login page on 2026-09-16 (see
-// auth0/README.md), so a credential minted here would be one the member could
-// never use. The account is created on the Database connection, with the
-// passwordless `email` identity the login page's code prompt signs in against
-// linked into it; callers carry members in with the auto-login links in their
-// own email (server/lib/session.ts).
+// The account is created on the Database connection, with the passwordless
+// `email` identity the login page's code prompt signs in against linked into
+// it. Callers carry members in with the auto-login links in their own email
+// (server/lib/session.ts).
 
 import crypto from 'node:crypto'
 import type { ManagementClient } from 'auth0'
@@ -20,10 +16,10 @@ import {
 } from '../../shared/profile-name.js'
 
 // app_metadata key recording that a name came from the member, not from a
-// backfill, a billing form, or the old email-local-part fallback. Auth0 is
-// already the name's home, so its provenance lives beside it rather than in a
-// new Neon column (membership stores no PII). shared/profile-name explains why
-// the shape of a name alone can't answer the question.
+// backfill or a billing form. Auth0 is already the name's home, so its
+// provenance lives beside it rather than in a new Neon column (membership
+// stores no PII). shared/profile-name explains why the shape of a name alone
+// can't answer the question.
 const NAME_SET_BY_MEMBER_KEY = 'name_set_by_member'
 
 // Reads that flag off a Management API user record.
@@ -148,21 +144,14 @@ export async function findOrCreateAuth0User(
   const mgmt = getManagementClient(env)
   if (!mgmt) return null
 
-  // Only write a name we were actually given. This used to fall back to
-  // `email.split('@')[0]`, which is why the migrated roster is full of members
-  // called "hannah.waxman8" — a value indistinguishable from a real name at
-  // every downstream read. Auth0 doesn't require given_name, so leaving it
-  // unset is both honest and what lets `hasRealName` spot the gap.
+  // Only write a name we were actually given. Auth0 doesn't require given_name,
+  // so leaving it unset is both honest and what lets `hasRealName` spot the gap.
   const { first: givenName, last: familyName } = splitFullName(nameHint)
   const hintIsReal = hasRealName({ givenName, familyName, email })
 
   // Return early if Auth0 user already exists — but not before filling an empty
-  // name from the hint. The hint used to be read only on the create branch
-  // below, so a reader who already had a login (a free newsletter subscriber,
-  // say) kept whatever Auth0 held when they later paid, even though they typed
-  // a real name into Stripe checkout: it reached Beehiiv and their welcome email
-  // and stopped there, while /account went on asking them for a name they had
-  // already given us.
+  // name from the hint. A reader who already had a login (a free newsletter
+  // subscriber, say) still gets the name they typed into Stripe checkout.
   //
   // Strictly gap-filling. Any real name already on the record wins — including
   // one the member typed, which `hasRealName` honours via app_metadata — and the

@@ -90,11 +90,9 @@ describe('validateReminderConfig', () => {
 
 describe('DEFAULT_REMINDER_CONFIG', () => {
   test('reminders are on by default', () => {
-    // Off for most of this feature's life, guarding a roster that predated
-    // activation tracking. Beehiiv rebuilt that roster (0023), so an absent
-    // activation row now means the member really has not set up — and the
-    // nudge is the right email. Pinned because flipping it back silently
-    // turns the whole campaign off.
+    // Pinned because flipping it back silently turns the whole campaign off.
+    // "No activation row" means the member has not set up, so the nudge is
+    // the right email.
     expect(DEFAULT_REMINDER_CONFIG.enabled).toBe(true)
   })
 })

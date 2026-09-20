@@ -398,10 +398,10 @@ describe('/api/beehiiv/posts is never shared-cacheable', () => {
 
   for (const newsletter of ['ark-daily', 'members-letter']) {
     test(`${newsletter} is private even for an anonymous reader`, async () => {
-      // The regression, and this one was live. An anonymous reader gets the
-      // PREVIEW body (`view: 'free'`), and that response used to be marked
-      // `public, s-maxage=300`. Once the edge held it, the next member to open
-      // the same url was served the preview of the newsletter they pay for.
+      // The regression. An anonymous reader gets the PREVIEW body
+      // (`view: 'free'`). Marking that response `public` would let the edge
+      // keep it and serve the preview of the newsletter they pay for to the
+      // next member who opened the same url.
       //
       // ark-daily is included on purpose: `both`-audience posts surface there
       // too and are projected through the same membership-dependent `view`, so

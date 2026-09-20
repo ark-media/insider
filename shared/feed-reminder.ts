@@ -16,15 +16,8 @@ export type ReminderConfig = {
 }
 
 export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
-  // On. This was off for most of its life, guarding a specific hazard: the
-  // roster predated activation tracking, so members who had set their feeds up
-  // before the webhook existed read as "0 set up" and would have taken a
-  // spurious — one-time, irreversible — nudge on the cron's first run.
-  //
-  // That hazard is gone. The move to Beehiiv rebuilt the premium roster from
-  // scratch when we moved to Beehiiv, and every activation since is recorded as it
-  // happens, so "no activation row" now means what it says. A member who reads
-  // as unset really is unset, and the nudge is the correct email to send them.
+  // On. "No activation row" means the member has not set up: every activation
+  // is recorded as it happens, so the nudge is the correct email to send them.
   //
   // The admin toggle and FEED_REMINDER_ENABLED still override this, so turning
   // sends off is a switch rather than a deploy.

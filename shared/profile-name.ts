@@ -1,12 +1,10 @@
 // The one place a member's name is parsed, judged, and rendered — on the client
 // and the server.
 //
-// The whole module exists because of one legacy behaviour: for most of this
-// site's life we *manufactured* a name whenever we didn't have one.
-// `findOrCreateAuth0User` writes `given_name: email.split('@')[0]` when it has
-// nothing better, and that value propagates outward to every store that greets
-// the member. So "no name" does not present as an empty field — it presents as
-// a member whose name is literally "hannah.waxman8".
+// Auth0 records (and some billing forms) can hold the email local part as
+// `given_name` when no name was given. That value propagates outward to every
+// store that greets the member. So "no name" does not present as an empty
+// field — it presents as a member whose name is literally "hannah.waxman8".
 //
 // That makes `!givenName` the wrong test everywhere. Asking "do we have a real
 // name?" has to mean "do we have one a human typed?", and every caller — the
@@ -18,14 +16,15 @@
 // own name capitalizes it. So a value that matches the local part but carries a
 // capital ("Hannah" for hannah@…) is treated as real, which keeps the
 // legitimately-named-like-your-email case out of the prompt loop. A value with a
-// surname beside it is always real, since we never manufactured a family name.
+// surname beside it is always real, since we never fill a family name from the
+// email.
 //
 // The heuristic has one blind spot it cannot close on its own: "sarah", typed by
-// sarah@gmail.com, is character-for-character what we would have manufactured
-// for her. Provenance settles that case — `setByMember` says a human typed this
-// into the account form, and nothing about its shape can overrule that. Without
-// it her save reads as manufactured on the very next request: the prompt returns
-// with the form seeded blank and /api/me stops greeting her by name.
+// sarah@gmail.com, is character-for-character the email local part. Provenance
+// settles that case — `setByMember` says a human typed this into the account
+// form, and nothing about its shape can overrule that. Without it her save
+// reads as manufactured on the very next request: the prompt returns with the
+// form seeded blank and /api/me stops greeting her by name.
 
 // Auth0 root attributes are capped in practice and the create path already
 // truncated to 40; keep every writer agreeing on one bound.

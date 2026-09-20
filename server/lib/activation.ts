@@ -73,10 +73,8 @@ function parseAxes(welcomedAxes: string | undefined): Set<string> {
 // What the member has now been TOLD they hold: everything an earlier email
 // covered, plus the axes the email this activation is about to send names.
 //
-// It accumulates rather than overwrites, and it is written on both send paths.
-// Stamping only the first activation was the bug: a Circle-only member who
-// added Ark+ got the upgrade email and kept the stamp `circle`, so the record
-// of what they had been told never caught up with what they had been told.
+// It accumulates rather than overwrites, and it is written on both send paths
+// so the stamp stays in sync with every email that has gone out.
 function welcomedAxesValue(
   existing: string | undefined,
   entitlements: Entitlements,
@@ -92,10 +90,9 @@ function welcomedAxesValue(
 // already own when they were welcomed — i.e. a real upgrade, not the second
 // half of the purchase they already have an email about.
 //
-// A subscription with no stamp at all predates the stamp, so nothing is known
-// about what its welcome covered. Treated as "welcomed for nothing", which errs
-// toward sending: an upgrade that goes unannounced is the silence this branch
-// was added to fix, and a stray email is the cheaper mistake of the two.
+// A subscription with no stamp at all has nothing known about what its welcome
+// covered. Treated as "welcomed for nothing", which errs toward sending: an
+// upgrade that goes unannounced is worse than a stray email.
 //
 // Note what this cannot see: an axis the member held, lost, and bought back is
 // still in the stamp, so the re-purchase is silent. Fixing that means clearing
@@ -219,12 +216,9 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
   // just Ark+ — a Circle-only buyer needs a login to SSO into what they bought
   // (§8 risk 6).
   //
-  // A brand-new account used to leave here with an Auth0 password-change ticket,
-  // which was the welcome email's CTA and the only way in. Password sign-in is
-  // gone from the login page (auth0/README.md), so there is nothing to mint: the
-  // member is provisioned on the Database connection, and the login page mails
-  // them a code against that address. The welcome email's own auto-login link
-  // (`loginLink` below) is what carries them in on the first click.
+  // The member is provisioned on the Database connection, and the login page
+  // mails them a code against that address. The welcome email's own auto-login
+  // link (`loginLink` below) is what carries them in on the first click.
   const ensureAuth0Login = async (
     email: string,
     name: string | undefined,
@@ -363,16 +357,14 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         ...(arkPlusGranted ? { beehiiv_premium: 'true' } : {}),
         ...(auth0Sub ? { auth0_user_id: auth0Sub } : {}),
         ...(circleProvisioned ? { circle_provisioned: 'true' } : {}),
-        // Both send paths record what they announced. Only the first activation
-        // used to, which left the stamp permanently behind on any member who
-        // ever upgraded.
+        // Both send paths record what they announced.
         ...(wasUnprovisioned || gainedNewAxis ? { welcomed_axes: welcomedAxes } : {}),
       },
     })
 
     if (wasUnprovisioned) {
-      // One branded welcome email — feed setup lives on /welcome, and it stands
-      // in for Auth0's reset email too (link embedded above).
+      // One branded welcome email — feed setup lives on /welcome (link
+      // embedded above).
       // One per tier: bundle (feed + Fold) and ark-plus (feed only) share
       // the subscriber template but branch on tier for accurate copy;
       // Circle-only gets the Fold-first copy. Soft-fail: the membership is
@@ -421,11 +413,10 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     } else if (gainedNewAxis) {
       // An already-provisioned member who just gained an axis — an Ark+ member
       // adding the Fold (or the reverse), which moves their subscription onto
-      // the Bundle. `wasUnprovisioned` deliberately keeps the welcome copy away
-      // from them, which until now left the upgrade completely silent: no
-      // branded email, no pointer to the thing they just bought, and no notice
-      // of the new recurring price (Stripe's receipt doesn't arrive until the
-      // next invoice, since the change is prorated onto it).
+      // the Bundle. `wasUnprovisioned` keeps the welcome copy away from them
+      // so they get this upgrade notice instead: a pointer to the thing they
+      // just bought, and the new recurring price (Stripe's receipt doesn't
+      // arrive until the next invoice, since the change is prorated onto it).
       //
       // Gated (see gainedNewAxis above) on the provisioning having SUCCEEDED,
       // not merely been attempted: "the Fold is yours now" must not go out
@@ -483,8 +474,8 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     // metadata-only customer.subscription.updated events Stripe fires. Keyed on
     // the external-grant markers (beehiiv_premium / circle_provisioned), not
     // auth0_user_id — the login is best-effort and stamped alongside them on the
-    // first activation, so requiring it here would re-provision legacy subs that
-    // predate the stamp.
+    // first activation, so requiring it here would re-provision subs that never
+    // got the stamp.
     const need = deriveEntitlements(tier)
     const m = sub.metadata ?? {}
     const fullyProvisioned =

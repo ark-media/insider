@@ -17,7 +17,7 @@
 // on purpose — "not now" said on /welcome is still "not now" on /account, where
 // they'll meet the quiet row instead.
 //
-// "Needs a name" is the server's judgement, never `!givenName` — most migrated
+// "Needs a name" is the server's judgement, never `!givenName` — many
 // members have a name we manufactured from their email address, and treating
 // that as real is what ships "Hi hannah.waxman8," to the whole list.
 

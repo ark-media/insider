@@ -2,8 +2,8 @@
 //
 //   1. Auth0 RS256 access tokens (the long-term session).
 //   2. Our own HS256 `ark_checkout` JWT, issued at the end of checkout so
-//      brand-new subscribers can land on /setup before their password-reset
-//      email arrives. Lives in an httpOnly cookie or a Bearer header.
+//      brand-new subscribers can land on /setup before the welcome email's
+//      auto-login link is opened. Lives in an httpOnly cookie or a Bearer header.
 
 import type { IncomingMessage } from 'node:http'
 import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from 'jose'
@@ -104,9 +104,8 @@ export async function verifyAuth0BearerProfile(
     const email = payload[AUTH0_EMAIL_CLAIM] as string | undefined
     if (!email) return null
     const verifiedClaim = payload[`${AUTH0_EMAIL_CLAIM}_verified`]
-    // Namespaced claims emitted by the Login Action. A bare `name` was read here
-    // previously and was always undefined — Auth0 drops non-namespaced custom
-    // claims — so nothing downstream ever saw a name.
+    // Namespaced claims emitted by the Login Action. Auth0 drops
+    // non-namespaced custom claims, so a bare `name` would always be undefined.
     const givenName = (payload[AUTH0_GIVEN_NAME_CLAIM] as string | undefined) ?? undefined
     const familyName =
       (payload[AUTH0_FAMILY_NAME_CLAIM] as string | undefined) ?? undefined

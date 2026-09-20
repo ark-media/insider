@@ -8,10 +8,8 @@ import {
 // The Settings tab's email section: every list this address is on, in one
 // place, each one switchable where switching means anything.
 //
-// This supersedes the standalone /account/newsletters page, which showed a
-// member the members-letter toggle and a free reader the free-newsletter one —
-// never both. An entitled member is on two lists and could only ever see one of
-// them, so turning the daily off meant guessing where the switch lived.
+// An entitled member is on two lists — members-letter and the free
+// newsletter — and both switches live here.
 //
 // WHAT THE TWO TOGGLES ACTUALLY ARE
 // They are not independent, and treating them as if they were is a way to

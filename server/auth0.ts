@@ -2,12 +2,7 @@
 // Auth0 client factories shared by the webhook/entitlement paths and the
 // admin script. We use the official `auth0` SDK (node-auth0 v5):
 //   - ManagementClient for the Management API (users, roles, jobs, tickets).
-//     It manages the M2M client-credentials token itself, so there's no
-//     hand-rolled token fetch/cache here anymore.
-//
-// There was also an AuthenticationClient here, for the one Authentication-API
-// call we made: dbconnections/change_password. Password sign-in was removed
-// from the login page on 2026-09-16, so nothing sends that email any more.
+//     It manages the M2M client-credentials token itself.
 //
 // Domain split (still load-bearing): the public login domain is custom
 // (auth.ark-plus.xyz) and is used for JWKS and the ID-token issuer. The

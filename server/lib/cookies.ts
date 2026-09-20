@@ -6,8 +6,8 @@
 //     `ark_session_present` is JS-readable so the SPA can detect the session
 //     without exposing the token.
 //   ark_checkout — the short-lived post-checkout auto-login session, so a
-//     brand-new subscriber reaches /setup before their password-reset email
-//     arrives. Same httpOnly + companion-present shape.
+//     brand-new subscriber reaches /setup before the welcome email's
+//     auto-login link is opened. Same httpOnly + companion-present shape.
 //   ark_auth_txn — a 10-minute httpOnly cookie holding the in-flight OAuth
 //     transaction (PKCE verifier, state, nonce, returnTo) between /login and
 //     /callback.

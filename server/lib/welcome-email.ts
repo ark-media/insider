@@ -9,14 +9,10 @@
 //   VISUAL BENEFITS LIST        → the text half (show + one-liner) from
 //                                 src/data/shows.ts. See networkShowBullets().
 //
-// Brand-new accounts used to get a different CTA here: an Auth0 password-change
-// ticket labelled "Set your password", because a new account had no way in
-// otherwise. Password sign-in was removed from the login page on 2026-09-16, so
-// that ticket would now hand members a credential they can never sign in with.
-// Both kinds of account now get the doc's own CTA, which `activation.ts` already
-// wraps in an auto-login link — the click lands a new member signed in, with no
-// credential to create. `isNewAccount` survives only to pick the sentence
-// underneath it: the two cases still need different reassurance.
+// Both kinds of account get the doc's own CTA, which `activation.ts` wraps in
+// an auto-login link — the click lands a new member signed in. `isNewAccount`
+// picks the sentence underneath it: the two cases still need different
+// reassurance.
 
 import type { GiftTerm } from './activation.js'
 import { greetingFirstName, splitFullName } from '../../shared/profile-name.js'
@@ -322,7 +318,7 @@ export const MANAGE_FOOTER =
 //
 // `email` is the recipient's address, and it is what makes the check work at
 // all: without it `hasRealName` has nothing to compare against and accepts any
-// non-empty string, so the manufactured value the migrated roster is full of
+// non-empty string, so a local-part value already on the record
 // ("hannah.waxman8") renders as a greeting. Every caller has it in hand.
 function firstName(name?: string, email?: string): string | undefined {
   const { first, last } = splitFullName(name)
@@ -603,8 +599,7 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
   const priceSentence = p.price
     ? `Your membership is now <strong>${esc(p.price)} ${perPeriod(p.plan)}</strong>, and that covers everything: ${coversEverything}.`
     : `Your membership now covers everything: ${coversEverything}.`
-  // Same wording the confirm panel promised — see shared/billing-copy.ts, which
-  // exists because this sentence and that one used to be written out twice.
+  // Same wording the confirm panel promised — see shared/billing-copy.ts.
   // 'unknown' is the honest settlement here: this renderer is told what the
   // membership costs NOW, never what it cost before, so it can't say which way
   // the money went.

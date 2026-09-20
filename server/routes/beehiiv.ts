@@ -243,16 +243,12 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         // Both surfaces project a membership-dependent body — `view` is
         // 'premium' for a member and 'free' for everyone else, and `both`
         // -audience posts appear on ark-daily as well as members-letter — so
-        // neither slug may enter a shared cache under this url.
-        //
-        // This used to be decided per caller: member responses were `private`
-        // and anonymous ones were share-cached. That reads as safe and isn't.
-        // The anonymous response is the PREVIEW, and once the edge held it, the
-        // next member to open the newsletter was served the preview of the
-        // thing they pay for. Gating on the resource costs anonymous readers
-        // the edge hit; `beehiivRawCache` still spares Beehiiv the round-trip,
-        // and an anonymous request resolves no identity so it never reaches
-        // Neon either.
+        // neither slug may enter a shared cache under this url. The anonymous
+        // response is the PREVIEW, and a shared cache would serve it to the
+        // next member to open the newsletter. Gating on the resource costs
+        // anonymous readers the edge hit; `beehiivRawCache` still spares
+        // Beehiiv the round-trip, and an anonymous request resolves no identity
+        // so it never reaches Neon either.
         setReadCacheControl(res, { gated: true })
 
         const token = env.BEEHIIV_API_KEY

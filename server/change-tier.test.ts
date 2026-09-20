@@ -466,7 +466,7 @@ describe('POST /api/stripe/change-tier — 18+ attestation', () => {
 // ===========================================================================
 // The debundle notice
 //
-// A debundle is the one membership change that used to tell the member nothing:
+// A debundle is the membership change Stripe does not itself explain:
 // one product stops, the other continues at a new price, and Stripe's receipt
 // for that price doesn't arrive until the next invoice.
 // ===========================================================================

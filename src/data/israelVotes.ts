@@ -8,10 +8,8 @@ import type { ShowSlug } from "./shows";
  * dates, no durations. Those are fetched from the podcast host at runtime
  * (`fetchEpisodeById`), the same as everywhere else on the site.
  *
- * This page used to embed the host's mp3 urls directly, which meant the whole
- * page silently went dead the moment the shows moved hosts. An
- * episode is referenced here by its Beehiiv id — the host's own stable handle
- * for it, unaffected by renames — and nothing else.
+ * An episode is referenced here by its Beehiiv id — the host's own stable
+ * handle for it, unaffected by renames — and nothing else.
  *
  * `title` is deliberately still ours: these are shortened for the page (the
  * upstream titles carry an "ISRAEL VOTES:" prefix and a full guest list that
@@ -56,10 +54,9 @@ export const EXPLAINERS: Explainer[] = [
 
 // Ordering is editorial, not chronological — leave it alone unless Ava asks.
 //
-// One track was dropped when this list moved off the hardcoded audio urls: "Sneak Peek: Live with Tal Becker and Nadav Eyal", from the Call Me
-// Back AMA feed. That show is paid, so its audio can't be served from a public
-// page at all now that the API gates paid audio behind membership — and it has
-// no Beehiiv podcast configured to fetch from either.
+// The Call Me Back AMA show is paid, so its audio can't be served from a
+// public page — the API gates paid audio behind membership — and it has no
+// Beehiiv podcast configured to fetch from either.
 export const PLAYLIST: CuratedEpisode[] = [
   {
     show: "call-me-back",

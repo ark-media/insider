@@ -228,9 +228,9 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
   test('adding an axis emails the upgrade, not the welcome — with the new price', async () => {
     // An Ark+ member adding the Fold: they were provisioned long ago, so
     // `wasUnprovisioned` is false and the welcome email is (correctly) skipped.
-    // Until this email existed that left the upgrade entirely silent — no
-    // pointer to the Fold, and no notice of the new recurring price, which
-    // Stripe's own receipt doesn't carry until the next invoice.
+    // The upgrade email is the pointer to the Fold and the notice of the new
+    // recurring price, which Stripe's own receipt doesn't carry until the
+    // next invoice.
     const { stripe, sub } = makeFakeStripe({
       beehiiv_premium: 'true',
       auth0_user_id: 'auth0|abc',
@@ -323,10 +323,8 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
     await activator.activateMembershipForStripeSub(sub, 'bundle')
 
     expect(sentEmails.length).toBe(1)
-    // The upgrade path records what it announced. Only the first activation
-    // used to write this, so the stamp stayed at `ark_plus` for the rest of the
-    // membership's life and no later read could tell that the Fold had already
-    // been announced.
+    // The upgrade path records what it announced so later reads can tell
+    // that both axes have already been named.
     expect(meta.welcomed_axes).toBe('ark_plus,circle')
     expect(sentEmails[0].subject).toContain('Fold')
   })

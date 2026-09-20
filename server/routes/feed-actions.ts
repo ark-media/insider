@@ -36,8 +36,8 @@ import { redactEmail } from '../../shared/validation.js'
 // table is rebuilt is not a budget. (Same reason the limiters in routes/me.ts
 // live outside meRoutes.)
 //
-// Beehiiv sends the mail, so this is not metered the way the old SMS route was
-// — but it is still an email to a real inbox on a click. Same budget: 3/hour.
+// Beehiiv sends the mail. Still an email to a real inbox on a click. Same
+// budget: 3/hour.
 const emailLimiter = createRateLimiter({
   capacity: 3,
   refillPerSec: 3 / (60 * 60),

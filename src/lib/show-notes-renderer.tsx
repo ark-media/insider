@@ -165,9 +165,9 @@ const showNotesParserOptions: HTMLReactParserOptions = {
           </>
         );
       }
-      // Show notes are a link-dense surface (books, sponsors, guest sites) and
-      // every one of those clicks used to be invisible. OutboundLink reports
-      // only the destination HOST, and stays silent for links back to us.
+      // Show notes are a link-dense surface (books, sponsors, guest sites).
+      // OutboundLink reports only the destination HOST, and stays silent for
+      // links back to us.
       return (
         <>
           {lead ? " " : null}

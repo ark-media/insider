@@ -225,9 +225,8 @@ describe('renderWinbackEmail', () => {
   })
 
   test('names the members-only show as the app names it', () => {
-    // The copy doc says "Inside Call Me Back", which is what the show used to be
-    // called. Reading the title off the show data is what keeps this bullet from
-    // promising a product name that no longer exists.
+    // Reading the title off the show data keeps this bullet in sync with
+    // the product name.
     const premium = shows.find((s) => s.paid)!
     const { html } = renderWinbackEmail(BASE)
     expect(html).toContain(premium.title)

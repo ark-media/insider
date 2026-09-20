@@ -478,10 +478,8 @@ export const supportTopics: SupportTopic[] = [
   },
   {
     id: "concession-pricing",
-    // Not a refund question, which is where these phrasings used to land: a
-    // student asking what it costs was answered with "a refund or a charge I
-    // don't recognise / we'll need to look at your account", having never paid
-    // us anything. Pay-what-you-can is the real answer and it is a good one.
+    // Not a refund question: a student asking what it costs belongs on
+    // pay-what-you-can, not on "a refund or a charge I don't recognise".
     label: "Student, group or team pricing",
     blurb: "No special rates — but you can pay what you can.",
     keywords: [

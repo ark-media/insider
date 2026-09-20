@@ -1,8 +1,6 @@
 // The sentences a member reads about a change to what they pay. These exist as
 // a shared module because the confirm panel and the follow-up email describe
-// the SAME event minutes apart, and each used to carry its own copy of this
-// wording — which drifted: the success banner hardcoded the monthly phrasing
-// and the charge direction, contradicting the panel the member had just read.
+// the SAME event minutes apart, and the wording has to stay identical.
 
 import { describe, expect, test } from 'bun:test'
 import { nextBillLine, perPeriod, restOfPeriod, NOTHING_TO_PAY_TODAY } from './billing-copy'

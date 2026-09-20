@@ -12,9 +12,8 @@ import {
 } from './welcome-email.js'
 import { shows } from '../../src/data/shows.js'
 
-// The members-only show, named as the app names it. The doc calls it "Inside
-// Call Me Back", which is what it used to be; reading the title off the show
-// data means this bullet can't drift from the product again.
+// The members-only show, named as the app names it. Reading the title off
+// the show data means this bullet can't drift from the product.
 function premiumShowTitle(): string {
   return shows.find((s) => s.paid)?.title ?? 'our members-only show'
 }

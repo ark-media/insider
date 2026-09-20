@@ -154,9 +154,8 @@ interface EventMap {
   feed_spotify_linked: { feed_count: number }
   // Intent to buy the Fold tier from the /fold page — it opens OUR
   // CheckoutModal, so this is a top-of-funnel event that continues into
-  // checkout_opened, not a hand-off. (It was previously documented as a
-  // hand-off to Circle's own paid signup; that is wrong. Every purchase
-  // transacts through our Stripe checkout — there is no other buy path.)
+  // checkout_opened, not a hand-off. Every purchase transacts through our
+  // Stripe checkout — there is no other buy path.
   circle_join_clicked: void
   // The Fold login gate turned someone away and landed them on /plus?from=fold
   // (auth0/actions/post-login.js). `audience` is what they were actually

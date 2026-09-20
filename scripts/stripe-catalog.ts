@@ -389,11 +389,10 @@ async function upsertGiftProduct(
   return created.id
 }
 
-// Sandbox orphans — products created by the old `product_data`-per-checkout
-// pattern (the source of the sprawl, §4). Anything active without our
-// `catalog_key` marker. Report by default; archive only with --archive-orphans,
-// and only run that AFTER checkout is on the new catalog (task 8) so we don't
-// archive the product the live test checkout still points at.
+// Sandbox orphans — products without our `catalog_key` marker. Anything active
+// without that marker. Report by default; archive only with --archive-orphans,
+// and only after checkout is on the catalog so we don't archive the product
+// a live test checkout still points at.
 async function handleOrphans(
   stripe: Stripe,
   orphans: Stripe.Product[],
@@ -430,8 +429,8 @@ const DEBUNDLE_INTRO_MONTHS = 6
 // same percentage for both cadences, since the yearly prices scale together.
 //
 // One percentage only fits while half the bundle is below BOTH standalone
-// prices. It no longer is: at Ark+ $8 and bundle $25, half the bundle is $12.50,
-// so a debundler keeping Ark+ already lands cheaper and this goes negative —
+// prices. At Ark+ $8 and bundle $25, half the bundle is $12.50, so a
+// debundler keeping Ark+ already lands cheaper and this goes negative —
 // see the skip in upsertIntroCoupon. Softening the Fold side ($19, i.e.
 // $6.50/mo above the in-bundle half) would need a per-axis coupon, which is a
 // change to server/lib/retention.ts, not to this script.

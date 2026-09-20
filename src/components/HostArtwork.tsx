@@ -4,9 +4,9 @@ type Variant = "primary" | "secondary";
 
 /**
  * Single source for a host portrait. Prefers a real `photo`; without one it
- * renders the cyan-radial initials placeholder (previously duplicated across
- * Hosts, ShowPage, and hosts/* routes). Two variants so adjacent placeholders
- * don't look identical: primary leans top-left, secondary leans bottom-right.
+ * renders the cyan-radial initials placeholder. Two variants so adjacent
+ * placeholders don't look identical: primary leans top-left, secondary leans
+ * bottom-right.
  */
 export function HostArtwork({
   initials,

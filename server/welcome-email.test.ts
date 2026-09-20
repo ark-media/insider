@@ -37,8 +37,7 @@ describe('renderGiftRedemptionEmail', () => {
   })
 
   test('an address typed into recipient_name is never greeted', () => {
-    // Free text a giver types. The capitalization rule used to accept this,
-    // rendering "Hi Alice@example.com," at the top of the email.
+    // Free text a giver types. An address in this field is never a name.
     const { html } = renderGiftRedemptionEmail({
       recipientName: 'Alice@example.com',
       term: '1yr',
@@ -116,8 +115,8 @@ describe('renderSubscriberWelcomeEmail', () => {
   })
 
   test('a name manufactured from the address falls back to "Hi there,"', () => {
-    // The migrated roster is full of these, and without the email passed
-    // alongside there is nothing to compare the name against — so it renders.
+    // Without the email passed alongside there is nothing to compare the
+    // name against — so a local-part value would render as a greeting.
     const { html } = renderSubscriberWelcomeEmail({
       ...URLS,
       name: 'hannah.waxman8',

@@ -70,8 +70,7 @@ function AccountLayout() {
           : `Signed in as ${me.email}. Everything in your membership, in one place.`
       }
       // Sign out belongs next to the "Signed in as …" line that names the
-      // session it ends, and living in the shell puts it on every account tab
-      // rather than only on Settings, where it used to sit below the fold.
+      // session it ends, and living in the shell puts it on every account tab.
       aside={
         <button
           type="button"

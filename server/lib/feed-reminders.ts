@@ -233,8 +233,7 @@ export async function runFeedSetupReminders(deps: {
     : []
   // Members to serve but nothing to serve them: Beehiiv is unreachable or
   // misconfigured. Throw so the cron route 500s and the run is visible, rather
-  // than reporting a successful zero — the old code failed loudly on a missing
-  // show id and this is the same failure wearing different clothes.
+  // than reporting a successful zero.
   if (members.length > 0 && premiumShows.length === 0) {
     throw new Error('[feed-reminders] no premium shows discovered')
   }

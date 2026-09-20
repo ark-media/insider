@@ -1,9 +1,8 @@
 /// <reference types="bun" />
 // Tests for the acquisition-attribution capture layer (BI plan §4.1).
 //
-// This is the layer that answers "where did this member come from" — a question
-// the codebase previously could not answer for a single member. Two behaviors
-// carry the whole design and are pinned hardest below:
+// This is the layer that answers "where did this member come from". Two
+// behaviors carry the whole design and are pinned hardest below:
 //
 //   1. FIRST touch is written exactly once and is never overwritten. If a later
 //      visit could clobber it, "which channel introduced this member" degrades

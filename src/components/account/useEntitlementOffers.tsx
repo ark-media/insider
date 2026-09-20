@@ -15,11 +15,9 @@ import { NOTHING_TO_PAY_TODAY, nextBillLine } from "../../../shared/billing-copy
 // "What you don't have yet" on the membership tab (T7.2/T7.3/T7.4, decisions
 // D6–D9).
 //
-// This was a "Your access" list of BOTH axes, which restated for the active one
-// exactly what the plan card above it already says — same product, same status,
-// same renewal date, twice on one screen. The rows for an axis the member
-// already holds are gone; only the axis they LACK is offered, and it's offered
-// as one more card in "Jump back in" rather than as a section of its own.
+// Only the axis the member LACKS is offered, as one more card in "Jump back
+// in" rather than as a section of its own. The plan card above already states
+// the active axis.
 //
 // That last part is why this is a hook and not a component: the offer has to
 // render as a sibling of the other jump cards (same grid, same card), while the
@@ -109,11 +107,11 @@ export function useEntitlementOffers({
     setBundle({ kind: "loading", axis });
     const result = await getBundleUpgradePreview();
     // "No live subscription to change" and "the request failed" are opposite
-    // instructions and used to arrive as the same null. Only the first is a
-    // reason to sell a standalone subscription instead: doing that on a failure
-    // drops a member who already HAS a healthy subscription into buying a
-    // second one, which the single-active-subscription guard then refuses with
-    // an "already a member" screen they didn't ask for.
+    // instructions. Only the first is a reason to sell a standalone
+    // subscription instead: doing that on a failure drops a member who already
+    // HAS a healthy subscription into buying a second one, which the
+    // single-active-subscription guard then refuses with an "already a member"
+    // screen they didn't ask for.
     if (result.kind === "none") {
       setBundle({ kind: "idle" });
       setCheckout({ tier: AXIS[axis].tier, plan: "monthly" });
@@ -286,10 +284,7 @@ export function useEntitlementOffers({
         aria-live="polite"
       >
         {bundle.immediate
-          ? // Same facts the panel stated a moment ago, from the same module:
-            // the banner used to hardcode "the rest of this month" and the
-            // charge direction, which contradicted the confirm step for every
-            // yearly member and every above-bundle pay-what-you-can one.
+          ? // Same facts the panel stated a moment ago, from the same module.
             `You're in — your membership covers Ark+ and the Fold now. ${NOTHING_TO_PAY_TODAY} ${nextBillLine(
               {
                 plan: bundle.preview.plan,

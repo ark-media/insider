@@ -276,8 +276,8 @@ describe("bundle switch — reading the preview", () => {
     await openConfirm();
     expect(text()).toContain("We couldn't read what this change would cost");
     expect(buttonWith("Try again")).toBeDefined();
-    // The trap this replaced: a member who already has a subscription being
-    // dropped into checkout for another one.
+    // A member who already has a subscription must not be dropped into
+    // checkout for another one.
     expect(text()).not.toContain("Complete your membership");
   });
 
@@ -373,8 +373,8 @@ describe("bundle switch — the success banner", () => {
 
   test("a member who was paying MORE than the bundle is told about credit, not a charge", async () => {
     // Pay-what-you-can above the bundle price: the switch owes them the unused
-    // remainder rather than charging a difference. The confirm panel said so;
-    // the banner used to contradict it.
+    // remainder rather than charging a difference. The confirm panel said so
+    // and the banner has to agree.
     previewReply = { status: 200, preview: preview({ currentCents: 4000, bundleCents: 2500 }) };
     await openConfirm();
     await confirmSwitch();

@@ -1265,8 +1265,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         //
         // When an intro coupon was granted this row is also what SPENDS the
         // 12-month retention window: hasAcceptedRetention only counts rows with
-        // a non-null coupon_id and outcome 'accepted', so writing null here (as
-        // it previously did) left the discount invisible to the eligibility read
+        // a non-null coupon_id and outcome 'accepted', so a null coupon_id
+        // here would leave the discount invisible to the eligibility read
         // and therefore repeatable.
         //
         // Returns the row's id so the response can hand it back: the debundle
@@ -1293,10 +1293,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         }
 
         // The debundle notice. A debundle is a partial cancellation — one
-        // product stops, the other continues at a new price — and until now it
-        // was the only membership change that told the member nothing at all.
-        // Stripe's receipt for the new amount doesn't arrive until the next
-        // invoice, so without this the first signal is a smaller charge.
+        // product stops, the other continues at a new price. Stripe's receipt
+        // for the new amount doesn't arrive until the next invoice, so without
+        // this the first signal is a smaller charge.
         //
         // Only for a real debundle: `isDebundle` is what distinguishes dropping
         // a product from a plain upgrade or a PWYC amount change, both of which

@@ -234,8 +234,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
       // moment a member takes a setup action (opens a deep link, copies the
       // feed URL, texts themselves the link, or links Spotify for the whole
       // network), so the setup hub shows the feed as done immediately and
-      // across devices — the server-side replacement for the old localStorage
-      // marker. Beehiiv's `podcasts.private_feed` webhook remains
+      // across devices. Beehiiv's `podcasts.private_feed` webhook remains
       // authoritative and reconciles the row later.
       path: '/api/me/feeds/setup',
       method: 'POST',

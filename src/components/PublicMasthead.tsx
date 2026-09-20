@@ -9,7 +9,7 @@ import { shows } from "../data/shows";
 // Nav order per Figma IA spec: Podcasts | The Fold | Newsletters | Israel
 // Votes | Subscribe | About | Account. Israel Votes renders as a pill for
 // campaign emphasis; Account is a plain link straight to /account (no menu —
-// everything it used to list is a tab on that page, Admin included).
+// every section lives as a tab on that page, Admin included).
 //
 // Items render in array order — reorder here, the nav reflows. Each item's
 // variant chooses the renderer (text link / pill / menu). `hideWhen` removes
@@ -331,9 +331,8 @@ export function PublicMasthead() {
               </button>
             ) : state.kind === "member" ? (
               /* Straight to /account — no menu. The tab bar there already lists
-                 every section the dropdown used to duplicate (Membership,
-                 Podcasts, the Fold, Settings, and Admin for staff), and Sign
-                 out lives on the Settings tab. */
+                 every section (Membership, Podcasts, the Fold, Settings, and
+                 Admin for staff), and Sign out lives on the Settings tab. */
               <Link
                 to="/account"
                 aria-current={

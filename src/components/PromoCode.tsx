@@ -137,12 +137,12 @@ export function PromoCode({
 
   // Apply the house sale once.
   //
-  // Not silent when it fails, which it used to be. The buyer never typed this
-  // code, so a dead one is not an error they can act on — but they have already
-  // been PROMISED the discount on the email step (PromoBanner), and letting a
-  // failed apply pass without a word charges them full price under a sentence
-  // that said the sale was already on. Whatever we do about it, they have to be
-  // told the promise didn't hold.
+  // Not silent when it fails. The buyer never typed this code, so a dead one
+  // is not an error they can act on — but they have already been PROMISED the
+  // discount on the email step (PromoBanner), and letting a failed apply pass
+  // without a word charges them full price under a sentence that said the sale
+  // was already on. Whatever we do about it, they have to be told the promise
+  // didn't hold.
   useEffect(() => {
     if (!houseCode || autoAppliedFor.current === houseCode) return;
     autoAppliedFor.current = houseCode;
