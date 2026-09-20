@@ -470,12 +470,23 @@ function AlsoFromArkMedia() {
 // The paid show lives under /plus, not in the public podcast grid.
 const publicShows = shows.filter((show) => !show.paid);
 
+// Hero CTA: guests are sold membership; logged-in subscribers manage theirs.
+export function homeHeroCta(isSubscriber: boolean): {
+  to: "/account" | "/plus";
+  label: "Subscriber Benefits" | "Subscribe";
+} {
+  return isSubscriber
+    ? { to: "/account", label: "Subscriber Benefits" }
+    : { to: "/plus", label: "Subscribe" };
+}
+
 function HomePage() {
   const { gift } = Route.useSearch();
   const navigate = useNavigate();
   const { state } = useSubscriberAuth();
   const descriptions = useShowDescriptions(publicShows.map((s) => s.slug));
   const isSubscriber = isArkPlusMember(state);
+  const heroCta = homeHeroCta(isSubscriber);
   return (
     <main className="relative">
       <section className="section-hero relative">
@@ -508,10 +519,10 @@ function HomePage() {
                 style={{ animationDelay: "0.78s" }}
               >
                 <Link
-                  to={isSubscriber ? "/fold" : "/plus"}
+                  to={heroCta.to}
                   className="inline-flex min-h-12 items-center gap-2 border border-cyan bg-cyan px-5 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
-                  {isSubscriber ? "Subscriber Benefits" : "Subscribe"}{" "}
+                  {heroCta.label}{" "}
                   →
                 </Link>
               </div>
