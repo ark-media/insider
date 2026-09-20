@@ -28,6 +28,10 @@ const REASON_LABELS = {
     'I had trouble with the app, login, or accessing the community.',
   fold_culture_mismatch:
     "The conversations or community culture weren't the right fit for me.",
+  // Debundles only — the reason that points somewhere the others don't. Price
+  // says the bundle is priced wrong and a product reason says that product has
+  // a problem, but this one says the bundle was mis-sold at checkout.
+  only_wanted_one: 'I only wanted one part of the membership.',
   too_expensive: "It's too expensive for me right now.",
   cutting_back: "I'm cutting back on subscriptions.",
   other: 'Other (please tell us more).',
@@ -60,24 +64,42 @@ type CancellationSurveyGroup = {
   reasons: readonly CancellationReason[]
 }
 
-// A post-cancel survey: what the member just cancelled, and what we ask about
-// it. The survey is multi-select (checkboxes) across all of its groups, so a
-// member can pick several; `other` pairs with the free-text note.
+// A post-cancel survey: what the member just gave up, and what we ask about it.
+// The survey is multi-select (checkboxes) across all of its groups, so a member
+// can pick several; `other` pairs with the free-text note.
 export type CancellationSurvey = {
   heading: string
   prompt: string
   groups: readonly CancellationSurveyGroup[]
 }
 
-// The prompt is the same in all three surveys.
 const SURVEY_PROMPT = "Help us improve by letting us know why you're cancelling."
 
-// Keyed by the tier the member cancelled: Ark+ and the Fold each ask about the
-// one product, the bundle asks the shared reasons once and then splits the
-// product-specific ones under their own sub-questions. Debundles (dropping one
-// half of a bundle) never reach a survey.
+// A debundle names the product being dropped, because the member is keeping the
+// other one — an unqualified "why you're cancelling" would be asking about a
+// membership they still hold.
+const debundlePrompt = (product: string) =>
+  `Help us improve by letting us know why you're cancelling ${product}.`
+
+// Keyed by what the member gave up.
+//
+// The three cancel surveys are keyed by the tier: Ark+ and the Fold each ask
+// about the one product, and the bundle asks the shared reasons once before
+// splitting the product-specific ones under their own sub-questions.
+//
+// The two debundle surveys (keyed like the save intents that precede them) ask
+// about the product being dropped — a member removing Ark+ is leaving Ark+ for
+// the same reasons a standalone Ark+ member is, so they reuse that list and the
+// two routes into a product's churn data aggregate without translation. What
+// differs: the heading can't say "cancelled" (they're staying), `support_only`
+// is dropped from the Ark+ list because they plainly do still want an ongoing
+// subscription, and both lead with `only_wanted_one`.
 export const CANCELLATION_SURVEYS: Record<
-  'ark-plus' | 'circle' | 'bundle',
+  | 'ark-plus'
+  | 'circle'
+  | 'bundle'
+  | 'debundle-remove-ark-plus'
+  | 'debundle-remove-circle',
   CancellationSurvey
 > = {
   'ark-plus': {
@@ -144,6 +166,45 @@ export const CANCELLATION_SURVEYS: Record<
           'fold_overwhelming',
           'fold_technical_issues',
           'fold_culture_mismatch',
+        ),
+      },
+    ],
+  },
+  'debundle-remove-ark-plus': {
+    heading: 'Ark+ has been removed from your membership',
+    prompt: debundlePrompt('Ark+'),
+    groups: [
+      {
+        question: null,
+        reasons: reasons(
+          'only_wanted_one',
+          'finished_series',
+          'not_listening',
+          'too_expensive',
+          'cutting_back',
+          'content_mismatch',
+          'technical_issues',
+          'other',
+        ),
+      },
+    ],
+  },
+  'debundle-remove-circle': {
+    heading: 'The Fold has been removed from your membership',
+    prompt: debundlePrompt('The Fold'),
+    groups: [
+      {
+        question: null,
+        reasons: reasons(
+          'only_wanted_one',
+          'fold_low_usage',
+          'too_expensive',
+          'cutting_back',
+          'fold_no_connection',
+          'fold_overwhelming',
+          'fold_technical_issues',
+          'fold_culture_mismatch',
+          'other',
         ),
       },
     ],

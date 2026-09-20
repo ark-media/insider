@@ -501,6 +501,21 @@ describe('POST /api/stripe/change-tier — debundle notice', () => {
     expect(String(body!.html)).toContain('Ark+')
   })
 
+  test('hands back a survey_id so the debundle survey has a row to annotate', async () => {
+    // The win-back row the debundle writes is also what the survey-after-cancel
+    // step updates, so its id has to come back on the response. There is no
+    // DATABASE_URL here, so no row is written and the id is null — what this
+    // pins is that the key is part of the contract, since the client reads
+    // `survey_id ?? null` and would otherwise silently never submit.
+    stageDebundle()
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.__json()).toHaveProperty('survey_id')
+    expect(res.__json().survey_id).toBeNull()
+  })
+
   test('dropping Ark+ sends the other direction', async () => {
     stageDebundle()
     const res = await post(

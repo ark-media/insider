@@ -471,11 +471,19 @@ export function CancelFlow({
     }
   };
 
-  // Finish a cancel: attach the survey reasons (when we have a row to update),
-  // then hand control back to the billing page. `skip` submits nothing. The
-  // reason analytics fire only when we actually persist, so every
-  // cancellation_reason_submitted event has a backing survey row — no phantom
-  // events in a DB-less preview env (surveyId === null) or on an empty submit.
+  // Hand control back to the billing page once the survey is done with. Which
+  // callback depends on what the member actually did: a debundle left them on a
+  // single product, a cancel left them on none.
+  const leaveSurvey = () => {
+    if (terminal.kind === "debundle") onDebundled(terminal.retained);
+    else onCancelled(accessUntil);
+  };
+
+  // Finish a cancel or a debundle: attach the survey reasons (when we have a row
+  // to update), then leave. `skip` submits nothing. The reason analytics fire
+  // only when we actually persist, so every cancellation_reason_submitted event
+  // has a backing survey row — no phantom events in a DB-less preview env
+  // (surveyId === null) or on an empty submit.
   const finishSurvey = async (skip: boolean) => {
     const chosen = skip ? [] : [...reasons];
     const hasInput = chosen.length > 0 || note.trim().length > 0;
@@ -491,7 +499,7 @@ export function CancelFlow({
       });
       setBusy(false);
     }
-    onCancelled(accessUntil);
+    leaveSurvey();
   };
 
   const toggleReason = (slug: string) => {
@@ -518,7 +526,11 @@ export function CancelFlow({
     setBusy(false);
     if (r.ok) {
       trackEvent("subscription_debundled", { flow: flowId, retained_product: retained });
-      onDebundled(retained);
+      // Ask why, the same way a cancel does — the change has already committed,
+      // so the survey is optional and can't undo it. `survey_id` is the win-back
+      // row the debundle just wrote; null (no DB) leaves the survey a no-op.
+      setSurveyId(r.survey_id ?? null);
+      setScreen("survey");
     } else {
       setError(r.error ?? "Could not update your plan — please try again.");
     }
@@ -551,18 +563,25 @@ export function CancelFlow({
 
   // Dismissing the modal from a terminal screen must finalize, not just hide it:
   // the change already committed server-side, so the billing page needs to
-  // refresh. On `saved` → onSaved; on `survey` → onCancelled (a skip); otherwise
-  // a plain close.
+  // refresh. On `saved` → onSaved; on `survey` → a skip; otherwise a plain close.
   const handleModalClose = () => {
     if (screen === "saved") onSaved();
-    else if (screen === "survey") onCancelled(accessUntil);
+    else if (screen === "survey") leaveSurvey();
     else onClose();
   };
 
-  // Which post-cancel survey to ask. Keyed off the tier the member arrived on:
-  // a bundle member who keeps neither product (Flow E) gets the bundle survey,
-  // and the debundle flows (C/D) never reach this screen.
-  const survey = CANCELLATION_SURVEYS[tier];
+  // Which post-cancel survey to ask — keyed off what the member gave up, not
+  // what they arrived with. A debundle asks about the product being dropped
+  // (`terminal.to` is the one they KEEP); every cancel asks about the tier,
+  // including a bundle member who keeps neither product (Flow E).
+  const survey =
+    CANCELLATION_SURVEYS[
+      terminal.kind === "debundle"
+        ? terminal.to === "circle"
+          ? "debundle-remove-ark-plus"
+          : "debundle-remove-circle"
+        : tier
+    ];
 
   const heading = (text: string) => (
     <h2

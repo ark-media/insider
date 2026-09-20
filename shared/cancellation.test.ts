@@ -67,11 +67,13 @@ describe('isCancellationReasons', () => {
 describe('CANCELLATION_SURVEYS', () => {
   const surveys = Object.entries(CANCELLATION_SURVEYS)
 
-  test('covers each cancellable tier', () => {
+  test('covers each cancellable tier and each debundle', () => {
     expect(Object.keys(CANCELLATION_SURVEYS).sort()).toEqual([
       'ark-plus',
       'bundle',
       'circle',
+      'debundle-remove-ark-plus',
+      'debundle-remove-circle',
     ])
   })
 
@@ -107,6 +109,49 @@ describe('CANCELLATION_SURVEYS', () => {
     )
     expect([...asked].sort()).toEqual(
       CANCELLATION_REASONS.map((r) => r.slug).sort(),
+    )
+  })
+
+  // A debundler is keeping half the membership, so the survey can't talk as if
+  // they left, and it asks about the half they dropped — not the half they kept.
+  test.each([
+    ['debundle-remove-ark-plus', 'Ark+', 'finished_series', 'fold_low_usage'],
+    ['debundle-remove-circle', 'The Fold', 'fold_low_usage', 'finished_series'],
+  ] as const)(
+    '%s asks about %s and never says "cancelled"',
+    (key, product, dropped, kept) => {
+      const survey = CANCELLATION_SURVEYS[key]
+      expect(survey.heading).toContain(product)
+      expect(survey.heading).not.toContain('cancelled')
+      expect(survey.prompt).toContain(product)
+      const slugs = survey.groups.flatMap((g) => g.reasons.map((r) => r.slug))
+      expect(slugs).toContain(dropped)
+      expect(slugs).not.toContain(kept)
+      // The reason that says the bundle was mis-sold, not that a product fell
+      // short — it leads both debundle surveys and appears in no other.
+      expect(slugs[0]).toBe('only_wanted_one')
+    },
+  )
+
+  test('only a debundle asks whether one part was ever wanted', () => {
+    const asks = surveys
+      .filter(([, s]) =>
+        s.groups.some((g) => g.reasons.some((r) => r.slug === 'only_wanted_one')),
+      )
+      .map(([tier]) => tier)
+      .sort()
+    expect(asks).toEqual(['debundle-remove-ark-plus', 'debundle-remove-circle'])
+  })
+
+  test('dropping Ark+ does not ask a staying member about support', () => {
+    // "…don't need an ongoing subscription" is false on its face for someone
+    // who is keeping the Fold.
+    const slugs = CANCELLATION_SURVEYS['debundle-remove-ark-plus'].groups.flatMap(
+      (g) => g.reasons.map((r) => r.slug),
+    )
+    expect(slugs).not.toContain('support_only')
+    expect(CANCELLATION_SURVEYS['ark-plus'].groups[0].reasons.map((r) => r.slug)).toContain(
+      'support_only',
     )
   })
 

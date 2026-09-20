@@ -1268,10 +1268,16 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // a non-null coupon_id and outcome 'accepted', so writing null here (as
         // it previously did) left the discount invisible to the eligibility read
         // and therefore repeatable.
-        const recordDebundleWinBack = async () => {
-          if (!retainedProduct || !env.DATABASE_URL) return
+        //
+        // Returns the row's id so the response can hand it back: the debundle
+        // survey attaches the member's reasons to this same row afterward, the
+        // way /cancel-subscription does. Null when nothing was written (a plain
+        // upgrade, no DB, or a failed write) — the survey step then no-ops
+        // rather than annotating a row that isn't there.
+        const recordDebundleWinBack = async (): Promise<string | number | null> => {
+          if (!retainedProduct || !env.DATABASE_URL) return null
           try {
-            await insertCancellationSurvey(getDb(env), {
+            return await insertCancellationSurvey(getDb(env), {
               email,
               reasons: [],
               note: null,
@@ -1282,6 +1288,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             })
           } catch (err) {
             console.error('[stripe] debundle survey write failed:', err)
+            return null
           }
         }
 
@@ -1360,10 +1367,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             if (env.DATABASE_URL) {
               await clearMembershipPending(getDb(env), customerId)
             }
-            await recordDebundleWinBack()
+            const surveyId = await recordDebundleWinBack()
             // Immediate: the change is live now, so there is no future date.
             await notifyDebundle(null)
-            return json(200, { ok: true, changed: true, timing: 'immediate' })
+            return json(200, {
+              ok: true,
+              changed: true,
+              timing: 'immediate',
+              survey_id: surveyId,
+            })
           }
 
           // Period-end: schedule the destination price to start at the current
@@ -1419,7 +1431,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               pending_plan: plan,
             })
           }
-          await recordDebundleWinBack()
+          const surveyId = await recordDebundleWinBack()
           const effectiveAt = periodEndIso(sub)
           await notifyDebundle(effectiveAt)
           return json(200, {
@@ -1427,6 +1439,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             changed: true,
             timing: 'period_end',
             effective_at: effectiveAt,
+            survey_id: surveyId,
           })
         } catch (err) {
           console.error('[stripe] change-tier failed:', err)
