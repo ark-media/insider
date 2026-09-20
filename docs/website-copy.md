@@ -1462,8 +1462,11 @@ Hidden for a membership with no subscription behind it (a gift). The card fields
 - **BUTTON**: Keep my bundle
 
 ### Post-cancel survey
-- **HEADING**: Your subscription has been cancelled
-- **BODY**: Help us improve by letting us know why you're cancelling
+The reasons asked follow what the member gave up — including a debundle, where the member is keeping half the membership and so is never told they "cancelled".
+
+#### Cancelling Ark+
+- **HEADING**: Your Ark+ subscription has been cancelled
+- **BODY**: Help us improve by letting us know why you're cancelling.
 - **REASON**: I subscribed for specific episodes or a series and finished them.
 - **REASON**: I'm not listening regularly.
 - **REASON**: It's too expensive for me right now.
@@ -1472,6 +1475,66 @@ Hidden for a membership with no subscription behind it (a gift). The card fields
 - **REASON**: I subscribed mainly to support Ark Media and don't need an ongoing subscription
 - **REASON**: I had trouble accessing the content or using my podcast app.
 - **REASON**: Other (please tell us more).
+
+#### Cancelling the Fold
+- **HEADING**: Your subscription to The Fold has been cancelled
+- **BODY**: Help us improve by letting us know why you're cancelling.
+- **REASON**: I wasn't spending enough time in The Fold.
+- **REASON**: It's too expensive for me right now.
+- **REASON**: I'm cutting back on subscriptions.
+- **REASON**: It was hard to find people or conversations I connected with.
+- **REASON**: There was too much going on to keep up with.
+- **REASON**: I had trouble with the app, login, or accessing the community.
+- **REASON**: The conversations or community culture weren't the right fit for me.
+- **REASON**: Other (please tell us more).
+
+#### Cancelling the whole bundle
+- **HEADING**: Your subscription has been cancelled
+- **BODY**: Help us improve by letting us know why you're cancelling.
+- **REASON**: It's too expensive for me right now.
+- **REASON**: I'm cutting back on subscriptions.
+- **REASON**: Other (please tell us more).
+- **SUB-QUESTION**: What made you decide to cancel Ark+?
+- **REASON**: I subscribed for specific episodes or a series and finished them.
+- **REASON**: I'm not listening regularly.
+- **REASON**: The content or topics weren't what I expected.
+- **REASON**: I subscribed mainly to support Ark Media and don't need an ongoing subscription
+- **REASON**: I had trouble accessing the content or using my podcast app.
+- **SUB-QUESTION**: What made you decide to cancel The Fold?
+- **REASON**: I wasn't spending enough time in The Fold.
+- **REASON**: It was hard to find people or conversations I connected with.
+- **REASON**: There was too much going on to keep up with.
+- **REASON**: I had trouble with the app, login, or accessing the community.
+- **REASON**: The conversations or community culture weren't the right fit for me.
+
+#### Dropping Ark+, keeping the Fold (debundle)
+- **HEADING**: Ark+ has been removed from your membership
+- **BODY**: Help us improve by letting us know why you're cancelling Ark+.
+- **REASON**: I only wanted one part of the membership.
+- **REASON**: I subscribed for specific episodes or a series and finished them.
+- **REASON**: I'm not listening regularly.
+- **REASON**: It's too expensive for me right now.
+- **REASON**: I'm cutting back on subscriptions.
+- **REASON**: The content or topics weren't what I expected.
+- **REASON**: I had trouble accessing the content or using my podcast app.
+- **REASON**: Other (please tell us more).
+
+(No "I subscribed mainly to support Ark Media…" here — this member is keeping an ongoing subscription.)
+
+#### Dropping the Fold, keeping Ark+ (debundle)
+- **HEADING**: The Fold has been removed from your membership
+- **BODY**: Help us improve by letting us know why you're cancelling The Fold.
+- **REASON**: I only wanted one part of the membership.
+- **REASON**: I wasn't spending enough time in The Fold.
+- **REASON**: It's too expensive for me right now.
+- **REASON**: I'm cutting back on subscriptions.
+- **REASON**: It was hard to find people or conversations I connected with.
+- **REASON**: There was too much going on to keep up with.
+- **REASON**: I had trouble with the app, login, or accessing the community.
+- **REASON**: The conversations or community culture weren't the right fit for me.
+- **REASON**: Other (please tell us more).
+
+#### Shared by all five
 - **TEXTAREA LABEL (WHEN "OTHER" CHECKED)**: Tell us more
 - **BUTTON**: Submit
 - **BUTTON (BUSY)**: Submitting…

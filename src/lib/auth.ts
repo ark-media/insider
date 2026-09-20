@@ -431,6 +431,10 @@ export async function changeTier(input: {
   changed?: boolean;
   timing?: "immediate" | "period_end";
   effective_at?: string;
+  // On a debundle, the win-back row's id, so the survey that follows can attach
+  // the member's reasons to it. Null for a plain upgrade/PWYC (no row written)
+  // and in a DB-less preview env — the survey step then just no-ops.
+  survey_id?: string | number | null;
   error?: string;
 }> {
   try {
@@ -452,6 +456,7 @@ export async function changeTier(input: {
       changed?: boolean;
       timing?: "immediate" | "period_end";
       effective_at?: string;
+      survey_id?: string | number | null;
       error?: string;
     };
   } catch {

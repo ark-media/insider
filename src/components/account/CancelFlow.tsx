@@ -5,7 +5,7 @@ import { trackEvent } from "../../lib/analytics";
 import { applyCouponDiscount, formatCouponDiscount } from "../../lib/currency";
 import { continuationCopy, introTerm, usd } from "../../lib/debundleCopy";
 import {
-  CANCELLATION_REASONS,
+  CANCELLATION_SURVEYS,
   OTHER_REASON_SLUG,
 } from "../../../shared/cancellation";
 import { formatTimestamp } from "../../../shared/format-date";
@@ -471,11 +471,19 @@ export function CancelFlow({
     }
   };
 
-  // Finish a cancel: attach the survey reasons (when we have a row to update),
-  // then hand control back to the billing page. `skip` submits nothing. The
-  // reason analytics fire only when we actually persist, so every
-  // cancellation_reason_submitted event has a backing survey row — no phantom
-  // events in a DB-less preview env (surveyId === null) or on an empty submit.
+  // Hand control back to the billing page once the survey is done with. Which
+  // callback depends on what the member actually did: a debundle left them on a
+  // single product, a cancel left them on none.
+  const leaveSurvey = () => {
+    if (terminal.kind === "debundle") onDebundled(terminal.retained);
+    else onCancelled(accessUntil);
+  };
+
+  // Finish a cancel or a debundle: attach the survey reasons (when we have a row
+  // to update), then leave. `skip` submits nothing. The reason analytics fire
+  // only when we actually persist, so every cancellation_reason_submitted event
+  // has a backing survey row — no phantom events in a DB-less preview env
+  // (surveyId === null) or on an empty submit.
   const finishSurvey = async (skip: boolean) => {
     const chosen = skip ? [] : [...reasons];
     const hasInput = chosen.length > 0 || note.trim().length > 0;
@@ -491,7 +499,7 @@ export function CancelFlow({
       });
       setBusy(false);
     }
-    onCancelled(accessUntil);
+    leaveSurvey();
   };
 
   const toggleReason = (slug: string) => {
@@ -518,7 +526,11 @@ export function CancelFlow({
     setBusy(false);
     if (r.ok) {
       trackEvent("subscription_debundled", { flow: flowId, retained_product: retained });
-      onDebundled(retained);
+      // Ask why, the same way a cancel does — the change has already committed,
+      // so the survey is optional and can't undo it. `survey_id` is the win-back
+      // row the debundle just wrote; null (no DB) leaves the survey a no-op.
+      setSurveyId(r.survey_id ?? null);
+      setScreen("survey");
     } else {
       setError(r.error ?? "Could not update your plan — please try again.");
     }
@@ -551,13 +563,25 @@ export function CancelFlow({
 
   // Dismissing the modal from a terminal screen must finalize, not just hide it:
   // the change already committed server-side, so the billing page needs to
-  // refresh. On `saved` → onSaved; on `survey` → onCancelled (a skip); otherwise
-  // a plain close.
+  // refresh. On `saved` → onSaved; on `survey` → a skip; otherwise a plain close.
   const handleModalClose = () => {
     if (screen === "saved") onSaved();
-    else if (screen === "survey") onCancelled(accessUntil);
+    else if (screen === "survey") leaveSurvey();
     else onClose();
   };
+
+  // Which post-cancel survey to ask — keyed off what the member gave up, not
+  // what they arrived with. A debundle asks about the product being dropped
+  // (`terminal.to` is the one they KEEP); every cancel asks about the tier,
+  // including a bundle member who keeps neither product (Flow E).
+  const survey =
+    CANCELLATION_SURVEYS[
+      terminal.kind === "debundle"
+        ? terminal.to === "circle"
+          ? "debundle-remove-ark-plus"
+          : "debundle-remove-circle"
+        : tier
+    ];
 
   const heading = (text: string) => (
     <h2
@@ -783,31 +807,41 @@ export function CancelFlow({
         </>
       ) : screen === "survey" ? (
         // Post-cancel: the subscription is already cancelled; ask why (optional).
+        // The questions follow what was cancelled — the bundle survey asks the
+        // shared reasons once, then one sub-question per product.
         <>
-          {heading("Your subscription has been cancelled")}
-          <p className="mt-4 text-body-sm text-fg">
-            Help us improve by letting us know why you're cancelling
-          </p>
-          <fieldset className="mt-6">
-            <legend className="sr-only">Reasons for cancelling</legend>
-            <div className="flex flex-col gap-3">
-              {CANCELLATION_REASONS.map((r) => (
-                <label
-                  key={r.slug}
-                  className="flex cursor-pointer items-start gap-3 text-body-sm text-fg"
-                >
-                  <input
-                    type="checkbox"
-                    value={r.slug}
-                    checked={reasons.has(r.slug)}
-                    onChange={() => toggleReason(r.slug)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                  />
-                  <span>{r.label}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          {heading(survey.heading)}
+          <p className="mt-4 text-body-sm text-fg">{survey.prompt}</p>
+          {survey.groups.map((group) => (
+            <fieldset key={group.question ?? "main"} className="mt-6">
+              {/* A sub-question doubles as the group's legend; the opening
+                  group has none, so it gets a screen-reader-only one. */}
+              <legend
+                className={group.question ? "text-body-sm text-fg-strong" : "sr-only"}
+              >
+                {group.question ?? "Reasons for cancelling"}
+              </legend>
+              <div
+                className={`flex flex-col gap-3 ${group.question ? "mt-3" : ""}`}
+              >
+                {group.reasons.map((r) => (
+                  <label
+                    key={r.slug}
+                    className="flex cursor-pointer items-start gap-3 text-body-sm text-fg"
+                  >
+                    <input
+                      type="checkbox"
+                      value={r.slug}
+                      checked={reasons.has(r.slug)}
+                      onChange={() => toggleReason(r.slug)}
+                      className="mt-1 h-4 w-4 shrink-0 accent-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+                    />
+                    <span>{r.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ))}
           {reasons.has(OTHER_REASON_SLUG) ? (
             <>
               <label
