@@ -13,10 +13,10 @@ dist-ssr
 .tanstack
 *.local
 .env
-# Deliberately covers .env.example too. Despite the name, that file currently
-# holds REAL values (Circle tokens, CHECKOUT_SESSION_SECRET, CIRCLE_SSO_SECRET),
-# not placeholders — so it must not be tracked. If you want a committed schema,
-# add a separate .env.template with every value stubbed out.
+# Deliberately a blanket pattern: every .env variant holds real values, and a
+# file named .env.example would be ignored too. There is no such file any more.
+# If you want a committed schema, name it so this pattern doesn't catch it
+# (env.template) and stub out every value.
 .env.*
 
 # Scratch artifacts — screenshots of signed-in pages, copy extracts. Untracked
@@ -34,8 +34,14 @@ dist-ssr
 *.sln
 *.sw?
 
-# Use bun.lock as the single lockfile
+# pnpm-lock.yaml is the single lockfile (installs are pnpm; bun only runs
+# scripts), so neither of the others gets committed.
 package-lock.json
+bun.lock
+bun.lockb
+
+# Agent worktrees: full checkouts of this repo, copied .env files included.
+.claude/worktrees/
 
 # Machine-specific workspace overrides
 .humanlayer/workspace.local.json

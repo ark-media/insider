@@ -28,12 +28,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Branch or commit to ship'
+        description: 'Branch or commit to ship (must already be on main)'
         required: false
         default: 'main'
         type: string
       force:
-        description: 'Allow a non-fast-forward push (rollback / sideways move)'
+        description: 'Allow a non-fast-forward push, or a commit that is not on main (rollback / sideways move)'
         required: false
         default: false
         type: boolean
@@ -55,7 +55,7 @@ jobs:
     steps:
       # Full history: the fast-forward check needs both branches' ancestry.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -71,6 +71,38 @@ jobs:
             || git rev-parse --verify "${REF}^{commit}")
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
           echo "Shipping $(git log -1 --format='%h %s' "${sha}")"
+
+      # Production only ever gets commits that are already on main, i.e. that
+      # went through main's pull-request review. Without this, any pushed
+      # branch or bare SHA could be dispatched straight onto ark-plus.xyz.
+      # force: true skips it, because a sideways move (a hotfix cut from
+      # production) is by definition not on main; that path relies on the
+      # `production` environment's required reviewer instead.
+      - name: Refuse a commit that is not on main
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+          REF: ${{ inputs.ref }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor "${SHA}" origin/main; then
+            echo "${SHA} is on main."
+            exit 0
+          fi
+          if [ "$FORCE" = "true" ]; then
+            echo "::warning::${SHA} is NOT on main; shipping it anyway because force is true."
+            {
+              echo "### :warning: Shipping a commit that is not on main"
+              echo "\`${REF}\` has not been through main's review. force: true overrode the check."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::${SHA} is not an ancestor of origin/main, so it has not been reviewed."
+          echo "Refusing to ship '${REF}'."
+          echo "Merge it to main through a pull request, then dispatch this workflow again with ref: main"
+          echo "(or that merged commit). To ship an unmerged commit on purpose (a hotfix or"
+          echo "a rollback target that never reached main), dispatch again with force: true."
+          exit 1
 
       # The operator sees exactly what production gains before it lands. On a
       # non-fast-forward this is also where they find out what it would lose.

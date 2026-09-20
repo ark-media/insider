@@ -10,6 +10,8 @@ name: Dependency audit
 #   • manual dispatch (Actions tab → Run workflow)
 #
 # Dev-only findings don't fail the build (--prod); they never ship to Vercel.
+# They do run on developer machines and in the migrate job, though, so the
+# weekly run also does a full audit that reports without blocking anything.
 
 on:
   pull_request:
@@ -35,11 +37,32 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Reads the pnpm version from the packageManager field in package.json.
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       - name: Audit
         run: pnpm audit --prod
+
+  # Build tooling and the migration runner's install include dev dependencies.
+  # Report on them weekly, but never turn a PR red over one.
+  audit-all:
+    name: Audit all dependencies (report only)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - name: Audit (dev dependencies included)
+        continue-on-error: true
+        run: pnpm audit

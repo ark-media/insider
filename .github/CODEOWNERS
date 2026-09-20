@@ -1,0 +1,14 @@
+# Paths that can move production, its schema, or who may sign in. A change to
+# any of them needs a review from the owner below once main's branch protection
+# has "Require review from Code Owners" switched on (docs/deploys.md, Required
+# GitHub settings). On its own this file only requests the review.
+#
+# Handle taken from the repo's commit history (7963857+HanWax@users.noreply.
+# github.com). Add a second owner as soon as there is one: GitHub never lets an
+# author approve their own pull request, so a single owner cannot satisfy this
+# for their own changes.
+
+/.github/            @HanWax
+/migrations/         @HanWax
+/scripts/migrate.ts  @HanWax
+/auth0/              @HanWax

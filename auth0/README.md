@@ -34,8 +34,9 @@ have to be resolved against the same (primary) user, so they live together:
 
 The activation webhook creates every paying/gift member on the
 `Username-Password-Authentication` connection *before* they ever log in
-(`server/lib/auth0-user.ts` → `findOrCreateAuth0User`), and stamps
-`app_metadata.tier` via the Management API (`server/entitlement.ts`). So "does a
+(`server/lib/auth0-user.ts` → `findOrCreateAuth0User`). It stamps no tier: the
+Neon membership row is the only tier authority and Auth0 holds no mirror of it
+(`server/entitlement.ts`). So "does a
 Database account exist for this email?" is exactly "is this a real member?".
 The same step creates the member's passwordless `email` identity and links it
 into that account (see *Passwordless email*), so a code login never reaches the
