@@ -998,7 +998,14 @@ single member only ever sees some of them.
 - **BUTTON**: Buy on Amazon →
 - **LINK**: Discuss it in the Fold →
 
+### Upcoming picks
+> Shown while months are still ahead of the featured pick — which is all four, until the club starts.
+- **EYEBROW**: On deck
+- **HEADING**: What we're reading next.
+- **COVER RIBBON**: {Month 'YY} Pick
+
 ### Past picks
+> Hidden until a pick's month falls behind the featured one; nothing shows here yet.
 - **EYEBROW**: The shelf
 - **HEADING**: Every pick so far.
 - **COVER RIBBON**: {Month 'YY} Pick
@@ -1015,12 +1022,11 @@ single member only ever sees some of them.
 - **EYEBROW**: Ark Book Club
 
 ## Book Club data (src/data/bookClub.ts)
-### Dan's notes on monthly picks (all marked PLACEHOLDER in source)
-- **THE POWER BROKER — ROBERT A. CARO (JULY '26, FEATURED)**: PLACEHOLDER — Caro's study of how power actually accrues and gets spent. I keep coming back to it whenever I want to understand the machinery behind the headlines. We'll take it slow.
-- **THINKING, FAST AND SLOW — DANIEL KAHNEMAN (JUNE '26)**: PLACEHOLDER — the book that reframed how I read every poll, every forecast, every gut call. A useful antidote to a news cycle built on snap judgments.
-- **THE LOOMING TOWER — LAWRENCE WRIGHT (MAY '26)**: PLACEHOLDER — narrative history at its best, and essential context for so much of what we talk about on the show.
-- **TEAM OF RIVALS — DORIS KEARNS GOODWIN (APRIL '26)**: PLACEHOLDER — leadership under impossible pressure. Worth reading for the temperament alone.
-- **SAPIENS — YUVAL NOAH HARARI (MARCH '26)**: PLACEHOLDER — a big, argumentative sweep of a book. The Fold had plenty to disagree with, which is exactly the point.
+### Dan's notes on monthly picks (titles/authors final; notes still marked PLACEHOLDER in source)
+- **THE PITY OF IT ALL — AMOS ELON (OCTOBER '26, FEATURED)**: subtitle "A Portrait of the German-Jewish Epoch, 1743–1933". PLACEHOLDER — two centuries of German Jews building a country's culture while being told they could never quite belong to it. Elon writes the whole arc without ever letting you forget how it ends. I can't think of a better book to start with.
+- **THE CAULDRON — SIMON SEBAG MONTEFIORE (NOVEMBER '26)**: subtitle "The Making of the Modern Middle East". PLACEHOLDER — the long backstory to almost everything we cover on Call Me Back, told by someone who can move a century along without losing the people inside it. Read this and the headlines stop arriving out of nowhere.
+- **SUBMISSION — MICHEL HOUELLEBECQ (DECEMBER '26)**: PLACEHOLDER — a novel about a France too tired to argue for itself. Plenty of people in the Fold will hate it, which is exactly why it's here: fiction gets at the mood underneath the politics in a way reporting rarely does.
+- **AMERICAN PASTORAL — PHILIP ROTH (JANUARY '27)**: PLACEHOLDER — Roth on a man who did everything right and watched the ground open under him anyway. Assimilation, political violence, and what parents owe their children. We'll have plenty to argue about.
 
 ### Books by Dan
 - **BOOK 1 TITLE / SUBTITLE**: The Genius of Israel — The Surprising Resilience of a Divided Nation in a Turbulent World
