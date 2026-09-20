@@ -82,7 +82,10 @@ function getHandler(): Middleware {
 }
 
 async function adminCookie(): Promise<string> {
-  const token = await signSessionToken({ email: 'a@b.co', roles: ['admin'] }, BASE_ENV)
+  const token = await signSessionToken(
+    { email: 'a@b.co', sub: 'auth0|admin-test', roles: ['admin'] },
+    BASE_ENV,
+  )
   return `${SESSION_COOKIE_NAME}=${token}`
 }
 

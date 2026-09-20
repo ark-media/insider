@@ -327,6 +327,10 @@ describe('GET /api/auth/email-login', () => {
     expect(profile?.givenName).toBe('Ada')
     // An emailed link never confers admin, whoever clicks it.
     expect(profile?.roles).toEqual([])
+    // ...and the session is marked as link-minted. The link is replayable for
+    // two weeks and rides in a GET URL, so what it buys can read the account
+    // and set up feeds but not touch billing (requireLoginAssurance).
+    expect(profile?.via).toBe('email_link')
   })
 
   test('a missing or forged token falls through to the normal login, keeping the destination', async () => {

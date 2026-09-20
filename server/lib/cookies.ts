@@ -56,7 +56,13 @@ function buildCookie(
   return parts.join('; ')
 }
 
+// `Secure` follows APP_BASE_URL so local http dev still gets its cookies — but
+// a deployment is always served over HTTPS, so there it is unconditional. It
+// used to follow APP_BASE_URL everywhere, which meant a missing or mistyped
+// value in Vercel silently shipped the session cookie without `Secure`.
 function isSecureOrigin(env: Env): boolean {
+  const vercelEnv = env.VERCEL_ENV ?? process.env.VERCEL_ENV
+  if (vercelEnv === 'production' || vercelEnv === 'preview') return true
   return env.APP_BASE_URL?.startsWith('https://') ?? false
 }
 

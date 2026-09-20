@@ -25,7 +25,7 @@ import {
   setCheckoutCookies,
   setSessionCookies,
 } from '../lib/cookies.js'
-import { makeJsonRes, readJson } from '../lib/http.js'
+import { getClientIp, isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getOidcConfig, OidcNotConfiguredError } from '../lib/oidc.js'
 import {
@@ -136,6 +136,12 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
     capacity: 25,
     refillPerSec: 1,
   })
+  // Room for a few checkouts' worth of polling from one address (an office NAT),
+  // and nothing like enough to walk Checkout Session ids.
+  const checkoutSessionIpLimiter = createRateLimiter({
+    capacity: 90,
+    refillPerSec: 1.5,
+  })
 
   return [
     defineRoute({
@@ -146,6 +152,12 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         if (!env.CHECKOUT_SESSION_SECRET) {
           return json(500, { error: 'not_configured' })
         }
+        // This route SETS an auth cookie, so a cross-site page must not be able
+        // to drive it: an attacker who has paid could otherwise plant their own
+        // post-checkout session in a victim's browser (login CSRF).
+        if (!isSameOrigin(req, appBaseUrl)) {
+          return json(403, { error: 'Forbidden' })
+        }
 
         const body =
           (await readJson<{ checkout_session_id?: string; email?: string }>(req)) ?? {}
@@ -154,7 +166,12 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         if (!sessionId) return json(400, { error: 'checkout_session_id required' })
         if (!emailParam) return json(400, { error: 'email required' })
 
-        const wait = checkoutSessionLimiter.take(sessionId)
+        // Per caller first, then per Checkout Session. The session id is chosen
+        // by the caller, so on its own it bounds nothing — every fresh id was a
+        // fresh bucket and a free Stripe retrieve.
+        const wait =
+          checkoutSessionIpLimiter.take(getClientIp(req)) ??
+          checkoutSessionLimiter.take(sessionId)
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'Too many attempts. Please wait a moment.' })
@@ -209,14 +226,42 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         // but provisioning is incomplete; the webhook retries async, but we
         // shouldn't hand out a session token yet.
         let resolvedSub: string | null = null
+        let accountCreated = false
         try {
           const tier = await tierFromSubscription(sub, stripe)
           const result = await activator.activateMembershipForStripeSub(sub, tier)
           resolvedSub = result.auth0Sub
+          accountCreated = result.accountCreated
         } catch (err) {
           console.error('[auth/checkout-session] provision failed:', err)
           return json(502, {
             error: 'Could not finish setting up your account. Please try again.',
+          })
+        }
+
+        // The email on this purchase was TYPED, never proven. Everything above
+        // only shows the caller knows which address the buyer typed — which the
+        // buyer chose. So the post-payment session is handed out for exactly one
+        // case: an account this purchase created, which cannot belong to anyone
+        // else yet. For an address that already had an account (a comped or
+        // gifted member, staff, a lapsed member, a newsletter reader with a
+        // login), paying under it must not sign the buyer in AS that person —
+        // that was a full impersonation for the price of the cheapest plan.
+        //
+        // A buyer who is already signed in as that address needs nothing from
+        // us: their `ark_session` works. Everyone else proves the inbox the
+        // ordinary way — the welcome email's link, or a sign-in code. The 409
+        // `already_subscribed` shape is the one CheckoutModal already routes to
+        // its sign-in screen, and the payment itself is complete either way.
+        if (!accountCreated) {
+          const session = await getSessionProfile(req, env)
+          if (session?.email.toLowerCase() === customerEmail) {
+            return json(200, { ready: true, email: customerEmail, expires_in: 0 })
+          }
+          return json(409, {
+            code: 'already_subscribed',
+            error:
+              'Your membership is active. This email already had an Ark account, so sign in to continue — we’ve also emailed you a link.',
           })
         }
 
@@ -233,7 +278,12 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
     defineRoute({
       path: '/api/signout',
       method: 'POST',
-      handler: async (_req, res, json) => {
+      handler: async (req, res, json) => {
+        // Same-origin only, like every other cookie-changing POST: a cross-site
+        // form could otherwise sign a member out at will.
+        if (!isSameOrigin(req, appBaseUrl)) {
+          return json(403, { error: 'Forbidden' })
+        }
         clearCheckoutCookies(res, env)
         clearSessionCookies(res, env)
         json(200, { ok: true })
@@ -292,6 +342,11 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
             givenName: claim.givenName,
             familyName: claim.familyName,
             ...(claim.sub ? { sub: claim.sub } : {}),
+            // Marks the session as link-minted. The link is replayable for its
+            // whole 14 days and travels in a GET URL, so the session it buys
+            // can set up feeds and read the account but cannot touch billing
+            // until the member signs in for real (requireLoginAssurance).
+            via: 'email_link',
           },
           env,
         )

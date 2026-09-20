@@ -39,6 +39,9 @@ type FakeSubscription = {
   created: number
   customer: { id: string; email: string | null; name?: string; deleted?: false }
   metadata: Record<string, string>
+  // The catalog product behind the price. Tier comes from its `entitlements`
+  // metadata and nowhere else, so a sub without one is "not a membership".
+  items: { data: Array<{ price: { product: { id: string; metadata: Record<string, string> } } }> }
 }
 
 let nextSubscription: FakeSubscription | null = null
@@ -276,7 +279,14 @@ function activeSub(overrides: Partial<FakeSubscription> = {}): FakeSubscription 
     status: 'active',
     created: Math.floor(Date.now() / 1000) - 10, // 10s ago
     customer: { id: 'cus_1', email: 'user@example.com', name: 'Test User' },
-    metadata: { plan: 'monthly' },
+    // `auth0_account_created` is the marker activation stamps when THIS purchase
+    // created the login — the only case the route hands a session out for. The
+    // harness has no Auth0, so the default models "the webhook got there first
+    // and created the account"; the existing-account suite below drops it.
+    metadata: { plan: 'monthly', auth0_account_created: 'true' },
+    items: {
+      data: [{ price: { product: { id: 'prod_ark_plus', metadata: { entitlements: 'ark_plus' } } } }],
+    },
     ...overrides,
   }
 }
@@ -509,7 +519,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
 
   test('idempotent: skips the grant if the sub is already marked', async () => {
     nextSubscription = activeSub({
-      metadata: { plan: 'monthly', beehiiv_premium: 'true' },
+      metadata: { plan: 'monthly', beehiiv_premium: 'true', auth0_account_created: 'true' },
     })
     const h = getHandler(PATH)
     const req = makeReq({
@@ -563,6 +573,114 @@ describe('POST /api/auth/checkout-session — happy path', () => {
 // ===========================================================================
 // Rate limiting
 // ===========================================================================
+
+// ===========================================================================
+// An email that already had an account
+// ===========================================================================
+//
+// The buyer TYPES the email; nothing proves it is theirs. Paying under an address
+// that already has an account used to sign the buyer in as that account — its
+// private feed URLs, its name, its newsletters — for the price of the cheapest
+// plan, and the webhook then overwrote that account's comp or gift row. The
+// route now hands a session out only for an account this purchase created.
+
+describe('POST /api/auth/checkout-session — email with an existing account', () => {
+  const SESSION_SECRET = 'test-session-secret-0123456789abcdef0123456789abcdef'
+
+  // No `auth0_account_created` marker: activation found the account already
+  // there (or, in this harness, could not create one — same answer, no session).
+  const existingAccountSub = () =>
+    activeSub({ metadata: { plan: 'monthly', auth0_user_id: 'auth0|victim' } })
+
+  test('409 and NO cookie: paying under someone else’s address does not sign you in as them', async () => {
+    nextSubscription = existingAccountSub()
+    const h = getHandler(PATH)
+    const res = makeRes()
+    await runHandler(
+      h,
+      makeReq({ body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' } }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(409)
+    // The shape CheckoutModal already routes to its sign-in screen.
+    expect((res.__json() as { code: string }).code).toBe('already_subscribed')
+    expect(parseSetCookies(res.__header('set-cookie')).size).toBe(0)
+  })
+
+  test('the membership is still provisioned — the buyer paid, they just have to prove the inbox', async () => {
+    nextSubscription = existingAccountSub()
+    const h = getHandler(PATH)
+    await runHandler(
+      h,
+      makeReq({ body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' } }),
+      makeRes(),
+    )
+    expect(
+      fetchCalls.some((c) => c.url.includes('api.beehiiv.com') && c.method === 'POST'),
+    ).toBe(true)
+  })
+
+  test('200 with no checkout cookie when the buyer is already signed in as that address', async () => {
+    nextSubscription = existingAccountSub()
+    const { signSessionToken } = await import('./lib/session')
+    const { SESSION_COOKIE_NAME, CHECKOUT_COOKIE_NAME } = await import('./lib/cookies')
+    const env = { SESSION_SECRET }
+    const token = await signSessionToken({ email: 'User@Example.com', roles: [] }, env)
+
+    const h = getHandler(PATH, env)
+    const res = makeRes()
+    await runHandler(
+      h,
+      makeReq({
+        body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { ready: boolean }).ready).toBe(true)
+    // Their own session already works; nothing new is minted.
+    expect(parseSetCookies(res.__header('set-cookie')).has(CHECKOUT_COOKIE_NAME)).toBe(false)
+  })
+
+  test('a session for a DIFFERENT address does not unlock it', async () => {
+    nextSubscription = existingAccountSub()
+    const { signSessionToken } = await import('./lib/session')
+    const { SESSION_COOKIE_NAME } = await import('./lib/cookies')
+    const env = { SESSION_SECRET }
+    const token = await signSessionToken({ email: 'attacker@evil.com', roles: [] }, env)
+
+    const h = getHandler(PATH, env)
+    const res = makeRes()
+    await runHandler(
+      h,
+      makeReq({
+        body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(409)
+  })
+
+  test('403 for a cross-site caller: the route sets an auth cookie, so it is same-origin only', async () => {
+    nextSubscription = activeSub()
+    const h = getHandler(PATH)
+    const res = makeRes()
+    await runHandler(
+      h,
+      makeReq({
+        body: { checkout_session_id: 'cs_test_1', email: 'user@example.com' },
+        headers: { origin: 'https://evil.example' },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(403)
+    expect(stripeCalls).toHaveLength(0)
+  })
+})
 
 describe('POST /api/auth/checkout-session — rate limit', () => {
   test('429 after 25 requests with retry-after header', async () => {
@@ -744,6 +862,19 @@ describe('POST /api/signout — clears checkout cookies', () => {
     expect(cookies.get('ark_checkout')?.attrs['max-age']).toBe('0')
     expect(cookies.get('ark_checkout')?.attrs['httponly']).toBe('')
     expect(cookies.get('ark_checkout_present')?.attrs['max-age']).toBe('0')
+  })
+
+  test('403 for a cross-site caller — a foreign page cannot sign a member out', async () => {
+    const h = getHandler('/api/signout')
+    const req = makeReq({
+      method: 'POST',
+      url: '/api/signout',
+      headers: { origin: 'https://evil.example' },
+    })
+    const res = makeRes()
+    await runHandler(h, req, res)
+    expect(res.statusCode).toBe(403)
+    expect(parseSetCookies(res.__header('set-cookie')).size).toBe(0)
   })
 
   test('405 on GET', async () => {

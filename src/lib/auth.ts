@@ -91,6 +91,32 @@ export async function fetchMe(): Promise<Me | null> {
   return (await res.json()) as Me;
 }
 
+// Every call that changes what a member is billed goes through here.
+//
+// The server only lets those through for a member who actually signed in — an
+// emailed code or Google. A session that came from a link in one of our emails
+// (or the brief post-payment one) can read the account and set up feeds, but is
+// answered 401 `reauth_required` on billing. That isn't an error to show and
+// leave: send them through sign-in and straight back to the page they were on,
+// where the same click now works. The caller still gets the response, so the
+// server's sentence shows for the moment before the navigation lands.
+async function billingFetch(input: string, init: RequestInit): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    const body = (await res
+      .clone()
+      .json()
+      .catch(() => null)) as { code?: string } | null;
+    if (body?.code === "reauth_required") {
+      const here = window.location.pathname + window.location.search;
+      window.location.assign(
+        `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
+      );
+    }
+  }
+  return res;
+}
+
 export async function cancelSubscription(input: {
   // `offerOutcome` records whether a retention offer was shown first; defaults
   // to 'not_offered'. The reasons/note are collected *after* this commits (the
@@ -110,7 +136,7 @@ export async function cancelSubscription(input: {
   // catch. Without it the rejection escapes the click handler and strands the
   // page on its in-flight state.
   try {
-    const res = await fetch("/api/stripe/cancel-subscription", {
+    const res = await billingFetch("/api/stripe/cancel-subscription", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
@@ -165,7 +191,7 @@ export async function reactivateSubscription(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch("/api/stripe/reactivate-subscription", {
+    const res = await billingFetch("/api/stripe/reactivate-subscription", {
       method: "POST",
       credentials: "include",
     });
@@ -236,7 +262,7 @@ export async function createCardSetupIntent(): Promise<
   { ok: true; clientSecret: string } | { ok: false; error: string }
 > {
   try {
-    const res = await fetch("/api/stripe/card-setup-intent", {
+    const res = await billingFetch("/api/stripe/card-setup-intent", {
       method: "POST",
       credentials: "include",
     });
@@ -259,7 +285,7 @@ export async function saveUpdatedCard(setupIntentId: string): Promise<
   { ok: true; card: CardOnFile | null } | { ok: false; error: string }
 > {
   try {
-    const res = await fetch("/api/stripe/update-card", {
+    const res = await billingFetch("/api/stripe/update-card", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -389,7 +415,7 @@ export async function acceptSaveOffer(
   error?: string;
 }> {
   try {
-    const res = await fetch("/api/stripe/accept-save-offer", {
+    const res = await billingFetch("/api/stripe/accept-save-offer", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
@@ -438,7 +464,7 @@ export async function changeTier(input: {
   error?: string;
 }> {
   try {
-    const res = await fetch("/api/stripe/change-tier", {
+    const res = await billingFetch("/api/stripe/change-tier", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
