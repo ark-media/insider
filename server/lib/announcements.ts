@@ -137,12 +137,23 @@ function parseTimestamp(raw: unknown): string | null {
 
 type Row = Record<string, unknown>
 
+// The stored action URL, put back through the write-path check. Same reasoning
+// as re-sanitizing `body`: the normal write path validates it, but a row can
+// also arrive by migration, a manual fix in the Neon console, or a bug — and the
+// client renders this straight into an href, where `javascript:` is script
+// execution. A value that no longer passes is dropped (the banner renders
+// without its link) rather than served.
+function readActionUrl(raw: unknown): string | null {
+  const url = normalizeActionUrl(raw == null ? null : String(raw))
+  return typeof url === 'string' ? url : null
+}
+
 function mapRow(r: Row): Announcement {
   return {
     id: String(r.id),
     // Re-sanitized on read as well as write — see the note in lib/faqs.ts.
     body: sanitizeRichText(String(r.body)),
-    actionUrl: r.action_url == null ? null : String(r.action_url),
+    actionUrl: readActionUrl(r.action_url),
     barColor: String(r.bar_color),
     textColor: String(r.text_color),
     dismissible: Boolean(r.dismissible),

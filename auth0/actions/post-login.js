@@ -144,6 +144,14 @@ exports.onExecutePostLogin = async (event, api) => {
 
     // Look for the canonical Database account provisioned by the webhook.
     const users = await usersByEmail(event, token, email);
+    // A FAILED lookup is not "no member". Reading it that way sent a Management
+    // API 429 or 5xx straight into the self-signup branch below, which deletes
+    // the identity the member just signed in with — and with passwordless
+    // signups off, a member whose `email` identity is gone gets no more codes
+    // until someone runs the backfill. Deny and touch nothing; they retry.
+    if (users === null) {
+      return api.access.deny('Could not verify membership. Please try again.');
+    }
     const primary = users.find(
       (u) =>
         u.user_id !== event.user.user_id &&
@@ -318,7 +326,8 @@ async function usersByEmail(event, token, email) {
     `${tenantBase(event)}/api/v2/users-by-email?email=${encodeURIComponent(email)}`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
-  if (!res.ok) return [];
+  // null = "couldn't find out", distinct from [] = "nobody has this email".
+  if (!res.ok) return null;
   return res.json(); // each record includes identities + app_metadata
 }
 

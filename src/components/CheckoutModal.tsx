@@ -87,6 +87,10 @@ type Step =
   | { kind: "activating"; email: string }
   | { kind: "processing"; email: string }
   | { kind: "already_subscribed"; email: string; message: string }
+  // The typed email already has an Ark account (a comp, a gift, a lapsed
+  // membership) and this browser isn't signed in to it. Refused BEFORE any
+  // payment, unlike already_subscribed above, which can also arrive after one.
+  | { kind: "login_required"; email: string; message: string }
   | { kind: "error"; message: string };
 
 const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as
@@ -122,6 +126,47 @@ function initialStep(): Step {
 }
 
 const MAX_POLL_ATTEMPTS = 15;
+
+// Where a finished checkout lands. Origin-relative, and exported so a test can
+// hold it to that.
+export const WELCOME_PATH = "/welcome";
+
+// create-checkout-session's two "this address is already somebody" refusals,
+// mapped to the sign-in screen. Neither is fixed by trying again, so they must
+// not fall through to the generic error and its "Try again" button — which would
+// only meet the same refusal. Null for every other response.
+//   login_required      the email has an Ark account (a comp, a gift, a lapsed
+//                       membership) and this browser isn't signed in to it
+//   already_subscribed  the email holds a live subscription
+// Exported for tests: reaching it through the modal needs a live Stripe session.
+// A non-component export costs this file its fast refresh in dev (a full reload
+// instead), which is all the rule below guards; it belongs in its own
+// src/lib module the next time this area is touched.
+// eslint-disable-next-line react-refresh/only-export-components
+export function signInStepForRefusal(
+  status: number,
+  data: { error?: string; code?: string },
+  email: string,
+): { kind: "login_required" | "already_subscribed"; email: string; message: string } | null {
+  if (status !== 409) return null;
+  if (data.code === "login_required") {
+    return {
+      kind: "login_required",
+      email,
+      message:
+        data.error ??
+        "You already have an Ark account. Sign in to change or add to your plan.",
+    };
+  }
+  if (data.code === "already_subscribed") {
+    return {
+      kind: "already_subscribed",
+      email,
+      message: data.error ?? "This email already has an active membership.",
+    };
+  }
+  return null;
+}
 
 type CheckoutSessionResult =
   | { kind: "ready" }
@@ -370,7 +415,18 @@ export function CheckoutModal({
           client_secret?: string;
           checkout_session_id?: string;
           error?: string;
+          code?: string;
         };
+        const signInStep = signInStepForRefusal(res.status, data, email);
+        if (signInStep) {
+          trackEvent("checkout_failed", {
+            plan,
+            stage: "create_session",
+            reason: signInStep.kind,
+          });
+          setStep(signInStep);
+          return;
+        }
         if (!res.ok || !data.client_secret || !data.checkout_session_id) {
           trackEvent("checkout_failed", {
             plan,
@@ -416,8 +472,13 @@ export function CheckoutModal({
       try {
         await refresh();
         onClose();
-        // Hand off to the Ark+ welcome flow (lives on the ark-plus.xyz host).
-        window.location.assign("https://ark-plus.xyz/welcome");
+        // Hand off to the welcome flow. Origin-relative on purpose: the session
+        // cookie the poll just set belongs to THIS origin, so a hardcoded
+        // production host signed a preview or localhost buyer straight out —
+        // and sent a production one across hosts for a route this app serves.
+        // A full load rather than a router push, so /welcome boots from the
+        // refreshed session rather than whatever this tree had cached.
+        window.location.assign(WELCOME_PATH);
       } catch {
         // Payment confirmed and the webhook will provision the user; the
         // refresh failed locally. Routing back to the EmailForm would risk
@@ -518,10 +579,12 @@ export function CheckoutModal({
         </>
       ) : null}
 
-      {step.kind === "already_subscribed" ? (
+      {step.kind === "already_subscribed" || step.kind === "login_required" ? (
         <>
           <h2 id="checkout-title" className={titleClass}>
-            You're already a member
+            {step.kind === "login_required"
+              ? "You already have an account"
+              : "You're already a member"}
           </h2>
           <div className="mt-6 space-y-4 text-sm text-fg">
             <p role="alert">{step.message}</p>

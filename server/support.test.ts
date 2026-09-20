@@ -7,7 +7,10 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test'
 import { makeFakeReq, makeFakeRes, neonMockModule } from './test-utils'
 import type { Deps } from './lib/route'
-import { validateSupportSession } from './lib/support'
+import { recordSupportSession, validateSupportSession } from './lib/support'
+import { getDb } from './lib/db'
+import { signSessionToken } from './lib/session'
+import { SESSION_COOKIE_NAME } from './lib/cookies'
 import { SUPPORT_MAX_STEPS, SUPPORT_MAX_VALUE_LENGTH } from '../shared/support'
 
 type SqlCall = { sql: string; values: unknown[] }
@@ -19,6 +22,7 @@ const { supportRoutes } = await import('./routes/support')
 const ENV: Record<string, string> = {
   DATABASE_URL: 'postgres://x',
   APP_BASE_URL: 'http://localhost:5173',
+  SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
 }
 
 function makeDeps(env: Record<string, string> = ENV): Deps {
@@ -90,8 +94,12 @@ describe('POST /api/support/log', () => {
     expect(res.__json()).toEqual({ error: 'too_many_steps' })
   })
 
+  // Without DATABASE_URL the shared limiter is its in-memory fallback — same
+  // shape and limits, and the limit is checked before anything needs a database.
+  // (With one, the fake driver here answers every query with no rows, which the
+  // limiter reads as "allowed"; its Neon path is shared-rate-limit's to test.)
   test('rate limits a client that floods the endpoint', async () => {
-    const handler = logHandler()
+    const handler = logHandler({ APP_BASE_URL: ENV.APP_BASE_URL })
     let last = await post(handler, validBody())
     for (let i = 0; i < 40 && last.statusCode === 200; i += 1) {
       last = await post(handler, validBody())
@@ -106,6 +114,72 @@ describe('POST /api/support/log', () => {
     const res = await post(logHandler({ APP_BASE_URL: ENV.APP_BASE_URL }), validBody())
     expect(res.statusCode).toBe(200)
     expect(calls).toHaveLength(0)
+  })
+})
+
+// The session id is client-chosen and is the row's only key. Once a row belongs
+// to a member, only that member may rewrite it; everyone else's write is a no-op
+// the caller can't distinguish from one that landed.
+//
+// The rule itself is enforced inside the upsert (atomically — a read-then-write
+// in the route would race), and there is no Postgres in this suite, so these pin
+// the two halves it depends on: the guard is in the statement, and the email it
+// compares against is the server-derived identity and nothing else.
+describe('support log — a session attributed to a member', () => {
+  function upsert() {
+    const call = calls.find((c) => c.sql.includes('insert into support_conversations'))
+    if (!call) throw new Error('no support_conversations upsert recorded')
+    return call
+  }
+  // Interpolation order in recordSupportSession: session_id, email, steps, escalated.
+  const emailOf = (c: SqlCall) => c.values[1]
+
+  async function memberCookie(email: string): Promise<string> {
+    const token = await signSessionToken({ email, roles: [] }, ENV)
+    return `${SESSION_COOKIE_NAME}=${token}`
+  }
+
+  test('the upsert only updates a row that is unattributed or already this identity\'s', async () => {
+    const parsed = validateSupportSession(validBody())
+    if (!parsed.ok) throw new Error('fixture should validate')
+    await recordSupportSession(getDb(ENV), parsed.value, 'jane@example.com')
+    const sql = upsert().sql.replace(/\s+/g, ' ')
+    expect(sql).toContain(
+      'where support_conversations.email is null or lower(support_conversations.email) = lower(excluded.email)',
+    )
+    // The guard belongs to the conflict arm: it must come after `do update set`.
+    expect(sql.indexOf('do update set')).toBeLessThan(sql.indexOf('where support_conversations.email'))
+  })
+
+  test('an anonymous post carries a null email, which the guard can never match', async () => {
+    const res = await post(logHandler(), validBody())
+    expect(emailOf(upsert())).toBeNull()
+    // …and is answered exactly like a write that landed.
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ ok: true })
+  })
+
+  test('a signed-in post carries the session\'s email', async () => {
+    const res = await post(logHandler(), validBody(), {
+      cookie: await memberCookie('jane@example.com'),
+    })
+    expect(res.statusCode).toBe(200)
+    expect(emailOf(upsert())).toBe('jane@example.com')
+  })
+
+  test('an email in the request body is never the identity', async () => {
+    const res = await post(logHandler(), validBody({ email: 'jane@example.com' }))
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ ok: true })
+    expect(emailOf(upsert())).toBeNull()
+    expect(JSON.stringify(upsert().values)).not.toContain('jane@example.com')
+  })
+
+  test('a different signed-in member presents their own email, not the row owner\'s', async () => {
+    await post(logHandler(), validBody({ email: 'jane@example.com' }), {
+      cookie: await memberCookie('mallory@example.com'),
+    })
+    expect(emailOf(upsert())).toBe('mallory@example.com')
   })
 })
 

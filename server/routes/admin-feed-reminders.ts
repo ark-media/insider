@@ -6,10 +6,13 @@
 //     in app_settings; the cron reads it on its next run.
 //
 // Admin-gated (Auth0 "admin" role) + same-origin on the mutation, like the
-// other back-office routes.
+// other back-office routes. Each save is recorded in the admin audit log — these
+// two configs decide who gets emailed and when, so "who turned that on?" needs
+// an answer.
 
 import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { getDb } from '../lib/db.js'
 import {
   getMigrationConfig,
@@ -41,6 +44,10 @@ export function adminFeedReminderRoutes({ env, appBaseUrl }: Deps): Route[] {
           const v = validateReminderConfig(await readJson(req))
           if (!v.ok) return json(400, { error: v.error })
           await setReminderConfig(sql, v.value)
+          await logAdminAction(env, admin, req, {
+            action: 'feed_reminders.update',
+            summary: `enabled=${v.value.enabled}`,
+          })
           return json(200, { config: v.value })
         }
         return json(405, { error: 'Method Not Allowed' })
@@ -67,6 +74,10 @@ export function adminFeedReminderRoutes({ env, appBaseUrl }: Deps): Route[] {
           const v = validateMigrationConfig(await readJson(req))
           if (!v.ok) return json(400, { error: v.error })
           await setMigrationConfig(sql, v.value)
+          await logAdminAction(env, admin, req, {
+            action: 'feed_migration.update',
+            summary: `enabled=${v.value.enabled}`,
+          })
           return json(200, { config: v.value })
         }
         return json(405, { error: 'Method Not Allowed' })

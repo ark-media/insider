@@ -629,47 +629,105 @@ export function tierFromEntitlements(ent: Entitlements): Tier {
   return 'free'
 }
 
+// Subscription statuses under which a row's SUBSCRIPTION still grants its tier.
+// `past_due` is in: that is Stripe's dunning window (Smart Retries, up to a few
+// weeks), the member is mid-retry rather than gone, and the webhook deliberately
+// keeps their access through it. `unpaid` is out: it is where a subscription
+// lands once every retry has FAILED, when the Dashboard is set to leave it open
+// rather than cancel it — no `subscription.deleted` ever follows, so without this
+// a member who stopped paying kept everything, indefinitely. Anything else
+// (canceled, paused, incomplete…) should never be on a subscription row at all,
+// and is read as closed if it is.
+const SUBSCRIPTION_GRANTING_STATUSES = new Set(['active', 'trialing', 'past_due'])
+
+// How far past `current_period_end` a subscription row keeps granting. The
+// period end only lapses when the renewal's `subscription.updated` never reached
+// us — Stripe rolls the period forward when it CREATES the renewal invoice, paid
+// or not, so a member in dunning is a full period ahead of this check, not
+// behind it. A week outlasts Stripe's own three days of webhook retries with
+// room for a bad deploy; past it, a row nobody has refreshed is not evidence of
+// a paying member. (The reconciler only ever removes, so this is the one place
+// a silently-dead subscription stops granting.)
+const SUBSCRIPTION_PERIOD_GRACE_MS = 7 * 24 * 60 * 60 * 1000
+
+type AxisRow = {
+  tier: Tier
+  status: string
+  stripe_subscription_id: string | null
+  current_period_end: string | null
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
+}
+
+// The axes a row's GIFT terms grant right now, on their own — each per-axis
+// expiry still in the future. Split out of liveAxes because the webhook needs
+// exactly this when a subscription ends: what is left once the subscription's
+// half of the row is gone.
+export function liveGiftAxes(
+  row: Pick<AxisRow, 'ark_plus_gift_expires_at' | 'circle_gift_expires_at'>,
+  now: number = Date.now(),
+): Entitlements {
+  return {
+    arkPlus:
+      row.ark_plus_gift_expires_at != null && Date.parse(row.ark_plus_gift_expires_at) > now,
+    circle:
+      row.circle_gift_expires_at != null && Date.parse(row.circle_gift_expires_at) > now,
+  }
+}
+
+// Whether a row's subscription is still one that grants. Fails CLOSED on both
+// signals the row carries: a status outside the granting set, or a period end
+// more than the grace behind us. A null period end is not held against the row
+// — a subscription event can legitimately carry none (an itemless payload), and
+// status still gates it.
+function subscriptionGrants(
+  row: Pick<AxisRow, 'status' | 'current_period_end'>,
+  now: number,
+): boolean {
+  if (!SUBSCRIPTION_GRANTING_STATUSES.has(row.status)) return false
+  if (row.current_period_end == null) return true
+  const endsAt = Date.parse(row.current_period_end)
+  // Unparseable is unknown, not lapsed: status has already vouched for the row.
+  if (!Number.isFinite(endsAt)) return true
+  return endsAt + SUBSCRIPTION_PERIOD_GRACE_MS > now
+}
+
 // The entitlement axes a membership row grants RIGHT NOW — the union of:
 //   - base axes: a row with a live subscription grants its tier's axes (dunning
-//     rows still grant; a full cancel deletes the row). A row with NO
-//     subscription and NO gift term is a comp / staff grant — perpetual
-//     access to its tier.
+//     rows still grant; an `unpaid` or long-lapsed one does not — see
+//     subscriptionGrants). A row with NO subscription and NO gift term is a comp
+//     / staff / legacy grant — perpetual access to its tier (matching the
+//     pre-per-axis "non-free tier = live").
 //   - gift axes: each per-axis gift expiry still in the future grants that axis.
 // A gift-only row has no subscription and at least one gift expiry, so its axes
 // come purely from the two gift expiries. This is the single predicate behind the
 // resolver's per-request gate and the reconciler's keep-set. Absence of a row =
 // free (no axes).
-export function liveAxes(row: {
-  tier: Tier
-  stripe_subscription_id: string | null
-  ark_plus_gift_expires_at: string | null
-  circle_gift_expires_at: string | null
-}): Entitlements {
+export function liveAxes(row: AxisRow): Entitlements {
   const now = Date.now()
   const hasGift =
     row.ark_plus_gift_expires_at != null || row.circle_gift_expires_at != null
-  // Subscription row → its tier; comp/staff row (no sub, no gift) → perpetual its
-  // tier; gift-only row → no base axes (gift expiries decide below).
+  // Subscription row → its tier, while the subscription still grants; comp/staff
+  // row (no sub, no gift) → perpetual its tier; gift-only row → no base axes
+  // (gift expiries decide below).
   const base =
-    row.stripe_subscription_id != null || !hasGift ? deriveEntitlements(row.tier) : GRANTS.free
-  const giftArkPlus =
-    row.ark_plus_gift_expires_at != null && Date.parse(row.ark_plus_gift_expires_at) > now
-  const giftCircle =
-    row.circle_gift_expires_at != null && Date.parse(row.circle_gift_expires_at) > now
+    row.stripe_subscription_id != null
+      ? subscriptionGrants(row, now)
+        ? deriveEntitlements(row.tier)
+        : GRANTS.free
+      : !hasGift
+        ? deriveEntitlements(row.tier)
+        : GRANTS.free
+  const gift = liveGiftAxes(row, now)
   return {
-    arkPlus: base.arkPlus || giftArkPlus,
-    circle: base.circle || giftCircle,
+    arkPlus: base.arkPlus || gift.arkPlus,
+    circle: base.circle || gift.circle,
   }
 }
 
 // A membership row is live when it still grants at least one axis. Behind both
 // the resolver's per-request gate and the reconciler's keep-set.
-export function membershipIsLive(row: {
-  tier: Tier
-  stripe_subscription_id: string | null
-  ark_plus_gift_expires_at: string | null
-  circle_gift_expires_at: string | null
-}): boolean {
+export function membershipIsLive(row: AxisRow): boolean {
   const axes = liveAxes(row)
   return axes.arkPlus || axes.circle
 }

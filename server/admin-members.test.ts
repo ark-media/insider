@@ -119,7 +119,7 @@ async function get(headers?: Record<string, string>, query = ''): Promise<FakeRe
 }
 
 async function cookie(roles: string[]): Promise<string> {
-  const token = await signSessionToken({ email: 'a@b.co', roles }, BASE_ENV)
+  const token = await signSessionToken({ email: 'a@b.co', sub: 'auth0|admin-test', roles }, BASE_ENV)
   return `${SESSION_COOKIE_NAME}=${token}`
 }
 

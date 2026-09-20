@@ -165,11 +165,30 @@ async function verifyHs256(
     const { payload } = await jwtVerify(token, hmacKey(opts.secret), {
       issuer: opts.issuer,
       audience: opts.audience,
+      // jose already refuses anything but HS* for a byte key; pinned so the
+      // accepted algorithm is stated here rather than inferred from the key type.
+      algorithms: ['HS256'],
     })
     return payload
   } catch {
     return null
   }
+}
+
+// Which secret signs a given class of token. Each class has its own optional
+// env var and falls back to SESSION_SECRET when that is unset.
+//
+// They all used to share SESSION_SECRET outright, which is fine until the day it
+// has to be rotated. Sessions are stateless, so rotating the key is the only way
+// to kill them — and with one key that also voided every unclaimed gift link and
+// every auto-login link sitting in an inbox. Separate keys make "sign everyone
+// out" a thing you can do without breaking mail already sent. Audiences keep the
+// classes from being confused with each other either way; this is about
+// rotation, not forgery.
+type TokenPurpose = 'AUTH_TXN_SECRET' | 'GIFT_CLAIM_SECRET' | 'EMAIL_LOGIN_SECRET'
+
+function secretFor(env: Env, purpose: TokenPurpose): string | undefined {
+  return env[purpose] || env.SESSION_SECRET
 }
 
 export async function verifyCheckoutToken(token: string, env: Env): Promise<string | null> {
@@ -244,7 +263,24 @@ export type SessionProfile = {
   // (§3). Stored in the cookie so a gate never needs a Management API round-trip
   // to map the session back to its membership row.
   sub?: string
+  // How this session was established. Absent for a real login (an emailed code
+  // or Google, through Auth0). 'email_link' for one minted from a link in a
+  // lifecycle email or a gift claim: those links sit in an inbox for two weeks,
+  // get forwarded, and pass through mail gateways and request logs, so holding
+  // one proves much less than typing a fresh code does. Such a session reads and
+  // sets up feeds like any other; it cannot move money — see `assurance` on
+  // RequestIdentity and requireLoginAssurance in guards.ts.
+  via?: 'email_link'
+  // Epoch seconds of the login this session descends from. A profile save
+  // re-mints the cookie with a fresh 7-day expiry, so without this a stolen
+  // cookie could be renewed forever by saving the profile once a week. Carried
+  // across re-mints and checked against SESSION_ABSOLUTE_MAX_SEC on verify.
+  loginAt?: number
 }
+
+// The longest a session can live however often it is re-minted. After this the
+// member signs in again.
+const SESSION_ABSOLUTE_MAX_SEC = 30 * 24 * 60 * 60
 
 export async function signSessionToken(profile: SessionProfile, env: Env): Promise<string> {
   const secret = env.SESSION_SECRET
@@ -257,6 +293,8 @@ export async function signSessionToken(profile: SessionProfile, env: Env): Promi
       ...(profile.familyName ? { family_name: profile.familyName } : {}),
       ...(profile.nameSetByMember ? { name_set_by_member: true } : {}),
       ...(profile.sub ? { sub: profile.sub } : {}),
+      ...(profile.via ? { via: profile.via } : {}),
+      login_at: profile.loginAt ?? Math.floor(Date.now() / 1000),
     },
     {
       issuer: SESSION_TOKEN_ISSUER,
@@ -274,6 +312,17 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     secret: env.SESSION_SECRET,
   })
   if (!payload?.email) return null
+  // `iat` stands in for sessions minted before login_at existed; it is reset by
+  // a re-mint, so it only ever errs toward a longer life, and only for those.
+  const loginAt =
+    typeof payload.login_at === 'number'
+      ? payload.login_at
+      : typeof payload.iat === 'number'
+        ? payload.iat
+        : undefined
+  if (loginAt !== undefined && Date.now() / 1000 - loginAt > SESSION_ABSOLUTE_MAX_SEC) {
+    return null
+  }
   return {
     email: payload.email as string,
     roles: extractStrings(payload.roles),
@@ -281,6 +330,8 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     familyName: (payload.family_name as string | undefined) ?? undefined,
     nameSetByMember: payload.name_set_by_member === true,
     sub: (payload.sub as string | undefined) ?? undefined,
+    ...(payload.via === 'email_link' ? { via: 'email_link' as const } : {}),
+    ...(loginAt !== undefined ? { loginAt } : {}),
   }
 }
 
@@ -312,7 +363,7 @@ export async function signGiftClaimToken(
   claim: GiftClaimToken,
   env: Env,
 ): Promise<string> {
-  const secret = env.SESSION_SECRET
+  const secret = secretFor(env, 'GIFT_CLAIM_SECRET')
   if (!secret) throw new Error('SESSION_SECRET not configured')
   return signHs256(
     {
@@ -336,7 +387,7 @@ export async function verifyGiftClaimToken(
   const payload = await verifyHs256(token, {
     issuer: GIFT_CLAIM_ISSUER,
     audience: GIFT_CLAIM_AUDIENCE,
-    secret: env.SESSION_SECRET,
+    secret: secretFor(env, 'GIFT_CLAIM_SECRET'),
   })
   const giftToken = payload?.giftToken as string | undefined
   const email = payload?.email as string | undefined
@@ -359,7 +410,7 @@ export type AuthTxn = {
 }
 
 export async function signAuthTxnToken(txn: AuthTxn, env: Env): Promise<string> {
-  const secret = env.SESSION_SECRET
+  const secret = secretFor(env, 'AUTH_TXN_SECRET')
   if (!secret) throw new Error('SESSION_SECRET not configured')
   return signHs256({ ...txn }, {
     issuer: AUTH_TXN_ISSUER,
@@ -373,7 +424,7 @@ export async function verifyAuthTxnToken(token: string, env: Env): Promise<AuthT
   const payload = await verifyHs256(token, {
     issuer: AUTH_TXN_ISSUER,
     audience: AUTH_TXN_AUDIENCE,
-    secret: env.SESSION_SECRET,
+    secret: secretFor(env, 'AUTH_TXN_SECRET'),
   })
   if (!payload) return null
   const { verifier, state, nonce, returnTo } = payload as Record<string, unknown>
@@ -409,6 +460,14 @@ export type RequestIdentity = {
   email: string
   sub: string | null
   source: 'auth0' | 'checkout'
+  // How strongly the caller has proven they own `email`.
+  //   'login' — they signed in: an emailed code or Google, through Auth0.
+  //   'link'  — they hold a link we sent (a lifecycle email, a gift claim) or
+  //             the post-payment token, whose email was typed and never proven.
+  // Reading, feed setup and profile edits accept either. Anything that moves
+  // money or changes what the member is billed requires 'login'
+  // (requireLoginAssurance, guards.ts).
+  assurance: 'login' | 'link'
   // The name to greet this person by, or null whenever we hold no name a human
   // gave us — including for the checkout token, which carries no name at all.
   // Callers greet by this or fall back; they must never substitute the email.
@@ -453,17 +512,28 @@ export async function resolveRequestIdentity(
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
     const profile = await verifyAuth0BearerProfile(token)
-    if (profile?.email) {
+    // An address Auth0 says is UNverified proves nothing about who holds it, and
+    // the by-email entitlement net trusts this email. Every login the tenant
+    // allows today is verified (Google, an emailed code; signups are closed), so
+    // this refuses nothing real — it is here for the day a connection changes.
+    if (profile?.email && profile.emailVerified !== false) {
       return {
         email: profile.email,
         sub: profile.sub ?? null,
         source: 'auth0',
+        assurance: 'login',
         ...identityName(profile),
       }
     }
     const checkout = await verifyCheckoutProfile(token, env)
     if (checkout) {
-      return { email: checkout.email, sub: checkout.sub, source: 'checkout', ...NO_NAME }
+      return {
+        email: checkout.email,
+        sub: checkout.sub,
+        source: 'checkout',
+        assurance: 'link',
+        ...NO_NAME,
+      }
     }
   }
   const session = await getSessionProfile(req, env)
@@ -472,6 +542,7 @@ export async function resolveRequestIdentity(
       email: session.email,
       sub: session.sub ?? null,
       source: 'auth0',
+      assurance: session.via === 'email_link' ? 'link' : 'login',
       ...identityName(session),
       session,
     }
@@ -480,7 +551,13 @@ export async function resolveRequestIdentity(
   if (cookieToken) {
     const checkout = await verifyCheckoutProfile(cookieToken, env)
     if (checkout) {
-      return { email: checkout.email, sub: checkout.sub, source: 'checkout', ...NO_NAME }
+      return {
+        email: checkout.email,
+        sub: checkout.sub,
+        source: 'checkout',
+        assurance: 'link',
+        ...NO_NAME,
+      }
     }
   }
   return null
@@ -518,12 +595,19 @@ export function __resetAdminRoleCacheForTests(): void {
 // Failure semantics, deliberately asymmetric:
 //   - A definitive answer is authoritative, including a definitive "no" — that
 //     is the revocation this exists for.
-//   - No Management credentials, or a failed lookup, returns null meaning
-//     "unknown". Callers fall back to the cookie's claim. Denying here would
-//     turn a missing env var or a transient Auth0 outage into a total back-office
-//     lockout, and an attacker can't induce either condition; the exposure is
-//     bounded by the cookie TTL, which is where it already was.
-async function auth0SaysAdmin(sub: string, env: Env): Promise<boolean | null> {
+//   - No Management credentials returns 'unconfigured'. Callers fall back to the
+//     cookie's claim: that is a deployment state, not something a caller can
+//     induce, and denying would lock the back office out of every environment
+//     that has no M2M client. The launch checklist requires the credentials.
+//   - A FAILED lookup returns 'error', and what that means depends on what we
+//     last knew. If Auth0 has already told this instance the role is gone, it
+//     stays gone: a revoked admin must not get back in by retrying until a
+//     lookup happens to 429 or time out, which the old "unknown → trust the
+//     cookie" rule allowed. Otherwise the caller decides — reads ride out an
+//     Auth0 blip on the cookie's claim, writes do not (see requireAdmin).
+type LiveAdmin = boolean | 'unconfigured' | 'error'
+
+async function auth0SaysAdmin(sub: string, env: Env): Promise<LiveAdmin> {
   const hit = adminRoleCache.get(sub)
   if (hit && Date.now() - hit.at < ADMIN_ROLE_TTL_MS) return hit.isAdmin
 
@@ -532,7 +616,7 @@ async function auth0SaysAdmin(sub: string, env: Env): Promise<boolean | null> {
     console.warn(
       '[session] no Management credentials — admin role served from the session cookie, revocation will lag until it expires',
     )
-    return null
+    return 'unconfigured'
   }
   try {
     const page = await mgmt.users.roles.list(sub)
@@ -541,8 +625,37 @@ async function auth0SaysAdmin(sub: string, env: Env): Promise<boolean | null> {
     return isAdmin
   } catch (err) {
     console.error('[session] live admin role lookup failed:', err)
-    return null
+    // A stale "no" outlives its TTL for exactly this case.
+    if (hit && !hit.isAdmin) return false
+    return 'error'
   }
+}
+
+// Whether a claimed admin role survives the live check. Reads tolerate a failed
+// lookup; anything that changes state does not — minting a coupon or exporting
+// the member list on the strength of a week-old cookie, at the one moment Auth0
+// can't confirm it, is the wrong way round.
+async function adminRoleHolds(
+  sub: string | undefined,
+  req: IncomingMessage,
+  env: Env,
+): Promise<boolean> {
+  // Every real login carries a sub (the callback reads it off the verified
+  // token). A role claim with no subject can't be re-checked, so it isn't honored.
+  if (!sub) return false
+  const live = await auth0SaysAdmin(sub, env)
+  if (live === false) {
+    console.warn('[session] rejecting session whose admin role was revoked:', sub)
+    return false
+  }
+  if (live === 'error') {
+    const method = (req.method ?? 'GET').toUpperCase()
+    if (method !== 'GET' && method !== 'HEAD') {
+      console.warn('[session] admin role unconfirmed (Auth0 lookup failed); refusing a write:', sub)
+      return false
+    }
+  }
+  return true
 }
 
 // Admin gate for the back office. Passes only for a session that carries the
@@ -560,13 +673,7 @@ export async function requireAdmin(
 ): Promise<Auth0Profile | null> {
   const session = await getSessionProfile(req, env)
   if (session && session.roles.includes('admin')) {
-    if (session.sub) {
-      const live = await auth0SaysAdmin(session.sub, env)
-      if (live === false) {
-        console.warn('[session] rejecting session whose admin role was revoked:', session.sub)
-        return null
-      }
-    }
+    if (!(await adminRoleHolds(session.sub, req, env))) return null
     return {
       email: session.email,
       sub: session.sub,
@@ -574,10 +681,17 @@ export async function requireAdmin(
       roles: session.roles,
     }
   }
+  // A raw Auth0 access token. The browser never holds one (the BFF keeps it
+  // server-side), so this is tooling only — and it gets the same live check as
+  // the cookie. It used to be trusted for the token's whole lifetime, which made
+  // a leaked admin token outlive the role's removal.
   const authHeader = req.headers.authorization
   if (authHeader?.startsWith('Bearer ')) {
     const profile = await verifyAuth0BearerProfile(authHeader.slice(7))
-    if (isAdminProfile(profile)) return profile
+    if (profile && isAdminProfile(profile)) {
+      if (!(await adminRoleHolds(profile.sub, req, env))) return null
+      return profile
+    }
   }
   return null
 }
@@ -620,7 +734,7 @@ export async function signEmailLoginToken(
   claim: EmailLoginToken,
   env: Env,
 ): Promise<string> {
-  const secret = env.SESSION_SECRET
+  const secret = secretFor(env, 'EMAIL_LOGIN_SECRET')
   if (!secret) throw new Error('SESSION_SECRET not configured')
   return signHs256(
     {
@@ -645,7 +759,7 @@ export async function verifyEmailLoginToken(
   const payload = await verifyHs256(token, {
     issuer: EMAIL_LOGIN_ISSUER,
     audience: EMAIL_LOGIN_AUDIENCE,
-    secret: env.SESSION_SECRET,
+    secret: secretFor(env, 'EMAIL_LOGIN_SECRET'),
   })
   const email = payload?.email as string | undefined
   if (!email) return null

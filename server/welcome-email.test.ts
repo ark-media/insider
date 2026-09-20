@@ -70,6 +70,61 @@ describe('renderGiftRedemptionEmail', () => {
   })
 })
 
+// `giver_name` is free text from an unauthenticated checkout form that mails any
+// address the buyer names, and the subject is both a mail header and the line a
+// recipient trusts before opening. Only a name may reach it.
+describe('renderGiftRedemptionEmail — subject line', () => {
+  const subjectFor = (giverName: string) =>
+    renderGiftRedemptionEmail({
+      giverName,
+      term: '1yr',
+      claimUrl: 'https://app.test/redeem?mt=jwt',
+    }).subject
+
+  test('an ordinary name passes through untouched', () => {
+    expect(subjectFor('Dana Levi')).toBe('Dana Levi sent you Ark+')
+    expect(subjectFor("J.R. O'Neil-Cohen")).toBe("J.R. O'Neil-Cohen sent you Ark+")
+    expect(subjectFor('דנה לוי')).toBe('דנה לוי sent you Ark+')
+  })
+
+  test('line breaks and control characters cannot start a new header', () => {
+    const subject = subjectFor('Bob\r\nBcc: victim@example.com\u0000\u2028x')
+    // eslint-disable-next-line no-control-regex
+    expect(subject).not.toMatch(/[\r\n\u0000\u2028]/)
+    expect(subject.startsWith('Bob Bcc:')).toBe(true)
+  })
+
+  test('collapses runs of whitespace', () => {
+    expect(subjectFor('  Dana \t  Levi  ')).toBe('Dana Levi sent you Ark+')
+  })
+
+  test('strips urls and bare domains', () => {
+    expect(subjectFor('Bob https://evil.example/login')).toBe('Bob sent you Ark+')
+    expect(subjectFor('Bob www.evil.example')).toBe('Bob sent you Ark+')
+    expect(subjectFor('Bob evil.example/x?y=1 now')).toBe('Bob now sent you Ark+')
+  })
+
+  test('a name that was nothing but a link falls back to the generic subject', () => {
+    expect(subjectFor('http://evil.example')).toBe("You've been gifted Ark+")
+  })
+
+  test('caps the name at 60 characters without halving an emoji', () => {
+    const subject = subjectFor('😀'.repeat(100))
+    expect(subject).toBe(`${'😀'.repeat(60)} sent you Ark+`)
+    expect(subjectFor('a'.repeat(300))).toBe(`${'a'.repeat(60)} sent you Ark+`)
+  })
+
+  test('the note is capped at 500 characters in the body', () => {
+    const { html } = renderGiftRedemptionEmail({
+      term: '1yr',
+      message: 'm'.repeat(2000),
+      claimUrl: 'https://app.test/redeem?mt=jwt',
+    })
+    expect(html).toContain('m'.repeat(500))
+    expect(html).not.toContain('m'.repeat(501))
+  })
+})
+
 describe('networkShowBullets', () => {
   test('names every public network show, and never the members-only one', () => {
     // The copy doc's "VISUAL BENEFITS LIST" — the shows an Ark+ membership makes

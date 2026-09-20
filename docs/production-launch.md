@@ -7,11 +7,28 @@ depend on, the keys it produces, where each key goes, and what has to flip from
 test/sandbox to production.
 
 > **Read first — the whole stack is still sandbox-scoped.** The app was built
-> and tested against Stripe **test** keys, and `scripts/backfill-membership.ts`
+> and tested against Stripe **test** keys, and `scripts/stripe-catalog.ts`
 > *refuses to run* unless `STRIPE_SECRET_KEY` starts with `sk_test_`
 > (`assertTestMode`). Going to production is not just swapping keys — it means
-> provisioning live catalogs/webhooks and lifting that guard for a controlled
-> run. Every "flip to prod" step below is called out with ⚠️.
+> provisioning live catalogs/webhooks, and the catalog script needs a reviewed
+> change before it will touch live (see Stripe live setup). Every "flip to
+> prod" step below is called out with ⚠️.
+
+> **BLOCKER — the live site has no database of its own.** `ark-plus.xyz`,
+> staging, local dev and the ungated merge-to-main migrations all use
+> `ark-insider-dev`; `ark-insider-prod` is wired to GitHub only. Do not take
+> real members until this is done, in this order:
+> 1. Vercel → arkmedia → Environment Variables: give **Production** its own
+>    `DATABASE_URL`, the **pooled** `ark-insider-prod` string (Preview keeps
+>    `ark-insider-dev`).
+> 2. Bring the prod schema current: run "Migrate database" from the
+>    `production` branch (approval-gated) and check `migrate:status` shows every
+>    file in `migrations/` applied.
+> 3. Only then flip Settings → Git → Production Branch to `production`
+>    (`docs/deploys.md`).
+>
+> Until step 1, put a required reviewer on the `preview` GitHub Environment: a
+> merge to main migrates the database the live site reads.
 
 ---
 
@@ -99,7 +116,11 @@ you get the value; "Scope" = server-only vs shipped to browser.
 **Stripe live setup:**
 - Re-run the catalog provisioner (`scripts/stripe-catalog.ts`) against live mode
   to create products/prices with the `entitlements` metadata the tier resolver
-  reads. Capture the gift price ids too.
+  reads. Capture the gift price ids too. ⚠️ The script **hard-refuses any key
+  that is not `sk_test_`** (`assertTestMode`), and that is deliberate: it
+  creates and archives prices. Going live needs a reviewed PR that adds an
+  explicit live path (e.g. a `--live` flag that prints the account and asks for
+  confirmation), merged ahead of time — not the guard deleted on launch day.
 - Create the **live webhook endpoint** → `https://<APP_BASE_URL>/api/stripe/webhook`,
   subscribe to the subscription/invoice/checkout events the handler consumes,
   copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the source
@@ -146,7 +167,7 @@ a green build.
 #### Database
 | Var | Scope | Prod source / action |
 |---|---|---|
-| `DATABASE_URL` | server | Neon **pooled** connection string for the prod project. Run migrations via `.github/workflows/migrate.yml`; confirm all through `0015` applied (`bun run migrate:status`). |
+| `DATABASE_URL` | server | Neon **pooled** connection string for the prod project (`ark-insider-prod` — see the BLOCKER at the top). Run migrations via `.github/workflows/migrate.yml`; confirm every file in `migrations/` is applied (`bun run migrate:status`) — the history was squashed, so that is `0001_initial_schema` plus whatever follows it, not "through `0015`". |
 
 #### Cron & observability
 | Var | Scope | Prod source / action |
@@ -182,7 +203,9 @@ Regenerate all shared secrets for prod: `SESSION_SECRET`, `CHECKOUT_SESSION_SECR
 - [ ] All server vars present in Vercel **Production** scope; `VITE_` vars also
       present at build time (they bake into the bundle).
 - [ ] `bun run build` green; `bun test` green.
-- [ ] Neon migrations through `0015` applied to prod.
+- [ ] Every file in `migrations/` applied to prod (`0001_initial_schema`,
+      `0002_faq_drop_password_signin`, then `0003`–`0005`; `migrate:status`
+      shows no `pending`).
 - [ ] Stripe live webhook shows a successful test delivery; a real test purchase
       provisions Auth0 user + Neon `membership` + Circle access.
 - [ ] Auth0 prod login round-trips (**emailed one-time code** and Google, incl.
@@ -191,6 +214,54 @@ Regenerate all shared secrets for prod: `SESSION_SECRET`, `CHECKOUT_SESSION_SECR
 - [ ] Cron routes return 200 only with the correct `CRON_SECRET`.
 - [ ] Resend domain verified; a test send lands (not spam).
 - [ ] `VITE_GATE_PASSWORD` decision made (empty = public).
+
+### 1.7 Security checklist
+- [ ] **BLOCKER:** Vercel Production has its own `ark-insider-prod`
+      `DATABASE_URL`, prod schema is current, Production Branch flipped (top of
+      this doc).
+- [ ] **Migrations `0003`–`0005` applied** (rate-limit buckets, webhook ledger
+      lease, admin audit log). The code tolerates
+      their absence, so deploy order doesn't matter — but until they are
+      applied those protections are simply off.
+- [ ] **Least-privilege runtime DB role.** Vercel's pooled `DATABASE_URL` uses
+      `app_rw`; the owner role stays only in the migrate workflow's direct URL.
+      As the owner, on `ark-insider-prod`:
+      ```sql
+      create role app_rw login password '<openssl rand -hex 24>';
+      grant connect on database neondb to app_rw;
+      grant usage on schema public to app_rw;
+      grant select, insert, update, delete on all tables in schema public to app_rw;
+      grant usage, select on all sequences in schema public to app_rw;
+      alter default privileges in schema public
+        grant select, insert, update, delete on tables to app_rw;
+      alter default privileges in schema public
+        grant usage, select on sequences to app_rw;
+      revoke all on table _migrations from app_rw;
+      ```
+      (Swap `neondb` for the real database name. Run the default-privileges
+      lines as the role that runs migrations, so new tables are covered.)
+- [ ] **Enforce the CSP.** `vercel.json` ships it as
+      `Content-Security-Policy-Report-Only`. After a week of clean reports at
+      `/api/csp-report`, rename the header to `Content-Security-Policy`. First
+      confirm the `media-src` hosts cover where Beehiiv actually serves podcast
+      audio (play an episode of each show, free and paid, and watch for
+      redirects to a CDN host).
+- [ ] **GitHub:** Actions are SHA-pinned (done, Dependabot bumps them); branch
+      and environment protection per "Required GitHub settings" in
+      `docs/deploys.md`.
+- [ ] **Auth0 prod tenant:** Disable Sign Ups still ON for both the Database
+      and the passwordless `email` connection; the prod M2M client holds only
+      the scopes in step 5 above, nothing broader.
+- [ ] **Beehiiv:** double opt-in on for both publications.
+- [ ] **Beehiiv webhook key rotated at launch** (`BEEHIIV_WEBHOOK_SECRET`; it
+      travels in the registered URL's `?key=`, so re-register the webhook with
+      the new value).
+- [ ] **`VITE_GATE_PASSWORD` is not access control.** It ships in the JS bundle
+      and the API behind it is ungated. For a soft launch use Vercel Deployment
+      Protection instead; at launch leave the variable empty.
+- [ ] **PostHog:** the project's session-replay masking settings match the code
+      (`src/lib/observability.ts`: `mask_all_text`, `maskAllInputs`) — the
+      dashboard can override what the SDK asks for.
 
 ---
 

@@ -8,6 +8,7 @@
 
 import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { getDb } from '../lib/db.js'
 import {
   createFaq,
@@ -19,6 +20,7 @@ import {
   validateFaqInput,
 } from '../lib/faqs.js'
 import { defineRoute } from '../lib/route.js'
+import { isUuid } from './discuss-threads.js'
 import type { Deps, Route } from '../lib/route.js'
 
 export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
@@ -50,6 +52,9 @@ export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
 
         const sql = getDb(env)
         const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id')
+        // A junk `?id=` would reach Postgres as a bad uuid cast and come back as
+        // the catch-all's 500. Same check, same answer as discuss-threads.
+        if (id !== null && !isUuid(id)) return json(400, { error: 'invalid id format' })
 
         if (req.method === 'GET') {
           return json(200, { faqs: await listFaqs(sql) })
@@ -67,6 +72,11 @@ export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
           if (!v.ok) return json(400, { error: v.error })
           try {
             const faq = await createFaq(sql, v.value)
+            await logAdminAction(env, admin, req, {
+              action: 'faq.create',
+              targetId: faq.id,
+              summary: `key=${faq.key ?? '(none)'} enabled=${faq.enabled}`,
+            })
             return json(200, { faq })
           } catch (err) {
             if (err instanceof DuplicateFaqKeyError) return keyTaken(err.key)
@@ -81,6 +91,11 @@ export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
           try {
             const updated = await updateFaq(sql, id, v.value)
             if (!updated) return json(404, { error: 'not_found' })
+            await logAdminAction(env, admin, req, {
+              action: 'faq.update',
+              targetId: id,
+              summary: `key=${updated.key ?? '(none)'} enabled=${updated.enabled}`,
+            })
             return json(200, { faq: updated })
           } catch (err) {
             if (err instanceof DuplicateFaqKeyError) return keyTaken(err.key)
@@ -91,6 +106,7 @@ export function faqRoutes({ env, appBaseUrl }: Deps): Route[] {
           if (!id) return json(400, { error: 'id required' })
           const ok = await deleteFaq(sql, id)
           if (!ok) return json(404, { error: 'not_found' })
+          await logAdminAction(env, admin, req, { action: 'faq.delete', targetId: id })
           return json(200, { ok: true })
         }
         return json(405, { error: 'Method Not Allowed' })

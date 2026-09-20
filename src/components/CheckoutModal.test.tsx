@@ -27,7 +27,7 @@ g.IS_REACT_ACT_ENVIRONMENT = true;
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { EmailForm } from "./CheckoutModal";
+import { EmailForm, WELCOME_PATH, signInStepForRefusal } from "./CheckoutModal";
 
 let mounted: { root: Root; container: HTMLElement } | null = null;
 
@@ -143,5 +143,44 @@ describe("CheckoutModal amount selection", () => {
     expect(cta?.textContent).toContain("Continue at");
     expect(cta?.textContent).toContain("$5");
     expect(cta?.textContent).toContain("/mo");
+  });
+});
+
+describe("CheckoutModal — create-session refusals", () => {
+  test("login_required routes to the sign-in screen with the server's message", () => {
+    expect(
+      signInStepForRefusal(
+        409,
+        { code: "login_required", error: "You already have an Ark account. Sign in to change or add to your plan." },
+        "staff@ark.co",
+      ),
+    ).toEqual({
+      kind: "login_required",
+      email: "staff@ark.co",
+      message: "You already have an Ark account. Sign in to change or add to your plan.",
+    });
+  });
+
+  test("already_subscribed keeps its own screen", () => {
+    expect(signInStepForRefusal(409, { code: "already_subscribed" }, "m@b.co")).toEqual({
+      kind: "already_subscribed",
+      email: "m@b.co",
+      message: "This email already has an active membership.",
+    });
+  });
+
+  test("anything else stays a generic error", () => {
+    expect(signInStepForRefusal(409, { code: "something_else" }, "m@b.co")).toBeNull();
+    expect(signInStepForRefusal(400, { code: "login_required" }, "m@b.co")).toBeNull();
+    expect(signInStepForRefusal(502, {}, "m@b.co")).toBeNull();
+  });
+});
+
+describe("CheckoutModal — post-payment hand-off", () => {
+  test("the welcome redirect is origin-relative, so the session cookie goes with it", () => {
+    // A hardcoded production host signed preview and localhost buyers straight
+    // out: the cookie the poll sets belongs to the origin that set it.
+    expect(WELCOME_PATH.startsWith("/")).toBe(true);
+    expect(WELCOME_PATH.startsWith("//")).toBe(false);
   });
 });

@@ -126,13 +126,24 @@ export function projectBeehiivPost(
   // pure-free posts that a member happens to request). Callers are responsible
   // for only requesting `premium` after authenticating an Ark+ reader — this
   // function trusts that decision.
+  //
+  // The free view reaches for the flat `content_html` ONLY on a post whose
+  // audience is `free`. That field carries no free/premium split — it is the
+  // post's body, whole — so on a `premium` or `both` post it may be exactly the
+  // text the paywall exists to withhold, and a missing `free.web` there (Beehiiv
+  // omits it when nothing sits above the divider) must render as an empty
+  // preview rather than fall through to it. An empty body is what a gated post
+  // with no preview looks like; the title and excerpt still carry the card.
+  const audience = (p.audience ?? 'free').toLowerCase()
   const rawHtml =
     view === 'premium'
       ? p.content?.premium?.web?.trim() ||
         p.content?.free?.web ||
         p.content_html ||
         ''
-      : p.content?.free?.web ?? p.content_html ?? ''
+      : (p.content?.free?.web ??
+        (audience === 'free' ? p.content_html : undefined) ??
+        '')
   const bodyHtml = sanitizeBeehiivHtml(rawHtml)
   const plain = stripHtml(rawHtml)
 
@@ -140,7 +151,6 @@ export function projectBeehiivPost(
   // post's intrinsic audience. A `both`-audience post is the free version on
   // ark-daily (above-divider IS the published version), but the paywalled
   // version on members-letter (members see full, others see the preview).
-  const audience = (p.audience ?? 'free').toLowerCase()
   let tier: 'free' | 'ark-plus' = 'free'
   if (audience === 'premium') {
     tier = 'ark-plus'

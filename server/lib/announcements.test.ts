@@ -3,8 +3,11 @@
 // against the real DB, not here.
 
 import { describe, test, expect } from 'bun:test'
+import type { Sql } from './db'
 import {
+  getActiveAnnouncement,
   isHexColor,
+  listAnnouncements,
   normalizeActionUrl,
   sanitizeAnnouncementBody,
   validateAnnouncementInput,
@@ -110,5 +113,40 @@ describe('validateAnnouncementInput', () => {
       expect(r.value.dismissible).toBe(false)
       expect(r.value.startsAt).toBe(new Date(valid.startsAt).toISOString())
     }
+  })
+})
+
+// The write path rejects a bad action URL, but a row can also get there by
+// migration, a manual fix, or a bug — and the client puts this value straight
+// into an href. So the read projection re-runs the same check.
+describe('action URL is re-validated on read', () => {
+  const row = (actionUrl: unknown) => ({
+    id: 'a-1', body: 'Save now', action_url: actionUrl, bar_color: '#4a9fe8',
+    text_color: '#ffffff', dismissible: true, enabled: true,
+    starts_at: '2026-05-01T00:00:00Z', ends_at: '2026-05-31T23:59:00Z',
+    created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z',
+  })
+  // The accessors only ever use `sql` as a tagged template.
+  const sqlReturning = (rows: unknown[]) => (() => Promise.resolve(rows)) as unknown as Sql
+
+  test.each<[unknown, string | null]>([
+    ['javascript:alert(1)', null],
+    ['data:text/html,<script>alert(1)</script>', null],
+    ['//evil.example/x', null],
+    ['not a url', null],
+    ['/plus', '/plus'],
+    ['https://ark.com/x', 'https://ark.com/x'],
+    [null, null],
+  ])('stored %p is served as %p', async (stored, served) => {
+    const [listed] = await listAnnouncements(sqlReturning([row(stored)]))
+    expect(listed.actionUrl).toBe(served)
+    // The public banner goes through the same projection.
+    const active = await getActiveAnnouncement(sqlReturning([row(stored)]))
+    expect(active?.actionUrl).toBe(served)
+  })
+
+  test('a bad URL drops the link, not the banner', async () => {
+    const active = await getActiveAnnouncement(sqlReturning([row('javascript:alert(1)')]))
+    expect(active).toMatchObject({ id: 'a-1', body: 'Save now', actionUrl: null })
   })
 })

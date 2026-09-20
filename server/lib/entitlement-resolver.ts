@@ -18,10 +18,12 @@ import {
   type Entitlements,
   type Tier,
 } from '../entitlement.js'
+import { getManagementClient } from '../auth0.js'
 import { getDb } from './db.js'
 import {
   getMembershipByAuth0Sub,
   getMembershipByStripeCustomer,
+  getMembershipsByAuth0Subs,
   type MembershipRow,
 } from './membership.js'
 import {
@@ -46,6 +48,77 @@ export type ResolvedMembership = {
   origin: 'neon' | 'none'
 }
 
+// Every Stripe Customer holding this email, whatever casing it arrives in.
+// `customers.list({ email })` is an exact, case-sensitive match, while the
+// address reaching us is not normalised everywhere it comes from: checkout
+// lowercases what the buyer types (and so every Customer we create is lowercase),
+// but a session email is whatever Auth0 holds, and a social identity can keep
+// its capitals. Asking for the lowercase form, plus the form as given when that
+// differs, makes every guard built on this list see one person as one person.
+// (Stripe's search API is case-insensitive but eventually consistent — useless
+// for a guard that has to see a Customer created seconds ago.)
+export async function listStripeCustomersByEmail(
+  stripe: Stripe,
+  email: string,
+): Promise<Stripe.Customer[]> {
+  const given = email.trim()
+  const lower = given.toLowerCase()
+  const lists = await Promise.all(
+    (given === lower ? [lower] : [lower, given]).map((e) =>
+      stripe.customers.list({ email: e, limit: 100 }),
+    ),
+  )
+  const byId = new Map<string, Stripe.Customer>()
+  for (const list of lists) for (const c of list.data) byId.set(c.id, c)
+  return [...byId.values()]
+}
+
+// Does this email already have a membership row — any row, live or not? The
+// question checkout asks before it lets an UNAUTHENTICATED buyer purchase under
+// an address: the webhook upserts `on conflict (auth0_sub)`, so a purchase made
+// under a comped staffer's, an early-access member's or a gift recipient's email
+// lands on THEIR row, and the eventual subscription.deleted takes it away.
+//
+// The table holds no email (§3), so there are two ways to a row and both are
+// walked:
+//   email → Auth0 user ids → rows keyed on them. The reliable one, and the only
+//     one that reaches a comp or gift row, which has no Stripe customer at all.
+//   email → Stripe customers → rows keyed on those. Covers a row whose Auth0
+//     account now sits under a different address.
+//
+// THROWS when a lookup fails: the caller fails closed. "We couldn't check" must
+// not read as "nothing to protect". An unconfigured Management client is the one
+// exception — that is an environment with no Auth0 accounts to collide with
+// (preview, tests), not a failed lookup, and skipping the leg matches how every
+// other Auth0 call site treats a null client.
+export async function membershipRowsForEmail(
+  env: Env,
+  stripe: Stripe,
+  email: string,
+): Promise<MembershipRow[]> {
+  const sql = getDb(env)
+  const lower = email.trim().toLowerCase()
+  const found = new Map<string, MembershipRow>()
+
+  const mgmt = getManagementClient(env)
+  if (mgmt) {
+    const users = await mgmt.users.listUsersByEmail({
+      email: lower,
+      fields: 'user_id',
+      include_fields: true,
+    })
+    const subs = users.map((u) => u.user_id).filter((id): id is string => Boolean(id))
+    for (const row of await getMembershipsByAuth0Subs(sql, subs)) found.set(row.auth0_sub, row)
+  }
+
+  const customers = await listStripeCustomersByEmail(stripe, lower)
+  for (const customer of customers) {
+    const row = await getMembershipByStripeCustomer(sql, customer.id)
+    if (row) found.set(row.auth0_sub, row)
+  }
+  return [...found.values()]
+}
+
 // Resolve the caller's Neon membership row by email, via their Stripe customer.
 // The membership table is keyed on auth0_sub and holds no email (PII-free, §3),
 // so the join runs email → Stripe customer(s) → membership-by-customer. Covers a
@@ -60,8 +133,8 @@ async function membershipByEmailViaStripe(
   try {
     // Checkout mints a Customer per session, so one email can map to several
     // (churn-then-resubscribe); return the first that carries a live row.
-    const customers = await stripe.customers.list({ email, limit: 100 })
-    for (const customer of customers.data) {
+    const customers = await listStripeCustomersByEmail(stripe, email)
+    for (const customer of customers) {
       const row = await getMembershipByStripeCustomer(getDb(env), customer.id)
       if (row && membershipIsLive(row)) return row
     }

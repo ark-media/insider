@@ -3,9 +3,14 @@
 // one transaction; partial application fails atomically.
 //
 // Usage (Bun auto-loads .env, so DATABASE_URL must be set there):
-//   bun run migrate                 # apply pending migrations
+//   bun run migrate --yes           # apply pending migrations
 //   bun run migrate:status          # list applied vs pending
 //   bun run migrate:create <name>   # scaffold migrations/NNNN_<name>.sql
+//
+// Bun picks DATABASE_URL up from .env without being asked, so every command
+// that connects prints the host and database it is about to touch, and
+// `apply` outside CI refuses to go further without --yes (a localhost database
+// is exempt). Without the flag it prints the target and stops.
 //
 // Uses @neondatabase/serverless `Pool` (WebSocket) rather than the HTTP
 // `neon()` client because multi-statement transactions need a single session.
@@ -88,7 +93,19 @@ async function applyOne(client: PoolClient, name: string): Promise<void> {
   }
 }
 
-async function cmdApply(): Promise<void> {
+async function cmdApply(confirmed: boolean): Promise<void> {
+  const target = describeTarget(requireDatabaseUrl())
+  console.log(`[migrate] target: ${target.label}`)
+  const mayApply = confirmed || isCi() || target.local
+  if (!mayApply) {
+    console.error(
+      '[migrate] refusing to apply: this is not CI and the target is not local.\n' +
+        '          Check the target above, then re-run with --yes:\n' +
+        '            DATABASE_URL="<direct url>" bun run migrate --yes\n' +
+        '          `bun run migrate:status` lists what is pending without changing anything.',
+    )
+    process.exit(1)
+  }
   const pool = newPool()
   const client = await pool.connect()
   try {
@@ -121,6 +138,7 @@ async function cmdApply(): Promise<void> {
 }
 
 async function cmdStatus(): Promise<void> {
+  console.log(`[migrate] target: ${describeTarget(requireDatabaseUrl()).label}`)
   const pool = newPool()
   const client = await pool.connect()
   try {
@@ -178,7 +196,7 @@ function cmdCreate(rawName: string | undefined): void {
   console.log(`[migrate] created ${filename}`)
 }
 
-function newPool(): Pool {
+function requireDatabaseUrl(): string {
   const url = process.env.DATABASE_URL
   if (!url) {
     console.error(
@@ -186,21 +204,56 @@ function newPool(): Pool {
     )
     process.exit(1)
   }
-  return new Pool({ connectionString: url })
+  return url
+}
+
+function newPool(): Pool {
+  return new Pool({ connectionString: requireDatabaseUrl() })
+}
+
+function isCi(): boolean {
+  return Boolean(process.env.CI || process.env.GITHUB_ACTIONS)
+}
+
+// Host and database name only — never the user, password or query string. A
+// value that isn't a postgres:// URL stops the run here without being echoed:
+// scrubConnectionString only catches well-formed URLs, and both this label and
+// the driver's own parse error would otherwise repeat a mangled one, password
+// and all.
+function describeTarget(url: string): { label: string; local: boolean } {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'postgres:' && u.protocol !== 'postgresql:') throw new Error('scheme')
+    const host = u.hostname.replace(/^\[|\]$/g, '')
+    const database = decodeURIComponent(u.pathname.replace(/^\//, '')) || '(default)'
+    const pooled = host.includes('-pooler') ? '  [POOLED host: migrations need the direct one]' : ''
+    return {
+      label: `host=${host} database=${database}${pooled}`,
+      local: host === 'localhost' || host === '127.0.0.1' || host === '::1',
+    }
+  } catch {
+    console.error('[migrate] DATABASE_URL is not a postgres:// connection string.')
+    process.exit(1)
+  }
 }
 
 async function main(): Promise<void> {
-  const cmd = process.argv[2] ?? 'apply'
+  // Flags can sit anywhere (`bun run migrate --yes` puts one where the command
+  // would be), so separate them from the positionals first.
+  const args = process.argv.slice(2)
+  const flags = new Set(args.filter((a) => a.startsWith('--')))
+  const positional = args.filter((a) => !a.startsWith('--'))
+  const cmd = positional[0] ?? 'apply'
   switch (cmd) {
     case 'apply':
     case 'up':
-      await cmdApply()
+      await cmdApply(flags.has('--yes'))
       return
     case 'status':
       await cmdStatus()
       return
     case 'create':
-      cmdCreate(process.argv[3])
+      cmdCreate(positional[1])
       return
     default:
       console.error(

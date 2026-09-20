@@ -483,6 +483,13 @@ function AppRow({
   );
   const rowClass =
     "group flex min-w-0 flex-1 items-center gap-3 p-4 transition hover:bg-fg-strong/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan";
+  // The per-member feed URL is a bearer credential — whoever holds it can play
+  // the paid shows. `ph-no-capture` is PostHog's own opt-out class and covers
+  // both of its DOM collectors: autocapture drops clicks on the element (it
+  // would otherwise send `attr__href`), and session replay swaps the element for
+  // a blank box of the same size, attributes and all. Every element in this file
+  // that renders, links or encodes the URL carries it; our own typed
+  // `feed_activated` events still fire, and they never include the URL.
 
   return (
     <li className="-mt-px border border-rule">
@@ -495,7 +502,7 @@ function AppRow({
             target="_blank"
             rel="noreferrer"
             onClick={onOpen}
-            className={rowClass}
+            className={`${rowClass} ph-no-capture`}
           >
             {icon}
             {name}
@@ -538,7 +545,7 @@ function AppRow({
               setPasted(true);
               onOpen();
             }}
-            className="flex shrink-0 items-center border-l border-rule px-4 button-text text-fg-muted transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
+            className="ph-no-capture flex shrink-0 items-center border-l border-rule px-4 button-text text-fg-muted transition hover:bg-cyan/10 hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"
           >
             Open here
           </a>
@@ -599,7 +606,8 @@ function QrPanel({
       id={id}
       className="flex items-center gap-6 border-t border-rule bg-navy-900/40 p-5"
     >
-      <div className="size-32 shrink-0 bg-white p-2">
+      {/* The QR *is* the feed URL — a replay frame of it can be scanned. */}
+      <div className="ph-no-capture size-32 shrink-0 bg-white p-2">
         <img
           src={dataUrl}
           alt={`QR code that opens ${appName} on your phone`}
@@ -661,7 +669,7 @@ function FeedUrlRow({
       <div className="mt-3 flex items-stretch border border-rule bg-navy-900/60">
         <span
           title={feed.url}
-          className="min-w-0 flex-1 truncate px-4 py-3 font-mono text-body-sm"
+          className="ph-no-capture min-w-0 flex-1 truncate px-4 py-3 font-mono text-body-sm"
         >
           {feed.url}
         </span>

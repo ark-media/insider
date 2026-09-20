@@ -104,6 +104,17 @@ const COLUMNS = `id, session_id, email, steps, escalated, created_at, updated_at
  * `email` is only ever written from the server-derived identity. It is also
  * COALESCEd on update so that a member who signs in mid-session keeps their
  * identity attached, and a later anonymous write can't blank it.
+ *
+ * Once a row HAS an email, only that same identity may update it. The session
+ * id is chosen by the client and is the only key, so without this anyone who
+ * learned or guessed one could replace a member's logged conversation wholesale
+ * — putting words in their mouth in the back office, or wiping an escalation's
+ * context. The `where` on the conflict arm makes such a write a no-op: an
+ * anonymous caller has a null email, and `email = null` is never true. The
+ * statement still succeeds, so the route answers exactly as it would for a
+ * write that landed and the caller learns nothing about whose session it is.
+ * An unattributed row stays open to anyone holding its id, as it must — that
+ * is every signed-out visitor's own session.
  */
 export async function recordSupportSession(
   sql: Sql,
@@ -124,6 +135,8 @@ export async function recordSupportSession(
       steps = excluded.steps,
       escalated = support_conversations.escalated or excluded.escalated,
       updated_at = now()
+    where support_conversations.email is null
+       or lower(support_conversations.email) = lower(excluded.email)
   `
 }
 

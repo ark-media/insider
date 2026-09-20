@@ -90,6 +90,42 @@ const episodeCache = makeTTLCache<string, ProjectedEpisode>(
   EPISODE_CACHE_TTL_MS,
 )
 
+// Ids that turned out not to be an episode of the show they were asked under:
+// unknown to Beehiiv, unpublished, or belonging to a different show. The id is
+// caller-supplied and any string of the right alphabet gets as far as Beehiiv,
+// so without this a loop over random ids is one upstream call each against a
+// quota the whole site shares. Short, because the one legitimate way to land
+// here is an episode page opened moments before its episode publishes, and that
+// should heal within a minute rather than within `EPISODE_CACHE_TTL_MS`.
+//
+// Bounded, unlike the caches above: their keys are drawn from the catalogue, so
+// the catalogue is their bound, whereas these keys are whatever a caller cares
+// to invent. A Map iterates in insertion order, so dropping the first key is
+// dropping the oldest — and an evicted entry only costs one more upstream call.
+const MISSING_EPISODE_TTL_MS = 60 * 1000
+const MISSING_EPISODE_MAX = 500
+const missingEpisodes = new Map<string, number>()
+
+function isKnownMissing(cacheKey: string): boolean {
+  const at = missingEpisodes.get(cacheKey)
+  if (at === undefined) return false
+  if (Date.now() - at >= MISSING_EPISODE_TTL_MS) {
+    missingEpisodes.delete(cacheKey)
+    return false
+  }
+  return true
+}
+
+function rememberMissing(cacheKey: string): void {
+  // Delete first so a re-remembered key moves to the back of the eviction order.
+  missingEpisodes.delete(cacheKey)
+  if (missingEpisodes.size >= MISSING_EPISODE_MAX) {
+    const oldest = missingEpisodes.keys().next().value
+    if (oldest !== undefined) missingEpisodes.delete(oldest)
+  }
+  missingEpisodes.set(cacheKey, Date.now())
+}
+
 // Show-level metadata (title, description) changes very rarely — on the order
 // of months — so it gets a much longer TTL than episodes or show notes. The
 // cache still resets on each serverless cold start, bounding staleness.
@@ -115,6 +151,7 @@ type BeehiivShowResponse = { data?: BeehiivPodcast }
 export function clearPodcastCaches(): void {
   episodesCache.clear()
   episodeCache.clear()
+  missingEpisodes.clear()
   showCache.clear()
   latestCache.clear()
 }
@@ -232,15 +269,31 @@ function withAudioAccess<T extends { audioUrl: string }>(
 // list alone needed 20s of headroom and the timeout had to be kept clear of
 // `functions["api/handler.ts"].maxDuration` in vercel.json or it could never
 // fire. Nothing here needs an override any more.
+class BeehiivError extends Error {
+  readonly status: number
+  constructor(status: number, body: string) {
+    super(`Beehiiv ${status}: ${body}`)
+    this.status = status
+  }
+}
+
 async function beehiivGet<T>(path: string, token: string): Promise<T> {
   const res = await fetchWithTimeout(
     `${BEEHIIV_API_BASE}${path}`,
     { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
   )
   if (!res.ok) {
-    throw new Error(`Beehiiv ${res.status}: ${await res.text()}`)
+    throw new BeehiivError(res.status, await res.text())
   }
   return (await res.json()) as T
+}
+
+// Beehiiv shows the same podcast id with and without its `pod_` prefix
+// depending on the surface (see resolvePodcastId), so two ids are compared
+// with the prefix and the hex case taken out of it.
+function samePodcastId(a: string, b: string): boolean {
+  const bare = (id: string) => id.replace(/^pod_/, '').toLowerCase()
+  return bare(a) === bare(b)
 }
 
 // One page of the list. Kept separate from the cache/merge logic above so the
@@ -309,27 +362,80 @@ async function fetchEpisodes(
   return episodes
 }
 
+// Resolves null for an id that is not a published episode OF THIS SHOW — the
+// route's not-found.
+//
+// The ownership check is the paid gate's other half. The route decides whether
+// audio is withheld from `?show=` alone, and the id is a second, independent
+// parameter: if Beehiiv answers for an episode id regardless of which podcast
+// the path names, a paid episode requested under a public show's slug would
+// come back with its audio url, ungated and marked shared-cacheable. So the
+// episode has to be shown to belong to the show it was asked for under.
+//
+// Two ways to show it, in order. When the episode names its own show (a nested
+// `show.id`), that is authoritative, either way. When it doesn't — nothing in
+// this repo proves the single-episode endpoint always carries it — the episode
+// must appear in the requested show's own published list, which is fetched from
+// that podcast's list endpoint and so can only ever hold its episodes. Failing
+// closed on a missing `show.id` alone would have been just as safe and would
+// blank every episode page on the site the day Beehiiv omits the field.
+async function episodeBelongsToShow(
+  config: BeehiivConfig,
+  podcastId: string,
+  showSlug: string,
+  data: BeehiivEpisode,
+): Promise<boolean> {
+  const showId = data.show?.id
+  if (showId) return samePodcastId(showId, podcastId)
+  if (!data.id) return false
+  const listed = await fetchEpisodes(config, podcastId, showSlug)
+  return listed.some((e) => e.id === data.id)
+}
+
 async function fetchEpisode(
-  { publicationId, token }: BeehiivConfig,
+  config: BeehiivConfig,
   podcastId: string,
   showSlug: string,
   episodeId: string,
-): Promise<ProjectedEpisode> {
+): Promise<ProjectedEpisode | null> {
+  const { publicationId, token } = config
   const cacheKey = `${publicationId}:${podcastId}:${showSlug}:${episodeId}`
   const cached = episodeCache.get(cacheKey)
   if (cached) return cached
+  if (isKnownMissing(cacheKey)) return null
 
-  const body = await beehiivGet<{ data?: BeehiivEpisode }>(
-    `/publications/${encodeURIComponent(publicationId)}/podcasts/${encodeURIComponent(podcastId)}/episodes/${encodeURIComponent(episodeId)}`,
-    token,
-  )
-  const episode = projectBeehiivEpisode(body.data ?? {}, showSlug)
+  let data: BeehiivEpisode | undefined
+  try {
+    const body = await beehiivGet<{ data?: BeehiivEpisode }>(
+      `/publications/${encodeURIComponent(publicationId)}/podcasts/${encodeURIComponent(podcastId)}/episodes/${encodeURIComponent(episodeId)}`,
+      token,
+    )
+    data = body.data
+  } catch (err) {
+    // An id Beehiiv has never heard of is a not-found, not an outage. Anything
+    // else (5xx, 429, a timeout) still is one, and is deliberately NOT
+    // remembered: a blip must not blank a real episode for a minute.
+    if (!(err instanceof BeehiivError) || err.status !== 404) throw err
+  }
+
+  if (
+    !data ||
+    // Same filter the list applies: a draft or scheduled episode is reachable
+    // by id long before it appears in any list.
+    !isPublishedEpisode(data) ||
+    !(await episodeBelongsToShow(config, podcastId, showSlug, data))
+  ) {
+    rememberMissing(cacheKey)
+    return null
+  }
+
+  const episode = projectBeehiivEpisode(data, showSlug)
   episodeCache.set(cacheKey, episode)
   return episode
 }
 
 // The podcasts-page "latest episodes" strip: one newest episode per public
-// show, not the newest N across the catalogue (which used to let a daily show
+// show, not the newest N across the catalogue (a daily show would otherwise
 // fill every slot).
 //
 // Each show is asked for a single published episode. That is enough for the
@@ -507,6 +613,15 @@ export function podcastRoutes({ env }: Deps): Route[] {
 
         try {
           const episode = await fetchEpisode(config, podcastId, show, id)
+          if (!episode) {
+            // Never shared-cacheable, whichever show it was asked under. The
+            // edge would otherwise hold "no such episode" for 15 minutes (and
+            // serve it stale for 90) against an id that may be one publish away
+            // from existing; the in-process negative cache is what absorbs a
+            // loop over random ids, and it forgets within the minute.
+            setReadCacheControl(res, { gated: true })
+            return json(200, { episode: null })
+          }
           json(200, { episode: withAudioAccess(episode, access) })
         } catch (err) {
           console.error('[beehiiv] episode fetch failed:', err)

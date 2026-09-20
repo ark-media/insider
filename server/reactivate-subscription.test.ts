@@ -40,8 +40,16 @@ let subsByCustomer: Record<
     id: string
     current_period_end: number | null
     cancel_at_period_end?: boolean
+    // A pending period-end change (what the annual→monthly save schedules), the
+    // subscription's discount ids, and its billing interval.
+    schedule?: string
+    discounts?: string[]
+    interval?: 'month' | 'year'
   }>
 > = {}
+// The subscription's discounts with coupons expanded — what the route re-reads
+// before deciding which retention coupons survive the released schedule.
+let expandedDiscounts: Array<Record<string, unknown>> = []
 // current_period_end echoed back by subscriptions.update (the route reads it
 // as next_charge_at). 2030-01-01, fixed for stable assertions.
 const UPDATED_PERIOD_END = 1893456000
@@ -63,14 +71,29 @@ class FakeStripe {
         // so the (status-filtered) live-subscription lookup matches it.
         status: 'active',
         cancel_at_period_end: s.cancel_at_period_end ?? false,
+        customer: args.customer,
+        schedule: s.schedule ?? null,
+        discounts: s.discounts ?? [],
         items: {
           data:
             s.current_period_end == null
               ? []
-              : [{ current_period_end: s.current_period_end }],
+              : [
+                  {
+                    current_period_end: s.current_period_end,
+                    price: {
+                      product: 'prod_ark_plus',
+                      recurring: { interval: s.interval ?? 'month' },
+                    },
+                  },
+                ],
         },
       }))
       return { data: subs }
+    },
+    retrieve: async (id: string, args?: Record<string, unknown>) => {
+      stripeCalls.push({ method: 'subscriptions.retrieve', args: [id, args] })
+      return { id, discounts: expandedDiscounts }
     },
     update: async (id: string, args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
@@ -80,6 +103,15 @@ class FakeStripe {
         items: { data: [{ current_period_end: UPDATED_PERIOD_END }] },
       }
     },
+  }
+  subscriptionSchedules = {
+    release: async (id: string) => {
+      stripeCalls.push({ method: 'subscriptionSchedules.release', args: [id] })
+      return { id }
+    },
+  }
+  products = {
+    retrieve: async (id: string) => ({ id, metadata: { entitlements: 'ark_plus' } }),
   }
   webhooks = {
     constructEvent: () => {
@@ -136,6 +168,7 @@ beforeEach(() => {
   stripeCalls.length = 0
   existingCustomers = []
   subsByCustomer = {}
+  expandedDiscounts = []
 })
 
 // A signed ark_session cookie for `email`, so getSessionEmail authenticates.
@@ -157,7 +190,15 @@ async function post(
 
 const PERIOD_END = 1798761600 // 2027-01-01, distinct from UPDATED_PERIOD_END
 
-function withSub(over: { cancel_at_period_end?: boolean; current_period_end?: number | null } = {}) {
+function withSub(
+  over: {
+    cancel_at_period_end?: boolean
+    current_period_end?: number | null
+    schedule?: string
+    discounts?: string[]
+    interval?: 'month' | 'year'
+  } = {},
+) {
   existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
   subsByCustomer = {
     cus_1: [
@@ -165,6 +206,9 @@ function withSub(over: { cancel_at_period_end?: boolean; current_period_end?: nu
         id: 'sub_1',
         current_period_end: over.current_period_end === undefined ? PERIOD_END : over.current_period_end,
         cancel_at_period_end: over.cancel_at_period_end ?? false,
+        schedule: over.schedule,
+        discounts: over.discounts,
+        interval: over.interval,
       },
     ],
   }
@@ -246,5 +290,64 @@ describe('POST /api/stripe/reactivate-subscription — behavior', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({ ok: true, next_charge_at: null })
+  })
+})
+
+// F4 — accept a save offer, then reactivate. The annual→monthly save attaches
+// the MONTHLY supporter coupon beside a scheduled switch to monthly. Reactivate
+// releases that schedule, so the member stays annual — and the coupon, priced
+// for a month, would come off a whole year's invoice.
+describe('POST /api/stripe/reactivate-subscription — a released schedule takes its coupon with it', () => {
+  const discount = (id: string, metadata: Record<string, string>) => ({
+    id,
+    source: { type: 'coupon', coupon: { id: `coupon_${id}`, metadata } },
+  })
+  const MONTHLY_SUPPORTER = discount('di_supporter', {
+    retention_offer: 'true',
+    offer_kind: 'supporter_coupon',
+    plan: 'monthly',
+  })
+
+  test('accept → reactivate: the monthly coupon is dropped from the annual subscription', async () => {
+    withSub({ interval: 'year', schedule: 'sched_1', discounts: ['di_supporter'] })
+    expandedDiscounts = [MONTHLY_SUPPORTER]
+
+    const res = await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.release')).toBe(true)
+    const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
+    expect(update!.args[1]).toEqual({ cancel_at_period_end: false, discounts: '' })
+  })
+
+  test('a coupon that fits the resumed plan stays, as does anything that is not a retention coupon', async () => {
+    withSub({ interval: 'month', schedule: 'sched_1', discounts: ['di_supporter', 'di_promo'] })
+    expandedDiscounts = [MONTHLY_SUPPORTER, discount('di_promo', { auto_apply: 'true' })]
+
+    await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
+    const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
+    // Nothing dropped → the param is omitted and Stripe leaves discounts alone.
+    expect(update!.args[1]).toEqual({ cancel_at_period_end: false })
+  })
+
+  test('no schedule released → discounts are never read or touched', async () => {
+    withSub({ cancel_at_period_end: true, interval: 'year', discounts: ['di_supporter'] })
+    expandedDiscounts = [MONTHLY_SUPPORTER]
+
+    await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.retrieve')).toBe(false)
+    const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
+    expect(update!.args[1]).toEqual({ cancel_at_period_end: false })
   })
 })

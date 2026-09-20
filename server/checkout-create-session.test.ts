@@ -125,8 +125,49 @@ class FakeStripe {
 
 mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 
+// --- neon + Auth0 mocks (existing-account guard) ------------------------------
+// Only the DB_ENV tests reach these: without DATABASE_URL the guard is off. The
+// membership table holds no email, so the guard goes email → Auth0 user ids →
+// rows; `auth0SubsByEmail` stages the first hop (null = the lookup throws) and
+// `membershipRowsBySub` the second.
+let auth0SubsByEmail = new Map<string, string[] | null>()
+let membershipRowsBySub: Record<string, Record<string, unknown>> = {}
+let membershipQueryFails = false
+const sqlTexts: string[] = []
+
+mock.module('@neondatabase/serverless', () => ({
+  neon: (_url: string) =>
+    ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join('?')
+      sqlTexts.push(text)
+      if (text.includes('from membership where auth0_sub = any')) {
+        if (membershipQueryFails) return Promise.reject(new Error('neon down'))
+        const subs = values[0] as string[]
+        return Promise.resolve(subs.map((sub) => membershipRowsBySub[sub]).filter(Boolean))
+      }
+      return Promise.resolve([])
+    }) as unknown,
+  __esModule: true,
+}))
+
+mock.module('auth0', () => ({
+  ManagementClient: class {
+    users = {
+      listUsersByEmail: ({ email }: { email: string }) => {
+        const subs = auth0SubsByEmail.get(email)
+        if (subs === null) return Promise.reject(new Error('auth0 down'))
+        return Promise.resolve((subs ?? []).map((user_id) => ({ user_id })))
+      },
+    }
+  },
+  AuthenticationClient: class {},
+  __esModule: true,
+}))
+
 // Static import AFTER mock.module so the plugin picks up the fake Stripe.
 import { devApiPlugin } from './dev-api'
+import { signSessionToken, signCheckoutToken } from './lib/session'
+import { CHECKOUT_COOKIE_NAME, SESSION_COOKIE_NAME } from './lib/cookies'
 
 // ---------------------------------------------------------------------------
 // Plugin harness
@@ -136,12 +177,33 @@ import { devApiPlugin } from './dev-api'
 // inline price_data.
 const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
+  // Signs the post-payment checkout token, which two tests mint to prove it
+  // does NOT count as a login here.
+  CHECKOUT_SESSION_SECRET: 'checkout-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
 }
 
-function getHandler(path: string): Middleware {
-  return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
+// The production shape: a database (so the existing-account guard is live) and
+// an Auth0 Management client (the email → sub hop).
+const DB_ENV = {
+  ...BASE_ENV,
+  DATABASE_URL: 'postgres://stub-checkout-test',
+  // Unique per file: getManagementClient caches its client per domain+client id
+  // for the whole process, and `bun test` shares one process — a shared id would
+  // hand this file another suite's mocked client (and its staged lookups).
+  AUTH0_MANAGEMENT_CLIENT_ID: 'cid-checkout-create-session',
+  AUTH0_MANAGEMENT_CLIENT_SECRET: 'csec',
+  AUTH0_TENANT_DOMAIN: 'https://tenant.us.auth0.com',
+}
+
+function getHandler(path: string, env: Record<string, string> = BASE_ENV): Middleware {
+  return createDevApiHarness(devApiPlugin(env)).getHandler(path)
+}
+
+// A durable login (the ark_session cookie) as this address.
+async function sessionCookie(email: string): Promise<string> {
+  return `${SESSION_COOKIE_NAME}=${await signSessionToken({ email, roles: [] }, BASE_ENV)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +289,10 @@ beforeEach(() => {
   existingCustomers = []
   subsByCustomer = {}
   nextSessionId = 'cs_test_1'
+  auth0SubsByEmail = new Map()
+  membershipRowsBySub = {}
+  membershipQueryFails = false
+  sqlTexts.length = 0
 })
 
 // ---------------------------------------------------------------------------
@@ -236,9 +302,16 @@ const PATH = '/api/stripe/create-checkout-session'
 // → new rate limiter → new price cache). Tests that rely on rate-limiter
 // state across calls should pin a single handler via getSharedHandler() and
 // pass it to postWith().
-async function post(body: unknown): Promise<FakeRes> {
+async function post(
+  body: unknown,
+  opts: { cookie?: string; env?: Record<string, string> } = {},
+): Promise<FakeRes> {
   const res = makeRes()
-  await runHandler(getHandler(PATH), makeReq({ body }), res)
+  await runHandler(
+    getHandler(PATH, opts.env),
+    makeReq({ body, ...(opts.cookie ? { cookie: opts.cookie } : {}) }),
+    res,
+  )
   return res
 }
 
@@ -295,37 +368,192 @@ describe('POST /api/stripe/create-checkout-session — find-or-create', () => {
     expect(session.customer).toBe('cus_new')
   })
 
-  test('single existing customer → reused, no create call', async () => {
+  // Reuse is for a PROVEN email only. An existing Customer carries a saved card,
+  // a balance (a credited gift lands there) and a billing history; the email on
+  // this form is just something somebody typed.
+  test('unauthenticated + an existing customer → a FRESH customer, never the existing one', async () => {
     existingCustomers = [{ id: 'cus_existing', email: 'a@b.co' }]
     const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
+    expect(stripeCalls.find((c) => c.method === 'customers.create')).toBeTruthy()
+    expect(lastSessionCreateArgs().customer).toBe('cus_new')
+  })
+
+  test('the checkout token is not proof of the email — still a fresh customer', async () => {
+    // It is minted off an address typed into this same form.
+    existingCustomers = [{ id: 'cus_existing', email: 'a@b.co' }]
+    const token = await signCheckoutToken('a@b.co', BASE_ENV, null)
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly' },
+      { cookie: `${CHECKOUT_COOKIE_NAME}=${token}` },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().customer).toBe('cus_new')
+  })
+
+  test('signed in as a DIFFERENT email → a fresh customer', async () => {
+    existingCustomers = [{ id: 'cus_existing', email: 'a@b.co' }]
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly' },
+      { cookie: await sessionCookie('someone-else@b.co') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().customer).toBe('cus_new')
+  })
+
+  test('signed in as that email → single existing customer reused, no create call', async () => {
+    existingCustomers = [{ id: 'cus_existing', email: 'a@b.co' }]
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly' },
+      { cookie: await sessionCookie('a@b.co') },
+    )
     expect(res.statusCode).toBe(200)
     expect(stripeCalls.find((c) => c.method === 'customers.create')).toBeUndefined()
     expect(lastSessionCreateArgs().customer).toBe('cus_existing')
   })
 
-  test('multiple customers → picks one without an active subscription', async () => {
+  test('the session email matches case-insensitively', async () => {
+    // Auth0 can hold a social identity's address with its capitals; checkout
+    // lowercases what the buyer types. Same person.
+    existingCustomers = [{ id: 'cus_existing', email: 'a@b.co' }]
+    const res = await post(
+      { email: 'A@B.co', plan: 'monthly' },
+      { cookie: await sessionCookie('A@b.CO') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().customer).toBe('cus_existing')
+  })
+
+  test('a new customer is created with the lowercased email', async () => {
+    const res = await post({ email: '  New@Example.COM ', plan: 'monthly' })
+    expect(res.statusCode).toBe(200)
+    const created = stripeCalls.find((c) => c.method === 'customers.create')
+    expect((created!.args[0] as { email: string }).email).toBe('new@example.com')
+  })
+
+  test('signed in, multiple customers → picks one without an active subscription', async () => {
     existingCustomers = [
       { id: 'cus_with_sub', email: 'a@b.co' },
       { id: 'cus_clean', email: 'a@b.co' },
     ]
-    subsByCustomer = { cus_with_sub: [{ id: 'sub_1' }] }
-    const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    // Canceled, so the single-active-subscription guard lets the request through
+    // and the pick is what is under test. (The fake ignores the status filter.)
+    subsByCustomer = { cus_with_sub: [{ id: 'sub_1', status: 'canceled' }] }
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly' },
+      { cookie: await sessionCookie('a@b.co') },
+    )
     expect(res.statusCode).toBe(200)
     expect(lastSessionCreateArgs().customer).toBe('cus_clean')
   })
 
-  test('multiple customers all with active subs → falls back to the first', async () => {
+  test('signed in, multiple customers all with subs → falls back to the first', async () => {
     existingCustomers = [
       { id: 'cus_a', email: 'a@b.co' },
       { id: 'cus_b', email: 'a@b.co' },
     ]
     subsByCustomer = {
-      cus_a: [{ id: 'sub_a' }],
-      cus_b: [{ id: 'sub_b' }],
+      cus_a: [{ id: 'sub_a', status: 'canceled' }],
+      cus_b: [{ id: 'sub_b', status: 'canceled' }],
     }
-    const res = await post({ email: 'a@b.co', plan: 'monthly' })
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly' },
+      { cookie: await sessionCookie('a@b.co') },
+    )
     expect(res.statusCode).toBe(200)
     expect(lastSessionCreateArgs().customer).toBe('cus_a')
+  })
+})
+
+// The HIGH finding. The webhook upserts the membership row `on conflict
+// (auth0_sub)`, so a purchase made under a comped staffer's, an early-access
+// member's or a gift recipient's address overwrote THEIR row — and the eventual
+// subscription.deleted removed it. An address that already has a row must sign
+// in first.
+describe('POST /api/stripe/create-checkout-session — existing-account guard', () => {
+  const COMP_ROW = {
+    auth0_sub: 'auth0|staff',
+    stripe_customer_id: null,
+    stripe_subscription_id: null,
+    tier: 'bundle',
+    status: 'active',
+  }
+
+  test('409 login_required when the typed email already has a membership row', async () => {
+    auth0SubsByEmail.set('staff@ark.co', ['auth0|staff'])
+    membershipRowsBySub = { 'auth0|staff': COMP_ROW }
+    const res = await post({ email: 'Staff@ark.co', plan: 'monthly' }, { env: DB_ENV })
+    expect(res.statusCode).toBe(409)
+    expect(res.__json()).toEqual({
+      code: 'login_required',
+      error: 'You already have an Ark account. Sign in to change or add to your plan.',
+    })
+    // Nothing was created in Stripe on the strength of a typed address.
+    expect(stripeCalls.find((c) => c.method === 'customers.create')).toBeUndefined()
+    expect(stripeCalls.find((c) => c.method === 'checkout.sessions.create')).toBeUndefined()
+  })
+
+  test('the checkout token does not lift the guard', async () => {
+    auth0SubsByEmail.set('staff@ark.co', ['auth0|staff'])
+    membershipRowsBySub = { 'auth0|staff': COMP_ROW }
+    const token = await signCheckoutToken('staff@ark.co', BASE_ENV, 'auth0|staff')
+    const res = await post(
+      { email: 'staff@ark.co', plan: 'monthly' },
+      { env: DB_ENV, cookie: `${CHECKOUT_COOKIE_NAME}=${token}` },
+    )
+    expect(res.statusCode).toBe(409)
+    expect((res.__json() as Record<string, unknown>).code).toBe('login_required')
+  })
+
+  test('signed in as that email → allowed through', async () => {
+    auth0SubsByEmail.set('staff@ark.co', ['auth0|staff'])
+    membershipRowsBySub = { 'auth0|staff': COMP_ROW }
+    const res = await post(
+      { email: 'staff@ark.co', plan: 'monthly' },
+      { env: DB_ENV, cookie: await sessionCookie('Staff@ark.co') },
+    )
+    expect(res.statusCode).toBe(200)
+  })
+
+  test('signed in as someone else → still refused', async () => {
+    auth0SubsByEmail.set('staff@ark.co', ['auth0|staff'])
+    membershipRowsBySub = { 'auth0|staff': COMP_ROW }
+    const res = await post(
+      { email: 'staff@ark.co', plan: 'monthly' },
+      { env: DB_ENV, cookie: await sessionCookie('attacker@evil.co') },
+    )
+    expect(res.statusCode).toBe(409)
+  })
+
+  test('an email with an Auth0 account but no membership row buys normally', async () => {
+    // A free reader, or a lapsed member whose row was removed at cancel.
+    auth0SubsByEmail.set('reader@b.co', ['auth0|reader'])
+    const res = await post({ email: 'reader@b.co', plan: 'monthly' }, { env: DB_ENV })
+    expect(res.statusCode).toBe(200)
+  })
+
+  test('fails CLOSED when the Auth0 lookup errors — no session is sold', async () => {
+    auth0SubsByEmail.set('staff@ark.co', null)
+    const res = await post({ email: 'staff@ark.co', plan: 'monthly' }, { env: DB_ENV })
+    expect(res.statusCode).toBe(502)
+    expect(stripeCalls.find((c) => c.method === 'checkout.sessions.create')).toBeUndefined()
+  })
+
+  test('fails CLOSED when the membership read errors', async () => {
+    auth0SubsByEmail.set('staff@ark.co', ['auth0|staff'])
+    membershipQueryFails = true
+    const res = await post({ email: 'staff@ark.co', plan: 'monthly' }, { env: DB_ENV })
+    expect(res.statusCode).toBe(502)
+  })
+
+  test('the already_subscribed guard still answers first for a live subscriber', async () => {
+    existingCustomers = [{ id: 'cus_live', email: 'member@b.co' }]
+    subsByCustomer = { cus_live: [{ id: 'sub_live', status: 'active' }] }
+    auth0SubsByEmail.set('member@b.co', ['auth0|member'])
+    membershipRowsBySub = { 'auth0|member': { ...COMP_ROW, auth0_sub: 'auth0|member' } }
+    const res = await post({ email: 'member@b.co', plan: 'monthly' }, { env: DB_ENV })
+    expect(res.statusCode).toBe(409)
+    expect((res.__json() as Record<string, unknown>).code).toBe('already_subscribed')
   })
 })
 

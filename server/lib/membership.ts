@@ -73,6 +73,25 @@ export async function getMembershipByStripeCustomer(
   return (rows[0] as MembershipRow | undefined) ?? null
 }
 
+// Every membership row held by any of these Auth0 subs. One email can sit behind
+// several Auth0 user ids until the post-login linking Action has merged them, and
+// the table holds no email to ask by (§3), so "does this address already have a
+// membership?" is answered email → Auth0 subs → this. Checkout uses it to refuse
+// an unauthenticated purchase that would land on somebody else's row.
+export async function getMembershipsByAuth0Subs(
+  sql: Sql,
+  auth0Subs: string[],
+): Promise<MembershipRow[]> {
+  if (auth0Subs.length === 0) return []
+  const rows = await sql`
+    select auth0_sub, stripe_customer_id, stripe_subscription_id,
+           tier, status, plan, amount_cents,
+           current_period_end, cancel_at,
+           ark_plus_gift_expires_at, circle_gift_expires_at
+    from membership where auth0_sub = any(${auth0Subs}::text[])`
+  return rows as MembershipRow[]
+}
+
 // The tier a scheduled period-end change will land the member on, keyed on the
 // Stripe customer (the account page has the customer off the live sub, not the
 // auth0_sub). Null when no change is pending. Lets the UI name the change
@@ -128,13 +147,17 @@ export type MembershipReconcileRow = {
   tier: Tier
   status: string
   stripe_subscription_id: string | null
+  // With `status`, what decides whether the subscription half of the row still
+  // grants (entitlement.ts subscriptionGrants) — so the keep-set agrees with the
+  // per-request gate about an unpaid or long-lapsed subscription.
+  current_period_end: string | null
   ark_plus_gift_expires_at: string | null
   circle_gift_expires_at: string | null
 }
 
 export async function loadAllMemberships(sql: Sql): Promise<MembershipReconcileRow[]> {
   const rows = await sql`
-    select auth0_sub, tier, status, stripe_subscription_id,
+    select auth0_sub, tier, status, stripe_subscription_id, current_period_end,
            ark_plus_gift_expires_at, circle_gift_expires_at
     from membership`
   return rows as MembershipReconcileRow[]
@@ -239,13 +262,82 @@ export async function clearMembershipPending(
     where stripe_customer_id = ${customerId}`
 }
 
-// Full cancel/pause on a single-subscription member leaves no remaining
-// entitlement, so the row is removed (absence = free). Matched on the customer.
+// Full cancel/pause on a member with nothing else live leaves no remaining
+// entitlement, so the row is removed (absence = free). Matched on the customer
+// AND the subscription that ended: a late `deleted` for a subscription the member
+// has since replaced must never take the new one's row with it.
 export async function deleteMembershipByCustomer(
   sql: Sql,
   customerId: string,
+  subscriptionId: string,
 ): Promise<void> {
-  await sql`delete from membership where stripe_customer_id = ${customerId}`
+  await sql`
+    delete from membership
+    where stripe_customer_id = ${customerId}
+      and (stripe_subscription_id = ${subscriptionId} or stripe_subscription_id is null)`
+}
+
+// The subscription ended but a gift axis is still running, so the row stays and
+// only its subscription half is cleared. What is left is exactly the shape a
+// redeemed gift writes (routes/gift.ts): no subscription id, `status` 'active',
+// `tier` the tier the still-live gift axes add up to — which is what liveAxes
+// reads as "gift expiries decide". The customer id is kept: it is how a later
+// subscription event, or a refund, finds this row again. The gift expiries are
+// not in the SET list on purpose.
+export async function clearMembershipSubscription(
+  sql: Sql,
+  customerId: string,
+  subscriptionId: string,
+  remainingTier: Tier,
+): Promise<void> {
+  await sql`
+    update membership set
+      stripe_subscription_id = null,
+      tier                   = ${remainingTier},
+      status                 = 'active',
+      plan                   = null,
+      amount_cents           = null,
+      current_period_end     = null,
+      cancel_at              = null,
+      scheduled_tier = null, schedule_id = null,
+      pending_amount_cents = null, pending_plan = null,
+      updated_at             = now()
+    where stripe_customer_id = ${customerId}
+      and (stripe_subscription_id = ${subscriptionId} or stripe_subscription_id is null)`
+}
+
+// A redeemed gift whose payment was reversed: take the term that gift added back
+// off the axes it covered on the redeemer's row. Subtracting the term, rather
+// than ending the axis outright, is what keeps a stacked gift honest — a
+// recipient holding an earlier, paid-for gift keeps exactly that one's remaining
+// time, while a lone gift lands at its redemption date (the past) and stops
+// granting. Never nulls an expiry: liveAxes treats "no sub, no gift term" as a
+// perpetual comp, so nulling both would turn a clawed-back gift into free access
+// for life. Only an axis that actually holds a term is touched. Returns the row
+// as it now stands, or null when the redeemer has none.
+export async function revokeGiftTerm(
+  sql: Sql,
+  auth0Sub: string,
+  axes: { arkPlus: boolean; circle: boolean },
+  termDays: number,
+): Promise<MembershipRow | null> {
+  const rows = await sql`
+    update membership set
+      ark_plus_gift_expires_at = case
+        when ${axes.arkPlus} and ark_plus_gift_expires_at is not null
+        then ark_plus_gift_expires_at - make_interval(days => ${termDays})
+        else ark_plus_gift_expires_at end,
+      circle_gift_expires_at = case
+        when ${axes.circle} and circle_gift_expires_at is not null
+        then circle_gift_expires_at - make_interval(days => ${termDays})
+        else circle_gift_expires_at end,
+      updated_at = now()
+    where auth0_sub = ${auth0Sub}
+    returning auth0_sub, stripe_customer_id, stripe_subscription_id,
+              tier, status, plan, amount_cents,
+              current_period_end, cancel_at,
+              ark_plus_gift_expires_at, circle_gift_expires_at`
+  return (rows[0] as MembershipRow | undefined) ?? null
 }
 
 // Remove provably-expired gift membership rows: a gift is customer-less (no
@@ -280,7 +372,11 @@ export type GiftRow = {
   // 'void' = the purchase was refunded or disputed before anyone claimed it.
   // Terminal, and deliberately distinct from 'redeemed' so a reversal on an
   // already-claimed gift stays visible rather than being silently overwritten.
-  status: 'pending' | 'redeemed' | 'void'
+  //
+  // 'reversed' = the purchase was refunded or disputed AFTER it was claimed, and
+  // the webhook took the term back off the redeemer's row (markGiftReversed).
+  // Also terminal; to the redeem routes it reads like any other non-pending gift.
+  status: 'pending' | 'redeemed' | 'void' | 'reversed'
   redeemed_by: string | null
 }
 
@@ -323,6 +419,19 @@ export async function markGiftRedeemed(
     where redemption_token = ${token} and status = 'pending'
     returning redemption_token`
   return rows.length > 0
+}
+
+// Flip redeemed → reversed when the gift's payment is clawed back. The atomic
+// flip is the idempotency guard for the term subtraction that follows it: a
+// dispute and a refund can both arrive for one charge, under two event ids the
+// webhook ledger can't relate, and the term must come off once. Returns the gift
+// only to the call that performed the transition.
+export async function markGiftReversed(sql: Sql, token: string): Promise<GiftRow | null> {
+  const rows = await sql`
+    update gift set status = 'reversed'
+    where redemption_token = ${token} and status = 'redeemed'
+    returning redemption_token, tier, plan, amount_cents, currency, giver_sub, status, redeemed_by`
+  return (rows[0] as GiftRow | undefined) ?? null
 }
 
 // --- gift-expiry reminders (T7.5) -----------------------------------------

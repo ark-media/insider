@@ -91,6 +91,12 @@ the fix is to merge `production` into your branch, not to reach for `force`.
 The `force` input exists for deliberate rollbacks and sideways moves, and says
 so in the run summary.
 
+The ref must also **already be on `main`**: the workflow refuses a commit that
+is not an ancestor of `origin/main`, so nothing reaches production without
+having been through main's pull-request review. `force` overrides that too (a
+hotfix cut from `production` is not on main), which is why the `production`
+environment's required reviewer matters.
+
 **Clicking instead:** the Vercel dashboard's Redeploy and Instant Rollback on
 the `arkmedia` project both still work and are the fastest way to undo a bad
 deploy.
@@ -131,6 +137,37 @@ when an order is needed. `preview` deliberately has none.
 `ark-insider-dev` is also what local `.env` points at, so a migration you apply
 locally lands on staging too.
 
+## Required GitHub settings
+
+None of this can be enforced from the repo; the workflows assume it. Settings
+→ Branches / Rules, and Settings → Environments.
+
+- [ ] **`production` branch protected:** push restricted to the GitHub Actions
+      app (so only "Deploy to production" moves it), force-push off for
+      everyone else, deletion off. A `force: true` deploy needs the Actions app
+      on the force-push bypass list; leave it off until a rollback needs it.
+- [ ] **`main` branch protected:** pull request required, at least one
+      approval, "Require review from Code Owners" on (`.github/CODEOWNERS`),
+      force-push and deletion off.
+- [ ] **`production` environment:** required reviewers set, and **"Prevent
+      self-review"** on, so whoever dispatches a deploy or a prod migration
+      cannot also approve it.
+- [ ] **Deployment branch policies:** `production` environment → selected
+      branches → `production` only. `preview` environment → `main` only. Without
+      these, any branch's workflow file can name the environment and read its
+      `DATABASE_URL`.
+- [ ] **`preview` environment gets a required reviewer for now.** Its database
+      is `ark-insider-dev`, which the live site still reads, so an ungated
+      merge-to-main migration is a production schema change. Drop the reviewer
+      once Vercel Production has its own `DATABASE_URL` (top of this page).
+- [ ] Settings → Actions → General: workflow permissions read-only by default,
+      and "Allow GitHub Actions to create and approve pull requests" off.
+- [ ] Dependabot alerts and security updates on (`.github/dependabot.yml` only
+      configures version updates).
+
+Actions are pinned to commit SHAs and Dependabot proposes the bumps; review
+those PRs like any other change to `.github/`.
+
 ## Ownership of each piece
 
 | Piece | Where it lives |
@@ -138,6 +175,7 @@ locally lands on staging too.
 | Production Branch = `production` | Vercel → arkmedia → Settings → Git |
 | Preview auth | Vercel → arkmedia → Settings → Deployment Protection |
 | Production deploy | `.github/workflows/deploy-production.yml` |
+| Branch protection, environment reviewers, branch policies | GitHub → Settings (checklist above) |
 | Schema | `.github/workflows/migrate.yml` |
 | Per-branch `DATABASE_URL` + prod approval | GitHub → Settings → Environments → `preview` / `production` |
 | Cron jobs | `vercel.json` — they run on production deployments only, so staging never fires them |

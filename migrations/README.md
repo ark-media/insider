@@ -8,9 +8,12 @@ ORM; migrations are plain SQL.
 
 ```bash
 # Apply all pending migrations (against $DATABASE_URL — the DIRECT url, see below).
-DATABASE_URL="<direct url>" bun run migrate
+# Prints the target host + database first. Outside CI it refuses without --yes,
+# unless the host is localhost.
+DATABASE_URL="<direct url>" bun run migrate --yes
 
-# Show which migrations have been applied and which are pending.
+# Show which migrations have been applied and which are pending. Also prints
+# the target, so it doubles as "where would this land?".
 bun run migrate:status
 
 # Scaffold a new migration file with the next sequence number.
@@ -36,7 +39,7 @@ needs DDL privileges in that database.
 
 | Where | Database | How |
 | --- | --- | --- |
-| Local | `ark-insider-dev` | `DATABASE_URL="<dev direct url>" bun run migrate` |
+| Local | `ark-insider-dev` | `DATABASE_URL="<dev direct url>" bun run migrate --yes` |
 | Staging (`main`) | `ark-insider-dev` | CI on merge, `preview` environment |
 | Production (`production`) | `ark-insider-prod` | CI on push, `production` environment, approval required |
 
@@ -97,7 +100,7 @@ values ('0001_initial_schema.sql', '<sha256 of the file>');
 ```
 
 Get the hash with `shasum -a 256 migrations/0001_initial_schema.sql`. A brand
-new database needs none of this — just `bun run migrate`.
+new database needs none of this — just `bun run migrate --yes`.
 
 ## Conventions
 

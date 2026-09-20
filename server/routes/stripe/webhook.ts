@@ -6,11 +6,18 @@ import { renderGiftRedemptionEmail } from '../../lib/welcome-email.js'
 import { renderPaymentFailedEmail } from '../../lib/payment-failed-email.js'
 import type { CancellableTier } from '../../lib/cancellation-email.js'
 import { greetingFirstName } from '../../../shared/profile-name.js'
+import { redactEmail } from '../../../shared/validation.js'
+import { GIFT_TERM_DAYS, type GiftTerm } from '../../lib/activation.js'
+import { membershipRowsForEmail } from '../../lib/entitlement-resolver.js'
 import {
   deriveEntitlements,
   emailForStripeCustomer,
+  liveAxes,
+  liveGiftAxes,
+  membershipIsLive,
   syncEntitlement,
   tierFromEntitlementString,
+  tierFromEntitlements,
   type Tier,
 } from '../../entitlement.js'
 import {
@@ -22,9 +29,12 @@ import { downgradeToFree, tryPush } from '../../lib/beehiiv-sync.js'
 import { getDb } from '../../lib/db.js'
 import {
   clearMembershipPending,
+  clearMembershipSubscription,
   deleteMembershipByCustomer,
   getMembershipByStripeCustomer,
   insertGift,
+  markGiftReversed,
+  revokeGiftTerm,
   setMembershipStatusByCustomer,
   upsertMembership,
 } from '../../lib/membership.js'
@@ -40,30 +50,81 @@ import {
 } from './helpers.js'
 
 // The tier a subscription sells, from its price product's `entitlements`
-// metadata (the authority) — not the client-stamped sub metadata. Falls back to
-// the stamped tier only if the product metadata is missing/unreadable.
+// metadata — the ONLY authority. Null means "this is not one of our membership
+// subscriptions": no readable product, a deleted one, or one without the
+// entitlements stamp the catalog script puts on every product we sell.
+//
+// Two ways this used to fail open, both gone:
+//   - a product lookup that errored was swallowed and read as "no metadata". It
+//     now RETHROWS: a Stripe blip is not a fact about the subscription, and the
+//     webhook's 500 is what makes Stripe redeliver.
+//   - "no metadata" fell back to `sub.metadata.tier`, defaulting to Ark+. That
+//     metadata is stamped from the checkout request body, so it is the buyer's
+//     claim about what they bought; and the default meant ANY subscription on
+//     the account — a Beehiiv-native one, something made in the Dashboard —
+//     provisioned a membership. The tier is never read from there now.
+export async function catalogTierOfSubscription(
+  sub: Stripe.Subscription,
+  stripe: Stripe,
+): Promise<Tier | null> {
+  const productRef = sub.items?.data?.[0]?.price?.product
+  if (!productRef) return null
+  const product =
+    typeof productRef === 'string' ? await stripe.products.retrieve(productRef) : productRef
+  if ('deleted' in product && product.deleted) return null
+  const derived = tierFromEntitlementString(product.metadata?.entitlements)
+  return derived === 'free' ? null : derived
+}
+
+// Thrown by tierFromSubscription for a subscription that isn't ours. Its own
+// class so a caller that wants to tell "not a membership" from "Stripe is down"
+// can, without parsing a message.
+export class NotAMembershipSubscriptionError extends Error {
+  constructor(subscriptionId: string) {
+    super(`subscription ${subscriptionId} sells no catalog entitlement`)
+    this.name = 'NotAMembershipSubscriptionError'
+  }
+}
+
+// catalogTierOfSubscription for callers that can only proceed with a real tier:
+// same authority, but "not ours" THROWS rather than returning null, so the
+// signature stays `Promise<Tier>` and nothing downstream can provision on a
+// guess. Every caller already sits in a try/catch or on a path where a throw is
+// the right answer (routes/auth.ts answers 502 and mints no session).
 export async function tierFromSubscription(
   sub: Stripe.Subscription,
   stripe: Stripe,
 ): Promise<Tier> {
-  const productRef = sub.items?.data?.[0]?.price?.product
-  let entitlements: string | null | undefined
-  try {
-    if (productRef) {
-      const product =
-        typeof productRef === 'string' ? await stripe.products.retrieve(productRef) : productRef
-      if (!('deleted' in product && product.deleted)) {
-        entitlements = product.metadata?.entitlements
-      }
-    }
-  } catch (err) {
-    console.error('[stripe] tierFromSubscription product lookup failed:', err)
-  }
-  const derived = tierFromEntitlementString(entitlements)
-  // Fall back to the checkout-stamped tier when the product metadata is missing
-  // or unreadable (default Ark+).
-  return derived !== 'free' ? derived : coerceTier(sub.metadata?.tier)
+  const tier = await catalogTierOfSubscription(sub, stripe)
+  if (!tier) throw new NotAMembershipSubscriptionError(sub.id)
+  return tier
 }
+
+// The subscription as Stripe holds it NOW, or null when it no longer exists.
+// Webhook payloads are snapshots and deliveries are neither ordered nor prompt: a
+// retried `updated` can land after the `deleted` that ended the subscription,
+// and acting on its "status: active" would re-grant a cancelled member. So the
+// subscription handlers read the current state and treat the event as a nudge to
+// go and look. Anything but a clean "no such subscription" rethrows — Stripe
+// redelivers, which beats deciding on a snapshot we already know may be stale.
+async function retrieveCurrentSubscription(
+  stripe: Stripe,
+  subscriptionId: string,
+): Promise<Stripe.Subscription | null> {
+  try {
+    return await stripe.subscriptions.retrieve(subscriptionId)
+  } catch (err) {
+    const e = err as { code?: string; statusCode?: number } | null
+    if (e?.code === 'resource_missing' || e?.statusCode === 404) return null
+    throw err
+  }
+}
+
+// Statuses from which a subscription never comes back.
+const ENDED_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
+  'canceled',
+  'incomplete_expired',
+])
 
 function cancelAtIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.cancel_at)
@@ -135,22 +196,17 @@ export async function dispatchWebhookEvent(
       const sub = event.data.object as Stripe.Subscription
       const customerId = customerIdOf(sub)
       await serializeByCustomer(customerId, async () => {
-        // Single-subscription member → no remaining entitlement. Drop the
-        // entitlement signals (the Beehiiv downgrade below revokes the arkPlus
-        // feed with the premium tier) and remove the membership row
-        // (absence = free).
-        const email = await emailForStripeCustomer(sub.customer, stripe)
-        if (email) {
-          await syncEntitlement(env, email, 'free')
-          if (env.DATABASE_URL) {
-            await tryPush('downgrade (cancel)', () =>
-              downgradeToFree({ env, sql: getDb(env) }, email),
-            )
+        // `deleted` is terminal, so its payload can't be stale about THIS
+        // subscription. A pause can be: resumed since, the subscription is live
+        // again and a late `paused` must not revoke it.
+        if (event.type === 'customer.subscription.paused') {
+          const current = await retrieveCurrentSubscription(stripe, sub.id)
+          if (current && (current.status === 'active' || current.status === 'trialing')) {
+            console.warn('[stripe] stale subscription.paused ignored (resumed since):', sub.id)
+            return
           }
         }
-        if (env.DATABASE_URL) {
-          await deleteMembershipByCustomer(getDb(env), customerId)
-        }
+        await handleSubscriptionEnded(sub, customerId, stripe, env)
         // No churn event here on purpose. Stripe Billing already reports churn,
         // splits voluntary from involuntary via `cancellation_details.reason`,
         // and reconciles to the ledger. See server/lib/analytics-server.ts.
@@ -166,27 +222,44 @@ export async function dispatchWebhookEvent(
     }
     case 'charge.refunded':
     case 'charge.dispute.created': {
+      // The money went back (or is being contested), so what it bought has to
+      // as well. The two events carry different objects — a Charge and a Dispute
+      // — that happen to share the one field needed from either.
+      const reversed = event.data.object as Stripe.Charge | Stripe.Dispute
+      const piId =
+        typeof reversed.payment_intent === 'string'
+          ? reversed.payment_intent
+          : reversed.payment_intent?.id ?? null
+      // A dispute contests the whole charge. A refund only counts as a reversal
+      // when it is the whole charge: a partial refund is a goodwill adjustment
+      // on a membership that is still paid for.
+      const full =
+        event.type === 'charge.dispute.created' ||
+        ((reversed as Stripe.Charge).refunded === true &&
+          (reversed as Stripe.Charge).amount_refunded === (reversed as Stripe.Charge).amount)
+      if (!piId) break
+
       // A gift is redeemable indefinitely (no redeem-by), so without this the
       // money can be reversed while the claim link stays live forever. Void the
-      // gift if it hasn't been claimed yet; if it already has, the grant can't
-      // be walked back automatically — surface it loudly for manual handling.
-      const charge = event.data.object as Stripe.Charge
-      const piId =
-        typeof charge.payment_intent === 'string'
-          ? charge.payment_intent
-          : charge.payment_intent?.id ?? null
-      if (piId && env.DATABASE_URL) {
+      // gift if it hasn't been claimed yet.
+      let wasGift = false
+      if (env.DATABASE_URL) {
+        const sql = getDb(env)
         const token = giftTokenForPaymentIntent(piId, env)
-        const rows = await getDb(env)`
+        const voided = await sql`
           update gift set status = 'void'
           where redemption_token = ${token} and status = 'pending'
           returning redemption_token`
-        if (rows.length === 0) {
-          console.error(
-            `[stripe] ${event.type} did not void a pending gift (already redeemed, or not a gift):`,
-            piId,
-          )
+        wasGift = voided.length > 0
+        if (!wasGift && full) {
+          wasGift = await reverseRedeemedGift(token, piId, event.type, stripe, env)
         }
+      }
+      // Not a gift → if this charge paid a subscription invoice, the
+      // subscription it paid for ends now. Cancelling is all this does: the
+      // `customer.subscription.deleted` it produces runs the one revoke path.
+      if (!wasGift && full) {
+        await cancelSubscriptionForReversedPayment(piId, event.type, stripe)
       }
       break
     }
@@ -259,6 +332,82 @@ export async function dispatchWebhookEvent(
   }
 }
 
+// A subscription is over (deleted, paused, or found gone by the upsert handler).
+// Revoke what IT granted and nothing else:
+//
+//   1. A row that names a DIFFERENT subscription means this event is about one
+//      the member has since replaced — a late `deleted` for the old sub arriving
+//      after they re-subscribed. Acting on it would delete a paying member's row.
+//   2. Gift terms are not the subscription's to take. A gift axis still running
+//      keeps the row (cleared down to its gift half) and keeps that axis granted;
+//      only the axes nothing else holds are revoked.
+//   3. No row for this customer is not proof of "free": a comp, staff or gift row
+//      carries no Stripe customer, so it is invisible from here. The email is
+//      checked before anything is revoked BY email (Circle and Beehiiv both key
+//      on it), so a stray subscription on a comped member's address can't strip
+//      their access on its way out.
+//
+// Idempotent: a redelivery finds the row already cleared/deleted and re-mirrors
+// the same remaining tier.
+async function handleSubscriptionEnded(
+  sub: Stripe.Subscription,
+  customerId: string,
+  stripe: Stripe,
+  env: Env,
+): Promise<void> {
+  const email = await emailForStripeCustomer(sub.customer, stripe)
+
+  if (!env.DATABASE_URL) {
+    // No Neon store (preview / test envs): nothing to diff against, so mirror
+    // free as before. The Beehiiv downgrade needs the DB too.
+    if (email) await syncEntitlement(env, email, 'free')
+    return
+  }
+  const sql = getDb(env)
+  const row = await getMembershipByStripeCustomer(sql, customerId)
+
+  if (row?.stripe_subscription_id && row.stripe_subscription_id !== sub.id) {
+    console.warn(
+      `[stripe] ended subscription ${sub.id} is not the one on the membership row (${row.stripe_subscription_id}) — stale event, ignored`,
+    )
+    return
+  }
+
+  let remaining = { arkPlus: false, circle: false }
+  if (row) {
+    remaining = liveGiftAxes(row)
+  } else if (email) {
+    // Throws on a failed lookup, deliberately: Stripe redelivers, which is
+    // better than revoking on "couldn't check".
+    const others = (await membershipRowsForEmail(env, stripe, email)).filter(membershipIsLive)
+    for (const other of others) {
+      const axes = liveAxes(other)
+      remaining = {
+        arkPlus: remaining.arkPlus || axes.arkPlus,
+        circle: remaining.circle || axes.circle,
+      }
+    }
+  }
+  const remainingTier = tierFromEntitlements(remaining)
+
+  if (email) {
+    await syncEntitlement(env, email, remainingTier)
+    // Beehiiv premium mirrors the arkPlus axis: drop it only when nothing else
+    // still holds arkPlus. Losing the premium tier is losing the feed.
+    if (!remaining.arkPlus) {
+      await tryPush('downgrade (cancel)', () => downgradeToFree({ env, sql }, email))
+    }
+  }
+
+  if (!row) return
+  if (remainingTier === 'free') {
+    // Nothing left → remove the row (absence = free).
+    await deleteMembershipByCustomer(sql, customerId, sub.id)
+  } else {
+    await clearMembershipSubscription(sql, customerId, sub.id, remainingTier)
+  }
+}
+
 // customer.subscription.created / .updated. Derives the tier from the price
 // product, gates provisioning on the entitlement diff (not `statusChanged`,
 // which missed tier switches — those move `items`, not `status`), writes the
@@ -267,7 +416,7 @@ export async function dispatchWebhookEvent(
 // entitlement without cancelling a subscription (§6).
 async function handleSubscriptionUpsert(
   event: Stripe.Event,
-  sub: Stripe.Subscription,
+  eventSub: Stripe.Subscription,
   customerId: string,
   stripe: Stripe,
   env: Env,
@@ -275,10 +424,34 @@ async function handleSubscriptionUpsert(
 ): Promise<void> {
   const created = event.type === 'customer.subscription.created'
   const prev = (event.data.previous_attributes ?? {}) as Partial<Stripe.Subscription>
+
+  // Act on what the subscription IS, not on what it was when this event was
+  // cut (see retrieveCurrentSubscription). Gone or ended → this is a late
+  // delivery for a dead subscription: run the (idempotent) ended path instead of
+  // granting off the snapshot.
+  const sub = await retrieveCurrentSubscription(stripe, eventSub.id)
+  if (!sub || ENDED_SUB_STATUSES.has(sub.status)) {
+    console.warn(`[stripe] ${event.type} for an ended subscription — treating as deleted:`, eventSub.id)
+    await handleSubscriptionEnded(sub ?? eventSub, customerId, stripe, env)
+    return
+  }
+
+  // Not one of ours (no catalog entitlement on its product) → not our event.
+  // Checked before ANY write, the dunning status included: that update matches
+  // on the customer alone, and a foreign subscription going past_due must not
+  // mark a healthy membership delinquent. A failed product lookup throws from
+  // here, which is the point — Stripe retries.
+  const tier = await catalogTierOfSubscription(sub, stripe)
+  if (!tier) {
+    console.warn('[stripe] subscription sells no catalog entitlement — ignored:', sub.id)
+    return
+  }
+
   const isActive = sub.status === 'active' || sub.status === 'trialing'
 
   if (!isActive) {
-    // Delinquent-but-not-yet-cancelled → dunning status only; no revoke.
+    // Delinquent-but-not-yet-cancelled → dunning status only; no revoke here.
+    // `unpaid` stops granting at read time (entitlement.ts subscriptionGrants).
     if (env.DATABASE_URL && (sub.status === 'past_due' || sub.status === 'unpaid')) {
       await setMembershipStatusByCustomer(getDb(env), customerId, sub.status)
     }
@@ -292,15 +465,13 @@ async function handleSubscriptionUpsert(
   if (!env.DATABASE_URL) {
     const statusChanged = created || 'status' in prev
     if (!statusChanged) return
-    const noDbTier = await tierFromSubscription(sub, stripe)
-    await activator.activateMembershipForStripeSub(sub, noDbTier)
+    await activator.activateMembershipForStripeSub(sub, tier)
     const email = await emailForStripeCustomer(sub.customer, stripe)
-    if (email) await syncEntitlement(env, email, noDbTier)
-    await emitProvisioningEvents(env, sub, noDbTier, email, created)
+    if (email) await syncEntitlement(env, email, tier)
+    await emitProvisioningEvents(env, sub, tier, email, created)
     return
   }
 
-  const tier = await tierFromSubscription(sub, stripe)
   const newEnt = deriveEntitlements(tier)
 
   // priorTier from the existing row BEFORE any write (default free), keyed on the
@@ -457,6 +628,112 @@ async function emitProvisioningEvents(
   }
 }
 
+// A subscription payment was fully refunded or disputed: end the subscription
+// it paid for, now. Until this existed the money could go back while the member
+// kept everything until the period ran out — or, on a dispute, indefinitely.
+//
+// Charge → invoice goes through the invoice-payments list: current API versions
+// dropped `charge.invoice`, and an InvoicePayment is what ties a PaymentIntent to
+// the invoice it settled. A payment with no subscription invoice behind it (a
+// gift, a one-off) finds nothing and is left alone.
+//
+// Errors propagate — a reversal we failed to act on is worth Stripe's retry. An
+// already-cancelled subscription is not an error: a second event for the same
+// charge (dispute, then refund) finds it ended and moves on.
+async function cancelSubscriptionForReversedPayment(
+  paymentIntentId: string,
+  eventType: string,
+  stripe: Stripe,
+): Promise<void> {
+  const payments = await stripe.invoicePayments.list({
+    payment: { type: 'payment_intent', payment_intent: paymentIntentId },
+    expand: ['data.invoice'],
+    limit: 1,
+  })
+  const invoice = payments.data[0]?.invoice
+  if (!invoice || typeof invoice === 'string' || ('deleted' in invoice && invoice.deleted)) {
+    return
+  }
+  const subRef = invoice.parent?.subscription_details?.subscription
+  const subscriptionId = typeof subRef === 'string' ? subRef : subRef?.id ?? null
+  if (!subscriptionId) return
+
+  const current = await retrieveCurrentSubscription(stripe, subscriptionId)
+  if (!current || ENDED_SUB_STATUSES.has(current.status)) return
+  console.error(
+    `[stripe] PAYMENT-REVERSED ${eventType}: cancelling subscription ${subscriptionId} (payment ${paymentIntentId})`,
+  )
+  // Immediate, no proration credit and no final invoice: the money is already
+  // back with the cardholder.
+  await stripe.subscriptions.cancel(subscriptionId, { prorate: false, invoice_now: false })
+}
+
+// A gift that was already REDEEMED when its payment was reversed. Take the term
+// back off the redeemer's row and re-mirror what they still hold. Answers
+// whether the PaymentIntent was a gift at all, so the caller doesn't go looking
+// for a subscription behind a gift payment.
+//
+// What this can't undo is anything the redemption did inside Stripe: a gift that
+// overlapped a paid subscription EXTENDED it (a pause / a pushed period) or
+// CREDITED the customer balance (routes/gift.ts), and neither leaves a gift
+// expiry on the row to take back. Those need a human, so the log line below is
+// loud and greppable (GIFT-REVERSED) rather than an aside.
+async function reverseRedeemedGift(
+  token: string,
+  paymentIntentId: string,
+  eventType: string,
+  stripe: Stripe,
+  env: Env,
+): Promise<boolean> {
+  const sql = getDb(env)
+  // The atomic redeemed → reversed flip is the once-only guard: a dispute and a
+  // refund on one charge are two events, and the term comes off once.
+  const gift = await markGiftReversed(sql, token)
+  if (!gift) {
+    // Not redeemed: either no such gift (this payment wasn't one), or a gift
+    // already void/reversed by an earlier event. Only the latter is "a gift".
+    const rows = (await sql`
+      select 1 from gift where redemption_token = ${token} limit 1`) as unknown[]
+    return rows.length > 0
+  }
+
+  const covered = deriveEntitlements(gift.tier)
+  const termDays = GIFT_TERM_DAYS[(gift.plan as GiftTerm) ?? '1yr'] ?? GIFT_TERM_DAYS['1yr']
+  const row = gift.redeemed_by
+    ? await revokeGiftTerm(sql, gift.redeemed_by, covered, termDays)
+    : null
+
+  // Re-mirror what the redeemer still holds. The row stores no email, so it
+  // comes from the Stripe customer when the row has one; a gift-only redeemer
+  // has none, and the nightly reconciler (Neon-authoritative) removes the
+  // external grants their row no longer backs.
+  let email: string | null = null
+  if (row?.stripe_customer_id) {
+    try {
+      email = await emailForStripeCustomer(row.stripe_customer_id, stripe)
+    } catch (err) {
+      console.error('[stripe] gift reversal: customer email lookup failed:', err)
+    }
+  }
+  if (row && email) {
+    const remaining = liveAxes(row)
+    await syncEntitlement(env, email, tierFromEntitlements(remaining))
+    if (!remaining.arkPlus) {
+      const to = email
+      await tryPush('downgrade (gift reversed)', () => downgradeToFree({ env, sql }, to))
+    }
+  }
+
+  console.error(
+    `[stripe] GIFT-REVERSED ${eventType}: payment ${paymentIntentId} for a REDEEMED ${gift.tier} gift (${gift.plan ?? 'unknown term'}) was reversed. ` +
+      `Redeemer ${gift.redeemed_by ?? 'unknown'}${email ? ` <${redactEmail(email)}>` : ''}: ` +
+      `${row ? `gift term (${termDays}d) taken off the membership row` : 'NO membership row found'}` +
+      `${row && !email ? '; external access (Beehiiv/Circle) left to the nightly reconciler' : ''}. ` +
+      `MANUAL ACTION: if this gift extended a paid subscription or credited the customer balance, reverse that in Stripe by hand.`,
+  )
+  return true
+}
+
 // A gift PaymentIntent grants nothing until redeemed (§3): write a pending
 // `gift` row and email the recipient a claim link. Idempotent via a token
 // derived deterministically from the PI id (a retry re-derives the same token,
@@ -534,7 +811,8 @@ async function handleGiftPaymentIntent(
     idempotencyKey: `gift_redeem_${pi.id}`,
   })
   if (!sent) {
-    throw new Error(`gift redemption email failed to send to ${recipientEmail}`)
+    // Redacted: this message lands in the webhook's error log verbatim.
+    throw new Error(`gift redemption email failed to send to ${redactEmail(recipientEmail)}`)
   }
   try {
     await stripe.paymentIntents.update(pi.id, {

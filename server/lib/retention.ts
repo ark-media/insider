@@ -43,6 +43,85 @@ export function isRetentionCoupon(c: RetentionCouponLike): boolean {
   return c.valid === true && c.metadata?.retention_offer?.toLowerCase() === 'true'
 }
 
+// Whether a discount ALREADY on a subscription still belongs there once the
+// subscription becomes `result`. A retention coupon is priced for one product at
+// one cadence — the supporter rate for monthly Ark+, the affordability rate for
+// the Fold, the intro rate for whichever single product a debundler kept — and
+// Stripe knows none of that: a subscription-level discount follows the
+// subscription through any plan or tier change. So a member could accept the
+// monthly supporter rate, switch to annual, and take the same percentage off a
+// whole year; or collect the debundle intro rate and re-bundle under it.
+//
+// Reads the marker only (`metadata.retention_offer`), NOT isRetentionCoupon: that
+// also requires `valid`, which is about whether a coupon can be redeemed AGAIN.
+// An archived or fully-redeemed retention coupon is still a retention coupon on
+// the subscriptions that hold it. Anything unmarked — a checkout promo code, a
+// Dashboard courtesy discount — is not ours to remove and always stays.
+//
+// A null tier or plan means "couldn't establish it", and never drops anything on
+// that axis: losing a discount the member was promised is the worse error.
+export function retentionDiscountStillApplies(
+  coupon: Pick<RetentionCouponLike, 'metadata'>,
+  result: { tier: PricedTier | 'free' | null; plan: Plan | null },
+): boolean {
+  if (coupon.metadata?.retention_offer?.toLowerCase() !== 'true') return true
+  const targetPlan = coupon.metadata?.plan
+  if (targetPlan && targetPlan !== 'both' && result.plan !== null && targetPlan !== result.plan) {
+    return false
+  }
+  if (result.tier === null) return true
+  switch (coupon.metadata?.offer_kind) {
+    case 'supporter_coupon':
+      return result.tier === 'ark-plus'
+    case 'affordability_coupon':
+      return result.tier === 'circle'
+    case DEBUNDLE_INTRO_SLOT:
+      // The intro rate is for the single product kept out of a bundle.
+      return result.tier === 'ark-plus' || result.tier === 'circle'
+    default:
+      return true
+  }
+}
+
+// The `discounts` param for a subscription update that lands the subscription on
+// `result`: every current discount except retention coupons that no longer fit
+// (see retentionDiscountStillApplies). Null when nothing needs dropping, so the
+// caller omits the param and Stripe leaves the discounts exactly as they are.
+// Kept discounts are passed back by discount id, which preserves their original
+// start and end — re-attaching by coupon would restart a repeating term.
+//
+// The subscriptions the billing routes hold come from a list call, where
+// `discounts` is bare ids, so this re-reads the one subscription with the
+// coupons expanded. Skipped entirely for the common undiscounted subscription.
+export async function discountsSurvivingChange(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+  result: { tier: PricedTier | 'free' | null; plan: Plan | null },
+): Promise<Array<{ discount: string }> | '' | null> {
+  if (!sub.discounts || sub.discounts.length === 0) return null
+  const full = await stripe.subscriptions.retrieve(sub.id, {
+    expand: ['discounts.source.coupon'],
+  })
+  const kept: Array<{ discount: string }> = []
+  let dropped = false
+  for (const d of full.discounts ?? []) {
+    if (typeof d === 'string') {
+      // Unexpanded → unknown coupon; keep it.
+      kept.push({ discount: d })
+      continue
+    }
+    const coupon = d.source?.coupon
+    if (coupon && typeof coupon !== 'string' && !retentionDiscountStillApplies(coupon, result)) {
+      dropped = true
+      continue
+    }
+    kept.push({ discount: d.id })
+  }
+  if (!dropped) return null
+  // Stripe clears a list param with an empty string, not an empty array.
+  return kept.length > 0 ? kept : ''
+}
+
 // Plan targeting, mirroring the checkout promos (server/lib/stripe-promos.ts):
 // metadata.plan = "monthly" | "yearly" targets one plan; absent/"both" applies
 // to either. An admin sets this when they want distinct save offers per plan.

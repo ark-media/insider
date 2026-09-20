@@ -15,6 +15,7 @@
 import { circleUrls } from '../../src/config/urls.js'
 import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'
+import { logAdminAction } from '../lib/admin-audit.js'
 import { getDb } from '../lib/db.js'
 import {
   createCompanionThread,
@@ -36,6 +37,12 @@ import {
 // hygiene / error clarity rather than SQL safety.
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+// Exported for the other back-office CRUD routes (announcements, faqs, careers),
+// whose `?id=` is the same kind of key and wants the same 400.
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value)
+}
 
 export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
   return [
@@ -72,6 +79,15 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
             appBaseUrl,
           })
           if (!result.ok) return json(result.status, { error: result.error })
+          // Only a thread this call actually made is a mutation; the idempotent
+          // replay changed nothing.
+          if (!result.alreadyExisted) {
+            await logAdminAction(env, admin, req, {
+              action: 'discuss_thread.create',
+              targetId: result.thread.id,
+              summary: `newsletter=${v.value.newsletterSlug} post=${v.value.beehiivPostId}`,
+            })
+          }
           return json(200, {
             thread: result.thread,
             alreadyExisted: result.alreadyExisted,
@@ -81,9 +97,13 @@ export function discussThreadsRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (req.method === 'DELETE') {
           const id = url.searchParams.get('id')
           if (!id) return json(400, { error: 'id required' })
-          if (!UUID_RE.test(id)) return json(400, { error: 'invalid id format' })
+          if (!isUuid(id)) return json(400, { error: 'invalid id format' })
           const ok = await deleteDiscussThread(sql, id)
           if (!ok) return json(404, { error: 'not_found' })
+          await logAdminAction(env, admin, req, {
+            action: 'discuss_thread.delete',
+            targetId: id,
+          })
           return json(200, { ok: true })
         }
 

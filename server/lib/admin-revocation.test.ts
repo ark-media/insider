@@ -49,12 +49,16 @@ const ENV_WITH_MGMT = {
 }
 const ENV_NO_MGMT = { SESSION_SECRET: 'session-secret-32-chars-long-aaaaaa' }
 
-async function adminReq(env: Record<string, string>): Promise<IncomingMessage> {
+async function adminReq(
+  env: Record<string, string>,
+  method = 'GET',
+): Promise<IncomingMessage> {
   const token = await signSessionToken(
     { email: 'admin@ark.com', roles: ['admin'], sub: SUB },
     env,
   )
   return {
+    method,
     headers: { cookie: `${SESSION_COOKIE_NAME}=${token}` },
   } as unknown as IncomingMessage
 }
@@ -88,10 +92,44 @@ describe('requireAdmin — live role revocation', () => {
     expect(admin?.email).toBe('admin@ark.com')
   })
 
-  test('falls back to the cookie when the lookup throws', async () => {
+  test('a READ falls back to the cookie when the lookup throws', async () => {
     roleNames = null
     const admin = await requireAdmin(await adminReq(ENV_WITH_MGMT), ENV_WITH_MGMT)
     expect(admin?.email).toBe('admin@ark.com')
+  })
+
+  test('a WRITE is refused when the lookup throws', async () => {
+    // Minting a coupon on the strength of a week-old cookie, at the one moment
+    // Auth0 can't confirm the role, is the wrong way round.
+    roleNames = null
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      __resetAdminRoleCacheForTests()
+      expect(await requireAdmin(await adminReq(ENV_WITH_MGMT, method), ENV_WITH_MGMT)).toBeNull()
+    }
+  })
+
+  test('a write still passes with no Management credentials at all', async () => {
+    // A deployment state, not something a caller can induce — and refusing here
+    // would lock the back office out of every environment without an M2M client.
+    const admin = await requireAdmin(await adminReq(ENV_NO_MGMT, 'POST'), ENV_NO_MGMT)
+    expect(admin?.email).toBe('admin@ark.com')
+  })
+
+  test('once revoked, a later failed lookup does not let them back in', async () => {
+    // The old rule was "unknown → trust the cookie", so a revoked admin could
+    // retry until a lookup happened to 429 or time out.
+    const realNow = Date.now
+    try {
+      roleNames = []
+      expect(await requireAdmin(await adminReq(ENV_WITH_MGMT), ENV_WITH_MGMT)).toBeNull()
+      // Past the cache TTL, and now Auth0 is failing.
+      const later = realNow() + 5 * 60_000
+      Date.now = () => later
+      roleNames = null
+      expect(await requireAdmin(await adminReq(ENV_WITH_MGMT), ENV_WITH_MGMT)).toBeNull()
+    } finally {
+      Date.now = realNow
+    }
   })
 
   test('caches a positive answer so the back office does not round-trip per click', async () => {

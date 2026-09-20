@@ -170,7 +170,18 @@ type MembershipProvisionResult = {
   tier: Tier
   plan: Plan
   auth0Sub: string | null
+  // True only when THIS subscription's activation created the Auth0 account.
+  // The buyer's email is typed, never proven, so an account that already
+  // existed belongs to whoever owns that inbox — not necessarily to whoever
+  // paid. /api/auth/checkout-session hands out its post-payment session on this
+  // and nothing else. Read off the `auth0_account_created` marker, not the
+  // in-memory result of the create call: the webhook usually provisions first,
+  // and by the time the browser's poll arrives the account "already exists".
+  accountCreated: boolean
 }
+
+// Stamped on the subscription by the activation that created the account.
+const ACCOUNT_CREATED_MARKER = 'auth0_account_created'
 
 export type Activator = {
   // Tier-aware provisioning: Auth0 login for every paid tier, the Beehiiv
@@ -299,6 +310,8 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       auth0Sub = login.userId
       isNewAccount = login.created
     }
+    const accountCreated =
+      isNewAccount || fresh.metadata?.[ACCOUNT_CREATED_MARKER] === 'true'
 
     // Every link in a lifecycle email points at a session-gated page, and the
     // recipient is usually opening the mail somewhere that has never held an
@@ -356,6 +369,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         ...fresh.metadata,
         ...(arkPlusGranted ? { beehiiv_premium: 'true' } : {}),
         ...(auth0Sub ? { auth0_user_id: auth0Sub } : {}),
+        ...(isNewAccount ? { [ACCOUNT_CREATED_MARKER]: 'true' } : {}),
         ...(circleProvisioned ? { circle_provisioned: 'true' } : {}),
         // Both send paths record what they announced.
         ...(wasUnprovisioned || gainedNewAxis ? { welcomed_axes: welcomedAxes } : {}),
@@ -458,7 +472,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       }
     }
 
-    return { email, name, tier, plan, auth0Sub }
+    return { email, name, tier, plan, auth0Sub, accountCreated }
   }
 
   const activateMembershipForStripeSub = async (
@@ -466,7 +480,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     tier: Tier,
   ): Promise<MembershipProvisionResult> => {
     if (!stripe) {
-      return { email: '', tier, plan: 'yearly', auth0Sub: null }
+      return { email: '', tier, plan: 'yearly', auth0Sub: null, accountCreated: false }
     }
 
     // Fast path: every external grant this tier needs is already marked on the
@@ -488,6 +502,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         tier,
         plan: (m.plan as Plan | undefined) ?? 'yearly',
         auth0Sub: m.auth0_user_id ?? null,
+        accountCreated: m[ACCOUNT_CREATED_MARKER] === 'true',
       }
     }
 

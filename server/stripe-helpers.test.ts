@@ -9,7 +9,12 @@
 
 import { describe, test, expect } from 'bun:test'
 import type Stripe from 'stripe'
-import { planFromSubscription } from './routes/stripe/helpers'
+import {
+  findLiveSubscription,
+  findOrCreateSubscriber,
+  planFromSubscription,
+  validatePwycAmount,
+} from './routes/stripe/helpers'
 
 const sub = (items: unknown): Stripe.Subscription =>
   ({ id: 'sub_1', items }) as unknown as Stripe.Subscription
@@ -36,5 +41,113 @@ describe('planFromSubscription', () => {
     expect(planFromSubscription(sub({ data: [] }))).toBeNull()
     expect(planFromSubscription(sub({ data: [{}] }))).toBeNull()
     expect(planFromSubscription(sub({ data: [{ price: {} }] }))).toBeNull()
+  })
+})
+
+// F9 — both callers index a per-currency map for the floor, and every
+// comparison against undefined/NaN is false: a missing floor used to wave ANY
+// amount through, one minor unit included.
+describe('validatePwycAmount', () => {
+  test('no custom amount charges the floor', () => {
+    expect(validatePwycAmount(undefined, 800, 'usd')).toEqual({ amountCents: 800 })
+    expect(validatePwycAmount(null, 800, 'usd')).toEqual({ amountCents: 800 })
+  })
+
+  test('an amount within [floor, max] is charged as given', () => {
+    expect(validatePwycAmount(1500, 800, 'usd')).toEqual({ amountCents: 1500 })
+    expect(validatePwycAmount(800, 800, 'usd')).toEqual({ amountCents: 800 })
+  })
+
+  test('below the floor and above the cap are refused', () => {
+    expect('error' in validatePwycAmount(799, 800, 'usd')).toBe(true)
+    expect('error' in validatePwycAmount(800 * 1000 + 1_000_000, 800, 'usd')).toBe(true)
+  })
+
+  test.each<[string, unknown]>([
+    ['undefined', undefined],
+    ['NaN', Number.NaN],
+    ['zero', 0],
+    ['negative', -800],
+    ['a float', 799.5],
+    ['a string', '800'],
+  ])('a floor that is %s is an error, never a free pass', (_label, floor) => {
+    // The exploit: floor undefined, custom amount 1.
+    expect('error' in validatePwycAmount(1, floor as number, 'usd')).toBe(true)
+    // …and with no custom amount it must not hand the bad floor on as the price.
+    expect('error' in validatePwycAmount(undefined, floor as number, 'usd')).toBe(true)
+  })
+
+  test.each<[string, unknown]>([
+    ['a float', 1500.5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['a numeric string', '1500'],
+    ['an object', {}],
+  ])('a custom amount that is %s is refused, not rounded or defaulted to the floor', (_label, amount) => {
+    expect('error' in validatePwycAmount(amount, 800, 'usd')).toBe(true)
+  })
+})
+
+// F11 — `customers.list({ email })` is an exact, case-sensitive match. Checkout
+// lowercases what it stores; a session email is whatever Auth0 holds.
+describe('by-email customer lookups are robust to case', () => {
+  function fakeStripe(customers: Array<{ id: string; email: string }>) {
+    const asked: string[] = []
+    const created: Array<{ email: string }> = []
+    const stripe = {
+      customers: {
+        list: async ({ email }: { email: string }) => {
+          asked.push(email)
+          return { data: customers.filter((c) => c.email === email) }
+        },
+        create: async (args: { email: string }) => {
+          created.push(args)
+          return { id: 'cus_new', ...args }
+        },
+      },
+      subscriptions: {
+        list: async ({ customer }: { customer: string }) => ({
+          data: customer === 'cus_lower' ? [{ id: 'sub_live', status: 'active' }] : [],
+        }),
+      },
+    } as unknown as Stripe
+    return { stripe, asked, created }
+  }
+
+  test('a mixed-case session email still finds the lowercase customer and its live sub', async () => {
+    const { stripe, asked } = fakeStripe([{ id: 'cus_lower', email: 'member@example.com' }])
+    const sub = await findLiveSubscription(stripe, 'Member@Example.com')
+    expect(sub?.id).toBe('sub_live')
+    expect(asked).toEqual(['member@example.com', 'Member@Example.com'])
+  })
+
+  test('an already-lowercase email costs one list call, not two', async () => {
+    const { stripe, asked } = fakeStripe([])
+    await findLiveSubscription(stripe, 'member@example.com')
+    expect(asked).toEqual(['member@example.com'])
+  })
+
+  test('a customer stored under both casings is returned once', async () => {
+    const { stripe } = fakeStripe([
+      { id: 'cus_lower', email: 'member@example.com' },
+      { id: 'cus_mixed', email: 'Member@Example.com' },
+    ])
+    const c = await findOrCreateSubscriber(stripe, {
+      email: 'Member@Example.com',
+      reuseExisting: true,
+    })
+    // Two distinct customers found → the clean one (no active sub) is picked.
+    expect(c.id).toBe('cus_mixed')
+  })
+
+  test('customers are created lowercase, and never looked up when the email is unproven', async () => {
+    const { stripe, asked, created } = fakeStripe([{ id: 'cus_lower', email: 'member@example.com' }])
+    const c = await findOrCreateSubscriber(stripe, {
+      email: ' Member@Example.com ',
+      reuseExisting: false,
+    })
+    expect(c.id).toBe('cus_new')
+    expect(created[0]!.email).toBe('member@example.com')
+    expect(asked).toEqual([])
   })
 })

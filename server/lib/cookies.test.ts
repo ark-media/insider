@@ -75,6 +75,21 @@ describe('setCheckoutCookies', () => {
     const cookies = res.getHeader!('Set-Cookie') as string[]
     expect(cookies.every((c) => !c.includes('Secure'))).toBe(true)
   })
+
+  test('always Secure on a deployment, even with APP_BASE_URL missing or mistyped', () => {
+    // A deployment is always HTTPS. Following APP_BASE_URL there meant one bad
+    // env var silently shipped the session cookie without Secure.
+    const envs: Array<Record<string, string>> = [
+      { VERCEL_ENV: 'production' },
+      { VERCEL_ENV: 'preview', APP_BASE_URL: 'http://ark-plus.xyz' },
+    ]
+    for (const env of envs) {
+      const res = makeRes()
+      setCheckoutCookies(res, 'jwt', env)
+      const cookies = res.getHeader!('Set-Cookie') as string[]
+      expect(cookies.every((c) => c.includes('Secure'))).toBe(true)
+    }
+  })
 })
 
 describe('clearCheckoutCookies', () => {

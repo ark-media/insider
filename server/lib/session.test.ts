@@ -10,6 +10,7 @@ import {
   getSessionEmail,
   getSessionProfile,
   requireAdmin,
+  resolveRequestIdentity,
   sessionName,
   signAuthTxnToken,
   signCheckoutToken,
@@ -113,7 +114,10 @@ describe('session token', () => {
       sub: 'auth0|abc',
     }
     const token = await signSessionToken(profile, SENV)
-    expect(await verifySessionToken(token, SENV)).toEqual(profile)
+    expect(await verifySessionToken(token, SENV)).toEqual({
+      ...profile,
+      loginAt: expect.any(Number),
+    })
   })
 
   test('defaults roles to [] and omits absent name/sub', async () => {
@@ -127,7 +131,39 @@ describe('session token', () => {
       // manufactured-name heuristic.
       nameSetByMember: false,
       sub: undefined,
+      loginAt: expect.any(Number),
     })
+  })
+
+  test('a link-minted session keeps its mark, and resolves at link assurance', async () => {
+    const token = await signSessionToken(
+      { email: 'l@x.com', roles: [], via: 'email_link' },
+      SENV,
+    )
+    expect((await verifySessionToken(token, SENV))?.via).toBe('email_link')
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect((await resolveRequestIdentity(req, SENV))?.assurance).toBe('link')
+  })
+
+  test('a signed-in session resolves at login assurance', async () => {
+    const token = await signSessionToken({ email: 'l@x.com', roles: [] }, SENV)
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect((await resolveRequestIdentity(req, SENV))?.assurance).toBe('login')
+  })
+
+  test('re-minting carries the original login time, and an old login expires however fresh the cookie', async () => {
+    // A profile save re-mints the cookie with a new 7-day expiry. Without the
+    // carried login time, a stolen cookie could be kept alive forever that way.
+    const thirtyOneDaysAgo = Math.floor(Date.now() / 1000) - 31 * 24 * 60 * 60
+    const stale = await signSessionToken(
+      { email: 'o@x.com', roles: [], loginAt: thirtyOneDaysAgo },
+      SENV,
+    )
+    expect(await verifySessionToken(stale, SENV)).toBeNull()
+
+    const recent = Math.floor(Date.now() / 1000) - 3 * 24 * 60 * 60
+    const live = await signSessionToken({ email: 'o@x.com', roles: [], loginAt: recent }, SENV)
+    expect((await verifySessionToken(live, SENV))?.loginAt).toBe(recent)
   })
 
   test('a member-typed name survives the round-trip and is greetable', async () => {
@@ -198,10 +234,19 @@ describe('auth txn token', () => {
 
 describe('requireAdmin', () => {
   test('passes for a session cookie carrying the admin role', async () => {
-    const token = await signSessionToken({ email: 'a@x.com', roles: ['admin'] }, SENV)
+    const token = await signSessionToken(
+      { email: 'a@x.com', roles: ['admin'], sub: 'auth0|a' },
+      SENV,
+    )
     const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
     const admin = await requireAdmin(req, SENV)
     expect(admin?.email).toBe('a@x.com')
+  })
+
+  test('rejects an admin claim with no subject — it cannot be re-checked against Auth0', async () => {
+    const token = await signSessionToken({ email: 'a@x.com', roles: ['admin'] }, SENV)
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect(await requireAdmin(req, SENV)).toBeNull()
   })
 
   test('rejects a session cookie without the admin role', async () => {

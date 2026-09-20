@@ -3,7 +3,7 @@
   "pathTemplate": "~/.humanlayer/workspaces/{{ TASKSLUG }}/{{ REPOBASENAME }}",
   "branchTemplate": "{{ TASKSLUG }}",
   "sourceRef": "HEAD",
-  "setupCommand": "bun install",
+  "setupCommand": "pnpm install --frozen-lockfile",
   "copyGlobs": [
     ".env",
     ".env.local",
