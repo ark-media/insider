@@ -17,6 +17,11 @@ const CARDS = [
     body: "Create and schedule the dismissible banner at the top of the site.",
   },
   {
+    to: "/admin/open-houses",
+    title: "Open Houses",
+    body: "Schedule the drop-in sessions advertised on the Fold page — dates, times, and each one's Zoom link.",
+  },
+  {
     to: "/admin/careers",
     title: "Careers",
     body: "Post and edit open positions. Each links out to its application (e.g. a TestGorilla assessment).",

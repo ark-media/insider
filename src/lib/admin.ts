@@ -15,6 +15,7 @@ import type {
 import type { NewsletterSlug } from "../data/newsletters";
 import type { ReminderConfig } from "../../shared/feed-reminder";
 import type { MigrationConfig } from "../../shared/feed-migration";
+import type { OpenHouseConfig } from "../../shared/open-house";
 import type { SupportSession } from "../../shared/support";
 import type {
   MemberDirectoryEntry,
@@ -25,6 +26,7 @@ import type {
 export type { Promo, BeehiivDraft, DiscussThread };
 export type { CancellationSummary, CancellationFilter };
 export type { ReminderConfig, MigrationConfig };
+export type { OpenHouseConfig };
 export type { SupportSession };
 export type { MemberDirectoryEntry, MemberDirectoryFilter, MemberDirectoryPage };
 
@@ -366,6 +368,32 @@ export async function saveMigrationConfig(
   });
   if (!res.ok) throw new Error(await errorMessage(res));
   return ((await res.json()) as { config: MigrationConfig }).config;
+}
+
+// --- Open Houses ---------------------------------------------------------
+
+// The whole schedule, past sessions included — the back office edits the full
+// list, unlike the public route which only serves what's still to come.
+export async function fetchOpenHouseConfig(): Promise<OpenHouseConfig> {
+  const res = await fetch("/api/admin/open-houses", {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { config: OpenHouseConfig }).config;
+}
+
+export async function saveOpenHouseConfig(
+  config: OpenHouseConfig,
+): Promise<OpenHouseConfig> {
+  const res = await fetch("/api/admin/open-houses", {
+    method: "PUT",
+    headers: await authHeaders({ "content-type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return ((await res.json()) as { config: OpenHouseConfig }).config;
 }
 
 // --- Member directory ----------------------------------------------------
