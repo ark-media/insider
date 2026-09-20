@@ -5,8 +5,6 @@ import { useShowDescriptions } from "../lib/useShowDescription";
 import { LinkCard } from "../components/ContentCard";
 import { formatPostDate, type NewsletterPost } from "../data/newsletters";
 import { listPostsPublic } from "../lib/beehiiv";
-import { fetchEventStrip, type EventStripItem } from "../lib/circle";
-import { formatEventStart, type ArkEvent } from "../data/events";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { ArkPlusMark } from "../components/ArkPlusMark";
@@ -92,13 +90,6 @@ function NewsletterVisual() {
   );
 }
 
-const FORMAT_LABEL: Record<ArkEvent["format"], string> = {
-  "audio-room": "Audio room",
-  "video-ama": "Video AMA",
-  "watch-party": "Watch party",
-  "in-person": "In person",
-};
-
 // A phone shell mirroring the app mockups on /fold — fixed dark colors so
 // it reads as a real screenshot in both themes. `bleed` top-anchors the device
 // in a capped window that fades out at the bottom, so it reads as "rising into
@@ -145,25 +136,14 @@ function PhoneStatusBar() {
 }
 
 // ---------------------------------------------------------------------------
-// Fold visual — the Fold app on a phone. Shows the next real
-// live/upcoming event as an in-app card, with an evergreen fallback.
+// Fold visual — the Fold app on a phone.
+//
+// Every string below is art, like the /fold hero mockup: hand-written, static,
+// and safe to reword for design reasons. Do not wire it to a live source. The
+// Fold is private and this is a public marketing page, so the website reads
+// nothing out of it.
 // ---------------------------------------------------------------------------
 function CommunityVisual() {
-  const [item, setItem] = useState<EventStripItem | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    void fetchEventStrip().then((items) => {
-      if (alive && items.length) setItem(items[0]);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const ev = item?.event;
-  const isLive = item?.status === "live";
-
   return (
     <PhoneFrame bleed>
       <div className="flex h-full flex-col text-white">
@@ -190,27 +170,21 @@ function CommunityVisual() {
           <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                {ev ? (ev.formatLabel ?? FORMAT_LABEL[ev.format]) : "Live room"}
+                Live room
               </span>
-              {isLive ? (
-                <span className="rounded-full bg-cyan px-2 py-[2px] text-[9px] font-bold uppercase tracking-wide text-navy">
-                  Live
-                </span>
-              ) : (
-                <span className="rounded-full border border-white/25 px-2 py-[2px] text-[9px] font-bold uppercase tracking-wide text-white/55">
-                  Upcoming
-                </span>
-              )}
+              <span className="rounded-full border border-white/25 px-2 py-[2px] text-[9px] font-bold uppercase tracking-wide text-white/55">
+                Upcoming
+              </span>
             </div>
             <div className="mt-2 line-clamp-2 text-[14px] font-bold leading-snug">
-              {ev ? ev.title : "Live Q&A with the hosts"}
+              Live Q&amp;A with the hosts
             </div>
             <div className="mt-2 flex items-center gap-1.5 text-[11px] text-white/60">
               <span className="inline-block h-[6px] w-[6px] shrink-0 rounded-full bg-cyan" />
-              {ev ? formatEventStart(ev.startsAt) : "This week"}
+              This week
             </div>
             <div className="mt-3 w-full rounded-full bg-cyan py-2 text-center text-[11px] font-bold text-navy">
-              {isLive ? "Join now" : "RSVP"}
+              RSVP
             </div>
           </div>
         </div>

@@ -1,245 +1,129 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { PageShell } from "../components/PageShell";
-import { ContentError } from "../components/ContentError";
-import {
-  fetchActivityDigest,
-  fetchCommunityFeed,
-  fetchEventStrip,
-  fetchShowcasePosts,
-  fetchSuggestedSpaces,
-  type ActivityDigest,
-  type CommunityFeedItem,
-  type EventStripItem,
-  type ShowcasePost,
-  type SuggestedSpace,
-} from "../lib/circle";
-import { isCircleMember, useSubscriberAuth } from "../lib/subscriberAuth";
-import { CommunityFeed } from "../components/community/CommunityFeed";
-import { LiveEventsStrip } from "../components/community/LiveEventsStrip";
-import { CommunityAppLinks } from "../components/CommunityAppLinks";
-import { FoldLogo } from "../components/FoldLogo";
+import { FoldLogo, ProductMarks } from "../components/FoldLogo";
+import { BookCover } from "../components/BookCover";
 import { CheckoutModal } from "../components/CheckoutModal";
+import { OutboundLink } from "../components/OutboundLink";
 import { PriceSkeleton } from "../components/PriceSkeleton";
 import { PlayGlyph } from "../components/PlayGlyph";
+import {
+  BillingPeriodToggle,
+  type Plan,
+} from "../components/BillingPeriodToggle";
+import { formatPickMonth, getCurrentPick } from "../data/bookClub";
+import { TIERS, type Tier } from "../data/pricingTiers";
 import { trackEvent } from "../lib/analytics";
-import { formatMinor, toMajor } from "../lib/currency";
-import { usePricing } from "../lib/usePricing";
+import { formatMinor, toMajor, type TierAmounts } from "../lib/currency";
+import {
+  fetchUpcomingOpenHouses,
+  type OpenHouseSession,
+} from "../lib/openHouses";
+import { annualSavingsPct, usePricing } from "../lib/usePricing";
+import { formatEventParts } from "../../shared/format-date";
 
 export const Route = createFileRoute("/fold")({
-  component: CommunityPage,
+  component: FoldPage,
 });
 
-function CommunityPage() {
-  const { state } = useSubscriberAuth();
-
-  // The Fold lives on the `circle` axis (Circle or Bundle) — NOT arkPlus.
-  // Members with Circle access get the personalized read-only feed; everyone
-  // else (including Ark+-only members) sees the marketing showcase + join CTA.
-  if (state.kind === "loading") return null;
-
-  const hasCommunity = isCircleMember(state);
-
-  return hasCommunity ? <SubscriberCommunity /> : <MarketingShowcase />;
-}
-
-/** Poll interval for live Fold data while the tab is visible. */
-const POLL_MS = 45_000;
-
 /**
- * Fetch the subscriber feed on load and re-poll ~every 45s while the tab is
- * visible (no websockets — see SPEC). Each poll re-derives live event status
- * against the current instant, so an event going live appears within ~45s.
+ * `/fold` is a marketing page for everyone — signed out, signed in, Ark+-only,
+ * or a paid-up Fold member. It renders the same thing for all of them.
+ *
+ * The website does not pull data out of the Fold, for a member's own eyes or
+ * anyone else's. The Fold is private, and this is a public marketing page.
+ *
+ * Two consequences worth keeping:
+ *   - There is NO auth gate here, so the page paints immediately instead of
+ *     holding a blank frame until the session resolves.
+ *   - Members already holding the Fold still see the join CTAs. Their way into
+ *     the app is /account/fold, which is the one surface that hands off to
+ *     Circle. Don't add a member branch here to "fix" that.
  */
-type CommunityData = {
-  events: EventStripItem[];
-  feed: CommunityFeedItem[];
-  digest: ActivityDigest | null;
-  spaces: SuggestedSpace[];
-};
-
-function useCommunityData() {
-  const [data, setData] = useState<CommunityData | null>(null);
-  const [status, setStatus] = useState<"loading" | "error" | "ready">(
-    "loading",
-  );
-  const [nonce, setNonce] = useState(0);
-
-  useEffect(() => {
-    let alive = true;
-
-    // Full load: everything. Used on mount and when the tab is refocused (the
-    // feed/spaces may have changed while it was hidden). Any fetch rejecting
-    // (Circle unreachable / errored) surfaces the error+retry card.
-    const load = async () => {
-      try {
-        const [events, feed, digest, spaces] = await Promise.all([
-          fetchEventStrip(),
-          fetchCommunityFeed(),
-          fetchActivityDigest(),
-          fetchSuggestedSpaces(),
-        ]);
-        if (!alive) return;
-        setData({ events, feed, digest, spaces });
-        setStatus("ready");
-      } catch {
-        if (alive) setStatus("error");
-      }
-    };
-
-    // The 45s poll only refreshes events — that's the sole surface whose live
-    // state changes minute-to-minute; re-fetching the feed/spaces every tick is
-    // wasted work. A failed poll surfaces the error so a section that dies
-    // mid-session doesn't keep showing stale data silently.
-    const loadEvents = async () => {
-      try {
-        const events = await fetchEventStrip();
-        if (alive) setData((prev) => (prev ? { ...prev, events } : prev));
-      } catch {
-        if (alive) setStatus("error");
-      }
-    };
-
-    void load();
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") void loadEvents();
-    }, POLL_MS);
-    // Catch up fully when the tab is refocused after being hidden.
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      alive = false;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [nonce]);
-
-  // Reset to loading here (in the handler, not the effect) so retry shows the
-  // loading state without the effect resetting on every tab refocus.
-  const retry = useCallback(() => {
-    setStatus("loading");
-    setData(null);
-    setNonce((n) => n + 1);
-  }, []);
-
-  return { data, status, retry };
+function FoldPage() {
+  return <MarketingShowcase />;
 }
 
-function SubscriberCommunity() {
-  const { data, status, retry } = useCommunityData();
-
-  return (
-    <PageShell
-      brand={<FoldLogo className="h-9 sm:h-11" />}
-      title="Real People, Real Conversations, Real Connection"
-      lede="What's live, what's happening, and what the Fold is talking about right now. Jump in — every conversation continues in the app."
-      aside={<CommunityAppLinks />}
-      heroClassName="fold-bg grain-overlay overflow-hidden"
-    >
-      {status === "error" ? (
-        <section>
-          <div className="page-gutter py-10">
-            <ContentError
-              message="We couldn't load your Fold feed. Refresh to try again."
-              onRetry={retry}
-            />
-          </div>
-        </section>
-      ) : (
-        <section>
-          <div className="page-gutter flex flex-col gap-10 py-10">
-            <div>
-              <h2 className="label text-cyan">Live &amp; upcoming</h2>
-              <div className="mt-6">
-                <LiveEventsStrip items={data?.events ?? null} />
-              </div>
-            </div>
-
-            <div>
-              <h2 className="label text-cyan">From the Fold</h2>
-              <div className="mt-6">
-                <CommunityFeed
-                  items={data?.feed ?? null}
-                  digest={data?.digest ?? null}
-                  spaces={data?.spaces ?? null}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-    </PageShell>
-  );
-}
 /* ---------------------------------------------------------------------------
-   Marketing showcase — the public /fold page, shown to anyone without Circle
-   access. It has one job: explain what the Fold is and sell a membership, so
-   every band ends within reach of a join CTA.
+   Marketing showcase — the public /fold page, shown to everyone. It has one
+   job: explain what the Fold is and sell a membership, so every band ends
+   within reach of a join CTA.
+
+   The order below is the argument, not a layout accident: what this is (hero)
+   → hear it in our own voice (video) → what's actually inside (three rooms) →
+   why the conversation is different (curation) → come and look before you buy
+   (open houses) → one more reason to want in (book club) → join. Moving a band
+   reorders the pitch.
+
+   What is deliberately NOT here: real member posts. The Fold is private and
+   posts carry personal detail, so nothing from inside it is published on this
+   page.
 
    Prices are never hardcoded here: the Fold sells on the `circle` tier and the
    amounts come from Stripe via /api/pricing, same as the /plus card grid.
 --------------------------------------------------------------------------- */
 
-// The join card leads with a monthly price, so checkout opens on the monthly
-// plan. Annual lives on /plus, linked under the card.
-const MARKETING_PLAN = "monthly" as const;
+/**
+ * The two SKUs that grant the Fold. Ark+ alone does not, so it isn't offered on
+ * this page — someone who has read this far wants the Fold, and the only choice
+ * left is whether to take Ark+ along with it.
+ */
+type JoinTier = Extract<Tier, "circle" | "bundle">;
+const JOIN_TIERS: JoinTier[] = ["circle", "bundle"];
 
-// The hero headline runs to two full clauses, so it steps down from the default
-// text-h1 scale to keep the whole lockup — logo, headline, CTA — above the fold.
-const HERO_LINE = "text-[clamp(1.9rem,4vw,3rem)]";
+const TIER_META = new Map(TIERS.map((t) => [t.key, t] as const));
 
 function MarketingShowcase() {
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // One modal behind every CTA on the page; the tier and plan it opens on are
+  // whatever the clicked control asked for. CheckoutModal re-derives its own
+  // per-purchase state when `tier` changes, so reusing it is safe (see the note
+  // on `purchase` in that file).
+  const [checkout, setCheckout] = useState<{
+    open: boolean;
+    tier: JoinTier;
+    plan: Plan;
+  }>({ open: false, tier: "circle", plan: "monthly" });
 
   const pricing = usePricing();
   const data = pricing.status === "ready" ? pricing.data : null;
+  const tiers = data?.tiers ?? null;
   const currency = data?.currency ?? "usd";
   const factor = data?.factor ?? 100;
-  const foldMinor = data?.tiers.circle?.monthly[currency] ?? null;
-  const bundleMinor = data?.tiers.bundle?.monthly[currency] ?? null;
 
-  const openCheckout = useCallback(() => {
-    trackEvent("checkout_opened", {
-      plan: MARKETING_PLAN,
-      tier: "circle",
-      amount: foldMinor !== null ? toMajor(foldMinor, factor) : null,
-      is_custom_amount: false,
-    });
-    setCheckoutOpen(true);
-  }, [foldMinor, factor]);
+  const openCheckout = useCallback(
+    (tier: JoinTier, plan: Plan) => {
+      const minor = tiers?.[tier]?.[plan][currency] ?? null;
+      trackEvent("checkout_opened", {
+        plan,
+        tier,
+        amount: minor !== null ? toMajor(minor, factor) : null,
+        is_custom_amount: false,
+      });
+      setCheckout({ open: true, tier, plan });
+    },
+    [tiers, currency, factor],
+  );
+
+  // The hero and the mid-page CTA both sell the Fold on its own, monthly — the
+  // tier this page is about, at its smallest commitment. The choice between
+  // tiers and terms belongs at the bottom, where the reader has the case for it.
+  const joinFoldMonthly = useCallback(
+    () => openCheckout("circle", "monthly"),
+    [openCheckout],
+  );
 
   return (
     <>
       <PageShell
-        brand={
-          <div>
-            <FoldLogo className="h-9 sm:h-11" />
-            <p className="mt-7 label text-fg-muted">
-              Ark Media curates. The members make it valuable.
-            </p>
-          </div>
-        }
-        title={
-          <>
-            <span className={`${HERO_LINE} block`}>
-              A private community defined by{" "}
-              <span className="display text-cyan">a shared curiosity</span>{" "}
-              about the Jewish experience
-            </span>
-            <span className={`${HERO_LINE} mt-3 block`}>
-              <span className="display text-cyan">
-                and by great conversations with
-              </span>{" "}
-              people you haven't met yet…
-            </span>
-          </>
-        }
+        brand={<FoldLogo className="h-9 sm:h-11" />}
+        title="Ark Media curates. The members make it valuable."
+        lede="A private community defined by a shared curiosity about the Jewish experience."
         actions={
-          <button type="button" onClick={openCheckout} className={JOIN_PRIMARY}>
+          <button
+            type="button"
+            onClick={joinFoldMonthly}
+            className={JOIN_PRIMARY}
+          >
             Join the Fold
           </button>
         }
@@ -254,16 +138,15 @@ function MarketingShowcase() {
         }
         heroClassName="fold-bg grain-overlay overflow-hidden"
       >
-        <WhatToPack />
         <InviteVideo />
-        <InsideTheApp />
-        <ThreeRooms onJoin={openCheckout} />
+        <ThreeRooms onJoin={joinFoldMonthly} />
         <WhyDifferent />
         <StatementBand />
+        <OpenHouses />
+        <BookClubBand />
         <JoinCta
           status={pricing.status}
-          foldMinor={foldMinor}
-          bundleMinor={bundleMinor}
+          tiers={tiers}
           currency={currency}
           factor={factor}
           onJoin={openCheckout}
@@ -271,10 +154,10 @@ function MarketingShowcase() {
       </PageShell>
 
       <CheckoutModal
-        open={checkoutOpen}
-        plan={MARKETING_PLAN}
-        tier="circle"
-        onClose={() => setCheckoutOpen(false)}
+        open={checkout.open}
+        plan={checkout.plan}
+        tier={checkout.tier}
+        onClose={() => setCheckout((c) => ({ ...c, open: false }))}
       />
     </>
   );
@@ -294,36 +177,8 @@ const JOIN_PRIMARY = `${JOIN_BASE} border border-cyan bg-cyan text-navy hover:bg
 
 const JOIN_SECONDARY = `${JOIN_BASE} border border-cyan text-cyan hover:bg-cyan hover:text-navy`;
 
-/* --- Before you arrive ---------------------------------------------------- */
-
-const PACKING_LIST = [
-  "Encounter people whose experiences and perspectives are different from your own.",
-  "Stay with important conversations long enough for them to deepen.",
-  "Get to know the people behind the ideas.",
-  "Bring your questions and convictions.",
-];
-
-function WhatToPack() {
-  return (
-    <section>
-      <div className="page-gutter grid gap-10 py-14 sm:py-20 lg:grid-cols-12 lg:gap-16">
-        <div className="lg:col-span-5">
-          <div className="label text-cyan">Before you arrive</div>
-          <h2 className="mt-6 display-upright text-[clamp(2rem,4vw,3.2rem)] text-fg-strong">
-            What to pack?
-          </h2>
-        </div>
-        <ul className="border-b border-rule lg:col-span-7">
-          {PACKING_LIST.map((item) => (
-            <li key={item} className="border-t border-rule py-6 text-body-lg">
-              {item}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
+/** The scale the page's section headings share, so they read as one rank. */
+const SECTION_HEADING = "display-upright text-[clamp(2rem,4.4vw,3.2rem)] text-fg-strong";
 
 /* --- You are invited ------------------------------------------------------ */
 
@@ -331,9 +186,7 @@ function InviteVideo() {
   return (
     <section>
       <div className="page-gutter py-14 sm:py-20">
-        <h2 className="display-upright text-center text-[clamp(2rem,4.4vw,3.2rem)] text-fg-strong">
-          You are invited.
-        </h2>
+        <h2 className={`text-center ${SECTION_HEADING}`}>You are invited.</h2>
         {/* Placeholder frame until the captioned welcome video is supplied —
             swap the inner block for the <video> and drop the caption. */}
         <div className="mx-auto mt-10 flex aspect-video max-w-4xl flex-col items-center justify-center gap-5 border border-rule bg-navy-800/40">
@@ -351,139 +204,6 @@ function InviteVideo() {
         </div>
       </div>
     </section>
-  );
-}
-
-/* --- You might do inside the Fold app -------------------------------------
-   Real posts, pulled live from the three conversational rooms in Circle via
-   /api/circle/showcase. The grid used to be six hand-written samples.
-
-   The "placeholders" caption below is deliberate and stays, even though the
-   names and avatars under it are now real members. Hannah's call. Don't
-   "correct" it to match the data — if it changes, it changes because the copy
-   owner changed it.
-
-   The cards deliberately do NOT link through to Circle. A visitor reading this
-   section is not a member yet, so a click would land them on Circle's own
-   login wall rather than our checkout — the Join CTAs are the way in.
--------------------------------------------------------------------------- */
-
-function InsideTheApp() {
-  const [posts, setPosts] = useState<ShowcasePost[] | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    // fetchShowcasePosts never rejects — an outage arrives as an empty array.
-    void fetchShowcasePosts().then((p) => {
-      if (alive) setPosts(p);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Nothing real to show (still loading, Circle unreachable, or every room
-  // genuinely empty) → no section at all. An empty grid under "You might do"
-  // sells the community worse than silence does.
-  if (!posts || posts.length === 0) return null;
-
-  return (
-    <section>
-      <div className="page-gutter py-14 sm:py-20">
-        <h2 className="display-upright max-w-3xl text-[clamp(2rem,4.4vw,3.2rem)]">
-          <span className="block text-fg-strong">You might do</span>
-          <span className="mt-2 block text-cyan">inside the Fold app:</span>
-        </h2>
-        <p className="meta mt-6">Member names and avatars are placeholders</p>
-
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {posts.map((post) => (
-            <PostCard key={post.id} post={post} />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/**
- * The card's activity line. Replies are the signal worth leading with; likes
- * stand in when a post has none yet. A post with neither renders an empty
- * span, which keeps "Reply" pushed right by the row's justify-between.
- */
-function activityLabel(post: ShowcasePost): string {
-  if (post.replyCount > 0) {
-    return post.replyCount === 1 ? "1 reply" : `${post.replyCount} replies`;
-  }
-  if (post.likeCount > 0) {
-    return post.likeCount === 1 ? "1 like" : `${post.likeCount} likes`;
-  }
-  return "";
-}
-
-function PostCard({ post }: { post: ShowcasePost }) {
-  return (
-    <article className="flex flex-col border border-rule bg-navy-800/40 p-6">
-      <div className="flex items-center gap-3">
-        <Avatar name={post.authorName} src={post.authorAvatarUrl} />
-        <div className="min-w-0">
-          <div className="text-h6">{post.authorName}</div>
-          {post.authorLocation ? (
-            <div className="text-body-sm">{post.authorLocation}</div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <RoomChip name={post.roomName} />
-      </div>
-
-      <p className="mt-4 grow text-body">{post.text}</p>
-
-      <div className="mt-6 flex items-center justify-between border-t border-rule pt-4 text-body-sm">
-        <span>{activityLabel(post)}</span>
-        {/* Illustrative app UI, not a control — the real Reply lives in the app. */}
-        <span>Reply</span>
-      </div>
-    </article>
-  );
-}
-
-/**
- * The member's Circle avatar, falling back to their initial. Circle serves
- * avatars from signed active_storage redirects, so a URL that has gone stale
- * drops back to the initial rather than leaving a broken image on the page.
- */
-function Avatar({ name, src }: { name: string; src?: string }) {
-  const [failed, setFailed] = useState(false);
-
-  return (
-    <span
-      aria-hidden="true"
-      className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy-600/80 text-sm font-bold text-fg-strong"
-    >
-      {src && !failed ? (
-        <img
-          src={src}
-          alt=""
-          loading="lazy"
-          className="size-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        name.trim().charAt(0).toUpperCase()
-      )}
-    </span>
-  );
-}
-
-// Rooms read as outlined cyan tags, labelled with the space's own Circle name
-// so renaming a room in Circle renames it here.
-function RoomChip({ name }: { name: string }) {
-  return (
-    <span className="shrink-0 border border-cyan/40 px-2.5 py-1 label text-cyan">
-      {name}
-    </span>
   );
 }
 
@@ -511,9 +231,15 @@ function ThreeRooms({ onJoin }: { onJoin: () => void }) {
   return (
     <section>
       <div className="page-gutter py-14 sm:py-20">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="label text-cyan">Three rooms, one community</h2>
-          <button type="button" onClick={onJoin} className={JOIN_SECONDARY}>
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between lg:gap-12">
+          <h2 className={`min-w-0 ${SECTION_HEADING}`}>
+            Three Rooms, One Community
+          </h2>
+          <button
+            type="button"
+            onClick={onJoin}
+            className={`${JOIN_SECONDARY} self-start lg:shrink-0`}
+          >
             Join the Fold
           </button>
         </div>
@@ -547,7 +273,7 @@ function WhyDifferent() {
       <div className="page-gutter grid gap-10 py-14 sm:py-20 lg:grid-cols-12 lg:gap-16">
         <div className="lg:col-span-6">
           <div className="label text-cyan">What makes the Fold different</div>
-          <h2 className="mt-6 max-w-md display-upright text-[clamp(2rem,4vw,3.2rem)] text-fg-strong">
+          <h2 className={`mt-6 max-w-md ${SECTION_HEADING}`}>
             Good conversation does not happen by accident.
           </h2>
         </div>
@@ -592,91 +318,293 @@ function StatementBand() {
   );
 }
 
+/* --- Upcoming Open Houses -------------------------------------------------
+   The only band on the page with a way in that isn't a purchase. Dates, times
+   and Zoom links are edited in /admin/open-houses (see shared/open-house.ts):
+   the schedule moves week to week and shifts hours to reach other time zones,
+   so it is data the team owns, not copy in this file.
+-------------------------------------------------------------------------- */
+
+function OpenHouses() {
+  const [sessions, setSessions] = useState<OpenHouseSession[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    // fetchUpcomingOpenHouses never rejects — an outage arrives as an empty list.
+    void fetchUpcomingOpenHouses().then((s) => {
+      if (alive) setSessions(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Nothing upcoming (still loading, the section switched off, or the schedule
+  // has simply run out) → no section at all. An invitation with no date to
+  // accept is worse than not extending one.
+  if (!sessions || sessions.length === 0) return null;
+
+  return (
+    <section>
+      <div className="page-gutter py-14 sm:py-20">
+        <div className="label text-cyan">Upcoming Open Houses</div>
+        <h2 className={`mt-6 max-w-3xl ${SECTION_HEADING}`}>
+          Curious about the Fold? Come see for yourself.
+        </h2>
+        <p className="mt-6 max-w-2xl text-body-lg">
+          Join us for an upcoming Open House to get a feel for the Fold before
+          you become a member. Meet some of the people behind the community, see
+          what's happening inside, and ask any questions you have.
+        </p>
+
+        <ul className="mt-10 grid gap-6 lg:grid-cols-3">
+          {sessions.map((session) => (
+            <OpenHouseCard key={session.id} session={session} />
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function OpenHouseCard({ session }: { session: OpenHouseSession }) {
+  // Rendered in the visitor's own timezone with the zone named, so a reader in
+  // Tel Aviv doesn't have to work out what "12:00 PM" was supposed to mean.
+  const when = formatEventParts(session.startsAt);
+  if (!when) return null;
+
+  return (
+    <li className="flex flex-col border border-rule bg-navy-800/40 p-7 sm:p-8">
+      <div className="display-upright text-[clamp(1.4rem,2.2vw,1.75rem)] text-fg-strong">
+        {when.date}
+      </div>
+      <div className="mt-3 label text-cyan">{when.time}</div>
+      {session.note ? (
+        <p className="mt-4 text-body">{session.note}</p>
+      ) : null}
+
+      <div className="mt-7 grow" />
+      {session.rsvpUrl ? (
+        <OutboundLink
+          href={session.rsvpUrl}
+          platform="zoom"
+          placement="fold_open_house"
+          context={session.id}
+          className={`${JOIN_SECONDARY} w-full`}
+        >
+          RSVP
+        </OutboundLink>
+      ) : (
+        // A date can be announced before the meeting exists. Saying so beats a
+        // button that goes nowhere — and beats withholding the date.
+        <p className="meta">RSVP link coming soon</p>
+      )}
+    </li>
+  );
+}
+
+/* --- Dan's Book Club -------------------------------------------------------
+   The current pick, pointing at /book-club for the note, the shelf, and the
+   buy link. Picks live in src/data/bookClub.ts, so this band follows whatever
+   is featured there with no edit here.
+-------------------------------------------------------------------------- */
+
+function BookClubBand() {
+  const pick = getCurrentPick();
+  if (!pick) return null;
+
+  return (
+    <section>
+      <div className="page-gutter grid items-center gap-10 py-14 sm:py-20 lg:grid-cols-12 lg:gap-16">
+        <div className="mx-auto w-full max-w-[220px] lg:col-span-3 lg:mx-0">
+          <BookCover book={pick} />
+        </div>
+
+        <div className="lg:col-span-9">
+          <div className="label text-cyan">Dan's Book Club</div>
+          <h2 className={`mt-6 ${SECTION_HEADING}`}>
+            {formatPickMonth(pick.month)} Pick
+          </h2>
+          <p className="mt-6 display-upright text-[clamp(1.4rem,2.4vw,1.9rem)] text-fg-strong">
+            {pick.title}
+          </p>
+          <p className="mt-2 text-body-lg">{pick.author}</p>
+          <p className="mt-6 max-w-2xl text-body">
+            One book a month, picked by Dan and read alongside the Fold —
+            argued over in the rooms, not in a vacuum.
+          </p>
+          <Link to="/book-club" className={`${JOIN_SECONDARY} mt-8`}>
+            Learn more
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* --- Join the Fold --------------------------------------------------------- */
 
 function JoinCta({
   status,
-  foldMinor,
-  bundleMinor,
+  tiers,
   currency,
   factor,
   onJoin,
 }: {
   status: "loading" | "error" | "ready";
-  foldMinor: number | null;
-  bundleMinor: number | null;
+  tiers: Record<string, TierAmounts> | null;
   currency: string;
   factor: number;
-  onJoin: () => void;
+  onJoin: (tier: JoinTier, plan: Plan) => void;
 }) {
+  // Monthly by default, unlike /plus (which leads annual). This card sits at the
+  // end of a long read and the smaller number is the easier yes; the toggle is
+  // right there for anyone who'd rather commit for the year.
+  const [plan, setPlan] = useState<Plan>("monthly");
+
+  const changePlan = (p: Plan) => {
+    setPlan(p);
+    trackEvent("plan_selected", { plan: p });
+  };
+
   // A pricing outage must not take the join CTA down with it — checkout fetches
-  // its own prices, so the card drops the amounts and keeps the button.
+  // its own prices, so the cards drop the amounts and keep the buttons.
   const priced = status !== "error";
+  const savingsPct = tiers?.bundle ? annualSavingsPct(tiers.bundle) : null;
 
   return (
     <section>
-      <div className="page-gutter py-14 text-center sm:py-20">
-        <div className="flex justify-center">
-          <FoldLogo className="h-10 sm:h-12" />
-        </div>
-        <h2 className="mt-8 display-upright text-[clamp(2rem,4.4vw,3.2rem)] text-fg-strong">
-          Join the Fold
-        </h2>
-        <p className="mx-auto mt-6 max-w-xl text-body-lg">
-          A private community from Ark Media, for people who take these
-          questions seriously.
-        </p>
-
-        <div className="mx-auto mt-12 max-w-2xl border border-rule bg-navy-800/40 p-7 text-left sm:p-9">
-          <div className="flex items-baseline justify-between gap-4">
-            <div className="label text-cyan">Membership</div>
-            {priced ? <div className="meta">Starting at</div> : null}
+      <div className="page-gutter py-14 sm:py-20">
+        <div className="text-center">
+          <div className="flex justify-center">
+            <FoldLogo className="h-10 sm:h-12" />
           </div>
-
+          <h2 className={`mt-8 ${SECTION_HEADING}`}>Join the Fold</h2>
+          <p className="mx-auto mt-6 max-w-xl text-body-lg">
+            A private community from Ark Media, for people who take these
+            questions seriously.
+          </p>
           {priced ? (
-            <>
-              <div className="mt-5 flex items-baseline gap-2 text-fg-strong">
-                <span className="display-upright text-[clamp(2.4rem,6vw,3.2rem)] leading-none">
-                  {foldMinor !== null ? (
-                    formatMinor(foldMinor, currency, factor)
-                  ) : (
-                    <PriceSkeleton className="h-[0.7em] w-28" />
-                  )}
-                </span>
-                <span className="text-body-sm">/ month</span>
-              </div>
-
-              <div className="mt-6 border-t border-rule pt-6 text-body">
-                {bundleMinor !== null ? (
-                  <>
-                    <span className="font-bold text-fg-strong">
-                      {formatMinor(bundleMinor, currency, factor)} / month
-                    </span>{" "}
-                    when you bundle it with Ark+
-                  </>
-                ) : (
-                  <PriceSkeleton className="h-4 w-56" />
-                )}
-              </div>
-            </>
+            <div className="mt-10 flex justify-center">
+              <BillingPeriodToggle
+                plan={plan}
+                onChange={changePlan}
+                savingsPct={savingsPct}
+              />
+            </div>
           ) : null}
+        </div>
 
-          <button
-            type="button"
-            onClick={onJoin}
-            className={`${JOIN_PRIMARY} mt-8 w-full`}
-          >
-            Join the Fold
-          </button>
+        <div className="mx-auto mt-10 grid max-w-3xl gap-6 sm:grid-cols-2">
+          {JOIN_TIERS.map((tier) => (
+            <JoinCard
+              key={tier}
+              tier={tier}
+              plan={plan}
+              priced={priced}
+              amounts={tiers?.[tier] ?? null}
+              currency={currency}
+              factor={factor}
+              onJoin={onJoin}
+            />
+          ))}
+        </div>
 
-          <div className="mt-5 text-center">
-            <Link to="/plus" className="episode-action hover:underline">
-              See all membership options
-            </Link>
-          </div>
+        <div className="mt-8 text-center">
+          <Link to="/plus" className="episode-action hover:underline">
+            See all membership options
+          </Link>
         </div>
       </div>
     </section>
+  );
+}
+
+// The button copy names what the buyer ends up with, rather than the generic
+// "Subscribe monthly" the /plus grid uses — on this page the Fold is assumed
+// and the bundle is the upgrade.
+const JOIN_CARD_CTA: Record<JoinTier, string> = {
+  circle: "Join the Fold",
+  bundle: "Join with Ark+",
+};
+
+function JoinCard({
+  tier,
+  plan,
+  priced,
+  amounts,
+  currency,
+  factor,
+  onJoin,
+}: {
+  tier: JoinTier;
+  plan: Plan;
+  priced: boolean;
+  amounts: TierAmounts | null;
+  currency: string;
+  factor: number;
+  onJoin: (tier: JoinTier, plan: Plan) => void;
+}) {
+  const meta = TIER_META.get(tier);
+  if (!meta) return null;
+
+  // A floor, not a fixed price: members choose their amount at checkout, so the
+  // card leads with "From" exactly as the /plus grid does.
+  const minor = amounts?.[plan][currency] ?? null;
+  const featured = tier === "bundle";
+
+  return (
+    <div
+      className={`relative flex flex-col p-7 sm:p-8 ${
+        featured
+          ? "border-2 border-cyan bg-navy-800/60"
+          : "border border-rule bg-navy-800/40"
+      }`}
+    >
+      {featured ? (
+        <span className="absolute -top-px left-1/2 -translate-x-1/2 -translate-y-1/2 bg-cyan px-3 py-1 button-text font-display font-bold text-navy">
+          Best value
+        </span>
+      ) : null}
+
+      <div className="flex items-center gap-3">
+        <ProductMarks marks={meta.marks} />
+        <div className="text-h4 font-display font-bold text-fg-strong">
+          {meta.label}
+        </div>
+      </div>
+
+      {priced ? (
+        <div className="mt-5 border-t border-rule pt-5">
+          <div className="flex items-baseline gap-2 text-fg-strong">
+            <span className="text-body-sm">From</span>
+            <span className="display-upright text-[clamp(2rem,4.5vw,2.6rem)] leading-none">
+              {minor !== null ? (
+                formatMinor(minor, currency, factor)
+              ) : (
+                <PriceSkeleton className="h-[0.7em] w-20" />
+              )}
+            </span>
+            <span className="text-body-sm">
+              / {plan === "yearly" ? "year" : "month"}
+            </span>
+          </div>
+          <div className="mt-2 text-body-sm">
+            {plan === "yearly" ? "Billed annually" : "Billed monthly"}
+          </div>
+        </div>
+      ) : null}
+
+      <p className="mt-5 grow text-body-sm text-fg">{meta.blurb}</p>
+
+      <button
+        type="button"
+        onClick={() => onJoin(tier, plan)}
+        className={`mt-7 w-full ${featured ? JOIN_PRIMARY : JOIN_SECONDARY}`}
+      >
+        {JOIN_CARD_CTA[tier]}
+      </button>
+    </div>
   );
 }
 

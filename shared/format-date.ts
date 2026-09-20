@@ -222,3 +222,60 @@ export function calendarDaysUntilInZone(
   const b = Date.UTC(from.year, from.month - 1, from.day)
   return Math.round((a - b) / 86_400_000)
 }
+
+// Scheduled events are formatted as two pieces rather than one string, because
+// every surface that shows one wants to lay the date and the time out
+// separately — the date reads as the heading, the time as the detail under it.
+const eventFormatters = new Map<
+  string,
+  { date: Intl.DateTimeFormat; time: Intl.DateTimeFormat }
+>()
+
+/**
+ * An instant someone has to show up for, split into its two halves and rendered
+ * in `timeZone` (the viewer's own when omitted):
+ *
+ *   { date: "Wednesday, October 14", time: "12:00 PM EDT" }
+ *
+ * Weekday first, because that is how people actually hold a date in their head,
+ * and the zone spelled out, because a bare clock time is silently wrong for
+ * every reader who doesn't share it. No year: these are near-term invitations,
+ * and a year on the card only adds noise.
+ *
+ * The zone uses the specific 'EDT'/'EST' form rather than the DST-stable 'ET'
+ * that `formatTimestampInZone` appends — a clock time is being stated here, so
+ * the reader needs the offset that actually applies on that day.
+ *
+ * Returns null for a missing or unparseable value, so callers can drop the row.
+ */
+export function formatEventParts(
+  iso: string | null | undefined,
+  timeZone?: string,
+): { date: string; time: string } | null {
+  const ms = iso ? Date.parse(iso) : NaN
+  if (Number.isNaN(ms)) return null
+
+  const key = timeZone ?? ''
+  let f = eventFormatters.get(key)
+  if (!f) {
+    const zone = timeZone ? { timeZone } : {}
+    f = {
+      date: new Intl.DateTimeFormat(LOCALE, {
+        ...zone,
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      }),
+      // Safe to combine with timeZoneName: ICU only joins them with " at " when
+      // date components are present too, which is why this is its own formatter.
+      time: new Intl.DateTimeFormat(LOCALE, {
+        ...zone,
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      }),
+    }
+    eventFormatters.set(key, f)
+  }
+  return { date: f.date.format(ms), time: f.time.format(ms) }
+}

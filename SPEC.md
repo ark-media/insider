@@ -1,6 +1,18 @@
 # SPEC — The Fold's web feed for Ark+ subscribers
 
-Status: Draft for approval
+> **NOT IMPLEMENTED — this document does not describe the shipped product.**
+>
+> `/fold` is a marketing page for everyone: signed out, signed in, Ark+-only and
+> paid-up Fold members all see the same thing, and the page makes no Circle
+> reads. The member hand-off into the Circle app is **`/account/fold`**.
+>
+> The Fold is private and `/fold` is public, so the website reads nothing out of
+> the community — no member feed, no member posts.
+>
+> Kept for the Circle API research in it, which is still accurate. The `FoldPage`
+> comment in `src/routes/fold.tsx` is the reference for what the route does.
+
+Status: Not implemented
 Scope: The `/fold` route (`src/routes/fold.tsx`) and its Circle data layer
 (`src/lib/circle.ts`). Decided via product interview; see "Decisions" below.
 

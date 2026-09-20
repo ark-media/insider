@@ -38,6 +38,7 @@ import { Route as AdminDiscussThreadsRouteImport } from './routes/admin/discuss-
 import { Route as AdminFaqsRouteImport } from './routes/admin/faqs'
 import { Route as AdminFeedRemindersRouteImport } from './routes/admin/feed-reminders'
 import { Route as AdminMembersRouteImport } from './routes/admin/members'
+import { Route as AdminOpenHousesRouteImport } from './routes/admin/open-houses'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
 import { Route as AdminSupportRouteImport } from './routes/admin/support'
 import { Route as CareersIndexRouteImport } from './routes/careers/index'
@@ -205,6 +206,11 @@ const AdminMembersRoute = AdminMembersRouteImport.update({
   path: '/admin/members',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminOpenHousesRoute = AdminOpenHousesRouteImport.update({
+  id: '/admin/open-houses',
+  path: '/admin/open-houses',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminPromosRoute = AdminPromosRouteImport.update({
   id: '/admin/promos',
   path: '/admin/promos',
@@ -339,6 +345,7 @@ export interface FileRoutesByFullPath {
   '/admin/faqs': typeof AdminFaqsRoute
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
   '/admin/members': typeof AdminMembersRoute
+  '/admin/open-houses': typeof AdminOpenHousesRoute
   '/admin/promos': typeof AdminPromosRoute
   '/admin/support': typeof AdminSupportRoute
   '/careers/$slug': typeof CareersSlugRoute
@@ -390,6 +397,7 @@ export interface FileRoutesByTo {
   '/admin/faqs': typeof AdminFaqsRoute
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
   '/admin/members': typeof AdminMembersRoute
+  '/admin/open-houses': typeof AdminOpenHousesRoute
   '/admin/promos': typeof AdminPromosRoute
   '/admin/support': typeof AdminSupportRoute
   '/careers/$slug': typeof CareersSlugRoute
@@ -443,6 +451,7 @@ export interface FileRoutesById {
   '/admin/faqs': typeof AdminFaqsRoute
   '/admin/feed-reminders': typeof AdminFeedRemindersRoute
   '/admin/members': typeof AdminMembersRoute
+  '/admin/open-houses': typeof AdminOpenHousesRoute
   '/admin/promos': typeof AdminPromosRoute
   '/admin/support': typeof AdminSupportRoute
   '/careers/$slug': typeof CareersSlugRoute
@@ -497,6 +506,7 @@ export interface FileRouteTypes {
     | '/admin/faqs'
     | '/admin/feed-reminders'
     | '/admin/members'
+    | '/admin/open-houses'
     | '/admin/promos'
     | '/admin/support'
     | '/careers/$slug'
@@ -548,6 +558,7 @@ export interface FileRouteTypes {
     | '/admin/faqs'
     | '/admin/feed-reminders'
     | '/admin/members'
+    | '/admin/open-houses'
     | '/admin/promos'
     | '/admin/support'
     | '/careers/$slug'
@@ -600,6 +611,7 @@ export interface FileRouteTypes {
     | '/admin/faqs'
     | '/admin/feed-reminders'
     | '/admin/members'
+    | '/admin/open-houses'
     | '/admin/promos'
     | '/admin/support'
     | '/careers/$slug'
@@ -649,6 +661,7 @@ export interface RootRouteChildren {
   AdminFaqsRoute: typeof AdminFaqsRoute
   AdminFeedRemindersRoute: typeof AdminFeedRemindersRoute
   AdminMembersRoute: typeof AdminMembersRoute
+  AdminOpenHousesRoute: typeof AdminOpenHousesRoute
   AdminPromosRoute: typeof AdminPromosRoute
   AdminSupportRoute: typeof AdminSupportRoute
   CareersSlugRoute: typeof CareersSlugRoute
@@ -878,6 +891,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminMembersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/open-houses': {
+      id: '/admin/open-houses'
+      path: '/admin/open-houses'
+      fullPath: '/admin/open-houses'
+      preLoaderRoute: typeof AdminOpenHousesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/promos': {
       id: '/admin/promos'
       path: '/admin/promos'
@@ -1083,6 +1103,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminFaqsRoute: AdminFaqsRoute,
   AdminFeedRemindersRoute: AdminFeedRemindersRoute,
   AdminMembersRoute: AdminMembersRoute,
+  AdminOpenHousesRoute: AdminOpenHousesRoute,
   AdminPromosRoute: AdminPromosRoute,
   AdminSupportRoute: AdminSupportRoute,
   CareersSlugRoute: CareersSlugRoute,

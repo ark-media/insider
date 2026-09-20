@@ -6,6 +6,7 @@ type Tab =
   | "home"
   | "members"
   | "announcements"
+  | "open-houses"
   | "careers"
   | "faqs"
   | "promos"
@@ -18,6 +19,7 @@ const TABS: { id: Tab; label: string; to: string }[] = [
   { id: "home", label: "Overview", to: "/admin" },
   { id: "members", label: "Members", to: "/admin/members" },
   { id: "announcements", label: "Announcements", to: "/admin/announcements" },
+  { id: "open-houses", label: "Open Houses", to: "/admin/open-houses" },
   { id: "careers", label: "Careers", to: "/admin/careers" },
   { id: "faqs", label: "FAQs", to: "/admin/faqs" },
   { id: "promos", label: "Promo codes", to: "/admin/promos" },

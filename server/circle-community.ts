@@ -1,10 +1,7 @@
-// Circle Admin API v2 → /fold subscriber-feed projections.
+// Circle Admin API v2 projections for events, space posts, and spaces.
 //
-// Parallels circle-broadcasts.ts / circle-space-posts.ts, but feeds the
-// signed-in Ark+ subscriber view on /fold rather than the newsletter
-// pages. Three surfaces, three projections, all returning the v1→v2-stable
-// client shapes so the data source can swap (admin reads now → per-member
-// reads later) without touching the UI:
+// Three surfaces, three projections, all returning stable client shapes so the
+// data source can swap without touching the UI:
 //
 //   events      → ArkEvent[]            (live/upcoming strip)
 //   space posts → CommunityFeedItem[]   (curated highlights feed)
@@ -13,8 +10,7 @@
 // Deep links point straight at the member-facing Circle URL. Circle owns auth:
 // it's configured for SSO against our Auth0 tenant (the `/oauth2/initiate` →
 // `auth.ark-plus.xyz` chain), so an unauthenticated click is bounced through
-// Auth0 and lands on the destination. (The old `/circle-sso` JWT bridge pointed
-// at a non-existent Circle `/sso` endpoint and 404'd — removed.)
+// Auth0 and lands on the destination.
 
 import { stripHtml } from './show-notes.js'
 import { toIsoDate } from './lib/dates.js'
@@ -104,7 +100,7 @@ export type CircleFeedPost = {
   url?: string
 }
 
-export function extractBodyHtml(body: CircleFeedPost['body']): string {
+function extractBodyHtml(body: CircleFeedPost['body']): string {
   if (!body) return ''
   if (typeof body === 'string') return body
   if (typeof body.body === 'string') return body.body
