@@ -5,10 +5,14 @@
  *
  * Beehiiv documents `redirect_path` as "where the subscriber should land after
  * completing the Spotify OAuth flow — this can point back to your own site".
- * It does not: as of 2026-09-14 it is a path on the publication's own beehiiv
- * domain, and anything that could leave that host is collapsed to "/", which is
- * why members finished the flow on `arkmedia.beehiiv.com/?connected=spotify`
+ * Until 2026-09-14 it did not: it was a path on the publication's own beehiiv
+ * domain, and anything that could leave that host was collapsed to "/", which
+ * is why members finished the flow on `arkmedia.beehiiv.com/?connected=spotify`
  * instead of back on /account/podcast-feed.
+ *
+ * Re-measured 2026-09-20: HTTPS absolute URLs now survive verbatim, so the
+ * setup page is a same-tab round trip. HTTP and protocol-relative URLs still
+ * collapse to "/". This probe is the regression check.
  *
  * You cannot see that by reading the response: `/authorize` 302s to Spotify
  * with the value sealed inside an encrypted `state` blob. But the ciphertext
@@ -19,13 +23,11 @@
  *   (omitted)             0   baseline
  *   /x                    2   verbatim
  *   /a/b?c=d             36   verbatim, query and #fragment survive
- *   https://…  (246ch)    1   collapsed to "/"
+ *   https://…  (246ch)  246   verbatim (was 1 — collapsed to "/" — before 2026-09-20)
  *
- * Re-run this before believing any claim that it's fixed. If the absolute-URL
- * rows start reporting their full length, Beehiiv now honours it and the
- * `?spotify=linked` return path in FeedSetup starts working on its own — the
- * hand-off can go back to the same tab, and the "follow the show" panel can key
- * off the real return instead of the click.
+ * Re-run this before believing any claim that it's broken or fixed again. If
+ * the absolute-URL rows shrink to 1 character, Beehiiv has regressed and the
+ * FeedSetup hand-off has to go back to a new tab.
  *
  * Reads BEEHIIV_API_KEY / BEEHIIV_PUBLICATION_ID_ARK_DAILY /
  * BEEHIIV_SUBSCRIBER_HOST from .env.local (bun loads it). Mints a real 30-minute
@@ -118,6 +120,6 @@ for (const value of cases) {
 
 console.log(
   honoursAbsolute
-    ? '\n✅ Absolute URLs now survive — Beehiiv can return members to us. Revisit the new-tab hand-off in FeedSetup.'
-    : '\n❌ Still path-only on the beehiiv domain. The hand-off must stay a new tab.',
+    ? '\n✅ Absolute URLs still survive — same-tab return in FeedSetup is safe.'
+    : '\n❌ Path-only on the beehiiv domain again. Revert the FeedSetup hand-off to a new tab.',
 )

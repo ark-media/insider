@@ -6,10 +6,10 @@
 //
 // Two behaviours, both of which broke in front of a member:
 //
-// 1. The Spotify hand-off leaves for Beehiiv and never comes back (Beehiiv's
-//    `redirect_path` can't leave its domain — see SPOTIFY_HANDOFF_PATH), so the
-//    link must open in a NEW tab and the "now follow the show" step must appear
-//    on this page once they've been sent off.
+// 1. The Spotify hand-off is a same-tab round trip back to
+//    `?spotify=linked`. The follow step keys off that marker, not the click —
+//    a background-tab return would be worse than useless, and claiming "linked"
+//    on click would congratulate a member who cancelled at Spotify.
 // 2. A member holds a feed per premium show, and four of them turned this page
 //    into an unreadable stack. Each show is a disclosure row: the checklist
 //    stays visible, one show is open, and finishing one moves to the next.
@@ -143,15 +143,17 @@ describe("FeedSetup — no feeds yet", () => {
 });
 
 describe("FeedSetup — Spotify", () => {
-  test("hands off in a new tab, so the member keeps this page", async () => {
+  test("hands off in this tab, so the return lands in front of the member", async () => {
     const container = await render(<FeedSetup feeds={[FEED]} />);
 
-    expect(spotifyCta(container).target).toBe("_blank");
+    // OutboundLink defaults to `_blank`; the hand-off has to override it.
+    expect(spotifyCta(container).target).toBe("_self");
   });
 
-  test("offers the follow step only once the member has been handed off", async () => {
+  test("marks every show on click, but does not claim Spotify is linked yet", async () => {
     const container = await render(<FeedSetup feeds={[FEED]} />);
     expect(followLink(container)).toBeNull();
+    expect(container.textContent).not.toContain("Spotify is linked");
 
     await act(async () => {
       spotifyCta(container).dispatchEvent(
@@ -159,16 +161,21 @@ describe("FeedSetup — Spotify", () => {
       );
     });
 
-    expect(followLink(container)).not.toBeNull();
-    // The click also checks every show off — one link covers the network.
+    // One link covers the network — check every show off even if the same-tab
+    // navigation later cancels the persist. The follow step waits for the
+    // return marker, because the member may still cancel at Spotify.
     expect(markedFeeds).toEqual([[FEED.id]]);
+    expect(followLink(container)).toBeNull();
+    expect(container.textContent).not.toContain("Spotify is linked");
+    expect(spotifyCta(container).textContent).toContain("Link Spotify");
   });
 
-  test("shows the follow step straight away when Beehiiv returns the marker", async () => {
+  test("shows the follow step when Beehiiv returns the marker", async () => {
     const container = await render(<FeedSetup feeds={[FEED]} spotifyLinked />);
 
     expect(followLink(container)).not.toBeNull();
     expect(container.textContent).toContain("Spotify is linked");
+    expect(spotifyCta(container).textContent).toContain("Link again");
   });
 });
 

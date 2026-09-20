@@ -15,16 +15,8 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 // Server route that mints Beehiiv's auto-login and 302s the member into
 // Beehiiv's Spotify consent flow. Open Access verifies the click originated on
-// Beehiiv, so there is no direct Spotify URL we can link.
-//
-// ⚠ The round trip does NOT come back to us, and can't be made to: Beehiiv's
-// `redirect_path` is a path on its OWN domain, and an absolute URL is collapsed
-// to "/", so the member ends on `https://<pub>.beehiiv.com/?connected=spotify`
-// (measured 2026-09-14 — see buildSpotifyHandoff for the proof).
-//
-// So this opens in a NEW TAB — the member keeps their place on this page, the
-// dead end is in a tab they can close, and the rest of the job (follow the
-// show) is finished here rather than on Beehiiv.
+// Beehiiv, so there is no direct Spotify URL we can link. The round trip ends
+// on /account/podcast-feed with `?spotify=linked` — see buildSpotifyHandoff.
 const SPOTIFY_HANDOFF_PATH = "/api/me/feeds/spotify";
 
 // The apps we can hand off to with one tap, in the order they're listed.
@@ -99,9 +91,10 @@ function useHandheld(): boolean {
  * the feed URL first so the empty box is one paste from done.
  *
  * Spotify stays first and set apart: it links the account rather than a device,
- * so it covers every show at once on whatever the member is holding. It's also
- * the one row with a second step — the hand-off opens in a new tab and doesn't
- * come back, so the row itself carries the "now follow the show" half.
+ * so it covers every show at once on whatever the member is holding. The
+ * hand-off leaves this tab for Beehiiv and Spotify, then Beehiiv sends them
+ * back with `?spotify=linked` — that's when the "now follow the show" half
+ * appears, keyed off the real return rather than the click.
  */
 export function FeedSetup({
   feeds,
@@ -117,10 +110,9 @@ export function FeedSetup({
    */
   provisioning?: boolean;
   /**
-   * The member came back from Beehiiv's Spotify consent flow carrying its
-   * marker. Beehiiv doesn't honour the return URL today (see
-   * SPOTIFY_HANDOFF_PATH), so this is the "if they ever fix it" path — the new
-   * tab keeps the flow working without it.
+   * The member came back from Beehiiv's Spotify consent flow carrying
+   * `?spotify=linked`. That's the only signal that Open Access actually
+   * finished — the click itself is not a confirmation.
    */
   spotifyLinked?: boolean;
 }) {
@@ -252,11 +244,11 @@ function SetupProgress({ feeds }: { feeds: UserFeed[] }) {
 // links an account rather than a device, so it needs no QR code and no
 // per-show repetition.
 //
-// It's also the only row whose job isn't done when the link is clicked. The
-// hand-off leaves for Beehiiv and then Spotify and never returns here (see
-// SPOTIFY_HANDOFF_PATH), so it opens in a new tab and this row keeps the thread
-// for the member: once they've been sent off, the panel below says what
-// finishes it and points them at the show to follow.
+// The hand-off is a same-tab round trip. Beehiiv now honours `redirect_path`
+// (see buildSpotifyHandoff), so the member comes back carrying
+// `?spotify=linked` and the panel below is the "now follow the show" half.
+// A return that landed in a background tab would be worse than useless —
+// OutboundLink defaults to `_blank`, so this has to override it.
 function SpotifyRow({
   linked,
   onLink,
@@ -265,13 +257,6 @@ function SpotifyRow({
   linked: boolean;
   onLink: () => void;
 }) {
-  // The member has been handed off in this session. Not a claim that Spotify
-  // is linked — they may still be mid-consent, or have backed out — which is
-  // why the panel's copy tells them what to finish rather than congratulating
-  // them. `linked` is the branch that can say it happened.
-  const [handedOff, setHandedOff] = useState(false);
-  const started = linked || handedOff;
-
   return (
     <div className="mt-10 border border-cyan/40 bg-cyan/[0.06]">
       <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:gap-6">
@@ -287,43 +272,36 @@ function SpotifyRow({
           href={SPOTIFY_HANDOFF_PATH}
           platform="spotify"
           placement="feed_setup"
-          // New tab: the hand-off dead-ends on Beehiiv, so the member keeps
-          // this page — and the follow step below — behind it.
-          target="_blank"
+          target="_self"
           rel="noreferrer"
-          onClick={() => {
-            setHandedOff(true);
-            onLink();
-          }}
+          onClick={onLink}
           className="inline-flex shrink-0 items-center justify-center gap-2 bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
         >
-          {started ? "Link again" : "Link Spotify"}
+          {linked ? "Link again" : "Link Spotify"}
           <span aria-hidden="true">→</span>
         </OutboundLink>
       </div>
-      {started ? <SpotifyFollowPanel linked={linked} /> : null}
+      {linked ? <SpotifyFollowPanel /> : null}
     </div>
   );
 }
 
-// The second half of the Spotify path, shown once the member has been sent off.
-// Linking puts the feed in their Spotify; following it is what makes new
-// episodes turn up on their own, and that is a step only they can take.
+// The second half of the Spotify path, shown once Beehiiv has sent the member
+// back. Linking puts the feed in their Spotify; following it is what makes
+// new episodes turn up on their own, and that is a step only they can take.
 //
 // It points at the library rather than at the show because a private feed has
 // no show page — Open Access materialises each member's own feed inside their
 // own account, and it never appears in Spotify's search (same reason the RSS
 // row below says to look in the library once it's added).
-function SpotifyFollowPanel({ linked }: { linked: boolean }) {
+function SpotifyFollowPanel() {
   return (
     <div
       role="status"
       className="border-t border-cyan/40 bg-navy-900/40 px-5 py-4"
     >
       <p className="text-body-sm text-fg-strong">
-        {linked
-          ? "Spotify is linked — your exclusive episodes are in Spotify now."
-          : "Spotify opened in a new tab. Approve the link there, then follow the show so new episodes come to you."}
+        Spotify is linked — your exclusive episodes are in Spotify now.
       </p>
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
         <OutboundLink

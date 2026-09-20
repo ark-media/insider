@@ -12,9 +12,9 @@
 // The Spotify hand-off exists because Open Access verifies that the click
 // originated on Beehiiv's own page: we cannot link a member straight at
 // Spotify. So we mint Beehiiv's auto-login server-side and 302 the member into
-// Beehiiv's `/oauth/spotify/authorize`, which runs the consent flow. It does
-// NOT send them back to us — see the note on the return URL below — so the
-// setup page opens this in a new tab.
+// Beehiiv's `/oauth/spotify/authorize`, which runs the consent flow and then
+// sends them back to `/account/podcast-feed?spotify=linked`. The setup page
+// opens this in the same tab so that return lands in front of them.
 //
 // Both are cookie-authenticated mutations of a sort, so both carry the
 // same-origin guard and a per-member budget.
@@ -175,12 +175,10 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         )
         if (!local) return json(409, { error: 'no_subscription' })
 
-        // Where we ASK Beehiiv to send the member once Spotify has been linked.
-        // It currently ignores this and dead-ends on its own publication root
-        // (see buildSpotifyHandoff) — which is why the setup page opens this
-        // route in a new tab and doesn't wait for the round trip. Kept as the
-        // better ending if Beehiiv starts honouring it; the `spotify` marker is
-        // what the page reads when it does.
+        // Where Beehiiv sends the member once Spotify has been linked. HTTPS
+        // absolute URLs survive in `redirect_path` (see buildSpotifyHandoff);
+        // the setup page is a same-tab hand-off and reads the `spotify` marker
+        // on the way back.
         const handoff = await buildSpotifyHandoff(
           env,
           local.beehiivSubscriptionId,

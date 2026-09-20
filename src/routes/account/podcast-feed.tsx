@@ -13,9 +13,8 @@ import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 // Bounded on purpose. Past the window the feeds are not "on their way" any
 // more, and saying so is better than a spinner that never resolves.
 //
-// Counted in ticks the member was actually here for, not wall time: the
-// Spotify hand-off opens in another tab, and a window that expired while this
-// one sat in the background would give up without ever having looked.
+// Counted in ticks the member was actually here for, not wall time: a tab
+// sitting in the background shouldn't burn through the window without looking.
 const FEED_POLL_INTERVAL_MS = 5_000;
 const FEED_POLL_TICKS = 24; // ~2 minutes of visible time
 
@@ -45,20 +44,19 @@ function PodcastsTab() {
 
   // Coming back from Beehiiv's Spotify consent flow.
   //
-  // This is now the unlikely path: Beehiiv ignores the return URL we pass and
-  // dead-ends on its own publication root, so the hand-off opens in a new tab
-  // and the setup page confirms from its own state instead. The marker is kept
-  // because it costs nothing and is the better ending if Beehiiv ever honours
-  // `redirect_path` — see SPOTIFY_HANDOFF_PATH in FeedSetup.
+  // Beehiiv honours the return URL we pass (see buildSpotifyHandoff), so this
+  // is the path that confirms the link — the CTA is a same-tab hand-off and
+  // the follow step keys off this marker, not the click.
   //
   // It deliberately stays in the URL rather than being read into state: the URL
   // is the one place that survives whatever the router and the auth refresh do
   // to this subtree, and it stays true on a reload.
   //
   // The Spotify CTA already marks the show set up on click, but redo it here
-  // too — this is the path that is guaranteed to run. Marking is idempotent (it
-  // only ever flips a feed that isn't already set up), which is what makes it
-  // safe to leave the marker in the URL.
+  // too — a same-tab navigation can cancel that request mid-flight, and this
+  // is the path that is guaranteed to run. Marking is idempotent (it only ever
+  // flips a feed that isn't already set up), which is what makes it safe to
+  // leave the marker in the URL.
   const spotifyLinked = spotify === "linked";
   const marked = useRef(false);
   useEffect(() => {
