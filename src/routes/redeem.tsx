@@ -7,6 +7,11 @@ import {
   type RedeemGiftResult,
 } from "../lib/gift";
 import { trackEvent } from "../lib/analytics";
+import {
+  clearLandingCredentials,
+  getLandingCredential,
+  stashUrlCredentials,
+} from "../lib/observability";
 
 // Where a recipient lands from the gift email's link. Two shapes:
 //   ?mt=…    — the single-email magic link. One click (POST /api/gift/claim)
@@ -64,21 +69,30 @@ const secondaryCta =
   "inline-flex min-h-12 items-center justify-center gap-2 border border-rule-strong px-6 py-3 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
 function RedeemPage() {
-  const { token, mt } = Route.useSearch();
+  const search = Route.useSearch();
 
   // `mt` is a bearer credential: it both logs the holder in and redeems the
-  // gift. Keep the value in state and drop it from the address bar on mount so
-  // it doesn't linger in browser history, get shoulder-surfed, or ride along in
-  // any later analytics pageview. (The initial pageview is covered separately by
-  // redactSensitiveQuery in lib/observability.) Captured once via the lazy
-  // initializer so clearing the URL can't blank it out.
-  const [magicToken] = useState(() => mt);
+  // gift — and `token` is the same thing one sign-in later. Neither should
+  // linger in browser history, get shoulder-surfed, or reach Sentry/PostHog.
+  //
+  // On the normal path (a fresh page load from the email link) main.tsx has
+  // ALREADY lifted both out of the URL, before the observability SDKs started,
+  // so the search params here are empty and the values come from the holder in
+  // lib/observability. The search params only carry them on an in-app
+  // navigation to /redeem; the effect below gives that case the same treatment.
+  // Captured once via lazy initializers so clearing the URL can't blank them.
+  //
+  // `token` additionally survives the sign-in round trip through
+  // sessionStorage (see stashUrlCredentials) — `returnTo` is built from the
+  // address bar, which no longer has it.
+  const [magicToken] = useState(() => search.mt ?? getLandingCredential("mt"));
+  const [token] = useState(
+    () => search.token ?? getLandingCredential("token"),
+  );
   useEffect(() => {
-    if (!mt) return;
-    const url = new URL(window.location.href);
-    url.searchParams.delete("mt");
-    window.history.replaceState(window.history.state, "", url.toString());
-  }, [mt]);
+    if (!search.mt && !search.token) return;
+    stashUrlCredentials();
+  }, [search.mt, search.token]);
 
   return (
     <main className="relative">
@@ -116,6 +130,8 @@ function MagicClaimBody({ mt }: { mt: string }) {
     setClaim({ kind: "claiming" });
     const result = await claimGiftWithMagicToken(mt);
     if (result.ok) {
+      // Spent — don't let it resurface the claim button on a later visit.
+      clearLandingCredentials();
       trackEvent("gift_redeemed", { applied: result.applied });
       // Pull the freshly-minted session so the app reflects the new access,
       // then drop into the new-account welcome flow.
@@ -129,7 +145,10 @@ function MagicClaimBody({ mt }: { mt: string }) {
       }
       return;
     }
-    setClaim({ kind: "error", ...messageForError(result.error) });
+    const failure = messageForError(result.error);
+    // A terminal failure (claimed / expired / unknown) is as spent as a success.
+    if (failure.terminal) clearLandingCredentials();
+    setClaim({ kind: "error", ...failure });
   };
 
   if (claim.kind === "error") {
@@ -184,11 +203,15 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
     setClaim({ kind: "claiming" });
     const result = await redeemGift(token);
     if (result.ok) {
+      // Spent — drop the copy kept in sessionStorage for the sign-in round trip.
+      clearLandingCredentials();
       trackEvent("gift_redeemed", { applied: result.applied });
       await refresh();
       setClaim({ kind: "done", result });
     } else {
-      setClaim({ kind: "error", ...messageForError(result.error) });
+      const failure = messageForError(result.error);
+      if (failure.terminal) clearLandingCredentials();
+      setClaim({ kind: "error", ...failure });
     }
   };
 

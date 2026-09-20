@@ -34,6 +34,7 @@ import { careerRoutes } from './routes/careers.js'
 import { circleRoutes } from './routes/circle.js'
 import { circleGateRoutes } from './routes/circle-gate.js'
 import { contactRoutes } from './routes/contact.js'
+import { cspReportRoutes } from './routes/csp-report.js'
 import { cronRoutes } from './routes/cron.js'
 import { winbackRoutes } from './routes/winback.js'
 import { discussThreadsRoutes } from './routes/discuss-threads.js'
@@ -83,6 +84,7 @@ export function buildApi(env: Env): Api {
     ...adminFeedReminderRoutes(deps),
     ...discussThreadsRoutes(deps),
     ...contactRoutes(deps),
+    ...cspReportRoutes(),
     ...supportRoutes(deps),
     ...cronRoutes(deps),
     ...winbackRoutes(deps),
