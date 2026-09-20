@@ -3,7 +3,7 @@
 // the URL to { gift: "complete" }. A full-tree render would drag in the root
 // route's auth providers, so we pin the gate itself — the parser that decides it.
 import { describe, expect, test } from "bun:test";
-import { Route } from "./index";
+import { homeHeroCta, Route } from "./index";
 
 const { validateSearch } = (
   Route as unknown as {
@@ -12,6 +12,19 @@ const { validateSearch } = (
     };
   }
 ).options;
+
+describe("homepage hero CTA", () => {
+  test("sends a subscriber to their account", () => {
+    expect(homeHeroCta(true)).toEqual({
+      to: "/account",
+      label: "Subscriber Benefits",
+    });
+  });
+
+  test("sends everyone else to subscribe", () => {
+    expect(homeHeroCta(false)).toEqual({ to: "/plus", label: "Subscribe" });
+  });
+});
 
 describe("homepage gift-confirmation search gate", () => {
   test("recognizes ?gift=complete", () => {
