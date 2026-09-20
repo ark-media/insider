@@ -30,9 +30,26 @@ import {
 // ---------------------------------------------------------------------------
 // neon mock — each test stages a ledger outcome via `ledgerMode`.
 // ---------------------------------------------------------------------------
-type LedgerMode = 'claim' | 'dedup' | 'throw'
+//   claim        the leased insert wins (new id, or a STALE 'processing' row
+//                re-claimed by the conflict arm — same one row back)
+//   dedup        conflict with a 'done' row → nothing back, status reads 'done'
+//   in_progress  conflict with a LIVE lease → nothing back, status 'processing'
+//   throw        the ledger is down
+//   no_migration / no_migration_dedup
+//                migration 0004 not applied: the leased statement raises 42703
+//                (undefined_column) and the handler falls back to the old
+//                single-state insert, which claims / dedups.
+type LedgerMode =
+  | 'claim'
+  | 'dedup'
+  | 'in_progress'
+  | 'throw'
+  | 'no_migration'
+  | 'no_migration_dedup'
 let ledgerMode: LedgerMode = 'claim'
 const sqlStatements: string[] = []
+const isLeasedInsert = (text: string) =>
+  text.includes('insert into stripe_webhook_events') && text.includes('claimed_at')
 
 mock.module('@neondatabase/serverless', () => ({
   neon: (_url: string) =>
@@ -43,9 +60,21 @@ mock.module('@neondatabase/serverless', () => ({
         if (ledgerMode === 'throw') {
           return Promise.reject(new Error('ledger DB down'))
         }
-        // 'claim' → one row back (we won the insert); 'dedup' → zero rows
-        // (on conflict do nothing, already processed).
+        if (ledgerMode === 'no_migration' || ledgerMode === 'no_migration_dedup') {
+          if (isLeasedInsert(text)) {
+            return Promise.reject(
+              Object.assign(new Error('column "status" of relation "stripe_webhook_events" does not exist'), {
+                code: '42703',
+              }),
+            )
+          }
+          return Promise.resolve(ledgerMode === 'no_migration' ? [{ id: 'evt_1' }] : [])
+        }
+        // 'claim' → one row back (we hold the lease); otherwise zero rows.
         return Promise.resolve(ledgerMode === 'claim' ? [{ id: 'evt_1' }] : [])
+      }
+      if (text.includes('select status from stripe_webhook_events')) {
+        return Promise.resolve([{ status: ledgerMode === 'in_progress' ? 'processing' : 'done' }])
       }
       return Promise.resolve([])
     }) as unknown,
@@ -159,5 +188,84 @@ describe('Stripe webhook idempotency ledger', () => {
     expect(res.statusCode).toBe(200)
     // Processed, NOT deduped — the claim never succeeded.
     expect(res.__json()).toEqual({ received: true })
+  })
+})
+
+// A claim is not a completion. It used to be released only in the handler's
+// catch, so a function that timed out or crashed mid-dispatch left it behind and
+// Stripe's retry was answered "already processed" — the event was lost.
+describe('Stripe webhook idempotency ledger — the claim is a lease', () => {
+  const statementsWith = (needle: string) => sqlStatements.filter((s) => s.includes(needle))
+
+  test('the claim is taken as processing, atomically re-claimable only when stale', async () => {
+    await dispatch(EVENT)
+    const claim = ledgerInserts()[0]!
+    expect(claim).toContain("'processing'")
+    // One statement: the conflict arm re-claims a 'processing' row past its
+    // lease and nothing else, so two concurrent deliveries can't both win.
+    expect(claim).toContain('on conflict (id) do update')
+    expect(claim).toContain("e.status = 'processing'")
+    expect(claim).toContain('e.claimed_at < now() - make_interval(secs =>')
+  })
+
+  test('a successful dispatch marks the claim done', async () => {
+    const res = await dispatch(EVENT)
+    expect(res.statusCode).toBe(200)
+    expect(statementsWith("set status = 'done'")).toHaveLength(1)
+    expect(statementsWith('delete from stripe_webhook_events')).toHaveLength(0)
+  })
+
+  test('a stale processing claim (a crashed delivery) is taken over and the event runs', async () => {
+    // The conflict arm hands the row back → this delivery holds the lease.
+    ledgerMode = 'claim'
+    const res = await dispatch(EVENT)
+    expect(res.__json()).toEqual({ received: true })
+  })
+
+  test('a LIVE lease is not acked — non-2xx, so Stripe comes back', async () => {
+    // Another delivery is mid-dispatch and may yet fail. A 200 here would be
+    // the last Stripe ever said about this event.
+    ledgerMode = 'in_progress'
+    const res = await dispatch(EVENT)
+    expect(res.statusCode).toBe(409)
+    expect(res.__json()).toEqual({ error: 'event_in_progress' })
+    expect(statementsWith("set status = 'done'")).toHaveLength(0)
+  })
+
+  test('a thrown dispatch still releases the claim, and is never marked done', async () => {
+    // A gift PaymentIntent with no recipient is the cheapest handler that throws.
+    const res = await dispatch({
+      id: 'evt_1',
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_1', metadata: { kind: 'gift' } } },
+    })
+    expect(res.statusCode).toBe(500)
+    expect(statementsWith('delete from stripe_webhook_events')).toHaveLength(1)
+    expect(statementsWith("set status = 'done'")).toHaveLength(0)
+  })
+})
+
+// Deploy-before-migrate has taken prod down before. The handler must run on a
+// ledger that doesn't have the new columns yet.
+describe('Stripe webhook idempotency ledger — migration 0004 not applied', () => {
+  test('falls back to the single-state claim and processes the event', async () => {
+    ledgerMode = 'no_migration'
+    const res = await dispatch(EVENT)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ received: true })
+    // Leased attempt, then the legacy insert.
+    expect(ledgerInserts()).toHaveLength(2)
+    expect(ledgerInserts()[1]).toContain('on conflict (id) do nothing')
+    // No `status` column to write.
+    expect(sqlStatements.some((s) => s.includes("set status = 'done'"))).toBe(false)
+  })
+
+  test('the fallback still dedups a replay', async () => {
+    ledgerMode = 'no_migration_dedup'
+    const res = await dispatch(EVENT)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ received: true, deduped: true })
+    // Never asks for a column that isn't there.
+    expect(sqlStatements.some((s) => s.includes('select status from'))).toBe(false)
   })
 })

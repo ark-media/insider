@@ -35,6 +35,13 @@ let productEntitlements: Record<string, string> = {}
 // Makes the schedule write throw, so a test can watch what the handler leaves
 // behind when the change fails halfway.
 let scheduleUpdateFails = false
+// What subscriptions.update throws, standing in for Stripe refusing an upgrade
+// whose immediate charge failed (payment_behavior: error_if_incomplete).
+let subscriptionUpdateError: unknown = null
+// The subscription's discounts with coupons expanded — what the route re-reads
+// (subscriptions.retrieve, expand discounts.source.coupon) to decide which
+// retention coupons survive the change.
+let expandedDiscounts: Array<Record<string, unknown>> = []
 let activeCoupons: Array<Record<string, unknown>> = []
 
 class FakeStripe {
@@ -54,7 +61,12 @@ class FakeStripe {
     },
     update: async (id: string, args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
+      if (subscriptionUpdateError) throw subscriptionUpdateError
       return { id }
+    },
+    retrieve: async (id: string, args?: Record<string, unknown>) => {
+      stripeCalls.push({ method: 'subscriptions.retrieve', args: [id, args] })
+      return { ...currentSub, discounts: expandedDiscounts }
     },
   }
   subscriptionSchedules = {
@@ -277,6 +289,8 @@ beforeEach(() => {
   schedulePhases = []
   productEntitlements = {}
   scheduleUpdateFails = false
+  subscriptionUpdateError = null
+  expandedDiscounts = []
   activeCoupons = []
   fetchCalls = []
   // The resolver's price cache is module-level and `bun test` shares one
@@ -565,4 +579,144 @@ describe('POST /api/stripe/change-tier — debundle notice', () => {
 
 afterAll(() => {
   globalThis.fetch = originalFetch
+})
+
+function lastSubUpdate(): Record<string, unknown> {
+  const call = [...stripeCalls].reverse().find((c) => c.method === 'subscriptions.update')
+  if (!call) throw new Error('no subscriptions.update call recorded')
+  return call.args[1] as Record<string, unknown>
+}
+
+// F7 — an upgrade that gains an entitlement is access granted now, so it is
+// charged now, and a failed charge leaves the subscription untouched.
+describe('POST /api/stripe/change-tier — upgrades are paid for up front', () => {
+  test('gaining an entitlement invoices immediately and refuses to apply unpaid', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    const update = lastSubUpdate()
+    // create_prorations only parked the difference on the NEXT invoice — up to
+    // a year out — so the Bundle could be taken on credit.
+    expect(update.proration_behavior).toBe('always_invoice')
+    expect(update.payment_behavior).toBe('error_if_incomplete')
+  })
+
+  test('a same-entitlement PWYC raise keeps the deferred proration', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1500 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    const update = lastSubUpdate()
+    expect(update.proration_behavior).toBe('create_prorations')
+    expect(update.payment_behavior).toBeUndefined()
+  })
+
+  test('a declined card is a clean 402, not a 502 — and nothing is recorded as changed', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    subscriptionUpdateError = Object.assign(new Error('Your card was declined.'), {
+      type: 'StripeCardError',
+      code: 'card_declined',
+      statusCode: 402,
+    })
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(402)
+    const body = res.__json() as Record<string, unknown>
+    expect(body.code).toBe('payment_failed')
+    expect(String(body.error)).toContain('declined')
+  })
+
+  test('any other Stripe failure is still a 502', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    subscriptionUpdateError = new Error('stripe is having a bad day')
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(502)
+  })
+})
+
+// F4 — a retention coupon is priced for one product at one cadence, and must
+// not ride a plan/tier change onto something else.
+describe('POST /api/stripe/change-tier — retention coupons do not survive a change they no longer fit', () => {
+  const discount = (id: string, metadata: Record<string, string>) => ({
+    id,
+    source: { type: 'coupon', coupon: { id: `coupon_${id}`, metadata } },
+  })
+  const SUPPORTER = discount('di_supporter', {
+    retention_offer: 'true',
+    offer_kind: 'supporter_coupon',
+    plan: 'monthly',
+  })
+  const CHECKOUT_PROMO = discount('di_promo', { auto_apply: 'true' })
+
+  function withDiscounts(list: Array<Record<string, unknown>>) {
+    expandedDiscounts = list
+    ;(currentSub as Record<string, unknown>).discounts = list.map((d) => d.id)
+  }
+
+  test('accept the monthly supporter rate → switch to annual: the coupon is dropped', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    withDiscounts([SUPPORTER])
+    const res = await post(
+      { tier: 'ark-plus', plan: 'yearly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().timing).toBe('immediate')
+    // Stripe clears a list param with '' — the only discount was the stale one.
+    expect(lastSubUpdate().discounts).toBe('')
+  })
+
+  test('accept the Ark+ supporter rate → upgrade to Bundle: dropped, other discounts kept', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    withDiscounts([SUPPORTER, CHECKOUT_PROMO])
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    // Kept by DISCOUNT id, so its original term is preserved, not restarted.
+    expect(lastSubUpdate().discounts).toEqual([{ discount: 'di_promo' }])
+  })
+
+  test('a coupon that still fits is left exactly as it is', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    withDiscounts([SUPPORTER])
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1500 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect('discounts' in lastSubUpdate()).toBe(false)
+  })
+
+  test('an undiscounted subscription costs no extra Stripe read', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    await post({ tier: 'bundle', plan: 'monthly' }, await sessionCookie('member@example.com'))
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.retrieve')).toBe(false)
+  })
+})
+
+// F6 — the current tier comes from the price product, never sub.metadata.tier.
+describe('POST /api/stripe/change-tier — tier authority', () => {
+  test('a live subscription that sells none of our tiers cannot be rewritten into one', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    productEntitlements = {} // the product carries no entitlements stamp
+    ;(currentSub as Record<string, unknown>).metadata = { tier: 'bundle' }
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
 })

@@ -44,10 +44,18 @@ class FakeStripe {
   subscriptions = {
     create: async () => ({}),
     update: async () => ({}),
-    retrieve: async () => ({}),
+    // The handlers act on the subscription's CURRENT state rather than the
+    // event snapshot; here the two agree, so hand back the event's own object.
+    retrieve: async () => (webhookEvent as { data: { object: unknown } }).data.object,
     list: async () => ({ data: [] }),
   }
   paymentIntents = { create: async () => ({}), retrieve: async () => ({}), update: async () => ({}) }
+  products = {
+    // The tier authority. Without it the subscription reads as "not one of
+    // ours" and the webhook ignores the event before reaching anything these
+    // tests are about.
+    retrieve: async (id: string) => ({ id, metadata: { entitlements: 'ark_plus' } }),
+  }
   prices = { create: async () => ({}) }
   checkout = { sessions: { create: async () => ({}), retrieve: async () => ({}) } }
 }
@@ -129,6 +137,7 @@ function makeSub(overrides: Record<string, unknown> = {}) {
     status: 'active',
     customer: { id: 'cus_1', email: 'sub@example.com' },
     metadata: { beehiiv_premium: 'true' },
+    items: { data: [{ price: { product: 'prod_arkplus', recurring: { interval: 'month' } } }] },
     cancel_at: null,
     cancel_at_period_end: false,
     ...overrides,

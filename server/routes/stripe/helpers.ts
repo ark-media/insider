@@ -1,5 +1,6 @@
 import type Stripe from 'stripe'
 import { getDb } from '../../lib/db.js'
+import { listStripeCustomersByEmail } from '../../lib/entitlement-resolver.js'
 import { clearMembershipPending } from '../../lib/membership.js'
 import {
   formatMinorUnits,
@@ -16,19 +17,35 @@ export const MAX_NAME_LEN = 250
 // (churn-then-resubscribe). Prefer one without an active subscription so a
 // new sub doesn't end up on a customer that already has one — bounded scan
 // keeps the API cost modest even with many matches.
+//
+// `reuseExisting` is the caller's statement that the request is a durable login
+// AS this email. Checkout takes the address from an unauthenticated form, and a
+// Customer is not a neutral container: it carries a saved card, a balance (a
+// credited gift lands there), a billing address and an invoice history. Attaching
+// a stranger's Checkout Session to it hands them all of that on the strength of
+// knowing an email address. So an unproven email always gets a fresh Customer;
+// the duplicate is the cheap side of that trade, and the lookups here already
+// cope with several Customers per email.
+//
+// The email is lowercased on the way in. Stripe's `customers.list({ email })` is
+// an exact, case-sensitive match, so one address stored in two casings is two
+// people to every guard built on that list — the single-active-subscription
+// guard included.
 export async function findOrCreateSubscriber(
   stripe: Stripe,
-  opts: { email: string; name?: string },
+  opts: { email: string; name?: string; reuseExisting: boolean },
 ): Promise<Stripe.Customer> {
-  const { email, name } = opts
-  const list = await stripe.customers.list({ email, limit: 100 })
-  if (list.data.length === 0) {
+  const email = opts.email.trim().toLowerCase()
+  const { name, reuseExisting } = opts
+  if (!reuseExisting) return stripe.customers.create({ email, name })
+  const matches = await listStripeCustomersByEmail(stripe, opts.email)
+  if (matches.length === 0) {
     return stripe.customers.create({ email, name })
   }
-  if (list.data.length === 1) return list.data[0]
+  if (matches.length === 1) return matches[0]
   // Multiple matches — try to pick a clean one. Cap the scan so a pathological
   // case (many duplicates) doesn't fan out to dozens of Stripe calls.
-  for (const c of list.data.slice(0, 10)) {
+  for (const c of matches.slice(0, 10)) {
     const subs = await stripe.subscriptions.list({
       customer: c.id,
       status: 'active',
@@ -36,7 +53,7 @@ export async function findOrCreateSubscriber(
     })
     if (subs.data.length === 0) return c
   }
-  return list.data[0]
+  return matches[0]
 }
 
 // Statuses that count as a live membership for the single-active-subscription
@@ -70,9 +87,9 @@ export async function findLiveSubscription(
   email: string,
   { withPaymentMethod = false }: { withPaymentMethod?: boolean } = {},
 ): Promise<Stripe.Subscription | null> {
-  const customers = await stripe.customers.list({ email, limit: 100 })
+  const customers = await listStripeCustomersByEmail(stripe, email)
   const subLists = await Promise.all(
-    customers.data.map((customer) =>
+    customers.map((customer) =>
       stripe.subscriptions.list({
         customer: customer.id,
         status: 'all',
@@ -104,27 +121,40 @@ function pwycMaxAmount(floor: number): number {
 }
 
 // Validate a pay-what-you-can custom amount against the tier/plan floor. No
-// custom amount (or a non-numeric one) charges the floor; a custom amount must
-// sit within [floor, pwycMaxAmount]. Returns the amount to charge, or a
+// custom amount charges the floor; a custom amount must be a whole number of
+// minor units within [floor, pwycMaxAmount]. Returns the amount to charge, or a
 // client-facing error string. Shared by create-checkout-session and change-tier.
+//
+// The floor is checked first, and a floor that isn't a positive integer is an
+// error rather than a default. Both callers index a per-currency map for it, and
+// every comparison against `undefined`/NaN is false — so a missing floor must
+// not wave ANY amount through, one minor unit included, and with no custom
+// amount it must not hand `undefined` on as the price.
 export function validatePwycAmount(
   customAmountCents: unknown,
   floor: number,
   currency: string,
 ): { amountCents: number } | { error: string } {
-  if (
-    typeof customAmountCents === 'number' &&
-    Number.isFinite(customAmountCents)
-  ) {
-    if (customAmountCents < floor) {
-      return { error: `Amount must be at least ${formatMinorUnits(floor, currency)}.` }
-    }
-    if (customAmountCents > pwycMaxAmount(floor)) {
-      return { error: 'Custom amount too large.' }
-    }
-    return { amountCents: Math.round(customAmountCents) }
+  if (!Number.isInteger(floor) || floor <= 0) {
+    console.error(`[stripe] no usable price floor for currency "${currency}":`, floor)
+    return { error: 'This plan is not available in that currency.' }
   }
-  return { amountCents: floor }
+  if (customAmountCents === undefined || customAmountCents === null) {
+    return { amountCents: floor }
+  }
+  // Present but not a whole number — a string, a float, NaN. Refuse rather than
+  // quietly charge the floor: the buyer asked for something else, and rounding
+  // 799.5 up to a floor of 800 is a decision nobody made.
+  if (typeof customAmountCents !== 'number' || !Number.isInteger(customAmountCents)) {
+    return { error: 'Amount must be a whole number.' }
+  }
+  if (customAmountCents < floor) {
+    return { error: `Amount must be at least ${formatMinorUnits(floor, currency)}.` }
+  }
+  if (customAmountCents > pwycMaxAmount(floor)) {
+    return { error: 'Custom amount too large.' }
+  }
+  return { amountCents: customAmountCents }
 }
 
 // The plan a subscription bills on, from its recurring interval, so the cancel

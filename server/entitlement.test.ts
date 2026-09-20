@@ -57,6 +57,9 @@ mock.module('auth0', () => ({
 // Imports AFTER mock.module so getDb picks up the fake neon.
 import {
   emailForStripeCustomer,
+  liveAxes,
+  liveGiftAxes,
+  membershipIsLive,
   provisionCircleMember,
   reconcileEntitlements,
   syncEntitlement,
@@ -743,5 +746,69 @@ describe('reconcileEntitlements', () => {
       {} as Stripe,
     )
     expect(summary.arkPlusRemoved).toBe(0)
+  })
+})
+
+// F3(c) — a row's SUBSCRIPTION only grants while it is one that still can.
+describe('liveAxes / membershipIsLive — status and period end', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString()
+  const subRow = (over: Record<string, unknown> = {}) => ({
+    tier: 'bundle' as const,
+    status: 'active',
+    stripe_subscription_id: 'sub_1' as string | null,
+    current_period_end: iso(10 * DAY) as string | null,
+    ark_plus_gift_expires_at: null as string | null,
+    circle_gift_expires_at: null as string | null,
+    ...over,
+  })
+
+  test('active, trialing and past_due (dunning) all grant', () => {
+    for (const status of ['active', 'trialing', 'past_due']) {
+      expect(liveAxes(subRow({ status }))).toEqual({ arkPlus: true, circle: true })
+    }
+  })
+
+  test('unpaid fails closed — every retry failed and no deleted event will follow', () => {
+    expect(membershipIsLive(subRow({ status: 'unpaid' }))).toBe(false)
+  })
+
+  test('a status that should never be on a subscription row reads as closed', () => {
+    for (const status of ['canceled', 'paused', 'incomplete', 'incomplete_expired', '']) {
+      expect(membershipIsLive(subRow({ status }))).toBe(false)
+    }
+  })
+
+  test('a period end inside the grace still grants (a late renewal webhook)', () => {
+    expect(membershipIsLive(subRow({ current_period_end: iso(-3 * DAY) }))).toBe(true)
+  })
+
+  test('a period end past the grace fails closed', () => {
+    expect(membershipIsLive(subRow({ current_period_end: iso(-8 * DAY) }))).toBe(false)
+  })
+
+  test('dunning is not revoked early: past_due with the period already rolled forward', () => {
+    // Stripe advances the period when it CREATES the renewal invoice, so a
+    // member mid-retry is a full period ahead of the check.
+    expect(
+      membershipIsLive(subRow({ status: 'past_due', current_period_end: iso(27 * DAY) })),
+    ).toBe(true)
+  })
+
+  test('a null period end is not held against the row — status still gates it', () => {
+    expect(membershipIsLive(subRow({ current_period_end: null }))).toBe(true)
+    expect(membershipIsLive(subRow({ current_period_end: null, status: 'unpaid' }))).toBe(false)
+  })
+
+  test('a lapsed subscription does not take a live gift axis down with it', () => {
+    const row = subRow({ status: 'unpaid', circle_gift_expires_at: iso(30 * DAY) })
+    expect(liveAxes(row)).toEqual({ arkPlus: false, circle: true })
+    expect(liveGiftAxes(row)).toEqual({ arkPlus: false, circle: true })
+  })
+
+  test('a comp row (no subscription, no gift) is untouched by either check', () => {
+    expect(
+      liveAxes(subRow({ stripe_subscription_id: null, current_period_end: null, status: 'comp' })),
+    ).toEqual({ arkPlus: true, circle: true })
   })
 })

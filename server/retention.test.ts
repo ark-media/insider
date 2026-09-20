@@ -5,6 +5,7 @@ import {
   couponOfferKind,
   isRetentionCoupon,
   pickOfferCoupon,
+  retentionDiscountStillApplies,
   toRetentionOffer,
   type RetentionCouponLike,
 } from './lib/retention'
@@ -168,5 +169,51 @@ describe('toRetentionOffer', () => {
       amountOff: null,
       durationMonths: 3,
     })
+  })
+})
+
+// F4 — which discounts ALREADY on a subscription survive a plan/tier change.
+describe('retentionDiscountStillApplies', () => {
+  const marked = (metadata: Record<string, string>) => ({
+    metadata: { retention_offer: 'true', ...metadata },
+  })
+
+  test.each<[string, Record<string, string>, { tier: 'ark-plus' | 'circle' | 'bundle'; plan: 'monthly' | 'yearly' }, boolean]>([
+    ['monthly supporter rate on monthly Ark+', { offer_kind: 'supporter_coupon', plan: 'monthly' }, { tier: 'ark-plus', plan: 'monthly' }, true],
+    ['…carried onto an ANNUAL invoice', { offer_kind: 'supporter_coupon', plan: 'monthly' }, { tier: 'ark-plus', plan: 'yearly' }, false],
+    ['…carried onto the Bundle', { offer_kind: 'supporter_coupon', plan: 'monthly' }, { tier: 'bundle', plan: 'monthly' }, false],
+    ['affordability rate stays on the Fold', { offer_kind: 'affordability_coupon' }, { tier: 'circle', plan: 'yearly' }, true],
+    ['affordability rate does not follow a move to Ark+', { offer_kind: 'affordability_coupon' }, { tier: 'ark-plus', plan: 'yearly' }, false],
+    ['debundle intro rate on the kept single product', { offer_kind: 'debundle_intro' }, { tier: 'circle', plan: 'monthly' }, true],
+    ['debundle intro rate does not survive a re-bundle', { offer_kind: 'debundle_intro' }, { tier: 'bundle', plan: 'monthly' }, false],
+    ['plan "both" targets either cadence', { offer_kind: 'supporter_coupon', plan: 'both' }, { tier: 'ark-plus', plan: 'yearly' }, true],
+  ])('%s', (_label, metadata, result, expected) => {
+    expect(retentionDiscountStillApplies(marked(metadata), result)).toBe(expected)
+  })
+
+  test('an unmarked coupon (a checkout promo, a courtesy discount) is never ours to drop', () => {
+    expect(
+      retentionDiscountStillApplies(
+        { metadata: { auto_apply: 'true', plan: 'monthly' } },
+        { tier: 'bundle', plan: 'yearly' },
+      ),
+    ).toBe(true)
+  })
+
+  test('reads the marker, not `valid` — an archived retention coupon is still one', () => {
+    // isRetentionCoupon also requires valid (can it be redeemed AGAIN?), which
+    // says nothing about a discount a subscription already holds.
+    expect(
+      retentionDiscountStillApplies(
+        marked({ offer_kind: 'supporter_coupon', plan: 'monthly' }),
+        { tier: 'ark-plus', plan: 'yearly' },
+      ),
+    ).toBe(false)
+  })
+
+  test('an unknown tier or plan drops nothing on that axis', () => {
+    const c = marked({ offer_kind: 'supporter_coupon', plan: 'monthly' })
+    expect(retentionDiscountStillApplies(c, { tier: null, plan: 'monthly' })).toBe(true)
+    expect(retentionDiscountStillApplies(c, { tier: 'ark-plus', plan: null })).toBe(true)
   })
 })

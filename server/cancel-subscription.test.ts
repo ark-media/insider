@@ -45,9 +45,10 @@ const stripeCalls: StripeCall[] = []
 let existingCustomers: Array<{ id: string; email: string }> = []
 let subsByCustomer: Record<
   string,
-  // `tier` is stamped into the sub's metadata: tierFromSubscription falls back
-  // to it when the price product can't be read, which is what lets these tests
-  // choose which cancellation email is rendered without faking a product.
+  // `tier` picks the price PRODUCT the sub sells, and the product's
+  // `entitlements` metadata is the only thing tierFromSubscription reads — it no
+  // longer falls back to the sub's own (client-stamped) metadata. A sub with no
+  // tier has no items product, i.e. is not one of our memberships.
   Array<{ id: string; current_period_end: number; tier?: string }>
 > = {}
 // Coupons returned by coupons.list — part of the shared stripe mock harness.
@@ -55,6 +56,13 @@ let activeCoupons: Array<Record<string, unknown>> = []
 // current_period_end echoed back by subscriptions.update. 2030-01-01, fixed for
 // stable assertions.
 const UPDATED_PERIOD_END = 1893456000
+
+// The catalog's product → entitlements stamp (scripts/stripe-catalog).
+const PRODUCT_ENTITLEMENTS: Record<string, string> = {
+  'prod_ark-plus': 'ark_plus',
+  prod_circle: 'circle',
+  prod_bundle: 'ark_plus,circle',
+}
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -72,8 +80,15 @@ class FakeStripe {
         // These flows manage the member's live subscription; default to 'active'
         // so the (status-filtered) live-subscription lookup matches it.
         status: 'active',
-        metadata: s.tier ? { tier: s.tier } : {},
-        items: { data: [{ current_period_end: s.current_period_end }] },
+        metadata: {},
+        items: {
+          data: [
+            {
+              current_period_end: s.current_period_end,
+              ...(s.tier ? { price: { product: `prod_${s.tier}` } } : {}),
+            },
+          ],
+        },
       }))
       return { data: subs }
     },
@@ -81,6 +96,12 @@ class FakeStripe {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
       return { id, items: { data: [{ current_period_end: UPDATED_PERIOD_END }] } }
     },
+  }
+  products = {
+    retrieve: async (id: string) => ({
+      id,
+      metadata: { entitlements: PRODUCT_ENTITLEMENTS[id] ?? '' },
+    }),
   }
   coupons = {
     list: async (args?: { starting_after?: string }) => {
@@ -99,8 +120,8 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 
 // Static imports AFTER mock.module so the plugin picks up the fake Stripe.
 import { devApiPlugin } from './dev-api'
-import { signSessionToken } from './lib/session'
-import { SESSION_COOKIE_NAME } from './lib/cookies'
+import { signCheckoutToken, signSessionToken } from './lib/session'
+import { CHECKOUT_COOKIE_NAME, SESSION_COOKIE_NAME } from './lib/cookies'
 
 // ---------------------------------------------------------------------------
 // Plugin harness
@@ -134,8 +155,8 @@ function resendCalls(): FetchCall[] {
   return fetchCalls.filter((c) => c.url.includes('api.resend.com'))
 }
 
-function getHandler(path: string): Middleware {
-  return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
+function getHandler(path: string, env: Record<string, string> = BASE_ENV): Middleware {
+  return createDevApiHarness(devApiPlugin(env)).getHandler(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +202,48 @@ describe('POST /api/stripe/cancel-subscription — auth', () => {
   test('401 when unauthenticated', async () => {
     const res = await post({ body: { offer_outcome: 'not_offered' } })
     expect(res.statusCode).toBe(401)
+    expect(stripeCalls.length).toBe(0)
+  })
+
+  // A link in one of our emails signs the member in, and stays clickable for two
+  // weeks — forwarded, scanned by mail gateways, written to request logs. That
+  // is enough to land on /setup. It is not enough to change what they're billed.
+  test('401 reauth_required for a session minted from an emailed link, and Stripe is never called', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    const token = await signSessionToken(
+      { email: 'member@example.com', roles: [], via: 'email_link' },
+      BASE_ENV,
+    )
+    const res = await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: `${SESSION_COOKIE_NAME}=${token}`,
+    })
+
+    expect(res.statusCode).toBe(401)
+    // What src/lib/auth.ts keys on to send them through sign-in and back.
+    expect((res.__json() as { code?: string }).code).toBe('reauth_required')
+    expect(stripeCalls.length).toBe(0)
+  })
+
+  test('401 reauth_required for the post-payment checkout token — its email was typed, never proven', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    const env = {
+      ...BASE_ENV,
+      CHECKOUT_SESSION_SECRET: 'test-checkout-secret-0123456789abcdef0123456789abcdef',
+    }
+    const token = await signCheckoutToken('member@example.com', env)
+    const res = makeRes()
+    await runHandler(
+      getHandler(PATH, env),
+      makeReq({
+        body: { offer_outcome: 'not_offered' },
+        headers: { cookie: `${CHECKOUT_COOKIE_NAME}=${token}` },
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(401)
+    expect((res.__json() as { code?: string }).code).toBe('reauth_required')
     expect(stripeCalls.length).toBe(0)
   })
 })

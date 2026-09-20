@@ -48,7 +48,9 @@ class FakeStripe {
   subscriptions = {
     create: async () => ({}),
     update: async () => ({}),
-    retrieve: async () => ({}),
+    // The handlers act on the subscription's CURRENT state rather than the
+    // event snapshot; here the two agree, so hand back the event's own object.
+    retrieve: async () => (webhookEvent as { data: { object: unknown } }).data.object,
     list: async () => ({ data: [] }),
   }
   paymentIntents = { create: async () => ({}), retrieve: async () => ({}), update: async () => ({}) }

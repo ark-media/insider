@@ -39,6 +39,7 @@ import {
   bundleBreakdown,
   debundlePricePreview,
   deriveSaveOffers,
+  discountsSurvivingChange,
   pickIntroCoupon,
 } from '../../lib/retention.js'
 import {
@@ -53,6 +54,7 @@ import {
   MAX_CANCELLATION_NOTE_LEN,
 } from '../../../shared/cancellation.js'
 import { listActiveCoupons } from '../../lib/stripe-promos.js'
+import { membershipRowsForEmail } from '../../lib/entitlement-resolver.js'
 import {
   formatMinorUnits,
   isSupportedCurrency,
@@ -68,7 +70,9 @@ import {
 } from '../../../shared/checkout-consent.js'
 import { getClientIp, isSameOrigin, readBody, readJson } from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
+import { createSharedRateLimiter } from '../../lib/shared-rate-limit.js'
 import { getSessionEmail, resolveRequestIdentity } from '../../lib/session.js'
+import { requireBillingEmail } from '../../lib/guards.js'
 import { sendEmail } from '../../lib/email.js'
 import {
   renderCancellationEmail,
@@ -99,14 +103,49 @@ import {
   tsToIso,
   validatePwycAmount,
 } from './helpers.js'
-import { dispatchWebhookEvent, tierFromSubscription } from './webhook.js'
+import {
+  catalogTierOfSubscription,
+  dispatchWebhookEvent,
+  tierFromSubscription,
+} from './webhook.js'
+
+// How long a webhook claim is honoured before another delivery may take it over.
+// The function's maxDuration is 60s, so by two minutes a 'processing' claim
+// belongs to an invocation that no longer exists.
+const WEBHOOK_CLAIM_LEASE_SEC = 120
+
+// Log the missing-migration fallback once per instance, not once per event.
+let warnedLedgerLeaseMissing = false
+
+// Postgres 42703 undefined_column — what the leased claim raises against a
+// ledger that predates migration 0004.
+function isUndefinedColumn(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null
+  if (e?.code === '42703') return true
+  return typeof e?.message === 'string' && /column .* does not exist/i.test(e.message)
+}
+
+// A Stripe error that means "the payment didn't go through" (a decline, or a
+// card that needs an authentication step this server-side update can't present)
+// rather than "the request was wrong" or "Stripe is down".
+function isCardPaymentError(err: unknown): boolean {
+  const e = err as { type?: unknown; statusCode?: unknown } | null
+  return e?.type === 'StripeCardError' || e?.statusCode === 402
+}
 
 export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
   // Per-email cap on Checkout Session creation. Mirrors the gift flow: a
   // scripted caller can't produce thousands of zombie Sessions / Customer
   // rows. Small enough to catch abuse and large enough that a real buyer
   // retrying a few times doesn't get blocked.
-  const subscribeLimiter = createRateLimiter({
+  //
+  // The three unauthenticated limiters here (both checkout buckets and the
+  // consent one) are SHARED — one Neon row per bucket — because the in-memory
+  // kind gives every function instance its own allowance, which multiplies the
+  // limit on exactly the routes anyone can script. The session-authenticated
+  // ones below stay in memory: their caller is a known, paying member.
+  const subscribeLimiter = createSharedRateLimiter(env, {
+    name: 'stripe-checkout-email',
     capacity: 5,
     refillPerSec: 5 / (60 * 60), // 5 per hour
   })
@@ -115,7 +154,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   // to Stripe (customer + session) and answers "is this address a member?".
   // The per-IP bucket is what actually bounds enumeration. Vercel overwrites
   // x-forwarded-for with the true client IP, so it can't be spoofed in prod.
-  const subscribeIpLimiter = createRateLimiter({
+  const subscribeIpLimiter = createSharedRateLimiter(env, {
+    name: 'stripe-checkout-ip',
     capacity: 15,
     refillPerSec: 15 / (60 * 60), // 15 per hour per source
   })
@@ -133,7 +173,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   // Per-IP cap on consent writes. One purchase needs one call, and a retried
   // payment a handful; anything past that is a caller spending our Stripe
   // request budget on an endpoint that answers nothing useful.
-  const consentLimiter = createRateLimiter({
+  const consentLimiter = createSharedRateLimiter(env, {
+    name: 'stripe-consent-ip',
     capacity: 30,
     refillPerSec: 30 / (60 * 60), // 30 per hour per source
   })
@@ -189,7 +230,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // doesn't consume a token from a legitimate retry.
         const clientIp = getClientIp(req)
         const wait =
-          subscribeIpLimiter.take(clientIp) ?? subscribeLimiter.take(`${clientIp}|${email}`)
+          (await subscribeIpLimiter.take(clientIp)) ??
+          (await subscribeLimiter.take(`${clientIp}|${email}`))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, {
@@ -217,6 +259,40 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               'You already have an active membership. Manage or change your plan from your account.',
             code: 'already_subscribed',
           })
+        }
+
+        // The email above is whatever the buyer typed — nothing has proven it
+        // is theirs. Two things downstream would otherwise treat it as proof:
+        // the webhook upserts the membership row `on conflict (auth0_sub)`, and
+        // the Customer lookup below reuses an existing Customer. So work out
+        // once whether this request is a DURABLE login as that same address
+        // ('auth0' — the checkout token is itself minted off a typed email, so
+        // it proves nothing here).
+        const identity = await resolveRequestIdentity(req, env)
+        const provenEmail =
+          identity?.source === 'auth0' && identity.email.trim().toLowerCase() === email
+
+        // Existing-account guard. An address that already has a membership row
+        // — a comped staffer, an early-access member, a gift recipient — must
+        // sign in before buying: an anonymous purchase under it would overwrite
+        // their comp/gift row with the buyer's subscription, and the eventual
+        // subscription.deleted would then take the row away altogether. Fails
+        // CLOSED: if we can't check, we don't sell. Without a database there are
+        // no rows to protect.
+        if (env.DATABASE_URL && !provenEmail) {
+          let hasRow: boolean
+          try {
+            hasRow = (await membershipRowsForEmail(env, stripe, email)).length > 0
+          } catch (err) {
+            console.error('[stripe] checkout existing-account check failed:', err)
+            return json(502, { error: 'Could not start checkout. Please try again.' })
+          }
+          if (hasRow) {
+            return json(409, {
+              error: 'You already have an Ark account. Sign in to change or add to your plan.',
+              code: 'login_required',
+            })
+          }
         }
 
         // Per-currency floor for this tier+plan from the catalog price's
@@ -256,13 +332,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 quantity: 1,
               }
 
-        // Find-or-reuse a customer so we never mint duplicates for the same
-        // email (and so the resulting subscription's customer always has an
-        // email). Checkout has historically created a Customer per Session, so
-        // one email can map to several (churn-then-resubscribe).
+        // Find-or-reuse a customer so a signed-in member doesn't mint duplicates
+        // for their own email (and so the resulting subscription's customer
+        // always has an email). Reuse is for a PROVEN email only — an existing
+        // Customer carries a saved card, a balance and a billing history, none
+        // of which belong to whoever typed the address. Everyone else gets a
+        // fresh Customer; one email mapping to several is already a fact of life
+        // here (churn-then-resubscribe) and every lookup copes with it.
         const customer = await findOrCreateSubscriber(stripe, {
           email,
           name: body.name,
+          reuseExisting: provenEmail,
         })
 
         const session = await stripe.checkout.sessions.create({
@@ -344,8 +424,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       //
       // Not authenticated, and it can't be: the buyer has no session yet. What
       // it can do is refuse to write anywhere except an OPEN Checkout Session
-      // whose id the caller already had — Stripe rejects an update to any
-      // other, so a guessed id can't be used to scribble on a paid one.
+      // whose id the caller already had, and only once — both enforced below,
+      // not assumed of Stripe.
       path: '/api/stripe/record-consent',
       method: 'POST',
       handler: async (req, res, json) => {
@@ -374,10 +454,35 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           return json(400, { error: 'statements is required.' })
         }
 
-        const wait = consentLimiter.take(getClientIp(req))
+        const wait = await consentLimiter.take(getClientIp(req))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'Too many requests.' })
+        }
+
+        // Look before writing. The comment above used to lean on Stripe to
+        // refuse a write to a finished Session; it doesn't — metadata stays
+        // writable after completion — so anyone holding a `cs_` id could rewrite
+        // the consent record of a PAID purchase, which is precisely the evidence
+        // a dispute turns on. Two rules, both checked against the Session as
+        // Stripe holds it:
+        //   - only an OPEN Session takes consent (the browser records it just
+        //     before confirming, never after);
+        //   - consent is written ONCE. A retried payment posts again; the first
+        //     acceptance stands and the repeat is acked without a write, so the
+        //     record can't be replaced by a later caller either.
+        let existing: Stripe.Checkout.Session
+        try {
+          existing = await stripe.checkout.sessions.retrieve(sessionId)
+        } catch (err) {
+          console.error('[stripe] consent: session lookup failed for', sessionId, err)
+          return json(502, { error: 'Could not record consent.' })
+        }
+        if (existing.status !== 'open') {
+          return json(409, { error: 'This checkout is no longer open.' })
+        }
+        if (existing.metadata?.[CONSENT_ACCEPTED_AT_KEY]) {
+          return json(200, { ok: true, already_recorded: true })
         }
 
         // Merges into the Session's existing metadata rather than replacing it
@@ -410,12 +515,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     defineRoute({
       path: '/api/stripe/cancel-subscription',
       method: 'POST',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const cancelEmail = await getSessionEmail(req, env)
-        if (!cancelEmail) return json(401, { error: 'unauthenticated' })
+        // Signed in for real, not merely holding an emailed link (guards.ts).
+        const cancelEmail = await requireBillingEmail(req, res, env)
+        if (!cancelEmail) return
 
         // The survey is now collected *after* the cancel commits (the member
         // sees "your subscription has been cancelled" first, then the reasons —
@@ -591,12 +697,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // of its own, so clearing Stripe's is the whole operation.
       path: '/api/stripe/reactivate-subscription',
       method: 'POST',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const email = await getSessionEmail(req, env)
-        if (!email) return json(401, { error: 'unauthenticated' })
+        // Signed in for real, not merely holding an emailed link (guards.ts).
+        const email = await requireBillingEmail(req, res, env)
+        if (!email) return
 
         const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(404, { error: 'No active subscription found' })
@@ -607,10 +714,27 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // — so a plain reactivate on an already-renewing sub stays a no-op.
         const hadSchedule = Boolean(scheduleIdOf(sub))
         await releaseScheduleIfAny(stripe, sub, env)
+
+        // Releasing a schedule abandons the change it carried, and a retention
+        // coupon may have been accepted ON that change: the annual→monthly save
+        // attaches the monthly supporter rate beside the scheduled switch. With
+        // the switch gone the subscription stays on its current plan, and the
+        // coupon would take its monthly-priced cut off an annual invoice. Drop
+        // any retention discount that doesn't fit the plan/tier being resumed.
+        // A tier we can't read drops nothing on that axis.
+        let survivingDiscounts: Awaited<ReturnType<typeof discountsSurvivingChange>> = null
+        if (hadSchedule) {
+          const resumedTier = await catalogTierOfSubscription(sub, stripe).catch(() => null)
+          survivingDiscounts = await discountsSurvivingChange(stripe, sub, {
+            tier: resumedTier,
+            plan: planFromSubscription(sub),
+          })
+        }
         const updated =
           sub.cancel_at_period_end || hadSchedule
             ? await stripe.subscriptions.update(sub.id, {
                 cancel_at_period_end: false,
+                ...(survivingDiscounts !== null ? { discounts: survivingDiscounts } : {}),
               })
             : sub
 
@@ -697,12 +821,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // through change-tier instead, not this route.
       path: '/api/stripe/accept-save-offer',
       method: 'POST',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const email = await getSessionEmail(req, env)
-        if (!email) return json(401, { error: 'unauthenticated' })
+        // Signed in for real, not merely holding an emailed link (guards.ts).
+        const email = await requireBillingEmail(req, res, env)
+        if (!email) return
 
         const body = (await readJson<{ intent?: unknown; kind?: unknown }>(req)) ?? {}
         if (!isSaveIntent(body.intent)) return json(400, { error: 'bad_intent' })
@@ -718,8 +843,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // set only for a flow this member's ACTUAL tier can open — otherwise a
         // caller picks the offer set (e.g. 'cancel-circle' while on Bundle) and
         // lands another product's coupon on their own subscription.
-        const currentTier = await tierFromSubscription(sub, stripe)
-        if (!intentAllowedForTier(body.intent, currentTier)) {
+        const currentTier = await catalogTierOfSubscription(sub, stripe)
+        if (!currentTier || !intentAllowedForTier(body.intent, currentTier)) {
           return json(409, { error: 'No such save offer available.' })
         }
 
@@ -895,8 +1020,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const email = await getSessionEmail(req, env)
-        if (!email) return json(401, { error: 'unauthenticated' })
+        // Signed in for real, not merely holding an emailed link (guards.ts).
+        const email = await requireBillingEmail(req, res, env)
+        if (!email) return
 
         const wait = cardSetupLimiter.take(email)
         if (wait !== null) {
@@ -948,12 +1074,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // retry with the same intent and land in the same place.
       path: '/api/stripe/update-card',
       method: 'POST',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const email = await getSessionEmail(req, env)
-        if (!email) return json(401, { error: 'unauthenticated' })
+        // Signed in for real, not merely holding an emailed link (guards.ts).
+        const email = await requireBillingEmail(req, res, env)
+        if (!email) return
 
         const body = (await readJson<{ setup_intent_id?: unknown }>(req)) ?? {}
         const setupIntentId = body.setup_intent_id
@@ -1110,8 +1237,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const email = await getSessionEmail(req, env)
-        if (!email) return json(401, { error: 'unauthenticated' })
+        // Signed in for real, not merely holding an emailed link (guards.ts).
+        const email = await requireBillingEmail(req, res, env)
+        if (!email) return
 
         const body =
           (await readJson<{
@@ -1171,7 +1299,14 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!sub) return json(404, { error: 'No active subscription found' })
         const customerId = customerIdOf(sub)
 
-        const currentTier = await tierFromSubscription(sub, stripe)
+        // From the price product, never the subscription's own metadata (which
+        // the checkout request body stamped). Null = a live subscription on this
+        // email that sells none of our tiers — not something this route may
+        // rewrite into one that does.
+        const currentTier = await catalogTierOfSubscription(sub, stripe)
+        if (!currentTier) {
+          return json(409, { error: 'This subscription can’t be changed here.' })
+        }
 
         // A EUR sub updated with USD price_data hard-fails (§6 point 1) — reuse
         // the subscription's own currency, and validate against ITS floor.
@@ -1341,9 +1476,35 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             // the new tier from the price product and syncs Beehiiv/Circle/Neon.
             await releaseScheduleIfAny(stripe, sub, env)
             const priceField = destinationPrice
+            // Retention coupons are priced for one product at one cadence, and a
+            // subscription-level discount otherwise rides straight through this
+            // update: the monthly supporter rate onto an annual invoice, the
+            // debundle intro rate onto a re-bundle. Keep every discount except
+            // the retention ones that no longer fit where this change lands.
+            const survivingDiscounts = await discountsSurvivingChange(stripe, sub, {
+              tier: newTier,
+              plan,
+            })
+            // Gaining an entitlement is access granted NOW, so it is paid for
+            // now. `create_prorations` only parked the difference on the next
+            // invoice — up to a year out on an annual plan — so a member could
+            // take the Bundle on credit and cancel before ever being charged for
+            // it. `always_invoice` bills the proration immediately, and
+            // `error_if_incomplete` makes Stripe REFUSE the update (HTTP 402,
+            // nothing changed) when that charge fails, instead of applying it and
+            // leaving an open invoice behind. A same-entitlement change (a PWYC
+            // raise) grants nothing new and keeps the deferred proration.
+            const gainsEntitlement =
+              (nextEnt.arkPlus && !prevEnt.arkPlus) || (nextEnt.circle && !prevEnt.circle)
             await stripe.subscriptions.update(sub.id, {
               items: [{ id: item.id, ...priceField }],
-              proration_behavior: 'create_prorations',
+              ...(gainsEntitlement
+                ? {
+                    proration_behavior: 'always_invoice' as const,
+                    payment_behavior: 'error_if_incomplete' as const,
+                  }
+                : { proration_behavior: 'create_prorations' as const }),
+              ...(survivingDiscounts !== null ? { discounts: survivingDiscounts } : {}),
               // monthly→yearly resets the billing cycle to now (§6 table).
               ...(prevPlan !== plan ? { billing_cycle_anchor: 'now' as const } : {}),
               metadata: {
@@ -1441,6 +1602,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             survey_id: surveyId,
           })
         } catch (err) {
+          // error_if_incomplete (above) turns a failed upgrade charge into a 402
+          // with the subscription untouched. That is the member's card, not our
+          // outage — say so, and point at the fix, rather than "try again".
+          if (isCardPaymentError(err)) {
+            console.warn('[stripe] change-tier payment failed:', (err as { code?: string }).code)
+            return json(402, {
+              error:
+                'Your card was declined, so your plan hasn’t changed. Update your card under Manage billing and try again.',
+              code: 'payment_failed',
+            })
+          }
           console.error('[stripe] change-tier failed:', err)
           return json(502, { error: 'Could not change your plan. Please try again.' })
         }
@@ -1471,20 +1643,68 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         }
 
         // Idempotency: claim this event.id before doing any work. Stripe
-        // delivers at least once, so a replay/retry must be inert. If the row
-        // already exists we've processed it — ack 200 and skip. A ledger error
-        // is non-fatal: fall through and process (dispatch is largely
-        // metadata-idempotent on its own).
+        // delivers at least once, so a replay/retry must be inert — but a claim
+        // is not a completion. It is taken as 'processing' and only becomes
+        // 'done' once dispatch has succeeded; a function that dies in between
+        // (a timeout, a crash) never reaches the release in the catch below, and
+        // a claim that read as "already processed" would turn Stripe's retry
+        // into a no-op and lose the event. So a 'processing' claim is a LEASE:
+        // older than WEBHOOK_CLAIM_LEASE_SEC, the next delivery takes it over.
+        //
+        // One atomic statement, so two concurrent deliveries can't both win: the
+        // insert claims a new id; the conflict arm re-claims only a stale
+        // 'processing' row; a 'done' row or a live lease returns nothing.
+        //
+        // A ledger error is non-fatal: fall through and process (dispatch is
+        // largely metadata-idempotent on its own).
         let claimedEventId: string | null = null
+        let leased = false
         if (env.DATABASE_URL) {
+          const sql = getDb(env)
           try {
-            const sql = getDb(env)
-            const rows = await sql`
-              insert into stripe_webhook_events (id, type)
-              values (${event.id}, ${event.type})
-              on conflict (id) do nothing
-              returning id`
+            let rows: unknown[]
+            try {
+              rows = (await sql`
+                insert into stripe_webhook_events as e (id, type, status, claimed_at)
+                values (${event.id}, ${event.type}, 'processing', now())
+                on conflict (id) do update
+                  set status = 'processing', claimed_at = now()
+                  where e.status = 'processing'
+                    and (e.claimed_at is null
+                         or e.claimed_at < now() - make_interval(secs => ${WEBHOOK_CLAIM_LEASE_SEC}))
+                returning id`) as unknown[]
+              leased = true
+            } catch (err) {
+              // Migration 0004 not applied yet (deploy landed before migrate —
+              // the ordering that has taken prod down before). Degrade to the
+              // single-state claim rather than to no ledger at all.
+              if (!isUndefinedColumn(err)) throw err
+              if (!warnedLedgerLeaseMissing) {
+                warnedLedgerLeaseMissing = true
+                console.error(
+                  '[stripe] webhook ledger has no status/claimed_at (migration 0004 not applied) — using the single-state claim',
+                )
+              }
+              rows = (await sql`
+                insert into stripe_webhook_events (id, type)
+                values (${event.id}, ${event.type})
+                on conflict (id) do nothing
+                returning id`) as unknown[]
+            }
             if (rows.length === 0) {
+              // Lost the claim. 'done' → a true replay, ack it. Still
+              // 'processing' → another delivery holds a live lease; it may yet
+              // fail, so this one must NOT be acked — a non-2xx makes Stripe
+              // come back, by when the lease is either done or stale.
+              if (leased) {
+                const held = (await sql`
+                  select status from stripe_webhook_events where id = ${event.id}`) as {
+                  status: string
+                }[]
+                if (held[0]?.status === 'processing') {
+                  return json(409, { error: 'event_in_progress' })
+                }
+              }
               return json(200, { received: true, deduped: true })
             }
             claimedEventId = event.id
@@ -1495,6 +1715,17 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         try {
           await dispatchWebhookEvent(event, stripe, env, activator)
+          // Dispatch succeeded → the claim becomes a completion. Best-effort: a
+          // failure here leaves a 'processing' row that goes stale, and the only
+          // cost is that a later redelivery of this event would run again.
+          if (claimedEventId && leased) {
+            try {
+              await getDb(env)`
+                update stripe_webhook_events set status = 'done' where id = ${claimedEventId}`
+            } catch (doneErr) {
+              console.error('[dev-api] webhook claim completion failed:', doneErr)
+            }
+          }
           json(200, { received: true })
         } catch (err) {
           // Retryable failure: release the claim so Stripe's retry reprocesses

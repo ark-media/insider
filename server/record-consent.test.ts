@@ -27,13 +27,23 @@ const stripeCalls: StripeCall[] = []
 // Set to make checkout.sessions.update throw, standing in for Stripe refusing
 // the write (an expired session, a session that has already been paid).
 let updateError: Error | null = null
+// The Session as Stripe holds it, which the route reads before it writes.
+let sessionState: { status: string; metadata: Record<string, string> } = {
+  status: 'open',
+  metadata: {},
+}
+let retrieveError: Error | null = null
 
 class FakeStripe {
   constructor(_key: string) {}
   checkout = {
     sessions: {
       create: async () => ({ id: 'cs_test_1', client_secret: 'cs_test_1_secret' }),
-      retrieve: async () => ({}),
+      retrieve: async (id: string) => {
+        stripeCalls.push({ method: 'checkout.sessions.retrieve', args: [id] })
+        if (retrieveError) throw retrieveError
+        return { id, ...sessionState }
+      },
       update: async (id: string, args: Record<string, unknown>) => {
         stripeCalls.push({ method: 'checkout.sessions.update', args: [id, args] })
         if (updateError) throw updateError
@@ -108,6 +118,8 @@ silenceExpectedConsole()
 beforeEach(() => {
   stripeCalls.length = 0
   updateError = null
+  retrieveError = null
+  sessionState = { status: 'open', metadata: {} }
 })
 
 describe('POST /api/stripe/record-consent', () => {
@@ -202,6 +214,46 @@ describe('POST /api/stripe/record-consent', () => {
     // The browser treats this as non-fatal and pays anyway, so the status is
     // only a signal for logging — but it must not read as success.
     expect(res.statusCode).toBe(502)
+  })
+
+  // The route is unauthenticated, so what it may write to is the whole defence.
+  test('409 for a Session that is no longer open — a paid purchase keeps its record', async () => {
+    // Stripe does NOT refuse a metadata write to a completed Session, so this
+    // has to be checked here rather than assumed.
+    sessionState = {
+      status: 'complete',
+      metadata: { consent_accepted_at: '2026-01-01T00:00:00.000Z' },
+    }
+    const res = await post({ checkout_session_id: 'cs_test_1', statements: ['I agree to nothing.'] })
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'checkout.sessions.update')).toBe(false)
+  })
+
+  test('an expired Session takes no consent either', async () => {
+    sessionState = { status: 'expired', metadata: {} }
+    const res = await post({ checkout_session_id: 'cs_test_1', statements: [TERMS] })
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'checkout.sessions.update')).toBe(false)
+  })
+
+  test('consent is written once: a repeat is acked without overwriting the first', async () => {
+    // A retried payment posts again. The first acceptance (and its timestamp)
+    // stands; nobody holding the id can replace it.
+    sessionState = {
+      status: 'open',
+      metadata: { consent_accepted_at: '2026-01-01T00:00:00.000Z', consent_statement_0: TERMS },
+    }
+    const res = await post({ checkout_session_id: 'cs_test_1', statements: ['Something else.'] })
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ ok: true, already_recorded: true })
+    expect(stripeCalls.some((c) => c.method === 'checkout.sessions.update')).toBe(false)
+  })
+
+  test('502 when the Session cannot be read — nothing is written blind', async () => {
+    retrieveError = new Error('No such checkout session')
+    const res = await post({ checkout_session_id: 'cs_guess', statements: [TERMS] })
+    expect(res.statusCode).toBe(502)
+    expect(stripeCalls.some((c) => c.method === 'checkout.sessions.update')).toBe(false)
   })
 
   test('rate-limits a caller hammering the endpoint', async () => {
