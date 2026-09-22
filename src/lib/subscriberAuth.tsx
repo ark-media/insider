@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -116,14 +117,29 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     isAdmin: false,
   });
 
+  // Spotify follow ticks set this session. A /api/me read that went out
+  // before the tick's save committed comes back without it, and would untick
+  // the row the member just clicked — so every read is overlaid with these.
+  // An id leaves only when its save fails.
+  const followOpenedIds = useRef(new Set<string>());
+
   const refresh = useCallback(async () => {
     if (!hasAnySession()) {
+      followOpenedIds.current.clear();
       setState({ kind: "guest" });
       setAuthError(false);
       return;
     }
     try {
-      const me = await fetchMe();
+      const fetched = await fetchMe();
+      const me = fetched && {
+        ...fetched,
+        feeds: fetched.feeds.map((f) =>
+          followOpenedIds.current.has(f.id)
+            ? { ...f, spotify_follow_opened: true }
+            : f,
+        ),
+      };
       setState(me ? { kind: "member", me } : { kind: "guest" });
       setAuthError(false);
     } catch {
@@ -234,9 +250,12 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
             }
           : prev,
       );
+    followOpenedIds.current.add(feedId);
     patch(true);
     void persistSpotifyFollowOpened(feedId).then((ok) => {
-      if (!ok) patch(false);
+      if (ok) return;
+      followOpenedIds.current.delete(feedId);
+      patch(false);
     });
   }, []);
 
