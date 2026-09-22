@@ -20,7 +20,11 @@ import {
   resolveRequestIdentity,
 } from '../lib/entitlement-resolver.js'
 import type { MembershipRow } from '../lib/membership.js'
-import { getSetupStates, recordFeedsPending } from '../lib/feed-activations.js'
+import {
+  getSetupStates,
+  recordFeedsPending,
+  recordSpotifyFollowOpened,
+} from '../lib/feed-activations.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
@@ -116,6 +120,9 @@ type WireFeed = {
   activated?: boolean
   activated_at?: string | null
   pending?: boolean
+  // Opened on Spotify from the setup page's follow checklist (not a confirmed
+  // follow — Spotify reports none). Only present when true.
+  spotify_follow_opened?: boolean
 }
 
 // Project a Beehiiv feed onto the wire shape. Keeps `name`/`image_url` as the
@@ -164,6 +171,7 @@ async function enrichFeedsWithActivation(
         activated: w.activated === true || s.activated,
         activated_at: w.activated_at ?? s.activatedAt,
         pending: s.pending,
+        ...(s.spotifyFollowOpened ? { spotify_follow_opened: true } : {}),
       }
     })
   } catch (err) {
@@ -280,6 +288,52 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         } catch (err) {
           console.error('[me] feed pending write failed:', err)
           json(500, { error: 'pending_write_failed' })
+        }
+      },
+    }),
+    defineRoute({
+      // "I've opened this show on Spotify" from the follow checklist that
+      // appears once Spotify is linked. Linking unlocks every premium show but
+      // follows none, and Spotify tells nobody about follows, so this is the
+      // closest signal there is. The row is the only record: /api/me reads it
+      // back as `spotify_follow_opened`, so the checklist is the same on every
+      // device. Same guards and budget as /api/me/feeds/setup.
+      path: '/api/me/feeds/spotify-follow',
+      method: 'POST',
+      handler: async (req, res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+
+        const email = (await resolveRequestIdentity(req, env))?.email ?? null
+        if (!email) return json(401, { error: 'unauthenticated' })
+
+        const wait = feedSetupLimiter.take(email.toLowerCase())
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'too_many_requests' })
+        }
+
+        // A show id (`pod_<uuid>`), bounded like the setup marker's so the
+        // endpoint can't be scripted into bloating the table with junk rows.
+        const body = await readJson<{ show_id?: unknown }>(req)
+        const showId =
+          typeof body?.show_id === 'string' &&
+          body.show_id.length > 0 &&
+          body.show_id.length <= 64
+            ? body.show_id
+            : null
+        if (!showId) return json(400, { error: 'no_show_id' })
+
+        // Unlike the setup marker there is no webhook behind this to fall back
+        // on, so no database is a failure, not an ack: the checklist would
+        // otherwise tick a show that no reload will ever show ticked again.
+        if (!env.DATABASE_URL) return json(503, { error: 'follow_write_unavailable' })
+
+        try {
+          await recordSpotifyFollowOpened(getDb(env), email, showId)
+          json(200, { ok: true })
+        } catch (err) {
+          console.error('[me] spotify follow write failed:', err)
+          json(500, { error: 'follow_write_failed' })
         }
       },
     }),

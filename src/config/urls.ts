@@ -173,14 +173,32 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
 };
 
 /**
- * Spotify's own "Your Library → Podcasts" shelf — where the feed setup page
- * sends a member to follow the premium show once Open Access has linked their
- * account.
- *
- * Deliberately the library and not the show: the premium feed is PRIVATE and
- * per-member, so there is no one Spotify show page to link anybody at. Open
- * Access drops each linked member's own feed into their own library, which is
- * the only place it exists for them. Don't go looking for a show URL to
- * hardcode here — there isn't one.
+ * Spotify's own "Your Library → Podcasts" shelf. The fallback for a premium
+ * show we don't have a Spotify show page for yet (see premiumSpotifyShows).
  */
 export const spotifyLibraryUrl = "https://open.spotify.com/collection/podcasts";
+
+/**
+ * The Spotify show page for each premium show, keyed by Beehiiv show id
+ * (`pod_<uuid>`, the same id as UserFeed.id). Where the feed setup page sends a
+ * member to follow a show once Open Access has linked their account.
+ *
+ * One page per show, shared by every member — Open Access gates the episodes
+ * by account, not by URL (a non-member who opens it just sees the lock).
+ * Beehiiv's API doesn't expose these, so they live here. A show missing from
+ * this map falls back to spotifyLibraryUrl.
+ */
+export const premiumSpotifyShows: Record<string, string> = {
+  // Giraffe Sandbox NEW — Beehiiv's test premium show.
+  "pod_01a05d4d-d91e-7d23-b20e-7c225707635e":
+    "https://open.spotify.com/show/4ILTO8EcAStnyj5n40blWM",
+  // For Heaven's Sake | Ark+
+  "pod_01a087ad-c057-7777-8e69-cc88ed2eb995":
+    "https://open.spotify.com/show/7Bu4rjmNegJ98HXiG26z2x",
+  // Ark News Daily | Ark+
+  "pod_01a087b1-cc11-7fd9-9a7a-06f22be61188":
+    "https://open.spotify.com/show/2aCfy2SFFkDOUFC1Xbfwms",
+  // Chosen People Problems | Ark+
+  "pod_01a087b8-bfaa-782a-a835-e1a3a2bf5d86":
+    "https://open.spotify.com/show/6hsCqZXUt81rwfLgBY3LrM",
+};

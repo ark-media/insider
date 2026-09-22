@@ -24,6 +24,10 @@ export type UserFeed = {
   // webhook hasn't landed yet. The setup page treats a feed as done if it is
   // `activated` OR `pending` (see feedIsSetUp).
   pending?: boolean;
+  // Opened on Spotify from the post-link follow checklist. The server row is
+  // the only record — see persistSpotifyFollowOpened. Not a confirmed follow:
+  // Spotify reports none.
+  spotify_follow_opened?: boolean;
 };
 
 // A feed counts as "set up" once it's either confirmed (Beehiiv reports it
@@ -507,6 +511,23 @@ export async function persistFeedsSetUp(feedIds: string[]): Promise<void> {
     });
   } catch {
     /* optimistic UI stands; webhook reconciles */
+  }
+}
+
+// Record that the member opened this show on Spotify from the follow
+// checklist. Resolves false when the write didn't land, so the caller can
+// take its optimistic tick back rather than show one the server doesn't hold.
+export async function persistSpotifyFollowOpened(showId: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/me/feeds/spotify-follow", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ show_id: showId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

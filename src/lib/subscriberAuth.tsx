@@ -6,7 +6,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { fetchMe, persistFeedsSetUp, type Me } from "./auth";
+import {
+  fetchMe,
+  persistFeedsSetUp,
+  persistSpotifyFollowOpened,
+  type Me,
+} from "./auth";
 import { fetchAdminMe } from "./admin";
 import { hasAnySession } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
@@ -70,6 +75,11 @@ type SubscriberAuthValue = {
   // devices. Monotonic — only ever flips a feed to set up, never back. The
   // provider's feed webhook remains authoritative and reconciles on refresh.
   markFeedsSetUp: (feedIds: string[]) => void;
+  // Tick a show off the Spotify follow checklist: patches `me.feeds` so the
+  // tick shows at once, then writes the server row — the only record. If the
+  // write fails the tick is taken back, so the page never shows state the
+  // server doesn't hold.
+  markSpotifyFollowOpened: (feedId: string) => void;
   // True when /api/me couldn't be reached (network / server error, not a 401).
   // Member-data pages show an error+retry on this; `refresh` is the retry. Kept
   // separate from `state` so a transient outage doesn't ripple a new variant
@@ -209,6 +219,27 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     void persistFeedsSetUp(feedIds);
   }, []);
 
+  const markSpotifyFollowOpened = useCallback((feedId: string) => {
+    const patch = (opened: boolean) =>
+      setState((prev) =>
+        prev.kind === "member"
+          ? {
+              ...prev,
+              me: {
+                ...prev.me,
+                feeds: prev.me.feeds.map((f) =>
+                  f.id === feedId ? { ...f, spotify_follow_opened: opened } : f,
+                ),
+              },
+            }
+          : prev,
+      );
+    patch(true);
+    void persistSpotifyFollowOpened(feedId).then((ok) => {
+      if (!ok) patch(false);
+    });
+  }, []);
+
   const signIn = useCallback((returnTo?: string, opts?: SignInOpts) => {
     const params = new URLSearchParams();
     params.set(
@@ -236,6 +267,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
         state,
         refresh,
         markFeedsSetUp,
+        markSpotifyFollowOpened,
         authError,
         signIn,
         signOut,
