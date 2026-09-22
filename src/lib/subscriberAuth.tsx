@@ -117,14 +117,18 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     isAdmin: false,
   });
 
-  // Spotify follow ticks set this session. A /api/me read that went out
-  // before the tick's save committed comes back without it, and would untick
-  // the row the member just clicked — so every read is overlaid with these.
-  // An id leaves only when its save fails.
+  // Marks the member made this session: feeds they set up, and Spotify
+  // follow ticks. A /api/me read that went out before a mark's save committed
+  // comes back without it, and would undo the check-off the member just saw —
+  // so every read is overlaid with these. A follow id leaves only when its
+  // save fails; a set-up id never does, matching markFeedsSetUp's optimistic
+  // stance (the activation webhook reconciles).
+  const setUpIds = useRef(new Set<string>());
   const followOpenedIds = useRef(new Set<string>());
 
   const refresh = useCallback(async () => {
     if (!hasAnySession()) {
+      setUpIds.current.clear();
       followOpenedIds.current.clear();
       setState({ kind: "guest" });
       setAuthError(false);
@@ -134,11 +138,15 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
       const fetched = await fetchMe();
       const me = fetched && {
         ...fetched,
-        feeds: fetched.feeds.map((f) =>
-          followOpenedIds.current.has(f.id)
-            ? { ...f, spotify_follow_opened: true }
-            : f,
-        ),
+        feeds: fetched.feeds.map((f) => ({
+          ...f,
+          ...(setUpIds.current.has(f.id) && !f.activated
+            ? { pending: true }
+            : {}),
+          ...(followOpenedIds.current.has(f.id)
+            ? { spotify_follow_opened: true }
+            : {}),
+        })),
       };
       setState(me ? { kind: "member", me } : { kind: "guest" });
       setAuthError(false);
@@ -214,6 +222,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   const markFeedsSetUp = useCallback((feedIds: string[]) => {
     if (feedIds.length === 0) return;
     const ids = new Set(feedIds);
+    for (const id of feedIds) setUpIds.current.add(id);
     // Optimistic in-memory patch — instant check-off. Only flip feeds that
     // aren't already set up, so this can never downgrade a confirmed feed.
     setState((prev) =>

@@ -54,6 +54,7 @@ mock.module("./auth", () => ({
     return meImpl();
   },
   persistSpotifyFollowOpened: () => persistFollowImpl(),
+  persistFeedsSetUp: async () => {},
 }));
 
 const { SubscriberAuthProvider, useSubscriberAuth } = await import(
@@ -193,5 +194,43 @@ describe("SubscriberAuthProvider — Spotify follow ticks", () => {
 
     await refocus(60_000);
     expect(opened()).toBeUndefined();
+  });
+});
+
+describe("SubscriberAuthProvider — set-up marks", () => {
+  const SHOW: Me["feeds"][number] = { id: "pod_a", name: "Alpha", url: "https://x" };
+  const WITH_FEED: Me = { ...ME, feeds: [SHOW] };
+
+  function feedA() {
+    const state = ctx?.state;
+    return state?.kind === "member" ? state.me.feeds[0] : undefined;
+  }
+
+  // Back from Spotify's consent screen, the page marks every show set up while
+  // the refresh on return is still in flight without the marker.
+  test("a read that predates the save doesn't undo the check-off", async () => {
+    meImpl = async () => WITH_FEED;
+    await mountProvider();
+
+    let answerStaleRead: (me: Me) => void = () => {};
+    meImpl = () => new Promise<Me>((resolve) => (answerStaleRead = resolve));
+    await refocus(60_000);
+
+    await act(async () => ctx!.markFeedsSetUp(["pod_a"]));
+    expect(feedA()?.pending).toBe(true);
+
+    await act(async () => answerStaleRead(WITH_FEED));
+    expect(feedA()?.pending).toBe(true);
+  });
+
+  test("never paints pending over a feed the server reports activated", async () => {
+    meImpl = async () => WITH_FEED;
+    await mountProvider();
+    await act(async () => ctx!.markFeedsSetUp(["pod_a"]));
+
+    meImpl = async () => ({ ...ME, feeds: [{ ...SHOW, activated: true, pending: false }] });
+    await refocus(60_000);
+
+    expect(feedA()).toMatchObject({ activated: true, pending: false });
   });
 });
