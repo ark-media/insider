@@ -38,10 +38,15 @@ import type { UserFeed } from "../lib/auth";
 // and makes no request of its own.
 const realAuth = await import("../lib/auth");
 let markedFeeds: string[][] = [];
+let followWrites: string[] = [];
 mock.module("../lib/auth", () => ({
   ...realAuth,
   persistFeedsSetUp: async (feedIds: string[]) => {
     markedFeeds.push(feedIds);
+  },
+  persistSpotifyFollowOpened: async (showId: string) => {
+    followWrites.push(showId);
+    return true;
   },
 }));
 
@@ -115,6 +120,7 @@ afterEach(async () => {
     mounted = null;
   }
   markedFeeds = [];
+  followWrites = [];
 });
 
 // A member reaches this page before Beehiiv has minted their feeds — it mints
@@ -150,7 +156,7 @@ describe("FeedSetup — Spotify", () => {
     expect(spotifyCta(container).target).toBe("_self");
   });
 
-  test("marks every show on click, but does not claim Spotify is linked yet", async () => {
+  test("marks nothing on click, and does not claim Spotify is linked yet", async () => {
     const container = await render(<FeedSetup feeds={[FEED]} />);
     expect(followLink(container)).toBeNull();
     expect(container.textContent).not.toContain("Spotify is linked");
@@ -161,10 +167,9 @@ describe("FeedSetup — Spotify", () => {
       );
     });
 
-    // One link covers the network — check every show off even if the same-tab
-    // navigation later cancels the persist. The follow step waits for the
-    // return marker, because the member may still cancel at Spotify.
-    expect(markedFeeds).toEqual([[FEED.id]]);
+    // The member may still cancel at Spotify, so neither the checklist nor
+    // the follow step moves until Beehiiv returns the marker.
+    expect(markedFeeds).toEqual([]);
     expect(followLink(container)).toBeNull();
     expect(container.textContent).not.toContain("Spotify is linked");
     expect(spotifyCta(container).textContent).toContain("Link Spotify");
@@ -176,6 +181,64 @@ describe("FeedSetup — Spotify", () => {
     expect(followLink(container)).not.toBeNull();
     expect(container.textContent).toContain("Spotify is linked");
     expect(spotifyCta(container).textContent).toContain("Link again");
+  });
+
+  test("the ticks come from the server's per-show flag", async () => {
+    const FEEDS = [
+      feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
+      feed("pod_b", "Bravo Show"),
+    ];
+    const container = await render(<FeedSetup feeds={FEEDS} spotifyLinked />);
+    const buttons = [
+      ...container.querySelectorAll<HTMLAnchorElement>(
+        'a[href^="https://open.spotify.com"]',
+      ),
+    ];
+
+    expect(container.textContent).toContain("1/2 followed");
+    expect(buttons[0].textContent).toContain("Open again");
+    expect(buttons[1].textContent).not.toContain("Open again");
+  });
+
+  test("opening a show writes it to the server, once", async () => {
+    const FEEDS = [
+      feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
+      feed("pod_b", "Bravo Show"),
+    ];
+    const container = await render(<FeedSetup feeds={FEEDS} spotifyLinked />);
+    // Stop happy-dom from trying to navigate to Spotify.
+    container.addEventListener("click", (e) => e.preventDefault());
+    const buttons = [
+      ...container.querySelectorAll<HTMLAnchorElement>(
+        'a[href^="https://open.spotify.com"]',
+      ),
+    ];
+
+    await click(buttons[1]);
+    // Already ticked on the server — reopening it is not a new write.
+    await click(buttons[0]);
+
+    expect(followWrites).toEqual(["pod_b"]);
+  });
+
+  test("links each show to its own Spotify page, falling back to the library", async () => {
+    const mapped = "pod_01a05d4d-d91e-7d23-b20e-7c225707635e";
+    const container = await render(
+      <FeedSetup
+        feeds={[feed(mapped, "Mapped Show"), feed("pod_unmapped", "Unmapped Show")]}
+        spotifyLinked
+      />,
+    );
+
+    const hrefs = [
+      ...container.querySelectorAll<HTMLAnchorElement>(
+        'a[href^="https://open.spotify.com"]',
+      ),
+    ].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual([
+      "https://open.spotify.com/show/4ILTO8EcAStnyj5n40blWM",
+      "https://open.spotify.com/collection/podcasts",
+    ]);
   });
 });
 

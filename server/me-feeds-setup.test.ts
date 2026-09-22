@@ -330,6 +330,87 @@ describe('POST /api/me/feeds/setup', () => {
 })
 
 // ===========================================================================
+// POST /api/me/feeds/spotify-follow
+// ===========================================================================
+describe('POST /api/me/feeds/spotify-follow', () => {
+  const PATH = '/api/me/feeds/spotify-follow'
+
+  async function post(body: unknown, env: Record<string, string> = BASE_ENV, email = 'f@x.com') {
+    const token = await signSessionToken({ email, roles: [] }, env)
+    const res = makeRes()
+    await runHandler(
+      buildHandler(PATH, env),
+      makeReq({ path: PATH, method: 'POST', cookie: `${SESSION_COOKIE_NAME}=${token}`, body }),
+      res,
+    )
+    return res
+  }
+
+  test('403 on cross-origin post', async () => {
+    const token = await signSessionToken({ email: 'f@x.com', roles: [] }, BASE_ENV)
+    const res = makeRes()
+    await runHandler(
+      buildHandler(PATH),
+      makeReq({
+        path: PATH,
+        method: 'POST',
+        cookie: `${SESSION_COOKIE_NAME}=${token}`,
+        origin: 'https://evil.example',
+        body: { show_id: 'pod_a' },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(403)
+  })
+
+  test('401 when no session', async () => {
+    const res = makeRes()
+    await runHandler(
+      buildHandler(PATH),
+      makeReq({ path: PATH, method: 'POST', body: { show_id: 'pod_a' } }),
+      res,
+    )
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('400 on a missing, empty or overlong show id', async () => {
+    for (const body of [{}, { show_id: '' }, { show_id: 7 }, { show_id: 'x'.repeat(65) }]) {
+      const res = await post(body)
+      expect(res.statusCode).toBe(400)
+      expect((res.__json() as { error: string }).error).toBe('no_show_id')
+    }
+    expect(sqlCalls.some((c) => c.sql.includes('spotify_follow_opened_at'))).toBe(false)
+  })
+
+  test('200 + stamps the show once, keyed on the normalized email', async () => {
+    const res = await post({ show_id: 'pod_a' }, BASE_ENV, 'Follower@X.com')
+    expect(res.statusCode).toBe(200)
+    const write = sqlCalls.find((c) => c.sql.includes('spotify_follow_opened_at'))
+    expect(write).toBeDefined()
+    // coalesce keeps the first stamp on a repeat.
+    expect(write?.sql.includes('coalesce(beehiiv_feed_activations.spotify_follow_opened_at')).toBe(true)
+    expect(write?.values).toEqual(['follower@x.com', 'pod_a'])
+  })
+
+  test('no database is a failure, not an ack — the server is the only record', async () => {
+    const env = { ...BASE_ENV }
+    delete env.DATABASE_URL
+    const res = await post({ show_id: 'pod_a' }, env)
+    expect(res.statusCode).toBe(503)
+  })
+
+  test('500 when the write fails', async () => {
+    nextSqlResult = (sql) => {
+      if (sql.includes('spotify_follow_opened_at')) throw new Error('db down')
+      return []
+    }
+    const res = await post({ show_id: 'pod_a' }, BASE_ENV, 'followfail@x.com')
+    expect(res.statusCode).toBe(500)
+    expect((res.__json() as { error: string }).error).toBe('follow_write_failed')
+  })
+})
+
+// ===========================================================================
 // GET /api/me — feed setup-state enrichment
 // ===========================================================================
 describe('GET /api/me feed setup enrichment', () => {
@@ -386,6 +467,24 @@ describe('GET /api/me feed setup enrichment', () => {
     const res = await getMe('pendingmark@x.com')
     const feeds = (res.__json() as { feeds: Array<Record<string, unknown>> }).feeds
     expect(feeds[0]).toMatchObject({ activated: false, pending: true })
+  })
+
+  test('surfaces a show opened on Spotify, on its own row', async () => {
+    stageStates([
+      {
+        show_id: SHOW_ID,
+        activated: false,
+        activated_at: null,
+        pending_at: null,
+        revoked_at: null,
+        spotify_follow_opened_at: '2026-01-05T00:00:00Z',
+      },
+    ])
+    const res = await getMe('followopened@x.com')
+    const feeds = (res.__json() as { feeds: Array<Record<string, unknown>> }).feeds
+    // Opening a show on Spotify is not setup — the setup flags stay off.
+    expect(feeds[0]).toMatchObject({ spotify_follow_opened: true, pending: false })
+    expect(feeds[0].activated).toBe(false)
   })
 
   test('a show with no mirror row carries no activation fields', async () => {

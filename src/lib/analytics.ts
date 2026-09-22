@@ -149,9 +149,12 @@ interface EventMap {
   // Private-feed activation: the terminal hand-off action, and which app it
   // was for (open a deep link / copy the RSS URL / email the link).
   feed_activated: { app: string; method: 'open' | 'copy' | 'email' }
-  // The one-click path: linking Spotify once follows every private feed in the
-  // network. `feed_count` is how many feeds that link covers.
+  // The Spotify hand-off was started: linking once unlocks every premium show.
+  // `feed_count` is how many feeds that link covers.
   feed_spotify_linked: { feed_count: number }
+  // A show was opened on Spotify from the post-link follow checklist. Spotify
+  // reports no follows back, so this is the closest signal we get.
+  feed_spotify_follow_opened: { show_id: string }
   // Intent to buy the Fold tier from the /fold page — it opens OUR
   // CheckoutModal, so this is a top-of-funnel event that continues into
   // checkout_opened, not a hand-off. Every purchase transacts through our

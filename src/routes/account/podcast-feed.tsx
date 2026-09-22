@@ -52,11 +52,11 @@ function PodcastsTab() {
   // is the one place that survives whatever the router and the auth refresh do
   // to this subtree, and it stays true on a reload.
   //
-  // The Spotify CTA already marks the show set up on click, but redo it here
-  // too — a same-tab navigation can cancel that request mid-flight, and this
-  // is the path that is guaranteed to run. Marking is idempotent (it only ever
-  // flips a feed that isn't already set up), which is what makes it safe to
-  // leave the marker in the URL.
+  // This is the ONLY place a Spotify link checks the shows off — the CTA click
+  // doesn't, because the member may still cancel at Spotify's consent screen.
+  // One link covers every show. Marking is idempotent (it only ever flips a
+  // feed that isn't already set up), which is what makes it safe to leave the
+  // marker in the URL.
   const spotifyLinked = spotify === "linked";
   const marked = useRef(false);
   useEffect(() => {

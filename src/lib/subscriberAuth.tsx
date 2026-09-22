@@ -3,10 +3,16 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { fetchMe, persistFeedsSetUp, type Me } from "./auth";
+import {
+  fetchMe,
+  persistFeedsSetUp,
+  persistSpotifyFollowOpened,
+  type Me,
+} from "./auth";
 import { fetchAdminMe } from "./admin";
 import { hasAnySession } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
@@ -70,6 +76,11 @@ type SubscriberAuthValue = {
   // devices. Monotonic — only ever flips a feed to set up, never back. The
   // provider's feed webhook remains authoritative and reconciles on refresh.
   markFeedsSetUp: (feedIds: string[]) => void;
+  // Tick a show off the Spotify follow checklist: patches `me.feeds` so the
+  // tick shows at once, then writes the server row — the only record. If the
+  // write fails the tick is taken back, so the page never shows state the
+  // server doesn't hold.
+  markSpotifyFollowOpened: (feedId: string) => void;
   // True when /api/me couldn't be reached (network / server error, not a 401).
   // Member-data pages show an error+retry on this; `refresh` is the retry. Kept
   // separate from `state` so a transient outage doesn't ripple a new variant
@@ -106,14 +117,37 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     isAdmin: false,
   });
 
+  // Marks the member made this session: feeds they set up, and Spotify
+  // follow ticks. A /api/me read that went out before a mark's save committed
+  // comes back without it, and would undo the check-off the member just saw —
+  // so every read is overlaid with these. A follow id leaves only when its
+  // save fails; a set-up id never does, matching markFeedsSetUp's optimistic
+  // stance (the activation webhook reconciles).
+  const setUpIds = useRef(new Set<string>());
+  const followOpenedIds = useRef(new Set<string>());
+
   const refresh = useCallback(async () => {
     if (!hasAnySession()) {
+      setUpIds.current.clear();
+      followOpenedIds.current.clear();
       setState({ kind: "guest" });
       setAuthError(false);
       return;
     }
     try {
-      const me = await fetchMe();
+      const fetched = await fetchMe();
+      const me = fetched && {
+        ...fetched,
+        feeds: fetched.feeds.map((f) => ({
+          ...f,
+          ...(setUpIds.current.has(f.id) && !f.activated
+            ? { pending: true }
+            : {}),
+          ...(followOpenedIds.current.has(f.id)
+            ? { spotify_follow_opened: true }
+            : {}),
+        })),
+      };
       setState(me ? { kind: "member", me } : { kind: "guest" });
       setAuthError(false);
     } catch {
@@ -188,6 +222,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   const markFeedsSetUp = useCallback((feedIds: string[]) => {
     if (feedIds.length === 0) return;
     const ids = new Set(feedIds);
+    for (const id of feedIds) setUpIds.current.add(id);
     // Optimistic in-memory patch — instant check-off. Only flip feeds that
     // aren't already set up, so this can never downgrade a confirmed feed.
     setState((prev) =>
@@ -207,6 +242,30 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     );
     // Persist server-side (fire-and-forget; swallows its own errors).
     void persistFeedsSetUp(feedIds);
+  }, []);
+
+  const markSpotifyFollowOpened = useCallback((feedId: string) => {
+    const patch = (opened: boolean) =>
+      setState((prev) =>
+        prev.kind === "member"
+          ? {
+              ...prev,
+              me: {
+                ...prev.me,
+                feeds: prev.me.feeds.map((f) =>
+                  f.id === feedId ? { ...f, spotify_follow_opened: opened } : f,
+                ),
+              },
+            }
+          : prev,
+      );
+    followOpenedIds.current.add(feedId);
+    patch(true);
+    void persistSpotifyFollowOpened(feedId).then((ok) => {
+      if (ok) return;
+      followOpenedIds.current.delete(feedId);
+      patch(false);
+    });
   }, []);
 
   const signIn = useCallback((returnTo?: string, opts?: SignInOpts) => {
@@ -236,6 +295,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
         state,
         refresh,
         markFeedsSetUp,
+        markSpotifyFollowOpened,
         authError,
         signIn,
         signOut,

@@ -45,15 +45,28 @@ const ME: Me = {
 // import from this module, so everything else stays real.
 const realAuth = await import("./auth");
 let meCalls = 0;
+let meImpl: () => Promise<Me> = async () => ME;
+let persistFollowImpl: () => Promise<boolean> = async () => true;
 mock.module("./auth", () => ({
   ...realAuth,
   fetchMe: async () => {
     meCalls += 1;
-    return ME;
+    return meImpl();
   },
+  persistSpotifyFollowOpened: () => persistFollowImpl(),
+  persistFeedsSetUp: async () => {},
 }));
 
-const { SubscriberAuthProvider } = await import("./subscriberAuth");
+const { SubscriberAuthProvider, useSubscriberAuth } = await import(
+  "./subscriberAuth"
+);
+
+type AuthValue = ReturnType<typeof useSubscriberAuth>;
+let ctx: AuthValue | null = null;
+function Probe({ onValue }: { onValue: (v: AuthValue) => void }) {
+  onValue(useSubscriberAuth());
+  return null;
+}
 
 const SESSION_COOKIE = "ark_session_present";
 
@@ -76,7 +89,7 @@ async function mountProvider() {
   await act(async () => {
     root.render(
       <SubscriberAuthProvider>
-        <div />
+        <Probe onValue={(v) => (ctx = v)} />
       </SubscriberAuthProvider>,
     );
   });
@@ -93,6 +106,9 @@ async function refocus(ms: number) {
 
 beforeEach(() => {
   meCalls = 0;
+  meImpl = async () => ME;
+  persistFollowImpl = async () => true;
+  ctx = null;
   setSession(true);
 });
 
@@ -136,5 +152,85 @@ describe("SubscriberAuthProvider — revalidation", () => {
     await refocus(60_000);
 
     expect(meCalls).toBe(0);
+  });
+});
+
+describe("SubscriberAuthProvider — Spotify follow ticks", () => {
+  const SHOW: Me["feeds"][number] = { id: "pod_a", name: "Alpha", url: "https://x" };
+  const WITH_FEED: Me = { ...ME, feeds: [SHOW] };
+
+  function opened(): boolean | undefined {
+    const state = ctx?.state;
+    return state?.kind === "member"
+      ? state.me.feeds[0]?.spotify_follow_opened
+      : undefined;
+  }
+
+  // The member clicks, the phone hands off to Spotify, and the refresh on
+  // return was sent before the tick's save committed — so it answers without
+  // the tick. It must not untick the row.
+  test("a read that predates the save doesn't undo the tick", async () => {
+    meImpl = async () => WITH_FEED;
+    await mountProvider();
+
+    let answerStaleRead: (me: Me) => void = () => {};
+    meImpl = () => new Promise<Me>((resolve) => (answerStaleRead = resolve));
+    await refocus(60_000);
+
+    await act(async () => ctx!.markSpotifyFollowOpened("pod_a"));
+    expect(opened()).toBe(true);
+
+    await act(async () => answerStaleRead(WITH_FEED));
+    expect(opened()).toBe(true);
+  });
+
+  test("a failed save takes the tick back, and later reads don't restore it", async () => {
+    meImpl = async () => WITH_FEED;
+    persistFollowImpl = async () => false;
+    await mountProvider();
+
+    await act(async () => ctx!.markSpotifyFollowOpened("pod_a"));
+    expect(opened()).toBe(false);
+
+    await refocus(60_000);
+    expect(opened()).toBeUndefined();
+  });
+});
+
+describe("SubscriberAuthProvider — set-up marks", () => {
+  const SHOW: Me["feeds"][number] = { id: "pod_a", name: "Alpha", url: "https://x" };
+  const WITH_FEED: Me = { ...ME, feeds: [SHOW] };
+
+  function feedA() {
+    const state = ctx?.state;
+    return state?.kind === "member" ? state.me.feeds[0] : undefined;
+  }
+
+  // Back from Spotify's consent screen, the page marks every show set up while
+  // the refresh on return is still in flight without the marker.
+  test("a read that predates the save doesn't undo the check-off", async () => {
+    meImpl = async () => WITH_FEED;
+    await mountProvider();
+
+    let answerStaleRead: (me: Me) => void = () => {};
+    meImpl = () => new Promise<Me>((resolve) => (answerStaleRead = resolve));
+    await refocus(60_000);
+
+    await act(async () => ctx!.markFeedsSetUp(["pod_a"]));
+    expect(feedA()?.pending).toBe(true);
+
+    await act(async () => answerStaleRead(WITH_FEED));
+    expect(feedA()?.pending).toBe(true);
+  });
+
+  test("never paints pending over a feed the server reports activated", async () => {
+    meImpl = async () => WITH_FEED;
+    await mountProvider();
+    await act(async () => ctx!.markFeedsSetUp(["pod_a"]));
+
+    meImpl = async () => ({ ...ME, feeds: [{ ...SHOW, activated: true, pending: false }] });
+    await refocus(60_000);
+
+    expect(feedA()).toMatchObject({ activated: true, pending: false });
   });
 });
