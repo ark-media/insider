@@ -31,9 +31,10 @@ export function careerRoutes({ env, appBaseUrl }: Deps): Route[] {
       path: '/api/careers',
       method: 'GET',
       handler: async (req, res, json) => {
-        // Job postings change rarely; a short edge cache with SWR keeps the
-        // list snappy without going stale for long.
-        res.setHeader('cache-control', 'public, s-maxage=60, stale-while-revalidate=300')
+        // Do not edge-cache this. Admin creates, edits, and deletes must show
+        // up on the next public read. A shared cache with stale-while-revalidate
+        // kept serving deleted roles after the row was already gone.
+        res.setHeader('cache-control', 'private, no-store')
 
         const slug = new URL(req.url ?? '/', 'http://x').searchParams.get('slug')
         // Keep the response shape matching the request even with no DB: a slug

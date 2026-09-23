@@ -7,7 +7,7 @@ import type { Career } from "../../shared/career";
 
 export async function fetchCareers(): Promise<Career[]> {
   try {
-    const res = await fetch("/api/careers");
+    const res = await fetch("/api/careers", { cache: "no-store" });
     if (!res.ok) return [];
     const data = (await res.json()) as { careers: Career[] };
     return data.careers ?? [];
@@ -18,7 +18,9 @@ export async function fetchCareers(): Promise<Career[]> {
 
 export async function fetchCareer(slug: string): Promise<Career | null> {
   try {
-    const res = await fetch(`/api/careers?slug=${encodeURIComponent(slug)}`);
+    const res = await fetch(`/api/careers?slug=${encodeURIComponent(slug)}`, {
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as { career: Career | null };
     return data.career ?? null;

@@ -94,12 +94,11 @@ describe('GET /api/careers — public contract', () => {
     expect(res.__status()).toBe(405)
   })
 
-  test('sets an SWR cache-control header', async () => {
+  test('does not share-cache the public list', async () => {
     const handler = findHandler(buildDeps(), PUBLIC_PATH)
     const res = makeRes()
     await handler(makeReq('GET', PUBLIC_PATH), res)
-    expect(res.__header('cache-control')).toContain('s-maxage=60')
-    expect(res.__header('cache-control')).toContain('stale-while-revalidate=300')
+    expect(res.__header('cache-control')).toBe('private, no-store')
   })
 
   test('list returns an empty array when DATABASE_URL is unset', async () => {
