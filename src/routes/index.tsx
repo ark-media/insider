@@ -393,10 +393,18 @@ function AlsoFromArkMedia() {
   const { isSubscribed, prefsLoading } = useNewsletterSubscription();
 
   const isMember = state.kind === "member";
-  // Guests and signed-in readers not on the Beehiiv list get the inline signup.
-  // Beehiiv subscribers see a link to recent issues instead. While prefs load
-  // for a member we withhold both so the form never flashes.
-  const showSignup = !isMember || (!prefsLoading && !isSubscribed);
+  // Guests get the inline signup. A signed-in reader who is off the list is
+  // sent to Settings instead: the public form subscribes a bare email, which
+  // for an Ark+ member would land them on the free edition — Settings
+  // re-applies theirs. Subscribers get a link to recent issues. While prefs
+  // load for a member we withhold all of it so nothing flashes.
+  const newsletterAction = !isMember
+    ? { action: <NewsletterSignupForm slug="ark-daily" /> }
+    : prefsLoading
+      ? {}
+      : isSubscribed
+        ? { cta: "Read newsletters", to: "/newsletters" }
+        : { cta: "Turn it on in Settings", to: "/account/settings" };
 
   return (
     <>
@@ -431,11 +439,7 @@ function AlsoFromArkMedia() {
         eyebrow="Newsletter"
         title="In your inbox."
         visual={<NewsletterVisual />}
-        {...(showSignup
-          ? { action: <NewsletterSignupForm slug="ark-daily" /> }
-          : isMember && !prefsLoading
-            ? { cta: "Read newsletters", to: "/newsletters" }
-            : {})}
+        {...newsletterAction}
       />
     </>
   );

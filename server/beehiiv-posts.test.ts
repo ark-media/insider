@@ -1,7 +1,7 @@
 // Tests for the Beehiiv post sanitizer and upstream → NewsletterPost
 // projection. The sanitizer output reaches the user's browser as real HTML
 // via html-react-parser, so these tests pin both the allowlist and the
-// projection's audience-to-tier mapping.
+// projection's free-vs-members'-edition tier mapping.
 
 import { describe, test, expect } from 'bun:test'
 import {
@@ -81,7 +81,8 @@ describe('projectBeehiivPost', () => {
     expect(out!.publishedAt).toBe('2024-04-26')
     expect(out!.excerpt).toBe('Polling, bond markets, and the IDF reorg.')
     expect(out!.bodyHtml).toContain('<p>Three things this week.</p>')
-    expect(out!.tier).toBe('free')
+    // `base` carries a members-only body, so the free view is the preview.
+    expect(out!.tier).toBe('ark-plus')
     expect(out!.authorName).toBe('Dan Senor')
   })
 
@@ -106,7 +107,7 @@ describe('projectBeehiivPost', () => {
           content: { premium: { web: '<p>SECRET premium body.</p>' } },
           content_html: '<p>SECRET full body in the flat field.</p>',
         },
-        'members-letter',
+        'ark-daily',
         'Author',
       )
       expect(String(out!.bodyHtml)).toBe('')
@@ -128,7 +129,7 @@ describe('projectBeehiivPost', () => {
   test('a member still gets content_html when it is all a gated post has', () => {
     const out = projectBeehiivPost(
       { ...base, audience: 'premium', content: undefined, content_html: '<p>Flat premium body.</p>' },
-      'members-letter',
+      'ark-daily',
       'Author',
       'premium',
     )
@@ -138,7 +139,7 @@ describe('projectBeehiivPost', () => {
   test('projects the premium body when view=premium', () => {
     const out = projectBeehiivPost(
       { ...base, audience: 'premium' },
-      'members-letter',
+      'ark-daily',
       'Author',
       'premium',
     )
@@ -155,7 +156,7 @@ describe('projectBeehiivPost', () => {
           premium: { web: '   ' },
         },
       },
-      'members-letter',
+      'ark-daily',
       'Author',
       'premium',
     )
@@ -165,28 +166,65 @@ describe('projectBeehiivPost', () => {
   test('promotes tier to ark-plus when audience is premium', () => {
     const out = projectBeehiivPost(
       { ...base, audience: 'premium' },
-      'members-letter',
+      'ark-daily',
       'Author',
     )
     expect(out!.tier).toBe('ark-plus')
   })
 
-  test('treats audience=both as free on the free surface', () => {
+  test('an audience=both post whose premium body adds nothing is free', () => {
+    const same = '<p>Same for everyone.</p>'
     const out = projectBeehiivPost(
-      { ...base, audience: 'both' },
+      { ...base, audience: 'both', content: { free: { web: same }, premium: { web: same } } },
       'ark-daily',
       'Author',
     )
     expect(out!.tier).toBe('free')
   })
 
-  test('treats audience=both as ark-plus on the members surface', () => {
+  test('an audience=both post with members-only sections is ark-plus', () => {
     const out = projectBeehiivPost(
-      { ...base, audience: 'both' },
-      'members-letter',
+      {
+        ...base,
+        audience: 'both',
+        content: {
+          free: { web: '<p>Free part.</p>' },
+          premium: { web: '<p>Free part.</p><p>Members-only part.</p>' },
+        },
+      },
+      'ark-daily',
       'Author',
     )
     expect(out!.tier).toBe('ark-plus')
+    expect(out!.bodyHtml).not.toContain('Members-only')
+  })
+
+  // Shape seen on the live publication: sent only to the premium segment,
+  // `audience` still says free, free.web is just the header.
+  test('an audience=free post carrying the whole issue in premium.web is ark-plus', () => {
+    const out = projectBeehiivPost(
+      {
+        ...base,
+        audience: 'free',
+        content: {
+          free: { web: '<h1>The Friday File</h1><p>Marc Fink</p>' },
+          premium: { web: '<h1>The Friday File</h1><p>Marc Fink</p><p>The whole issue.</p>' },
+        },
+      },
+      'ark-daily',
+      'Author',
+    )
+    expect(out!.tier).toBe('ark-plus')
+    expect(out!.bodyHtml).not.toContain('The whole issue')
+  })
+
+  test('a free post with no premium body is free', () => {
+    const out = projectBeehiivPost(
+      { ...base, content: { free: { web: '<p>Only free.</p>' } } },
+      'ark-daily',
+      'Author',
+    )
+    expect(out!.tier).toBe('free')
   })
 
   test('returns null when id or slug is missing', () => {

@@ -15,18 +15,13 @@ import { isNewsletterSlug } from '../routes/newsletter-slugs.js'
 import { escapeHtml } from '../../shared/validation.js'
 import { fetchWithTimeout } from "./http.js"
 
-// newsletter slug → Circle space slug the companion thread lives in. The
-// read-side bindings in `server/routes/circle.ts` only cover `members-letter`
-// today; write-side bindings stay separate so we can target whichever space
-// hosts public-facing discussion threads per newsletter without coupling the
-// two paths. Space slugs map to space IDs via Circle's /spaces endpoint.
+// newsletter slug → Circle space slug the companion thread lives in. Space slugs map to space IDs via Circle's /spaces endpoint.
 // `conversation` is the space among the eight that hosts discussion.
 // One consequence to keep in view: the Fold highlights feed reads that
 // same space, so it filters these threads back out by id — see
 // listCompanionCirclePostIds below.
 const DISCUSS_SPACE_BINDINGS: Record<NewsletterSlug, string> = {
   'ark-daily': 'conversation',
-  'members-letter': 'conversation',
 }
 
 function discussSpaceSlugFor(slug: NewsletterSlug): string {

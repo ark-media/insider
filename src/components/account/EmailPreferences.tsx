@@ -1,72 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { newsletter } from "../../data/newsletters";
 import {
   fetchNewsletterPrefs,
   saveNewsletterPrefs,
   type NewsletterPrefs,
 } from "../../lib/newsletterPrefs";
 
-// The Settings tab's email section: every list this address is on, in one
-// place, each one switchable where switching means anything.
+// The Settings tab's email section.
 //
-// An entitled member is on two lists — members-letter and the free
-// newsletter — and both switches live here.
-//
-// WHAT THE TWO TOGGLES ACTUALLY ARE
-// They are not independent, and treating them as if they were is a way to
-// silently cancel a paid product. Both newsletters live in ONE Beehiiv
-// publication (server/lib/beehiiv-sync.ts: BEEHIIV_PUBLICATION_ID_ARK_DAILY and
-// _MEMBERS_LETTER resolve to the same pub_ id), so:
-//
-//   `free`    = subscribed to the publication at all. Off sends
-//               `unsubscribe: true`, which deactivates the whole record.
-//   `premium` = holds the paid tier WITHIN that subscription. Meaningless while
-//               the record is unsubscribed — the tier survives, the delivery
-//               does not.
-//
-// So the members letter is delivered only when BOTH are true, the daily switch
-// is really the master switch, and this component says so rather than rendering
-// two lies side by side. See the same note on /api/me/newsletters in
-// server/routes/me.ts.
-
-type Key = "premium" | "free";
-
-const ROWS: Record<Key, { title: string; description: string }> = {
-  premium: {
-    title: "Members-only newsletter",
-    description: "Weekly, from the hosts.",
-  },
-  free: {
-    title: "Ark News Daily",
-    description: "Every weekday morning.",
-  },
-};
-
-/** What a tap on `key` should send, given where the preferences stand now. */
-function patchFor(
-  key: Key,
-  prefs: NewsletterPrefs,
-): { free?: boolean; premium?: boolean } {
-  if (key === "free") return { free: !prefs.free };
-  // Turning the members letter back on from an unsubscribed record has to
-  // re-subscribe as well, or the tier is set on a record that receives nothing
-  // and the switch reads On while nothing arrives.
-  if (!isDelivered("premium", prefs)) {
-    return prefs.free ? { premium: true } : { free: true, premium: true };
-  }
-  return { premium: false };
-}
-
-/** Whether this list is actually reaching the member right now. */
-function isDelivered(key: Key, prefs: NewsletterPrefs): boolean {
-  return key === "free" ? prefs.free : prefs.premium && prefs.free;
-}
+// There is one newsletter. Free and Ark+ readers get different editions of it
+// — the edition is the premium tier on the reader's Beehiiv record, which the
+// membership sets and removes (server/lib/beehiiv-sync.ts), not something the
+// reader picks. So the only switch here is whether the newsletter arrives at
+// all: `free` in /api/me/newsletters, i.e. subscribed to the publication.
+// Turning it back on for an Ark+ member re-applies their edition server-side
+// (server/routes/me.ts).
 
 export function EmailPreferences({ email }: { email: string }) {
   const [prefs, setPrefs] = useState<NewsletterPrefs | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // Which row is mid-save, so only that switch goes busy rather than the list.
-  const [saving, setSaving] = useState<Key | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadGeneration = useRef(0);
 
@@ -108,18 +62,18 @@ export function EmailPreferences({ email }: { email: string }) {
     };
   }, [email, loadPrefs]);
 
-  const onToggle = async (key: Key) => {
+  const onToggle = async () => {
     if (!prefs || saving || loading || loadError) return;
-    const patch = patchFor(key, prefs);
+    const patch = { free: !prefs.free };
     const previous = prefs;
     // Bump the generation so a load still in flight can't overwrite the
     // optimistic value with the pre-toggle one.
     loadGeneration.current += 1;
     setPrefs({ ...prefs, ...patch });
-    setSaving(key);
+    setSaving(true);
     setError(null);
     const result = await saveNewsletterPrefs(patch);
-    setSaving(null);
+    setSaving(false);
     if (result.ok && result.prefs) {
       loadGeneration.current += 1;
       setPrefs(result.prefs);
@@ -133,7 +87,7 @@ export function EmailPreferences({ email }: { email: string }) {
     <div>
       <h3 className="label text-cyan">Email preferences</h3>
       <p className="mt-2 text-body-sm text-fg-muted">
-        Sent to {email}. Change any of these at any time.
+        Sent to {email}. Change this at any time.
       </p>
 
       <div className="mt-4 divide-y divide-rule border border-rule bg-navy-800/40">
@@ -156,36 +110,19 @@ export function EmailPreferences({ email }: { email: string }) {
           </div>
         ) : (
           <>
-            {/* The members letter only exists for an entitled member. Showing
-                it to a free reader would be a switch that can't be flipped. */}
-            {prefs?.canPremium ? (
+            {prefs ? (
               <PrefRow
-                title={ROWS.premium.title}
+                title={newsletter.title}
                 description={
-                  prefs.premium && !prefs.free
-                    ? "Weekly, from the hosts. Paused while all email is off — turning this on resumes both."
-                    : ROWS.premium.description
+                  prefs.canPremium
+                    ? "Weekly. You get the members' edition, with the members-only sections."
+                    : "Weekly. The free edition — Ark+ members get the members' edition."
                 }
-                on={isDelivered("premium", prefs)}
-                busy={saving === "premium"}
-                onToggle={() => void onToggle("premium")}
+                on={prefs.free}
+                busy={saving}
+                onToggle={() => void onToggle()}
               />
             ) : null}
-            <PrefRow
-              title={ROWS.free.title}
-              description={
-                // The one place a member can stop everything. An entitled
-                // member turning this off loses the letter they pay for, so the
-                // row says that here rather than letting them find out by not
-                // receiving it.
-                prefs?.canPremium
-                  ? "Every weekday morning. Turning this off stops all Ark Media newsletters, including the members-only one."
-                  : ROWS.free.description
-              }
-              on={prefs ? isDelivered("free", prefs) : false}
-              busy={saving === "free"}
-              onToggle={() => void onToggle("free")}
-            />
             {/* Not a switch. Receipts, renewal notices and cancellation
                 confirmations are how a member finds out what they were charged,
                 so there is nothing here to opt out of — and a disabled toggle
@@ -232,26 +169,37 @@ function PrefRow({
       <div className="min-w-0">
         <h4 className="text-h5">{title}</h4>
         <p className="mt-1 text-body-sm text-fg-muted">{description}</p>
+        {/* The button names the action, so the current state is spelled out
+            here rather than left for the reader to infer from it. */}
+        <p
+          className={`mt-2 text-[11px] font-semibold uppercase tracking-button ${
+            on ? "text-cyan" : "text-fg-muted"
+          }`}
+        >
+          {on ? "Subscribed" : "Not subscribed"}
+        </p>
       </div>
-      {/* A labelled ON/OFF button rather than a sliding track: the state is the
-          word, so it survives being read aloud, printed, or squinted at. */}
       <button
         type="button"
-        role="switch"
-        aria-checked={on}
         aria-busy={busy}
-        aria-label={`${title} — ${on ? "subscribed" : "not subscribed"}`}
+        aria-label={`${on ? "Unsubscribe from" : "Subscribe to"} ${title}`}
         onClick={onToggle}
         disabled={busy}
-        className={`inline-flex min-h-8 shrink-0 items-center border px-3 text-[11px] font-semibold uppercase tracking-button transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+        className={`inline-flex min-h-11 shrink-0 items-center border px-4 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
           busy
             ? "cursor-wait border-rule text-fg-muted opacity-60"
             : on
-              ? "border-cyan bg-cyan/10 text-cyan hover:bg-cyan/20"
-              : "border-rule-strong text-fg-muted hover:border-cyan hover:text-cyan"
+              ? "border-rule-strong text-fg-muted hover:border-cyan hover:text-cyan"
+              : "border-cyan bg-cyan text-navy hover:bg-transparent hover:text-cyan"
         }`}
       >
-        {busy ? "…" : on ? "On" : "Off"}
+        {busy
+          ? on
+            ? "Subscribing…"
+            : "Unsubscribing…"
+          : on
+            ? "Unsubscribe"
+            : "Subscribe"}
       </button>
     </div>
   );

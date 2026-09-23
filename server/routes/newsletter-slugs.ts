@@ -5,10 +5,7 @@
 import type { NewsletterSlug } from '../../src/data/newsletters.js'
 import type { Env } from '../lib/route.js'
 
-const NEWSLETTER_SLUGS = new Set<NewsletterSlug>([
-  'ark-daily',
-  'members-letter',
-])
+const NEWSLETTER_SLUGS = new Set<NewsletterSlug>(['ark-daily'])
 
 export function isNewsletterSlug(s: string): s is NewsletterSlug {
   return (NEWSLETTER_SLUGS as Set<string>).has(s)

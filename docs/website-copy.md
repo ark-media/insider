@@ -34,7 +34,8 @@
 - **TITLE**: In your inbox.
 - **BODY**: Subscribe to our newsletter and get new episodes every Friday.
 - **CTA (MEMBER ALREADY SUBSCRIBED)**: Read newsletters →
-> Guests / non-subscribers see the inline newsletter signup form instead (see Newsletter signup form below).
+- **CTA (SIGNED IN, NOT ON THE LIST)**: Turn it on in Settings →
+> Guests see the inline newsletter signup form instead (see Newsletter signup form below).
 
 ### Newsletter visual (illustrative mock)
 - **MASTHEAD EYEBROW**: The Ark Media Newsletter
@@ -1172,23 +1173,27 @@ single member only ever sees some of them.
 
 ### Recent issues list
 - **SECTION LABEL**: Recent issues
+- **SECTION LABEL (ARK+ MEMBERS)**: Recent issues · Members' edition
 - **EMPTY STATE**: No recent issues yet.
-- **POST META SUFFIX (ARK+ POST)**: · Ark+ (appended after the date)
+- **POST META SUFFIX (ISSUE WITH MEMBERS-ONLY SECTIONS, NON-MEMBERS)**: · Ark+ (appended after the date)
 
-### Subscribe card (guests / not yet subscribed)
+### Subscribe card (guests)
 - **LABEL**: Subscribe
-- **BODY**: {cadence}. Written by {author name}. (from the newsletter data below)
-- **BODY SUFFIX (ARK+ NEWSLETTER)**: Members-only — included with Ark+.
-- **BODY SUFFIX (FREE NEWSLETTER)**: Free in your inbox.
-- **CTA (ARK+ NEWSLETTER)**: Become an Ark+ member →
+- **BODY**: {cadence}. Written by {author name}. Free in your inbox. (from the newsletter data below)
 - **EMAIL PLACEHOLDER**: you@example.com
 - **SUBMIT BUTTON**: Subscribe
 - **SUBMIT BUTTON (SUCCESS)**: Subscribed
 - **SUCCESS MESSAGE**: You're on the list.
 
-### Ark+ upsell card (free newsletter, non-subscriber)
+### Turn-on card (signed in, not on the list)
+- **LABEL**: Not in your inbox
+- **BODY (ARK+ MEMBERS)**: You're not getting the newsletter by email. Turn it on to get the members' edition every week.
+- **BODY (FREE ACCOUNTS)**: You're not getting the newsletter by email. Turn it on to get it every week.
+- **CTA**: Email settings →
+
+### Ark+ upsell card (anyone without Ark+)
 - **LABEL**: Ark+
-- **BODY**: Get the members-only newsletter, ad-free episodes, and the full archive when you join Ark+.
+- **BODY**: Ark+ members get the members' edition of every issue — sharper analysis and source notes — plus ad-free episodes and the full archive.
 - **CTA**: Join Ark+ →
 
 ### Subscribe error messages (shared with all newsletter forms)
@@ -1215,8 +1220,8 @@ single member only ever sees some of them.
 
 ### Members-only gate (Ark+ posts, non-members)
 - **LABEL**: Members only
-- **HEADING**: The rest of this post is for Ark+ members.
-- **BODY**: Ark+ includes the paid feed, members-only newsletters, and the Fold.
+- **HEADING**: The rest of this issue is in the members' edition.
+- **BODY**: Ark+ members get the full issue in their inbox every week, along with the private, ad-free feed.
 - **CTA**: Become an Ark+ member →
 
 ### Post not found
@@ -1229,19 +1234,13 @@ single member only ever sees some of them.
 - **EPISODE CTA**: Listen →
 
 ## Newsletter data (src/data/newsletters.ts)
-### The free newsletter
+### The newsletter
+> One newsletter. Free readers get the free edition; Ark+ members get the members' edition of the same issue.
 - **TITLE**: The Ark Media Newsletter
 - **SHORT TITLE**: Ark Media
-- **DESCRIPTION**: Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead.
+- **DESCRIPTION**: The through-lines from this week's interviews and what they tell us about the week ahead. Ark+ members get the members' edition, with sharper analysis and source notes.
 - **CADENCE**: Weekly
 - **AUTHOR**: Ark Media newsroom
-
-### The members newsletter
-- **TITLE**: The Ark+ Members Letter
-- **SHORT TITLE**: Members Letter
-- **DESCRIPTION**: A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading.
-- **CADENCE**: Weekly
-- **AUTHOR**: Ark Media editorial
 
 ## Fold broadcasts (mock member highlights, src/data/communityBroadcasts.ts)
 ### Broadcast — Sarah K. (Member, Tel Aviv)
@@ -1569,17 +1568,17 @@ The reasons asked follow what the member gave up — including a debundle, where
 - **LOADING**: Loading…
 
 ### Preference card
-- **ROW (ARK+ MEMBERS) LABEL / TITLE**: Members letter — The Ark+ Members Letter
-- **ROW (ARK+ MEMBERS) DESCRIPTION**: A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading. Turning off keeps you on the free newsletter.
-- **BADGE (ARK+ MEMBERS)**: Ark+
-- **ROW (FREE ACCOUNTS) LABEL / TITLE**: Free newsletter — The Ark Media Newsletter
-- **ROW (FREE ACCOUNTS) DESCRIPTION**: Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead. Toggling off stops all Ark Media emails.
-- **CADENCE (BOTH ROWS)**: Weekly
+> One switch: whether the newsletter arrives. The edition follows the membership and isn't a setting.
+- **ROW TITLE**: The Ark Media Newsletter
+- **ROW DESCRIPTION (ARK+ MEMBERS)**: Weekly. You get the members' edition, with the members-only sections.
+- **ROW DESCRIPTION (FREE ACCOUNTS)**: Weekly. The free edition — Ark+ members get the members' edition.
+- **STATUS**: Subscribed / Not subscribed
+- **BUTTON**: Unsubscribe (when subscribed) / Subscribe (when not)
+- **BUTTON (SAVING)**: Unsubscribing… / Subscribing…
 - **ERROR (SESSION EXPIRED)**: Session expired. Sign in again to manage preferences.
 - **ERROR (LOAD FAILED)**: Could not load preferences. Please refresh the page.
 - **RETRY BUTTON**: Try again
 - **ERROR (SAVE FAILED)**: Could not update. Please try again.
-- **ERROR (ARK+ REQUIRED)**: Ark+ membership required.
 - **ERROR (PROVIDER UPDATE FAILED)**: Could not update newsletter preferences. Please try again.
 - **ERROR (GENERIC SAVE)**: Could not save. Please try again.
 - **ERROR (NETWORK)**: Network error. Please try again.

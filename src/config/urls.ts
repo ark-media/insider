@@ -141,7 +141,6 @@ export const circleUrls = {
  */
 export const newsletterCircleSpaces: Record<NewsletterSlug, string> = {
   "ark-daily": `${circleUrls.community}/c/conversation`,
-  "members-letter": `${circleUrls.community}/c/conversation`,
 };
 
 // ---------------------------------------------------------------------------

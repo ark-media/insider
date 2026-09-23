@@ -57,7 +57,7 @@ test/sandbox to production.
 | 3 | **Neon (Postgres)** | Source of truth for entitlement + app data | Prod project = `ark-insider-dev` (us-east-1) per current env. Confirm before launch. |
 | 4 | **Stripe** | Payments, subscriptions, gift catalog | ⚠️ Live mode: catalog, webhooks, coupons all re-provisioned. |
 | 5 | **Resend** | Transactional email (gift welcome, feed reminders, **migration emails**) | Verified sending domain. |
-| 6 | **Beehiiv** | Newsletters (Ark Daily + Members Letter), episode catalog (fetched at runtime — never hardcoded), and the private paid feed | API key, publication ids, podcast ids, premium tier id, webhook. |
+| 6 | **Beehiiv** | The newsletter (free + members' editions), episode catalog (fetched at runtime — never hardcoded), and the private paid feed | API key, publication ids, podcast ids, premium tier id, webhook. |
 | 9 | **Circle** | Community; gated Spaces via access group; SSO | Two tokens (v1 + v2), community id, access group id, SSO secret. |
 | 10 | **PostHog** | Product analytics + session replay | Project key (`phc_…`). |
 | 11 | **Sentry** | Error monitoring | Client DSN. |
@@ -156,7 +156,7 @@ you get the value; "Scope" = server-only vs shipped to browser.
 | Var | Scope | Prod source / action |
 |---|---|---|
 | `BEEHIIV_API_KEY` | server | Beehiiv API key. Also the podcast catalog's credential. |
-| `BEEHIIV_PUBLICATION_ID_ARK_DAILY` / `_MEMBERS_LETTER` | server | Publication ids (may be the same pub with audience tiers). |
+| `BEEHIIV_PUBLICATION_ID_ARK_DAILY` | server | The newsletter's publication id (one newsletter; free and members' editions via the premium tier). |
 | `BEEHIIV_PREMIUM_TIER_ID` | server | `GET /v2/publications/<id>/tiers`. |
 | `BEEHIIV_WEBHOOK_SECRET` | server | `openssl rand -hex 32`; register `/api/beehiiv/webhook?key=…` for the subscription.* events. |
 

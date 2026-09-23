@@ -5,12 +5,12 @@
 // the inbound webhook has a place to land updates (a reader clicks the
 // unsubscribe link in an email → Beehiiv updates → webhook tells us).
 //
-// One publication, two newsletter "surfaces": `ark-daily` (free issues) and
-// `members-letter` (premium issues, same publication, premium audience). A
-// reader has at most one subscription record per email. We express the two
-// surfaces as:
-//   - status = active|pending|... → the reader gets emails at all
-//   - has_premium                 → the reader gets the members-letter issues
+// One publication, one newsletter, two editions: free readers get the free
+// edition, premium-tier readers the members' edition of the same issue. A
+// reader has at most one subscription record per email:
+//   - status = active|pending|... → the reader gets the newsletter at all
+//   - has_premium                 → which edition (and, separately, the
+//                                   private podcast feed — see below)
 //
 // Callers:
 //   - activation.ts (subscription + gift)        → ensureSubscribedWithPremium
@@ -99,12 +99,7 @@ function unwrapData(
 }
 
 function publicationIdFromEnv(env: Env): string | null {
-  // The two slug-scoped vars point at the same shared publication (see
-  // server/routes/beehiiv.ts and .env). We accept either as the source of
-  // truth and prefer ark-daily as a tie-breaker.
-  const id =
-    env.BEEHIIV_PUBLICATION_ID_ARK_DAILY ||
-    env.BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER
+  const id = env.BEEHIIV_PUBLICATION_ID_ARK_DAILY
   if (!id || !/^pub_[A-Za-z0-9-]+$/.test(id)) return null
   return id
 }

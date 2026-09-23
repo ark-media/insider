@@ -65,7 +65,6 @@ const BASE_ENV: Record<string, string> = {
   SESSION_SECRET: 'session-secret-for-tests-32-chars__',
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test',
-  BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: 'pub_test',
   BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: SHOW_ID,
   // Distinct URL per test file keeps getDb()'s cached neon closure isolated.
   DATABASE_URL: 'postgres://stub-me-feeds-setup-test',

@@ -1,7 +1,11 @@
 import { formatCalendarDate } from "../../shared/format-date.js";
 import type { SanitizedHtml } from "../../shared/sanitized-html.js";
 
-export type NewsletterSlug = "ark-daily" | "members-letter";
+// One newsletter. Free and paid readers get different editions of the same
+// issue — Beehiiv's premium tier sees the members-only sections, everyone else
+// the free ones — so there is no second list to pick between. The slug keeps
+// its original name because it keys BEEHIIV_PUBLICATION_ID_ARK_DAILY.
+export type NewsletterSlug = "ark-daily";
 
 export type Newsletter = {
   slug: NewsletterSlug;
@@ -9,8 +13,6 @@ export type Newsletter = {
   shortTitle: string;
   description: string;
   cadence: string;
-  /** Free issues land in inboxes; paid issues are gated for Ark+ on the web. */
-  tier: "free" | "ark-plus";
   authorName: string;
 };
 
@@ -46,38 +48,15 @@ export type NewsletterPost = {
   discussUrl?: string;
 };
 
-export const newsletters: Newsletter[] = [
-  {
-    slug: "ark-daily",
-    title: "The Ark Media Newsletter",
-    shortTitle: "Ark Media",
-    description:
-      "Our free dispatch — the through-lines from this week's interviews and what they tell us about the week ahead.",
-    cadence: "Weekly",
-    tier: "free",
-    authorName: "Ark Media newsroom",
-  },
-  {
-    slug: "members-letter",
-    title: "The Ark+ Members Letter",
-    shortTitle: "Members Letter",
-    description:
-      "A members-only letter from the Ark Media editorial team — sharper analysis, source notes, and what we're reading.",
-    cadence: "Weekly",
-    tier: "ark-plus",
-    authorName: "Ark Media editorial",
-  },
-];
-
-/** Beehiiv publication slugs — not post slugs. Redirects those newsletter URLs. */
-export function isNewsletterPublicationSlug(s: string): s is NewsletterSlug {
-  return s === "ark-daily" || s === "members-letter";
-}
-
-/** Which newsletter surface a reader should see on /newsletters. */
-export function newsletterSlugForReader(isArkPlusSubscriber: boolean): NewsletterSlug {
-  return isArkPlusSubscriber ? "members-letter" : "ark-daily";
-}
+export const newsletter: Newsletter = {
+  slug: "ark-daily",
+  title: "The Ark Media Newsletter",
+  shortTitle: "Ark Media",
+  description:
+    "The through-lines from this week's interviews and what they tell us about the week ahead. Ark+ members get the members' edition, with sharper analysis and source notes.",
+  cadence: "Weekly",
+  authorName: "Ark Media newsroom",
+};
 
 // Beehiiv issue dates arrive as 'YYYY-MM-DD' — a calendar date, so format it
 // timezone-free rather than letting local time slide it back a day.

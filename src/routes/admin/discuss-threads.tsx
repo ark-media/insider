@@ -9,10 +9,7 @@ import {
   type BeehiivDraft,
   type DiscussThread,
 } from "../../lib/admin";
-import {
-  newsletters,
-  type NewsletterSlug,
-} from "../../data/newsletters";
+import { newsletter } from "../../data/newsletters";
 import {
   adminField,
   adminFieldLabel,
@@ -25,16 +22,12 @@ export const Route = createFileRoute("/admin/discuss-threads")({
   component: DiscussThreadsAdmin,
 });
 
-const DEFAULT_NEWSLETTER: NewsletterSlug = "members-letter";
-
 type FlashKind = "success" | "warn" | "error";
 type Flash = { kind: FlashKind; message: string };
 
 function DiscussThreadsAdmin() {
   const [threads, setThreads] = useState<DiscussThread[]>([]);
   const [drafts, setDrafts] = useState<BeehiivDraft[]>([]);
-  const [selectedNewsletter, setSelectedNewsletter] =
-    useState<NewsletterSlug>(DEFAULT_NEWSLETTER);
   const [selectedDraftId, setSelectedDraftId] = useState<string>("");
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -82,17 +75,11 @@ function DiscussThreadsAdmin() {
     };
   }, [loadThreadsInto]);
 
-  // Derived: drafts are "loading" until a response for the currently selected
-  // newsletter lands, so switching newsletters shows the spinner immediately
-  // without the effect setting state synchronously.
-  const [loadedDraftsFor, setLoadedDraftsFor] = useState<NewsletterSlug | null>(
-    null,
-  );
-  const loadingDrafts = loadedDraftsFor !== selectedNewsletter;
+  const [loadingDrafts, setLoadingDrafts] = useState(true);
 
   useEffect(() => {
     let live = true;
-    listBeehiivDrafts(selectedNewsletter).then(
+    listBeehiivDrafts(newsletter.slug).then(
       (next) => {
         if (!live) return;
         setDrafts(next);
@@ -100,7 +87,7 @@ function DiscussThreadsAdmin() {
           if (curr && next.some((d) => d.id === curr)) return curr;
           return next[0]?.id ?? "";
         });
-        setLoadedDraftsFor(selectedNewsletter);
+        setLoadingDrafts(false);
       },
       (err: unknown) => {
         if (!live) return;
@@ -108,13 +95,13 @@ function DiscussThreadsAdmin() {
           kind: "error",
           message: errMessage(err, "Failed to load Beehiiv drafts."),
         });
-        setLoadedDraftsFor(selectedNewsletter);
+        setLoadingDrafts(false);
       },
     );
     return () => {
       live = false;
     };
-  }, [selectedNewsletter]);
+  }, []);
 
   const selectedDraft = useMemo(
     () => drafts.find((d) => d.id === selectedDraftId) ?? null,
@@ -128,7 +115,7 @@ function DiscussThreadsAdmin() {
     setFlash(null);
     try {
       const { thread, alreadyExisted } = await createDiscussThread({
-        newsletterSlug: selectedNewsletter,
+        newsletterSlug: newsletter.slug,
         beehiivPostId: selectedDraft.id,
         beehiivPostTitle: selectedDraft.title,
       });
@@ -194,26 +181,6 @@ function DiscussThreadsAdmin() {
           </p>
 
           <form onSubmit={submit} className="mt-6 space-y-5">
-            <div>
-              <label htmlFor="dt-newsletter" className={labelClass}>
-                Newsletter
-              </label>
-              <select
-                id="dt-newsletter"
-                value={selectedNewsletter}
-                onChange={(e) =>
-                  setSelectedNewsletter(e.target.value as NewsletterSlug)
-                }
-                className={`mt-2 ${field}`}
-              >
-                {newsletters.map((n) => (
-                  <option key={n.slug} value={n.slug}>
-                    {n.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             <div>
               <label htmlFor="dt-draft" className={labelClass}>
                 Beehiiv draft

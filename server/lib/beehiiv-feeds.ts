@@ -78,8 +78,7 @@ function toStringMap(input: Record<string, unknown> | undefined): Record<string,
 }
 
 export function publicationIdFromEnv(env: Env): string | null {
-  const id =
-    env.BEEHIIV_PUBLICATION_ID_ARK_DAILY || env.BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER
+  const id = env.BEEHIIV_PUBLICATION_ID_ARK_DAILY
   if (!id || !/^pub_[A-Za-z0-9-]+$/.test(id)) return null
   return id
 }

@@ -1,21 +1,11 @@
-import {
-  createFileRoute,
-  Link,
-  notFound,
-  redirect,
-  useRouter,
-} from "@tanstack/react-router";
-import { useEffect } from "react";
-import {
-  formatPostDate,
-  isNewsletterPublicationSlug,
-  newsletterSlugForReader,
-} from "../../data/newsletters";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
+import { formatPostDate, newsletter } from "../../data/newsletters";
 import { calendarDateParts } from "../../../shared/format-date";
-import { fetchMe } from "../../lib/auth";
-import { hasAnySession } from "../../lib/tokenStore";
-import { getPublication } from "../../lib/beehiiv";
-import { sourceFor } from "../../lib/newsletterSources";
+import {
+  forgetNewsletterPosts,
+  sourceFor,
+} from "../../lib/newsletterSources";
 import { newsletterCommentUrl } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
@@ -23,50 +13,41 @@ import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { NewsletterArticle } from "../../lib/newsletter-renderer";
 
-// The "comment in the Fold" band under each post. Off for launch; flip back
-// on when we want to push newsletter readers into the Fold threads.
-const SHOW_DISCUSSION_CTA = false;
-
 export const Route = createFileRoute("/newsletters/$post")({
   beforeLoad: ({ params }) => {
-    if (isNewsletterPublicationSlug(params.post)) {
+    // The newsletter's own slug is not a post; send it to the listing.
+    if (params.post === newsletter.slug) {
       throw redirect({ to: "/newsletters", replace: true });
     }
   },
+  // The session cookie rides the request, so the server already answers with
+  // the edition this reader is entitled to — no tier lookup needed here.
   loader: async () => {
-    // Tier hint only — the page re-derives membership from useSubscriberAuth and
-    // invalidates. A failed /api/me shouldn't break the post, so fall back to
-    // the free reader on error rather than letting the loader reject. Skip the
-    // call entirely for guests (no session cookie) to avoid a guaranteed 401.
-    let me = null;
-    if (hasAnySession()) {
-      try {
-        me = await fetchMe();
-      } catch {
-        me = null;
-      }
-    }
-    const slug = newsletterSlugForReader(me?.entitlements.arkPlus ?? false);
-    const pub = await getPublication(slug);
-    if (!pub) throw notFound();
-    const posts = await sourceFor(slug).listPosts(slug);
-    return { pub, posts };
+    const posts = await sourceFor(newsletter.slug).listPosts(newsletter.slug);
+    return { posts };
   },
   component: PostPage,
 });
 
 function PostPage() {
   const router = useRouter();
-  const { pub, posts } = Route.useLoaderData();
+  const { posts } = Route.useLoaderData();
   const { post: postSlug } = Route.useParams();
   const { state } = useSubscriberAuth();
   const isArkPlusSubscriber = isArkPlusMember(state);
 
+  // The loader's list came back as whatever edition the cookie was entitled
+  // to, so the first resolved tier is just recorded. A later flip (sign-in,
+  // checkout) means the cached list is the wrong edition: drop it and reload.
+  const resolvedTier = useRef<boolean | null>(null);
   useEffect(() => {
-    if (!isArkPlusMember(state)) return;
-    if (pub.slug === "members-letter") return;
+    if (state.kind === "loading") return;
+    const previous = resolvedTier.current;
+    resolvedTier.current = isArkPlusSubscriber;
+    if (previous === null || previous === isArkPlusSubscriber) return;
+    forgetNewsletterPosts();
     void router.invalidate();
-  }, [state, router, pub.slug]);
+  }, [state.kind, isArkPlusSubscriber, router]);
 
   const found = posts.find((p) => p.slug === postSlug);
 
@@ -91,7 +72,7 @@ function PostPage() {
               to="/newsletters"
               className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              ← Back to {pub.title}
+              ← Back to {newsletter.title}
             </Link>
           </div>
         </section>
@@ -142,7 +123,7 @@ function PostPage() {
             ) : null}
             <div className="rise rise-2">
               <div className="label tracking-[0.28em] text-cyan">
-                {pub.shortTitle}
+                {newsletter.shortTitle}
                 {post.tier === "ark-plus" ? " · Ark+" : " · Newsletter"}
               </div>
               <h1 className="mt-4 font-display text-[clamp(2rem,4.5vw,3.4rem)] font-bold leading-[1.05] tracking-[-0.01em] text-fg-strong">
@@ -178,7 +159,7 @@ function PostPage() {
         </div>
       </article>
 
-      {gated || !SHOW_DISCUSSION_CTA ? null : (
+      {gated ? null : (
         <section>
           <div className="mx-auto flex max-w-[1040px] flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10">
             <div>
@@ -192,7 +173,7 @@ function PostPage() {
               </p>
             </div>
             <a
-              href={post.discussUrl ?? newsletterCommentUrl(pub.slug)}
+              href={post.discussUrl ?? newsletterCommentUrl(newsletter.slug)}
               target="_blank"
               rel="noreferrer noopener"
               className="inline-flex shrink-0 items-center justify-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
@@ -213,11 +194,11 @@ function PostPage() {
               </div>
             </div>
             <h2 className="mt-6 font-display text-[28px] leading-[1.1] text-fg-strong">
-              The rest of this post is for Ark+ members.
+              The rest of this issue is in the members&rsquo; edition.
             </h2>
             <p className="mt-4 max-w-2xl text-body-lg">
-              Ark+ includes the paid feed, members-only newsletter, and the
-              Fold.
+              Ark+ members get the full issue in their inbox every week, along
+              with the private, ad-free feed.
             </p>
             <Link
               to="/plus"

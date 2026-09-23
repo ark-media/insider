@@ -25,13 +25,10 @@ const FIELDS = [FIELD_FIRST_NAME, FIELD_LAST_NAME]
 type CustomField = { id?: string; display?: string; kind?: string }
 
 function publicationId(env: Env): string {
-  // The two slug-scoped vars point at the same shared publication (see
-  // server/lib/beehiiv-sync.ts); accept either.
-  const id =
-    env.BEEHIIV_PUBLICATION_ID_ARK_DAILY || env.BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER
+  const id = env.BEEHIIV_PUBLICATION_ID_ARK_DAILY
   if (!id || !/^pub_[A-Za-z0-9-]+$/.test(id)) {
     console.error(
-      'Refusing to run: set BEEHIIV_PUBLICATION_ID_ARK_DAILY (or _MEMBERS_LETTER) to a pub_… id.',
+      'Refusing to run: set BEEHIIV_PUBLICATION_ID_ARK_DAILY to a pub_… id.',
     )
     process.exit(1)
   }
