@@ -322,6 +322,9 @@ function memberFacingError(status: number, error: string | undefined): string {
 // Stripe hiccup) — the selector then renders without price lines.
 export type BundleBreakdown = {
   plan: "monthly" | "yearly";
+  // What every amount below is in: the subscription's own currency.
+  currency: string;
+  minorFactor: number;
   bundleCents: number;
   arkPlus: DebundlePrice;
   circle: DebundlePrice;

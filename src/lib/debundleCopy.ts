@@ -15,8 +15,11 @@ import { formatMinor } from "./currency";
 
 type Plan = "monthly" | "yearly";
 
-// The catalog is priced in USD, so debundle amounts are USD minor units.
-export const usd = (cents: number) => formatMinor(cents, "usd", 100);
+// Every quote in the cancel/debundle flows is in the member's subscription
+// currency, which the server sends alongside the amounts.
+export type Money = { currency: string; minorFactor: number };
+export const priceIn = (cents: number, m: Money) =>
+  formatMinor(cents, m.currency, m.minorFactor);
 
 // How long the intro rate lasts, in the member's own billing terms. Empty string
 // when the price carries no bounded intro, so callers can concatenate freely.
@@ -47,9 +50,9 @@ export function continuationCopy(
     return `${name} continues on its own at its standalone price, ${tail}`;
   }
   const cadence = plan === "yearly" ? "year" : "month";
-  const list = `${usd(price.priceCents)}/${cadence}`;
+  const list = `${priceIn(price.priceCents, price)}/${cadence}`;
   if (price.introCents === null) {
     return `${name} continues on its own at ${list}, ${tail}`;
   }
-  return `${name} continues on its own at ${usd(price.introCents)}/${cadence} ${introTerm(price, plan)}, then ${list} — ${tail}`;
+  return `${name} continues on its own at ${priceIn(price.introCents, price)}/${cadence} ${introTerm(price, plan)}, then ${list} — ${tail}`;
 }

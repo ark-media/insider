@@ -15,12 +15,14 @@
 
 import type Stripe from 'stripe'
 import {
+  amountOffIn,
   listActiveCoupons,
   listPromotionCodes,
   pickAutoApplyPromo,
 } from '../lib/stripe-promos.js'
 import {
   isSupportedCurrency,
+  minorUnitFactors,
   resolveCatalogPrice,
   resolveGiftPrice,
   type GiftTerm,
@@ -116,7 +118,15 @@ export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
             name: best.coupon.name ?? null,
             kind: best.coupon.percent_off != null ? 'percent' : 'amount',
             percent_off: best.coupon.percent_off ?? undefined,
-            amount_off_cents: best.coupon.amount_off ?? undefined,
+            // In the buyer's currency — the coupon's own top-level amount_off
+            // is the USD one, and announcing "$5 off" on a EUR checkout that
+            // then takes €5 off is the sort of thing support tickets are.
+            amount_off_cents:
+              best.coupon.percent_off != null
+                ? undefined
+                : (amountOffIn(best.coupon, currency) ?? undefined),
+            currency,
+            minor_factor: minorUnitFactors()[currency],
           })
         } catch (err) {
           // Non-fatal: checkout still works at full price.

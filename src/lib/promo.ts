@@ -14,7 +14,11 @@ export type PromoInfo = {
   name: string | null;
   kind: "percent" | "amount";
   percentOff?: number;
+  // A fixed discount, in minor units of `currency` (the buyer's), with that
+  // currency's minor-unit factor.
   amountOffCents?: number;
+  currency?: string;
+  minorFactor?: number;
 };
 
 type PromoQuery = {
@@ -42,6 +46,8 @@ export async function fetchActivePromo(query: PromoQuery): Promise<PromoInfo | n
       kind?: "percent" | "amount";
       percent_off?: number;
       amount_off_cents?: number;
+      currency?: string;
+      minor_factor?: number;
     };
     if (!data.active || !data.code) return null;
     if (data.kind !== "percent" && data.kind !== "amount") return null;
@@ -51,6 +57,8 @@ export async function fetchActivePromo(query: PromoQuery): Promise<PromoInfo | n
       kind: data.kind,
       percentOff: data.percent_off,
       amountOffCents: data.amount_off_cents,
+      currency: data.currency,
+      minorFactor: data.minor_factor,
     };
   } catch {
     return null;

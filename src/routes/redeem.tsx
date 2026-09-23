@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import {
   claimGiftWithMagicToken,
+  GIFT_TIER_LABEL,
+  giftTierFromClaimToken,
   redeemGift,
   type RedeemGiftResult,
 } from "../lib/gift";
@@ -93,6 +95,9 @@ function RedeemPage() {
     if (!search.mt && !search.token) return;
     stashUrlCredentials();
   }, [search.mt, search.token]);
+  // Any of the three tiers can be gifted; name the right one when the link says.
+  const giftTier = giftTierFromClaimToken(magicToken);
+  const tierLabel = giftTier ? GIFT_TIER_LABEL[giftTier] : null;
 
   return (
     <main className="relative">
@@ -101,13 +106,19 @@ function RedeemPage() {
           <div className="eyebrow text-cyan">A gift for you</div>
           <h1 className="mt-5 max-w-2xl text-fg-strong">
             <span className="display-upright block text-[clamp(2rem,5vw,3.6rem)] leading-[1.05]">
-              Claim your <span className="display text-cyan">Ark+</span> gift.
+              Claim your{" "}
+              {tierLabel ? (
+                <>
+                  <span className="display text-cyan">{tierLabel}</span>{" "}
+                </>
+              ) : null}
+              gift.
             </span>
           </h1>
 
           <div className="mt-10 max-w-xl">
             {magicToken ? (
-              <MagicClaimBody mt={magicToken} />
+              <MagicClaimBody mt={magicToken} tierLabel={tierLabel} />
             ) : (
               <TokenClaimBody token={token} />
             )}
@@ -121,7 +132,7 @@ function RedeemPage() {
 // The magic-link path: one button confirms, then we redeem + auto-login and go
 // to the welcome flow. A confirm button (rather than claiming on page load)
 // keeps email link-scanners that auto-open links from consuming the gift.
-function MagicClaimBody({ mt }: { mt: string }) {
+function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | null }) {
   const { refresh } = useSubscriberAuth();
   const navigate = useNavigate();
   const [claim, setClaim] = useState<ClaimState>({ kind: "idle" });
@@ -186,7 +197,12 @@ function MagicClaimBody({ mt }: { mt: string }) {
           disabled={claiming}
           className={primaryCta}
         >
-          {claiming ? "Starting…" : "Start your Ark+ membership"} →
+          {claiming
+            ? "Starting…"
+            : tierLabel
+              ? `Start your ${tierLabel} membership`
+              : "Start your membership"}{" "}
+          →
         </button>
       </div>
     </Card>
@@ -237,7 +253,7 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
         ? "You already have an active membership, so your gift has been added as account credit toward your future renewals."
         : applied === "extended"
           ? "You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift."
-          : "Your Ark+ membership is active. Set up your private podcast feed and join the Fold from your welcome page.";
+          : "Your gift membership is active. Your welcome page walks you through getting set up.";
     return (
       <Card>
         <p className="eyebrow text-cyan">You're all set</p>

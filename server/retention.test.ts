@@ -4,6 +4,7 @@ import { describe, test, expect } from 'bun:test'
 import {
   couponOfferKind,
   isRetentionCoupon,
+  pickIntroCoupon,
   pickOfferCoupon,
   retentionDiscountStillApplies,
   toRetentionOffer,
@@ -153,6 +154,63 @@ describe('pickOfferCoupon', () => {
   })
 })
 
+// A fixed-amount coupon Stripe won't attach in the member's currency must never
+// be offered — the save would fail after the member said yes.
+describe('currency-aware selection', () => {
+  const usdOnly = retention({
+    id: 'usd3',
+    amount_off: 300,
+    currency: 'usd',
+    metadata: { retention_offer: 'true', offer_kind: 'supporter_coupon' },
+  })
+  const everywhere = retention({
+    id: 'multi2',
+    amount_off: 200,
+    currency: 'usd',
+    currency_options: { eur: { amount_off: 250 } },
+    metadata: { retention_offer: 'true', offer_kind: 'supporter_coupon' },
+  })
+
+  test('a USD-only amount coupon is skipped for a EUR member', () => {
+    expect(pickOfferCoupon([usdOnly], 'supporter_coupon', 'monthly', 'eur')).toBeNull()
+    expect(pickOfferCoupon([usdOnly], 'supporter_coupon', 'monthly', 'usd')?.id).toBe('usd3')
+  })
+
+  test('ranks fixed coupons by their amount in the member currency', () => {
+    expect(pickOfferCoupon([usdOnly, everywhere], 'supporter_coupon', 'monthly', 'eur')?.id).toBe(
+      'multi2',
+    )
+    expect(pickOfferCoupon([usdOnly, everywhere], 'supporter_coupon', 'monthly', 'usd')?.id).toBe(
+      'usd3',
+    )
+  })
+
+  test('the offer quotes the amount and currency the member will actually get', () => {
+    expect(toRetentionOffer(everywhere, 'supporter_coupon', 900, 'eur')).toMatchObject({
+      amountOff: 250,
+      currency: 'eur',
+      minorFactor: 100,
+      currentPriceCents: 900,
+    })
+    expect(toRetentionOffer(everywhere, 'supporter_coupon', 1300, 'jpy')).toMatchObject({
+      amountOff: null,
+      currency: 'jpy',
+      minorFactor: 1,
+    })
+  })
+
+  test('the debundle intro coupon follows the same rule', () => {
+    const intro = retention({
+      id: 'intro',
+      amount_off: 100,
+      currency: 'usd',
+      metadata: { retention_offer: 'true', offer_kind: 'debundle_intro' },
+    })
+    expect(pickIntroCoupon([intro], 'gbp')).toBeNull()
+    expect(pickIntroCoupon([intro], 'usd')?.id).toBe('intro')
+  })
+})
+
 describe('toRetentionOffer', () => {
   test('flattens the coupon into the client DTO', () => {
     const c = retention({
@@ -168,6 +226,8 @@ describe('toRetentionOffer', () => {
       percentOff: 20,
       amountOff: null,
       durationMonths: 3,
+      currency: 'usd',
+      minorFactor: 100,
     })
   })
 })

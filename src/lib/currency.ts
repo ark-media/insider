@@ -63,19 +63,19 @@ export function formatMajor(major: number, currency: string): string {
 }
 
 // The discount portion of a Stripe coupon as a localized string, e.g. "20% off"
-// or "$5 off". amount_off coupons carry their own fixed currency (the server
-// mints them in USD — see server/lib/admin-promos.ts), so format the amount in
-// THAT currency via Intl rather than hardcoding "$". amount_off is in the
-// currency's minor unit; our coupon currencies are all 2-decimal, so /100 →
-// major. percent coupons are currency-agnostic.
+// or "€5 off". A fixed amount is in minor units of `currency` — the server
+// resolves it into the buyer's or member's own currency before it gets here —
+// and `factor` is that currency's minor-unit factor (1 for ¥/₩, else 100).
+// Percent coupons are currency-agnostic.
 export function formatCouponDiscount(
   percentOff: number | null | undefined,
-  amountOffCents: number | null | undefined,
+  amountOffMinor: number | null | undefined,
   currency?: string | null,
+  factor = 100,
 ): string {
   if (percentOff != null) return `${percentOff}% off`;
-  if (amountOffCents != null)
-    return `${formatMajor(amountOffCents / 100, currency ?? "usd")} off`;
+  if (amountOffMinor != null)
+    return `${formatMinor(amountOffMinor, currency ?? "usd", factor)} off`;
   return "a discount";
 }
 

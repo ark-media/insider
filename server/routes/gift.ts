@@ -39,8 +39,10 @@ import {
   getGiftByToken,
   getMembershipByAuth0Sub,
   markGiftRedeemed,
+  setGiftStripeEffect,
   upsertMembership,
   type GiftRow,
+  type GiftStripeEffect,
   type MembershipRow,
 } from '../lib/membership.js'
 import { setSessionCookies } from '../lib/cookies.js'
@@ -234,6 +236,27 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
             name: giverName || undefined,
           }))
 
+        // Everything the webhook needs to issue the gift. Stamped on the
+        // PaymentIntent (the normal path, payment_intent.succeeded) AND on the
+        // Session: a 100%-off promo leaves a $0 Session with no PaymentIntent
+        // at all, and then checkout.session.completed is the only event, with
+        // only the Session's metadata to go on.
+        const giftMetadata = {
+          kind: 'gift',
+          tier,
+          term,
+          currency,
+          giver_email: giverEmail,
+          giver_name: giverName,
+          recipient_email: recipientEmail,
+          recipient_name: recipientName,
+          message: body.message ?? '',
+          // Acquisition channel for the GIVER, forwarded from the browser
+          // (BI plan §4.1) so `gift_purchased_confirmed` is attributable.
+          // Allowlisted + length-capped — the client is untrusted.
+          ...sanitizeAttribution(body.attribution),
+        }
+
         const session = await stripe.checkout.sessions.create({
           mode: 'payment',
           ui_mode: 'elements',
@@ -272,25 +295,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           payment_intent_data: {
             receipt_email: giverEmail,
             description: `Ark Insider gift · ${termLabel}`,
-            metadata: {
-              kind: 'gift',
-              tier,
-              term,
-              currency,
-              giver_email: giverEmail,
-              giver_name: giverName,
-              recipient_email: recipientEmail,
-              recipient_name: recipientName,
-              message: body.message ?? '',
-              // Acquisition channel for the GIVER, forwarded from the browser
-              // (BI plan §4.1) so `gift_purchased_confirmed` is attributable.
-              // Allowlisted + length-capped — the client is untrusted.
-              ...sanitizeAttribution(body.attribution),
-            },
+            metadata: giftMetadata,
           },
-          // Lightweight Session-level metadata for the ownership check in
-          // /api/gift/status (avoids expanding the PaymentIntent just to authz).
-          metadata: { kind: 'gift', giver_email: giverEmail },
+          // Also what /api/gift/status checks ownership against (giver_email).
+          metadata: giftMetadata,
           // Required for ui_mode 'elements'; only used when a payment method
           // needs an off-site redirect (e.g. 3DS). The modal otherwise confirms
           // in place and polls /api/gift/status.
@@ -336,15 +344,16 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         }
 
         // The PaymentIntent carries the live status the webhook stamps on
-        // activation.
+        // activation. A $0 (fully discounted) gift has no PaymentIntent, and the
+        // webhook stamps the Session instead.
         const pi =
           typeof session.payment_intent === 'object' ? session.payment_intent : null
         json(200, {
           status: pi?.status ?? session.status ?? 'unknown',
-          // The webhook now writes a pending gift row and stamps the redemption
-          // token on the PI (rather than granting immediately) — so "processed"
-          // means the recipient's claim link is out, not that access is live.
-          activated: Boolean(pi?.metadata?.gift_token),
+          // The webhook writes a pending gift row and stamps the redemption
+          // token (rather than granting immediately) — so "processed" means the
+          // recipient's claim link is out, not that access is live.
+          activated: Boolean(pi?.metadata?.gift_token || session.metadata?.gift_token),
         })
       },
     }),
@@ -678,6 +687,12 @@ export async function redeemGiftForRecipient(
     status: plan.hasPaidSub && existing != null ? existing.status : 'active',
     plan: plan.hasPaidSub && existing != null ? existing.plan : gift.plan,
     amount_cents: plan.hasPaidSub && existing != null ? existing.amount_cents : gift.amount_cents,
+    currency:
+      plan.hasPaidSub && existing != null
+        ? existing.currency
+        : gift.amount_cents != null
+          ? (gift.currency ?? 'usd')
+          : null,
     current_period_end: existing?.current_period_end ?? null,
     cancel_at: existing?.cancel_at ?? null,
     ark_plus_gift_expires_at: grant.arkPlusEndsAt,
@@ -700,11 +715,15 @@ export async function redeemGiftForRecipient(
   //     A Stripe balance only draws invoices of its own currency, so a gift paid
   //     in another currency can't be credited here without inventing an FX rate.
   //     Skip rather than guess — the gift still granted/extended above.
+  //
+  //     Whatever either one did inside Stripe is recorded on the gift
+  //     (gift.stripe_effect) so a later refund or dispute can undo exactly that.
   let extended = false
   let creditApplied = false
+  let effect: GiftStripeEffect | null = null
   if (plan.extendSub && existing?.stripe_subscription_id) {
     try {
-      await extendSubscription(stripe, env, existing.stripe_subscription_id, term)
+      effect = await extendSubscription(stripe, env, existing.stripe_subscription_id, term)
       extended = true
     } catch (err) {
       console.error('[gift] subscription extend failed:', err)
@@ -728,11 +747,21 @@ export async function redeemGiftForRecipient(
       })
     } else {
       try {
-        await applyGiftAsCredit(stripe, existing, creditCents, currency)
-        creditApplied = true
+        effect = await applyGiftAsCredit(stripe, existing, creditCents, currency)
+        creditApplied = effect !== null
       } catch (err) {
         console.error('[gift] credit apply failed:', err)
       }
+    }
+  }
+  if (effect) {
+    // Best-effort: the Stripe change already happened and the redemption stands
+    // either way. A missing record only means a later reversal can't undo it
+    // automatically — the reversal path logs that loudly.
+    try {
+      await setGiftStripeEffect(sql, token, effect)
+    } catch (err) {
+      console.error('[gift] could not record the Stripe effect of a redemption:', err)
     }
   }
 
@@ -830,33 +859,58 @@ async function undoLostRaceGrant(
 // skip a cycle). Never moves the customer balance — that's the credit path
 // (D5/D10). The resulting subscription.updated is a no-op for entitlement: same
 // tier + already-provisioned sub → the webhook's diff-gate skips fan-out/revoke.
+//
+// Both mechanics start the gift where the member's PAID time ends — the current
+// period end — not now. Pausing from now handed the recipient the gift term
+// minus whatever was left of a period they had already paid for.
+//
+// Returns what it changed, for gift.stripe_effect (see the reversal path in
+// routes/stripe/webhook.ts).
 async function extendSubscription(
   stripe: Stripe,
   env: Deps['env'],
   subscriptionId: string,
   term: GiftTerm,
-): Promise<void> {
+): Promise<GiftStripeEffect> {
   const sub = await stripe.subscriptions.retrieve(subscriptionId)
   // A pending period-end change (attached schedule) makes Stripe reject a plain
   // subscriptions.update — detach it first, then extend on the current phase.
   await releaseScheduleIfAny(stripe, sub, env)
-  const termMs = GIFT_TERM_DAYS[term] * 24 * 60 * 60 * 1000
+  const termSec = GIFT_TERM_DAYS[term] * 24 * 60 * 60
   const item = sub.items.data[0]
+  const nowSec = Math.floor(Date.now() / 1000)
+  // Where paid time runs out. An already-paused sub resumes later than its
+  // period end, and stacking a second gift must start from THAT date.
+  const periodEndSec = Math.max(item?.current_period_end ?? nowSec, nowSec)
   if (item?.price?.recurring?.interval === 'year') {
     // Push the renewal: trial_end = current period end + term, no proration, so
     // no charge lands now and billing resumes at the moved-out date.
-    const periodEndSec = item.current_period_end ?? Math.floor(Date.now() / 1000)
-    const newEndSec = Math.floor((periodEndSec * 1000 + termMs) / 1000)
+    const trialEndSec = periodEndSec + termSec
     await stripe.subscriptions.update(subscriptionId, {
-      trial_end: newEndSec,
+      trial_end: trialEndSec,
       proration_behavior: 'none',
     })
-  } else {
-    // Monthly (or any non-annual cadence) → pause collection for the term.
-    const resumesAtSec = Math.floor((Date.now() + termMs) / 1000)
-    await stripe.subscriptions.update(subscriptionId, {
-      pause_collection: { behavior: 'keep_as_draft', resumes_at: resumesAtSec },
-    })
+    return {
+      kind: 'trial_end',
+      subscription_id: subscriptionId,
+      previous_period_end: periodEndSec,
+      trial_end: trialEndSec,
+    }
+  }
+  // Monthly (or any non-annual cadence) → pause collection for the term, from
+  // the end of the paid period (or the end of an existing pause, when one is
+  // already running from an earlier gift).
+  const existingResume = sub.pause_collection?.resumes_at ?? null
+  const fromSec = Math.max(periodEndSec, existingResume ?? 0)
+  const resumesAtSec = fromSec + termSec
+  await stripe.subscriptions.update(subscriptionId, {
+    pause_collection: { behavior: 'keep_as_draft', resumes_at: resumesAtSec },
+  })
+  return {
+    kind: 'pause',
+    subscription_id: subscriptionId,
+    previous_resumes_at: existingResume,
+    resumes_at: resumesAtSec,
   }
 }
 
@@ -910,11 +964,18 @@ async function applyGiftAsCredit(
   membership: MembershipRow,
   amountCents: number,
   currency: string,
-): Promise<void> {
-  if (!membership.stripe_customer_id || amountCents <= 0) return
-  await stripe.customers.createBalanceTransaction(membership.stripe_customer_id, {
+): Promise<GiftStripeEffect | null> {
+  if (!membership.stripe_customer_id || amountCents <= 0) return null
+  const txn = await stripe.customers.createBalanceTransaction(membership.stripe_customer_id, {
     amount: -amountCents, // negative = credit toward future invoices
     currency,
     description: 'Ark gift credit',
   })
+  return {
+    kind: 'credit',
+    customer_id: membership.stripe_customer_id,
+    balance_transaction_id: txn.id,
+    amount: amountCents,
+    currency,
+  }
 }
