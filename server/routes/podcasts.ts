@@ -29,6 +29,7 @@ import {
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { fetchWithTimeout, setReadCacheControl } from '../lib/http.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { createSingleFlight } from '../../shared/single-flight.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { getShow, shows } from '../../src/data/shows.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -137,6 +138,13 @@ const showCache = makeTTLCache<string, string>(SHOW_CACHE_TTL_MS)
 // show's list — and shares its 5 minute TTL because a new episode should
 // surface on /podcasts as promptly as on the show page.
 const latestCache = makeTTLCache<string, EpisodeSummary[]>(EPISODES_CACHE_TTL_MS)
+
+// One upstream load per cache key at a time, so a burst of misses on a cold
+// instance shares a single set of Beehiiv calls (see shared/single-flight.ts).
+const episodesFlight = createSingleFlight<string, EpisodeSummary[]>()
+const episodeFlight = createSingleFlight<string, ProjectedEpisode | null>()
+const latestFlight = createSingleFlight<string, EpisodeSummary[]>()
+const showFlight = createSingleFlight<string, string>()
 
 // Upper bound on `?limit`. The podcasts page wants one card per public show;
 // the cap only exists so the parameter can't be turned into a request for
@@ -334,7 +342,17 @@ async function fetchEpisodes(
   const cacheKey = `${publicationId}:${podcastId}:${showSlug}`
   const cached = episodesCache.get(cacheKey)
   if (cached) return cached
+  return episodesFlight.run(cacheKey, () =>
+    loadEpisodes({ publicationId, token }, podcastId, showSlug, cacheKey),
+  )
+}
 
+async function loadEpisodes(
+  { publicationId, token }: BeehiivConfig,
+  podcastId: string,
+  showSlug: string,
+  cacheKey: string,
+): Promise<EpisodeSummary[]> {
   // Every page is its own request, so they all go out at once and the list
   // costs one page's latency rather than the whole catalogue's. A rejected page
   // rejects the lot — a partial list is worse than a retryable error, because
@@ -398,12 +416,24 @@ async function fetchEpisode(
   showSlug: string,
   episodeId: string,
 ): Promise<ProjectedEpisode | null> {
-  const { publicationId, token } = config
+  const { publicationId } = config
   const cacheKey = `${publicationId}:${podcastId}:${showSlug}:${episodeId}`
   const cached = episodeCache.get(cacheKey)
   if (cached) return cached
   if (isKnownMissing(cacheKey)) return null
+  return episodeFlight.run(cacheKey, () =>
+    loadEpisode(config, podcastId, showSlug, episodeId, cacheKey),
+  )
+}
 
+async function loadEpisode(
+  config: BeehiivConfig,
+  podcastId: string,
+  showSlug: string,
+  episodeId: string,
+  cacheKey: string,
+): Promise<ProjectedEpisode | null> {
+  const { publicationId, token } = config
   let data: BeehiivEpisode | undefined
   try {
     const body = await beehiivGet<{ data?: BeehiivEpisode }>(
@@ -449,6 +479,17 @@ async function fetchLatestEpisodes(
   const cacheKey = `${config.publicationId}:one-per-show`
   const cached = latestCache.get(cacheKey)
   if (cached) return cached.slice(0, limit)
+  const episodes = await latestFlight.run(cacheKey, () =>
+    loadLatestEpisodes(config, env, cacheKey),
+  )
+  return episodes.slice(0, limit)
+}
+
+async function loadLatestEpisodes(
+  config: BeehiivConfig,
+  env: Env,
+  cacheKey: string,
+): Promise<EpisodeSummary[]> {
 
   // Public shows only. A paid show's audio is withheld from anyone who hasn't
   // proved membership, and this response is deliberately cacheable by a shared
@@ -500,7 +541,7 @@ async function fetchLatestEpisodes(
     )
 
   latestCache.set(cacheKey, episodes)
-  return episodes.slice(0, limit)
+  return episodes
 }
 
 async function fetchShowDescription(
@@ -509,7 +550,15 @@ async function fetchShowDescription(
 ): Promise<string> {
   const cached = showCache.get(podcastId)
   if (cached !== null) return cached
+  return showFlight.run(podcastId, () =>
+    loadShowDescription({ publicationId, token }, podcastId),
+  )
+}
 
+async function loadShowDescription(
+  { publicationId, token }: BeehiivConfig,
+  podcastId: string,
+): Promise<string> {
   const body = await beehiivGet<BeehiivShowResponse>(
     `/publications/${encodeURIComponent(publicationId)}/podcasts/${encodeURIComponent(podcastId)}`,
     token,

@@ -5,6 +5,7 @@
 
 import type Stripe from 'stripe'
 import { formatCurrencyMajor } from '../../shared/currency-format.js'
+import { createSingleFlight } from '../../shared/single-flight.js'
 
 export type Plan = 'monthly' | 'yearly'
 
@@ -95,6 +96,7 @@ export type CatalogPrice = {
 
 const PRICE_TTL_MS = 5 * 60_000
 const cache = new Map<string, { at: number; price: CatalogPrice }>()
+const priceFlight = createSingleFlight<string, CatalogPrice>()
 
 // Resolve the catalog price for a tier+plan by `lookup_key`, with its product id
 // and per-currency floors. Throws if no active price carries the lookup_key, it
@@ -151,7 +153,13 @@ async function resolvePriceByLookupKey(
   const now = Date.now()
   const hit = cache.get(key)
   if (hit && now - hit.at < PRICE_TTL_MS) return hit.price
+  return priceFlight.run(key, () => loadPriceByLookupKey(stripe, key))
+}
 
+async function loadPriceByLookupKey(
+  stripe: Stripe,
+  key: string,
+): Promise<CatalogPrice> {
   const list = await stripe.prices.list({
     lookup_keys: [key],
     active: true,
@@ -182,7 +190,7 @@ async function resolvePriceByLookupKey(
     floors[cur] = amount
   }
   const resolved: CatalogPrice = { priceId: price.id, productId, floors }
-  cache.set(key, { at: now, price: resolved })
+  cache.set(key, { at: Date.now(), price: resolved })
   return resolved
 }
 

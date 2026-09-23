@@ -13,12 +13,13 @@ import {
 } from '../lib/pricing.js'
 import { countryFromRequest, currencyForCountry } from '../lib/geo-currency.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
+import { setReadCacheControl } from '../lib/http.js'
 
 export function pricingRoutes({ stripe }: Deps): Route[] {
   return [
     defineRoute({
       path: '/api/pricing',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
         try {
           const url = new URL(req.url ?? '/', 'http://x')
@@ -46,6 +47,16 @@ export function pricingRoutes({ stripe }: Deps): Route[] {
             ]),
           )
 
+          // Same body for everyone in a country, so the edge can serve it: this
+          // is on every pricing card and checkout open, and without it each new
+          // instance in a traffic spike goes to Stripe for the catalog. The
+          // geo header is the only input outside the url (`?country=` and
+          // `?locale_hint=` are already in the cache key), so varying on it
+          // keeps one country's default currency from reaching another. Short,
+          // because a catalog change should show within minutes. Success only:
+          // a 502 is never stored.
+          setReadCacheControl(res, { gated: false, maxAgeSec: 60 })
+          res.setHeader('vary', 'X-Vercel-IP-Country')
           json(200, {
             default_currency: defaultCurrency,
             currencies: SUPPORTED_CURRENCIES,

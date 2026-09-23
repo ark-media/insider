@@ -3,7 +3,7 @@
 // Two surfaces share this module:
 //   1. The /admin back office calls `createCompanionThread` to mint the Circle
 //      thread, patch the Beehiiv draft body, and persist the mapping row.
-//   2. The public /api/beehiiv/posts route calls `listDiscussThreadsByNewsletter`
+//   2. The public /api/beehiiv/posts route calls `listDiscussThreadsByNewsletterCached`
 //      to enrich projected NewsletterPosts with their per-article `discussUrl`.
 //
 // Schema lives in `migrations/` — run `bun run migrate` to apply.
@@ -14,6 +14,8 @@ import type { NewsletterSlug } from '../../src/data/newsletters.js'
 import { isNewsletterSlug } from '../routes/newsletter-slugs.js'
 import { escapeHtml } from '../../shared/validation.js'
 import { fetchWithTimeout } from "./http.js"
+import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { createSingleFlight } from '../../shared/single-flight.js'
 
 // newsletter slug → Circle space slug the companion thread lives in. Space slugs map to space IDs via Circle's /spaces endpoint.
 // `conversation` is the space among the eight that hosts discussion.
@@ -85,7 +87,7 @@ export async function listCompanionCirclePostIds(sql: Sql): Promise<string[]> {
   return rows.map((r) => String(r.circle_post_id))
 }
 
-export async function listDiscussThreadsByNewsletter(
+async function listDiscussThreadsByNewsletter(
   sql: Sql,
   newsletterSlug: NewsletterSlug,
 ): Promise<DiscussThread[]> {
@@ -99,6 +101,29 @@ export async function listDiscussThreadsByNewsletter(
     limit 500
   `) as Row[]
   return rows.map(mapRow)
+}
+
+// The public newsletter route reads this on every post-list request, and that
+// response can't be edge-cached (it differs for members), so without a cache
+// every newsletter view is a Neon query. A minute of staleness only delays a
+// new "Discuss" link; this instance's own writes clear it immediately.
+const BY_NEWSLETTER_TTL_MS = 60_000
+const byNewsletterCache = makeTTLCache<NewsletterSlug, DiscussThread[]>(
+  BY_NEWSLETTER_TTL_MS,
+)
+const byNewsletterFlight = createSingleFlight<NewsletterSlug, DiscussThread[]>()
+
+export async function listDiscussThreadsByNewsletterCached(
+  sql: Sql,
+  newsletterSlug: NewsletterSlug,
+): Promise<DiscussThread[]> {
+  const cached = byNewsletterCache.get(newsletterSlug)
+  if (cached) return cached
+  return byNewsletterFlight.run(newsletterSlug, async () => {
+    const threads = await listDiscussThreadsByNewsletter(sql, newsletterSlug)
+    byNewsletterCache.set(newsletterSlug, threads)
+    return threads
+  })
 }
 
 async function getDiscussThreadByBeehiivId(
@@ -134,11 +159,13 @@ async function insertDiscussThread(
               circle_thread_url, circle_space_id, circle_post_id,
               beehiiv_body_patched, created_at
   `) as Row[]
+  byNewsletterCache.clear()
   return mapRow(rows[0])
 }
 
 export async function deleteDiscussThread(sql: Sql, id: string): Promise<boolean> {
   const rows = (await sql`delete from discuss_threads where id = ${id} returning id`) as Row[]
+  byNewsletterCache.clear()
   return rows.length > 0
 }
 

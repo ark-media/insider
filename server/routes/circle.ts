@@ -26,6 +26,7 @@ import { listCompanionCirclePostIds } from '../lib/discuss-threads.js'
 import { getDb } from '../lib/db.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { createSingleFlight } from '../../shared/single-flight.js'
 import type { IncomingMessage } from 'node:http'
 import { fetchWithTimeout } from "../lib/http.js"
 
@@ -87,6 +88,7 @@ async function paginateCircleAdmin<R>(
 }
 
 const circleSpaceIdCache = makeTTLCache<string, number>(CIRCLE_CACHE_TTL_MS)
+const circleSpaceIdFlight = createSingleFlight<string, number | null>()
 
 const CIRCLE_SPACES_PAGE_SIZE = 100
 const CIRCLE_SPACES_MAX_PAGES = 5
@@ -99,6 +101,15 @@ async function resolveSpaceIdBySlug(
 ): Promise<number | null> {
   const cached = circleSpaceIdCache.get(spaceSlug)
   if (cached !== null) return cached
+  return circleSpaceIdFlight.run(spaceSlug, () =>
+    loadSpaceIdBySlug(spaceSlug, token),
+  )
+}
+
+async function loadSpaceIdBySlug(
+  spaceSlug: string,
+  token: string,
+): Promise<number | null> {
   let foundId: number | null = null
   await paginateCircleAdmin<CircleSpaceRecord>(
     'spaces',
@@ -135,6 +146,11 @@ const circleCommunityFeedCache = makeTTLCache<string, CommunityFeedItem[]>(
 const circleSpacesCache = makeTTLCache<string, SuggestedSpace[]>(
   CIRCLE_CACHE_TTL_MS,
 )
+// One Circle load per cache at a time, so a burst of misses on a cold instance
+// shares a single paginated fetch (see shared/single-flight.ts).
+const circleEventsFlight = createSingleFlight<'events', ArkEvent[]>()
+const circleCommunityFeedFlight = createSingleFlight<string, CommunityFeedItem[]>()
+const circleSpacesFlight = createSingleFlight<'spaces', SuggestedSpace[]>()
 
 const CIRCLE_EVENTS_PAGE_SIZE = 100
 // Paging budget for /posts?space_id=… — the curated highlights feed stops
@@ -175,6 +191,10 @@ async function companionThreadPostIds(env: Deps['env']): Promise<Set<string>> {
 async function fetchCircleEvents(token: string): Promise<ArkEvent[]> {
   const cached = circleEventsCache.get('events')
   if (cached) return cached
+  return circleEventsFlight.run('events', () => loadCircleEvents(token))
+}
+
+async function loadCircleEvents(token: string): Promise<ArkEvent[]> {
 
   const out: ArkEvent[] = []
   await paginateCircleAdmin<CircleEvent>(
@@ -200,6 +220,15 @@ async function fetchCircleCommunityFeed(
 ): Promise<CommunityFeedItem[]> {
   const cached = circleCommunityFeedCache.get(COMMUNITY_FEED_SPACE_SLUG)
   if (cached) return cached
+  return circleCommunityFeedFlight.run(COMMUNITY_FEED_SPACE_SLUG, () =>
+    loadCircleCommunityFeed(token, env),
+  )
+}
+
+async function loadCircleCommunityFeed(
+  token: string,
+  env: Deps['env'],
+): Promise<CommunityFeedItem[]> {
 
   const spaceId = await resolveSpaceIdBySlug(COMMUNITY_FEED_SPACE_SLUG, token)
   if (spaceId === null) {
@@ -247,6 +276,10 @@ async function fetchCircleCommunityFeed(
 async function fetchMemberSpaces(token: string): Promise<SuggestedSpace[]> {
   const cached = circleSpacesCache.get('spaces')
   if (cached) return cached
+  return circleSpacesFlight.run('spaces', () => loadMemberSpaces(token))
+}
+
+async function loadMemberSpaces(token: string): Promise<SuggestedSpace[]> {
 
   const all: CircleSpace[] = []
   await paginateCircleAdmin<CircleSpace>(
