@@ -406,7 +406,7 @@ function OpenHouseCard({ session }: { session: OpenHouseSession }) {
 /* --- Dan's Book Club -------------------------------------------------------
    The current pick, pointing at /book-club for the note, the shelf, and the
    buy link. Picks live in src/data/bookClub.ts, so this band follows whatever
-   is featured there with no edit here.
+   is current there (by date) with no edit here.
 -------------------------------------------------------------------------- */
 
 function BookClubBand() {

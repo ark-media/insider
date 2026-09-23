@@ -995,17 +995,18 @@ single member only ever sees some of them.
 
 ### Current pick
 - **EYEBROW**: {Month 'YY} Pick (e.g. "July '26 Pick")
-- **BUTTON**: Buy on Amazon →
+- **BUTTON**: Buy on Amazon → (goes to the book's main edition)
+- **EDITIONS LINE (UNDER THE BUTTON)**: {Main format} · Also in {Other formats, each a link} (e.g. "Paperback · Also in Hardcover, Kindle")
 - **LINK**: Discuss it in the Fold →
 
 ### Upcoming picks
-> Shown while months are still ahead of the featured pick — which is all four, until the club starts.
+> A pick appears here once it's announced, on the 15th of the month before its month (November's pick on Oct 15). Hidden entirely until then.
 - **EYEBROW**: On deck
 - **HEADING**: What we're reading next.
 - **COVER RIBBON**: {Month 'YY} Pick
 
 ### Past picks
-> Hidden until a pick's month falls behind the featured one; nothing shows here yet.
+> Hidden until a pick's month is over; October's pick moves here on Nov 1.
 - **EYEBROW**: The shelf
 - **HEADING**: Every pick so far.
 - **COVER RIBBON**: {Month 'YY} Pick
@@ -1013,6 +1014,7 @@ single member only ever sees some of them.
 ### Books by Dan
 - **HEADING**: Books by Dan
 - **BUTTON**: Buy on Amazon →
+- **EDITIONS LINE (UNDER THE BUTTON)**: {Main format} · Also in {Other formats}
 
 ### Pick detail modal
 - **BUTTON**: Buy on Amazon →

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  amazonUrl,
   danBooks,
   formatPickMonth,
+  getBuyLinks,
   getCurrentPick,
   getPastPicks,
   getUpcomingPicks,
@@ -21,26 +21,65 @@ export const Route = createFileRoute("/book-club")({
 const BUY_BUTTON_CLASS =
   "group inline-flex min-h-12 items-center justify-between gap-8 bg-cyan px-5 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
+/* One button for the book's main edition, and the other editions as a single
+   line of small links under it — every format stays one tap away without a
+   stack of near-identical buttons. */
 function BuyOnAmazon({
   book,
+  stretch = false,
   className,
 }: {
-  book: Pick<BookClubPick | AuthoredBook, "slug" | "amazonAsin">;
+  book: Pick<BookClubPick | AuthoredBook, "slug" | "amazonAsin" | "buyLinks">;
+  /** Full-width button (the detail modal) instead of sized to its label. */
+  stretch?: boolean;
   className?: string;
 }) {
+  const [primary, ...others] = getBuyLinks(book);
+  const track = (format?: string) =>
+    trackEvent("book_link_clicked", { slug: book.slug, format });
+
   return (
-    <a
-      href={amazonUrl(book.amazonAsin)}
-      target="_blank"
-      rel="noreferrer noopener sponsored"
-      onClick={() => trackEvent("book_link_clicked", { slug: book.slug })}
-      className={`${BUY_BUTTON_CLASS} ${className ?? ""}`}
+    <div
+      className={`flex flex-col gap-2 ${stretch ? "items-stretch" : "items-start"} ${className ?? ""}`}
     >
-      Buy on Amazon
-      <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
-        →
-      </span>
-    </a>
+      <a
+        href={primary.url}
+        target="_blank"
+        rel="noreferrer noopener sponsored"
+        onClick={() => track(primary.format)}
+        aria-label={
+          primary.format
+            ? `Buy on Amazon — ${primary.format.toLowerCase()}`
+            : undefined
+        }
+        className={BUY_BUTTON_CLASS}
+      >
+        Buy on Amazon
+        <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
+          →
+        </span>
+      </a>
+      {primary.format && others.length > 0 ? (
+        <p className="text-body-sm text-fg-muted">
+          {primary.format} · Also in{" "}
+          {others.map((link, i) => (
+            <span key={link.url}>
+              {i > 0 ? ", " : null}
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noreferrer noopener sponsored"
+                onClick={() => track(link.format)}
+                aria-label={`Buy on Amazon — ${link.format?.toLowerCase()}`}
+                className="text-fg underline decoration-rule-strong underline-offset-4 transition hover:text-cyan hover:decoration-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+              >
+                {link.format}
+              </a>
+            </span>
+          ))}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -145,7 +184,7 @@ function BookClubPage() {
                 <p className="mt-6 max-w-2xl text-body-lg text-fg">
                   {current.danNote}
                 </p>
-                <div className="mt-8 flex flex-wrap items-center gap-4">
+                <div className="mt-8 flex flex-wrap items-start gap-4">
                   <BuyOnAmazon book={current} />
                   <Link
                     to="/fold"
@@ -164,7 +203,8 @@ function BookClubPage() {
         </section>
       ) : null}
 
-      {/* What's next — the months already chosen, in reading order. */}
+      {/* What's next — only picks already announced (mid-month before their
+          month), in reading order. Hidden until the first announcement. */}
       {upcoming.length > 0 ? (
         <PickShelf
           eyebrow="On deck"
@@ -174,7 +214,7 @@ function BookClubPage() {
         />
       ) : null}
 
-      {/* Past picks — empty until a month falls behind the featured pick. */}
+      {/* Past picks — empty until a month falls behind the current pick. */}
       {past.length > 0 ? (
         <PickShelf
           eyebrow="The shelf"
@@ -256,7 +296,7 @@ function BookClubPage() {
               </p>
               <p className="mt-5 text-body-sm text-fg">{selected.danNote}</p>
               <div className="mt-6 flex flex-col gap-3">
-                <BuyOnAmazon book={selected} className="w-full" />
+                <BuyOnAmazon book={selected} stretch />
                 <Link
                   to="/fold"
                   onClick={() => trackEvent("book_club_join_clicked")}
