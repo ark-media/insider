@@ -6,7 +6,7 @@
 // <CRON_SECRET>` matching the secret set in the project's environment.
 
 import { secretEquals } from '../lib/timing-safe.js'
-import { reconcileEntitlements } from '../entitlement.js'
+import { reconcileEntitlements, type ReconcileAxis } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
 import { getMigrationConfig, getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
@@ -44,9 +44,12 @@ const WEBHOOK_EVENT_RETENTION_DAYS = 90
 const SUPPORT_SESSION_RETENTION_DAYS = 180
 
 export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
-  return [
+  // The entitlement reconcile. vercel.json schedules the per-axis paths
+  // separately so neither pass's Auth0 lookups can run the other out of the
+  // function's time limit; the combined path runs both, for a manual run.
+  const reconcileRoute = (path: string, axis?: ReconcileAxis): Route =>
     defineRoute({
-      path: '/api/cron/reconcile-entitlements',
+      path,
       method: ['POST', 'GET'],
       handler: async (req, _res, json) => {
         const cronSecret = env.CRON_SECRET
@@ -56,7 +59,7 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         }
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const summary = await reconcileEntitlements(env, stripe)
+        const summary = await reconcileEntitlements(env, stripe, { axis })
         json(200, {
           scanned: summary.scanned,
           arkPlusRemoved: summary.arkPlusRemoved,
@@ -66,7 +69,12 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
           errors: summary.errors,
         })
       },
-    }),
+    })
+
+  return [
+    reconcileRoute('/api/cron/reconcile-entitlements'),
+    reconcileRoute('/api/cron/reconcile-entitlements/ark-plus', 'ark-plus'),
+    reconcileRoute('/api/cron/reconcile-entitlements/circle', 'circle'),
     defineRoute({
       // Nudge members who started paying but haven't set up their private
       // feed. Scans the premium readers in Neon, sends a one-time Resend

@@ -679,13 +679,21 @@ export function membershipIsLive(row: AxisRow): boolean {
   return axes.arkPlus || axes.circle
 }
 
+// Which pass(es) a run covers. Each pass makes one Auth0 lookup per member it
+// checks, so on a full roster the two together outgrow a single function's
+// time limit — the cron runs them as separate invocations (vercel.json).
+// Omitted → both, for a manual run.
+export type ReconcileAxis = 'ark-plus' | 'circle'
+
 export async function reconcileEntitlements(
   env: Env,
   _stripe: Stripe,
-  opts: { maxPages?: number; batchSize?: number } = {},
+  opts: { maxPages?: number; batchSize?: number; axis?: ReconcileAxis } = {},
 ): Promise<ReconcileSummary> {
   const maxPages = opts.maxPages ?? 10
   const batchSize = opts.batchSize ?? 8
+  const runArkPlus = opts.axis !== 'circle'
+  const runCircle = opts.axis !== 'ark-plus'
   let errors = 0
 
   if (!env.DATABASE_URL) {
@@ -703,8 +711,8 @@ export async function reconcileEntitlements(
 
   const rows = await loadAllNeonMemberships(getDb(env))
   const { arkPlusSubs, circleSubs } = keepSets(rows)
-  // Resolving drift takes one Auth0 call per member — minutes on a real roster —
-  // and a checkout in that gap is in Beehiiv/Circle but not in the keep-sets
+  // Resolving drift takes one Auth0 call per member — tens of seconds on a real
+  // roster — and a checkout in that gap is in Beehiiv/Circle but not in the keep-sets
   // above. Its sub already carries the provisioned marker, so nothing would
   // grant it back after a removal. Each axis re-reads Neon right before it
   // removes anyone, and keeps whoever is entitled by then.
@@ -713,34 +721,41 @@ export async function reconcileEntitlements(
   // Housekeeping: drop provably-expired gift membership rows (customer-less rows
   // whose gift term has elapsed). Reads already ignore them, but leaving them
   // makes any status-based logic (e.g. the gift-redeem stacking check) wrong.
-  try {
-    await deleteExpiredGiftMemberships(getDb(env))
-  } catch (err) {
-    console.error('[reconcile] expired-gift cleanup failed:', err)
-    errors += 1
+  // Once per day is enough, so it rides with the arkPlus run.
+  if (runArkPlus) {
+    try {
+      await deleteExpiredGiftMemberships(getDb(env))
+    } catch (err) {
+      console.error('[reconcile] expired-gift cleanup failed:', err)
+      errors += 1
+    }
   }
 
-  const arkPlusRemoved = await reconcileArkPlusAxis(
-    env,
-    arkPlusSubs,
-    async () => (await reloadKeepSets()).arkPlusSubs,
-    batchSize,
-  ).catch((err: unknown) => {
-    console.error('[reconcile] arkPlus axis failed:', err)
-    errors += 1
-    return 0
-  })
-  const circle = await reconcileCircleAxis(
-    env,
-    circleSubs,
-    async () => (await reloadKeepSets()).circleSubs,
-    maxPages,
-    batchSize,
-  ).catch((err: unknown) => {
-    console.error('[reconcile] Circle axis failed:', err)
-    errors += 1
-    return { drift: 0, removed: 0 }
-  })
+  const arkPlusRemoved = runArkPlus
+    ? await reconcileArkPlusAxis(
+        env,
+        arkPlusSubs,
+        async () => (await reloadKeepSets()).arkPlusSubs,
+        batchSize,
+      ).catch((err: unknown) => {
+        console.error('[reconcile] arkPlus axis failed:', err)
+        errors += 1
+        return 0
+      })
+    : 0
+  const circle = runCircle
+    ? await reconcileCircleAxis(
+        env,
+        circleSubs,
+        async () => (await reloadKeepSets()).circleSubs,
+        maxPages,
+        batchSize,
+      ).catch((err: unknown) => {
+        console.error('[reconcile] Circle axis failed:', err)
+        errors += 1
+        return { drift: 0, removed: 0 }
+      })
+    : { drift: 0, removed: 0 }
 
   return {
     scanned: rows.length,

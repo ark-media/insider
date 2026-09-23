@@ -45,7 +45,8 @@ test/sandbox to production.
   exposed to the client. `VITE_`-prefixed values ship in the JS bundle — only
   publishable/DSN-class values belong there.
 - **Cron auth:** Vercel Cron invokes the three jobs in `vercel.json`
-  (`reconcile-entitlements` daily 03:00, `feed-setup-reminders` daily 15:00,
+  (`reconcile-entitlements` daily, once per axis: `/ark-plus` 03:00 and
+  `/circle` 03:30; `feed-setup-reminders` daily 15:00;
   `prune-webhook-events` monthly) with `Authorization: Bearer $CRON_SECRET`.
 
 ### 1.2 Accounts to own before launch

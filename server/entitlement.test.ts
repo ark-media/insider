@@ -761,6 +761,31 @@ describe('reconcileEntitlements', () => {
     expect(calls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
   })
 
+  test('axis=circle runs only the Circle pass; axis=ark-plus only the Beehiiv one', async () => {
+    // Split so neither pass's Auth0 lookups can run the other out of the
+    // function's time limit.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'bundle' })]
+    premiumEmails = ['keep@x.com', 'drift@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['drift@x.com', ['auth0|gone']],
+    ])
+    installFetch(
+      reconcilerFetch({ circleMembers: [{ email: 'keep@x.com' }, { email: 'drift@x.com' }] }),
+    )
+
+    const circleOnly = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe, { axis: 'circle' })
+    expect(circleOnly.circleRemoved).toBe(1)
+    expect(circleOnly.arkPlusRemoved).toBe(0)
+    expect(calls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
+
+    calls = []
+    const arkPlusOnly = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe, { axis: 'ark-plus' })
+    expect(arkPlusOnly.arkPlusRemoved).toBe(1)
+    expect(arkPlusOnly.circleDrift).toBe(0)
+    expect(calls.some((c) => c.url.includes('circle.so'))).toBe(false)
+  })
+
   test('Circle drift: a dry run by default — finds the drift, removes nobody', async () => {
     neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
     auth0SubsByEmail = new Map([

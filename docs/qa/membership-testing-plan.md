@@ -344,7 +344,8 @@ Run each at the trigger points listed.
 
 ### 8.4 Reconcile cron
 
-`/api/cron/reconcile-entitlements` (daily 03:00 UTC). It **only removes** access
+`/api/cron/reconcile-entitlements`, run once per axis (`…/ark-plus` daily
+03:00 UTC, `…/circle` 03:30; the bare path runs both). It **only removes** access
 that Neon doesn't back, capped at 100 removals per axis per run. It never grants
 and never reads Stripe.
 
