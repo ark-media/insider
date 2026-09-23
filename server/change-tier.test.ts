@@ -25,6 +25,7 @@ type Phase = {
   start_date: number
   end_date: number | null
   items: Array<{ price: string; quantity?: number }>
+  discounts?: Array<Record<string, unknown>>
 }
 
 // Per-test config.
@@ -43,6 +44,9 @@ let subscriptionUpdateError: unknown = null
 // retention coupons survive the change.
 let expandedDiscounts: Array<Record<string, unknown>> = []
 let activeCoupons: Array<Record<string, unknown>> = []
+// What the subscription's price charges in each non-base currency — the
+// currency_options Stripe only returns on prices.retrieve with the expand.
+let priceCurrencyOptions: Record<string, { unit_amount: number }> = {}
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -62,7 +66,7 @@ class FakeStripe {
     update: async (id: string, args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
       if (subscriptionUpdateError) throw subscriptionUpdateError
-      return { id }
+      return { ...currentSub, id }
     },
     retrieve: async (id: string, args?: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptions.retrieve', args: [id, args] })
@@ -121,6 +125,15 @@ class FakeStripe {
     create: async (args: unknown) => {
       stripeCalls.push({ method: 'prices.create', args: [args] })
       return { id: 'price_dyn_1' }
+    },
+    retrieve: async (id: string) => {
+      stripeCalls.push({ method: 'prices.retrieve', args: [id] })
+      return {
+        id,
+        currency: 'usd',
+        currency_options: priceCurrencyOptions,
+        recurring: { interval: id.includes('yearly') ? 'year' : 'month' },
+      }
     },
   }
   // A debundle looks for an intro coupon before it writes anything. Empty by
@@ -185,7 +198,7 @@ async function sessionCookie(email: string): Promise<string> {
   return `${SESSION_COOKIE_NAME}=${token}`
 }
 
-function makeReq(body: unknown, cookie?: string): IncomingMessage {
+function makeReq(body: unknown, cookie?: string, path: string = PATH): IncomingMessage {
   const raw = Buffer.from(JSON.stringify(body), 'utf8')
   const stream = Readable.from([raw]) as unknown as Omit<IncomingMessage, 'socket'> & {
     method?: string
@@ -194,7 +207,7 @@ function makeReq(body: unknown, cookie?: string): IncomingMessage {
     socket: { remoteAddress: string }
   }
   stream.method = 'POST'
-  stream.url = PATH
+  stream.url = path
   stream.headers = {
     'content-type': 'application/json',
     ...(cookie ? { cookie } : {}),
@@ -225,11 +238,17 @@ function makeRes() {
   }
 }
 
-async function post(body: unknown, cookie?: string, sharedHandler?: Middleware) {
+async function post(
+  body: unknown,
+  cookie?: string,
+  sharedHandler?: Middleware,
+  path: string = PATH,
+) {
   // A fresh handler per call by default, so each test starts with its own rate
   // limiter; the limiter's own test passes one in to keep the bucket.
-  const handler = sharedHandler ?? getHandler()
-  const req = makeReq(body, cookie)
+  const handler =
+    sharedHandler ?? createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
+  const req = makeReq(body, cookie, path)
   const res = makeRes()
   await new Promise<void>((resolve, reject) => {
     const orig = res.end.bind(res)
@@ -271,7 +290,9 @@ function withSub(opts: {
         {
           id: 'si_1',
           price: {
+            id: 'price_current',
             unit_amount: opts.amountCents,
+            currency: 'usd',
             product: `prod_${opts.tier === 'ark-plus' ? 'ark_plus' : 'bundle'}`,
             recurring: { interval: 'month' },
           },
@@ -292,6 +313,7 @@ beforeEach(() => {
   subscriptionUpdateError = null
   expandedDiscounts = []
   activeCoupons = []
+  priceCurrencyOptions = {}
   fetchCalls = []
   // The resolver's price cache is module-level and `bun test` shares one
   // process. Clearing it keeps `prices.list` a reliable signal of whether the
@@ -718,5 +740,180 @@ describe('POST /api/stripe/change-tier — tier authority', () => {
     )
     expect(res.statusCode).toBe(409)
     expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+})
+
+// A currency_options price states `unit_amount` in USD whatever the member pays
+// in. Comparing that with a amount in the subscription's own currency decided
+// "nothing changed" and "immediate vs period end" in the wrong money.
+describe('POST /api/stripe/change-tier — non-USD subscriptions compare in their own currency', () => {
+  function withEurSub(paysEur: number) {
+    withSub({ tier: 'ark-plus', amountCents: 800 }) // 800 = the USD base, not what they pay
+    ;(currentSub as Record<string, unknown>).currency = 'eur'
+    priceCurrencyOptions = { eur: { unit_amount: paysEur } }
+  }
+
+  test('lowering a EUR PWYC amount lands at period end, even when it is above the USD base', async () => {
+    withEurSub(1500)
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_current', quantity: 1 }] },
+    ]
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1200 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().timing).toBe('period_end')
+  })
+
+  test('asking for exactly what they pay in EUR is a no-op', async () => {
+    withEurSub(1500)
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1500 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().changed).toBe(false)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+})
+
+// subscriptionSchedules.update replaces every phase, so a phase rebuilt without
+// its discounts silently loses them.
+describe('POST /api/stripe/change-tier — discounts survive a period-end change', () => {
+  test('a checkout promo stays on the current phase and carries into the next', async () => {
+    withSub({ tier: 'bundle', amountCents: 2000 })
+    ;(currentSub as Record<string, unknown>).discounts = ['di_promo']
+    expandedDiscounts = [
+      { id: 'di_promo', source: { type: 'coupon', coupon: { id: 'c_promo', metadata: {} } } },
+    ]
+    schedulePhases = [
+      {
+        start_date: NOW_SEC - 100,
+        end_date: NOW_SEC + 1000,
+        items: [{ price: 'price_bundle_monthly', quantity: 1 }],
+        discounts: [{ discount: 'di_promo', coupon: null, promotion_code: null }],
+      },
+    ]
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().timing).toBe('period_end')
+
+    const upd = stripeCalls.find((c) => c.method === 'subscriptionSchedules.update')
+    const phases = (upd!.args[1] as { phases: Array<{ discounts?: unknown }> }).phases
+    expect(phases[0].discounts).toEqual([{ discount: 'di_promo' }])
+    expect(phases[1].discounts).toEqual([{ discount: 'di_promo' }])
+  })
+
+  test('a retention coupon priced for the Fold does not ride onto Ark+', async () => {
+    withSub({ tier: 'bundle', amountCents: 2000 })
+    ;(currentSub as Record<string, unknown>).discounts = ['di_afford']
+    expandedDiscounts = [
+      {
+        id: 'di_afford',
+        source: {
+          type: 'coupon',
+          coupon: {
+            id: 'c_afford',
+            metadata: { retention_offer: 'true', offer_kind: 'affordability_coupon' },
+          },
+        },
+      },
+    ]
+    schedulePhases = [
+      {
+        start_date: NOW_SEC - 100,
+        end_date: NOW_SEC + 1000,
+        items: [{ price: 'price_bundle_monthly', quantity: 1 }],
+      },
+    ]
+    await post({ tier: 'ark-plus', plan: 'monthly' }, await sessionCookie('member@example.com'))
+    const upd = stripeCalls.find((c) => c.method === 'subscriptionSchedules.update')
+    const phases = (upd!.args[1] as { phases: Array<{ discounts?: unknown }> }).phases
+    expect(phases[1].discounts).toBeUndefined()
+  })
+})
+
+// Accepting a save attaches its coupon. `discounts` REPLACES the list, so a
+// member who already had a promo must keep it — a save that quietly strips a
+// forever discount leaves them paying more for having said yes.
+describe('POST /api/stripe/accept-save-offer', () => {
+  const ACCEPT = '/api/stripe/accept-save-offer'
+  const supporter = (over: Record<string, unknown> = {}) => ({
+    id: 'save20',
+    valid: true,
+    name: 'Stay 20',
+    percent_off: 20,
+    amount_off: null,
+    currency: null,
+    duration: 'repeating',
+    duration_in_months: 3,
+    metadata: { retention_offer: 'true', offer_kind: 'supporter_coupon', plan: 'monthly' },
+    ...over,
+  })
+
+  test('keeps the discounts already on the subscription alongside the new coupon', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as Record<string, unknown>).discounts = ['di_promo']
+    activeCoupons = [supporter()]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSubUpdate().discounts).toEqual([{ discount: 'di_promo' }, { coupon: 'save20' }])
+    expect(lastSubUpdate().cancel_at_period_end).toBe(false)
+  })
+
+  test('a fixed-amount save with no EUR amount is not offered to a EUR member', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as Record<string, unknown>).currency = 'eur'
+    activeCoupons = [supporter({ percent_off: null, amount_off: 200, currency: 'usd' })]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+
+  test('a switch still pending on a schedule gets the coupon on its future phase, not the sub', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 8000, scheduleId: 'sched_1' })
+    const item = ((currentSub as { items: { data: Array<{ price: Record<string, unknown> }> } })
+      .items.data[0])
+    item.price.recurring = { interval: 'year' }
+    activeCoupons = [supporter()]
+    schedulePhases = [
+      {
+        start_date: NOW_SEC - 100,
+        end_date: NOW_SEC + 1000,
+        items: [{ price: 'price_ark_plus_yearly', quantity: 1 }],
+        discounts: [{ discount: 'di_promo', coupon: null, promotion_code: null }],
+      },
+      {
+        start_date: NOW_SEC + 1000,
+        end_date: null,
+        items: [{ price: 'price_ark_plus_monthly', quantity: 1 }],
+      },
+    ]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'monthly_switch' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    const upd = stripeCalls.find((c) => c.method === 'subscriptionSchedules.update')
+    const phases = (upd!.args[1] as { phases: Array<{ discounts?: unknown }> }).phases
+    expect(phases[0].discounts).toEqual([{ discount: 'di_promo' }])
+    expect(phases[1].discounts).toEqual([{ coupon: 'save20' }])
   })
 })

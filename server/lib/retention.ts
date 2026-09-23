@@ -19,13 +19,23 @@ import {
   type RetentionOffer,
   type SaveIntent,
 } from '../../shared/retention.js'
-import { getPlanPriceCents, type Plan, type PricedTier } from './pricing.js'
-import { listActiveCoupons } from './stripe-promos.js'
+import {
+  getPlanPriceCents,
+  minorUnitFactors,
+  type Plan,
+  type PricedTier,
+  type SupportedCurrency,
+} from './pricing.js'
+import { amountOffIn, listActiveCoupons } from './stripe-promos.js'
 
-// USD is the source currency for all our prices (see server/routes/stripe.ts).
-// A fixed (amount_off) coupon in any other currency can't be applied
-// meaningfully, so we don't offer one.
-const CHARGE_CURRENCY = 'usd'
+// Every quote and coupon here is in the member's SUBSCRIPTION currency: that is
+// what Stripe will bill, and a fixed coupon is only attachable in a currency it
+// carries (amountOffIn). Callers pass sub.currency; USD is only the default.
+type QuoteCurrency = SupportedCurrency
+
+function money(currency: QuoteCurrency): { currency: string; minorFactor: number } {
+  return { currency, minorFactor: minorUnitFactors()[currency] ?? 100 }
+}
 
 export type RetentionCouponLike = {
   id: string
@@ -34,6 +44,7 @@ export type RetentionCouponLike = {
   percent_off: number | null
   amount_off: number | null
   currency: string | null
+  currency_options?: Record<string, { amount_off: number }> | null
   duration?: 'once' | 'repeating' | 'forever' | null
   duration_in_months?: number | null
   metadata?: Record<string, string> | null
@@ -138,26 +149,27 @@ function appliesToPlan(c: RetentionCouponLike, plan: Plan | null): boolean {
   return plan !== null && target === plan
 }
 
-// Usable as an offer: a percent discount, or a fixed discount already in the
-// currency we charge in. A foreign-currency amount_off is dropped (it would be
-// subtracted as if it were USD cents — see the stripe-promos currency note).
-function isUsable(c: RetentionCouponLike): boolean {
+// Usable as an offer in `currency`: a percent discount, or a fixed discount the
+// coupon carries in that currency. Anything else Stripe refuses to attach to the
+// subscription, so offering it would promise a save that then fails.
+function isUsable(c: RetentionCouponLike, currency: QuoteCurrency): boolean {
   if (c.percent_off != null) return true
-  if (c.amount_off != null && c.currency === CHARGE_CURRENCY) return true
-  return false
+  return amountOffIn(c, currency) != null
 }
 
 // The largest of a set of usable coupons: prefers the largest percent_off (the
 // plan favors a repeating percent coupon); if none are percentage-based, the
-// largest USD amount_off. Null for an empty set. Deterministic so re-entering
-// the flow offers the same coupon.
-function bestOf<T extends RetentionCouponLike>(usable: T[]): T | null {
+// largest amount_off in `currency`. Null for an empty set. Deterministic so
+// re-entering the flow offers the same coupon.
+function bestOf<T extends RetentionCouponLike>(usable: T[], currency: QuoteCurrency): T | null {
   if (usable.length === 0) return null
   const percent = usable.filter((c) => c.percent_off != null)
   if (percent.length > 0) {
     return percent.reduce((a, b) => (b.percent_off! > a.percent_off! ? b : a))
   }
-  return usable.reduce((a, b) => (b.amount_off! > a.amount_off! ? b : a))
+  return usable.reduce((a, b) =>
+    (amountOffIn(b, currency) ?? 0) > (amountOffIn(a, currency) ?? 0) ? b : a,
+  )
 }
 
 // Which save an admin tagged this coupon for (metadata.offer_kind, set on the
@@ -174,15 +186,17 @@ export function pickOfferCoupon<T extends RetentionCouponLike>(
   coupons: T[],
   kind: OfferKind,
   plan: Plan | null = null,
+  currency: QuoteCurrency = 'usd',
 ): T | null {
   return bestOf(
     coupons.filter(
       (c) =>
         isRetentionCoupon(c) &&
-        isUsable(c) &&
+        isUsable(c, currency) &&
         appliesToPlan(c, plan) &&
         couponOfferKind(c) === kind,
     ),
+    currency,
   )
 }
 
@@ -194,14 +208,16 @@ export function toRetentionOffer(
   c: RetentionCouponLike,
   kind: OfferKind = 'supporter_coupon',
   currentPriceCents?: number,
+  currency: QuoteCurrency = 'usd',
 ): RetentionOffer {
   return {
     kind,
     couponId: c.id,
     label: c.name,
     percentOff: c.percent_off,
-    amountOff: c.amount_off,
+    amountOff: c.percent_off != null ? null : amountOffIn(c, currency),
     durationMonths: c.duration_in_months ?? null,
+    ...money(currency),
     ...(currentPriceCents != null ? { currentPriceCents } : {}),
   }
 }
@@ -216,6 +232,7 @@ function planSwitchOffer(
   targetPlan: Plan,
   currentPriceCents: number,
   targetPriceCents: number,
+  currency: QuoteCurrency,
   coupon: RetentionCouponLike | null = null,
 ): RetentionOffer {
   return {
@@ -223,8 +240,9 @@ function planSwitchOffer(
     couponId: coupon?.id ?? null,
     label: coupon?.name ?? null,
     percentOff: coupon?.percent_off ?? null,
-    amountOff: coupon?.amount_off ?? null,
+    amountOff: coupon && coupon.percent_off == null ? amountOffIn(coupon, currency) : null,
     durationMonths: coupon?.duration_in_months ?? null,
+    ...money(currency),
     targetPlan,
     currentPriceCents,
     targetPriceCents,
@@ -250,12 +268,18 @@ export function discountedCents(
 // the back office. Unlike a save card this is never offered — change-tier
 // attaches it to the scheduled phase automatically. Null when unconfigured, in
 // which case a debundle simply lands at the standalone catalog price.
-export function pickIntroCoupon<T extends RetentionCouponLike>(coupons: T[]): T | null {
+export function pickIntroCoupon<T extends RetentionCouponLike>(
+  coupons: T[],
+  currency: QuoteCurrency = 'usd',
+): T | null {
   return bestOf(
     coupons.filter(
       (c) =>
-        isRetentionCoupon(c) && isUsable(c) && c.metadata?.offer_kind === DEBUNDLE_INTRO_SLOT,
+        isRetentionCoupon(c) &&
+        isUsable(c, currency) &&
+        c.metadata?.offer_kind === DEBUNDLE_INTRO_SLOT,
     ),
+    currency,
   )
 }
 
@@ -276,12 +300,18 @@ export async function debundlePricePreview(
   stripe: Stripe,
   targetTier: PricedTier,
   plan: Plan,
+  currency: QuoteCurrency = 'usd',
 ): Promise<DebundlePrice> {
   const [priceCents, coupons] = await Promise.all([
-    getPlanPriceCents(stripe, targetTier, plan),
+    getPlanPriceCents(stripe, targetTier, plan, currency),
     listActiveCoupons(stripe),
   ])
-  return { tier: targetTier, plan, ...introFor(priceCents, pickIntroCoupon(coupons)) }
+  return {
+    tier: targetTier,
+    plan,
+    ...money(currency),
+    ...introFor(priceCents, pickIntroCoupon(coupons, currency), currency),
+  }
 }
 
 // Split a resolved list price into the { priceCents, introCents, introMonths }
@@ -290,9 +320,14 @@ export async function debundlePricePreview(
 function introFor(
   priceCents: number,
   coupon: RetentionCouponLike | null,
+  currency: QuoteCurrency,
 ): { priceCents: number; introCents: number | null; introMonths: number | null } {
   if (!coupon) return { priceCents, introCents: null, introMonths: null }
-  const introCents = discountedCents(priceCents, coupon.percent_off, coupon.amount_off)
+  const introCents = discountedCents(
+    priceCents,
+    coupon.percent_off,
+    amountOffIn(coupon, currency),
+  )
   if (introCents === null || introCents >= priceCents) {
     return { priceCents, introCents: null, introMonths: null }
   }
@@ -306,24 +341,32 @@ function introFor(
 // discount, and showing it is what makes "Keep bundle" argue for itself.
 export type BundleBreakdown = {
   plan: Plan
+  currency: string
+  minorFactor: number
   bundleCents: number
   arkPlus: DebundlePrice
   circle: DebundlePrice
 }
 
-export async function bundleBreakdown(stripe: Stripe, plan: Plan): Promise<BundleBreakdown> {
+export async function bundleBreakdown(
+  stripe: Stripe,
+  plan: Plan,
+  currency: QuoteCurrency = 'usd',
+): Promise<BundleBreakdown> {
   const [bundleCents, arkPlusCents, circleCents, coupons] = await Promise.all([
-    getPlanPriceCents(stripe, 'bundle', plan),
-    getPlanPriceCents(stripe, 'ark-plus', plan),
-    getPlanPriceCents(stripe, 'circle', plan),
+    getPlanPriceCents(stripe, 'bundle', plan, currency),
+    getPlanPriceCents(stripe, 'ark-plus', plan, currency),
+    getPlanPriceCents(stripe, 'circle', plan, currency),
     listActiveCoupons(stripe),
   ])
-  const intro = pickIntroCoupon(coupons)
+  const intro = pickIntroCoupon(coupons, currency)
+  const m = money(currency)
   return {
     plan,
+    ...m,
     bundleCents,
-    arkPlus: { tier: 'ark-plus', plan, ...introFor(arkPlusCents, intro) },
-    circle: { tier: 'circle', plan, ...introFor(circleCents, intro) },
+    arkPlus: { tier: 'ark-plus', plan, ...m, ...introFor(arkPlusCents, intro, currency) },
+    circle: { tier: 'circle', plan, ...m, ...introFor(circleCents, intro, currency) },
   }
 }
 
@@ -344,18 +387,21 @@ async function deriveEligibleOffers(
   stripe: Stripe,
   tier: PricedTier,
   plan: Plan,
+  currency: QuoteCurrency,
 ): Promise<RetentionOffer[]> {
   const coupons = await listActiveCoupons(stripe)
   const offers: RetentionOffer[] = []
 
   if (tier === 'ark-plus' && plan === 'monthly') {
     const [monthlyCents, yearlyCents] = await Promise.all([
-      getPlanPriceCents(stripe, 'ark-plus', 'monthly'),
-      getPlanPriceCents(stripe, 'ark-plus', 'yearly'),
+      getPlanPriceCents(stripe, 'ark-plus', 'monthly', currency),
+      getPlanPriceCents(stripe, 'ark-plus', 'yearly', currency),
     ])
-    offers.push(planSwitchOffer('annual_switch', 'yearly', monthlyCents, yearlyCents))
-    const supporter = pickOfferCoupon(coupons, 'supporter_coupon', 'monthly')
-    if (supporter) offers.push(toRetentionOffer(supporter, 'supporter_coupon', monthlyCents))
+    offers.push(planSwitchOffer('annual_switch', 'yearly', monthlyCents, yearlyCents, currency))
+    const supporter = pickOfferCoupon(coupons, 'supporter_coupon', 'monthly', currency)
+    if (supporter) {
+      offers.push(toRetentionOffer(supporter, 'supporter_coupon', monthlyCents, currency))
+    }
     return offers
   }
 
@@ -365,19 +411,23 @@ async function deriveEligibleOffers(
     // looked up for the plan they're moving TO (monthly), and is the same
     // admin-configured coupon, so both cards move together.
     const [monthlyCents, yearlyCents] = await Promise.all([
-      getPlanPriceCents(stripe, 'ark-plus', 'monthly'),
-      getPlanPriceCents(stripe, 'ark-plus', 'yearly'),
+      getPlanPriceCents(stripe, 'ark-plus', 'monthly', currency),
+      getPlanPriceCents(stripe, 'ark-plus', 'yearly', currency),
     ])
-    const discount = pickOfferCoupon(coupons, 'supporter_coupon', 'monthly')
-    offers.push(planSwitchOffer('monthly_switch', 'monthly', yearlyCents, monthlyCents, discount))
+    const discount = pickOfferCoupon(coupons, 'supporter_coupon', 'monthly', currency)
+    offers.push(
+      planSwitchOffer('monthly_switch', 'monthly', yearlyCents, monthlyCents, currency, discount),
+    )
     return offers
   }
 
   if (tier === 'circle') {
-    const affordability = pickOfferCoupon(coupons, 'affordability_coupon', plan)
+    const affordability = pickOfferCoupon(coupons, 'affordability_coupon', plan, currency)
     if (affordability) {
-      const circleCents = await getPlanPriceCents(stripe, 'circle', plan)
-      offers.push(toRetentionOffer(affordability, 'affordability_coupon', circleCents))
+      const circleCents = await getPlanPriceCents(stripe, 'circle', plan, currency)
+      offers.push(
+        toRetentionOffer(affordability, 'affordability_coupon', circleCents, currency),
+      )
     }
     return offers
   }
@@ -405,12 +455,13 @@ export async function deriveSaveOffers(
   stripe: Stripe,
   intent: SaveIntent,
   plan: Plan,
+  currency: QuoteCurrency = 'usd',
 ): Promise<RetentionOffer[]> {
   switch (intent) {
     case 'cancel-ark-plus':
-      return deriveEligibleOffers(stripe, 'ark-plus', plan)
+      return deriveEligibleOffers(stripe, 'ark-plus', plan, currency)
     case 'cancel-circle':
-      return deriveEligibleOffers(stripe, 'circle', plan)
+      return deriveEligibleOffers(stripe, 'circle', plan, currency)
     case 'debundle-remove-ark-plus':
     case 'debundle-remove-circle':
       return []

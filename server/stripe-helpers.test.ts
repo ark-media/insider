@@ -10,8 +10,10 @@
 import { describe, test, expect } from 'bun:test'
 import type Stripe from 'stripe'
 import {
+  existingDiscountParams,
   findLiveSubscription,
   findOrCreateSubscriber,
+  phaseDiscountParams,
   planFromSubscription,
   validatePwycAmount,
 } from './routes/stripe/helpers'
@@ -85,6 +87,49 @@ describe('validatePwycAmount', () => {
     ['an object', {}],
   ])('a custom amount that is %s is refused, not rounded or defaulted to the floor', (_label, amount) => {
     expect('error' in validatePwycAmount(amount, 800, 'usd')).toBe(true)
+  })
+
+  test('HUF and TWD take whole units only — Stripe refuses a stray hundredth', () => {
+    expect(validatePwycAmount(350000, 349000, 'huf')).toEqual({ amountCents: 350000 })
+    expect('error' in validatePwycAmount(349050, 349000, 'huf')).toBe(true)
+    expect('error' in validatePwycAmount(29001, 29000, 'twd')).toBe(true)
+    // The catalog's own floor is always payable, whole or not.
+    expect(validatePwycAmount(828875, 828875, 'huf')).toEqual({ amountCents: 828875 })
+    // Every other two-decimal currency keeps its cents.
+    expect(validatePwycAmount(1001, 1000, 'eur')).toEqual({ amountCents: 1001 })
+  })
+})
+
+// A discount list is REPLACED by any update that passes one, so everything that
+// rewrites discounts has to hand the existing ones back first.
+describe('existingDiscountParams', () => {
+  test('passes each discount back by id, expanded or not', () => {
+    const s = { discounts: ['di_1', { id: 'di_2' }] } as unknown as Stripe.Subscription
+    expect(existingDiscountParams(s)).toEqual([{ discount: 'di_1' }, { discount: 'di_2' }])
+  })
+
+  test('no discounts → an empty list', () => {
+    expect(existingDiscountParams({ discounts: [] } as unknown as Stripe.Subscription)).toEqual([])
+  })
+})
+
+describe('phaseDiscountParams', () => {
+  test('keeps whichever reference each phase discount holds, preferring the discount id', () => {
+    const phase = [
+      { discount: 'di_1', coupon: 'c_ignored', promotion_code: null },
+      { discount: null, coupon: null, promotion_code: { id: 'promo_1' } },
+      { discount: null, coupon: { id: 'intro' }, promotion_code: null },
+      { discount: null, coupon: null, promotion_code: null },
+    ] as unknown as Stripe.SubscriptionSchedule.Phase.Discount[]
+    expect(phaseDiscountParams(phase)).toEqual([
+      { discount: 'di_1' },
+      { promotion_code: 'promo_1' },
+      { coupon: 'intro' },
+    ])
+  })
+
+  test('null → nothing', () => {
+    expect(phaseDiscountParams(null)).toEqual([])
   })
 })
 

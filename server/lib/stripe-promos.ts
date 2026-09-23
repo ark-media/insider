@@ -24,10 +24,9 @@ import type { Plan } from './pricing.js'
 
 // The default charge currency. Checkout now passes an explicit currency (§7 #4
 // per-currency floors replaced Adaptive Pricing), so callers on a non-USD path
-// pass that currency through; USD-only callers (gift, retention) keep the
-// default. A fixed (amount_off) coupon only applies when its currency matches
-// the charge currency — Stripe rejects a mismatched-currency coupon on the
-// subscription otherwise.
+// pass that currency through. A fixed (amount_off) coupon only applies in a
+// currency it carries (its own, or one of its currency_options) — Stripe
+// rejects it on a Session or subscription in any other.
 const CHARGE_CURRENCY = 'usd'
 
 // Minimal structural subset of Stripe.Coupon the logic needs, so the pure
@@ -39,7 +38,24 @@ export type CouponLike = {
   percent_off: number | null
   amount_off: number | null
   currency: string | null
+  // Per-currency amount_off for a fixed coupon (Stripe `currency_options`, only
+  // present when expanded). The back office writes one per supported currency.
+  currency_options?: Record<string, { amount_off: number }> | null
   metadata?: Record<string, string> | null
+}
+
+// A fixed coupon's amount_off in `currency`, or null when it has none there —
+// its own top-level currency first, then its currency_options. Stripe applies an
+// amount_off coupon only in a currency it names, so null means "not usable here".
+export function amountOffIn(
+  c: Pick<CouponLike, 'amount_off' | 'currency' | 'currency_options'>,
+  currency: string,
+): number | null {
+  if (c.amount_off == null) return null
+  const cur = currency.toLowerCase()
+  if (c.currency?.toLowerCase() === cur) return c.amount_off
+  const opt = c.currency_options?.[cur]?.amount_off
+  return typeof opt === 'number' ? opt : null
 }
 
 export function isAutoApply(c: CouponLike): boolean {
@@ -51,20 +67,17 @@ export function appliesToPlan(c: CouponLike, plan: Plan): boolean {
   return !target || target === plan
 }
 
-// Discount this coupon yields on a base amount, in cents. Fixed discounts are
-// clamped to the base (never negative) and ignored unless they're in the
-// currency we charge in — a foreign-currency amount_off would otherwise be
-// subtracted as if it were USD cents.
+// Discount this coupon yields on a base amount, in minor units. Fixed discounts
+// are clamped to the base (never negative) and count only in a currency the
+// coupon actually carries (see amountOffIn) — anything else Stripe would reject.
 export function discountCents(
   c: CouponLike,
   baseCents: number,
   chargeCurrency: string = CHARGE_CURRENCY,
 ): number {
   if (c.percent_off != null) return Math.round((baseCents * c.percent_off) / 100)
-  if (c.amount_off != null && c.currency === chargeCurrency) {
-    return Math.min(baseCents, c.amount_off)
-  }
-  return 0
+  const off = amountOffIn(c, chargeCurrency)
+  return off != null ? Math.min(baseCents, off) : 0
 }
 
 // Best auto-applicable coupon for a plan, ranked by actual discount on the
@@ -143,7 +156,13 @@ export async function listActiveCoupons(stripe: Stripe): Promise<Stripe.Coupon[]
   const all: Stripe.Coupon[] = []
   let startingAfter: string | undefined
   for (let i = 0; i < 20; i++) {
-    const page = await stripe.coupons.list({ limit: 100, starting_after: startingAfter })
+    // currency_options is only returned when expanded, and a fixed coupon's
+    // non-USD amounts live there.
+    const page = await stripe.coupons.list({
+      limit: 100,
+      starting_after: startingAfter,
+      expand: ['data.currency_options'],
+    })
     all.push(...page.data)
     if (!page.has_more || page.data.length === 0) break
     startingAfter = page.data[page.data.length - 1].id

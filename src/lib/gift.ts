@@ -43,6 +43,22 @@ export const GIFT_TIER_LABEL: Record<GiftTier, string> = {
   bundle: "Bundle",
 };
 
+// The gift's tier as named inside the emailed claim link (a signed JWT), for the
+// redeem page's heading. Read WITHOUT verifying — it only chooses a label; the
+// server redeems from the gift row, never from this. Null for a link minted
+// before the claim carried a tier, or anything that doesn't parse.
+export function giftTierFromClaimToken(mt: string | undefined): GiftTier | null {
+  const payload = mt?.split(".")[1];
+  if (!payload) return null;
+  try {
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const tier = (JSON.parse(json) as { tier?: unknown }).tier;
+    return tier === "ark-plus" || tier === "circle" || tier === "bundle" ? tier : null;
+  } catch {
+    return null;
+  }
+}
+
 export const GIFT_TIER_BLURB: Record<GiftTier, string> = {
   "ark-plus": "Private, ad-free podcast feed",
   circle: "Access to the Fold",

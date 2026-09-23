@@ -26,6 +26,7 @@ const coupon = (
     currency?: string
     metadata?: Record<string, string>
     name?: string
+    currency_options?: Record<string, { amount_off: number }>
   },
 ) => ({
   id,
@@ -34,6 +35,7 @@ const coupon = (
   percent_off: fields.percent_off ?? null,
   amount_off: fields.amount_off ?? null,
   currency: fields.currency ?? null,
+  currency_options: fields.currency_options ?? null,
   metadata: fields.metadata ?? { auto_apply: 'true' },
 })
 
@@ -121,6 +123,8 @@ describe('GET /api/promo/active', () => {
     expect(status).toBe(200)
     expect(body).toEqual({
       active: true,
+      currency: 'usd',
+      minor_factor: 100,
       code: 'SPRING60',
       name: 'Spring sale',
       kind: 'percent',
@@ -167,6 +171,24 @@ describe('GET /api/promo/active', () => {
     // outright, so the percentage wins.
     expect((await get('plan=monthly&currency=eur')).body).toMatchObject({ code: 'EUR3' })
     expect((await get('plan=monthly&currency=usd')).body).toMatchObject({ code: 'TEN' })
+  })
+
+  test("a fixed discount is announced in the buyer's currency, not the coupon's USD base", async () => {
+    coupons = [
+      coupon('c1', {
+        amount_off: 200,
+        currency: 'usd',
+        currency_options: { eur: { amount_off: 225 } },
+      }),
+    ]
+    promotionCodes = [code('TWOOFF', 'c1')]
+    expect((await get('plan=monthly&currency=eur')).body).toMatchObject({
+      code: 'TWOOFF',
+      kind: 'amount',
+      amount_off_cents: 225,
+      currency: 'eur',
+      minor_factor: 100,
+    })
   })
 
   test('a gift ignores plan targeting and ranks on the gift price', async () => {

@@ -4,6 +4,7 @@ import { listStripeCustomersByEmail } from '../../lib/entitlement-resolver.js'
 import { clearMembershipPending } from '../../lib/membership.js'
 import {
   formatMinorUnits,
+  requiresWholeUnits,
   type Plan,
   type PricedTier,
 } from '../../lib/pricing.js'
@@ -150,6 +151,18 @@ export function validatePwycAmount(
   }
   if (customAmountCents < floor) {
     return { error: `Amount must be at least ${formatMinorUnits(floor, currency)}.` }
+  }
+  // HUF/TWD charge in hundredths but only in whole units. The browser rounds the
+  // field this way already (src/lib/currency.ts); this is the check that holds
+  // when the request didn't come from it. The floor itself is always accepted:
+  // it is the catalog's own price, and a catalog provisioned before the
+  // whole-unit rounding would otherwise make its own floor unbuyable.
+  if (
+    requiresWholeUnits(currency) &&
+    customAmountCents !== floor &&
+    customAmountCents % 100 !== 0
+  ) {
+    return { error: 'Amount must be a whole number.' }
   }
   if (customAmountCents > pwycMaxAmount(floor)) {
     return { error: 'Custom amount too large.' }
@@ -332,6 +345,73 @@ export async function scheduledPlanOf(
 export function scheduleIdOf(sub: Stripe.Subscription): string | null {
   if (!sub.schedule) return null
   return typeof sub.schedule === 'string' ? sub.schedule : sub.schedule.id
+}
+
+// The subscription's current discounts as update params, by discount id. Passing
+// them back by id (not by coupon) keeps each one's original start and end — a
+// repeating promo doesn't restart its clock. `sub.discounts` is bare ids on a
+// list call and objects when expanded; both are handled.
+export function existingDiscountParams(
+  sub: Pick<Stripe.Subscription, 'discounts'>,
+): Array<{ discount: string }> {
+  return (sub.discounts ?? []).map((d) => ({ discount: typeof d === 'string' ? d : d.id }))
+}
+
+// A schedule phase's discounts as update params. `subscriptionSchedules.update`
+// REPLACES every phase, so a phase rebuilt without its `discounts` silently
+// drops them — a checkout promo on the current period, or an intro coupon on
+// the next. Reads whichever of discount / promotion_code / coupon the phase
+// holds, in that order (an existing discount keeps its own clock).
+export function phaseDiscountParams(
+  discounts: Stripe.SubscriptionSchedule.Phase.Discount[] | null | undefined,
+): Array<{ discount: string } | { promotion_code: string } | { coupon: string }> {
+  const idOf = (x: string | { id: string } | null | undefined): string | null =>
+    typeof x === 'string' ? x : (x?.id ?? null)
+  const out: Array<{ discount: string } | { promotion_code: string } | { coupon: string }> = []
+  for (const d of discounts ?? []) {
+    const discount = idOf(d.discount)
+    if (discount) {
+      out.push({ discount })
+      continue
+    }
+    const promotionCode = idOf(d.promotion_code)
+    if (promotionCode) {
+      out.push({ promotion_code: promotionCode })
+      continue
+    }
+    const coupon = idOf(d.coupon)
+    if (coupon) out.push({ coupon })
+  }
+  return out
+}
+
+// Add a coupon to a schedule's LAST phase — the pending change — leaving every
+// phase otherwise as it is. The update replaces all phases, so each is passed
+// back with its items, dates and discounts intact.
+export async function addCouponToFinalPhase(
+  stripe: Stripe,
+  scheduleId: string,
+  couponId: string,
+): Promise<void> {
+  const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId)
+  const last = schedule.phases.length - 1
+  await stripe.subscriptionSchedules.update(scheduleId, {
+    phases: schedule.phases.map((p, i) => {
+      const discounts = [
+        ...phaseDiscountParams(p.discounts),
+        ...(i === last ? [{ coupon: couponId }] : []),
+      ]
+      return {
+        items: p.items.map((item) => ({
+          price: typeof item.price === 'string' ? item.price : item.price.id,
+          quantity: item.quantity ?? 1,
+        })),
+        start_date: p.start_date,
+        end_date: p.end_date,
+        ...(discounts.length > 0 ? { discounts } : {}),
+      }
+    }),
+  })
 }
 
 // Release any attached subscription schedule so a following plain
