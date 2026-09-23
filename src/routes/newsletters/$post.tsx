@@ -23,6 +23,10 @@ import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { NewsletterArticle } from "../../lib/newsletter-renderer";
 
+// The "comment in the Fold" band under each post. Off for launch; flip back
+// on when we want to push newsletter readers into the Fold threads.
+const SHOW_DISCUSSION_CTA = false;
+
 export const Route = createFileRoute("/newsletters/$post")({
   beforeLoad: ({ params }) => {
     if (isNewsletterPublicationSlug(params.post)) {
@@ -174,7 +178,7 @@ function PostPage() {
         </div>
       </article>
 
-      {gated ? null : (
+      {gated || !SHOW_DISCUSSION_CTA ? null : (
         <section>
           <div className="mx-auto flex max-w-[1040px] flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10">
             <div>
