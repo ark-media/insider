@@ -453,10 +453,19 @@ describe('webhook DB path — membership row', () => {
       data: { object: makeSub(), previous_attributes: { metadata: {} } },
     }
 
-    const res = await runWebhook(CIRCLE_ENV)
+    const res = await runWebhook({
+      ...CIRCLE_ENV,
+      POSTHOG_API_KEY: 'phc_test',
+      VERCEL_ENV: 'production',
+    })
 
     expect(res.statusCode).toBe(200)
     expect(upsertStmt()!.values[3]).toBe('bundle')
+    // The member never got into the Fold — analytics must not say they did.
+    const events = fetchCalls
+      .filter((c) => c.url.includes('posthog.com'))
+      .map((c) => (JSON.parse(String(c.init?.body)) as { event: string }).event)
+    expect(events).not.toContain('member_provisioned')
   })
 
   test('Circle unconfigured is not a failure — the webhook acks', async () => {

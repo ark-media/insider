@@ -41,10 +41,13 @@ mock.module('@neondatabase/serverless', () => ({
 // `auth0SubsByEmail` stages that projection; an email mapped to `null` models a
 // lookup failure (the SDK throwing), which must never cause a revoke.
 let auth0SubsByEmail = new Map<string, string[] | null>()
+// Runs on every Auth0 lookup — lets a test land a checkout mid-reconcile.
+let onAuth0Lookup: (() => void) | null = null
 mock.module('auth0', () => ({
   ManagementClient: class {
     users = {
       listUsersByEmail: ({ email }: { email: string }) => {
+        onAuth0Lookup?.()
         const subs = auth0SubsByEmail.get(email)
         if (subs === null) return Promise.reject(new Error('auth0 down'))
         return Promise.resolve((subs ?? []).map((user_id) => ({ user_id })))
@@ -104,6 +107,7 @@ beforeEach(() => {
   neonMembershipRows = []
   premiumEmails = []
   auth0SubsByEmail = new Map()
+  onAuth0Lookup = null
 })
 
 afterAll(() => {
@@ -714,6 +718,47 @@ describe('reconcileEntitlements', () => {
     expect(summary.circleRemoved).toBe(1)
     expect(circleDelete('drift@x.com')).toBeDefined()
     expect(circleDelete('keep@x.com')).toBeUndefined()
+  })
+
+  test('Circle drift: a checkout that lands mid-run is re-checked and kept', async () => {
+    // The keep-set is read before minutes of Auth0 lookups; a Bundle bought in
+    // that gap is in the group but not the keep-set, and nothing re-adds it.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['new@x.com', ['auth0|new']],
+    ])
+    onAuth0Lookup = () => {
+      neonMembershipRows = [
+        row({ auth0_sub: 'auth0|keep', tier: 'circle' }),
+        row({ auth0_sub: 'auth0|new', tier: 'bundle' }),
+      ]
+    }
+    installFetch(
+      reconcilerFetch({ circleMembers: [{ email: 'keep@x.com' }, { email: 'new@x.com' }] }),
+    )
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleDrift).toBe(0)
+    expect(circleDelete('new@x.com')).toBeUndefined()
+  })
+
+  test('arkPlus drift: a checkout that lands mid-run is re-checked and kept', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    premiumEmails = ['keep@x.com', 'new@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['new@x.com', ['auth0|new']],
+    ])
+    onAuth0Lookup = () => {
+      neonMembershipRows = [
+        row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' }),
+        row({ auth0_sub: 'auth0|new', tier: 'ark-plus' }),
+      ]
+    }
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.arkPlusRemoved).toBe(0)
+    expect(calls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
   })
 
   test('Circle drift: a dry run by default — finds the drift, removes nobody', async () => {

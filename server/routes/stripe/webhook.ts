@@ -721,7 +721,9 @@ async function handleSubscriptionUpsert(
         amountCents,
         await memberEmail(),
         created,
-        shouldFanOut,
+        // Not after giving up on Circle: the member didn't get in, and with the
+        // marker still missing every later update would claim they did again.
+        shouldFanOut && !circleFailed,
       )
     }
   }

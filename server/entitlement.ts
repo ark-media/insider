@@ -702,17 +702,13 @@ export async function reconcileEntitlements(
   }
 
   const rows = await loadAllNeonMemberships(getDb(env))
-  const live = rows.filter(membershipIsLive)
-
-  // Per-axis keep-sets from Neon, keyed on the Auth0 sub — the only id a
-  // membership row carries.
-  const arkPlusSubs = new Set<string>()
-  const circleSubs = new Set<string>()
-  for (const r of live) {
-    const ent = liveAxes(r)
-    if (ent.arkPlus) arkPlusSubs.add(r.auth0_sub)
-    if (ent.circle) circleSubs.add(r.auth0_sub)
-  }
+  const { arkPlusSubs, circleSubs } = keepSets(rows)
+  // Resolving drift takes one Auth0 call per member — minutes on a real roster —
+  // and a checkout in that gap is in Beehiiv/Circle but not in the keep-sets
+  // above. Its sub already carries the provisioned marker, so nothing would
+  // grant it back after a removal. Each axis re-reads Neon right before it
+  // removes anyone, and keeps whoever is entitled by then.
+  const reloadKeepSets = async () => keepSets(await loadAllNeonMemberships(getDb(env)))
 
   // Housekeeping: drop provably-expired gift membership rows (customer-less rows
   // whose gift term has elapsed). Reads already ignore them, but leaving them
@@ -727,6 +723,7 @@ export async function reconcileEntitlements(
   const arkPlusRemoved = await reconcileArkPlusAxis(
     env,
     arkPlusSubs,
+    async () => (await reloadKeepSets()).arkPlusSubs,
     batchSize,
   ).catch((err: unknown) => {
     console.error('[reconcile] arkPlus axis failed:', err)
@@ -736,6 +733,7 @@ export async function reconcileEntitlements(
   const circle = await reconcileCircleAxis(
     env,
     circleSubs,
+    async () => (await reloadKeepSets()).circleSubs,
     maxPages,
     batchSize,
   ).catch((err: unknown) => {
@@ -754,6 +752,30 @@ export async function reconcileEntitlements(
   }
 }
 
+// Per-axis keep-sets from Neon, keyed on the Auth0 sub — the only id a
+// membership row carries.
+function keepSets(rows: AxisRow[]): { arkPlusSubs: Set<string>; circleSubs: Set<string> } {
+  const arkPlusSubs = new Set<string>()
+  const circleSubs = new Set<string>()
+  for (const r of rows) {
+    const ent = liveAxes(r)
+    if (ent.arkPlus) arkPlusSubs.add(r.auth0_sub)
+    if (ent.circle) circleSubs.add(r.auth0_sub)
+  }
+  return { arkPlusSubs, circleSubs }
+}
+
+// Drop anyone the fresh keep-set now covers (see reloadKeepSets). A failed
+// re-read removes nobody this run.
+async function stillDrifted<T extends { subs: string[] }>(
+  drift: T[],
+  reloadKeep: () => Promise<Set<string>>,
+): Promise<T[]> {
+  if (drift.length === 0) return drift
+  const fresh = await reloadKeep()
+  return drift.filter((d) => !d.subs.some((sub) => fresh.has(sub)))
+}
+
 // The Circle removal pass only acts when explicitly switched on.
 function circleDryRun(env: Env): boolean {
   return env.CIRCLE_RECONCILE_ENFORCE !== 'true'
@@ -770,6 +792,7 @@ function circleDryRun(env: Env): boolean {
 async function reconcileArkPlusAxis(
   env: Env,
   keep: Set<string>,
+  reloadKeep: () => Promise<Set<string>>,
   batchSize: number,
 ): Promise<number> {
   if (!env.DATABASE_URL) return 0
@@ -790,7 +813,7 @@ async function reconcileArkPlusAxis(
   }
 
   // Resolve first, remove second, so the cap applies to confirmed drift only.
-  const drift: string[] = []
+  const resolved: Array<{ email: string; subs: string[] }> = []
   let unresolved = 0
   await batched(roster, batchSize, async (email) => {
     const subs = await fetchAuth0SubsForEmail(env, email)
@@ -802,13 +825,14 @@ async function reconcileArkPlusAxis(
       return
     }
     if (subs.some((sub) => keep.has(sub))) return
-    drift.push(email)
+    resolved.push({ email, subs })
   })
   if (unresolved > 0) {
     console.warn(
       `[reconcile] arkPlus: ${unresolved} premium subscriber(s) could not be projected onto a membership row — left alone`,
     )
   }
+  const drift = (await stillDrifted(resolved, reloadKeep)).map((d) => d.email)
 
   const capped = drift.slice(0, ARK_PLUS_DRIFT_MAX_REMOVE)
   if (drift.length > capped.length) {
@@ -833,6 +857,7 @@ async function reconcileArkPlusAxis(
 async function reconcileCircleAxis(
   env: Env,
   keep: Set<string>,
+  reloadKeep: () => Promise<Set<string>>,
   maxPages: number,
   batchSize: number,
 ): Promise<{ drift: number; removed: number }> {
@@ -852,7 +877,7 @@ async function reconcileCircleAxis(
   }
 
   // Resolve first, remove second, so the cap applies to confirmed drift only.
-  const stale: CircleReconcileMember[] = []
+  const resolved: Array<CircleReconcileMember & { subs: string[] }> = []
   let unresolved = 0
   await batched(members, batchSize, async (m) => {
     if (!m.email) {
@@ -865,13 +890,14 @@ async function reconcileCircleAxis(
       return
     }
     if (subs.some((sub) => keep.has(sub))) return
-    stale.push(m)
+    resolved.push({ ...m, subs })
   })
   if (unresolved > 0) {
     console.warn(
       `[reconcile] Circle: ${unresolved} group member(s) could not be projected onto a membership row — left alone`,
     )
   }
+  const stale = await stillDrifted(resolved, reloadKeep)
 
   const drift = stale.slice(0, CIRCLE_DRIFT_MAX_REMOVE)
   if (stale.length > CIRCLE_DRIFT_MAX_REMOVE) {
