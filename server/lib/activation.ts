@@ -178,6 +178,11 @@ type MembershipProvisionResult = {
   // in-memory result of the create call: the webhook usually provisions first,
   // and by the time the browser's poll arrives the account "already exists".
   accountCreated: boolean
+  // The tier grants the Fold, Circle is configured, and THIS call tried to put
+  // the member in the subscriber group and failed. The webhook turns this into
+  // a Stripe retry: nothing else ever re-attempts the Circle add, so acking it
+  // would leave a paying member locked out of the Fold indefinitely.
+  circleFailed: boolean
 }
 
 // Stamped on the subscription by the activation that created the account.
@@ -335,10 +340,13 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     // Circle (circle axis): create the member pre-SSO, stamp auth0_sub, add to
     // the access group. Soft — a Circle hiccup must not fail the whole webhook.
     let circleProvisioned = fresh.metadata?.circle_provisioned === 'true'
+    let circleFailed = false
     const addingCircle = entitlements.circle && !circleProvisioned
     if (addingCircle) {
-      const status = await provisionCircleMember(env, email, name, auth0Sub)
+      const status = await provisionCircleMember(env, email, name)
       circleProvisioned = status === 'ok'
+      // 'skipped' (Circle not configured) is not a failure to retry.
+      circleFailed = status === 'error'
     }
 
     // The axes the member has been told about — the thing that separates a
@@ -472,7 +480,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       }
     }
 
-    return { email, name, tier, plan, auth0Sub, accountCreated }
+    return { email, name, tier, plan, auth0Sub, accountCreated, circleFailed }
   }
 
   const activateMembershipForStripeSub = async (
@@ -480,7 +488,14 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     tier: Tier,
   ): Promise<MembershipProvisionResult> => {
     if (!stripe) {
-      return { email: '', tier, plan: 'yearly', auth0Sub: null, accountCreated: false }
+      return {
+        email: '',
+        tier,
+        plan: 'yearly',
+        auth0Sub: null,
+        accountCreated: false,
+        circleFailed: false,
+      }
     }
 
     // Fast path: every external grant this tier needs is already marked on the
@@ -503,6 +518,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         plan: (m.plan as Plan | undefined) ?? 'yearly',
         auth0Sub: m.auth0_user_id ?? null,
         accountCreated: m[ACCOUNT_CREATED_MARKER] === 'true',
+        circleFailed: false,
       }
     }
 
@@ -546,7 +562,17 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     }
     if (opts.circleFromMs != null) {
       circleEndsAt = new Date(opts.circleFromMs + termMs).toISOString()
-      await provisionCircleMember(env, opts.email, opts.name, opts.auth0Sub)
+      const status = await provisionCircleMember(env, opts.email, opts.name)
+      // Unlike a subscription there is no Stripe redelivery to retry this, and
+      // the reconciler never grants. The redemption still stands (the Neon row
+      // is what the site and the Fold login gate read), but the member can't
+      // open a Fold space until someone adds them to the subscriber group.
+      if (status === 'error') {
+        console.error(
+          `[gift] GIFT-CIRCLE-FAILED ${redactEmail(opts.email)} (${opts.giftToken.slice(0, 8)}…): ` +
+            'MANUAL ACTION: add them to the Circle subscriber access group.',
+        )
+      }
     }
     return { arkPlusEndsAt, circleEndsAt }
   }

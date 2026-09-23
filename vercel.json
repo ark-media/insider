@@ -65,8 +65,12 @@
   ],
   "crons": [
     {
-      "path": "/api/cron/reconcile-entitlements",
+      "path": "/api/cron/reconcile-entitlements/ark-plus",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-entitlements/circle",
+      "schedule": "30 3 * * *"
     },
     {
       "path": "/api/cron/feed-setup-reminders",

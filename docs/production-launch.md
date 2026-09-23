@@ -45,7 +45,8 @@ test/sandbox to production.
   exposed to the client. `VITE_`-prefixed values ship in the JS bundle — only
   publishable/DSN-class values belong there.
 - **Cron auth:** Vercel Cron invokes the three jobs in `vercel.json`
-  (`reconcile-entitlements` daily 03:00, `feed-setup-reminders` daily 15:00,
+  (`reconcile-entitlements` daily, once per axis: `/ark-plus` 03:00 and
+  `/circle` 03:30; `feed-setup-reminders` daily 15:00;
   `prune-webhook-events` monthly) with `Authorization: Bearer $CRON_SECRET`.
 
 ### 1.2 Accounts to own before launch
@@ -179,7 +180,7 @@ a green build.
 | `CIRCLE_COMMUNITY_ID` | server | From any admin URL. |
 | `CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID` | server | Access group gating subscriber Spaces. |
 | `CIRCLE_SSO_SECRET` | server | HS256 secret shared with Circle for SSO. Enforce SSO in Circle admin. |
-| `CIRCLE_AUTH0_SUB_FIELD_KEY` | server | Circle member custom-field key used to match members by Auth0 sub. **Referenced in code but missing from `.env.example`** — add it. |
+| `CIRCLE_RECONCILE_ENFORCE` | server | `true` lets the nightly reconcile actually remove lapsed members from the Circle subscriber group. Unset = dry run: it logs `would remove community member <id>` and removes nobody. Turn on only after a dry run's list has been checked. |
 
 #### Database
 | Var | Scope | Prod source / action |

@@ -7,7 +7,8 @@
 //   - reconcileEntitlements is Neon-authoritative + removal-only (task 15): it
 //     diffs the Neon roster against the Beehiiv premium mirror (arkPlus, keyed
 //     on email and projected onto a sub through Auth0) and the Circle access
-//     group (circle, on the stamped auth0_sub), removing drift.
+//     group (circle, also email → Auth0 sub; a dry run unless
+//     CIRCLE_RECONCILE_ENFORCE='true'), removing drift.
 
 import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import type Stripe from 'stripe'
@@ -40,10 +41,13 @@ mock.module('@neondatabase/serverless', () => ({
 // `auth0SubsByEmail` stages that projection; an email mapped to `null` models a
 // lookup failure (the SDK throwing), which must never cause a revoke.
 let auth0SubsByEmail = new Map<string, string[] | null>()
+// Runs on every Auth0 lookup — lets a test land a checkout mid-reconcile.
+let onAuth0Lookup: (() => void) | null = null
 mock.module('auth0', () => ({
   ManagementClient: class {
     users = {
       listUsersByEmail: ({ email }: { email: string }) => {
+        onAuth0Lookup?.()
         const subs = auth0SubsByEmail.get(email)
         if (subs === null) return Promise.reject(new Error('auth0 down'))
         return Promise.resolve((subs ?? []).map((user_id) => ({ user_id })))
@@ -103,6 +107,7 @@ beforeEach(() => {
   neonMembershipRows = []
   premiumEmails = []
   auth0SubsByEmail = new Map()
+  onAuth0Lookup = null
 })
 
 afterAll(() => {
@@ -299,45 +304,55 @@ describe('syncEntitlement — cancelled access group', () => {
   })
 })
 
-// --- provisionCircleMember: resolving the member id -------------------------
-//
-// Circle answers a create and an already-a-member with the SAME 201 envelope,
-// the id nested under `community_member`. Reading a top-level `id` found nothing
-// on either, so the auth0_sub stamp was skipped for every member.
+// --- provisionCircleMember ----------------------------------------------------
 
 describe('provisionCircleMember', () => {
-  function stampedMemberId(): string | null {
-    const put = calls.find((c) => c.init?.method === 'PUT')
-    const m = put ? /\/community_members\/(\d+)$/.exec(put.url) : null
-    return m ? (m[1] as string) : null
+  function groupAdd(): FetchCall | undefined {
+    return calls.find(
+      (c) => c.url.includes('/access_groups/ag-99/community_members') && c.init?.method === 'POST',
+    )
   }
 
   // These exercise the v2 fallback: BASE_ENV has no v1 config.
-  test('reads the id nested under community_member', async () => {
+  test('an already-a-member 201 counts as ensured, then joins the group', async () => {
     installFetch(({ url, init }) => {
-      if (url.endsWith('/community_members') && init?.method === 'POST') {
-        return jsonRes(201, {
-          message: 'This user is already a member of this community.',
-          community_member: { id: 777 },
-        })
+      if (url.endsWith('/admin/v2/community_members') && init?.method === 'POST') {
+        return jsonRes(201, { message: 'This user is already a member of this community.' })
       }
       return jsonRes(200, {})
     })
-    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
-    expect(stampedMemberId()).toBe('777')
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A')).toBe('ok')
+    expect(JSON.parse(String(groupAdd()!.init!.body))).toEqual({ email: 'a@x.com' })
+    // No profile write: nothing is stamped on the member any more.
+    expect(calls.some((c) => c.init?.method === 'PUT')).toBe(false)
   })
 
-  test('falls back to the by-email search on an unrecognised envelope', async () => {
+  test('a v2 409/422 duplicate is tolerated', async () => {
+    for (const status of [409, 422]) {
+      calls = []
+      installFetch(({ url, init }) =>
+        url.endsWith('/admin/v2/community_members') && init?.method === 'POST'
+          ? jsonRes(status, { message: 'duplicate' })
+          : jsonRes(200, {}),
+      )
+      expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A')).toBe('ok')
+      expect(groupAdd()).toBeDefined()
+    }
+  })
+
+  test('a group add that finds no member is an error, not ok', async () => {
+    // The create succeeded but the access-group endpoint can't see the member.
+    // Reporting 'ok' would stamp circle_provisioned on someone outside the group.
     installFetch(({ url, init }) => {
-      if (url.endsWith('/community_members') && init?.method === 'POST') {
-        return jsonRes(201, { message: 'created' })
+      if (url.includes('/access_groups/ag-99/community_members')) {
+        return jsonRes(404, { message: 'not found' })
       }
-      // The search endpoint answers with the member object directly, no wrapper.
-      if (url.includes('/community_members/search')) return jsonRes(200, { id: 888 })
+      if (url.endsWith('/community_members') && init?.method === 'POST') {
+        return jsonRes(201, { community_member: { id: 777 } })
+      }
       return jsonRes(200, {})
     })
-    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
-    expect(stampedMemberId()).toBe('888')
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A')).toBe('error')
   })
 
   test('a member create that fails hard is an error, not a silent skip', async () => {
@@ -347,7 +362,7 @@ describe('provisionCircleMember', () => {
       }
       return jsonRes(200, {})
     })
-    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('error')
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A')).toBe('error')
   })
 
   // --- the v1 create (invitation suppressed) -------------------------------
@@ -372,7 +387,7 @@ describe('provisionCircleMember', () => {
       }
       return jsonRes(200, {})
     })
-    expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A B', 'auth0|abc')).toBe('ok')
+    expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A B')).toBe('ok')
 
     const create = v1Create()
     expect(create).toBeDefined()
@@ -390,7 +405,7 @@ describe('provisionCircleMember', () => {
         (c) => c.url.endsWith('/admin/v2/community_members') && c.init?.method === 'POST',
       ),
     ).toBe(false)
-    expect(stampedMemberId()).toBe('555')
+    expect(groupAdd()).toBeDefined()
   })
 
   test('a v1 failure is HTTP 200 — the body is the status', async () => {
@@ -403,11 +418,11 @@ describe('provisionCircleMember', () => {
       installFetch(({ url }) =>
         url.includes('/api/v1/community_members') ? jsonRes(200, body) : jsonRes(200, {}),
       )
-      expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('error')
+      expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A')).toBe('error')
     }
   })
 
-  test('a v1 duplicate carries the existing member id', async () => {
+  test('a v1 duplicate is success: true and counts as ensured', async () => {
     installFetch(({ url }) => {
       if (url.includes('/api/v1/community_members')) {
         return jsonRes(200, {
@@ -418,8 +433,8 @@ describe('provisionCircleMember', () => {
       }
       return jsonRes(200, {})
     })
-    expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
-    expect(stampedMemberId()).toBe('81174895')
+    expect(await provisionCircleMember(V1_ENV, 'a@x.com', 'A')).toBe('ok')
+    expect(groupAdd()).toBeDefined()
   })
 
   test('without v1 config it falls back to the v2 create', async () => {
@@ -430,9 +445,9 @@ describe('provisionCircleMember', () => {
       return jsonRes(200, {})
     })
     // BASE_ENV carries no CIRCLE_API_TOKEN / CIRCLE_COMMUNITY_ID.
-    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
+    expect(await provisionCircleMember(BASE_ENV, 'a@x.com', 'A')).toBe('ok')
     expect(v1Create()).toBeUndefined()
-    expect(stampedMemberId()).toBe('42')
+    expect(groupAdd()).toBeDefined()
   })
 
   test('provisioning clears a cancelled marker left by an earlier lapse', async () => {
@@ -443,7 +458,7 @@ describe('provisionCircleMember', () => {
       return jsonRes(200, {})
     })
     const env = { ...BASE_ENV, CIRCLE_CANCELLED_ACCESS_GROUP_ID: 'ag-cancel' }
-    expect(await provisionCircleMember(env, 'a@x.com', 'A', 'auth0|abc')).toBe('ok')
+    expect(await provisionCircleMember(env, 'a@x.com', 'A')).toBe('ok')
     expect(
       calls.some((c) => c.url.includes('ag-cancel') && c.init?.method === 'DELETE'),
     ).toBe(true)
@@ -503,8 +518,8 @@ function row(over: Partial<Record<string, unknown>>): Record<string, unknown> {
 // (/users/{id}), Circle access-group list + members roster + DELETE, and Beehiiv
 // (tolerated during drift downgrade).
 function reconcilerFetch(opts: {
-  // Circle group members → { auth0_sub (custom field), email }.
-  circleMembers?: Array<{ auth0Sub: string | null; email: string }>
+  // Circle group members, by email (projected to subs via auth0SubsByEmail).
+  circleMembers?: Array<{ email: string }>
 }): FetchHandler {
   const circleMembers = opts.circleMembers ?? []
   const idFor = new Map(circleMembers.map((m, i) => [m, i + 1] as const))
@@ -539,16 +554,12 @@ function reconcilerFetch(opts: {
           : []
       return jsonRes(200, { records, has_next_page: false })
     }
-    // Circle full members roster (id → email + profile_fields.auth0_sub).
+    // Circle full members roster (id → email).
     if (url.includes('/community_members')) {
       const page = Number(url.match(/[?&]page=(\d+)/)?.[1] ?? '1')
       const records =
         page === 1
-          ? circleMembers.map((m) => ({
-              id: idFor.get(m)!,
-              email: m.email,
-              profile_fields: { auth0_sub: m.auth0Sub },
-            }))
+          ? circleMembers.map((m) => ({ id: idFor.get(m)!, email: m.email }))
           : []
       return jsonRes(200, { records, has_next_page: false })
     }
@@ -563,7 +574,14 @@ describe('reconcileEntitlements', () => {
       { ...BASE_ENV, DATABASE_URL: '' },
       {} as Stripe,
     )
-    expect(summary).toEqual({ scanned: 0, arkPlusRemoved: 0, circleRemoved: 0, errors: 0 })
+    expect(summary).toEqual({
+      scanned: 0,
+      arkPlusRemoved: 0,
+      circleDrift: 0,
+      circleRemoved: 0,
+      circleDryRun: true,
+      errors: 0,
+    })
     expect(calls.length).toBe(0)
   })
 
@@ -676,50 +694,168 @@ describe('reconcileEntitlements', () => {
     expect(summary.arkPlusRemoved).toBe(0)
   })
 
-  test('Circle drift: removes a group member whose auth0_sub is not in the Neon circle keep-set', async () => {
-    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
-    installFetch(
-      reconcilerFetch({
-        circleMembers: [
-          { auth0Sub: 'auth0|keep', email: 'keep@x.com' }, // in keep-set
-          { auth0Sub: 'auth0|drift', email: 'drift@x.com' }, // stale → removed
-        ],
-      }),
-    )
-    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
-    expect(summary.circleRemoved).toBe(1)
-    const del = calls.find(
+  const ENFORCE_ENV = { ...BASE_ENV, CIRCLE_RECONCILE_ENFORCE: 'true' }
+  const circleDelete = (email: string) =>
+    calls.find(
       (c) =>
         c.url.includes('/access_groups/ag-99/community_members') &&
-        c.url.includes('email=drift%40x.com') &&
+        c.url.includes(`email=${encodeURIComponent(email)}`) &&
         c.init?.method === 'DELETE',
     )
-    expect(del).toBeDefined()
+
+  test('Circle drift (enforced): removes a group member whose email projects to no live circle row', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['drift@x.com', ['auth0|gone']],
+    ])
+    installFetch(
+      reconcilerFetch({ circleMembers: [{ email: 'keep@x.com' }, { email: 'drift@x.com' }] }),
+    )
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleDryRun).toBe(false)
+    expect(summary.circleDrift).toBe(1)
+    expect(summary.circleRemoved).toBe(1)
+    expect(circleDelete('drift@x.com')).toBeDefined()
+    expect(circleDelete('keep@x.com')).toBeUndefined()
   })
 
-  test('Circle drift: a member with an unstamped auth0_sub is left alone', async () => {
-    // A live circle member keeps the keep-set non-empty (so the empty-keep-set
-    // fail-safe doesn't trip); the unstamped member can't be positively
-    // identified as stale, so it is left alone.
+  test('Circle drift: a checkout that lands mid-run is re-checked and kept', async () => {
+    // The keep-set is read before minutes of Auth0 lookups; a Bundle bought in
+    // that gap is in the group but not the keep-set, and nothing re-adds it.
     neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['new@x.com', ['auth0|new']],
+    ])
+    onAuth0Lookup = () => {
+      neonMembershipRows = [
+        row({ auth0_sub: 'auth0|keep', tier: 'circle' }),
+        row({ auth0_sub: 'auth0|new', tier: 'bundle' }),
+      ]
+    }
+    installFetch(
+      reconcilerFetch({ circleMembers: [{ email: 'keep@x.com' }, { email: 'new@x.com' }] }),
+    )
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleDrift).toBe(0)
+    expect(circleDelete('new@x.com')).toBeUndefined()
+  })
+
+  test('arkPlus drift: a checkout that lands mid-run is re-checked and kept', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    premiumEmails = ['keep@x.com', 'new@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['new@x.com', ['auth0|new']],
+    ])
+    onAuth0Lookup = () => {
+      neonMembershipRows = [
+        row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' }),
+        row({ auth0_sub: 'auth0|new', tier: 'ark-plus' }),
+      ]
+    }
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.arkPlusRemoved).toBe(0)
+    expect(calls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
+  })
+
+  test('axis=circle runs only the Circle pass; axis=ark-plus only the Beehiiv one', async () => {
+    // Split so neither pass's Auth0 lookups can run the other out of the
+    // function's time limit.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'bundle' })]
+    premiumEmails = ['keep@x.com', 'drift@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['drift@x.com', ['auth0|gone']],
+    ])
+    installFetch(
+      reconcilerFetch({ circleMembers: [{ email: 'keep@x.com' }, { email: 'drift@x.com' }] }),
+    )
+
+    const circleOnly = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe, { axis: 'circle' })
+    expect(circleOnly.circleRemoved).toBe(1)
+    expect(circleOnly.arkPlusRemoved).toBe(0)
+    expect(calls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
+
+    calls = []
+    const arkPlusOnly = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe, { axis: 'ark-plus' })
+    expect(arkPlusOnly.arkPlusRemoved).toBe(1)
+    expect(arkPlusOnly.circleDrift).toBe(0)
+    expect(calls.some((c) => c.url.includes('circle.so'))).toBe(false)
+  })
+
+  test('Circle drift: a dry run by default — finds the drift, removes nobody', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['drift@x.com', ['auth0|gone']],
+    ])
+    installFetch(
+      reconcilerFetch({ circleMembers: [{ email: 'keep@x.com' }, { email: 'drift@x.com' }] }),
+    )
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.circleDryRun).toBe(true)
+    expect(summary.circleDrift).toBe(1)
+    expect(summary.circleRemoved).toBe(0)
+    expect(calls.some((c) => c.init?.method === 'DELETE')).toBe(false)
+  })
+
+  test('Circle drift: a member with no Auth0 account, or a failed lookup, is left alone', async () => {
+    // Circle staff / moderators added by hand have no site account; an Auth0
+    // blip tells us nothing. Neither is evidence of a lapsed membership.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['moderator@x.com', []],
+      ['blip@x.com', null],
+    ])
     installFetch(
       reconcilerFetch({
         circleMembers: [
-          { auth0Sub: 'auth0|keep', email: 'keep@x.com' },
-          { auth0Sub: null, email: 'unstamped@x.com' },
+          { email: 'keep@x.com' },
+          { email: 'moderator@x.com' },
+          { email: 'blip@x.com' },
         ],
       }),
     )
-    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleDrift).toBe(0)
     expect(summary.circleRemoved).toBe(0)
+  })
+
+  test('Circle drift: a member kept through either of two Auth0 identities', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|123', tier: 'bundle' })]
+    auth0SubsByEmail = new Map([['two@x.com', ['google-oauth2|123', 'auth0|123']]])
+    installFetch(reconcilerFetch({ circleMembers: [{ email: 'two@x.com' }] }))
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleRemoved).toBe(0)
+  })
+
+  test('Circle drift: an Ark+-only row does not keep a Fold member', async () => {
+    neonMembershipRows = [
+      row({ auth0_sub: 'auth0|fold', tier: 'circle' }),
+      row({ auth0_sub: 'auth0|arkplus', tier: 'ark-plus' }),
+    ]
+    auth0SubsByEmail = new Map([
+      ['fold@x.com', ['auth0|fold']],
+      ['arkplus@x.com', ['auth0|arkplus']],
+    ])
+    installFetch(
+      reconcilerFetch({ circleMembers: [{ email: 'fold@x.com' }, { email: 'arkplus@x.com' }] }),
+    )
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleRemoved).toBe(1)
+    expect(circleDelete('arkplus@x.com')).toBeDefined()
   })
 
   test('Circle drift: empty keep-set against a non-empty group → skips removal (fail-safe)', async () => {
     neonMembershipRows = []
-    installFetch(
-      reconcilerFetch({ circleMembers: [{ auth0Sub: 'auth0|x', email: 'x@x.com' }] }),
-    )
-    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    auth0SubsByEmail = new Map([['x@x.com', ['auth0|x']]])
+    installFetch(reconcilerFetch({ circleMembers: [{ email: 'x@x.com' }] }))
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleDrift).toBe(0)
     expect(summary.circleRemoved).toBe(0)
   })
 
@@ -727,10 +863,8 @@ describe('reconcileEntitlements', () => {
     neonMembershipRows = [row({ auth0_sub: 'auth0|b', tier: 'bundle' })]
     premiumEmails = ['b@x.com']
     auth0SubsByEmail = new Map([['b@x.com', ['auth0|b']]])
-    installFetch(
-      reconcilerFetch({ circleMembers: [{ auth0Sub: 'auth0|b', email: 'b@x.com' }] }),
-    )
-    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    installFetch(reconcilerFetch({ circleMembers: [{ email: 'b@x.com' }] }))
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
     expect(summary.arkPlusRemoved).toBe(0)
     expect(summary.circleRemoved).toBe(0)
   })

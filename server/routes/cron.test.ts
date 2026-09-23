@@ -95,6 +95,24 @@ describe('GET/POST /api/cron/reconcile-entitlements (auth gate)', () => {
   })
 })
 
+describe('per-axis reconcile paths (auth gate)', () => {
+  // vercel.json schedules these, one invocation per axis.
+  for (const path of [`${PATH}/ark-plus`, `${PATH}/circle`]) {
+    test(`${path}: 401s without the secret, passes with it`, async () => {
+      const denied = await call({ CRON_SECRET: SECRET }, makeReq({ url: path }), path)
+      expect(denied.statusCode).toBe(401)
+      const res = await call(
+        { CRON_SECRET: SECRET },
+        makeReq({ auth: `Bearer ${SECRET}`, url: path }),
+        path,
+      )
+      // Reaching the Stripe check proves auth passed.
+      expect(res.statusCode).toBe(500)
+      expect(JSON.parse(res.body).error).toBe('not_configured')
+    })
+  }
+})
+
 describe('GET/POST /api/cron/prune-webhook-events (auth gate)', () => {
   const req = (opts: { method?: string; auth?: string }) =>
     makeReq({ ...opts, url: PRUNE_PATH })

@@ -499,6 +499,10 @@ async function handleSubscriptionEnded(
   }
 }
 
+// How long a failed Circle add keeps failing its event for a Stripe retry.
+// Stripe itself retries for about 3 days; a day is plenty for an outage to clear.
+const CIRCLE_RETRY_WINDOW_MS = 24 * 60 * 60 * 1000
+
 // customer.subscription.created / .updated. Derives the tier from the price
 // product, gates provisioning on the entitlement diff (not `statusChanged`,
 // which missed tier switches — those move `items`, not `status`), writes the
@@ -588,7 +592,16 @@ async function handleSubscriptionUpsert(
     sub.metadata?.beehiiv_premium !== 'true' &&
     sub.metadata?.circle_provisioned !== 'true' &&
     !sub.metadata?.auth0_user_id
-  const shouldFanOut = created || entitlementsChanged || notProvisioned
+  // The tier grants the Fold but the Circle add hasn't landed (no marker). This,
+  // not the row diff, is what makes a redelivery retry a failed Circle add: the
+  // row is written before the failure throws (below), so by the retry the diff
+  // is gone. Gated on Circle being configured — unconfigured, activation skips
+  // Circle and never stamps the marker, and every update would fan out.
+  const circleOwed =
+    newEnt.circle &&
+    Boolean(env.CIRCLE_ADMIN_API_TOKEN && env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID) &&
+    sub.metadata?.circle_provisioned !== 'true'
+  const shouldFanOut = created || entitlementsChanged || notProvisioned || circleOwed
 
   // Fall back to the prior row's sub when the event carries no auth0_user_id
   // marker (an externally-triggered subscription.updated that skips the fan-out):
@@ -610,6 +623,7 @@ async function handleSubscriptionUpsert(
     return resolvedEmail
   }
 
+  let circleFailed = false
   if (shouldFanOut) {
     // Grant the (possibly new) tier — Auth0 login + the axes it grants. Provision
     // runs before the entitlement signals so an Auth0/Circle outage can't block
@@ -618,6 +632,7 @@ async function handleSubscriptionUpsert(
     const result = await activator.activateMembershipForStripeSub(sub, tier)
     if (result.auth0Sub) auth0Sub = result.auth0Sub
     plan = result.plan
+    circleFailed = result.circleFailed
 
     // Axes the prior tier granted that the new one drops (a downgrade in place,
     // no cancellation) are revoked by the Beehiiv downgrade just below — losing
@@ -669,6 +684,28 @@ async function handleSubscriptionUpsert(
       await clearMembershipPending(getDb(env), customerId)
     }
 
+    // A failed Circle add is retried by failing this event — nothing else ever
+    // re-attempts it (the reconciler only removes). The row is written first on
+    // every path, so a Circle outage can't strand the authority on a stale tier,
+    // period end or cancel_at, and a tier-drop revocation above never runs
+    // against a row that still shows the old tier. The redelivery fans out again
+    // via `circleOwed`; only activation's markers change, so it redoes just
+    // Circle. Before analytics, so `member_provisioned` fires on the delivery
+    // where the member actually got in.
+    if (circleFailed) {
+      // Bounded: a Circle refusal that never clears (a banned address) would
+      // otherwise 500 every event for this sub. Past the window, ack and hand it
+      // to a human; any later event for the sub still retries via `circleOwed`.
+      const ageMs = Date.now() - event.created * 1000
+      if (ageMs < CIRCLE_RETRY_WINDOW_MS) {
+        throw new Error(`Circle provisioning failed for ${sub.id}; retrying`)
+      }
+      console.error(
+        `[stripe] CIRCLE-PROVISION-FAILED ${sub.id} (customer ${customerId}): ` +
+          'gave up retrying. MANUAL ACTION: add them to the Circle subscriber access group.',
+      )
+    }
+
     // Analytics last, and only after the membership row has actually committed —
     // the conversion count must never claim a member the DB doesn't have.
     //
@@ -684,7 +721,9 @@ async function handleSubscriptionUpsert(
         amountCents,
         await memberEmail(),
         created,
-        shouldFanOut,
+        // Not after giving up on Circle: the member didn't get in, and with the
+        // marker still missing every later update would claim they did again.
+        shouldFanOut && !circleFailed,
       )
     }
   }
