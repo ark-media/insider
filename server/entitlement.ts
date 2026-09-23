@@ -769,7 +769,9 @@ export async function reconcileEntitlements(
 
 // Per-axis keep-sets from Neon, keyed on the Auth0 sub — the only id a
 // membership row carries.
-function keepSets(rows: AxisRow[]): { arkPlusSubs: Set<string>; circleSubs: Set<string> } {
+function keepSets(
+  rows: Array<AxisRow & { auth0_sub: string }>,
+): { arkPlusSubs: Set<string>; circleSubs: Set<string> } {
   const arkPlusSubs = new Set<string>()
   const circleSubs = new Set<string>()
   for (const r of rows) {
