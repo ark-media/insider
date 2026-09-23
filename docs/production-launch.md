@@ -131,10 +131,11 @@ you get the value; "Scope" = server-only vs shipped to browser.
   subscribe to the events the handler consumes: `customer.subscription.created`,
   `.updated`, `.deleted`, `.paused`, `invoice.payment_failed`,
   `payment_intent.succeeded`, `checkout.session.completed` (a $0 gift has no
-  PaymentIntent), `charge.refunded`, `charge.dispute.created` and
-  `charge.dispute.closed` (a won dispute restores a voided gift). `checkout.session.completed`
-  and `charge.dispute.closed` are new as of the pre-launch Stripe review — add
-  them to both TEST endpoints too. Copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the source
+  PaymentIntent), `charge.refunded`, `charge.dispute.created`,
+  `charge.dispute.funds_withdrawn` (an inquiry escalating to a chargeback) and
+  `charge.dispute.closed` (a won dispute restores a voided gift). `checkout.session.completed`,
+  `charge.dispute.funds_withdrawn` and `charge.dispute.closed` are new as of the
+  pre-launch Stripe review — add them to both TEST endpoints too. Copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the source
   of truth for entitlement — verify it's reachable in prod (localhost is not in
   the delivery path).
 - Disable Adaptive Pricing in the Dashboard (we use per-currency `currency_options`).

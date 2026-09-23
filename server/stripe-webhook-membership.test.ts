@@ -775,6 +775,30 @@ describe('webhook DB path — refunds and disputes', () => {
     expect(disputeVoid?.values).toContain('dispute')
   })
 
+  test('an inquiry (warning_*) voids no gift and cancels nothing — no money moved', async () => {
+    pendingGift = true
+    invoiceSubscriptionId = 'sub_1'
+    webhookEvent = {
+      type: 'charge.dispute.created',
+      data: { object: { id: 'dp_1', payment_intent: 'pi_1', status: 'warning_needs_response' } },
+    }
+    const res = await runWebhook(AUTH0_ENV)
+    expect(res.statusCode).toBe(200)
+    expect(statements.some((s) => s.text.includes("update gift set status = 'void'"))).toBe(false)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.cancel')).toBe(false)
+  })
+
+  test('an inquiry that escalates (funds withdrawn) voids the gift as a dispute', async () => {
+    pendingGift = true
+    webhookEvent = {
+      type: 'charge.dispute.funds_withdrawn',
+      data: { object: { id: 'dp_1', payment_intent: 'pi_1', status: 'needs_response' } },
+    }
+    await runWebhook(AUTH0_ENV)
+    const disputeVoid = statements.find((s) => s.text.includes("update gift set status = 'void'"))
+    expect(disputeVoid?.values).toContain('dispute')
+  })
+
   test('a WON dispute puts a dispute-voided gift back to pending', async () => {
     disputeVoidedGift = true
     webhookEvent = {

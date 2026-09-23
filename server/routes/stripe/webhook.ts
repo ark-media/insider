@@ -277,22 +277,29 @@ export async function dispatchWebhookEvent(
       break
     }
     case 'charge.refunded':
-    case 'charge.dispute.created': {
+    case 'charge.dispute.created':
+    case 'charge.dispute.funds_withdrawn': {
       // The money went back (or is being contested), so what it bought has to
-      // as well. The two events carry different objects — a Charge and a Dispute
-      // — that happen to share the one field needed from either.
+      // as well. The events carry different objects — a Charge and a Dispute —
+      // that happen to share the one field needed from either.
       const reversed = event.data.object as Stripe.Charge | Stripe.Dispute
       const piId =
         typeof reversed.payment_intent === 'string'
           ? reversed.payment_intent
           : reversed.payment_intent?.id ?? null
-      // A dispute contests the whole charge. A refund only counts as a reversal
-      // when it is the whole charge: a partial refund is a goodwill adjustment
-      // on a membership that is still paid for.
-      const full =
-        event.type === 'charge.dispute.created' ||
-        ((reversed as Stripe.Charge).refunded === true &&
-          (reversed as Stripe.Charge).amount_refunded === (reversed as Stripe.Charge).amount)
+      // A dispute contests the whole charge — unless it is only an inquiry
+      // (`warning_*`): no money has moved, and it closes as `warning_closed`,
+      // never `won`, so a gift voided for it could never be restored. An
+      // inquiry that escalates has its funds withdrawn, which lands here as
+      // `charge.dispute.funds_withdrawn`. A real dispute fires both events;
+      // every step below is idempotent, so the second is a no-op. A refund
+      // only counts as a reversal when it is the whole charge: a partial refund
+      // is a goodwill adjustment on a membership that is still paid for.
+      const isDispute = event.type !== 'charge.refunded'
+      const full = isDispute
+        ? !(reversed as Stripe.Dispute).status?.startsWith('warning_')
+        : (reversed as Stripe.Charge).refunded === true &&
+          (reversed as Stripe.Charge).amount_refunded === (reversed as Stripe.Charge).amount
       if (!piId) break
 
       // A gift is redeemable indefinitely (no redeem-by), so without this the
@@ -304,7 +311,7 @@ export async function dispatchWebhookEvent(
       if (env.DATABASE_URL && full) {
         const sql = getDb(env)
         const token = giftTokenForPaymentIntent(piId, env)
-        const reason = event.type === 'charge.dispute.created' ? 'dispute' : 'refund'
+        const reason = isDispute ? 'dispute' : 'refund'
         wasGift = await voidPendingGift(sql, token, reason)
         if (!wasGift) {
           wasGift = await reverseRedeemedGift(token, piId, event.type, stripe, env)
