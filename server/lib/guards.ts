@@ -50,7 +50,7 @@ export async function requireAdminRequest(
 // On failure it writes the 401 and returns false. `code: 'reauth_required'` is
 // what the client keys on to send the member through sign-in and back
 // (src/lib/auth.ts); `error` is the sentence shown if it doesn't.
-export function requireLoginAssurance(
+function requireLoginAssurance(
   identity: RequestIdentity,
   res: ServerResponse,
 ): boolean {

@@ -77,9 +77,9 @@ export async function catalogTierOfSubscription(
 }
 
 // Thrown by tierFromSubscription for a subscription that isn't ours. Its own
-// class so a caller that wants to tell "not a membership" from "Stripe is down"
-// can, without parsing a message.
-export class NotAMembershipSubscriptionError extends Error {
+// class so logs tell "not a membership" from "Stripe is down" without parsing a
+// message; export it when a caller needs to branch on it.
+class NotAMembershipSubscriptionError extends Error {
   constructor(subscriptionId: string) {
     super(`subscription ${subscriptionId} sells no catalog entitlement`)
     this.name = 'NotAMembershipSubscriptionError'
