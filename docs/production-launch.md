@@ -89,9 +89,18 @@ you get the value; "Scope" = server-only vs shipped to browser.
    The connection still backs every member's canonical account — it is just no
    longer offered as a way to *sign in*. See `auth0/README.md`.
 2b. **Authentication Profile = Identifier First**, Passwordless → Email enabled
-   with **Verification Method = OTP**, and its **Disable Sign Ups = OFF**
-   (deliberately the opposite of the database connection — `auth0/README.md`
-   explains why, and why no code email is sent if you get it wrong).
+   with **Verification Method = OTP**, and its **Disable Sign Ups = ON** (the
+   same as the database connection). Auth0 then mails a code only to an address
+   that already holds an `email` identity, and we create that identity at
+   provisioning time (`linkEmailCodeLogin`). Anyone provisioned outside that
+   path — a bulk CSV import, or a hand-made dashboard account — needs
+   `scripts/backfill-email-code-login.ts` or they cannot receive a code at all.
+   `auth0/README.md` has the detail, including why the failure looks exactly
+   like an email-delivery problem and isn't one.
+2c. **Enable the passwordless connection per application.** On for the website
+   (ArkPlus). For Circle's Custom SSO application decide deliberately: with it
+   off, the code option is not drawn on the Fold's login page, which matters for
+   any cohort provisioned without a password.
 3. Google social connection configured.
 4. **Post-Login Action** deployed from `auth0/actions/post-login.js` (account
    linking + signup gate + claims). Its **Secrets**: `AUTH0_TENANT_DOMAIN`,
@@ -99,8 +108,6 @@ you get the value; "Scope" = server-only vs shipped to browser.
 5. **M2M scopes** (Management API): `read:users`, `update:users`, `delete:users`,
    `read:roles`, `create:users`, and `update:users_app_metadata`. `update:users`
    (not just `update:users_app_metadata`) is required for identity linking.
-   `create:user_tickets` is no longer needed — nothing mints set-password
-   links since password sign-in was removed.
 6. Admin role assigned to the two admin accounts (ava@…, hannah.waxman8@…).
 7. **Prod callback/allowed URLs** on the Web App include `APP_BASE_URL` +
    `/api/auth/callback` (and logout return URL).

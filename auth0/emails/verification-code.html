@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <style>
+      :root { color-scheme: light; supported-color-schemes: light; }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:#eef3fc;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your Ark Media verification code is {{ code }}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef3fc;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #dddee4;border-radius:12px;overflow:hidden;">
+
+            <!-- Wordmark -->
+            <tr>
+              <td style="padding:32px 40px 8px;">
+                <p style="margin:0;font:800 20px -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0b153c;letter-spacing:-0.01em;">Ark Media</p>
+              </td>
+            </tr>
+
+            <!-- Headline + body -->
+            <tr>
+              <td style="padding:16px 40px 0;">
+                <p style="margin:0 0 8px;font:600 11px -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;letter-spacing:0.18em;text-transform:uppercase;color:#0a6fad;">Verify your email</p>
+                <h1 style="margin:0 0 20px;font:700 26px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0b153c;">Here&rsquo;s your code</h1>
+                <p style="margin:0 0 28px;font:400 15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#373f5f;">Enter this code to confirm <strong style="color:#0b153c;">{{ user.email }}</strong> is your address.</p>
+              </td>
+            </tr>
+
+            <!-- Code tile -->
+            <tr>
+              <td style="padding:0 40px 8px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef3fc;border:1px solid #dddee4;border-radius:10px;">
+                  <tr>
+                    <td align="center" style="padding:24px 16px;">
+                      <div style="font:700 34px/1.1 ui-monospace,SFMono-Regular,Menlo,Consolas,'Courier New',monospace;letter-spacing:0.22em;text-indent:0.22em;color:#0b153c;">{{ code }}</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:16px 40px 20px;">
+                <p style="margin:0;font:400 13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#686e86;">The code only works once. If it&rsquo;s expired or already used, head back and ask for a new one.</p>
+              </td>
+            </tr>
+
+            <!-- Didn't ask for this -->
+            <tr>
+              <td style="padding:4px 40px 12px;">
+                <p style="margin:0 0 12px;font:700 15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0b153c;">Didn&rsquo;t ask for this?</p>
+                <p style="margin:0 0 12px;font:400 15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#373f5f;">You can ignore this email &mdash; nothing changes until the code is entered. Never share it with anyone, including us.</p>
+              </td>
+            </tr>
+
+            <!-- Sign-off -->
+            <tr>
+              <td style="padding:4px 40px 20px;">
+                <p style="margin:0;font:400 15px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#373f5f;">Thanks,<br />The Ark Media Team</p>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:20px 40px 32px;border-top:1px solid #dddee4;">
+                <p style="margin:0;font:400 12px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#686e86;">Need help? Reach out at <a href="mailto:support@arkmedia.org" style="color:#686e86;">support@arkmedia.org</a>.</p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

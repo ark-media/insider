@@ -104,14 +104,10 @@ Auth0's stated reason is that a passwordless connection signs people up on
 sight, so offering it beside a password box could silently create a duplicate
 account for anyone whose email misses the database.
 
-We lived with that for a day (2026-09-16): the connection was enabled, did
-nothing on its own, and we carried our own "Email me a code instead" link on
-four surfaces to reach it. Then the password option was taken off the login
-page, which leaves the passwordless connection unshadowed — Auth0 now renders
-the code prompt itself, so those links were removed again (they were duplicating
-a choice the widget already offers).
+The password option is off the login page, which leaves the passwordless
+connection unshadowed — Auth0 renders the code prompt itself.
 
-⚠️ **This is conditional, not permanent.** Put password login back in front of
+⚠️ **This is conditional.** Put password login back in front of
 members and the code prompt disappears from the widget on the same day, silently
 — nothing errors, the option simply stops being drawn, and the only way back is
 `connection=email` from our own UI. If you re-enable the database connection for
@@ -151,9 +147,10 @@ Setup (Auth0 Dashboard):
    runs inside `findOrCreateAuth0User`, adds a record on the `email` connection
    and links it into the Database account. That covers every webhook and gift
    member, and repairs an older member the next time they're provisioned.
-   Anyone else (members provisioned before 2026-09-16, and staff, admins or
-   comps created by hand in the dashboard) needs the backfill, which is safe to
-   re-run:
+   Anyone else needs the backfill, which is safe to re-run: members provisioned
+   before 2026-09-16; staff, admins or comps created by hand in the dashboard;
+   and anyone loaded through an Auth0 **bulk CSV import**, which writes the
+   Database account directly and never runs this code:
 
    ```
    bun run scripts/backfill-email-code-login.ts            # preview
@@ -165,6 +162,13 @@ Setup (Auth0 Dashboard):
    exists, your codes keep arriving whatever the toggle says. To see who's
    covered, run the preview.
 
+   **The link soft-fails on purpose**, logging and returning false rather than
+   throwing, because the member still has Google. That assumption is the whole
+   safety margin, and it does not hold for anyone provisioned without a
+   password — a failed link there leaves someone with no way in at all. After a
+   bulk provisioning run, read the per-member results and re-run the failures
+   rather than trusting the run as a whole.
+
    Why ON rather than OFF: with signups allowed, the connection mails a code to
    any address typed into the login box, and it puts a "Don't have an account?
    Sign up" link on the login page that can't be hidden. It ran OFF on
@@ -173,21 +177,39 @@ Setup (Auth0 Dashboard):
    `!primary` branch), so flipping the toggle back OFF is a safe fallback, just
    a noisier one.
 
-6. Enable the connection for the website's application — **ArkPlus** (Regular
-   Web Application, client id `1T1u9VRHbSWx0wy80X5PVYw9BdPNtAvp`, i.e.
-   `AUTH0_WEB_CLIENT_ID`). Two equivalent routes to the same switch: the
-   connection's own **Applications** tab, or Applications → ArkPlus →
-   **Connections** → Passwordless. Leave it **off** for Circle's Custom SSO
-   application unless we want Fold members signing in that way too — the Fold
-   gate in this action keys on client id and keeps working either way.
+6. **Enable the connection per application.** Two equivalent routes to the same
+   switch: the connection's own **Applications** tab, or Applications → (the
+   app) → **Connections** → Passwordless.
+
+   - **ArkPlus** (the website; Regular Web Application, client id
+     `1T1u9VRHbSWx0wy80X5PVYw9BdPNtAvp`, i.e. `AUTH0_WEB_CLIENT_ID`) — **on**.
+     This is the way in for members without Google.
+   - **Circle's Custom SSO application** (the Fold) — **on only if Fold members
+     are meant to sign in this way**, and off otherwise. The Fold gate in this
+     action keys on client id and keeps working either way.
+
+   Decide the second one deliberately rather than by default. A cohort
+   provisioned **without a password** — invited straight into the Fold, never
+   through the website — has exactly two ways in, Google and the emailed code.
+   With the connection off for Circle's app, the code option is simply not drawn
+   on the Fold's login page, and anyone whose invited address has no Google
+   account behind it has no way in at all.
+
+   Two things to check when turning it on there, because both fail quietly:
+
+   - **The shadowing rule above applies per application.** If Circle's app still
+     offers the database connection, New Universal Login draws no passwordless
+     choice beside the password form. The toggle reads "on" and the option is
+     never rendered.
+   - **Test on the Fold's own login page**, not the website's. The website is
+     configured correctly and will pass while telling you nothing about Circle's
+     app.
 
 The app side is still wired even though nothing in the UI calls it now:
 `/api/auth/login?connection=email` (`server/routes/auth.ts`, allowlisted in
 `LOGIN_CONNECTIONS`) opens that prompt directly, and
 `signIn(returnTo, { connection: "email" })` in `src/lib/subscriberAuth.tsx` is
-the client-side spelling. Kept deliberately, for two reasons: it is the link
-support hands a member who is stuck, and it is the thing to re-mount in the UI
-if password login ever returns to the login page.
+the client-side spelling. Kept as the link support hands a member who is stuck.
 
 ## Behavior notes / gotchas
 
