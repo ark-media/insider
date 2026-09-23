@@ -8,38 +8,42 @@
 # Not covered: `bun-version` in migrate.yml. Bump that by hand.
 
 version: 2
+
+# Everything (npm packages and GitHub Actions, majors included) arrives as ONE
+# pull request a week, so there's a single thing to review and merge and the
+# lockfile never conflicts with a sibling bump. Security updates are separate
+# and still open on their own as soon as an advisory lands.
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: deps
+
 updates:
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: ci
+    patterns: ['*']
+    multi-ecosystem-group: all-dependencies
 
-  # pnpm is detected from pnpm-lock.yaml. Minor and patch bumps arrive as one
-  # grouped PR a week; majors come one at a time so each gets read. Security
-  # updates are separate from this limit and always open.
+  # pnpm is detected from pnpm-lock.yaml.
   - package-ecosystem: npm
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 3
-    groups:
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
-    # stripe is pinned exact on purpose (22.4.0's types break the retention
-    # coupon code); bump it by hand. An update-types ignore leaves security
-    # updates for it switched on.
+    patterns: ['*']
+    multi-ecosystem-group: all-dependencies
+    # An update-types ignore leaves security updates switched on.
     ignore:
+      # Pinned exact on purpose (22.4.0's types break the retention coupon
+      # code); bump it by hand.
       - dependency-name: stripe
         update-types:
           - version-update:semver-major
           - version-update:semver-minor
           - version-update:semver-patch
-    commit-message:
-      prefix: deps
+      # Must match the Node major we run on (engines: 24.x, Vercel). Newer
+      # types would let code use APIs that don't exist at runtime. Bump the
+      # major here together with engines.
+      - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
