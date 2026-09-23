@@ -149,7 +149,9 @@ class FakeStripe {
   webhooks = {
     constructEvent: () => {
       if (!webhookEvent) throw new Error('webhookEvent not configured')
-      return webhookEvent
+      // Stripe always stamps `created`; default it to now so a test only sets
+      // it when the event's age matters (the Circle retry window).
+      return { created: Math.floor(Date.now() / 1000), ...(webhookEvent as object) }
     },
   }
 }
@@ -381,9 +383,9 @@ describe('webhook DB path — membership row', () => {
     expect(stampedMetadata()?.circle_provisioned).toBeUndefined()
   })
 
-  test('subscription.updated: a failed Circle add on an upgrade fails BEFORE the row write', async () => {
-    // Writing the bundle row first would erase the entitlement diff, and the
-    // redelivery would skip the fan-out — and Circle — entirely.
+  test('subscription.updated: a failed Circle add on an upgrade writes the row, then fails for a retry', async () => {
+    // Throwing before the write would pin the row on the old tier — and drop
+    // every later cancel_at / period-end change — for as long as Circle refuses.
     subProductId = 'prod_bundle'
     omitAxisMarkers = true
     subMeta = { beehiiv_premium: 'true' }
@@ -397,7 +399,64 @@ describe('webhook DB path — membership row', () => {
     const res = await runWebhook(CIRCLE_ENV)
 
     expect(res.statusCode).toBe(500)
-    expect(upsertStmt()).toBeUndefined()
+    expect(upsertStmt()!.values[3]).toBe('bundle')
+    expect(stampedMetadata()?.circle_provisioned).toBeUndefined()
+  })
+
+  test('subscription.updated: the redelivery retries Circle though the row already shows the new tier', async () => {
+    // The first delivery wrote the bundle row, so there's no entitlement diff
+    // left — the missing circle_provisioned marker is what fans it out again.
+    subProductId = 'prod_bundle'
+    omitAxisMarkers = true
+    subMeta = { beehiiv_premium: 'true', auth0_user_id: 'auth0|abc' }
+    priorRow = { tier: 'bundle', stripe_customer_id: 'cus_1', auth0_sub: 'auth0|abc' }
+    circleDown()
+    webhookEvent = {
+      type: 'customer.subscription.updated',
+      data: { object: makeSub(), previous_attributes: { metadata: {} } },
+    }
+
+    const res = await runWebhook(CIRCLE_ENV)
+
+    expect(fetchCalls.some((c) => c.url.includes('circle.so'))).toBe(true)
+    expect(res.statusCode).toBe(500)
+  })
+
+  test('subscription.updated: a tier drop with Circle down still writes the new tier', async () => {
+    // Ark+ → Circle-only revokes the feed inside the fan-out. The row must say
+    // `circle` afterwards, not keep claiming an Ark+ membership whose feed is gone.
+    subProductId = 'prod_circle'
+    omitAxisMarkers = true
+    subMeta = { beehiiv_premium: 'true', auth0_user_id: 'auth0|abc' }
+    priorRow = { tier: 'ark-plus', stripe_customer_id: 'cus_1', auth0_sub: 'auth0|abc' }
+    circleDown()
+    webhookEvent = {
+      type: 'customer.subscription.updated',
+      data: { object: makeSub(), previous_attributes: { items: {} } },
+    }
+
+    const res = await runWebhook(CIRCLE_ENV)
+
+    expect(res.statusCode).toBe(500)
+    expect(upsertStmt()!.values[3]).toBe('circle')
+  })
+
+  test('a Circle failure past the retry window acks instead of failing forever', async () => {
+    subProductId = 'prod_bundle'
+    omitAxisMarkers = true
+    subMeta = { beehiiv_premium: 'true', auth0_user_id: 'auth0|abc' }
+    priorRow = { tier: 'bundle', stripe_customer_id: 'cus_1', auth0_sub: 'auth0|abc' }
+    circleDown()
+    webhookEvent = {
+      type: 'customer.subscription.updated',
+      created: Math.floor(Date.now() / 1000) - 25 * 60 * 60,
+      data: { object: makeSub(), previous_attributes: { metadata: {} } },
+    }
+
+    const res = await runWebhook(CIRCLE_ENV)
+
+    expect(res.statusCode).toBe(200)
+    expect(upsertStmt()!.values[3]).toBe('bundle')
   })
 
   test('Circle unconfigured is not a failure — the webhook acks', async () => {
