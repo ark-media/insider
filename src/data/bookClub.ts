@@ -65,6 +65,7 @@ const bookClubPicks: BookClubPick[] = [
     subtitle: "A Portrait of the German-Jewish Epoch, 1743–1933",
     author: "Amos Elon",
     month: "2026-10",
+    coverArt: "/book-club/the-pity-of-it-all.jpg",
     danNote:
       "PLACEHOLDER — two centuries of German Jews building a country's culture while being told they could never quite belong to it. Elon writes the whole arc without ever letting you forget how it ends. I can't think of a better book to start with.",
     amazonAsin: "0312422814",
@@ -76,6 +77,7 @@ const bookClubPicks: BookClubPick[] = [
     subtitle: "The Making of the Modern Middle East",
     author: "Simon Sebag Montefiore",
     month: "2026-11",
+    coverArt: "/book-club/the-cauldron.jpg",
     danNote:
       "PLACEHOLDER — the long backstory to almost everything we cover on Call Me Back, told by someone who can move a century along without losing the people inside it. Read this and the headlines stop arriving out of nowhere.",
     amazonAsin: "0593805054",
@@ -85,6 +87,7 @@ const bookClubPicks: BookClubPick[] = [
     title: "Submission",
     author: "Michel Houellebecq",
     month: "2026-12",
+    coverArt: "/book-club/submission.jpg",
     danNote:
       "PLACEHOLDER — a novel about a France too tired to argue for itself. Plenty of people in the Fold will hate it, which is exactly why it's here: fiction gets at the mood underneath the politics in a way reporting rarely does.",
     amazonAsin: "1250097347",
@@ -94,6 +97,7 @@ const bookClubPicks: BookClubPick[] = [
     title: "American Pastoral",
     author: "Philip Roth",
     month: "2027-01",
+    coverArt: "/book-club/american-pastoral.jpg",
     danNote:
       "PLACEHOLDER — Roth on a man who did everything right and watched the ground open under him anyway. Assimilation, political violence, and what parents owe their children. We'll have plenty to argue about.",
     amazonAsin: "0375701427",
