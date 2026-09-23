@@ -191,7 +191,7 @@ interface EventMap {
   listen_link_clicked: { platform: string }
   // Book club: outbound Amazon (affiliate) click per pick, and the Fold
   // hand-off CTA — the two ends of the book-club → Fold funnel.
-  book_link_clicked: { slug: string }
+  book_link_clicked: { slug: string; format?: string }
   book_club_join_clicked: void
 }
 

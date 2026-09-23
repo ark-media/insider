@@ -223,6 +223,15 @@ export function calendarDaysUntilInZone(
   return Math.round((a - b) / 86_400_000)
 }
 
+/**
+ * The calendar date `ms` falls on in `timeZone`, as 'YYYY-MM-DD' — comparable
+ * as a plain string against stored calendar dates.
+ */
+export function calendarDateInZone(ms: number, timeZone: string): string {
+  const { year, month, day } = zonedCalendarParts(ms, timeZone)
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 // Scheduled events are formatted as two pieces rather than one string, because
 // every surface that shows one wants to lay the date and the time out
 // separately — the date reads as the heading, the time as the detail under it.
