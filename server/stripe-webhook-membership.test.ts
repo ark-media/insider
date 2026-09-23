@@ -30,6 +30,10 @@ let rowsBySub: Record<string, Record<string, unknown>> = {}
 let redeemedGift: Record<string, unknown> | null = null
 let giftExists = false
 let rowAfterGiftRevoke: Record<string, unknown> | null = null
+// An unclaimed gift the reversal path can void, and a dispute-voided one a won
+// dispute can restore.
+let pendingGift = false
+let disputeVoidedGift = false
 
 mock.module('@neondatabase/serverless', () => ({
   neon: (_url: string) =>
@@ -49,6 +53,10 @@ mock.module('@neondatabase/serverless', () => ({
         return Promise.resolve(g ? [g] : [])
       }
       if (text.includes('select 1 from gift')) return Promise.resolve(giftExists ? [{}] : [])
+      if (text.includes("update gift set status = 'void'"))
+        return Promise.resolve(pendingGift ? [{ redemption_token: 't' }] : [])
+      if (text.includes("update gift set status = 'pending'"))
+        return Promise.resolve(disputeVoidedGift ? [{ redemption_token: 't' }] : [])
       if (text.includes('make_interval(days =>') && text.includes('update membership'))
         return Promise.resolve(rowAfterGiftRevoke ? [rowAfterGiftRevoke] : [])
       return Promise.resolve([])
@@ -76,6 +84,10 @@ class FakeStripe {
   customers = {
     retrieve: async (id: string) => ({ id, email: 'buyer@example.com' }),
     list: async () => ({ data: [] }),
+    createBalanceTransaction: async (id: string, args: unknown) => {
+      stripeCalls.push({ method: 'customers.createBalanceTransaction', args: [id, args] })
+      return { id: 'cbtxn_2' }
+    },
   }
   products = {
     retrieve: async (id: string) => {
@@ -124,7 +136,16 @@ class FakeStripe {
   }
   paymentIntents = { create: async () => ({}), retrieve: async () => ({}), update: async () => ({}) }
   prices = { create: async () => ({}) }
-  checkout = { sessions: { create: async () => ({}), retrieve: async () => ({}) } }
+  checkout = {
+    sessions: {
+      create: async () => ({}),
+      retrieve: async () => ({}),
+      update: async (id: string, args: unknown) => {
+        stripeCalls.push({ method: 'checkout.sessions.update', args: [id, args] })
+        return {}
+      },
+    },
+  }
   webhooks = {
     constructEvent: () => {
       if (!webhookEvent) throw new Error('webhookEvent not configured')
@@ -253,6 +274,8 @@ beforeEach(() => {
   redeemedGift = null
   giftExists = false
   rowAfterGiftRevoke = null
+  pendingGift = false
+  disputeVoidedGift = false
   auth0SubsByEmail = new Map()
   currentSub = null
   productLookupFails = false
@@ -724,6 +747,143 @@ describe('webhook DB path — refunds and disputes', () => {
     expect(line).not.toContain('buyer@example.com')
   })
 
+  test('a PARTIAL refund leaves an unclaimed gift claimable', async () => {
+    pendingGift = true
+    webhookEvent = {
+      type: 'charge.refunded',
+      data: { object: { ...FULL_REFUND, refunded: false, amount_refunded: 300 } },
+    }
+    const res = await runWebhook(AUTH0_ENV)
+    expect(res.statusCode).toBe(200)
+    expect(statements.some((s) => s.text.includes("update gift set status = 'void'"))).toBe(false)
+  })
+
+  test('a full refund voids an unclaimed gift as a refund; a dispute as a dispute', async () => {
+    pendingGift = true
+    webhookEvent = { type: 'charge.refunded', data: { object: FULL_REFUND } }
+    await runWebhook(AUTH0_ENV)
+    const refundVoid = statements.find((s) => s.text.includes("update gift set status = 'void'"))
+    expect(refundVoid?.values).toContain('refund')
+
+    statements = []
+    webhookEvent = {
+      type: 'charge.dispute.created',
+      data: { object: { id: 'dp_1', payment_intent: 'pi_1' } },
+    }
+    await runWebhook(AUTH0_ENV)
+    const disputeVoid = statements.find((s) => s.text.includes("update gift set status = 'void'"))
+    expect(disputeVoid?.values).toContain('dispute')
+  })
+
+  test('a WON dispute puts a dispute-voided gift back to pending', async () => {
+    disputeVoidedGift = true
+    webhookEvent = {
+      type: 'charge.dispute.closed',
+      data: { object: { id: 'dp_1', payment_intent: 'pi_1', status: 'won' } },
+    }
+    const res = await runWebhook(AUTH0_ENV)
+    expect(res.statusCode).toBe(200)
+    const restore = statements.find((s) => s.text.includes("update gift set status = 'pending'"))
+    expect(restore).toBeDefined()
+    // Only a dispute void is restored, never a refund one.
+    expect(restore!.text).toContain("void_reason = 'dispute'")
+  })
+
+  test('a LOST dispute restores nothing', async () => {
+    disputeVoidedGift = true
+    webhookEvent = {
+      type: 'charge.dispute.closed',
+      data: { object: { id: 'dp_1', payment_intent: 'pi_1', status: 'lost' } },
+    }
+    await runWebhook(AUTH0_ENV)
+    expect(statements.some((s) => s.text.includes("update gift set status = 'pending'"))).toBe(
+      false,
+    )
+  })
+
+  test('a reversed gift that credited a balance debits it back', async () => {
+    redeemedGift = {
+      redemption_token: 't',
+      tier: 'circle',
+      plan: '1yr',
+      status: 'reversed',
+      redeemed_by: 'auth0|recipient',
+      stripe_effect: {
+        kind: 'credit',
+        customer_id: 'cus_r',
+        balance_transaction_id: 'cbtxn_1',
+        amount: 19000,
+        currency: 'eur',
+      },
+    }
+    const logged: string[] = []
+    console.error = (...args: unknown[]) => void logged.push(args.map(String).join(' '))
+    webhookEvent = { type: 'charge.refunded', data: { object: FULL_REFUND } }
+    const res = await runWebhook(AUTH0_ENV)
+    expect(res.statusCode).toBe(200)
+    const debit = stripeCalls.find((c) => c.method === 'customers.createBalanceTransaction')
+    expect(debit?.args[0]).toBe('cus_r')
+    expect(debit?.args[1]).toMatchObject({ amount: 19000, currency: 'eur' })
+    const line = logged.find((l) => l.includes('GIFT-REVERSED'))
+    expect(line).toContain('was reversed')
+    expect(line).not.toContain('MANUAL ACTION')
+  })
+
+  test('a reversed gift that pushed an annual renewal ends the pushed trial', async () => {
+    const future = Math.floor(Date.now() / 1000) + 30 * 86400
+    currentSub = {
+      ...(makeSub() as object),
+      id: 'sub_r',
+      status: 'trialing',
+      trial_end: future + 365 * 86400,
+    }
+    redeemedGift = {
+      redemption_token: 't',
+      tier: 'ark-plus',
+      plan: '1yr',
+      status: 'reversed',
+      redeemed_by: 'auth0|recipient',
+      stripe_effect: {
+        kind: 'trial_end',
+        subscription_id: 'sub_r',
+        previous_period_end: future,
+        trial_end: future + 365 * 86400,
+      },
+    }
+    webhookEvent = { type: 'charge.refunded', data: { object: FULL_REFUND } }
+    const res = await runWebhook(AUTH0_ENV)
+    expect(res.statusCode).toBe(200)
+    const update = stripeCalls.find(
+      (c) => c.method === 'subscriptions.update' && c.args[0] === 'sub_r',
+    )
+    expect(update?.args[1]).toMatchObject({ trial_end: future, proration_behavior: 'none' })
+  })
+
+  test('a reversed gift whose subscription moved on since is left for a human', async () => {
+    currentSub = { ...(makeSub() as object), id: 'sub_r', status: 'active', trial_end: null }
+    redeemedGift = {
+      redemption_token: 't',
+      tier: 'ark-plus',
+      plan: '1yr',
+      status: 'reversed',
+      redeemed_by: 'auth0|recipient',
+      stripe_effect: {
+        kind: 'trial_end',
+        subscription_id: 'sub_r',
+        previous_period_end: 1,
+        trial_end: 2,
+      },
+    }
+    const logged: string[] = []
+    console.error = (...args: unknown[]) => void logged.push(args.map(String).join(' '))
+    webhookEvent = { type: 'charge.refunded', data: { object: FULL_REFUND } }
+    await runWebhook(AUTH0_ENV)
+    expect(
+      stripeCalls.some((c) => c.method === 'subscriptions.update' && c.args[0] === 'sub_r'),
+    ).toBe(false)
+    expect(logged.find((l) => l.includes('GIFT-REVERSED'))).toContain('MANUAL ACTION')
+  })
+
   test('a second reversal event for the same gift takes nothing more off', async () => {
     redeemedGift = null // already flipped to 'reversed' by the first event
     giftExists = true
@@ -738,5 +898,60 @@ describe('webhook DB path — refunds and disputes', () => {
       statements.some((s) => s.text.includes('update membership') && s.text.includes('make_interval')),
     ).toBe(false)
     expect(stripeCalls.some((c) => c.method === 'subscriptions.cancel')).toBe(false)
+  })
+})
+
+// A 100%-off promo leaves a $0 payment-mode Session with no PaymentIntent, so
+// checkout.session.completed is the only signal the gift was bought.
+describe('webhook DB path — a free (fully discounted) gift', () => {
+  const FREE_GIFT_SESSION = {
+    id: 'cs_free',
+    mode: 'payment',
+    payment_status: 'no_payment_required',
+    amount_total: 0,
+    currency: 'eur',
+    metadata: {
+      kind: 'gift',
+      tier: 'circle',
+      term: '6mo',
+      currency: 'eur',
+      giver_email: 'giver@example.com',
+      recipient_email: 'friend@example.com',
+      recipient_name: 'Friend',
+    },
+  }
+
+  test('issues the gift from the Session: a pending row, the claim email, the Session stamped', async () => {
+    webhookEvent = { type: 'checkout.session.completed', data: { object: FREE_GIFT_SESSION } }
+    const res = await runWebhook(AUTH0_ENV)
+    expect(res.statusCode).toBe(200)
+    const insert = statements.find((s) => s.text.includes('insert into gift'))
+    expect(insert).toBeDefined()
+    expect(insert!.values).toContain('circle')
+    expect(insert!.values).toContain('6mo')
+    expect(insert!.values).toContain(0)
+    expect(resendCalls().length).toBe(1)
+    const stamp = stripeCalls.find((c) => c.method === 'checkout.sessions.update')
+    expect(stamp?.args[0]).toBe('cs_free')
+    expect((stamp?.args[1] as { metadata: Record<string, string> }).metadata.gift_token).toBeTruthy()
+  })
+
+  test('a PAID gift Session is left to payment_intent.succeeded', async () => {
+    webhookEvent = {
+      type: 'checkout.session.completed',
+      data: { object: { ...FREE_GIFT_SESSION, payment_status: 'paid', amount_total: 11400 } },
+    }
+    await runWebhook(AUTH0_ENV)
+    expect(statements.some((s) => s.text.includes('insert into gift'))).toBe(false)
+    expect(resendCalls().length).toBe(0)
+  })
+
+  test('a subscription Session is not a gift', async () => {
+    webhookEvent = {
+      type: 'checkout.session.completed',
+      data: { object: { ...FREE_GIFT_SESSION, mode: 'subscription', metadata: {} } },
+    }
+    await runWebhook(AUTH0_ENV)
+    expect(statements.some((s) => s.text.includes('insert into gift'))).toBe(false)
   })
 })

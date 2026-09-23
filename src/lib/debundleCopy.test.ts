@@ -4,13 +4,15 @@
 // Stripe actually charges each of them.
 
 import { describe, test, expect } from "bun:test";
-import { continuationCopy, introTerm, usd } from "./debundleCopy";
+import { continuationCopy, introTerm, priceIn } from "./debundleCopy";
 import type { DebundlePrice } from "../../shared/retention";
 
 // $8/mo standalone → $6.50/mo intro (half the $13 bundle), 6-month coupon.
 const monthly: DebundlePrice = {
   tier: "circle",
   plan: "monthly",
+  currency: "usd",
+  minorFactor: 100,
   priceCents: 800,
   introCents: 650,
   introMonths: 6,
@@ -20,6 +22,8 @@ const monthly: DebundlePrice = {
 const yearly: DebundlePrice = {
   tier: "circle",
   plan: "yearly",
+  currency: "usd",
+  minorFactor: 100,
   priceCents: 8000,
   introCents: 6500,
   introMonths: 6,
@@ -28,6 +32,8 @@ const yearly: DebundlePrice = {
 const noIntro: DebundlePrice = {
   tier: "ark-plus",
   plan: "monthly",
+  currency: "usd",
+  minorFactor: 100,
   priceCents: 800,
   introCents: null,
   introMonths: null,
@@ -85,9 +91,26 @@ describe("continuationCopy", () => {
   });
 });
 
-describe("usd", () => {
+describe("priceIn", () => {
   test("renders catalog cents as dollars, dropping trailing zeros site-wide", () => {
-    expect(usd(650)).toBe("$6.50");
-    expect(usd(13000)).toBe("$130");
+    const m = { currency: "usd", minorFactor: 100 };
+    expect(priceIn(650, m)).toBe("$6.50");
+    expect(priceIn(13000, m)).toBe("$130");
+  });
+
+  test("quotes the member's own currency, zero-decimal included", () => {
+    expect(priceIn(900, { currency: "eur", minorFactor: 100 })).toContain("9");
+    expect(priceIn(900, { currency: "eur", minorFactor: 100 })).toContain("€");
+    // ¥1300 is 1300 minor units, not 13.
+    expect(priceIn(1300, { currency: "jpy", minorFactor: 1 })).toContain("1,300");
+  });
+});
+
+describe("continuationCopy in another currency", () => {
+  test("never quotes a EUR member in dollars", () => {
+    const eur: DebundlePrice = { ...monthly, currency: "eur", priceCents: 900, introCents: 700 };
+    const s = continuationCopy(eur, "monthly", "The Fold");
+    expect(s).toContain("€");
+    expect(s).not.toContain("$");
   });
 });

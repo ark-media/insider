@@ -3,9 +3,12 @@
 // §4, task 1). Run this once to create the catalog, and re-run any time to
 // refresh amounts (FX drift) — it is idempotent.
 //
-// TEST MODE ONLY. Live mode is out of scope for this whole redesign (§1b). The
-// script hard-refuses to run against a live key: it requires STRIPE_SECRET_KEY
-// (Bun auto-loads .env) to start with `sk_test_` and aborts otherwise.
+// Test mode by default. STRIPE_SECRET_KEY (Bun auto-loads .env) must start
+// with `sk_test_` unless `--live` is passed, and a live run that WRITES
+// (`--live --apply`) additionally needs CONFIRM_LIVE_ACCOUNT set to the live
+// account's id (acct_…), which the script checks against the key before writing
+// anything. `--archive-orphans` is refused in live mode: a live account can hold
+// products that aren't ours to archive.
 //
 // Idempotency:
 //   - Products are addressed by a stable `metadata.catalog_key` (ark_plus /
@@ -26,6 +29,10 @@
 //                                                         # orphans (run only AFTER
 //                                                         # checkout is on the new
 //                                                         # catalog — task 8)
+//   STRIPE_SECRET_KEY=sk_live_… bun run scripts/stripe-catalog.ts --live
+//                                                         # preview against LIVE
+//   STRIPE_SECRET_KEY=sk_live_… CONFIRM_LIVE_ACCOUNT=acct_… \
+//     bun run scripts/stripe-catalog.ts --live --apply    # provision LIVE
 
 import Stripe from 'stripe'
 
@@ -50,6 +57,17 @@ type Amounts = Record<Currency, number>
 // so this provisioning script stays standalone). Used only by the preview log —
 // BASE_MONTHLY_MINOR below is already encoded correctly per currency.
 const ZERO_DECIMAL = new Set<Currency>(['jpy', 'krw', 'vnd', 'clp'])
+
+// Charged in hundredths but only in whole units — an exact multiple of 100
+// minor units (Stripe "special cases"). Mirrors server/lib/pricing.ts
+// WHOLE_UNIT_CURRENCIES. The derived tiers (×19/8, ×25/8) land between whole
+// forints and dollars without this, e.g. HUF 8,288.75.
+const WHOLE_UNIT = new Set<Currency>(['huf', 'twd'])
+
+// A derived amount rounded to something the currency can be charged in.
+function roundFor(cur: Currency, amount: number): number {
+  return WHOLE_UNIT.has(cur) ? Math.round(amount / 100) * 100 : Math.round(amount)
+}
 
 // Column 1 of the localized price table (Stripe purchasing-power presets) for
 // the $8/mo Ark+ · Circle base, in MINOR units — 2-decimal currencies ×100 of
@@ -84,7 +102,7 @@ function amountsFor(usdMonthlyMinor: number, interval: 'month' | 'year'): Amount
   const yearFactor = interval === 'year' ? 10 : 1
   const out = {} as Amounts
   for (const cur of CURRENCIES) {
-    out[cur] = Math.round(BASE_MONTHLY_MINOR[cur] * monthScale * yearFactor)
+    out[cur] = roundFor(cur, BASE_MONTHLY_MINOR[cur] * monthScale * yearFactor)
   }
   return out
 }
@@ -174,7 +192,7 @@ function giftAmountsFor(tierMonthlyUsdMinor: number, multiple: number): Amounts 
   const monthScale = tierMonthlyUsdMinor / BASE_MONTHLY_MINOR.usd
   const out = {} as Amounts
   for (const cur of CURRENCIES) {
-    out[cur] = Math.round(BASE_MONTHLY_MINOR[cur] * monthScale * multiple)
+    out[cur] = roundFor(cur, BASE_MONTHLY_MINOR[cur] * monthScale * multiple)
   }
   out.usd = tierMonthlyUsdMinor * multiple
   return out
@@ -218,15 +236,37 @@ const GIFT_CATALOG: GiftProductDef[] = [
 
 // --- Guards ----------------------------------------------------------------
 
-function assertTestMode(key: string | undefined): asserts key is string {
+// The key must match the mode asked for: a test key without --live, a live key
+// with it. Refusing the mismatch both ways means a stray `--live` can't silently
+// run against test, and a live key left in .env can't be written to by a plain
+// `--apply`.
+function assertKeyMode(key: string | undefined, live: boolean): asserts key is string {
   if (!key) {
     console.error('STRIPE_SECRET_KEY is not set. Add your TEST key (sk_test_…) to .env.')
     process.exit(1)
   }
-  if (!key.startsWith('sk_test_')) {
+  const prefix = live ? 'sk_live_' : 'sk_test_'
+  if (!key.startsWith(prefix)) {
     console.error(
-      'Refusing to run: STRIPE_SECRET_KEY is not a test key (must start with "sk_test_").\n' +
-        'This redesign is test-mode only (§1b). Live mode is out of scope.',
+      live
+        ? 'Refusing to run: --live was passed but STRIPE_SECRET_KEY is not a live key (sk_live_…).'
+        : 'Refusing to run: STRIPE_SECRET_KEY is not a test key (must start with "sk_test_").\n' +
+            'Pass --live (and, to write, CONFIRM_LIVE_ACCOUNT=acct_…) to provision live mode.',
+    )
+    process.exit(1)
+  }
+}
+
+// A live write names its target twice: once by key, once by account id. Catches
+// the key for the wrong account (staging vs production, say) before any write.
+async function assertLiveAccount(stripe: Stripe): Promise<void> {
+  const expected = process.env.CONFIRM_LIVE_ACCOUNT
+  const account = await stripe.accounts.retrieveCurrent()
+  if (!expected || expected !== account.id) {
+    console.error(
+      `Refusing to write to LIVE: this key belongs to ${account.id}` +
+        `${account.settings?.dashboard?.display_name ? ` (${account.settings.dashboard.display_name})` : ''}. ` +
+        'Re-run with CONFIRM_LIVE_ACCOUNT set to that id to confirm.',
     )
     process.exit(1)
   }
@@ -496,12 +536,19 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const apply = args.includes('--apply')
   const archiveOrphans = args.includes('--archive-orphans')
+  const live = args.includes('--live')
 
   const key = process.env.STRIPE_SECRET_KEY
-  assertTestMode(key)
+  assertKeyMode(key, live)
+  if (live && archiveOrphans) {
+    console.error('Refusing --archive-orphans in live mode.')
+    process.exit(1)
+  }
   const stripe = new Stripe(key)
+  if (live && apply) await assertLiveAccount(stripe)
 
-  console.log(apply ? '=== APPLY (writing to Stripe TEST mode) ===' : '=== PREVIEW (no writes) ===')
+  const mode = live ? 'LIVE' : 'TEST'
+  console.log(apply ? `=== APPLY (writing to Stripe ${mode} mode) ===` : `=== PREVIEW (${mode}, no writes) ===`)
 
   const { byCatalogKey, orphans } = await scanProducts(stripe)
 
@@ -530,7 +577,7 @@ async function main(): Promise<void> {
 
   console.log(
     apply
-      ? '\nDone. Catalog is provisioned. Verify prices by lookup_key in the Dashboard (test mode).'
+      ? `\nDone. Catalog is provisioned. Verify prices by lookup_key in the Dashboard (${mode.toLowerCase()} mode).`
       : '\nPreview only — nothing was written. Re-run with --apply to provision.',
   )
 }

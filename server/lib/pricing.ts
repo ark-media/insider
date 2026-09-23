@@ -24,8 +24,9 @@ function priceLookupKey(tier: PricedTier, plan: Plan): string {
 
 // Gifts are one-time SKUs on their own catalog products (scripts/stripe-catalog.ts
 // GIFT_CATALOG), lookup-keyed `gift_<prefix>_<term>` — independent of the
-// recurring subscription prices. Prices are $48/$80 (Ark+, the Fold) and
-// $75/$130 (Bundle), each with the same 40-currency `currency_options`.
+// recurring subscription prices. 6mo = the tier's monthly ×6, 1yr = its yearly
+// (monthly ×10): $48/$80 Ark+, $114/$190 the Fold, $150/$250 Bundle, each with
+// the same 40-currency `currency_options`.
 export type GiftTerm = '6mo' | '1yr'
 
 function giftPriceLookupKey(tier: PricedTier, term: GiftTerm): string {
@@ -54,6 +55,23 @@ export function isSupportedCurrency(c: string): c is SupportedCurrency {
 // are 2-decimal (charge-safe as-is) so they are NOT here. Anything not selling
 // in these currencies must never divide their amounts by 100.
 const ZERO_DECIMAL_CURRENCIES = ['jpy', 'krw', 'vnd', 'clp'] as const
+
+// Currencies Stripe charges in hundredths but whose amounts must be whole units
+// — an exact multiple of 100 minor units (Stripe "special cases": HUF, TWD).
+// src/lib/currency.ts rounds typed amounts the same way; this is the server's
+// copy, used for every amount we DERIVE (scaled coupon amounts, PWYC checks).
+const WHOLE_UNIT_CURRENCIES = ['huf', 'twd'] as const
+
+export function requiresWholeUnits(currency: string): boolean {
+  return (WHOLE_UNIT_CURRENCIES as readonly string[]).includes(currency.toLowerCase())
+}
+
+// Round a derived minor-unit amount to one this currency can actually be
+// charged in: a whole minor unit everywhere, a whole major unit (×100) for the
+// currencies above.
+export function roundMinorFor(amount: number, currency: string): number {
+  return requiresWholeUnits(currency) ? Math.round(amount / 100) * 100 : Math.round(amount)
+}
 
 function isZeroDecimal(currency: string): boolean {
   return (ZERO_DECIMAL_CURRENCIES as readonly string[]).includes(currency.toLowerCase())
@@ -168,15 +186,16 @@ async function resolvePriceByLookupKey(
   return resolved
 }
 
-// The base (USD) list price in cents for a tier+plan. Kept for the pricing route
-// and promo math on the USD path; per-currency floors come from
-// resolveCatalogPrice.
+// The list price for a tier+plan in minor units of `currency` (default USD).
+// Callers quoting a member's own subscription pass sub.currency — a quote in the
+// USD base shown to a EUR member is wrong money, not a rounding error.
 export async function getPlanPriceCents(
   stripe: Stripe,
   tier: PricedTier,
   plan: Plan,
+  currency: SupportedCurrency = 'usd',
 ): Promise<number> {
-  return (await resolveCatalogPrice(stripe, tier, plan)).floors.usd
+  return (await resolveCatalogPrice(stripe, tier, plan)).floors[currency]
 }
 
 // Per-currency floors (minor units) for every tier+plan — the data the

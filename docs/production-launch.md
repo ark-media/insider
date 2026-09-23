@@ -118,23 +118,32 @@ you get the value; "Scope" = server-only vs shipped to browser.
 | `STRIPE_SECRET_KEY` | server | Live secret `sk_live_…`. |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | **browser** | Live publishable `pk_live_…`. |
 | `STRIPE_WEBHOOK_SECRET` | server | `whsec_…` from the **live** webhook endpoint (below). |
-| `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_YEARLY` | server | Live recurring Price ids (else server creates dynamic prices). |
 
 **Stripe live setup:**
-- Re-run the catalog provisioner (`scripts/stripe-catalog.ts`) against live mode
-  to create products/prices with the `entitlements` metadata the tier resolver
-  reads. Capture the gift price ids too. ⚠️ The script **hard-refuses any key
-  that is not `sk_test_`** (`assertTestMode`), and that is deliberate: it
-  creates and archives prices. Going live needs a reviewed PR that adds an
-  explicit live path (e.g. a `--live` flag that prints the account and asks for
-  confirmation), merged ahead of time — not the guard deleted on launch day.
+- Provision the live catalog with `scripts/stripe-catalog.ts`. Prices are
+  resolved by `lookup_key` (no price-id env vars). Preview first, then write:
+  `STRIPE_SECRET_KEY=sk_live_… bun run scripts/stripe-catalog.ts --live`, then
+  the same with `--apply` and `CONFIRM_LIVE_ACCOUNT=acct_…` (the script checks
+  the key belongs to that account before writing). A test key refuses `--live`
+  and a live key refuses to run without it; `--archive-orphans` is refused in
+  live mode.
 - Create the **live webhook endpoint** → `https://<APP_BASE_URL>/api/stripe/webhook`,
-  subscribe to the subscription/invoice/checkout events the handler consumes,
-  copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the source
+  subscribe to the events the handler consumes: `customer.subscription.created`,
+  `.updated`, `.deleted`, `.paused`, `invoice.payment_failed`,
+  `payment_intent.succeeded`, `checkout.session.completed` (a $0 gift has no
+  PaymentIntent), `charge.refunded`, `charge.dispute.created` and
+  `charge.dispute.closed` (a won dispute restores a voided gift). `checkout.session.completed`
+  and `charge.dispute.closed` are new as of the pre-launch Stripe review — add
+  them to both TEST endpoints too. Copy its signing secret into `STRIPE_WEBHOOK_SECRET`. The webhook is the source
   of truth for entitlement — verify it's reachable in prod (localhost is not in
   the delivery path).
 - Disable Adaptive Pricing in the Dashboard (we use per-currency `currency_options`).
-- Re-create coupons/promos in live mode (Stripe-native; auto-applied via metadata).
+- Re-create coupons/promos in live mode through `/admin/promos` rather than the
+  Dashboard: a fixed-amount promo made there gets `currency_options` for all 40
+  currencies, and one made in the Dashboard is USD-only (refused on every
+  non-USD checkout and subscription).
+- Run migration `0007_stripe_currency_and_gift_effects.sql` before deploying
+  code that writes `membership.currency` / `gift.stripe_effect`.
 
 #### Resend (email)
 | Var | Scope | Prod source / action |

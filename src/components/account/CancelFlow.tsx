@@ -3,7 +3,7 @@ import { Modal } from "../Modal";
 import { MissionReminder } from "./MissionReminder";
 import { trackEvent } from "../../lib/analytics";
 import { applyCouponDiscount, formatCouponDiscount } from "../../lib/currency";
-import { continuationCopy, introTerm, usd } from "../../lib/debundleCopy";
+import { continuationCopy, introTerm, priceIn } from "../../lib/debundleCopy";
 import {
   CANCELLATION_SURVEYS,
   OTHER_REASON_SLUG,
@@ -53,11 +53,12 @@ function PricePair({
   const discounted = applyCouponDiscount(listCents, offer.percentOff, offer.amountOff);
   return discounted !== null && discounted < listCents ? (
     <>
-      <s className="text-fg-muted">{usd(listCents)}</s> {usd(discounted)}/{cadence}
+      <s className="text-fg-muted">{priceIn(listCents, offer)}</s>{" "}
+      {priceIn(discounted, offer)}/{cadence}
     </>
   ) : (
     <>
-      {usd(listCents)}/{cadence}
+      {priceIn(listCents, offer)}/{cadence}
     </>
   );
 }
@@ -76,14 +77,14 @@ function RowPrice({
   return price.introCents !== null ? (
     <span className="text-right">
       <span className="text-fg-strong">
-        <s className="text-fg-muted">{usd(price.priceCents)}</s>{" "}
-        {usd(price.introCents)}/{cadence}
+        <s className="text-fg-muted">{priceIn(price.priceCents, price)}</s>{" "}
+        {priceIn(price.introCents, price)}/{cadence}
       </span>
       <span className="block text-fg-muted">{introTerm(price, plan)}</span>
     </span>
   ) : (
     <span className="text-fg-muted">
-      {usd(price.priceCents)}/{cadence}
+      {priceIn(price.priceCents, price)}/{cadence}
     </span>
   );
 }
@@ -97,7 +98,7 @@ function formatDate(iso: string): string {
 
 // A human headline for a coupon-backed offer, e.g. "20% off for 6 months".
 function couponHeadline(o: RetentionOffer): string {
-  const amount = formatCouponDiscount(o.percentOff, o.amountOff);
+  const amount = formatCouponDiscount(o.percentOff, o.amountOff, o.currency, o.minorFactor);
   if (o.durationMonths) {
     return `${amount} for ${o.durationMonths} month${o.durationMonths === 1 ? "" : "s"}`;
   }
@@ -137,7 +138,7 @@ function offerCopy(
         body:
           percent > 0
             ? `Save ${percent}% when you switch to annual billing`
-            : `Switch to annual billing at ${usd(yearly)}/year`,
+            : `Switch to annual billing at ${priceIn(yearly, o)}/year`,
       };
     }
     case "monthly_switch": {
@@ -155,7 +156,7 @@ function offerCopy(
             Switch to monthly billing for{" "}
             <PricePair listCents={monthly} offer={o} cadence="month" />
             {held !== null && held < monthly && o.durationMonths
-              ? `${couponTerm(o)}, then ${usd(monthly)}/month`
+              ? `${couponTerm(o)}, then ${priceIn(monthly, o)}/month`
               : null}
           </>
         ),
@@ -165,7 +166,7 @@ function offerCopy(
     case "affordability_coupon": {
       const list = o.currentPriceCents;
       return {
-        heading: `Keep your benefits for ${formatCouponDiscount(o.percentOff, o.amountOff)}`,
+        heading: `Keep your benefits for ${formatCouponDiscount(o.percentOff, o.amountOff, o.currency, o.minorFactor)}`,
         body:
           list != null ? (
             <>
@@ -196,7 +197,7 @@ function offerCta(o: RetentionOffer): string {
       return "Switch to monthly";
     case "supporter_coupon":
     case "affordability_coupon":
-      return `Redeem ${formatCouponDiscount(o.percentOff, o.amountOff)} discount`;
+      return `Redeem ${formatCouponDiscount(o.percentOff, o.amountOff, o.currency, o.minorFactor)} discount`;
   }
 }
 
@@ -405,7 +406,7 @@ export function CancelFlow({
         list == null
           ? null
           : (applyCouponDiscount(list, offer.percentOff, offer.amountOff) ?? list);
-      const detail = rate != null ? `${usd(rate)}/${cadence}` : "";
+      const detail = rate != null ? `${priceIn(rate, offer)}/${cadence}` : "";
       setSaved({ detail, nextChargeAt: r.effective_at ?? "" });
       setScreen("saved");
       return;
@@ -435,7 +436,7 @@ export function CancelFlow({
       setSaved({
         detail:
           discounted !== null
-            ? `${usd(discounted)}/${plan === "yearly" ? "year" : "month"}`
+            ? `${priceIn(discounted, offer)}/${plan === "yearly" ? "year" : "month"}`
             : couponHeadline(offer),
         nextChargeAt: r.next_charge_at ?? "",
       });
@@ -646,7 +647,7 @@ export function CancelFlow({
               {heading("Do you want to keep any services?")}
               <p className="mt-4 text-body-sm text-fg">
                 {breakdown
-                  ? `Your membership includes these services for ${usd(breakdown.bundleCents)}/${cadence}. Choose any individual services you'd like to keep.`
+                  ? `Your membership includes these services for ${priceIn(breakdown.bundleCents, breakdown)}/${cadence}. Choose any individual services you'd like to keep.`
                   : "Your membership includes both of these. Choose any you'd like to keep — uncheck the rest."}
               </p>
               <fieldset className="mt-6">
@@ -709,7 +710,7 @@ export function CancelFlow({
                     : count === 0
                       ? "Cancel all services"
                       : buttonCents !== null
-                        ? `${count} service${count === 1 ? "" : "s"}: ${usd(buttonCents)}/${cadence}`
+                        ? `${count} service${count === 1 ? "" : "s"}: ${breakdown ? priceIn(buttonCents, breakdown) : ""}/${cadence}`
                         : `Keep ${count} service${count === 1 ? "" : "s"}`}
                 </button>
                 <button type="button" className={primaryBtn} onClick={onClose}>

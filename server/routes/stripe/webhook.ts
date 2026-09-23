@@ -34,9 +34,12 @@ import {
   getMembershipByStripeCustomer,
   insertGift,
   markGiftReversed,
+  restoreDisputedGift,
   revokeGiftTerm,
   setMembershipStatusByCustomer,
   upsertMembership,
+  voidPendingGift,
+  type GiftStripeEffect,
 } from '../../lib/membership.js'
 import { type Plan } from '../../lib/pricing.js'
 import type { Deps, Env } from '../../lib/route.js'
@@ -46,6 +49,7 @@ import {
   periodEndIso,
   planFromSubscription,
   scheduleIdOf,
+  subscriptionAmount,
   tsToIso,
 } from './helpers.js'
 
@@ -134,18 +138,36 @@ function cancelAtIso(sub: Stripe.Subscription): string | null {
 // off the event payload — no extra Stripe calls. These are segmentation
 // dimensions for a PostHog funnel, NOT a revenue figure: Stripe is the system
 // of record for money (see server/lib/analytics-server.ts).
+//
+// `amountCents` is resolved by the caller (subscriptionAmountInOwnCurrency) so it
+// is denominated in `currency`, not the USD base of a currency_options price.
 function subscriptionAnalyticsProps(
   sub: Stripe.Subscription,
   tier: Tier,
+  amountCents: number | null,
 ): { tier: string; plan: string | null; amount_cents: number | null; currency: string | null } {
   return {
     tier,
     plan: planFromSubscription(sub) ?? sub.metadata?.plan ?? null,
-    amount_cents:
-      sub.items?.data?.[0]?.price?.unit_amount ??
-      (sub.metadata?.amount_cents ? Number(sub.metadata.amount_cents) : null),
+    amount_cents: amountCents,
     currency: sub.currency ?? null,
   }
+}
+
+// What the subscription bills, in its OWN currency. `price.unit_amount` is the
+// USD base under the currency_options catalog, so reading it straight gave every
+// non-USD member a dollar figure labelled with their currency. Falls back to the
+// checkout-stamped metadata (written in the Session's currency) when Stripe
+// can't say.
+async function subscriptionAmountInOwnCurrency(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+): Promise<number | null> {
+  const price = sub.items?.data?.[0]?.price
+  const fromStripe = price ? await subscriptionAmount(stripe, sub, price) : null
+  if (fromStripe != null) return fromStripe
+  const stamped = Number(sub.metadata?.amount_cents)
+  return Number.isInteger(stamped) && stamped > 0 ? stamped : null
 }
 
 // Serialize handling of same-customer deliveries within this instance so two
@@ -216,7 +238,41 @@ export async function dispatchWebhookEvent(
     case 'payment_intent.succeeded': {
       const pi = event.data.object as Stripe.PaymentIntent
       if (pi.metadata?.kind === 'gift') {
-        await handleGiftPaymentIntent(pi, stripe, env)
+        await handleGiftPurchase(
+          {
+            id: pi.id,
+            metadata: pi.metadata,
+            amount: pi.amount_received ?? pi.amount ?? null,
+            currency: pi.currency ?? null,
+            stamp: (metadata) => stripe.paymentIntents.update(pi.id, { metadata }),
+          },
+          env,
+        )
+      }
+      break
+    }
+    case 'checkout.session.completed': {
+      // Only the gift a promo made free. A paid gift is issued from its
+      // PaymentIntent above; a $0 payment-mode Session has no PaymentIntent, so
+      // without this a 100%-off gift code took the giver through checkout and
+      // issued nothing. Keyed on the Session id instead, and the gift details
+      // come from the Session's own metadata (routes/gift.ts stamps both).
+      const session = event.data.object as Stripe.Checkout.Session
+      if (
+        session.mode === 'payment' &&
+        session.metadata?.kind === 'gift' &&
+        session.payment_status === 'no_payment_required'
+      ) {
+        await handleGiftPurchase(
+          {
+            id: session.id,
+            metadata: session.metadata,
+            amount: session.amount_total ?? 0,
+            currency: session.currency ?? null,
+            stamp: (metadata) => stripe.checkout.sessions.update(session.id, { metadata }),
+          },
+          env,
+        )
       }
       break
     }
@@ -241,17 +297,16 @@ export async function dispatchWebhookEvent(
 
       // A gift is redeemable indefinitely (no redeem-by), so without this the
       // money can be reversed while the claim link stays live forever. Void the
-      // gift if it hasn't been claimed yet.
+      // gift if it hasn't been claimed yet — on a FULL reversal only, the same
+      // rule as a subscription: a partial refund is a goodwill adjustment and
+      // leaves the gift good. The reason is kept so a won dispute can restore it.
       let wasGift = false
-      if (env.DATABASE_URL) {
+      if (env.DATABASE_URL && full) {
         const sql = getDb(env)
         const token = giftTokenForPaymentIntent(piId, env)
-        const voided = await sql`
-          update gift set status = 'void'
-          where redemption_token = ${token} and status = 'pending'
-          returning redemption_token`
-        wasGift = voided.length > 0
-        if (!wasGift && full) {
+        const reason = event.type === 'charge.dispute.created' ? 'dispute' : 'refund'
+        wasGift = await voidPendingGift(sql, token, reason)
+        if (!wasGift) {
           wasGift = await reverseRedeemedGift(token, piId, event.type, stripe, env)
         }
       }
@@ -260,6 +315,35 @@ export async function dispatchWebhookEvent(
       // `customer.subscription.deleted` it produces runs the one revoke path.
       if (!wasGift && full) {
         await cancelSubscriptionForReversedPayment(piId, event.type, stripe)
+      }
+      break
+    }
+    case 'charge.dispute.closed': {
+      // A dispute we WON on an unclaimed gift: the money is ours again, so the
+      // claim link works again. Only a dispute void is restored (never a
+      // refund). A gift that had already been redeemed was reversed — its term
+      // taken back and any Stripe extension undone — and re-granting that is a
+      // judgement call, so it is logged for a human rather than guessed at.
+      const dispute = event.data.object as Stripe.Dispute
+      if (dispute.status !== 'won' || !env.DATABASE_URL) break
+      const piId =
+        typeof dispute.payment_intent === 'string'
+          ? dispute.payment_intent
+          : dispute.payment_intent?.id ?? null
+      if (!piId) break
+      const sql = getDb(env)
+      const token = giftTokenForPaymentIntent(piId, env)
+      if (await restoreDisputedGift(sql, token)) {
+        console.warn(`[stripe] dispute won: gift for payment ${piId} restored to pending`)
+        break
+      }
+      const rows = (await sql`
+        select status from gift where redemption_token = ${token}`) as Array<{ status: string }>
+      if (rows[0]?.status === 'reversed') {
+        console.error(
+          `[stripe] GIFT-DISPUTE-WON: payment ${piId} for a gift that was redeemed and then ` +
+            'reversed by this dispute. MANUAL ACTION: the redeemer lost the gift term; re-grant it if appropriate.',
+        )
       }
       break
     }
@@ -468,7 +552,14 @@ async function handleSubscriptionUpsert(
     await activator.activateMembershipForStripeSub(sub, tier)
     const email = await emailForStripeCustomer(sub.customer, stripe)
     if (email) await syncEntitlement(env, email, tier)
-    await emitProvisioningEvents(env, sub, tier, email, created)
+    await emitProvisioningEvents(
+      env,
+      sub,
+      tier,
+      await subscriptionAmountInOwnCurrency(stripe, sub),
+      email,
+      created,
+    )
     return
   }
 
@@ -549,9 +640,7 @@ async function handleSubscriptionUpsert(
     if (!auth0Sub) {
       throw new Error(`membership row: no auth0_sub resolved for customer ${customerId}`)
     }
-    const amountCents =
-      sub.items.data[0]?.price?.unit_amount ??
-      (sub.metadata?.amount_cents ? Number(sub.metadata.amount_cents) : null)
+    const amountCents = await subscriptionAmountInOwnCurrency(stripe, sub)
     await upsertMembership(getDb(env), {
       auth0_sub: auth0Sub,
       stripe_customer_id: customerId,
@@ -562,6 +651,7 @@ async function handleSubscriptionUpsert(
       status: sub.status,
       plan,
       amount_cents: amountCents,
+      currency: amountCents != null ? (sub.currency ?? null) : null,
       current_period_end: periodEndIso(sub),
       cancel_at: cancelAtIso(sub),
     })
@@ -580,7 +670,15 @@ async function handleSubscriptionUpsert(
     // lookup that resolving the distinct_id would cost. Tier/plan/amount changes
     // emit nothing here — expansion and contraction MRR live in Stripe.
     if (created || shouldFanOut) {
-      await emitProvisioningEvents(env, sub, tier, await memberEmail(), created, shouldFanOut)
+      await emitProvisioningEvents(
+        env,
+        sub,
+        tier,
+        amountCents,
+        await memberEmail(),
+        created,
+        shouldFanOut,
+      )
     }
   }
 }
@@ -600,13 +698,14 @@ async function emitProvisioningEvents(
   env: Env,
   sub: Stripe.Subscription,
   tier: Tier,
+  amountCents: number | null,
   email: string | null,
   created: boolean,
   provisioned = true,
 ): Promise<void> {
   const distinctId = emailDistinctId(email)
   const attribution = attributionFromMetadata(sub.metadata)
-  const props = subscriptionAnalyticsProps(sub, tier)
+  const props = subscriptionAnalyticsProps(sub, tier, amountCents)
 
   if (created) {
     await captureServerEvent(env, {
@@ -675,11 +774,12 @@ async function cancelSubscriptionForReversedPayment(
 // whether the PaymentIntent was a gift at all, so the caller doesn't go looking
 // for a subscription behind a gift payment.
 //
-// What this can't undo is anything the redemption did inside Stripe: a gift that
-// overlapped a paid subscription EXTENDED it (a pause / a pushed period) or
-// CREDITED the customer balance (routes/gift.ts), and neither leaves a gift
-// expiry on the row to take back. Those need a human, so the log line below is
-// loud and greppable (GIFT-REVERSED) rather than an aside.
+// A gift that overlapped a paid subscription also changed it inside Stripe —
+// extended it (a pause / a pushed period) or credited the customer balance —
+// and recorded that on the gift (gift.stripe_effect). undoGiftStripeEffect
+// reverses exactly that. When it can't (no record, or the subscription has
+// moved on since), the log line below says MANUAL ACTION, loud and greppable
+// (GIFT-REVERSED).
 async function reverseRedeemedGift(
   token: string,
   paymentIntentId: string,
@@ -701,6 +801,9 @@ async function reverseRedeemedGift(
 
   const covered = deriveEntitlements(gift.tier)
   const termDays = GIFT_TERM_DAYS[(gift.plan as GiftTerm) ?? '1yr'] ?? GIFT_TERM_DAYS['1yr']
+  const stripeUndo = gift.stripe_effect
+    ? await undoGiftStripeEffect(gift.stripe_effect, stripe)
+    : 'none'
   const row = gift.redeemed_by
     ? await revokeGiftTerm(sql, gift.redeemed_by, covered, termDays)
     : null
@@ -731,39 +834,105 @@ async function reverseRedeemedGift(
       `Redeemer ${gift.redeemed_by ?? 'unknown'}${email ? ` <${redactEmail(email)}>` : ''}: ` +
       `${row ? `gift term (${termDays}d) taken off the membership row` : 'NO membership row found'}` +
       `${row && !email ? '; external access (Beehiiv/Circle) left to the nightly reconciler' : ''}. ` +
-      `MANUAL ACTION: if this gift extended a paid subscription or credited the customer balance, reverse that in Stripe by hand.`,
+      (stripeUndo === 'undone'
+        ? `Its Stripe change (${gift.stripe_effect?.kind}) was reversed.`
+        : stripeUndo === 'none'
+          ? 'No Stripe change was recorded for it. MANUAL ACTION only if it predates that record and extended a subscription or credited a balance.'
+          : `MANUAL ACTION: its Stripe change (${JSON.stringify(gift.stripe_effect)}) could not be reversed automatically — undo it by hand.`),
   )
   return true
 }
 
-// A gift PaymentIntent grants nothing until redeemed (§3): write a pending
-// `gift` row and email the recipient a claim link. Idempotent via a token
-// derived deterministically from the PI id (a retry re-derives the same token,
+// Reverse what a redemption did inside Stripe (see GiftStripeEffect). Each case
+// first checks the subscription still shows exactly what the gift set — if
+// anything has changed it since (a later gift, a manual edit, a cancel), undoing
+// blindly could clobber that, so it reports 'manual' instead.
+//   trial_end → end the pushed trial at the original renewal date, or now if
+//               that has already passed (they owe from then)
+//   pause     → put back the earlier pause, or lift it
+//   credit    → debit the balance by the amount credited
+// 'undone' | 'manual' — never throws; the caller logs either way.
+async function undoGiftStripeEffect(
+  effect: GiftStripeEffect,
+  stripe: Stripe,
+): Promise<'undone' | 'manual'> {
+  try {
+    if (effect.kind === 'credit') {
+      await stripe.customers.createBalanceTransaction(effect.customer_id, {
+        amount: effect.amount, // positive = debit, cancelling the credit
+        currency: effect.currency,
+        description: 'Ark gift credit reversed (gift payment refunded or disputed)',
+      })
+      return 'undone'
+    }
+    const sub = await retrieveCurrentSubscription(stripe, effect.subscription_id)
+    if (!sub || ENDED_SUB_STATUSES.has(sub.status)) return 'undone' // nothing left to bill
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (effect.kind === 'trial_end') {
+      if (sub.trial_end !== effect.trial_end || sub.status !== 'trialing') return 'manual'
+      await stripe.subscriptions.update(sub.id, {
+        trial_end: effect.previous_period_end > nowSec ? effect.previous_period_end : 'now',
+        proration_behavior: 'none',
+      })
+      return 'undone'
+    }
+    if (sub.pause_collection?.resumes_at !== effect.resumes_at) return 'manual'
+    await stripe.subscriptions.update(sub.id, {
+      pause_collection:
+        effect.previous_resumes_at != null && effect.previous_resumes_at > nowSec
+          ? { behavior: 'keep_as_draft', resumes_at: effect.previous_resumes_at }
+          : '',
+    })
+    // keep_as_draft left any invoice raised during the pause as a draft, and
+    // lifting the pause doesn't finalize those. Not auto-charged on purpose:
+    // billing a member for past months without asking is a support ticket.
+    console.warn(
+      `[stripe] gift reversal: pause lifted on ${sub.id}; draft invoices from the paused window, if any, are left for review`,
+    )
+    return 'undone'
+  } catch (err) {
+    console.error('[stripe] gift reversal: undoing the Stripe effect failed:', err)
+    return 'manual'
+  }
+}
+
+// The Stripe object a gift was bought through: its PaymentIntent normally, or
+// its Checkout Session when a promo made it free (no PaymentIntent exists).
+// Either carries the same metadata (routes/gift.ts stamps both), and `stamp`
+// writes the gift_token marker back to whichever one it is.
+type GiftPurchase = {
+  id: string
+  metadata: Stripe.Metadata | null
+  amount: number | null
+  currency: string | null
+  stamp: (metadata: Stripe.MetadataParam) => Promise<unknown>
+}
+
+// A gift purchase grants nothing until redeemed (§3): write a pending `gift` row
+// and email the recipient a claim link. Idempotent via a token derived
+// deterministically from the purchase id (a retry re-derives the same token,
 // and insertGift no-ops on conflict). Redemption (routes/gift.ts), not this
 // webhook, writes the membership row.
-async function handleGiftPaymentIntent(
-  pi: Stripe.PaymentIntent,
-  stripe: Stripe,
-  env: Env,
-): Promise<void> {
-  const recipientEmail = pi.metadata?.recipient_email
-  const term = pi.metadata?.term
+async function handleGiftPurchase(purchase: GiftPurchase, env: Env): Promise<void> {
+  const metadata = purchase.metadata ?? {}
+  const recipientEmail = metadata.recipient_email
+  const term = metadata.term
   if (!recipientEmail || (term !== '6mo' && term !== '1yr')) {
-    throw new Error('Gift PaymentIntent missing recipient_email / term')
+    throw new Error(`Gift purchase ${purchase.id} missing recipient_email / term`)
   }
-  const token = giftTokenForPaymentIntent(pi.id, env)
+  const token = giftTokenForPaymentIntent(purchase.id, env)
 
-  // The purchased tier (Ark+, the Fold, or Bundle) rides in on PI metadata,
+  // The purchased tier (Ark+, the Fold, or Bundle) rides in on the metadata,
   // stamped by the gift checkout route; coerce defensively. The term is stored as
   // the row's `plan` and the duration clock starts at redemption.
-  const tier = coerceTier(pi.metadata?.tier)
+  const tier = coerceTier(metadata.tier)
   if (env.DATABASE_URL) {
     await insertGift(getDb(env), {
       redemption_token: token,
       tier,
       plan: term,
-      amount_cents: pi.amount_received ?? pi.amount ?? null,
-      currency: pi.metadata?.currency ?? pi.currency ?? null,
+      amount_cents: purchase.amount,
+      currency: metadata.currency ?? purchase.currency ?? null,
       giver_sub: null,
     })
   }
@@ -775,7 +944,7 @@ async function handleGiftPaymentIntent(
   // only because the magic-link path redeems server-side with no browser event.
 
   // Skip the email resend once the token is stamped (a prior delivery sent it).
-  if (pi.metadata?.gift_token === token) return
+  if (metadata.gift_token === token) return
 
   // A single magic link is the whole recipient flow. We deliberately do NOT
   // provision an Auth0 account here: creating one at purchase time (with
@@ -783,10 +952,10 @@ async function handleGiftPaymentIntent(
   // message — a second, confusing email. Instead the recipient gets one branded
   // email; clicking its link (POST /api/gift/claim) creates the account,
   // pre-verified, logs them in, and redeems — see routes/gift.ts.
-  const recipientName = pi.metadata?.recipient_name || undefined
+  const recipientName = metadata.recipient_name || undefined
   const baseUrl = env.APP_BASE_URL || 'http://localhost:5173'
   const mt = await signGiftClaimToken(
-    { giftToken: token, email: recipientEmail, name: recipientName },
+    { giftToken: token, email: recipientEmail, name: recipientName, tier },
     env,
   )
   const claimUrl = `${baseUrl}/redeem?mt=${encodeURIComponent(mt)}`
@@ -799,33 +968,32 @@ async function handleGiftPaymentIntent(
   const { subject, html } = renderGiftRedemptionEmail({
     recipientName,
     recipientEmail,
-    giverName: pi.metadata?.giver_name || undefined,
+    giverName: metadata.giver_name || undefined,
     term,
-    message: pi.metadata?.message || undefined,
+    message: metadata.message || undefined,
     claimUrl,
   })
-  // Idempotency-keyed on the PI so a webhook retry (or a cross-instance race)
-  // re-sends at most one copy of the claim link.
+  // Idempotency-keyed on the purchase so a webhook retry (or a cross-instance
+  // race) re-sends at most one copy of the claim link.
   const sent = await sendEmail(env, {
     to: recipientEmail,
     subject,
     html,
-    idempotencyKey: `gift_redeem_${pi.id}`,
+    idempotencyKey: `gift_redeem_${purchase.id}`,
   })
   if (!sent) {
     // Redacted: this message lands in the webhook's error log verbatim.
     throw new Error(`gift redemption email failed to send to ${redactEmail(recipientEmail)}`)
   }
   try {
-    await stripe.paymentIntents.update(pi.id, {
-      metadata: { ...pi.metadata, gift_token: token },
-    })
+    await purchase.stamp({ ...metadata, gift_token: token })
   } catch (err) {
     console.error('[stripe] gift token stamp failed:', err)
   }
 }
 
-// A high-entropy, deterministic redemption token: HMAC(SESSION_SECRET, pi.id).
+// A high-entropy, deterministic redemption token: HMAC(SESSION_SECRET, id), where
+// id is the gift's PaymentIntent (or, for a $0 gift, its Checkout Session).
 // Deterministic so webhook retries re-derive the same token (idempotent gift
 // row); unguessable so the link can't be brute-forced from a PI id.
 export function giftTokenForPaymentIntent(piId: string, env: Env): string {

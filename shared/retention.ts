@@ -3,8 +3,8 @@
 // so a step can describe a *plan switch* (monthly↔annual) or a *coupon* — not
 // only one coupon. Retention discounts are always time-bounded (a fixed number
 // of months); a save is never a permanent price cut. Shared by the server
-// deriver and the client offer step. Amounts are USD cents (our source
-// currency).
+// deriver and the client offer step. Amounts are minor units of `currency` —
+// the member's subscription currency, which is what Stripe bills.
 
 // What kind of save this offer represents. Drives both the copy the client
 // renders and the terminal action it takes when accepted:
@@ -117,12 +117,16 @@ export type RetentionOffer = {
   // How many months the discount runs (a repeating coupon's duration_in_months);
   // null for a once-off coupon or a couponless plan switch.
   durationMonths: number | null
+  // The currency every amount on this offer is in (the subscription's own), and
+  // its minor-unit factor (1 for zero-decimal currencies, else 100).
+  currency: string
+  minorFactor: number
   // Plan-switch offers only (annual_switch / monthly_switch): the plan being
-  // switched to plus the resolved list price (USD cents) of the target plan, so
+  // switched to plus the resolved list price (minor units) of the target plan, so
   // the client can render concrete savings without re-fetching the catalog.
   targetPlan?: 'monthly' | 'yearly'
   targetPriceCents?: number
-  // The list price (USD cents) the offer is measured against: the current plan's
+  // The list price (minor units) the offer is measured against: the current plan's
   // price for a plan switch, and the price the coupon discounts for a coupon
   // offer — the struck-through figure in the design's "$8 $6/month". Absent when
   // the catalog price couldn't be resolved, in which case the card omits it.
@@ -137,12 +141,14 @@ export type RetentionOffer = {
 //   introCents  what they actually pay for `introMonths`, when a debundle_intro
 //               coupon is configured. Null (with introMonths null) when none is,
 //               in which case the debundle simply lands at priceCents.
-// Both in USD cents. introCents is derived by applying the coupon to priceCents,
+// Both in minor units of `currency`. introCents is derived by applying the coupon to priceCents,
 // so the quote always matches what Stripe will charge even if an admin retunes
 // the coupon.
 export type DebundlePrice = {
   tier: 'ark-plus' | 'circle' | 'bundle'
   plan: 'monthly' | 'yearly'
+  currency: string
+  minorFactor: number
   priceCents: number
   introCents: number | null
   introMonths: number | null

@@ -17,7 +17,12 @@ import { requireAdmin } from '../lib/session.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { logAdminAction } from '../lib/admin-audit.js'
 import { listActiveCoupons, listPromotionCodes } from '../lib/stripe-promos.js'
-import { buildPromo, minimumsByCurrency, serializeCoupon } from '../lib/admin-promos.js'
+import {
+  amountOffByCurrency,
+  buildPromo,
+  minimumsByCurrency,
+  serializeCoupon,
+} from '../lib/admin-promos.js'
 import { getDb } from '../lib/db.js'
 import {
   cancellationRowsToCsv,
@@ -116,13 +121,26 @@ export function adminRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
           // the rollback below, leaving a live, codeless coupon behind and
           // minting another on every retry. Which is the state the rollback was
           // written to prevent.
+          //
+          // A fixed amount_off needs the same treatment for the same reason: a
+          // USD-only coupon is refused on every non-USD Session, and every
+          // save-offer attach on a non-USD subscription.
+          const minimum = built.value.code != null ? minimumAmountCents : undefined
+          const usdAmountOff = built.value.coupon.amount_off
           let currencyOptions: Record<string, { minimum_amount: number }> | undefined
-          if (built.value.code && minimumAmountCents != null) {
+          let couponParams = built.value.coupon
+          if (minimum != null || usdAmountOff != null) {
             const { floors } = await resolveCatalogPrice(stripe, 'ark-plus', 'yearly')
-            currencyOptions = minimumsByCurrency(minimumAmountCents, floors)
+            if (minimum != null) currencyOptions = minimumsByCurrency(minimum, floors)
+            if (usdAmountOff != null) {
+              couponParams = {
+                ...couponParams,
+                currency_options: amountOffByCurrency(usdAmountOff, floors),
+              }
+            }
           }
 
-          const coupon = await stripe.coupons.create(built.value.coupon)
+          const coupon = await stripe.coupons.create(couponParams)
           let promotionCode: Stripe.PromotionCode | null = null
           if (built.value.code) {
             try {

@@ -15,6 +15,7 @@
 import type Stripe from 'stripe'
 import type { Promo } from '../../shared/promo.js'
 import { isCouponSlot } from '../../shared/retention.js'
+import { requiresWholeUnits, roundMinorFor } from './pricing.js'
 
 type BuiltPromo = {
   coupon: Stripe.CouponCreateParams
@@ -67,7 +68,10 @@ export function buildPromo(raw: unknown): BuildResult {
       return { ok: false, error: 'Amount off (in cents) must be a positive whole number.' }
     }
     coupon.amount_off = a
-    coupon.currency = BASE_CURRENCY // matches the checkout's source currency
+    // The USD figure. The route fans it out into currency_options for every
+    // other supported currency (amountOffByCurrency) — without them the coupon
+    // is USD-only and Stripe rejects it on any other Session or subscription.
+    coupon.currency = BASE_CURRENCY
   } else {
     return { ok: false, error: "discountType must be 'percent' or 'amount'." }
   }
@@ -217,18 +221,44 @@ export function minimumsByCurrency(
   usdCents: number,
   floors: Record<string, number>,
 ): Record<string, { minimum_amount: number }> {
-  const usdFloor = floors.usd
   const out: Record<string, { minimum_amount: number }> = {}
+  for (const [currency, scaled] of Object.entries(scaleFromUsd(usdCents, floors))) {
+    out[currency] = { minimum_amount: scaled }
+  }
+  return out
+}
+
+// The same fan-out for a fixed discount: a USD amount_off stated in every other
+// supported currency, on the same purchasing-power ratio. "$2 off" stays "about
+// a quarter off the monthly price" wherever the buyer is.
+export function amountOffByCurrency(
+  usdCents: number,
+  floors: Record<string, number>,
+): Record<string, { amount_off: number }> {
+  const out: Record<string, { amount_off: number }> = {}
+  for (const [currency, scaled] of Object.entries(scaleFromUsd(usdCents, floors))) {
+    out[currency] = { amount_off: scaled }
+  }
+  return out
+}
+
+// A USD minor-unit amount scaled into every non-USD currency in `floors`, by the
+// ratio of each currency's floor to the USD floor.
+//
+// USD itself is left out: it is the coupon's / code's top-level currency, and
+// Stripe rejects a currency option that repeats it ("You are specifying a
+// currency option that matches the top-level currency"). Rounded to what the
+// currency can be charged in (roundMinorFor — whole units for HUF/TWD), and
+// clamped to at least the smallest such amount: Stripe rejects zero, and
+// dropping the currency instead would make the promo unusable there.
+function scaleFromUsd(usdCents: number, floors: Record<string, number>): Record<string, number> {
+  const usdFloor = floors.usd
+  const out: Record<string, number> = {}
   for (const [currency, floor] of Object.entries(floors)) {
-    // USD is carried by minimum_amount/minimum_amount_currency and added to the
-    // options by Stripe itself — passing it here is an error ("You are
-    // specifying a currency option that matches the top-level currency").
     if (currency === BASE_CURRENCY) continue
-    const scaled = usdFloor > 0 ? Math.round((usdCents * floor) / usdFloor) : usdCents
-    // Stripe rejects a zero minimum; a rounded-down tiny one means "no floor"
-    // anyway, so clamp rather than drop the currency (dropping it would make
-    // the code unredeemable there).
-    out[currency] = { minimum_amount: Math.max(1, scaled) }
+    const raw = usdFloor > 0 ? (usdCents * floor) / usdFloor : usdCents
+    const smallest = requiresWholeUnits(currency) ? 100 : 1
+    out[currency] = Math.max(smallest, roundMinorFor(raw, currency))
   }
   return out
 }

@@ -2,7 +2,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import type Stripe from 'stripe'
-import { buildPromo, minimumsByCurrency, serializeCoupon } from './admin-promos'
+import { amountOffByCurrency, buildPromo, minimumsByCurrency, serializeCoupon } from './admin-promos'
 
 // Coupon metadata is typed `"" | MetadataParam`; in these tests we always set
 // it to a record, so narrow it for readable assertions.
@@ -315,5 +315,30 @@ describe('serializeCoupon', () => {
       plan: 'monthly',
     })
     expect(r.value.coupon.duration_in_months).toBe(6)
+  })
+})
+
+// A USD-only amount_off is refused on every non-USD Session and subscription,
+// so the back office states it in every currency on the catalog's own ratio.
+describe('amountOffByCurrency', () => {
+  const floors = { usd: 800, eur: 900, jpy: 1300, huf: 349000, twd: 29000 }
+
+  test('scales by each currency floor, leaving USD to the top level', () => {
+    const out = amountOffByCurrency(200, floors)
+    expect(out.usd).toBeUndefined()
+    expect(out.eur).toEqual({ amount_off: 225 })
+    expect(out.jpy).toEqual({ amount_off: 325 })
+  })
+
+  test('HUF and TWD land on whole units', () => {
+    const out = amountOffByCurrency(199, floors)
+    expect(out.huf.amount_off % 100).toBe(0)
+    expect(out.twd.amount_off % 100).toBe(0)
+  })
+
+  test('never scales to zero', () => {
+    const out = amountOffByCurrency(1, { usd: 100000, eur: 1, huf: 1 })
+    expect(out.eur.amount_off).toBe(1)
+    expect(out.huf.amount_off).toBe(100)
   })
 })

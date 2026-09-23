@@ -96,7 +96,7 @@ export function PromoBanner({ promo }: { promo: PromoInfo }) {
   return (
     <p role="status" className={`mt-3 ${noticeClass}`}>
       <span className="font-semibold">
-        {formatCouponDiscount(promo.percentOff, promo.amountOffCents)}
+        {formatCouponDiscount(promo.percentOff, promo.amountOffCents, promo.currency, promo.minorFactor)}
       </span>{" "}
       applied automatically{promo.name ? ` — ${promo.name}` : ""}.
     </p>
@@ -258,7 +258,7 @@ export function PromoCode({
       {houseApplied && promo ? (
         <p role="status" className={noticeClass}>
           <span className="font-semibold">
-            {formatCouponDiscount(promo.percentOff, promo.amountOffCents)}
+            {formatCouponDiscount(promo.percentOff, promo.amountOffCents, promo.currency, promo.minorFactor)}
           </span>{" "}
           applied automatically{promo.name ? ` — ${promo.name}` : ""}.
         </p>

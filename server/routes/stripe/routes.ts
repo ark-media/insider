@@ -86,14 +86,17 @@ import {
 import { isValidEmail } from '../../../shared/validation.js'
 import { defineRoute, type Deps, type Route } from '../../lib/route.js'
 import {
+  addCouponToFinalPhase,
   cardOf,
   changeIsImmediate,
   coerceTier,
   customerIdOf,
+  existingDiscountParams,
   findLiveSubscription,
   findOrCreateSubscriber,
   MAX_NAME_LEN,
   periodEndIso,
+  phaseDiscountParams,
   planFromSubscription,
   readCardOnFile,
   releaseScheduleIfAny,
@@ -766,17 +769,19 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         if (!sub) return json(200, empty)
         const plan = planFromSubscription(sub)
         if (!plan) return json(200, empty)
+        // Quote in what the subscription bills in, not the USD base.
+        const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
 
         let offers
         // For a debundle, the standalone price the *kept* product continues at,
         // shown on the confirm screen (Flows C/D/E). Null for a full cancel.
         let standalone = null
         try {
-          offers = await deriveSaveOffers(stripe, intent, plan)
+          offers = await deriveSaveOffers(stripe, intent, plan, currency)
           if (intent === 'debundle-remove-ark-plus') {
-            standalone = await debundlePricePreview(stripe, 'circle', plan)
+            standalone = await debundlePricePreview(stripe, 'circle', plan, currency)
           } else if (intent === 'debundle-remove-circle') {
-            standalone = await debundlePricePreview(stripe, 'ark-plus', plan)
+            standalone = await debundlePricePreview(stripe, 'ark-plus', plan, currency)
           }
         } catch (err) {
           console.error('[stripe] save-offers derivation failed:', err)
@@ -848,7 +853,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           return json(409, { error: 'No such save offer available.' })
         }
 
-        const offers = await deriveSaveOffers(stripe, body.intent, plan)
+        // Derived in the subscription's currency, so a fixed-amount coupon that
+        // doesn't carry that currency is never picked — Stripe would refuse to
+        // attach it.
+        const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
+        const offers = await deriveSaveOffers(stripe, body.intent, plan, currency)
 
         const offer = offers.find((o) => o.kind === wantKind && o.couponId)
         // A pure plan switch (annual_switch, no coupon) is applied via
@@ -884,17 +893,31 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           if (!target || (plan !== target && scheduled !== target)) {
             return json(409, { error: 'Plan switch not applied.' })
           }
-          // Attach the discount alongside the schedule, without releasing it or
-          // touching cancel_at_period_end.
-          updated = await stripe.subscriptions.update(sub.id, {
-            discounts: [{ coupon: offer.couponId }],
-          })
+          const scheduleId = scheduleIdOf(sub)
+          if (plan !== target && scheduleId) {
+            // The switch is still a future phase. Stripe won't take a discount
+            // update on a schedule-managed subscription, and the coupon belongs
+            // to the cadence being switched TO anyway — so it goes on that phase,
+            // where its clock starts with the new price. Every phase is passed
+            // back with its own discounts, since the update replaces them all.
+            await addCouponToFinalPhase(stripe, scheduleId, offer.couponId)
+            updated = sub
+          } else {
+            // Already on the target cadence: attach to the subscription, keeping
+            // whatever it already carries.
+            updated = await stripe.subscriptions.update(sub.id, {
+              discounts: [...existingDiscountParams(sub), { coupon: offer.couponId }],
+            })
+          }
         } else {
           // Release any pending schedule so the coupon attaches cleanly, then
-          // attach it and clear any pending cancel in one update.
+          // attach it and clear any pending cancel in one update. Existing
+          // discounts are passed back alongside it: `discounts` replaces the
+          // whole list, and accepting a save must never quietly strip a promo
+          // the member already had (a forever checkout code, say).
           await releaseScheduleIfAny(stripe, sub, env)
           updated = await stripe.subscriptions.update(sub.id, {
-            discounts: [{ coupon: offer.couponId }],
+            discounts: [...existingDiscountParams(sub), { coupon: offer.couponId }],
             cancel_at_period_end: false,
           })
         }
@@ -1150,10 +1173,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         const sub = await findLiveSubscription(stripe, email)
         const plan = sub ? planFromSubscription(sub) : null
-        if (!plan) return json(200, { breakdown: null })
+        if (!sub || !plan) return json(200, { breakdown: null })
+        const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
 
         try {
-          const breakdown = await bundleBreakdown(stripe, plan)
+          const breakdown = await bundleBreakdown(stripe, plan, currency)
           return json(200, { breakdown })
         } catch (err) {
           console.error('[stripe] bundle-breakdown failed:', err)
@@ -1353,7 +1377,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           } else {
             windowSpent = false
           }
-          if (!windowSpent) introCoupon = pickIntroCoupon(await listActiveCoupons(stripe))
+          if (!windowSpent) {
+            introCoupon = pickIntroCoupon(await listActiveCoupons(stripe), currency)
+          }
         }
 
         // Kept for the timing decision below: gaining an entitlement applies
@@ -1362,7 +1388,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const nextEnt = deriveEntitlements(newTier)
         const item = sub.items.data[0]
         if (!item) return json(409, { error: 'Subscription has no item to change.' })
-        const prevAmount = item.price?.unit_amount ?? null
+        // In the SUBSCRIPTION's currency, like amountCents: `price.unit_amount`
+        // is the USD base of a currency_options price, so comparing it here
+        // mixed euros with dollars for every non-USD member.
+        const prevAmount = item.price ? await subscriptionAmount(stripe, sub, item.price) : null
         const prevPlan = planFromSubscription(sub)
 
         // No-op: identical tier, plan, and amount.
@@ -1561,6 +1590,25 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           if (!currentPhase) {
             return json(500, { error: 'Could not read subscription schedule.' })
           }
+          // The update REPLACES every phase, so each carries its discounts
+          // explicitly. The current phase keeps exactly what it has. The
+          // destination keeps the subscription's discounts that still fit where
+          // it lands (a checkout promo does; a retention coupon priced for the
+          // other product or cadence doesn't — discountsSurvivingChange), plus
+          // the debundle intro coupon when one was granted.
+          const surviving = await discountsSurvivingChange(stripe, sub, { tier: newTier, plan })
+          const carried =
+            surviving === null ? existingDiscountParams(sub) : surviving === '' ? [] : surviving
+          const destinationDiscounts = [
+            ...carried,
+            // Phase-scoped so the intro term is measured from the moment the
+            // debundled price takes effect. A repeating N-month coupon then
+            // discounts every invoice inside that window: N monthly invoices,
+            // but only the one annual invoice — so an annual debundler gets a
+            // full discounted year. Intended, and what the quote promises.
+            ...(introCoupon ? [{ coupon: introCoupon.id }] : []),
+          ]
+          const currentDiscounts = phaseDiscountParams(currentPhase.discounts)
           await stripe.subscriptionSchedules.update(scheduleId, {
             end_behavior: 'release',
             phases: [
@@ -1571,15 +1619,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 })),
                 start_date: currentPhase.start_date,
                 end_date: currentPhase.end_date,
+                ...(currentDiscounts.length > 0 ? { discounts: currentDiscounts } : {}),
               },
               {
                 items: [{ ...destinationPrice, quantity: 1 }],
-                // Phase-scoped so the intro term is measured from the moment the
-                // debundled price takes effect. A repeating N-month coupon then
-                // discounts every invoice inside that window: N monthly invoices,
-                // but only the one annual invoice — so an annual debundler gets a
-                // full discounted year. Intended, and what the quote promises.
-                ...(introCoupon ? { discounts: [{ coupon: introCoupon.id }] } : {}),
+                ...(destinationDiscounts.length > 0 ? { discounts: destinationDiscounts } : {}),
               },
             ],
           })

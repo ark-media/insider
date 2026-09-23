@@ -15,6 +15,8 @@ export type MembershipRow = {
   status: string
   plan: string | null
   amount_cents: number | null
+  // Lowercase ISO code `amount_cents` is denominated in. Null with it.
+  currency: string | null
   current_period_end: string | null
   cancel_at: string | null
   // Per-axis gift expiries (D4): a gift extends only the axis/axes it covers, so
@@ -34,6 +36,9 @@ export type MembershipUpsert = {
   status: string
   plan: string | null
   amount_cents: number | null
+  // The currency amount_cents is in — the subscription's (or gift's) own, never
+  // the USD base of a currency_options price.
+  currency: string | null
   current_period_end: string | null
   cancel_at: string | null
   // Per-axis gift expiries. Each is preserved when omitted (a subscription event
@@ -49,7 +54,7 @@ export async function getMembershipByAuth0Sub(
 ): Promise<MembershipRow | null> {
   const rows = await sql`
     select auth0_sub, stripe_customer_id, stripe_subscription_id,
-           tier, status, plan, amount_cents,
+           tier, status, plan, amount_cents, currency,
            current_period_end, cancel_at,
            ark_plus_gift_expires_at, circle_gift_expires_at
     from membership where auth0_sub = ${auth0Sub}`
@@ -65,7 +70,7 @@ export async function getMembershipByStripeCustomer(
 ): Promise<MembershipRow | null> {
   const rows = await sql`
     select auth0_sub, stripe_customer_id, stripe_subscription_id,
-           tier, status, plan, amount_cents,
+           tier, status, plan, amount_cents, currency,
            current_period_end, cancel_at,
            ark_plus_gift_expires_at, circle_gift_expires_at
     from membership where stripe_customer_id = ${customerId}
@@ -85,7 +90,7 @@ export async function getMembershipsByAuth0Subs(
   if (auth0Subs.length === 0) return []
   const rows = await sql`
     select auth0_sub, stripe_customer_id, stripe_subscription_id,
-           tier, status, plan, amount_cents,
+           tier, status, plan, amount_cents, currency,
            current_period_end, cancel_at,
            ark_plus_gift_expires_at, circle_gift_expires_at
     from membership where auth0_sub = any(${auth0Subs}::text[])`
@@ -118,11 +123,11 @@ export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<v
   await sql`
     insert into membership (
       auth0_sub, stripe_customer_id, stripe_subscription_id,
-      tier, status, plan, amount_cents, current_period_end, cancel_at,
+      tier, status, plan, amount_cents, currency, current_period_end, cancel_at,
       ark_plus_gift_expires_at, circle_gift_expires_at, updated_at
     ) values (
       ${m.auth0_sub}, ${m.stripe_customer_id}, ${m.stripe_subscription_id},
-      ${m.tier}, ${m.status}, ${m.plan}, ${m.amount_cents}, ${m.current_period_end}, ${m.cancel_at},
+      ${m.tier}, ${m.status}, ${m.plan}, ${m.amount_cents}, ${m.currency}, ${m.current_period_end}, ${m.cancel_at},
       ${arkPlusGift}, ${circleGift}, now()
     )
     on conflict (auth0_sub) do update set
@@ -132,6 +137,7 @@ export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<v
       status                   = excluded.status,
       plan                     = excluded.plan,
       amount_cents             = excluded.amount_cents,
+      currency                 = excluded.currency,
       current_period_end       = excluded.current_period_end,
       cancel_at                = excluded.cancel_at,
       ark_plus_gift_expires_at = coalesce(excluded.ark_plus_gift_expires_at, membership.ark_plus_gift_expires_at),
@@ -297,6 +303,7 @@ export async function clearMembershipSubscription(
       status                 = 'active',
       plan                   = null,
       amount_cents           = null,
+      currency               = null,
       current_period_end     = null,
       cancel_at              = null,
       scheduled_tier = null, schedule_id = null,
@@ -334,7 +341,7 @@ export async function revokeGiftTerm(
       updated_at = now()
     where auth0_sub = ${auth0Sub}
     returning auth0_sub, stripe_customer_id, stripe_subscription_id,
-              tier, status, plan, amount_cents,
+              tier, status, plan, amount_cents, currency,
               current_period_end, cancel_at,
               ark_plus_gift_expires_at, circle_gift_expires_at`
   return (rows[0] as MembershipRow | undefined) ?? null
@@ -378,6 +385,73 @@ export type GiftRow = {
   // Also terminal; to the redeem routes it reads like any other non-pending gift.
   status: 'pending' | 'redeemed' | 'void' | 'reversed'
   redeemed_by: string | null
+  // Why a 'void' gift is void: a won dispute restores a 'dispute' void to
+  // pending, never a 'refund' one. Null on anything not void.
+  void_reason?: 'refund' | 'dispute' | null
+  // What redeeming the gift changed inside Stripe, when it overlapped a paid
+  // subscription (routes/gift.ts). Null when it only granted a gift term.
+  stripe_effect?: GiftStripeEffect | null
+}
+
+// A redemption's side-effect inside Stripe, recorded so a later refund or
+// dispute can undo exactly it. Unix seconds throughout, like Stripe.
+//   trial_end — an annual sub's renewal pushed out by the gift term
+//   pause     — a monthly sub's collection paused until resumes_at
+//   credit    — a customer-balance credit (a single-axis gift inside a Bundle)
+export type GiftStripeEffect =
+  | {
+      kind: 'trial_end'
+      subscription_id: string
+      previous_period_end: number
+      trial_end: number
+    }
+  | {
+      kind: 'pause'
+      subscription_id: string
+      previous_resumes_at: number | null
+      resumes_at: number
+    }
+  | {
+      kind: 'credit'
+      customer_id: string
+      balance_transaction_id: string
+      amount: number
+      currency: string
+    }
+
+export async function setGiftStripeEffect(
+  sql: Sql,
+  token: string,
+  effect: GiftStripeEffect,
+): Promise<void> {
+  await sql`
+    update gift set stripe_effect = ${JSON.stringify(effect)}::jsonb
+    where redemption_token = ${token}`
+}
+
+// Void a still-unclaimed gift whose payment was reversed, recording why. Returns
+// true only when this call voided it.
+export async function voidPendingGift(
+  sql: Sql,
+  token: string,
+  reason: 'refund' | 'dispute',
+): Promise<boolean> {
+  const rows = await sql`
+    update gift set status = 'void', void_reason = ${reason}
+    where redemption_token = ${token} and status = 'pending'
+    returning redemption_token`
+  return rows.length > 0
+}
+
+// A dispute on an unclaimed gift was WON: the money came back, so the gift is
+// good again. Only a dispute void is restored — a refunded gift stays void.
+// Returns true when this call restored it.
+export async function restoreDisputedGift(sql: Sql, token: string): Promise<boolean> {
+  const rows = await sql`
+    update gift set status = 'pending', void_reason = null
+    where redemption_token = ${token} and status = 'void' and void_reason = 'dispute'
+    returning redemption_token`
+  return rows.length > 0
 }
 
 // Write a pending gift at purchase time. Idempotent on the token (the webhook
@@ -430,7 +504,8 @@ export async function markGiftReversed(sql: Sql, token: string): Promise<GiftRow
   const rows = await sql`
     update gift set status = 'reversed'
     where redemption_token = ${token} and status = 'redeemed'
-    returning redemption_token, tier, plan, amount_cents, currency, giver_sub, status, redeemed_by`
+    returning redemption_token, tier, plan, amount_cents, currency, giver_sub, status, redeemed_by,
+              stripe_effect`
   return (rows[0] as GiftRow | undefined) ?? null
 }
 

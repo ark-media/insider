@@ -357,7 +357,9 @@ export function sessionName(session: SessionProfile): string | undefined {
 // email + name and the gift's redemption token, so the `gift` table needs no
 // recipient columns.
 
-export type GiftClaimToken = { giftToken: string; email: string; name?: string }
+// `tier` is display-only: the redeem page reads it (unverified) to name the gift
+// in its heading. Redemption never trusts it — the gift row is the authority.
+export type GiftClaimToken = { giftToken: string; email: string; name?: string; tier?: string }
 
 export async function signGiftClaimToken(
   claim: GiftClaimToken,
@@ -370,6 +372,7 @@ export async function signGiftClaimToken(
       giftToken: claim.giftToken,
       email: claim.email,
       ...(claim.name ? { name: claim.name } : {}),
+      ...(claim.tier ? { tier: claim.tier } : {}),
     },
     {
       issuer: GIFT_CLAIM_ISSUER,

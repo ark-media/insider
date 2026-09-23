@@ -165,6 +165,7 @@ function makeSub(overrides: Record<string, unknown> = {}) {
             id: 'price_1',
             product: 'prod_1',
             unit_amount: 5999,
+            currency: 'usd',
             recurring: { interval: 'year' },
           },
         },
