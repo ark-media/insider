@@ -82,7 +82,6 @@ function EpisodePage() {
   const isPaid = show.paid;
   const detailed = detail && detail.id === episodeId ? detail.value : null;
   const notesPending = Boolean(episodeId) && detail?.id !== episodeId;
-  const description = detailed?.description || episode.description;
 
   return (
     <main className="relative">
@@ -110,12 +109,6 @@ function EpisodePage() {
                   <PlayerBlock episode={episode} show={show} />
                 )}
               </div>
-
-              {description ? (
-                <p className="rise rise-3 mt-6 max-w-2xl text-body-lg">
-                  {description}
-                </p>
-              ) : null}
 
               <h2 className="mt-14 label text-cyan">
                 Show notes
@@ -241,8 +234,7 @@ function ShowNotes({
   if (!html || !html.trim()) {
     return (
       <p className="mt-6 max-w-2xl text-body-sm">
-        Show notes for this episode aren't published yet. The summary above is
-        the full description for now.
+        Show notes for this episode aren't published yet.
       </p>
     );
   }
