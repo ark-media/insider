@@ -525,9 +525,11 @@ async function handleSubscriptionUpsert(
     // no cancellation) are revoked by the Beehiiv downgrade just below — losing
     // the premium tier is losing the feed.
 
-    // Mirror the entitlement signals: Auth0 tier claim (transitional shim, task 5
-    // pending) + the Circle access group per the circle axis. Circle-member
-    // creation already happened in activation; this add is idempotent.
+    // Mirror the entitlement signal Neon can't reach by itself: the Circle
+    // access group, per the circle axis. Auth0 holds no entitlement (task 5 is
+    // done — no tier claim, no app_metadata mirror), so this writes nothing
+    // there. Circle-member creation already happened in activation; this add is
+    // idempotent.
     const email = await memberEmail()
     if (email) {
       await syncEntitlement(env, email, tier)

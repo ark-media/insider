@@ -9,9 +9,11 @@
 // marks premium, and stamps `premium_since` as the join
 // clock.
 //
-// One premium show means `total` is always 1, so "partially set up" is not a
-// state that exists any more: a member has either activated their feed or not,
-// and `onlyIfNoneSetUp` collapses into that same question.
+// The publication carries several premium shows (four as of 2026-09), and
+// Beehiiv mints a feed per (show, member), so setup is N-of-M: `evaluateReminder`
+// nudges anyone with at least one feed still unactivated and the email says "2 of
+// 4 set up". NOTE: the `onlyIfNoneSetUp` config knob — env, stored config and the
+// admin toggle — is not consulted by that decision, so today it does nothing.
 //
 // The decision rules stay pure functions (memberInWindow / evaluateReminder) so
 // they're unit-testable without the DB or email. The orchestrator wires those
