@@ -459,7 +459,7 @@ single member only ever sees some of them.
 
 ### Show notes
 - **HEADING**: Show notes
-- **EMPTY STATE**: Show notes for this episode aren't published yet. The summary above is the full description for now.
+- **EMPTY STATE**: Show notes for this episode aren't published yet.
 
 ### Episode sidebar
 - **LABEL**: From the show
