@@ -25,8 +25,8 @@ each step in order — several are order-sensitive.
    to the **same release** that starts selling Circle (task 8/13):
    - Too early → invited members join free with no Stripe record.
    - Too late → members can double-pay (Circle's paywall + ours).
-   Set `CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID` and (if the custom field isn't keyed
-   `auth0_sub`) `CIRCLE_AUTH0_SUB_FIELD_KEY` in the environment first.
+   Set `CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID` (and `CIRCLE_CANCELLED_ACCESS_GROUP_ID`)
+   in the environment first.
 
 4. **Disable Adaptive Pricing in the Stripe Dashboard** once the launch
    currencies are enumerated (§7 #4). `currency_options` (per-currency floors) and
@@ -42,13 +42,13 @@ each step in order — several are order-sensitive.
 These were implemented against the documented/assumed API shapes and are flagged
 in the code as VERIFY-PENDING. Confirm each against the live test-mode systems:
 
-6. **Circle email-linking + custom-field round-trip** (§7 #9, gates the
-   reconciler's Circle axis):
+6. **Circle email-linking + the reconciler's Circle dry run** (§7 #9):
    - A member pre-created by email, then SSO'd with that same email, **links** to
      the existing record (no duplicate).
-   - The stamped `auth0_sub` custom profile field comes back on the access-group
-     roster (`readCircleProfileField` in `server/entitlement.ts` tries
-     `profile_fields` / `custom_fields` / `fields[]` — confirm which one is real).
+   - Run `/api/cron/reconcile-entitlements` with `CIRCLE_RECONCILE_ENFORCE` unset
+     and review the `would remove community member <id>` log lines (the pass
+     matches group members by email through Auth0). Set it to `true` only once
+     that list is right.
 
 7. **Billing portal render** (§7 #7): once a test sub exists, wire the Stripe
    Customer Portal and confirm it renders. **Configure it with

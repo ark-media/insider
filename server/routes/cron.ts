@@ -60,7 +60,9 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         json(200, {
           scanned: summary.scanned,
           arkPlusRemoved: summary.arkPlusRemoved,
+          circleDrift: summary.circleDrift,
           circleRemoved: summary.circleRemoved,
+          circleDryRun: summary.circleDryRun,
           errors: summary.errors,
         })
       },

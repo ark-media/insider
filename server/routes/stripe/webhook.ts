@@ -512,6 +512,7 @@ async function handleSubscriptionUpsert(
     return resolvedEmail
   }
 
+  let circleFailed = false
   if (shouldFanOut) {
     // Grant the (possibly new) tier — Auth0 login + the axes it grants. Provision
     // runs before the entitlement signals so an Auth0/Circle outage can't block
@@ -520,6 +521,7 @@ async function handleSubscriptionUpsert(
     const result = await activator.activateMembershipForStripeSub(sub, tier)
     if (result.auth0Sub) auth0Sub = result.auth0Sub
     plan = result.plan
+    circleFailed = result.circleFailed
 
     // Axes the prior tier granted that the new one drops (a downgrade in place,
     // no cancellation) are revoked by the Beehiiv downgrade just below — losing
@@ -549,6 +551,18 @@ async function handleSubscriptionUpsert(
     if (!auth0Sub) {
       throw new Error(`membership row: no auth0_sub resolved for customer ${customerId}`)
     }
+    // A failed Circle add is retried by failing this event — nothing else ever
+    // re-attempts it (the reconciler only removes). Where the throw goes decides
+    // whether the redelivery fans out again:
+    //   - `created` always fans out, so write the row first: the member reads as
+    //     their tier (and keeps the Ark+ half of a Bundle) while Circle is down.
+    //   - an `updated` fans out only on an entitlement diff against this row, so
+    //     writing it first would erase the diff and the retry would skip Circle.
+    //     Throw before the write; the member keeps their prior tier until it lands.
+    // Only activation's markers change on the retry, so it redoes just Circle.
+    if (circleFailed && !created) {
+      throw new Error(`Circle provisioning failed for ${sub.id}; retrying the tier change`)
+    }
     const amountCents =
       sub.items.data[0]?.price?.unit_amount ??
       (sub.metadata?.amount_cents ? Number(sub.metadata.amount_cents) : null)
@@ -570,6 +584,12 @@ async function handleSubscriptionUpsert(
     // pending columns are stale — clear them. Best-effort.
     if (!scheduleIdOf(sub)) {
       await clearMembershipPending(getDb(env), customerId)
+    }
+
+    // Before analytics, so `member_provisioned` fires on the delivery where the
+    // member actually got in.
+    if (circleFailed) {
+      throw new Error(`Circle provisioning failed for ${sub.id}; retrying`)
     }
 
     // Analytics last, and only after the membership row has actually committed —

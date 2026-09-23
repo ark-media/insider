@@ -5,8 +5,7 @@
 // Auth0 answers "who are you," never "what can you access." This module owns:
 //
 //   1. The tier → entitlements model (GRANTS / deriveEntitlements).
-//   2. The Circle axis: creating members, stamping the auth0_sub join field,
-//      and moving them between the two community access groups
+//   2. The Circle axis: creating members and moving them between the two community access groups
 //      (CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID / CIRCLE_CANCELLED_ACCESS_GROUP_ID).
 //      The arkPlus axis (Beehiiv's premium tier) is owned by lib/activation.ts
 //      + the webhook.
@@ -143,8 +142,8 @@ export async function fetchAuth0EmailVerified(
 }
 
 // Every Auth0 user id holding this email. Used by the reconciler to project a
-// Beehiiv premium subscriber (keyed on email) onto a membership row (keyed on
-// the Auth0 sub). Returns null — distinct from an empty array — when the lookup
+// Beehiiv premium subscriber or a Circle group member (both keyed on email) onto
+// a membership row (keyed on the Auth0 sub). Returns null — distinct from an empty array — when the lookup
 // could not be performed, so callers can tell "no such user" from "we don't
 // know" and refuse to revoke on the latter.
 async function fetchAuth0SubsForEmail(
@@ -306,36 +305,21 @@ async function setCircleAccessGroup(
   return 'ok'
 }
 
-// The custom profile-field key on the Circle member that we stamp with the
-// Auth0 `sub` at provisioning time. The reconciler (task 15) projects the
-// access-group roster's community_member_id → auth0_sub through this field
-// (sso_provider_user_id is still NULL pre-SSO), so the two must name the same
-// field. Overridable via env for whatever the field is actually keyed as in the
-// Circle admin. See tasks/entitlement-tiers.md §3 + §7 #9 (verify once wired).
-function circleAuth0SubField(env: Env): string {
-  return env.CIRCLE_AUTH0_SUB_FIELD_KEY || 'auth0_sub'
-}
-
 export type CircleProvisionStatus = 'ok' | 'skipped' | 'error'
 
 // Create (or find) the Circle community member for this buyer at pay time —
 // BEFORE their first Circle SSO — so adding them to the access group can't 404
-// (§3, task 4) and app login works immediately. Then stamp the Auth0 `sub` into
-// the reconciler's join field and add them to the subscriber access group.
+// (§3, task 4) and app login works immediately. Then add them to the subscriber
+// access group.
 //
-// Idempotent and soft per step: a duplicate create, an already-in-group add, or
-// a field-stamp hiccup must not fail provisioning of the paid product. Returns
+// Idempotent: a duplicate create or an already-in-group add is success. Returns
 // 'skipped' when Circle isn't configured, 'error' when the member couldn't be
-// ensured (so the caller can flag it), 'ok' otherwise.
-//
-// The exact Circle Admin v2 create + custom-field shapes are pending empirical
-// verification (§7 #9) — both writes are wrapped so an unexpected shape logs and
-// degrades rather than throwing through provisioning.
+// ensured or put in the group (so the caller can retry), 'ok' otherwise. Never
+// throws.
 export async function provisionCircleMember(
   env: Env,
   email: string,
   name: string | undefined,
-  auth0Sub: string | null,
 ): Promise<CircleProvisionStatus> {
   const apiToken = env.CIRCLE_ADMIN_API_TOKEN
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
@@ -345,24 +329,25 @@ export async function provisionCircleMember(
     'Content-Type': 'application/json',
   }
 
-  let memberId: number | null
   try {
-    memberId = await ensureCircleMember(env, headers, email, name)
+    await ensureCircleMember(env, headers, email, name)
   } catch (err) {
     console.error(`[circle] ensure member failed for ${redactEmail(email)}:`, err)
     return 'error'
   }
 
-  if (auth0Sub && memberId != null) {
-    try {
-      await stampCircleAuth0Sub(headers, memberId, circleAuth0SubField(env), auth0Sub)
-    } catch (err) {
-      console.error('[circle] auth0_sub field stamp failed:', err)
-    }
-  }
-
   try {
-    await setCircleAccessGroup(env, email, true)
+    const added = await setCircleAccessGroup(env, email, true)
+    // 'no-member' right after ensureCircleMember succeeded means the member we
+    // just created (or found) isn't one the access-group endpoint can see. That
+    // is not "in the group", and reporting 'ok' would stamp the provisioned
+    // marker on a member who can't open a single Fold space.
+    if (added === 'no-member') {
+      console.error(
+        `[circle] access-group add found no member for ${redactEmail(email)} after create`,
+      )
+      return 'error'
+    }
   } catch (err) {
     console.error(`[circle] access-group add failed for ${redactEmail(email)}:`, err)
     return 'error'
@@ -370,22 +355,18 @@ export async function provisionCircleMember(
   return 'ok'
 }
 
-type CircleMemberCreateBody = {
-  id?: number
-  community_member_id?: number
-  community_member?: { id?: number }
-}
-
 // Create (or find) the member. Prefers the v1 call, which is the only one that
 // can suppress Circle's invitation email; falls back to v2 when v1 isn't
 // configured — a member who gets one extra email is a far better outcome than a
-// member who never gets Fold access at all.
+// member who never gets Fold access at all. Throws when the member can't be
+// ensured; the access-group add that follows is keyed on email, so no id is
+// needed back.
 async function ensureCircleMember(
   env: Env,
   v2Headers: Record<string, string>,
   email: string,
   name: string | undefined,
-): Promise<number | null> {
+): Promise<void> {
   if (env.CIRCLE_API_TOKEN && env.CIRCLE_COMMUNITY_ID) {
     return createCircleMemberV1(env, email, name)
   }
@@ -408,14 +389,14 @@ async function ensureCircleMember(
 //   1. Everything is HTTP 200 — failures included. `{ success: false }` is a bad
 //      community id, `{ status: 'unauthorized' }` a bad token. Reading `res.ok`
 //      here (the reflex from every other call in this file) would read both as a
-//      successful create and hand back a null id.
-//   2. A duplicate is `success: true` carrying the EXISTING member's id, so
-//      create and find-existing are one call — no separate dedup branch.
+//      successful create.
+//   2. A duplicate is `success: true` for the EXISTING member, so create and
+//      find-existing are one call — no separate dedup branch.
 async function createCircleMemberV1(
   env: Env,
   email: string,
   name: string | undefined,
-): Promise<number | null> {
+): Promise<void> {
   const params = new URLSearchParams({
     community_id: env.CIRCLE_COMMUNITY_ID,
     email,
@@ -427,46 +408,32 @@ async function createCircleMemberV1(
     headers: { Authorization: `Token ${env.CIRCLE_API_TOKEN}` },
   })
   const body = (await res.json().catch(() => null)) as
-    | (CircleMemberCreateBody & { success?: boolean; message?: string; status?: string })
+    | { success?: boolean; message?: string; status?: string }
     | null
   if (!res.ok || body?.success !== true) {
     throw new Error(
       `Circle v1 member create ${res.status}: ${body?.message ?? body?.status ?? 'unreadable body'}`,
     )
   }
-  return body.community_member?.id ?? body.community_member_id ?? body.id ?? null
 }
 
 // The v2 create — the fallback, which always emails an invitation. A duplicate
 // is not an error to Circle: an existing email comes back 201 with
-// `{ message: "This user is already a member of this community.",
-// community_member: { … } }`, the same envelope a fresh create returns, so both
-// land on the same read. The id is NESTED under `community_member`; reading only
-// a top-level `id` (as this did) returned null for every existing member and
-// silently skipped the auth0_sub stamp.
+// `{ message: "This user is already a member of this community." }`, the same
+// as a fresh create. 409 / 422 — what this endpoint was assumed to answer for
+// duplicates before the 201 was observed — stay tolerated: a tolerated
+// duplicate is never wrong.
 async function createCircleMemberV2(
   headers: Record<string, string>,
   email: string,
   name: string | undefined,
-): Promise<number | null> {
+): Promise<void> {
   const res = await fetchWithTimeout(`${CIRCLE_API}/community_members`, {
     method: 'POST',
     headers,
     body: JSON.stringify(name ? { email, name } : { email }),
   })
-  if (res.ok) {
-    const body = (await res.json().catch(() => null)) as CircleMemberCreateBody | null
-    const id = body?.community_member?.id ?? body?.community_member_id ?? body?.id
-    if (typeof id === 'number') return id
-    // An envelope we don't recognise. Ask by email rather than give up on the
-    // stamp — the search endpoint answers with the member object directly.
-    return findCircleMemberIdByEmail(headers, email)
-  }
-  // 409 / 422 — what this endpoint was assumed to answer for duplicates before
-  // the 201 was observed. Kept tolerated: a tolerated duplicate is never wrong.
-  if (res.status === 409 || res.status === 422) {
-    return findCircleMemberIdByEmail(headers, email)
-  }
+  if (res.ok || res.status === 409 || res.status === 422) return
   throw new Error(`Circle member create ${res.status}: ${await res.text()}`)
 }
 
@@ -483,25 +450,6 @@ async function findCircleMemberIdByEmail(
     | { records?: Array<{ id?: number }>; id?: number }
     | null
   return body?.records?.[0]?.id ?? body?.id ?? null
-}
-
-// Write the Auth0 `sub` onto the member's custom profile field. Isolated so the
-// (unverified) endpoint shape lives in one place. Throws on a non-2xx so the
-// caller's try/catch can log-and-continue.
-async function stampCircleAuth0Sub(
-  headers: Record<string, string>,
-  memberId: number,
-  fieldKey: string,
-  auth0Sub: string,
-): Promise<void> {
-  const res = await fetchWithTimeout(`${CIRCLE_API}/community_members/${memberId}`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify({ profile_fields: { [fieldKey]: auth0Sub } }),
-  })
-  if (!res.ok) {
-    throw new Error(`Circle profile-field PUT ${res.status}: ${await res.text()}`)
-  }
 }
 
 // Push a member's name onto their Circle profile — the Fold's copy of the
@@ -579,21 +527,18 @@ export async function emailForStripeCustomer(
 // Neon is the entitlement authority (§3). This nightly pass heals DRIFT between
 // Neon and the two external access systems — a member who lost an axis in Neon
 // (cancel, downgrade, expired gift) but whose external grant a webhook failed to
-// revoke. It reconciles on OPAQUE IDS, never email:
+// revoke. Both external systems key their grant on EMAIL, and Neon holds none,
+// so each roster email is projected onto membership rows through Auth0
+// (email → subs → row) and compared against the per-axis keep-set of live subs:
 //
-//   - arkPlus (Beehiiv premium tier): Beehiiv keys the grant — and therefore the
-//     private feed — on EMAIL, so this axis cannot reconcile on an opaque id the
-//     way the Circle one does. The roster is the premium newsletter mirror
-//     (beehiiv_subscription where has_premium), and each email is projected onto
-//     a membership row through Auth0 (email → sub → row). A premium grant whose
-//     owner has no live arkPlus row is drift and is downgraded to free.
-//     Projection failures NEVER revoke: an Auth0 lookup that errors, or an email
-//     with no Auth0 user at all, is left alone — the same rule the Circle axis
-//     applies to an unstamped member.
-//   - circle (Circle access group): the keep-set is the auth0_sub of every live
-//     circle Neon row. The access-group roster returns community_member_id; we
-//     project each to its stamped `auth0_sub` custom profile field and remove
-//     anyone whose auth0_sub isn't in the keep-set.
+//   - arkPlus (Beehiiv premium tier, and therefore the private feed): the roster
+//     is the premium newsletter mirror (beehiiv_subscription where has_premium).
+//     A premium grant whose owner has no live arkPlus row is downgraded to free.
+//   - circle (the subscriber access group): the roster is the group's members.
+//     One whose owner has no live circle row is moved to the cancelled group.
+//
+// Projection failures NEVER revoke: an Auth0 lookup that errors, or an email
+// with no Auth0 user at all, is left alone.
 //
 // Grants are NOT healed here — they flow through the idempotent webhook +
 // activation path, and re-granting would need the price / currency / email the
@@ -605,9 +550,9 @@ export async function emailForStripeCustomer(
 // waits for the next run. Neon still holds no email: the arkPlus roster's
 // addresses come from the Beehiiv mirror, and the Circle DELETE's from Circle.
 //
-// VERIFY-PENDING (§7 #9): the Circle member → auth0_sub custom-field projection
-// (readCircleProfileField) is written against the assumed Admin v2 shape and
-// must be confirmed against a live roster before this cron is enabled.
+// The Circle pass is a dry run — find and log, remove nothing — unless
+// CIRCLE_RECONCILE_ENFORCE is 'true', so the first real roster can be checked
+// before anyone loses access.
 
 const ARK_PLUS_DRIFT_MAX_REMOVE = 100
 const CIRCLE_DRIFT_MAX_REMOVE = 100
@@ -615,7 +560,9 @@ const CIRCLE_DRIFT_MAX_REMOVE = 100
 export type ReconcileSummary = {
   scanned: number // Neon rows loaded
   arkPlusRemoved: number
+  circleDrift: number // found, capped — removed only when not a dry run
   circleRemoved: number
+  circleDryRun: boolean
   errors: number
 }
 
@@ -744,7 +691,14 @@ export async function reconcileEntitlements(
   if (!env.DATABASE_URL) {
     // Neon is the authority; without it there's nothing to reconcile against.
     console.warn('[reconcile] no DATABASE_URL — skipping (Neon is the authority)')
-    return { scanned: 0, arkPlusRemoved: 0, circleRemoved: 0, errors: 0 }
+    return {
+      scanned: 0,
+      arkPlusRemoved: 0,
+      circleDrift: 0,
+      circleRemoved: 0,
+      circleDryRun: circleDryRun(env),
+      errors: 0,
+    }
   }
 
   const rows = await loadAllNeonMemberships(getDb(env))
@@ -779,7 +733,7 @@ export async function reconcileEntitlements(
     errors += 1
     return 0
   })
-  const circleRemoved = await reconcileCircleAxis(
+  const circle = await reconcileCircleAxis(
     env,
     circleSubs,
     maxPages,
@@ -787,10 +741,22 @@ export async function reconcileEntitlements(
   ).catch((err: unknown) => {
     console.error('[reconcile] Circle axis failed:', err)
     errors += 1
-    return 0
+    return { drift: 0, removed: 0 }
   })
 
-  return { scanned: rows.length, arkPlusRemoved, circleRemoved, errors }
+  return {
+    scanned: rows.length,
+    arkPlusRemoved,
+    circleDrift: circle.drift,
+    circleRemoved: circle.removed,
+    circleDryRun: circleDryRun(env),
+    errors,
+  }
+}
+
+// The Circle removal pass only acts when explicitly switched on.
+function circleDryRun(env: Env): boolean {
+  return env.CIRCLE_RECONCILE_ENFORCE !== 'true'
 }
 
 // arkPlus drift: strip the Beehiiv premium tier from anyone holding it whose
@@ -858,20 +824,21 @@ async function reconcileArkPlusAxis(
   return capped.length
 }
 
-// circle drift: remove access-group members whose stamped auth0_sub isn't in
-// Neon's live circle keep-set. Only removes members we can positively identify
-// as stale — a member whose auth0_sub field is empty (SSO-created, never
-// stamped) is left alone, since removing on a failed projection would revoke a
-// legit member. Capped per group.
+// circle drift: remove access-group members whose Neon membership no longer
+// grants the circle axis. Like the arkPlus pass, each member's email is
+// projected onto Auth0 subs, and a failed or empty projection leaves the member
+// alone: that covers anyone added to the group by hand without a site account
+// (Circle staff, moderators), and an Auth0 blip. Capped per run. A dry run
+// (the default, see circleDryRun) logs what it would remove and removes nothing.
 async function reconcileCircleAxis(
   env: Env,
   keep: Set<string>,
   maxPages: number,
   batchSize: number,
-): Promise<number> {
+): Promise<{ drift: number; removed: number }> {
   const apiToken = env.CIRCLE_ADMIN_API_TOKEN
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
-  if (!apiToken || !accessGroupId) return 0
+  if (!apiToken || !accessGroupId) return { drift: 0, removed: 0 }
 
   const members = await listCircleAccessGroupMembers(env, maxPages)
   // Same fail-safe as the arkPlus axis: an empty keep-set against a populated access
@@ -881,38 +848,71 @@ async function reconcileCircleAxis(
     console.error(
       '[reconcile] Circle keep-set empty but access group non-empty — skipping removal (run the backfill?)',
     )
-    return 0
+    return { drift: 0, removed: 0 }
   }
-  const stale = members.filter(
-    (m) => m.auth0Sub != null && !keep.has(m.auth0Sub) && m.email != null,
-  )
+
+  // Resolve first, remove second, so the cap applies to confirmed drift only.
+  const stale: CircleReconcileMember[] = []
+  let unresolved = 0
+  await batched(members, batchSize, async (m) => {
+    if (!m.email) {
+      unresolved += 1
+      return
+    }
+    const subs = await fetchAuth0SubsForEmail(env, m.email)
+    if (subs === null || subs.length === 0) {
+      unresolved += 1
+      return
+    }
+    if (subs.some((sub) => keep.has(sub))) return
+    stale.push(m)
+  })
+  if (unresolved > 0) {
+    console.warn(
+      `[reconcile] Circle: ${unresolved} group member(s) could not be projected onto a membership row — left alone`,
+    )
+  }
+
   const drift = stale.slice(0, CIRCLE_DRIFT_MAX_REMOVE)
   if (stale.length > CIRCLE_DRIFT_MAX_REMOVE) {
     console.warn(
       `[reconcile] Circle drift exceeded cap ${CIRCLE_DRIFT_MAX_REMOVE}; overflow waits for next run`,
     )
   }
+
+  if (circleDryRun(env)) {
+    // The community member id is enough to find each one in Circle admin
+    // without putting addresses in the logs.
+    for (const m of drift) {
+      console.warn(
+        `[reconcile] Circle dry run: would remove community member ${m.communityMemberId} (${redactEmail(m.email as string)})`,
+      )
+    }
+    return { drift: drift.length, removed: 0 }
+  }
+
+  let removed = 0
   await batched(drift, batchSize, async (m) => {
     try {
-      // email is non-null here (filtered above); the write-address is transient.
+      // email is non-null here (checked above); the write-address is transient.
       await setCircleAccessGroup(env, m.email as string, false)
+      removed += 1
     } catch (err) {
       console.error('[reconcile] Circle remove failed:', err)
     }
   })
-  return drift.length
+  return { drift: drift.length, removed }
 }
 
 type CircleReconcileMember = {
   communityMemberId: number
-  auth0Sub: string | null
   email: string | null
 }
 
-// Project the subscriber access group's roster to { community_member_id,
-// auth0_sub, email }. The access-group list returns only community_member_id, so
-// we page it, then walk the full member roster to resolve each id to its email +
-// stamped auth0_sub custom field. Both walks share the same maxPages budget.
+// Project the subscriber access group's roster to { community_member_id, email }.
+// The access-group list returns only community_member_id, so we page it, then
+// walk the full member roster to resolve each id to its email. Both walks share
+// the same maxPages budget.
 async function listCircleAccessGroupMembers(
   env: Env,
   maxPages: number,
@@ -921,7 +921,6 @@ async function listCircleAccessGroupMembers(
   const accessGroupId = env.CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID
   if (!apiToken || !accessGroupId) return []
   const headers = { Authorization: `Bearer ${apiToken}` }
-  const fieldKey = circleAuth0SubField(env)
 
   // 1. community_member_ids in the access group.
   const memberIds = new Set<number>()
@@ -945,7 +944,7 @@ async function listCircleAccessGroupMembers(
   }
   if (memberIds.size === 0) return []
 
-  // 2. Resolve ids → { email, auth0_sub } by walking the member roster.
+  // 2. Resolve ids → email by walking the member roster.
   const out: CircleReconcileMember[] = []
   for (let page = 1; page <= maxPages; page += 1) {
     const url = `${CIRCLE_API}/community_members?per_page=100&page=${page}`
@@ -963,7 +962,6 @@ async function listCircleAccessGroupMembers(
         out.push({
           communityMemberId: r.id,
           email: typeof r.email === 'string' ? r.email.toLowerCase() : null,
-          auth0Sub: readCircleProfileField(r, fieldKey),
         })
       }
     }
@@ -976,20 +974,6 @@ async function listCircleAccessGroupMembers(
 type CircleMemberRecord = {
   id?: number
   email?: string
-  profile_fields?: Record<string, unknown>
-  custom_fields?: Record<string, unknown>
-  fields?: Array<{ key?: string; value?: unknown }>
-}
-
-// The stamped auth0_sub, read tolerantly across a few plausible Circle Admin v2
-// shapes (the exact one is §7 #9 verify-pending): a profile_fields / custom_fields
-// map, or a fields[] array of { key, value }. Null when unstamped.
-function readCircleProfileField(r: CircleMemberRecord, fieldKey: string): string | null {
-  const fromMap = r.profile_fields?.[fieldKey] ?? r.custom_fields?.[fieldKey]
-  if (typeof fromMap === 'string' && fromMap) return fromMap
-  const fromArr = r.fields?.find((f) => f.key === fieldKey)?.value
-  if (typeof fromArr === 'string' && fromArr) return fromArr
-  return null
 }
 
 async function batched<T, R>(

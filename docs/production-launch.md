@@ -169,7 +169,7 @@ a green build.
 | `CIRCLE_COMMUNITY_ID` | server | From any admin URL. |
 | `CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID` | server | Access group gating subscriber Spaces. |
 | `CIRCLE_SSO_SECRET` | server | HS256 secret shared with Circle for SSO. Enforce SSO in Circle admin. |
-| `CIRCLE_AUTH0_SUB_FIELD_KEY` | server | Circle member custom-field key used to match members by Auth0 sub. **Referenced in code but missing from `.env.example`** — add it. |
+| `CIRCLE_RECONCILE_ENFORCE` | server | `true` lets the nightly reconcile actually remove lapsed members from the Circle subscriber group. Unset = dry run: it logs `would remove community member <id>` and removes nobody. Turn on only after a dry run's list has been checked. |
 
 #### Database
 | Var | Scope | Prod source / action |
