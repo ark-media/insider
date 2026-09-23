@@ -150,6 +150,7 @@ Nothing is mirrored upstream: Beehiiv's premium tier has no cancel schedule of i
 | **CXL-06** | Cancel without auth | When unauthenticated POST to cancel; Then 401, no Stripe change. | No state change anywhere. |
 | **CXL-07** | Cancel a non-existent/already-cancelled sub | When the email has no active sub or is already pending-cancel; Then graceful error / idempotent no-op. | No duplicate survey rows; no Stripe churn. |
 | **CXL-08** | Cancel with invalid reason | When reason missing/invalid; Then 400, nothing cancelled. | No side effects. |
+| **CXL-09** | Spotify loses premium episodes at expiry | Given a paid test account that has linked Spotify through `/account/podcast-feed` (Beehiiv Open Access) and can play a premium episode in the Spotify app; When the subscription ends (Stripe test clock, or delete the subscription in the test Dashboard to fire `customer.subscription.deleted`); Then, with the Spotify app left open and reopened, premium episodes stop playing and no new paid episodes arrive, while free episodes keep playing. Record **how long** Spotify takes to notice (check at ~0, 15 min, 1 h, 24 h) and **what the listener sees** (locked episodes, resubscribe prompt, or the show gone from the library). | Beehiiv tier = free right after the webhook (not unsubscribed; free newsletter still active); `/api/me` = `free`. If Spotify still plays premium after 24 h while Beehiiv shows free, that's a Beehiiv/Spotify issue to raise with Beehiiv, not a webhook bug. Nothing in our code writes to Spotify; this case is the only proof the chain works. |
 
 ---
 
@@ -348,6 +349,7 @@ manually except as launch smoke. Newly added in this effort are marked **[new]**
 | End-to-end checkout → all-systems (real APIs) | ❌ manual | Suite A/E (staging) |
 | Stripe dunning window / PAY-01 timing | ❌ manual | requires Stripe config + test clock |
 | Circle/Beehiiv real-account propagation | ❌ manual | staging only |
+| CXL-09 Spotify premium episodes revoked at expiry | ❌ manual | real Spotify account + Beehiiv; timing is Spotify's |
 | SUB-10 double-Stripe-subscription billing | ❌ manual | staging only |
 
 **Manual focus:** the failure matrix's *recovery* legs against **real** Auth0 /
