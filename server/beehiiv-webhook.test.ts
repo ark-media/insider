@@ -57,7 +57,6 @@ const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'http://localhost:5173',
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,
-  BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: PUB_ID,
   BEEHIIV_PREMIUM_TIER_ID: 'pt_premium',
   BEEHIIV_WEBHOOK_SECRET: WEBHOOK_SECRET,
   // Distinct DATABASE_URL per test file — see me-newsletters.test.ts for

@@ -46,20 +46,14 @@ export function useNewsletterSubscription() {
   const isSubscriber = isArkPlusMember(state);
   const prefsLoading = isMember && prefs === undefined && !prefsError;
 
-  // `prefs.free` is refreshed from Beehiiv on GET /api/me/newsletters (active or
-  // pending subscription on the publication — not the JWT tier claim).
-  const isSubscribedToFree =
+  // On the newsletter list at all. `prefs.free` is refreshed from Beehiiv on
+  // GET /api/me/newsletters (active or pending subscription on the publication
+  // — not the tier). Which edition arrives is the tier, i.e. `isSubscriber`.
+  const isSubscribed =
     isMember && prefs !== undefined && prefs !== null && prefs.free;
-  const isSubscribedToPremium =
-    isMember && prefs !== undefined && prefs !== null && prefs.premium;
-
-  /** On the Beehiiv publication list (use to hide ark-daily email signup). */
-  const isSubscribed = isSubscribedToFree;
 
   return {
     isSubscribed,
-    isSubscribedToFree,
-    isSubscribedToPremium,
     prefsLoading,
     prefsError,
     isMember,

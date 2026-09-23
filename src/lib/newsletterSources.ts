@@ -52,7 +52,6 @@ function buildGatedPreview(post: NewsletterPost): NewsletterPost {
 
 const sourceBySlug: Record<NewsletterSlug, NewsletterSource> = {
   "ark-daily": beehiivSource,
-  "members-letter": beehiivSource,
 };
 
 // In-flight + result cache for `listPosts`. Sized to the newsletter universe,
@@ -78,6 +77,15 @@ function cachedListPosts(
   });
   listPostsCache.set(slug, pending);
   return pending;
+}
+
+/**
+ * Drop cached listings. The server answers with the edition the session cookie
+ * is entitled to, so a cached list belongs to whoever was signed in when it
+ * was fetched — call this when the reader's tier changes.
+ */
+export function forgetNewsletterPosts(): void {
+  listPostsCache.clear();
 }
 
 export function sourceFor(slug: NewsletterSlug): ResolvedNewsletterSource {

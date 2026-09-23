@@ -1,10 +1,9 @@
 // Beehiiv API v2 — Posts
 //
-// Pulls confirmed (published) posts from a Beehiiv publication and projects
-// them to NewsletterPosts. Used by public newsletter pages whose source is
-// `beehiivSource`. The API key is a server-side secret (BEEHIIV_API_KEY).
-// Each newsletter slug maps to a publication id resolved from env via
-// BEEHIIV_PUBLICATION_ID_<SLUG_UPPER>.
+// Pulls confirmed (published) posts from the newsletter's Beehiiv publication
+// and projects them to NewsletterPosts. The API key is a server-side secret
+// (BEEHIIV_API_KEY); the publication id comes from
+// BEEHIIV_PUBLICATION_ID_ARK_DAILY.
 
 import { secretEquals } from '../lib/timing-safe.js'
 import { isValidEmail, redactEmail } from '../../shared/validation.js'
@@ -43,23 +42,17 @@ import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { isNewsletterSlug, resolveBeehiivPublicationId } from './newsletter-slugs.js'
 
-// Cache the raw upstream Beehiiv response keyed by publication id. Two slugs
-// can map to the same publication (e.g. ark-daily and members-letter sharing
-// one publication with audience-tiered posts), so caching at the publication
-// level — not the slug level — lets both surfaces share one upstream fetch.
-// Projection (audience filtering, free vs. premium body) then runs per
-// request against this raw data, since it varies with the reader's tier.
+// Cache the raw upstream Beehiiv response keyed by publication id. Projection
+// (free vs. members' edition) then runs per request against this raw data,
+// since it varies with the reader's tier.
 const BEEHIIV_RAW_CACHE_TTL_MS = 5 * 60 * 1000
 const beehiivRawCache = makeTTLCache<string, BeehiivPost[]>(
   BEEHIIV_RAW_CACHE_TTL_MS,
 )
 
-// newsletter slug → author fallback for posts whose Beehiiv `authors[]` is
-// empty. Beehiiv usually populates authors, so this is just safety-net copy.
-const BEEHIIV_AUTHOR_FALLBACK: Partial<Record<NewsletterSlug, string>> = {
-  'ark-daily': 'Ark Media newsroom',
-  'members-letter': 'Ark Media editorial',
-}
+// Author for posts whose Beehiiv `authors[]` is empty. Beehiiv usually
+// populates authors, so this is just safety-net copy.
+const BEEHIIV_AUTHOR_FALLBACK = 'Ark Media newsroom'
 
 async function fetchBeehiivRaw(
   publicationId: string,
@@ -92,22 +85,6 @@ async function fetchBeehiivRaw(
   return posts
 }
 
-// Each newsletter slug owns a slice of the publication's posts based on the
-// post's `audience`. A single publication can host both surfaces — ark-daily
-// (free + both) and members-letter (premium + both). `both` posts appear on
-// both surfaces, rendered differently per surface (preview-only on ark-daily,
-// full-for-members + paywall-for-others on members-letter).
-function postBelongsToNewsletter(
-  p: BeehiivPost,
-  newsletterSlug: NewsletterSlug,
-): boolean {
-  const audience = (p.audience ?? 'free').toLowerCase()
-  if (newsletterSlug === 'members-letter') {
-    return audience === 'premium' || audience === 'both'
-  }
-  return audience !== 'premium'
-}
-
 async function buildBeehiivPosts(
   newsletterSlug: NewsletterSlug,
   token: string,
@@ -117,13 +94,11 @@ async function buildBeehiivPosts(
   const publicationId = resolveBeehiivPublicationId(env, newsletterSlug)
   if (!publicationId) return []
   const raw = await fetchBeehiivRaw(publicationId, token)
-  const authorFallback = BEEHIIV_AUTHOR_FALLBACK[newsletterSlug] ?? ''
   const view: 'free' | 'premium' = isMember ? 'premium' : 'free'
 
   return raw
     .filter(isPublishedBeehiivPost)
-    .filter((p) => postBelongsToNewsletter(p, newsletterSlug))
-    .map((p) => projectBeehiivPost(p, newsletterSlug, authorFallback, view))
+    .map((p) => projectBeehiivPost(p, newsletterSlug, BEEHIIV_AUTHOR_FALLBACK, view))
     .filter((p): p is NewsletterPost => p !== null)
     .sort(
       (a, b) =>
@@ -251,10 +226,9 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         const resolved = await resolveMembership(req, env)
         const isMember = resolved?.entitlements.arkPlus ?? false
 
-        // Both surfaces project a membership-dependent body — `view` is
-        // 'premium' for a member and 'free' for everyone else, and `both`
-        // -audience posts appear on ark-daily as well as members-letter — so
-        // neither slug may enter a shared cache under this url. The anonymous
+        // The body is membership-dependent — `view` is 'premium' (the members'
+        // edition) for a member and 'free' for everyone else — so this url
+        // may not enter a shared cache. The anonymous
         // response is the PREVIEW, and a shared cache would serve it to the
         // next member to open the newsletter. Gating on the resource costs
         // anonymous readers the edge hit; `beehiivRawCache` still spares
@@ -360,10 +334,7 @@ export function beehiivRoutes({ env }: Deps): Route[] {
           return json(400, { error: 'invalid_json' })
         }
 
-        const publicationId =
-          env.BEEHIIV_PUBLICATION_ID_ARK_DAILY ||
-          env.BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER ||
-          ''
+        const publicationId = env.BEEHIIV_PUBLICATION_ID_ARK_DAILY || ''
         // Idempotency: skip only events already fully PROCESSED. We READ the
         // ledger here and WRITE it after the handler succeeds — never before.
         // Claiming the id up front would mean a handler that throws leaves the

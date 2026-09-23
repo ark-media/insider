@@ -340,14 +340,15 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
     defineRoute({
       // Newsletter preferences for the signed-in reader. GET returns current
       // mirror state from Neon (kept fresh by activation/cancel pushes and
-      // the inbound Beehiiv webhook). PUT applies the requested change to
-      // Beehiiv in one combined update, then refreshes the row.
+      // the inbound Beehiiv webhook). PUT applies the change to Beehiiv, then
+      // refreshes the row.
       //
-      // Toggles map to Beehiiv ops:
+      // There is one newsletter, so there is one switch:
       //   free=true  → re-activate the subscription record (status=active)
-      //   free=false → unsubscribe the whole record (premium issues stop too)
-      //   premium=true  → require subscriber entitlement, then upgrade tier
-      //   premium=false → downgrade tier to free
+      //   free=false → unsubscribe the whole record
+      // The premium tier is which EDITION arrives (and the private-feed grant),
+      // so only the membership moves it — activation and cancellation, never
+      // this route. `premium` in the response is read-only.
       path: '/api/me/newsletters',
       method: ['GET', 'PUT'],
       handler: async (req, res, json) => {
@@ -387,27 +388,17 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           return json(429, { error: 'too_many_requests' })
         }
 
-        const body = await readJson<{ free?: unknown; premium?: unknown }>(req)
+        const body = await readJson<{ free?: unknown }>(req)
         const setFree = typeof body?.free === 'boolean' ? body.free : undefined
-        const setPremium =
-          typeof body?.premium === 'boolean' ? body.premium : undefined
-        if (setFree === undefined && setPremium === undefined) {
+        if (setFree === undefined) {
           return json(400, { error: 'no_changes' })
         }
-        if (setPremium === true && !isMember) {
-          return json(403, { error: 'not_entitled' })
-        }
 
-        // If the caller didn't touch the premium toggle but they're a member
-        // re-activating the record (free flipping back on), include
-        // premium:true so Beehiiv re-applies the tier on re-subscribe — this
-        // closes the silent-premium-drop edge case.
-        const prefs: { free?: boolean; premium?: boolean } = {}
-        if (setFree !== undefined) prefs.free = setFree
-        if (setPremium !== undefined) prefs.premium = setPremium
-        if (setFree === true && setPremium === undefined && isMember) {
-          prefs.premium = true
-        }
+        // A member re-activating the record gets premium:true alongside, so
+        // Beehiiv re-applies their edition on re-subscribe — this closes the
+        // silent-premium-drop edge case.
+        const prefs: { free?: boolean; premium?: boolean } = { free: setFree }
+        if (setFree === true && isMember) prefs.premium = true
 
         try {
           const updated = await applyPreferences(deps, email, prefs)

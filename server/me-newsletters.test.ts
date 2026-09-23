@@ -93,7 +93,6 @@ const BASE_ENV: Record<string, string> = {
   APP_BASE_URL: 'http://localhost:5173',
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,
-  BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: PUB_ID,
   BEEHIIV_PREMIUM_TIER_ID: 'pt_premium',
   // Distinct DATABASE_URL per test file: server/lib/db.ts's `getDb()` caches
   // the neon() client by url, and the cache is process-global. Different
@@ -398,20 +397,25 @@ describe('PUT /api/me/newsletters', () => {
     expect(res.statusCode).toBe(400)
   })
 
-  test('403 when non-member tries to enable premium', async () => {
-    const token = await signAuth0Token({ email: 'a@x.com' })
-    liveTierByEmail.set('a@x.com', 'free')
-    const handler = buildHandler()
-    const res = makeRes()
-    await runHandler(
-      handler,
-      makeReq({ method: 'PUT', bearer: token, body: { premium: true } }),
-      res,
-    )
-    expect(res.statusCode).toBe(403)
-  })
+  // The premium tier is the member's edition and their private-feed grant, so
+  // it only moves with the membership. A reader can't set it, either way.
+  for (const premium of [true, false]) {
+    test(`premium:${premium} alone is not a change a reader can make`, async () => {
+      markMember('m@x.com')
+      const token = await signAuth0Token({ email: 'm@x.com' })
+      const handler = buildHandler()
+      const res = makeRes()
+      await runHandler(
+        handler,
+        makeReq({ method: 'PUT', bearer: token, body: { premium } }),
+        res,
+      )
+      expect(res.statusCode).toBe(400)
+      expect(fetchCalls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
+    })
+  }
 
-  test('member can enable premium via combined PUT', async () => {
+  test('a member turning the newsletter on gets their edition re-applied', async () => {
     markMember('m@x.com')
     const token = await signAuth0Token({ email: 'm@x.com' })
     beehiivHandler = ({ url, method }) => {
@@ -452,7 +456,7 @@ describe('PUT /api/me/newsletters', () => {
       makeReq({
         method: 'PUT',
         bearer: token,
-        body: { free: true, premium: true },
+        body: { free: true },
       }),
       res,
     )
@@ -477,7 +481,7 @@ describe('PUT /api/me/newsletters', () => {
     const res = makeRes()
     await runHandler(
       handler,
-      makeReq({ method: 'PUT', bearer: token, body: { premium: true } }),
+      makeReq({ method: 'PUT', bearer: token, body: { free: true } }),
       res,
     )
     expect(res.statusCode).toBe(503)
@@ -488,7 +492,7 @@ describe('PUT /api/me/newsletters', () => {
     ).toBe(false)
   })
 
-  test('stale JWT but live-tier subscriber → premium toggle allowed', async () => {
+  test('stale JWT but live-tier subscriber → edition applied on turn-on', async () => {
     const token = await signAuth0Token({ email: 'upgraded@x.com' })
     markMember('upgraded@x.com')
     beehiivHandler = ({ method }) => {
@@ -516,7 +520,7 @@ describe('PUT /api/me/newsletters', () => {
       makeReq({
         method: 'PUT',
         bearer: token,
-        body: { premium: true },
+        body: { free: true },
       }),
       res,
     )
@@ -700,7 +704,7 @@ describe('PUT /api/me/newsletters', () => {
         makeReq({
           method: 'PUT',
           bearer: token,
-          body: { free: true, premium: true },
+          body: { free: true },
         }),
         res,
       )

@@ -147,16 +147,22 @@ export function projectBeehiivPost(
   const bodyHtml = sanitizeBeehiivHtml(rawHtml)
   const plain = stripHtml(rawHtml)
 
-  // Tier reflects "is this gated on the surface that requested it?" — not the
-  // post's intrinsic audience. A `both`-audience post is the free version on
-  // ark-daily (above-divider IS the published version), but the paywalled
-  // version on members-letter (members see full, others see the preview).
-  let tier: 'free' | 'ark-plus' = 'free'
-  if (audience === 'premium') {
-    tier = 'ark-plus'
-  } else if (audience === 'both') {
-    tier = newsletterSlug === 'members-letter' ? 'ark-plus' : 'free'
-  }
+  // Tier = "does the members' edition carry more than the free one?", read
+  // from the content rather than `audience`. One newsletter goes to everyone
+  // with members-only sections for the premium tier, and Beehiiv doesn't
+  // reliably reflect that in `audience`: issues sent only to the premium
+  // segment come back `audience: 'free'` with a free.web that is nothing but
+  // the title/byline header and the whole issue in premium.web (observed on
+  // the live publication, 2026-09-23). Comparing the two bodies catches that,
+  // a paywall divider, and per-tier content blocks alike.
+  const freeText = stripHtml(
+    p.content?.free?.web ?? (audience === 'free' ? p.content_html : '') ?? '',
+  )
+  const premiumText = stripHtml(p.content?.premium?.web ?? '')
+  const tier: 'free' | 'ark-plus' =
+    audience === 'premium' || premiumText.length > freeText.length
+      ? 'ark-plus'
+      : 'free'
 
   const excerpt = (p.preview_text && p.preview_text.trim()) ||
     (p.subtitle && p.subtitle.trim()) ||

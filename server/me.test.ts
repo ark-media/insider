@@ -95,7 +95,6 @@ const BASE_ENV: Record<string, string> = {
   SESSION_SECRET: 'session-secret-for-tests-32-chars__',
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: PUB_ID,
-  BEEHIIV_PUBLICATION_ID_MEMBERS_LETTER: PUB_ID,
   BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: SHOW_ID,
   STRIPE_SECRET_KEY: 'sk_test_me',
   // getDb() caches the neon() client by URL across the process; distinct URL

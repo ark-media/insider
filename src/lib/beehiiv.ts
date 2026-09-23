@@ -1,6 +1,5 @@
 import {
-  newsletters,
-  type Newsletter,
+  newsletter,
   type NewsletterPost,
   type NewsletterSlug,
 } from "../data/newsletters";
@@ -11,22 +10,8 @@ import type { NewsletterSource } from "./newsletterSources";
  *
  * Read paths (`listPosts`, `getPost`) proxy `/api/beehiiv/posts` and writes
  * (`subscribeEmail`) proxy `/api/beehiiv/subscribe`. Both call Beehiiv's v2
- * API server-side with `BEEHIIV_API_KEY` and per-newsletter publication-id
- * env vars.
+ * API server-side with `BEEHIIV_API_KEY` and the publication-id env var.
  */
-
-const FAKE_LATENCY_MS = 60;
-
-function jitter(ms = FAKE_LATENCY_MS): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms + Math.random() * 40));
-}
-
-export async function getPublication(
-  slug: NewsletterSlug,
-): Promise<Newsletter | null> {
-  await jitter();
-  return newsletters.find((n) => n.slug === slug) ?? null;
-}
 
 type ApiResponse = { posts?: NewsletterPost[] };
 
@@ -73,7 +58,7 @@ export async function subscribeEmail(
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
     return { ok: false, error: "That doesn't look like a valid email." };
   }
-  if (!newsletters.find((n) => n.slug === slug)) {
+  if (slug !== newsletter.slug) {
     return { ok: false, error: "Unknown newsletter." };
   }
 
