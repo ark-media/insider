@@ -737,37 +737,33 @@ export async function redeemGiftForRecipient(
       unapplied = 'extend_failed'
     }
   } else if (plan.creditFull && existing != null) {
-    const subCur = await subscriptionCurrency(stripe, existing)
-    const currency = isSupportedCurrency(subCur) ? subCur : 'usd'
-    subCurrencyForAlert = currency
-    // A gift row's tier is always a priced tier (never 'free').
-    const list = (await resolveGiftPrice(stripe, gift.tier as PricedTier, term)).floors[currency]
-    const creditCents = giftCreditCents({
-      paidCents: gift.amount_cents,
-      listCents: list ?? 0,
-      giftCurrency: gift.currency,
-      subscriptionCurrency: currency,
-    })
-    if (creditCents === null) {
-      console.error('[gift] credit skipped — currency mismatch or no captured amount', {
+    const credit = await resolveGiftCredit(stripe, existing, gift, term)
+    subCurrencyForAlert = credit.subscriptionCurrency
+    if (!credit.ok) {
+      console.error('[gift] credit skipped', {
+        reason: credit.reason,
         giftCurrency: gift.currency,
-        subscriptionCurrency: currency,
+        subscriptionCurrency: credit.subscriptionCurrency,
         amountCents: gift.amount_cents,
       })
-      unapplied = gift.amount_cents == null ? 'no_amount' : 'currency_mismatch'
+      unapplied = credit.reason
     } else {
       try {
-        effect = await applyGiftAsCredit(stripe, existing, creditCents, currency)
-        creditApplied = effect !== null
+        effect = await applyGiftAsCredit(stripe, credit.customerId, credit.cents, credit.currency)
+        creditApplied = true
       } catch (err) {
         console.error('[gift] credit apply failed:', err)
+        unapplied = 'credit_failed'
       }
-      if (!creditApplied) unapplied = 'credit_failed'
     }
   }
+  // What the recipient is about to be told — the alert says whether they know
+  // this part is pending, so support knows whether to reach out.
+  const grantedAny = grant.arkPlusEndsAt != null || grant.circleEndsAt != null
   if (unapplied) {
     const sent = await sendGiftUnappliedAlert(env, {
       reason: unapplied,
+      recipientToldPending: !grantedAny,
       gift,
       recipientEmail: email,
       subscriptionCurrency: subCurrencyForAlert ?? existing?.currency ?? null,
@@ -807,7 +803,6 @@ export async function redeemGiftForRecipient(
   // gift only had a Stripe half and it didn't happen (staff were alerted above).
   // Never claim a membership was created when only a sub was extended or credit
   // applied — or when nothing was.
-  const grantedAny = grant.arkPlusEndsAt != null || grant.circleEndsAt != null
   const applied: GiftApplied = creditApplied
     ? 'credit'
     : grantedAny && extended
@@ -946,23 +941,72 @@ async function extendSubscription(
 }
 
 // The billing currency of the recipient's live subscription — the only currency a
-// customer-balance credit can be drawn against. Falls back to USD if the sub
-// can't be read (a credit still lands; worst case it's mis-denominated).
+// customer-balance credit can be drawn against. Null when it can't be read: a
+// guessed currency would either mis-denominate the credit (it never draws) or
+// mislabel a matching gift as a currency mismatch.
 async function subscriptionCurrency(
   stripe: Stripe,
   membership: MembershipRow,
-): Promise<string> {
-  if (!membership.stripe_subscription_id) return 'usd'
+): Promise<string | null> {
+  if (!membership.stripe_subscription_id) return null
   try {
     const sub = await stripe.subscriptions.retrieve(membership.stripe_subscription_id)
-    return (sub.currency ?? 'usd').toLowerCase()
-  } catch {
-    return 'usd'
+    return sub.currency ? sub.currency.toLowerCase() : null
+  } catch (err) {
+    console.error('[gift] could not read the subscription currency:', err)
+    return null
   }
 }
 
-// How much customer balance a fully-overlapped gift is worth, or null when it
-// can't be credited safely. Split out from the redeem handler so the invariant
+type GiftCreditPlan =
+  | { ok: true; cents: number; currency: string; customerId: string; subscriptionCurrency: string }
+  | { ok: false; reason: GiftUnappliedReason; subscriptionCurrency: string | null }
+
+// Everything the credit branch needs before it touches the balance, or the
+// specific reason it can't — so the staff alert names the real cause. Never
+// throws: this runs after the gift is marked redeemed, and a throw here would
+// spend the gift with no credit and no alert.
+async function resolveGiftCredit(
+  stripe: Stripe,
+  membership: MembershipRow,
+  gift: GiftRow,
+  term: GiftTerm,
+): Promise<GiftCreditPlan> {
+  if (!membership.stripe_customer_id) {
+    return { ok: false, reason: 'no_customer', subscriptionCurrency: null }
+  }
+  const subCur = await subscriptionCurrency(stripe, membership)
+  if (subCur == null) return { ok: false, reason: 'currency_unknown', subscriptionCurrency: null }
+  if (!isSupportedCurrency(subCur)) {
+    return { ok: false, reason: 'no_list_price', subscriptionCurrency: subCur }
+  }
+  let listCents: number
+  try {
+    // A gift row's tier is always a priced tier (never 'free').
+    listCents =
+      (await resolveGiftPrice(stripe, gift.tier as PricedTier, term)).floors[subCur] ?? 0
+  } catch (err) {
+    console.error('[gift] gift price lookup failed:', err)
+    return { ok: false, reason: 'price_lookup_failed', subscriptionCurrency: subCur }
+  }
+  const credit = giftCreditCents({
+    paidCents: gift.amount_cents,
+    listCents,
+    giftCurrency: gift.currency,
+    subscriptionCurrency: subCur,
+  })
+  if (!credit.ok) return { ok: false, reason: credit.reason, subscriptionCurrency: subCur }
+  return {
+    ok: true,
+    cents: credit.cents,
+    currency: subCur,
+    customerId: membership.stripe_customer_id,
+    subscriptionCurrency: subCur,
+  }
+}
+
+// How much customer balance a fully-overlapped gift is worth, or why it can't
+// be credited safely. Split out from the redeem handler so the invariant
 // that matters — you get back what you PAID, never the catalog list price — is
 // directly testable.
 //
@@ -976,14 +1020,20 @@ export function giftCreditCents(opts: {
   listCents: number
   giftCurrency: string | null
   subscriptionCurrency: string
-}): number | null {
+}):
+  | { ok: true; cents: number }
+  | { ok: false; reason: 'no_amount' | 'zero_paid' | 'currency_mismatch' | 'no_list_price' } {
+  if (opts.paidCents == null) return { ok: false, reason: 'no_amount' }
+  // Paid nothing (a 100%-off code): there is no money to hand back as credit.
+  if (opts.paidCents <= 0) return { ok: false, reason: 'zero_paid' }
   const gift = (opts.giftCurrency ?? 'usd').toLowerCase()
   // A Stripe balance only offsets invoices in its own currency, so crossing
   // currencies here would require inventing an FX rate. Refuse instead.
-  if (gift !== opts.subscriptionCurrency.toLowerCase()) return null
-  const paid = opts.paidCents ?? 0
-  if (paid <= 0 || opts.listCents <= 0) return null
-  return Math.min(paid, opts.listCents)
+  if (gift !== opts.subscriptionCurrency.toLowerCase()) {
+    return { ok: false, reason: 'currency_mismatch' }
+  }
+  if (opts.listCents <= 0) return { ok: false, reason: 'no_list_price' }
+  return { ok: true, cents: Math.min(opts.paidCents, opts.listCents) }
 }
 
 // Apply an unwasted gift portion as Stripe customer-balance credit on the
@@ -992,19 +1042,18 @@ export function giftCreditCents(opts: {
 // the caller via subscriptionCurrency) so the balance actually draws.
 async function applyGiftAsCredit(
   stripe: Stripe,
-  membership: MembershipRow,
+  customerId: string,
   amountCents: number,
   currency: string,
-): Promise<GiftStripeEffect | null> {
-  if (!membership.stripe_customer_id || amountCents <= 0) return null
-  const txn = await stripe.customers.createBalanceTransaction(membership.stripe_customer_id, {
+): Promise<GiftStripeEffect> {
+  const txn = await stripe.customers.createBalanceTransaction(customerId, {
     amount: -amountCents, // negative = credit toward future invoices
     currency,
     description: 'Ark gift credit',
   })
   return {
     kind: 'credit',
-    customer_id: membership.stripe_customer_id,
+    customer_id: customerId,
     balance_transaction_id: txn.id,
     amount: amountCents,
     currency,

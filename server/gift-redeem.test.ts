@@ -194,15 +194,15 @@ describe('giftCreditCents — credit what was paid, never the list price', () =>
   test('credits the captured amount when it is below list', () => {
     // The bug this guards: a gift bought under a 50%-off auto-apply coupon used
     // to credit the full 8000 list price back as balance.
-    expect(giftCreditCents({ ...base, paidCents: 4000 })).toBe(4000)
+    expect(giftCreditCents({ ...base, paidCents: 4000 })).toEqual({ ok: true, cents: 4000 })
   })
 
   test('caps at list so a mis-stamped row cannot over-credit', () => {
-    expect(giftCreditCents({ ...base, paidCents: 99_000 })).toBe(8000)
+    expect(giftCreditCents({ ...base, paidCents: 99_000 })).toEqual({ ok: true, cents: 8000 })
   })
 
   test('credits the full amount when it was paid at list', () => {
-    expect(giftCreditCents({ ...base, paidCents: 8000 })).toBe(8000)
+    expect(giftCreditCents({ ...base, paidCents: 8000 })).toEqual({ ok: true, cents: 8000 })
   })
 
   test('refuses to cross currencies rather than invent an FX rate', () => {
@@ -215,22 +215,34 @@ describe('giftCreditCents — credit what was paid, never the list price', () =>
         giftCurrency: 'sgd',
         subscriptionCurrency: 'gbp',
       }),
-    ).toBeNull()
+    ).toEqual({ ok: false, reason: 'currency_mismatch' })
   })
 
   test('is case-insensitive about currency codes', () => {
     expect(
       giftCreditCents({ paidCents: 500, listCents: 800, giftCurrency: 'USD', subscriptionCurrency: 'usd' }),
-    ).toBe(500)
+    ).toEqual({ ok: true, cents: 500 })
   })
 
-  test('refuses when the row carries no usable amount', () => {
-    expect(giftCreditCents({ ...base, paidCents: null })).toBeNull()
-    expect(giftCreditCents({ ...base, paidCents: 0 })).toBeNull()
-    expect(giftCreditCents({ ...base, paidCents: -100 })).toBeNull()
+  test('refuses when the row carries no captured amount', () => {
+    expect(giftCreditCents({ ...base, paidCents: null })).toEqual({ ok: false, reason: 'no_amount' })
+  })
+
+  test('refuses a gift paid at 0 as zero-paid, not a currency mismatch', () => {
+    // A 100%-off gift in a different currency is still "nothing to credit" —
+    // the alert must not tell support to refund money nobody paid.
+    expect(giftCreditCents({ ...base, paidCents: 0 })).toEqual({ ok: false, reason: 'zero_paid' })
+    expect(giftCreditCents({ ...base, paidCents: -100 })).toEqual({ ok: false, reason: 'zero_paid' })
+    expect(giftCreditCents({ ...base, paidCents: 0, giftCurrency: 'gbp' })).toEqual({
+      ok: false,
+      reason: 'zero_paid',
+    })
   })
 
   test('refuses when the catalog list price is unresolvable', () => {
-    expect(giftCreditCents({ ...base, listCents: 0, paidCents: 4000 })).toBeNull()
+    expect(giftCreditCents({ ...base, listCents: 0, paidCents: 4000 })).toEqual({
+      ok: false,
+      reason: 'no_list_price',
+    })
   })
 })
