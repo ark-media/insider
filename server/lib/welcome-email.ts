@@ -294,17 +294,17 @@ function arkPlusSetupStep(setupUrl: string, lead: string): string {
 // Both cases now share a CTA, so this is the only place they differ. A new
 // account is told the link signs them in, which is what stops someone who has
 // just been told they have an account from hunting for a credential. An existing
-// account is told the opposite thing — that there is no new account to make —
-// for the same reason, one step earlier.
+// account gets nothing here: a "sign in with the login you already have" line
+// read as confusing, so it was dropped.
 //
-// Neither sentence names a password, and no member-facing copy anywhere does.
+// The sentence never names a password, and no member-facing copy anywhere does.
 // Sign-in is an emailed code or Google; a member who never had a password does
 // not need to hear that one is absent, and raising it only invites the hunt
 // this sentence exists to prevent.
 function ctaPrelude(isNewAccount: boolean, welcomeUrl: string): string {
   return isNewAccount
     ? `That link signs you in automatically. ${link(welcomeUrl, 'Your welcome page')} walks you through the rest. `
-    : 'Sign in with the login you already have — no new account to make. '
+    : ''
 }
 
 export const ARK_MEDIA_TEAM = 'The Ark Media Team'
