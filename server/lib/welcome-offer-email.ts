@@ -46,7 +46,8 @@ export type WelcomeOfferEmailParams = {
   bundlePrice: string
   discountedMonths: number
   // The auto-login link to /offer. Seeing the offer needs only this; taking it
-  // asks for a real sign-in, because it charges the card on file.
+  // does too for the first 48 hours after the send, and a real sign-in after
+  // that, because it charges the card on file.
   offerUrl: string
 }
 

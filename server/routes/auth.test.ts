@@ -331,6 +331,8 @@ describe('GET /api/auth/email-login', () => {
     // two weeks and rides in a GET URL, so what it buys can read the account
     // and set up feeds but not touch billing (requireLoginAssurance).
     expect(profile?.via).toBe('email_link')
+    // When the link was signed, so billing can trust it for its first 48 hours.
+    expect(profile?.linkIssuedAt).toBeCloseTo(Date.now() / 1000, -1)
   })
 
   test('a missing or forged token falls through to the normal login, keeping the destination', async () => {

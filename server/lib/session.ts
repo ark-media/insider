@@ -271,6 +271,11 @@ export type SessionProfile = {
   // sets up feeds like any other; it cannot move money — see `assurance` on
   // RequestIdentity and requireLoginAssurance in guards.ts.
   via?: 'email_link'
+  // Epoch seconds at which the emailed link behind an 'email_link' session was
+  // signed — when the email went out, not when it was clicked. A link this
+  // fresh is trusted like a sign-in (EMAIL_LINK_TRUST_SEC); an older one is
+  // not. Carried across re-mints like loginAt.
+  linkIssuedAt?: number
   // Epoch seconds of the login this session descends from. A profile save
   // re-mints the cookie with a fresh 7-day expiry, so without this a stolen
   // cookie could be renewed forever by saving the profile once a week. Carried
@@ -294,6 +299,7 @@ export async function signSessionToken(profile: SessionProfile, env: Env): Promi
       ...(profile.nameSetByMember ? { name_set_by_member: true } : {}),
       ...(profile.sub ? { sub: profile.sub } : {}),
       ...(profile.via ? { via: profile.via } : {}),
+      ...(profile.linkIssuedAt ? { link_iat: profile.linkIssuedAt } : {}),
       login_at: profile.loginAt ?? Math.floor(Date.now() / 1000),
     },
     {
@@ -331,6 +337,7 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     nameSetByMember: payload.name_set_by_member === true,
     sub: (payload.sub as string | undefined) ?? undefined,
     ...(payload.via === 'email_link' ? { via: 'email_link' as const } : {}),
+    ...(typeof payload.link_iat === 'number' ? { linkIssuedAt: payload.link_iat } : {}),
     ...(loginAt !== undefined ? { loginAt } : {}),
   }
 }
@@ -359,7 +366,15 @@ export function sessionName(session: SessionProfile): string | undefined {
 
 // `tier` is display-only: the redeem page reads it (unverified) to name the gift
 // in its heading. Redemption never trusts it — the gift row is the authority.
-export type GiftClaimToken = { giftToken: string; email: string; name?: string; tier?: string }
+export type GiftClaimToken = {
+  giftToken: string
+  email: string
+  name?: string
+  tier?: string
+  // When the claim email was signed (the token's `iat`). Read on verify only,
+  // for the session the claim mints (SessionProfile.linkIssuedAt).
+  issuedAt?: number
+}
 
 export async function signGiftClaimToken(
   claim: GiftClaimToken,
@@ -395,7 +410,12 @@ export async function verifyGiftClaimToken(
   const giftToken = payload?.giftToken as string | undefined
   const email = payload?.email as string | undefined
   if (!giftToken || !email) return null
-  return { giftToken, email, name: (payload?.name as string | undefined) ?? undefined }
+  return {
+    giftToken,
+    email,
+    name: (payload?.name as string | undefined) ?? undefined,
+    issuedAt: typeof payload?.iat === 'number' ? payload.iat : undefined,
+  }
 }
 
 // --- ark_auth_txn: the in-flight OAuth transaction -----------------------
@@ -465,8 +485,12 @@ export type RequestIdentity = {
   source: 'auth0' | 'checkout'
   // How strongly the caller has proven they own `email`.
   //   'login' — they signed in: an emailed code or Google, through Auth0.
-  //   'link'  — they hold a link we sent (a lifecycle email, a gift claim) or
-  //             the post-payment token, whose email was typed and never proven.
+  //   'link'  — they hold a link we sent (a lifecycle email, a gift claim)
+  //             more than EMAIL_LINK_TRUST_SEC old, or the post-payment token,
+  //             whose email was typed and never proven.
+  // A link inside that window counts as 'login': it proves the same thing an
+  // emailed code does — the member reads that inbox — and the member who
+  // clicks the offer email on the day can take it in one click.
   // Reading, feed setup and profile edits accept either. Anything that moves
   // money or changes what the member is billed requires 'login'
   // (requireLoginAssurance, guards.ts).
@@ -507,6 +531,26 @@ function identityName(profile: {
   }
 }
 
+// How long after an email goes out its auto-login link counts as a real
+// sign-in. Measured from when the link was signed, so a link opened a week
+// later gets the ordinary link session. 48 hours covers the day an email is
+// read, and the next.
+export const EMAIL_LINK_TRUST_SEC = 48 * 60 * 60
+
+// A session from an emailed link counts as a sign-in while that link is fresh.
+// A link session with no issue time (minted before linkIssuedAt existed) is
+// treated as stale.
+function sessionAssurance(
+  session: SessionProfile,
+  nowSec = Date.now() / 1000,
+): RequestIdentity['assurance'] {
+  if (session.via !== 'email_link') return 'login'
+  const issuedAt = session.linkIssuedAt
+  return issuedAt !== undefined && nowSec - issuedAt <= EMAIL_LINK_TRUST_SEC
+    ? 'login'
+    : 'link'
+}
+
 export async function resolveRequestIdentity(
   req: IncomingMessage,
   env: Env,
@@ -545,7 +589,7 @@ export async function resolveRequestIdentity(
       email: session.email,
       sub: session.sub ?? null,
       source: 'auth0',
-      assurance: session.via === 'email_link' ? 'link' : 'login',
+      assurance: sessionAssurance(session),
       ...identityName(session),
       session,
     }
@@ -731,6 +775,9 @@ export type EmailLoginToken = {
   sub?: string
   givenName?: string
   familyName?: string
+  // When the link was signed (the token's `iat`). Read on verify only, for the
+  // session the link mints (SessionProfile.linkIssuedAt).
+  issuedAt?: number
 }
 
 export async function signEmailLoginToken(
@@ -771,6 +818,7 @@ export async function verifyEmailLoginToken(
     sub: (payload?.sub as string | undefined) ?? undefined,
     givenName: (payload?.given_name as string | undefined) ?? undefined,
     familyName: (payload?.family_name as string | undefined) ?? undefined,
+    issuedAt: typeof payload?.iat === 'number' ? payload.iat : undefined,
   }
 }
 

@@ -9,9 +9,10 @@
 // There is no roster. Who may redeem is a fact Stripe already holds — an Ark+
 // subscription that predates launch (WELCOME_OFFER_ELIGIBLE_BEFORE_ISO) — and
 // who HAS redeemed is written onto the subscription itself. Redeeming charges a
-// card, so the route behind this runs `requireBillingEmail` (a real sign-in,
-// never an emailed link) and reads the SIGNED-IN member's own subscription. A
-// forwarded email is therefore worthless to anyone but its owner.
+// card, so the route behind this runs `requireBillingEmail` (a real sign-in, or
+// the emailed link while it is under 48 hours old) and reads the SIGNED-IN
+// member's own subscription. Within those 48 hours, whoever holds the link acts
+// as its owner — a forwarded email included.
 //
 // Everything here is pure. The Stripe side of redemption lives in
 // routes/offer.ts.

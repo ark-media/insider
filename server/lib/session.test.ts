@@ -145,6 +145,27 @@ describe('session token', () => {
     expect((await resolveRequestIdentity(req, SENV))?.assurance).toBe('link')
   })
 
+  test('a session from a link sent within 48 hours resolves at login assurance', async () => {
+    const sentAnHourAgo = Math.floor(Date.now() / 1000) - 3600
+    const token = await signSessionToken(
+      { email: 'l@x.com', roles: [], via: 'email_link', linkIssuedAt: sentAnHourAgo },
+      SENV,
+    )
+    expect((await verifySessionToken(token, SENV))?.linkIssuedAt).toBe(sentAnHourAgo)
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect((await resolveRequestIdentity(req, SENV))?.assurance).toBe('login')
+  })
+
+  test('a session from a link sent more than 48 hours ago resolves at link assurance', async () => {
+    const sent49HoursAgo = Math.floor(Date.now() / 1000) - 49 * 3600
+    const token = await signSessionToken(
+      { email: 'l@x.com', roles: [], via: 'email_link', linkIssuedAt: sent49HoursAgo },
+      SENV,
+    )
+    const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect((await resolveRequestIdentity(req, SENV))?.assurance).toBe('link')
+  })
+
   test('a signed-in session resolves at login assurance', async () => {
     const token = await signSessionToken({ email: 'l@x.com', roles: [] }, SENV)
     const req = makeReq({ cookie: `${SESSION_COOKIE_NAME}=${token}` })

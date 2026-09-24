@@ -101,9 +101,10 @@ export async function fetchMe(): Promise<Me | null> {
 // Every call that changes what a member is billed goes through here.
 //
 // The server only lets those through for a member who actually signed in — an
-// emailed code or Google. A session that came from a link in one of our emails
-// (or the brief post-payment one) can read the account and set up feeds, but is
-// answered 401 `reauth_required` on billing. A session that expired while the
+// emailed code or Google — or who came in by a link in one of our emails sent
+// within the last 48 hours. An older link's session (or the brief post-payment
+// one) can read the account and set up feeds, but is answered 401
+// `reauth_required` on billing. A session that expired while the
 // page sat open (or was signed out in another tab) is answered a plain 401
 // `unauthenticated`. Neither is an error to show and leave: send them through
 // sign-in and straight back to the page they were on, where the same click now

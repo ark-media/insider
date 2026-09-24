@@ -38,14 +38,14 @@ export async function requireAdminRequest(
 
 // Gate for anything that moves money or changes what a member is billed:
 // cancelling, reactivating, changing tier, taking a retention offer, replacing
-// the card. The caller must have actually signed in (an emailed code or Google).
+// the card. The caller must have signed in (an emailed code or Google), or be
+// holding a session from an emailed link that went out within the last 48 hours
+// (EMAIL_LINK_TRUST_SEC, session.ts) — which proves the same thing a code does.
 //
-// A session minted from a link in an email, or the post-payment checkout token,
-// is not enough. Those prove possession of a URL that sits in an inbox for two
-// weeks and passes through mail gateways, forwards and request logs — fine for
-// landing on /setup, not for charging the card on file. It is also what makes a
-// planted session harmless: someone walked into another account by a crafted
-// link can't be led into saving their own card there.
+// An older link session, or the post-payment checkout token, is not enough.
+// Those prove possession of a URL that has sat in an inbox for days and passed
+// through mail gateways, forwards and request logs — fine for landing on
+// /setup, not for charging the card on file.
 //
 // On failure it writes the 401 and returns false. `code: 'reauth_required'` is
 // what the client keys on to send the member through sign-in and back

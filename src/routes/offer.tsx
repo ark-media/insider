@@ -15,9 +15,10 @@ import { WELCOME_OFFER_CLOSES_LABEL } from "../../shared/welcome-offer";
 // 2026-10-05, open until 2026-10-31).
 //
 // The link carries nothing about the offer: the server decides eligibility from
-// who is signed in and what their own subscription is. A forwarded link is
-// therefore harmless — it shows the recipient their own status, not the
-// sender's offer.
+// who is signed in and what their own subscription is. The link signs its
+// holder in as the member it was sent to, and for its first 48 hours that
+// session can also redeem (server/lib/guards.ts) — so a forwarded email is
+// the member's own offer, taken on their own card.
 export const Route = createFileRoute("/offer")({
   component: OfferPage,
 });

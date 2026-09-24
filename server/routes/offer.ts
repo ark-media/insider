@@ -166,7 +166,8 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
   return [
     defineRoute({
       // Read-only, so a session minted from the offer email is enough to see
-      // the page. Redeeming is not — that needs a real sign-in (below).
+      // the page at any age. Redeeming needs a real sign-in, or the offer
+      // email's link while it is under 48 hours old (below).
       path: '/api/offer/check',
       method: 'GET',
       handler: async (req, _res, json) => {
@@ -236,9 +237,10 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        // Signed in for real, not merely holding the link from the offer email
-        // (guards.ts) — this bills a card. The client turns the 401's
-        // `reauth_required` into a round trip through sign-in and back.
+        // Signed in for real, or holding the offer email's link while it is
+        // under 48 hours old (guards.ts) — this bills a card. The client turns
+        // the 401's `reauth_required` into a round trip through sign-in and
+        // back.
         const email = await requireBillingEmail(req, res, env)
         if (!email) return
 
