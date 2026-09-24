@@ -1,6 +1,10 @@
-import { useState, type ReactNode } from "react";
-import type { BundleUpgradePreview, Me } from "../../lib/auth";
-import { changeTier, getBundleUpgradePreview } from "../../lib/auth";
+import { useEffect, useState, type ReactNode } from "react";
+import type { BundleUpgradePreview, Me, WelcomeOffer } from "../../lib/auth";
+import {
+  changeTier,
+  getBundleUpgradePreview,
+  getWelcomeOffer,
+} from "../../lib/auth";
 import {
   AXIS,
   fmtDate,
@@ -11,6 +15,8 @@ import {
 import { CheckoutModal } from "../CheckoutModal";
 import { BundleConfirm } from "./BundleConfirm";
 import { NOTHING_TO_PAY_TODAY, nextBillLine } from "../../../shared/billing-copy";
+import { formatMinor } from "../../lib/currency";
+import { welcomeOfferIsOpen } from "../../../shared/welcome-offer";
 
 // "What you don't have yet" on the membership tab (T7.2/T7.3/T7.4, decisions
 // D6–D9).
@@ -33,6 +39,16 @@ import { NOTHING_TO_PAY_TODAY, nextBillLine } from "../../../shared/billing-copy
 // covers the other axis (D7).
 
 const NEAR_EXPIRY_DAYS = 14;
+
+// The welcome offer in one line, in the member's own currency and cadence:
+// what the bundle costs them and for how long. The list price is left to the
+// confirm page — a jump card has room for the hook, not the whole quote.
+function welcomeOfferLine(offer: WelcomeOffer): string {
+  const price = formatMinor(offer.offerCents, offer.currency, offer.minorFactor);
+  return offer.plan === "yearly"
+    ? `Your welcome offer: the bundle at ${price} for your first year.`
+    : `Your welcome offer: the bundle at ${price} a month for ${offer.discountedTerms} months.`;
+}
 
 function daysUntil(iso: string | null, now: number): number | null {
   if (!iso) return null;
@@ -69,15 +85,29 @@ export type AxisOffer = {
   body?: string;
   cta: string;
   disabled: boolean;
-  onSelect: () => void;
+  /**
+   * A card that starts a flow on this page. Absent on the one card that is a
+   * signpost instead — the welcome offer, which is a real link to /offer so it
+   * can be middle-clicked and read as a destination.
+   */
+  onSelect?: () => void;
+  to?: "/offer";
 };
 
 export function useEntitlementOffers({
   me,
   onRefresh,
+  now: nowOverride,
 }: {
   me: Me;
   onRefresh: () => void;
+  /**
+   * "Now", for the two windows this hook reads: the near-expiry gift banner and
+   * whether the welcome offer is still open. Injectable because both are date
+   * gates, and a test that can only ask the wall clock is a test that changes
+   * its answer on a given morning. Production passes nothing.
+   */
+  now?: number;
 }): {
   // Gift banners, the confirm panel and the checkout modal: full-width, above
   // the cards. Null when there's nothing to say.
@@ -91,9 +121,36 @@ export function useEntitlementOffers({
     plan: "monthly" | "yearly";
   } | null>(null);
   const [bundle, setBundle] = useState<BundleState>({ kind: "idle" });
+  // The ICMB welcome offer, when this member has one. Null for everyone else,
+  // which is nearly everyone — see the gate below.
+  const [welcome, setWelcome] = useState<WelcomeOffer | null>(null);
   // Captured once (render must stay pure) — a stable "now" for the near-expiry
   // window is fine; the page reloads/refetches on any real state change.
-  const [now] = useState(() => Date.now());
+  const [clockNow] = useState(() => Date.now());
+  const now = nowOverride ?? clockNow;
+
+  // Whether it is even worth asking about the welcome offer. The eligibility
+  // check reads Stripe, so it is gated on the two things that can be known for
+  // free: the campaign is still open, and this member is in the only shape it
+  // applies to — a live Ark+ SUBSCRIPTION (not a gift, which expires and so
+  // can't be moved onto a bundle) with the Fold missing.
+  const eligibleShape =
+    !!me.axes &&
+    !me.axes.circle.active &&
+    me.axes.arkPlus.active &&
+    me.axes.arkPlus.source === "subscription" &&
+    welcomeOfferIsOpen(new Date(now));
+
+  useEffect(() => {
+    if (!eligibleShape) return;
+    let live = true;
+    void getWelcomeOffer().then((r) => {
+      if (live && r.kind === "offer") setWelcome(r.offer);
+    });
+    return () => {
+      live = false;
+    };
+  }, [eligibleShape]);
 
   // Without axes (a stale cached /api/me) there's nothing per-axis to offer;
   // the rest of the dashboard still works.
@@ -229,6 +286,22 @@ export function useEntitlementOffers({
       // on its own (D7).
       const upgradeToBundle =
         axes[meta.other].active && axes[meta.other].source === "subscription";
+      // An invited ICMB member gets their welcome price here instead of the
+      // list-price switch — showing someone full price for a thing they are
+      // holding a discount on is the wrong answer. The card is a signpost: the
+      // confirm flow itself lives at /offer, so the page reached from the offer
+      // email and the page reached from here are the same page, with the same
+      // numbers and the same 18+ box.
+      if (key === "circle" && welcome) {
+        return {
+          key,
+          title: meta.label,
+          body: welcomeOfferLine(welcome),
+          cta: "See your offer",
+          disabled: false,
+          to: "/offer" as const,
+        };
+      }
       return {
         key,
         title: meta.label,

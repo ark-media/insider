@@ -115,6 +115,7 @@ function PaidMembership({ me, onRefresh }: { me: Me; onRefresh: () => void }) {
               title={offer.title}
               body={offer.body}
               cta={offer.cta}
+              to={offer.to}
               onSelect={offer.onSelect}
               disabled={offer.disabled}
               accent
@@ -151,7 +152,7 @@ function JumpCard({
   title: string;
   body?: string;
   cta: string;
-  to?: "/account/podcast-feed" | "/account/fold" | "/account/settings";
+  to?: "/account/podcast-feed" | "/account/fold" | "/account/settings" | "/offer";
   /** An off-site destination, for a card whose surface isn't ours. */
   href?: string;
   /** The brand `href` hands off to, for `outbound_link_clicked`. */
