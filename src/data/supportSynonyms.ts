@@ -192,7 +192,8 @@ export const supportAliases: Alias[] = [
     intent: "feed-setup",
   },
 
-  // --- Inside Call Me Back, in every name members still use for it.
+  // --- Inside Call Me Back (now Call Me Back Ark+), in every name members
+  // still use for it.
   {
     phrases: ["icmb", "inside cmb", "inside call me back", "ama", "friday episode", "nadav", "amit"],
     expand: ["callmeback", "inside callmeback"],

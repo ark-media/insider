@@ -9,7 +9,7 @@ export type ShowSlug =
 
 type ShowRoute =
   | `/podcasts/${Exclude<ShowSlug, "inside-call-me-back">}`
-  | "/plus/inside-call-me-back";
+  | "/plus/call-me-back-ark-plus";
 
 export type ListenPlatform =
   | "apple"
@@ -65,9 +65,9 @@ export const shows: Show[] = [
     // Pointing at a different Beehiiv show is therefore a config change
     // (BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK), not a deploy.
     slug: "inside-call-me-back",
-    route: "/plus/inside-call-me-back",
-    title: "Call Me Back AMA",
-    shortTitle: "CMB AMA",
+    route: "/plus/call-me-back-ark-plus",
+    title: "Call Me Back Ark+",
+    shortTitle: "Call Me Back Ark+",
     tagline:
       "Presenting the challenges and dilemmas facing Israelis to a global audience.",
     description:
