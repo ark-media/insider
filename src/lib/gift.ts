@@ -106,7 +106,7 @@ export async function createGiftCheckout(
 }
 
 export type RedeemGiftResult =
-  | { ok: true; applied: "membership" | "credit" | "mixed" | "extended"; expiresAt?: string }
+  | { ok: true; applied: "membership" | "credit" | "mixed" | "extended" | "held"; expiresAt?: string }
   | { ok: false; error: string; status?: number };
 
 // Claim a gift the recipient received by email. Requires a signed-in session
@@ -122,7 +122,7 @@ export async function redeemGift(token: string): Promise<RedeemGiftResult> {
     });
     const data = (await res.json().catch(() => ({}))) as {
       redeemed?: boolean;
-      applied?: "membership" | "credit" | "mixed" | "extended";
+      applied?: "membership" | "credit" | "mixed" | "extended" | "held";
       expires_at?: string;
       error?: string;
     };
@@ -157,7 +157,7 @@ export async function claimGiftWithMagicToken(mt: string): Promise<RedeemGiftRes
     });
     const data = (await res.json().catch(() => ({}))) as {
       redeemed?: boolean;
-      applied?: "membership" | "credit" | "mixed" | "extended";
+      applied?: "membership" | "credit" | "mixed" | "extended" | "held";
       expires_at?: string;
       error?: string;
     };

@@ -145,7 +145,7 @@ interface EventMap {
   // Recipient side of the gift funnel: the claim landed and access was granted (a
   // new membership term), an existing subscription was extended, or the value was
   // applied as account credit.
-  gift_redeemed: { applied: 'membership' | 'credit' | 'mixed' | 'extended' }
+  gift_redeemed: { applied: 'membership' | 'credit' | 'mixed' | 'extended' | 'held' }
   // Private-feed activation: the terminal hand-off action, and which app it
   // was for (open a deep link / copy the RSS URL / email the link).
   feed_activated: { app: string; method: 'open' | 'copy' | 'email' }

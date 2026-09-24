@@ -147,9 +147,13 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
       // Pull the freshly-minted session so the app reflects the new access,
       // then drop into the new-account welcome flow.
       await refresh();
-      // Credit and extend both land on an existing account/subscription — send
-      // them to /account; a fresh (or mixed) grant drops into the welcome flow.
-      if (result.applied === "credit" || result.applied === "extended") {
+      // A held gift has nothing to show yet — stay here so the recipient reads
+      // why. Credit and extend both land on an existing account/subscription —
+      // send them to /account; a fresh (or mixed) grant drops into the welcome
+      // flow.
+      if (result.applied === "held") {
+        setClaim({ kind: "done", result });
+      } else if (result.applied === "credit" || result.applied === "extended") {
         navigate({ to: "/account" });
       } else {
         navigate({ to: "/welcome", search: { claimed: true } });
@@ -161,6 +165,8 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
     if (failure.terminal) clearLandingCredentials();
     setClaim({ kind: "error", ...failure });
   };
+
+  if (claim.kind === "done") return <ClaimDoneCard applied={claim.result.applied} />;
 
   if (claim.kind === "error") {
     return (
@@ -243,29 +249,7 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
     );
   }
 
-  if (claim.kind === "done") {
-    const applied = claim.result.applied;
-    // Credit and extend both act on an account the recipient already has — the
-    // copy differs but both route to /account rather than the new-member welcome.
-    const alreadyActive = applied === "credit" || applied === "extended";
-    const message =
-      applied === "credit"
-        ? "You already have an active membership, so your gift has been added as account credit toward your future renewals."
-        : applied === "extended"
-          ? "You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift."
-          : "Your gift membership is active. Your welcome page walks you through getting set up.";
-    return (
-      <Card>
-        <p className="eyebrow text-cyan">You're all set</p>
-        <p className="mt-4 text-body-sm">{message}</p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Link to={alreadyActive ? "/account" : "/welcome"} className={primaryCta}>
-            {alreadyActive ? "Go to your account" : "Get started"} →
-          </Link>
-        </div>
-      </Card>
-    );
-  }
+  if (claim.kind === "done") return <ClaimDoneCard applied={claim.result.applied} />;
 
   if (state.kind === "loading") {
     return (
@@ -318,6 +302,42 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
             {claiming ? "Claiming…" : "Claim your gift"} →
           </button>
         )}
+      </div>
+    </Card>
+  );
+}
+
+// The success screen for either claim path. Only the token path lands here for
+// every outcome; the magic-link path navigates away on success and shows it
+// just for a held gift, which has nowhere better to go.
+function ClaimDoneCard({
+  applied,
+}: {
+  applied: Extract<RedeemGiftResult, { ok: true }>["applied"];
+}) {
+  // Credit, extend and held all act on an account the recipient already has —
+  // the copy differs but all route to /account rather than the new-member
+  // welcome.
+  const alreadyActive =
+    applied === "credit" || applied === "extended" || applied === "held";
+  const message =
+    applied === "credit"
+      ? "You already have an active membership, so your gift has been added as account credit toward your future renewals."
+      : applied === "extended"
+        ? "You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift."
+        : applied === "held"
+          ? "You already have an active membership, so we couldn't apply your gift automatically. It's safely recorded, and our team will apply it by hand and email you when it's done."
+          : "Your gift membership is active. Your welcome page walks you through getting set up.";
+  return (
+    <Card>
+      <p className="eyebrow text-cyan">
+        {applied === "held" ? "Gift received" : "You're all set"}
+      </p>
+      <p className="mt-4 text-body-sm">{message}</p>
+      <div className="mt-8 flex flex-wrap gap-3">
+        <Link to={alreadyActive ? "/account" : "/welcome"} className={primaryCta}>
+          {alreadyActive ? "Go to your account" : "Get started"} →
+        </Link>
       </div>
     </Card>
   );

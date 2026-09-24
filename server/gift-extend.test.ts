@@ -31,7 +31,16 @@ const RECIPIENT = { email: 'member@example.com', name: 'Mem Ber', auth0Sub: 'aut
 const DAY = 86_400
 
 const originalFetch = globalThis.fetch
-globalThis.fetch = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch
+// Records Resend sends, for the unapplied-gift alert.
+const emailsSent: Array<{ to: string; subject: string; html: string; idempotencyKey?: string }> = []
+globalThis.fetch = (async (url: string, init?: RequestInit) => {
+  if (String(url).includes('api.resend.com')) {
+    const body = JSON.parse(String(init?.body)) as { to: string; subject: string; html: string }
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    emailsSent.push({ ...body, idempotencyKey: headers['Idempotency-Key'] })
+  }
+  return new Response('{}', { status: 200 })
+}) as unknown as typeof fetch
 silenceExpectedConsole()
 afterAll(() => {
   globalThis.fetch = originalFetch
@@ -107,6 +116,7 @@ beforeEach(() => {
   sqlCalls.length = 0
   updates.length = 0
   balanceTxns.length = 0
+  emailsSent.length = 0
   __resetPriceCacheForTests()
   nextSqlResult = (sql) => {
     if (/update gift set status = 'redeemed'/.test(sql)) return [{ redemption_token: 'tok_1' }]
@@ -216,5 +226,173 @@ describe('crediting a Bundle subscriber', () => {
       amount: 4800,
       currency: 'usd',
     })
+  })
+})
+
+// A gift whose Stripe half didn't happen is spent all the same, so the
+// recipient is told the truth and staff are alerted to handle it by hand.
+describe('a gift that could not be applied in Stripe', () => {
+  const ALERT_ENV = { ...ENV, RESEND_API_KEY: 're_test' }
+  const redeemAlerting = (g: GiftRow) =>
+    redeemGiftForRecipient({ sql: getDb(ALERT_ENV), stripe, env: ALERT_ENV, activator }, g, RECIPIENT)
+
+  test('a gift in another currency than the Bundle sub is held, and support is alerted', async () => {
+    membership = paidRow('bundle')
+    liveSub = { id: 'sub_m', currency: 'cad' }
+
+    const result = await redeemAlerting(gift('ark-plus', '1yr', 'usd'))
+    expect(result).toMatchObject({ ok: true, applied: 'held' })
+    expect(balanceTxns).toEqual([])
+    expect(emailsSent).toHaveLength(1)
+    expect(emailsSent[0]).toMatchObject({
+      to: 'support@arkmedia.org',
+      subject: 'Gift needs manual handling: member@example.com',
+      idempotencyKey: 'gift_unapplied_tok_1',
+    })
+    expect(emailsSent[0]!.html).toContain('different currency')
+    expect(emailsSent[0]!.html).toContain('CAD')
+  })
+
+  test('a failed extension is alerted too', async () => {
+    membership = paidRow('ark-plus')
+    liveSub = {
+      id: 'sub_m',
+      schedule: null,
+      pause_collection: null,
+      items: {
+        data: [
+          {
+            current_period_end: Math.floor(Date.now() / 1000) + 20 * DAY,
+            price: { recurring: { interval: 'month' } },
+          },
+        ],
+      },
+    }
+    const failing = {
+      ...stripe,
+      subscriptions: {
+        ...stripe.subscriptions,
+        update: async () => {
+          throw new Error('stripe down')
+        },
+      },
+    } as unknown as Stripe
+
+    const result = await redeemGiftForRecipient(
+      { sql: getDb(ALERT_ENV), stripe: failing, env: ALERT_ENV, activator },
+      gift('ark-plus', '6mo'),
+      RECIPIENT,
+    )
+    expect(result).toMatchObject({ ok: true, applied: 'held' })
+    expect(emailsSent).toHaveLength(1)
+    expect(emailsSent[0]!.html).toContain('extension')
+  })
+
+  test('a $0 gift is held with a zero-paid reason, not a currency mismatch', async () => {
+    membership = paidRow('bundle')
+    liveSub = { id: 'sub_m', currency: 'usd' }
+
+    const result = await redeemAlerting({ ...gift('ark-plus', '1yr'), amount_cents: 0 })
+    expect(result).toMatchObject({ ok: true, applied: 'held' })
+    expect(emailsSent).toHaveLength(1)
+    expect(emailsSent[0]!.html).toContain('paid at 0')
+    expect(emailsSent[0]!.html).toContain('nothing to refund')
+    expect(emailsSent[0]!.html).not.toContain('different currency')
+  })
+
+  test('an unreadable subscription currency is reported as such, not as a mismatch', async () => {
+    membership = paidRow('bundle')
+    const failing = {
+      ...stripe,
+      subscriptions: {
+        ...stripe.subscriptions,
+        retrieve: async () => {
+          throw new Error('stripe down')
+        },
+      },
+    } as unknown as Stripe
+
+    const result = await redeemGiftForRecipient(
+      { sql: getDb(ALERT_ENV), stripe: failing, env: ALERT_ENV, activator },
+      gift('ark-plus', '1yr'),
+      RECIPIENT,
+    )
+    expect(result).toMatchObject({ ok: true, applied: 'held' })
+    expect(balanceTxns).toEqual([])
+    expect(emailsSent[0]!.html).toContain("couldn&#39;t be reached")
+    expect(emailsSent[0]!.html).not.toContain('different currency')
+  })
+
+  test('a failed gift-price lookup still holds the gift and alerts, rather than 500ing', async () => {
+    membership = paidRow('bundle')
+    liveSub = { id: 'sub_m', currency: 'usd' }
+    const failing = {
+      ...stripe,
+      prices: {
+        list: async () => {
+          throw new Error('stripe down')
+        },
+      },
+    } as unknown as Stripe
+
+    const result = await redeemGiftForRecipient(
+      { sql: getDb(ALERT_ENV), stripe: failing, env: ALERT_ENV, activator },
+      gift('ark-plus', '1yr'),
+      RECIPIENT,
+    )
+    expect(result).toMatchObject({ ok: true, applied: 'held' })
+    expect(emailsSent).toHaveLength(1)
+    expect(emailsSent[0]!.html).toContain('price lookup')
+  })
+
+  test('a partial grant tells support the recipient does not know the rest is pending', async () => {
+    membership = paidRow('ark-plus')
+    liveSub = {
+      id: 'sub_m',
+      schedule: null,
+      pause_collection: null,
+      items: {
+        data: [
+          {
+            current_period_end: Math.floor(Date.now() / 1000) + 20 * DAY,
+            price: { recurring: { interval: 'month' } },
+          },
+        ],
+      },
+    }
+    const failing = {
+      ...stripe,
+      subscriptions: {
+        ...stripe.subscriptions,
+        update: async () => {
+          throw new Error('stripe down')
+        },
+      },
+    } as unknown as Stripe
+    const grantsCircle = {
+      activateGiftForRecipient: async () => ({
+        arkPlusEndsAt: null,
+        circleEndsAt: new Date(Date.now() + 365 * DAY * 1000).toISOString(),
+      }),
+    } as unknown as Deps['activator']
+
+    const result = await redeemGiftForRecipient(
+      { sql: getDb(ALERT_ENV), stripe: failing, env: ALERT_ENV, activator: grantsCircle },
+      gift('bundle', '1yr'),
+      RECIPIENT,
+    )
+    expect(result).toMatchObject({ ok: true, applied: 'membership' })
+    expect(emailsSent).toHaveLength(1)
+    expect(emailsSent[0]!.html).toContain('shown it as active')
+    expect(emailsSent[0]!.html).not.toContain('They were told the team will apply it by hand')
+  })
+
+  test('an applied gift sends no alert', async () => {
+    membership = paidRow('bundle')
+    liveSub = { id: 'sub_m', currency: 'usd' }
+
+    const result = await redeemAlerting(gift('ark-plus', '1yr'))
+    expect(result).toMatchObject({ ok: true, applied: 'credit' })
+    expect(emailsSent).toEqual([])
   })
 })

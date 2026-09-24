@@ -36,17 +36,12 @@ import type {
   MemberDirectoryEntry,
   MemberDirectoryPage,
 } from '../../shared/member-directory.js'
+import { stripeCustomerUrl } from '../lib/stripe-dashboard.js'
 
 const PAGE_SIZE = 25
 
 function isTierFilter(v: string | null): v is 'ark-plus' | 'circle' | 'bundle' {
   return v === 'ark-plus' || v === 'circle' || v === 'bundle'
-}
-
-// Live vs test dashboard URL is inferred from the secret-key mode.
-function stripeCustomerUrl(customerId: string, secretKey: string | undefined): string {
-  const test = secretKey?.startsWith('sk_test_') ?? false
-  return `https://dashboard.stripe.com/${test ? 'test/' : ''}customers/${customerId}`
 }
 
 type StripeCustomerInfo = { email: string | null; name: string | null }
