@@ -241,6 +241,7 @@ describe('POST /api/beehiiv/subscribe — happy path', () => {
     // without proof of control, so reactivating would let anyone override a
     // reader's recorded opt-out.
     expect(body.reactivate_existing).toBe(false)
+    expect(body.send_welcome_email).toBe(true)
     expect(body.utm_source).toBe('insider-site')
   })
 })
