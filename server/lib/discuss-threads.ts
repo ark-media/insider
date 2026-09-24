@@ -107,11 +107,23 @@ async function listDiscussThreadsByNewsletter(
 // response can't be edge-cached (it differs for members), so without a cache
 // every newsletter view is a Neon query. A minute of staleness only delays a
 // new "Discuss" link; this instance's own writes clear it immediately.
+//
+// A write bumps `byNewsletterGeneration`. The in-flight key carries the
+// generation, so a request after a write starts a fresh query instead of
+// joining one that began before it, and a load only fills the cache if no
+// write landed while it ran — otherwise a pre-write result would be put back
+// for another minute.
 const BY_NEWSLETTER_TTL_MS = 60_000
 const byNewsletterCache = makeTTLCache<NewsletterSlug, DiscussThread[]>(
   BY_NEWSLETTER_TTL_MS,
 )
-const byNewsletterFlight = createSingleFlight<NewsletterSlug, DiscussThread[]>()
+const byNewsletterFlight = createSingleFlight<string, DiscussThread[]>()
+let byNewsletterGeneration = 0
+
+function invalidateByNewsletterCache(): void {
+  byNewsletterGeneration++
+  byNewsletterCache.clear()
+}
 
 export async function listDiscussThreadsByNewsletterCached(
   sql: Sql,
@@ -119,9 +131,12 @@ export async function listDiscussThreadsByNewsletterCached(
 ): Promise<DiscussThread[]> {
   const cached = byNewsletterCache.get(newsletterSlug)
   if (cached) return cached
-  return byNewsletterFlight.run(newsletterSlug, async () => {
+  const generation = byNewsletterGeneration
+  return byNewsletterFlight.run(`${generation}:${newsletterSlug}`, async () => {
     const threads = await listDiscussThreadsByNewsletter(sql, newsletterSlug)
-    byNewsletterCache.set(newsletterSlug, threads)
+    if (generation === byNewsletterGeneration) {
+      byNewsletterCache.set(newsletterSlug, threads)
+    }
     return threads
   })
 }
@@ -159,13 +174,13 @@ async function insertDiscussThread(
               circle_thread_url, circle_space_id, circle_post_id,
               beehiiv_body_patched, created_at
   `) as Row[]
-  byNewsletterCache.clear()
+  invalidateByNewsletterCache()
   return mapRow(rows[0])
 }
 
 export async function deleteDiscussThread(sql: Sql, id: string): Promise<boolean> {
   const rows = (await sql`delete from discuss_threads where id = ${id} returning id`) as Row[]
-  byNewsletterCache.clear()
+  invalidateByNewsletterCache()
   return rows.length > 0
 }
 
