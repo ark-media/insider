@@ -15,6 +15,7 @@ import {
 import { feedIsSetUp, sendFeedEmail, type UserFeed } from "../lib/auth";
 import { trackEvent } from "../lib/analytics";
 import { useCopyToClipboard } from "../lib/useCopyToClipboard";
+import type { SpotifyReturn } from "../lib/spotifyReturn";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 
 // Server route that mints Beehiiv's auto-login and 302s the member into
@@ -97,13 +98,14 @@ function useHandheld(): boolean {
  * Spotify stays first and set apart: it links the account rather than a device,
  * so it covers every show at once on whatever the member is holding. The
  * hand-off leaves this tab for Beehiiv and Spotify, then Beehiiv sends them
- * back with `?spotify=linked` — that's when the "now follow the show" half
- * appears and the shows are checked off, keyed off the real return rather
- * than the click (the route does the marking).
+ * back to this page — that's when the "now follow the show" half appears and
+ * the shows are checked off, keyed off the real return rather than the click
+ * (the route does the marking). A failed link comes back too, flagged by
+ * Beehiiv's `toast=error`, and gets a retry instead.
  */
 export function FeedSetup({
   feeds,
-  spotifyLinked = false,
+  spotify,
   provisioning = false,
 }: {
   feeds: UserFeed[];
@@ -115,11 +117,12 @@ export function FeedSetup({
    */
   provisioning?: boolean;
   /**
-   * The member came back from Beehiiv's Spotify consent flow carrying
-   * `?spotify=linked`. That's the only signal that Open Access actually
-   * finished — the click itself is not a confirmation.
+   * How the member came back from Beehiiv's Spotify consent flow, if they
+   * just did (the route reads it off the URL — see SpotifyReturn). "linked" is
+   * the only signal that Open Access actually finished; the click itself is
+   * not a confirmation.
    */
-  spotifyLinked?: boolean;
+  spotify?: SpotifyReturn;
 }) {
   const { markFeedsSetUp } = useSubscriberAuth();
 
@@ -172,7 +175,7 @@ export function FeedSetup({
           <>
             <SpotifyRow
               feeds={feeds}
-              linked={spotifyLinked}
+              status={spotify}
               onLink={() => {
                 // Only the click is tracked here. The shows are checked off
                 // when Beehiiv sends the member back with `?spotify=linked`
@@ -258,21 +261,24 @@ function SetupProgress({ feeds }: { feeds: UserFeed[] }) {
 // Telling them about step 2 before they leave is what gets them to finish it.
 //
 // The hand-off is a same-tab round trip. Beehiiv honours `redirect_path` (see
-// buildSpotifyHandoff) and only redirects after the member approves, so the
-// return carrying `?spotify=linked` is the confirmation. A return that landed
-// in a background tab would be worse than useless — OutboundLink defaults to
-// `_blank`, so this has to override it. Once linked, the follow step takes
-// over the row and "Link again" drops to a quiet text link.
+// buildSpotifyHandoff), so the member comes back here either way. A return
+// that landed in a background tab would be worse than useless — OutboundLink
+// defaults to `_blank`, so this has to override it. Once linked, the follow
+// step takes over the row and "Link again" drops to a quiet text link. A
+// failed link keeps the big button, relabelled "Try again", with a note on
+// the one cause we know of.
 function SpotifyRow({
   feeds,
-  linked,
+  status,
   onLink,
 }: {
   feeds: UserFeed[];
-  /** Confirmed linked — the member came back carrying Beehiiv's marker. */
-  linked: boolean;
+  /** How the member came back from the hand-off, if they just did. */
+  status?: SpotifyReturn;
   onLink: () => void;
 }) {
+  const linked = status === "linked";
+  const failed = status === "failed";
   return (
     <div className="mt-10 border border-cyan/40 bg-cyan/[0.06]">
       <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:gap-6">
@@ -298,11 +304,43 @@ function SpotifyRow({
               : "inline-flex shrink-0 items-center justify-center gap-2 bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           }
         >
-          {linked ? "Link again" : "Link Spotify"}
+          {linked ? "Link again" : failed ? "Try again" : "Link Spotify"}
           {linked ? null : <span aria-hidden="true">→</span>}
         </OutboundLink>
       </div>
       {linked ? <SpotifyFollowPanel feeds={feeds} /> : null}
+      {failed ? <SpotifyLinkFailed /> : null}
+    </div>
+  );
+}
+
+// Beehiiv sent the member back with `toast=error`: the link didn't happen.
+// Its own `message` param isn't shown — it's free text off the URL, which
+// anyone could put there. Seen live 2026-09-24 on a member whose Spotify
+// account was still linked to a different Ark Media login, so that's the
+// cause worth naming, with the page where they can check it.
+function SpotifyLinkFailed() {
+  return (
+    <div
+      role="alert"
+      className="border-t border-cyan/40 bg-navy-900/40 px-5 py-4 text-body-sm"
+    >
+      <p className="font-bold text-fg-strong">
+        Spotify didn't link, so nothing is unlocked yet.
+      </p>
+      <p className="mt-1 text-fg-muted">
+        Try again. If it keeps failing, your Spotify account may already be
+        linked to a different Ark Media login — you can check and unlink it on{" "}
+        <OutboundLink
+          href={spotifyContentAccessUrl}
+          platform="spotify"
+          placement="feed_setup_link_failed"
+          className="text-cyan underline underline-offset-4 hover:text-fg-strong"
+        >
+          Spotify's linked accounts page
+        </OutboundLink>
+        .
+      </p>
     </div>
   );
 }
