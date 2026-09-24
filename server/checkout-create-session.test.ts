@@ -778,21 +778,21 @@ describe('GET /api/stripe/billing-currency', () => {
     existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
     const res = await get()
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ currency: null })
+    expect(res.__json()).toEqual({ currency: null, email: null })
     expect(stripeCalls).toEqual([])
   })
 
   test('signed in → the currency their Customer bills in', async () => {
     existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
     const res = await get(await sessionCookie('a@b.co'))
-    expect(res.__json()).toEqual({ currency: 'cad' })
+    expect(res.__json()).toEqual({ currency: 'cad', email: 'a@b.co' })
   })
 
   test('the checkout token is not a login → null', async () => {
     existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
     const token = await signCheckoutToken('a@b.co', BASE_ENV, null)
     const res = await get(`${CHECKOUT_COOKIE_NAME}=${token}`)
-    expect(res.__json()).toEqual({ currency: null })
+    expect(res.__json()).toEqual({ currency: null, email: null })
   })
 })
 

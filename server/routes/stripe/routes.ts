@@ -1056,16 +1056,21 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // The currency the checkout modal must hold its picker to: the one the
       // signed-in member's existing Customer bills in, or null for anyone free
       // to choose (signed out, never billed). Mirrors create-checkout-session's
-      // currency lock, which only engages for a durable login — the same test
-      // as its `provenEmail`, minus the typed address it doesn't have yet.
+      // currency lock, which only engages for a durable login buying under
+      // that login's own address — the same test as its `provenEmail`. The
+      // address the lock belongs to rides along so the modal can make the
+      // second half of that test against the email the buyer types: bought
+      // for another address, the purchase gets a fresh Customer and a free
+      // choice of currency.
       path: '/api/stripe/billing-currency',
       method: 'GET',
       handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
         const identity = await resolveRequestIdentity(req, env)
-        if (identity?.source !== 'auth0') return json(200, { currency: null })
-        const customer = await findReusableSubscriber(stripe, identity.email)
-        json(200, { currency: billingCurrencyOf(customer) })
+        if (identity?.source !== 'auth0') return json(200, { currency: null, email: null })
+        const email = identity.email.trim().toLowerCase()
+        const customer = await findReusableSubscriber(stripe, email)
+        json(200, { currency: billingCurrencyOf(customer), email })
       },
     }),
 
