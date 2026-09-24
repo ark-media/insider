@@ -126,7 +126,7 @@
 
 ### Link columns
 - **COLUMN TITLE**: Podcasts
-- **LINKS**: Call Me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
+- **LINKS**: Call me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
 - **COLUMN TITLE**: Read
 - **LINKS**: Newsletters / Hosts / About / Israel Votes
 - **COLUMN TITLE**: Connect
@@ -270,9 +270,9 @@ single member only ever sees some of them.
 - **BUTTON**: Email support instead
 - *(shown only to: signed out)*
 
-#### I subscribed to Inside Call Me Back
-- **CHIP**: I subscribed to Inside Call Me Back
-- **BLURB**: What changed when Inside Call Me Back became Ark+.
+#### I subscribed to Inside Call me Back
+- **CHIP**: I subscribed to Inside Call me Back
+- **BLURB**: What changed when Inside Call me Back became Ark+.
 - **BUTTON**: Sign in to check
 - **BUTTON**: Send us a message
 - **BUTTON**: Check your feed setup
@@ -392,7 +392,7 @@ single member only ever sees some of them.
 
 ### Ark+ upsell in hero (free shows, non-members only)
 - **LABEL**: Want more?
-- **BODY**: Ark+ members get the members-only newsletter and the ad-free Call Me Back | Ark+ feed — add the Fold, or get both in the bundle.
+- **BODY**: Ark+ members get the members-only newsletter and the ad-free Call me Back | Ark+ feed — add the Fold, or get both in the bundle.
 - **CTA**: Join Ark+ →
 
 ### Ark+ members-only gate (paid shows, non-members — replaces the episode browser)
@@ -455,7 +455,7 @@ single member only ever sees some of them.
 
 ### Ark+ members-only gate (paid episodes, replaces the player)
 - **LABEL**: Ark+ members only
-- **BODY**: This episode is part of Call Me Back | Ark+. Join Ark+ to listen.
+- **BODY**: This episode is part of Call me Back | Ark+. Join Ark+ to listen.
 - **CTA**: Become an Ark+ member →
 
 ### Show notes
@@ -477,9 +477,9 @@ single member only ever sees some of them.
 - **CTA**: ← Back to {show title}
 
 ## Show data (src/data/shows.ts — used site-wide)
-### Call Me Back
-- **TITLE**: Call Me Back
-- **TAGLINE / DESCRIPTION**: Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.
+### Call me Back
+- **TITLE**: Call me Back
+- **TAGLINE / DESCRIPTION**: Call me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.
 - **HOSTS**: Dan Senor
 - **CADENCE**: New episodes Sundays and Thursdays
 
@@ -495,9 +495,9 @@ single member only ever sees some of them.
 - **HOSTS**: Ark Media newsroom
 - **CADENCE**: Weekdays
 
-### Call Me Back | Ark+ (no show page — members hear it through the private feed)
-- **TITLE**: Call Me Back | Ark+
-- **SHORT TITLE**: Call Me Back | Ark+
+### Call me Back | Ark+ (no show page — members hear it through the private feed)
+- **TITLE**: Call me Back | Ark+
+- **SHORT TITLE**: Call me Back | Ark+
 - **TAGLINE**: Presenting the challenges and dilemmas facing Israelis to a global audience.
 - **DESCRIPTION**: Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.
 - **HOSTS**: Dan Senor
@@ -535,7 +535,7 @@ single member only ever sees some of them.
 - **EYEBROW**: Ark+
 - **HEADLINE**: The full Ark Media experience. ("experience." in the cyan accent)
 - **LEAD**: Ark+ is our premium membership, offering ad-free podcasts, unlimited access to all written content, and full access to the Fold.
-- **BULLET**: Call Me Back | Ark+ — extended interviews, ad-free
+- **BULLET**: Call me Back | Ark+ — extended interviews, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
 - **BULLET**: The Fold — join the hosts and other members in the room
 - **BULLET**: Live events and Q&As
@@ -549,7 +549,7 @@ single member only ever sees some of them.
 ### Hero — Ark+ member without the Fold ("add the Fold")
 - **EYEBROW**: The Fold
 - **HEADLINE**: You have the feed. Now join the Fold. ("the Fold." in the cyan accent)
-- **LEAD**: You already get Call Me Back | Ark+ ad-free and the members-only newsletters. Add the Fold — conversations with the hosts, live member events, and Dan's book club.
+- **LEAD**: You already get Call me Back | Ark+ ad-free and the members-only newsletters. Add the Fold — conversations with the hosts, live member events, and Dan's book club.
 - **BULLET**: The Fold — talk with the hosts and fellow members
 - **BULLET**: Live member events and Q&As
 - **BULLET**: Dan's book club
@@ -563,8 +563,8 @@ single member only ever sees some of them.
 ### Hero — Fold member without Ark+ ("add Ark+")
 - **EYEBROW**: Ark+
 - **HEADLINE**: You're in the room. Now go ad-free. ("ad-free." in the cyan accent)
-- **LEAD**: You're already part of the Fold. Add Ark+ — Call Me Back | Ark+ as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
-- **BULLET**: Call Me Back | Ark+ — private, ad-free feed
+- **LEAD**: You're already part of the Fold. Add Ark+ — Call me Back | Ark+ as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
+- **BULLET**: Call me Back | Ark+ — private, ad-free feed
 - **BULLET**: The full Ark Media network, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
 - **BULLET**: Early access to new shows
@@ -578,7 +578,7 @@ single member only ever sees some of them.
 - **EYEBROW**: Membership
 - **HEADLINE**: You have the full Ark Media experience. ("experience." in the cyan accent)
 - **LEAD**: You have Ark+ and the Fold — the private, ad-free feed, the members-only newsletters, and the Fold in full. Thank you for being a member.
-- **BULLET**: Call Me Back | Ark+ — private, ad-free feed
+- **BULLET**: Call me Back | Ark+ — private, ad-free feed
 - **BULLET**: Members-only newsletters
 - **BULLET**: The Fold, live events, and Dan's book club
 - **PRIMARY CTA**: Manage your membership
@@ -617,10 +617,10 @@ single member only ever sees some of them.
 ### Tier copy (shared by cards and comparison table)
 - **TIER NAME (ARK+)**: Ark+
 - **TIER BLURB (ARK+)**: Every Ark Media podcast, ad-free, plus the members-only newsletters.
-- **TIER FEATURES (ARK+)**: Call Me Back | Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters
+- **TIER FEATURES (ARK+)**: Call me Back | Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters
 - **TIER NAME (BUNDLE, FEATURED)**: Ark+ & The Fold
 - **TIER BLURB (BUNDLE)**: Both — the private feed and the Fold, one membership.
-- **TIER FEATURES (BUNDLE)**: Call Me Back | Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Fold / Live member events & Q&As
+- **TIER FEATURES (BUNDLE)**: Call me Back | Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Fold / Live member events & Q&As
 - **TIER NAME (FOLD)**: The Fold
 - **TIER BLURB (FOLD)**: The Fold — conversations, member events, and Dan's book club.
 - **TIER FEATURES (FOLD)**: The Fold / Live member events & Q&As / Dan's book club
@@ -662,13 +662,13 @@ single member only ever sees some of them.
 - **EYEBROW**: Details
 - **ENTRY**: Ad-free podcasts
 - **ENTRY SUMMARY**: Every Ark Media show in a private feed, with the ads cut.
-- **ENTRY BULLETS**: Call Me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
+- **ENTRY BULLETS**: Call me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
 - **ENTRY**: Subscriber-exclusive content
 - **ENTRY SUMMARY**: Episodes only members hear.
-- **ENTRY BULLETS**: Call Me Back | Ark+ — in your Call Me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
+- **ENTRY BULLETS**: Call me Back | Ark+ — in your Call me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
 - **ENTRY**: Early access
 - **ENTRY SUMMARY**: Hear it before everyone else.
-- **ENTRY BULLETS**: Mid-week Call Me Back episode — Wednesdays, not Fridays / History show
+- **ENTRY BULLETS**: Mid-week Call me Back episode — Wednesdays, not Fridays / History show
 - **ENTRY**: Ad-free video episodes
 - **ENTRY SUMMARY**: The video editions of the shows, without the ad breaks.
 - **ENTRY**: Premium access to the Fold
@@ -846,7 +846,7 @@ single member only ever sees some of them.
 ### What Ark Media does
 - **SECTION HEADING**: What Ark Media does
 - **BODY (MAIN COLUMN)**: Ark Media is a podcast network that explores the big questions shaping Jewish life, Israel's future, and our rapidly changing world. Through conversations with leading Jewish thinkers from around the world, Ark Media aims to build a global community driven by curiosity and meaningful dialogue.
-- **BODY (SIDE COLUMN)**: The company sits behind Call Me Back with Dan Senor, For Heaven's Sake with Donniel Hartman and Yossi Klein Halevi, Ark News Daily, and an Ark+ membership that funds the work. (show names in italics)
+- **BODY (SIDE COLUMN)**: The company sits behind Call me Back with Dan Senor, For Heaven's Sake with Donniel Hartman and Yossi Klein Halevi, Ark News Daily, and an Ark+ membership that funds the work. (show names in italics)
 
 ### Link cards
 - **CARD 1 EYEBROW**: Careers
@@ -867,7 +867,7 @@ single member only ever sees some of them.
 ### Properties cards
 - **SECTION HEADING**: Properties
 - **CARD 1 EYEBROW / TITLE**: Podcast network — Ark Media podcasts
-- **CARD 1 BODY**: Four shows — Call Me Back, For Heaven's Sake, Ark News Daily, and Chosen People Problems.
+- **CARD 1 BODY**: Four shows — Call me Back, For Heaven's Sake, Ark News Daily, and Chosen People Problems.
 - **CARD 2 EYEBROW / TITLE**: Newsroom — Newsletters
 - **CARD 2 BODY**: Curated dispatches from the Ark Media newsroom. Free editions ship to anyone with an email; members-only editions ship to Ark+ subscribers.
 - **CARD 3 EYEBROW / TITLE**: Members' app — The Fold
@@ -899,9 +899,9 @@ single member only ever sees some of them.
 
 ## Host data (src/data/hosts.ts)
 ### Dan Senor
-- **ROLE**: Host, Call Me Back
+- **ROLE**: Host, Call me Back
 - **SHORT BIO**: Author of The Genius of Israel and Start-Up Nation. Former foreign policy advisor.
-- **LONG BIO**: Dan Senor is the host of Call Me Back. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.
+- **LONG BIO**: Dan Senor is the host of Call me Back. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.
 
 ### Donniel Hartman
 - **ROLE**: Host, For Heaven's Sake
@@ -914,17 +914,17 @@ single member only ever sees some of them.
 - **LONG BIO**: Yossi Klein Halevi is the author of Letters to My Palestinian Neighbor and Like Dreamers. A Senior Fellow at the Shalom Hartman Institute in Jerusalem, he co-hosts For Heaven's Sake with Donniel Hartman.
 
 ### Nadav Eyal
-- **ROLE**: Call Me Back Contributor
+- **ROLE**: Call me Back Contributor
 - **SHORT BIO**: Columnist at Yedioth Ahronoth. Author of Revolt. One of Israel's most read journalists.
-- **LONG BIO**: Nadav Eyal is one of Israel's leading journalists and a columnist at Yedioth Ahronoth. His book Revolt (Ecco, 2021) won the Bernstein Prize. He appears regularly on Call Me Back for analysis on Israeli politics and security.
+- **LONG BIO**: Nadav Eyal is one of Israel's leading journalists and a columnist at Yedioth Ahronoth. His book Revolt (Ecco, 2021) won the Bernstein Prize. He appears regularly on Call me Back for analysis on Israeli politics and security.
 
 ### Amit Segal
-- **ROLE**: Call Me Back Contributor
+- **ROLE**: Call me Back Contributor
 - **SHORT BIO**: Chief political analyst for Channel 12 News. The most quoted political voice in Israel.
 - **LONG BIO**: Amit Segal is the chief political analyst for Channel 12 News in Israel and a columnist at Yedioth Ahronoth. He is widely regarded as one of the most influential political journalists in Israel.
 
 ### Tal Becker (marked placeholder in code)
-- **ROLE**: Call Me Back Contributor
+- **ROLE**: Call me Back Contributor
 - **SHORT BIO**: Vice President at the Shalom Hartman Institute. Former Legal Adviser to Israel's Ministry of Foreign Affairs.
 - **LONG BIO**: Dr. Tal Becker is Vice President at the Shalom Hartman Institute, where he directs its educational initiatives on Israel and the Jewish world and is a lead faculty member of the iEngage Project. Previously, he served as Legal Adviser of the Israeli Ministry of Foreign Affairs and was a senior member of Israel's peace negotiation team, including a key role in negotiating the Abraham Accords with the UAE, Bahrain, and Morocco. He holds a doctorate from Columbia University and is the author of Terrorism and the State.
 
@@ -1027,7 +1027,7 @@ single member only ever sees some of them.
 ## Book Club data (src/data/bookClub.ts)
 ### Dan's notes on monthly picks (titles/authors final; notes still marked PLACEHOLDER in source)
 - **THE PITY OF IT ALL — AMOS ELON (OCTOBER '26, FEATURED)**: subtitle "A Portrait of the German-Jewish Epoch, 1743–1933". PLACEHOLDER — two centuries of German Jews building a country's culture while being told they could never quite belong to it. Elon writes the whole arc without ever letting you forget how it ends. I can't think of a better book to start with.
-- **THE CAULDRON — SIMON SEBAG MONTEFIORE (NOVEMBER '26)**: subtitle "The Making of the Modern Middle East". PLACEHOLDER — the long backstory to almost everything we cover on Call Me Back, told by someone who can move a century along without losing the people inside it. Read this and the headlines stop arriving out of nowhere.
+- **THE CAULDRON — SIMON SEBAG MONTEFIORE (NOVEMBER '26)**: subtitle "The Making of the Modern Middle East". PLACEHOLDER — the long backstory to almost everything we cover on Call me Back, told by someone who can move a century along without losing the people inside it. Read this and the headlines stop arriving out of nowhere.
 - **SUBMISSION — MICHEL HOUELLEBECQ (DECEMBER '26)**: PLACEHOLDER — a novel about a France too tired to argue for itself. Plenty of people in the Fold will hate it, which is exactly why it's here: fiction gets at the mood underneath the politics in a way reporting rarely does.
 - **AMERICAN PASTORAL — PHILIP ROTH (JANUARY '27)**: PLACEHOLDER — Roth on a man who did everything right and watched the ground open under him anyway. Assimilation, political violence, and what parents owe their children. We'll have plenty to argue about.
 
@@ -1104,7 +1104,7 @@ single member only ever sees some of them.
 - **LEDE**: Our The Fold puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web.
 
 ### Feature block 01
-- **TITLE**: Call Me Back | Ark+
+- **TITLE**: Call me Back | Ark+
 - **KICKER**: Weekly Q&As with your favorite Ark Media hosts.
 - **BODY**: Ask questions. Get actual answers - not a comments section, not a bot. Bring what's on your mind to the people making the show.
 
@@ -1123,7 +1123,7 @@ single member only ever sees some of them.
 - **MOCK SCREEN LABELS**: Feature 03 / Feature 04 — Screen TBD
 
 ### Phone mockup — Q&A screen (illustrative)
-- **SHOW NAME**: Call Me Back
+- **SHOW NAME**: Call me Back
 - **SUBHEAD**: Live Q&A · with Dan Senor
 - **BADGE**: Live
 - **SAMPLE POST (RACHEL B.)**: What are you watching for in tonight's coalition vote?
@@ -1256,7 +1256,7 @@ single member only ever sees some of them.
 - **BODY**: Friday morning, 9am, same coffee shop as last month. Five members from the Fold have started meeting in person. If you're an Ark+ member and you're in the city, the invitation is open.
 
 ## Mock / fallback events (src/data/events.ts)
-### Call Me Back Live — Coalition Roundtable
+### Call me Back Live — Coalition Roundtable
 - **HOSTS**: Dan Senor, Amit Segal, Nadav Eyal
 - **DESCRIPTION**: An audio roundtable in the Fold on the latest coalition geometry. Members can submit questions live.
 
@@ -1275,7 +1275,7 @@ single member only ever sees some of them.
 ### Ark Media in New York — a live recording
 - **HOSTS**: Dan Senor
 - **VENUE**: 92NY, New York
-- **DESCRIPTION**: A live recording of Call Me Back in New York. Ark+ members get first access to tickets.
+- **DESCRIPTION**: A live recording of Call me Back in New York. Ark+ members get first access to tickets.
 # Onboarding & Account
 
 ## Welcome   /welcome

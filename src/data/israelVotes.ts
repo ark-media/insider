@@ -42,7 +42,7 @@ export const EXPLAINERS: Explainer[] = [
     episodeId: "pod_ep_01a059a0-4c88-76c9-bbfb-cb58aafc4a0d",
     title: "The Only-Bibi Camp vs Never-Bibi Camp",
     videoId: "aPqv68qM9a4",
-    credit: "Call Me Back · with Ari Shavit",
+    credit: "Call me Back · with Ari Shavit",
   },
   {
     show: "for-heavens-sake",
@@ -54,7 +54,7 @@ export const EXPLAINERS: Explainer[] = [
 
 // Ordering is editorial, not chronological — leave it alone unless Ava asks.
 //
-// The Call Me Back | Ark+ show is paid, so its audio can't be served from a
+// The Call me Back | Ark+ show is paid, so its audio can't be served from a
 // public page — the API gates paid audio behind membership — and it has no
 // Beehiiv podcast configured to fetch from either.
 export const PLAYLIST: CuratedEpisode[] = [

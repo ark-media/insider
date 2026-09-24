@@ -26,7 +26,7 @@ import { ArkPlusMark } from "./ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
 
-// Public shows only. The members' show (Call Me Back | Ark+) has no page of its
+// Public shows only. The members' show (Call me Back | Ark+) has no page of its
 // own: members hear it in their podcast app through the private feed, and the
 // membership pitch lives on /plus.
 export function ShowPage({ slug }: { slug: ShowSlug }) {
@@ -131,7 +131,7 @@ function ShowHero({ show }: { show: Show }) {
 }
 
 // Ark+ pitch shown on every free show's hero. The benefits named here are the
-// membership-wide ones — not per-show extras, since only Call Me Back has a
+// membership-wide ones — not per-show extras, since only Call me Back has a
 // paid feed. Members already have all of it, so they never see this; the root
 // blocks rendering while /api/me is in flight, so the tier is settled by the
 // time this runs and no upsell flashes at a member.

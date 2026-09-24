@@ -184,7 +184,7 @@ describe('run', () => {
     expect(sends).toHaveLength(1)
     const body = parseJsonInitBody(sends[0]!.init) as Record<string, unknown>
     expect(body.to).toBe('migrated@example.com')
-    expect(body.subject).toBe("You're about to lose early access to Call Me Back")
+    expect(body.subject).toBe("You're about to lose early access to Call me Back")
     expect(String(body.html)).toContain('https://ark.example/setup')
     expect(String(body.html)).toContain('December 31, 2099')
 

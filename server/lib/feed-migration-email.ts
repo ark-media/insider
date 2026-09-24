@@ -41,7 +41,7 @@ export type MigrationEmailParams = {
 // because by then the abstraction ("your benefits") has already failed to move
 // anyone.
 const AT_RISK =
-  'our subscriber-exclusive Friday Q&amp;A episode, early access to the Wednesday episode of Call Me Back, and ad-free listening'
+  'our subscriber-exclusive Friday Q&amp;A episode, early access to the Wednesday episode of Call me Back, and ad-free listening'
 
 // "Podcast app users set up a new feed for each show. Spotify users connect
 // once and get everything." Every stage carries it — it is the answer to "how
@@ -75,7 +75,7 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
         greetingHtml: greeting,
         bodyHtml:
           "It looks like you haven&rsquo;t finished moving to your new Ark+ feeds yet. It takes about five minutes.",
-        bodySecondHtml: `Once you&rsquo;re set up, you&rsquo;ll get ad-free listening, early access, and exclusive content across every show in the network, not just Call Me Back, plus our subscriber-exclusive newsletter.`,
+        bodySecondHtml: `Once you&rsquo;re set up, you&rsquo;ll get ad-free listening, early access, and exclusive content across every show in the network, not just Call me Back, plus our subscriber-exclusive newsletter.`,
         ctaHref: p.setupUrl,
         ctaLabel: 'Finish setup',
         ctaFollowupHtml: `${howSetupWorks(p.setupUrl)} ${supportLine(
@@ -83,7 +83,7 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
         )}`,
         sections: [
           // The doc's VISUAL BENEFITS LIST. The paragraph above promises "every
-          // show in the network, not just Call Me Back" — this is the half that
+          // show in the network, not just Call me Back" — this is the half that
           // says which shows those are, which is the whole argument for moving.
           // Only the 30-day stage carries it: by 60 days the pitch has already
           // failed, and those emails escalate to what stops working instead.
@@ -96,7 +96,7 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
           },
           {
             paragraphs: [
-              `Your old Call Me Back feed will be turned off on <strong>${deadline}</strong>, so it&rsquo;s worth knocking this out now rather than later.`,
+              `Your old Call me Back feed will be turned off on <strong>${deadline}</strong>, so it&rsquo;s worth knocking this out now rather than later.`,
             ],
           },
         ],
@@ -108,14 +108,14 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
 
   if (p.stage === 'check_in_60') {
     return {
-      subject: "You're about to lose early access to Call Me Back",
+      subject: "You're about to lose early access to Call me Back",
       html: renderShell({
         preheader: `Complete your feed migration before ${deadline} to keep these benefits.`,
         eyebrow: 'Benefits at risk',
         headlineHtml: 'Your Ark+ benefits are at risk.',
         greetingHtml: greeting,
         bodyHtml:
-          'It looks like you still haven&rsquo;t finished migrating your Call Me Back feed.',
+          'It looks like you still haven&rsquo;t finished migrating your Call me Back feed.',
         // The escalation is entirely in this sentence: name the three things,
         // and put the date on them.
         bodySecondHtml: `If you don&rsquo;t complete this before <strong>${deadline}</strong>, you&rsquo;ll lose ${AT_RISK}.`,
@@ -150,13 +150,13 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
         : `${days} days left`
 
   return {
-    subject: `${daysLabel} to keep your Call Me Back benefits`,
+    subject: `${daysLabel} to keep your Call me Back benefits`,
     html: renderShell({
       preheader: `Your feed migration deadline is ${deadline}. Here's what to do.`,
       eyebrow: 'Final reminder',
-      headlineHtml: `${daysLabel} to keep your Call Me Back benefits.`,
+      headlineHtml: `${daysLabel} to keep your Call me Back benefits.`,
       greetingHtml: greeting,
-      bodyHtml: `This is your final reminder. ${countdown}, on <strong>${deadline}</strong>, your old Call Me Back feed will be turned off.`,
+      bodyHtml: `This is your final reminder. ${countdown}, on <strong>${deadline}</strong>, your old Call me Back feed will be turned off.`,
       // The fear this defuses is the expensive one: a member who thinks their
       // subscription is ending behaves very differently from one who knows it
       // is a delivery address change.

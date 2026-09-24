@@ -92,7 +92,7 @@ describe('60-day check-in', () => {
       ...BASE,
       stage: 'check_in_60',
     })
-    expect(subject).toBe("You're about to lose early access to Call Me Back")
+    expect(subject).toBe("You're about to lose early access to Call me Back")
     expect(html).toContain('at risk')
     expect(html).toContain('Friday Q&amp;A')
     expect(html).toContain('early access to the Wednesday episode')
@@ -106,27 +106,27 @@ describe('final notice', () => {
   test('counts the days itself rather than trusting the doc literal', () => {
     // A cron that slips a day would otherwise promise five days on the fourth.
     const five = renderMigrationCheckInEmail({ ...BASE, stage: 'final', daysRemaining: 5 })
-    expect(five.subject).toBe('5 days left to keep your Call Me Back benefits')
+    expect(five.subject).toBe('5 days left to keep your Call me Back benefits')
     expect(five.html).toContain('In 5 days')
 
     const two = renderMigrationCheckInEmail({ ...BASE, stage: 'final', daysRemaining: 2 })
-    expect(two.subject).toBe('2 days left to keep your Call Me Back benefits')
+    expect(two.subject).toBe('2 days left to keep your Call me Back benefits')
     expect(two.html).toContain('In 2 days')
   })
 
   test('singular and same-day read as English, not as "1 days"', () => {
     const one = renderMigrationCheckInEmail({ ...BASE, stage: 'final', daysRemaining: 1 })
-    expect(one.subject).toBe('1 day left to keep your Call Me Back benefits')
+    expect(one.subject).toBe('1 day left to keep your Call me Back benefits')
     expect(one.html).toContain('Tomorrow, on')
 
     const today = renderMigrationCheckInEmail({ ...BASE, stage: 'final', daysRemaining: 0 })
-    expect(today.subject).toBe('Last day to keep your Call Me Back benefits')
+    expect(today.subject).toBe('Last day to keep your Call me Back benefits')
     expect(today.html).toContain('Today, on')
   })
 
   test('a negative countdown never renders as negative days', () => {
     const late = renderMigrationCheckInEmail({ ...BASE, stage: 'final', daysRemaining: -3 })
-    expect(late.subject).toBe('Last day to keep your Call Me Back benefits')
+    expect(late.subject).toBe('Last day to keep your Call me Back benefits')
     expect(late.html).not.toContain('-3')
   })
 

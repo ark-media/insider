@@ -114,7 +114,7 @@ const bookClubPicks: BookClubPick[] = [
     month: "2026-11",
     coverArt: "/book-club/the-cauldron.jpg",
     danNote:
-      "PLACEHOLDER — the long backstory to almost everything we cover on Call Me Back, told by someone who can move a century along without losing the people inside it. Read this and the headlines stop arriving out of nowhere.",
+      "PLACEHOLDER — the long backstory to almost everything we cover on Call me Back, told by someone who can move a century along without losing the people inside it. Read this and the headlines stop arriving out of nowhere.",
     amazonAsin: "0593805054",
   },
   {

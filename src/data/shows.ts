@@ -45,12 +45,12 @@ export const shows: Show[] = [
   {
     slug: "call-me-back",
     route: "/podcasts/call-me-back",
-    title: "Call Me Back",
-    shortTitle: "Call Me Back",
+    title: "Call me Back",
+    shortTitle: "Call me Back",
     tagline:
-      "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
+      "Call me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     description:
-      "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
+      "Call me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     hosts: ["Dan Senor"],
     cadence: "New episodes Mondays and Thursdays",
     coverArt: "/shows/call-me-back.jpg",
@@ -68,8 +68,8 @@ export const shows: Show[] = [
     // No page of its own: members hear it through the private feed, so the
     // show's "home" is the membership page that sells it.
     route: "/plus",
-    title: "Call Me Back | Ark+",
-    shortTitle: "Call Me Back | Ark+",
+    title: "Call me Back | Ark+",
+    shortTitle: "Call me Back | Ark+",
     tagline:
       "Presenting the challenges and dilemmas facing Israelis to a global audience.",
     description:

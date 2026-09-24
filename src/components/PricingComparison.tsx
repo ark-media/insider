@@ -62,7 +62,7 @@ const GROUPS: Group[] = [
         label: "Ad-free podcasts",
         summary: "Every Ark Media show in a private feed, with the ads cut.",
         detail: [
-          "Call Me Back",
+          "Call me Back",
           "Ark News Daily",
           "For Heaven's Sake",
           "Chosen People Problems",

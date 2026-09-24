@@ -58,7 +58,7 @@ export const DEFAULT_MIGRATION_CONFIG: MigrationConfig = {
   // cohort at all (premium access predating the end of this day = carried over
   // from the old feed). Moving it moves all three sends.
   launchDate: '2026-10-05',
-  // "Your old Call Me Back feed will be turned off at the end of 2026" — the
+  // "Your old Call me Back feed will be turned off at the end of 2026" — the
   // campaign copy states this date to members, so the two move together.
   deadlineDate: '2026-12-31',
   firstCheckInDays: 30,

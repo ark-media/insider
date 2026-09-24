@@ -198,7 +198,7 @@ function EpisodeBreadcrumbs({
 const SHOW_NOTES_CLASS = [
   "mt-6 max-w-2xl text-body-lg",
   "[&_p]:mt-4 [&_p:first-child]:mt-0",
-  // Bulleted lists (e.g. Call Me Back's "More Ark Media" link directory) drop
+  // Bulleted lists (e.g. Call me Back's "More Ark Media" link directory) drop
   // their markers entirely and read as a clean line-per-item stack, rather than
   // a bulleted list. Ordered lists (e.g. "Chapters") keep their numbers.
   "[&_ul]:mt-5 [&_ul]:list-none [&_ul]:space-y-1.5 [&_ul]:pl-0",

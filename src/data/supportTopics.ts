@@ -361,8 +361,8 @@ export const supportTopics: SupportTopic[] = [
   },
   {
     id: "icmb-transition",
-    label: "I subscribed to Inside Call Me Back",
-    blurb: "What changed when Inside Call Me Back became Ark+.",
+    label: "I subscribed to Inside Call me Back",
+    blurb: "What changed when Inside Call me Back became Ark+.",
     keywords: ["inside call me back", "icmb", "ama", "changed", "transition", "already subscribed"],
     faqKeys: ["icmb-resubscribe", "icmb-what-happened"],
     actions: [

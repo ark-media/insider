@@ -100,7 +100,7 @@ const RANK_1: [query: string, faqKey: string][] = [
   ['I forgot which email I used', 'forgot-subscribe-email'],
   ['who do I contact for support', 'contact-support'],
 
-  // The Inside Call Me Back transition
+  // The Inside Call me Back transition
   ['do I need to subscribe again', 'icmb-resubscribe'],
   ['what happened to inside call me back', 'icmb-what-happened'],
 ]
