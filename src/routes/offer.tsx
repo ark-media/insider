@@ -205,6 +205,7 @@ function OfferConfirm({
   offer: WelcomeOffer;
   setView: (v: View) => void;
 }) {
+  const { refresh } = useSubscriberAuth();
   const [confirmedAge, setConfirmedAge] = useState(false);
   const [ageMissing, setAgeMissing] = useState(false);
   const [working, setWorking] = useState(false);
@@ -230,6 +231,10 @@ function OfferConfirm({
     });
     setWorking(false);
     if (result.ok) {
+      // The member is on the Bundle now, but the auth context still holds the
+      // Ark+ /api/me it loaded before the charge — and "Back to your account"
+      // is a client-side hop, so /account would show the Fold as not included.
+      void refresh();
       setView({
         kind: "done",
         plan: result.plan ?? plan,
@@ -252,48 +257,55 @@ function OfferConfirm({
         together — at a welcome price for {termLabel}.
       </p>
 
-      <dl className="mt-8 divide-y divide-rule border-y border-rule">
-        <div className="flex items-baseline justify-between gap-4 py-3">
-          <dt className="body-text text-fg-muted">The bundle</dt>
-          <dd className="font-display text-fg-strong">
+      {/* Current plan → new plan → what today costs, one row each. */}
+      <div className="mt-8 divide-y divide-rule border-y border-rule">
+        <div className="flex items-center justify-between gap-4 py-4">
+          <div>
+            <p className="body-text text-sm text-fg-muted">Current plan</p>
+            <p className="mt-1 font-display text-fg-strong">Ark+</p>
+          </div>
+          <p className="body-text text-fg">
+            {offer.currentCents === null
+              ? null
+              : `${money(offer.currentCents)} ${cadence}`}
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-4 py-4">
+          <div>
+            <p className="body-text text-sm text-fg-muted">New plan</p>
+            <p className="mt-1 font-display text-fg-strong">
+              Ark+ and the Fold
+            </p>
+            <p className="mt-1 body-text text-sm text-fg-muted">
+              Welcome price for {termLabel}
+            </p>
+          </div>
+          <p className="body-text text-fg">
             <span className="text-fg-muted line-through">
               {money(offer.bundleCents)}
             </span>{" "}
             {money(offer.offerCents)} {cadence}
-          </dd>
+          </p>
         </div>
-        <div className="flex items-baseline justify-between gap-4 py-3">
-          <dt className="body-text text-fg-muted">
-            {plan === "yearly"
-              ? "Then, from next year"
-              : `Then, from month ${offer.discountedTerms + 1}`}
-          </dt>
-          <dd className="font-display text-fg-strong">
-            {money(offer.bundleCents)} {cadence}
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-4 py-3">
-          <dt className="body-text text-fg-muted">Due today</dt>
-          <dd className="font-display text-fg-strong">
+        <div className="flex items-center justify-between gap-4 py-4">
+          <p className="body-text text-fg-muted">Due today</p>
+          <p className="font-display text-fg-strong">
             {offer.dueTodayCents === null
               ? "Shown before you're charged"
               : money(offer.dueTodayCents)}
-          </dd>
+          </p>
         </div>
-      </dl>
+      </div>
 
       <p className="mt-4 body-text text-sm text-fg-muted">
         {offer.dueTodayCents === null
-          ? "We'll credit whatever is left of the Ark+ you've already paid for against today's charge."
-          : "That's the welcome price less a credit for the part of your Ark+ term you've already paid for."}{" "}
-        Your billing date moves to today
-        {offer.currentRenewsAt
-          ? `, instead of ${fmtDate(offer.currentRenewsAt)}`
-          : ""}
-        , and you'll renew {cadence === "a year" ? "each year" : "each month"}{" "}
-        from now on.
+          ? "You'll pay the difference today"
+          : `You'll be charged ${money(offer.dueTodayCents)} today`}
+        {plan === "yearly"
+          ? `, then ${money(offer.bundleCents)} a year from next year.`
+          : `, then ${money(offer.offerCents)} a month for ${offer.discountedTerms - 1} more months and ${money(offer.bundleCents)} a month after that.`}
         {offer.cancelBooked
-          ? " This also calls off the cancellation you'd booked."
+          ? " Your membership will also carry on instead of ending."
           : ""}
       </p>
 
@@ -335,7 +347,7 @@ function OfferConfirm({
       </div>
 
       <p className="mt-6 body-text text-sm text-fg-muted">
-        Open until {WELCOME_OFFER_CLOSES_LABEL}.
+        Valid until {WELCOME_OFFER_CLOSES_LABEL}.
       </p>
     </div>
   );

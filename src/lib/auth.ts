@@ -622,6 +622,8 @@ export type WelcomeOffer = {
   bundleCents: number;
   offerCents: number;
   discountedTerms: number;
+  // What they pay for Ark+ now, per term. Null if Stripe couldn't say.
+  currentCents: number | null;
   // Straight from Stripe: the Bundle term net of the credit for the member's
   // unused Ark+ time. Null if that lookup failed — show the offer without it
   // rather than blocking on a number.
