@@ -19,7 +19,7 @@ import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { sendEmail } from '../lib/email.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { contactTopics } from '../../src/config/urls.js'
-import { getShow, isListenerQuestionShow } from '../../src/data/shows.js'
+import { getShow, isShowSlug } from '../../src/data/shows.js'
 import { escapeHtml, isValidEmail } from '../../shared/validation.js'
 
 // Per name part: first and last are separate fields, as in the team's Airtable.
@@ -187,7 +187,7 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         // Only a listener question carries a show, and it must carry one.
         const showValue = body?.show
         const show =
-          topic.value === 'questions' && isListenerQuestionShow(showValue)
+          topic.value === 'questions' && isShowSlug(showValue)
             ? getShow(showValue)
             : undefined
         if (topic.value === 'questions' && !show) {

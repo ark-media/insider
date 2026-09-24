@@ -10,12 +10,13 @@ import {
   esc,
   renderShell,
 } from './welcome-email.js'
-import { shows } from '../../src/data/shows.js'
+import { getShow } from '../../src/data/shows.js'
 
-// The members-only show, named as the app names it. Reading the title off
-// the show data means this bullet can't drift from the product.
+// The flagship members-only show, named as the app names it. Reading the
+// title off the show data means this bullet can't drift from the product.
+// Named by slug: there are several Ark+ shows, and this bullet means this one.
 function premiumShowTitle(): string {
-  return shows.find((s) => s.paid)?.title ?? 'our members-only show'
+  return getShow('call-me-back-plus')?.title ?? 'our members-only show'
 }
 
 export type WinbackEmailParams = {

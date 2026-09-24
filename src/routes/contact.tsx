@@ -3,10 +3,9 @@ import { useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import { contactTopics, type ContactTopic } from "../config/urls";
 import {
-  getShow,
-  isListenerQuestionShow,
-  listenerQuestionShows,
-  type ListenerQuestionShow,
+  isShowSlug,
+  shows,
+  type ShowSlug,
 } from "../data/shows";
 import { sendContactMessage } from "../lib/contact";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
@@ -22,14 +21,14 @@ export const Route = createFileRoute("/contact")({
   // values fall through to the form's defaults. Only known values are accepted.
   validateSearch: (
     search,
-  ): { topic?: ContactTopic; show?: ListenerQuestionShow } => {
+  ): { topic?: ContactTopic; show?: ShowSlug } => {
     const t = search.topic;
     const s = search.show;
     return {
       ...(typeof t === "string" && contactTopics.some((x) => x.value === t)
         ? { topic: t as ContactTopic }
         : {}),
-      ...(isListenerQuestionShow(s) ? { show: s } : {}),
+      ...(isShowSlug(s) ? { show: s } : {}),
     };
   },
   component: ContactPage,
@@ -65,7 +64,7 @@ function ContactPage() {
   const [message, setMessage] = useState("");
   // No default: a listener question has to name its show, and preselecting
   // one would quietly file every unconsidered question under it.
-  const [show, setShow] = useState<ListenerQuestionShow | "">(showParam ?? "");
+  const [show, setShow] = useState<ShowSlug | "">(showParam ?? "");
 
   // Handoff from the help widget: it stashes a short transcript in
   // sessionStorage and navigates here with the desk already preselected.
@@ -230,16 +229,16 @@ function ContactPage() {
                   required
                   value={show}
                   onChange={(e) =>
-                    setShow(e.target.value as ListenerQuestionShow | "")
+                    setShow(e.target.value as ShowSlug | "")
                   }
                   className={`mt-3 ${inputClass} select-chevron`}
                 >
                   <option value="" disabled>
                     Which show is your question for?
                   </option>
-                  {listenerQuestionShows.map((slug) => (
-                    <option key={slug} value={slug}>
-                      {getShow(slug)?.title ?? slug}
+                  {shows.map((s) => (
+                    <option key={s.slug} value={s.slug}>
+                      {s.title}
                     </option>
                   ))}
                 </select>

@@ -3,6 +3,7 @@ import type { ServerResponse } from 'node:http'
 import { makeFakeReq } from './test-utils'
 import { contactRoutes, subjectSafeName } from './routes/contact'
 import { contactTopics } from '../src/config/urls'
+import { shows } from '../src/data/shows'
 import type { Deps } from './lib/route'
 
 function makeReq(opts: {
@@ -389,17 +390,25 @@ describe('/api/contact — inboxes and Airtable', () => {
     expect(email.html).not.toContain('Location:')
   })
 
-  test('sends Call Me Back Ark+ under its current name and stable slug', async () => {
+  test('accepts every show, free and Ark+', async () => {
+    for (const show of shows) {
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: show.slug } }), res)
+      expect(res.statusCode).toBe(200)
+    }
+  })
+
+  test('sends an Ark+ show under its display name and stable slug', async () => {
     const res = makeRes()
     await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: 'call-me-back-plus' } }), res)
     expect(res.statusCode).toBe(200)
     const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
-    expect(payload.show).toBe('Call Me Back Ark+')
+    expect(payload.show).toBe('Call Me Back | Ark+')
     expect(payload.showSlug).toBe('call-me-back-plus')
   })
 
   test('rejects a question with no show, or a show not on the list', async () => {
-    for (const show of [undefined, '', 'call-me-back', 'nonsense']) {
+    for (const show of [undefined, '', 'whats-your-number', 'nonsense']) {
       const res = makeRes()
       await getHandler(ENV)(makeReq({ body: { ...QUESTION, show } }), res)
       expect(res.statusCode).toBe(400)

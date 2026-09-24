@@ -1,7 +1,7 @@
 import { contactTopics, type ContactTopic } from "../config/urls";
 import {
-  isListenerQuestionShow,
-  type ListenerQuestionShow,
+  isShowSlug,
+  type ShowSlug,
 } from "../data/shows";
 
 /**
@@ -17,7 +17,7 @@ export async function sendContactMessage(input: {
   location?: string;
   topic: ContactTopic;
   /** Required when `topic` is "questions"; ignored otherwise. */
-  show?: ListenerQuestionShow | "";
+  show?: ShowSlug | "";
   message: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const firstName = input.firstName.trim();
@@ -35,7 +35,7 @@ export async function sendContactMessage(input: {
     return { ok: false, error: "Please choose a topic." };
   }
   const show = input.topic === "questions" ? input.show : undefined;
-  if (input.topic === "questions" && !isListenerQuestionShow(show)) {
+  if (input.topic === "questions" && !isShowSlug(show)) {
     return { ok: false, error: "Please choose a show." };
   }
   if (!message) return { ok: false, error: "Please add a message." };

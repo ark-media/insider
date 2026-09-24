@@ -151,10 +151,12 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "spotify", url: "https://open.spotify.com/show/79j7N0DUYHOgrt3GUjiCzb" },
     { platform: "youtube", url: "https://www.youtube.com/@the.fhs.podcast" },
   ],
+  "for-heavens-sake-plus": [],
   "ark-news-daily": [
     { platform: "apple", url: "https://podcasts.apple.com/us/podcast/ark-news-daily/id1885015768" },
     { platform: "spotify", url: "https://open.spotify.com/show/1O5ohSo8vLhudPTdSpXSwZ" },
   ],
+  "ark-news-daily-plus": [],
   // PLACEHOLDER: these point at Ask a Jew, standing in until Chosen People
   // Problems has its own feeds. See the show entry in src/data/shows.ts.
   "chosen-people-problems": [
@@ -162,6 +164,7 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "spotify", url: "https://open.spotify.com/show/1kJ4K907e9FuRcJQU4Pdjf" },
     { platform: "youtube", url: "https://www.youtube.com/@AskAJew" },
   ],
+  "chosen-people-problems-plus": [],
 };
 
 /**

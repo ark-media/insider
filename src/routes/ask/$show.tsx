@@ -1,19 +1,25 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import type { ListenerQuestionShow } from "../../data/shows";
+import { isShowSlug, type ShowSlug } from "../../data/shows";
 
-// Short links for show notes: /ask/cpp and /ask/cmb open the contact form with
-// "Listener questions" and that show already picked. The long names work too.
-// An unknown show still lands on the question form, just without a show picked.
-const askLinks: Record<string, ListenerQuestionShow> = {
+// Short links for show notes: /ask/cpp, /ask/cpp-plus and so on open the
+// contact form with "Listener questions" and that show already picked. A
+// show's full slug (/ask/chosen-people-problems) works too. Anything else
+// still lands on the question form, just without a show picked.
+const shortLinks: Record<string, ShowSlug> = {
+  cmb: "call-me-back",
+  "cmb-plus": "call-me-back-plus",
+  fhs: "for-heavens-sake",
+  "fhs-plus": "for-heavens-sake-plus",
+  and: "ark-news-daily",
+  "and-plus": "ark-news-daily-plus",
   cpp: "chosen-people-problems",
-  "chosen-people-problems": "chosen-people-problems",
-  cmb: "call-me-back-plus",
-  "call-me-back-plus": "call-me-back-plus",
+  "cpp-plus": "chosen-people-problems-plus",
 };
 
 export const Route = createFileRoute("/ask/$show")({
   beforeLoad: ({ params }) => {
-    const show = askLinks[params.show.toLowerCase()];
+    const key = params.show.toLowerCase();
+    const show = shortLinks[key] ?? (isShowSlug(key) ? key : undefined);
     throw redirect({
       to: "/contact",
       search: show ? { topic: "questions", show } : { topic: "questions" },
