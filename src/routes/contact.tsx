@@ -2,7 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import { contactTopics, type ContactTopic } from "../config/urls";
+import {
+  isShowSlug,
+  shows,
+  type ShowSlug,
+} from "../data/shows";
 import { sendContactMessage } from "../lib/contact";
+import { CONTACT_MESSAGE_MAX } from "../../shared/validation";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import {
   SUPPORT_DRAFT_EVENT,
@@ -11,13 +17,20 @@ import {
 
 export const Route = createFileRoute("/contact")({
   // Allow a topic to be pre-selected via ?topic=… (e.g. links that want the
-  // form to open on a specific desk). Unknown/missing values fall through to
-  // the form's default. Only known topic values are accepted.
-  validateSearch: (search): { topic?: ContactTopic } => {
+  // form to open on a specific desk), and a listener question's show via
+  // ?show=… (a show page linking to its own question box). Unknown/missing
+  // values fall through to the form's defaults. Only known values are accepted.
+  validateSearch: (
+    search,
+  ): { topic?: ContactTopic; show?: ShowSlug } => {
     const t = search.topic;
-    return typeof t === "string" && contactTopics.some((x) => x.value === t)
-      ? { topic: t as ContactTopic }
-      : {};
+    const s = search.show;
+    return {
+      ...(typeof t === "string" && contactTopics.some((x) => x.value === t)
+        ? { topic: t as ContactTopic }
+        : {}),
+      ...(isShowSlug(s) ? { show: s } : {}),
+    };
   },
   component: ContactPage,
 });
@@ -28,7 +41,7 @@ const labelClass =
   "label text-cyan";
 
 function ContactPage() {
-  const { topic: topicParam } = Route.useSearch();
+  const { topic: topicParam, show: showParam } = Route.useSearch();
   const { state } = useSubscriberAuth();
 
   // Name and email are DERIVED, not copied: null means "the member hasn't
@@ -36,17 +49,23 @@ function ContactPage() {
   // an effect that races /api/me resolving after mount. Typing anything (an
   // empty string included) takes ownership of the field from then on.
   const me = state.kind === "member" ? state.me : null;
-  const [nameInput, setNameInput] = useState<string | null>(null);
+  const [firstNameInput, setFirstNameInput] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState<string | null>(null);
   // The greeting rule from shared/profile-name.ts holds here too: a name we
   // were never given stays blank rather than being invented from the email.
-  const name = nameInput ?? me?.firstName ?? "";
+  // We hold no last name for anyone, so that one is always typed.
+  const firstName = firstNameInput ?? me?.firstName ?? "";
   const email = emailInput ?? me?.email ?? "";
+  const [lastName, setLastName] = useState("");
+  const [location, setLocation] = useState("");
 
   const [topic, setTopic] = useState<ContactTopic>(
     topicParam ?? contactTopics[0].value,
   );
   const [message, setMessage] = useState("");
+  // No default: a listener question has to name its show, and preselecting
+  // one would quietly file every unconsidered question under it.
+  const [show, setShow] = useState<ShowSlug | "">(showParam ?? "");
 
   // Handoff from the help widget: it stashes a short transcript in
   // sessionStorage and navigates here with the desk already preselected.
@@ -65,7 +84,7 @@ function ContactPage() {
   // already standing on /contact changes only the search param on a matched
   // route: TanStack updates the params without remounting, so neither a
   // mount-only draft read nor a `useState` initializer for `topic` would fire.
-  // Hence ?topic=… is treated as a live input, and the widget announces the
+  // Hence ?topic=… (and ?show=…) is treated as a live input, and the widget announces the
   // draft with an event — otherwise the transcript sits in sessionStorage and
   // ambushes some later visit.
   //
@@ -83,10 +102,11 @@ function ContactPage() {
     };
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (topicParam) setTopic(topicParam);
+    if (showParam) setShow(showParam);
     applyDraft();
     window.addEventListener(SUPPORT_DRAFT_EVENT, applyDraft);
     return () => window.removeEventListener(SUPPORT_DRAFT_EVENT, applyDraft);
-  }, [topicParam]);
+  }, [topicParam, showParam]);
 
   // Honeypot — see server/routes/contact.ts. Real users leave it blank.
   const [company, setCompany] = useState("");
@@ -100,16 +120,27 @@ function ContactPage() {
     if (company.trim() !== "") return; // bot tripped the honeypot
     setStatus("submitting");
     setFeedback(null);
-    const r = await sendContactMessage({ name, email, topic, message });
+    const r = await sendContactMessage({
+      firstName,
+      lastName,
+      email,
+      location,
+      topic,
+      show,
+      message,
+    });
     if (r.ok) {
       setStatus("ok");
       setFeedback("Thanks — your message is on its way. We'll be in touch.");
       // Back to derived: a signed-in member sees their details again, a
       // signed-out one sees a blank form.
-      setNameInput(null);
+      setFirstNameInput(null);
+      setLastName("");
       setEmailInput(null);
+      setLocation("");
       setMessage("");
       setTopic(contactTopics[0].value);
+      setShow("");
     } else {
       setStatus("error");
       setFeedback(r.error ?? "Could not send. Please try again.");
@@ -129,13 +160,24 @@ function ContactPage() {
           >
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <label className="block">
-                <span className={labelClass}>Name</span>
+                <span className={labelClass}>First name</span>
                 <input
                   type="text"
                   required
-                  value={name}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="Your name"
+                  autoComplete="given-name"
+                  value={firstName}
+                  onChange={(e) => setFirstNameInput(e.target.value)}
+                  className={`mt-3 ${inputClass}`}
+                />
+              </label>
+              <label className="block">
+                <span className={labelClass}>Last name</span>
+                <input
+                  type="text"
+                  required
+                  autoComplete="family-name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
                   className={`mt-3 ${inputClass}`}
                 />
               </label>
@@ -150,6 +192,20 @@ function ContactPage() {
                   className={`mt-3 ${inputClass}`}
                 />
               </label>
+              <label className="block">
+                <span className={labelClass}>
+                  Location <span className="text-fg-muted">(optional)</span>
+                </span>
+                <input
+                  type="text"
+                  autoComplete="address-level2"
+                  maxLength={200}
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="City, country"
+                  className={`mt-3 ${inputClass}`}
+                />
+              </label>
             </div>
 
             <label className="mt-6 block">
@@ -157,7 +213,7 @@ function ContactPage() {
               <select
                 value={topic}
                 onChange={(e) => setTopic(e.target.value as ContactTopic)}
-                className={`mt-3 ${inputClass} appearance-none bg-[length:16px] bg-[right_1rem_center] bg-no-repeat pr-10 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>')]`}
+                className={`mt-3 ${inputClass} select-chevron`}
               >
                 {contactTopics.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -167,10 +223,35 @@ function ContactPage() {
               </select>
             </label>
 
+            {topic === "questions" ? (
+              <label className="mt-6 block">
+                <span className={labelClass}>Show</span>
+                <select
+                  required
+                  value={show}
+                  onChange={(e) =>
+                    setShow(e.target.value as ShowSlug | "")
+                  }
+                  className={`mt-3 ${inputClass} select-chevron`}
+                >
+                  <option value="" disabled>
+                    Which show is your question for?
+                  </option>
+                  {shows.map((s) => (
+                    <option key={s.slug} value={s.slug}>
+                      {s.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
             <label className="mt-6 block">
               <span className={labelClass}>Message</span>
               <textarea
                 required
+                maxLength={CONTACT_MESSAGE_MAX}
+                aria-describedby="contact-message-count"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="What's on your mind?"
@@ -178,6 +259,14 @@ function ContactPage() {
                 className={`mt-3 ${inputClass} resize-y`}
               />
             </label>
+            {/* Not a live region: announcing every keystroke would drown out
+                the typing. Screen readers read it with the field instead. */}
+            <p
+              id="contact-message-count"
+              className="mt-2 text-body-sm text-fg-muted tabular-nums"
+            >
+              {message.length} of {CONTACT_MESSAGE_MAX} max characters.
+            </p>
 
             {/* Honeypot: visually hidden, off the tab order, ignored by humans. */}
             <div aria-hidden className="hidden">

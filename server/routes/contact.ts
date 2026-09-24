@@ -3,6 +3,9 @@
 //   POST /api/contact — public. Forwards a "Get in touch" submission to the
 //     inbox for the chosen topic via Resend. The form replaces the old
 //     mailto: links on /contact so visitors never see the raw addresses.
+//     A listener question must name a show. After the email is sent, every
+//     submission is also posted to a Make webhook that files it in the team's
+//     "Get in touch" Airtable.
 //
 // Validation is strict and the body is HTML-escaped before it goes into the
 // email, since every field is attacker-controlled. Same-origin only, rate-limited
@@ -11,15 +14,21 @@
 // (Neon-backed) kind: each call sends mail, and an in-memory bucket is one per
 // function instance.
 
-import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
+import { fetchWithTimeout, getClientIp, isSameOrigin, readJson } from '../lib/http.js'
 import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { sendEmail } from '../lib/email.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { contactTopics } from '../../src/config/urls.js'
-import { escapeHtml, isValidEmail } from '../../shared/validation.js'
+import { getShow, isShowSlug } from '../../src/data/shows.js'
+import {
+  CONTACT_MESSAGE_MAX,
+  escapeHtml,
+  isValidEmail,
+} from '../../shared/validation.js'
 
+// Per name part: first and last are separate fields, as in the team's Airtable.
 const NAME_MAX = 200
-const MESSAGE_MAX = 5000
+const LOCATION_MAX = 200
 // The sender's name rides in the subject so the inbox is scannable, but only a
 // tidy slice of it: a subject is a header, and a 200-character name is not one.
 const SUBJECT_NAME_MAX = 80
@@ -44,6 +53,59 @@ export function subjectSafeName(name: string): string {
 }
 
 const topicsByValue = new Map(contactTopics.map((t) => [t.value, t]))
+
+const WEBHOOK_TIMEOUT_MS = 5000
+
+// Files a submission in the team's "Get in touch" Airtable, via a Make
+// "Custom webhook" scenario the team owns (MAKE_CONTACT_WEBHOOK_URL). The key
+// goes in Make's API-key header; Make answers 401 without it.
+//
+// Best effort, and only ever after the email went out: the inbox is the record
+// of the submission, so a Make outage is logged rather than shown to the
+// sender, and a failed email (which the sender will retry) never leaves a row
+// behind to be duplicated. The slugs are the stable handles for filtering in
+// Make (e.g. CPP questions → their own table); `topic` and `show` are display
+// names, which change when a label or a show is renamed. `show`/`showSlug` are
+// empty strings on anything but a listener question.
+async function fileInAirtable(
+  env: Deps['env'],
+  payload: {
+    firstName: string
+    lastName: string
+    email: string
+    location: string
+    topic: string
+    topicSlug: string
+    show: string
+    showSlug: string
+    message: string
+  },
+): Promise<void> {
+  const url = env.MAKE_CONTACT_WEBHOOK_URL
+  if (!url) {
+    console.warn('[contact] MAKE_CONTACT_WEBHOOK_URL unset; submission not sent to Airtable')
+    return
+  }
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const key = env.MAKE_CONTACT_WEBHOOK_KEY
+  if (key) headers['x-make-apikey'] = key
+  try {
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ submittedAt: new Date().toISOString(), ...payload }),
+      },
+      WEBHOOK_TIMEOUT_MS,
+    )
+    if (!res.ok) {
+      console.error(`[contact] Make webhook answered ${res.status}`)
+    }
+  } catch (err) {
+    console.error('[contact] Make webhook failed', err)
+  }
+}
 
 export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
   // A contact form is low-frequency per person: 5-message burst, then ~1 every
@@ -78,9 +140,12 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
 
         const body = await readJson<{
-          name?: unknown
+          firstName?: unknown
+          lastName?: unknown
+          location?: unknown
           email?: unknown
           topic?: unknown
+          show?: unknown
           message?: unknown
           company?: unknown
         }>(req)
@@ -91,15 +156,30 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(200, { ok: true })
         }
 
-        const name = typeof body?.name === 'string' ? body.name.trim() : ''
+        const firstName =
+          typeof body?.firstName === 'string' ? body.firstName.trim() : ''
+        const lastName =
+          typeof body?.lastName === 'string' ? body.lastName.trim() : ''
+        // Optional: where the sender listens from, for the team's Airtable.
+        const location =
+          typeof body?.location === 'string' ? body.location.trim() : ''
         const email = typeof body?.email === 'string' ? body.email.trim() : ''
         const topicValue = typeof body?.topic === 'string' ? body.topic : ''
         const message =
           typeof body?.message === 'string' ? body.message.trim() : ''
 
-        if (!name || name.length > NAME_MAX) {
+        if (
+          !firstName ||
+          !lastName ||
+          firstName.length > NAME_MAX ||
+          lastName.length > NAME_MAX
+        ) {
           return json(400, { error: 'invalid_name' })
         }
+        if (location.length > LOCATION_MAX) {
+          return json(400, { error: 'invalid_location' })
+        }
+        const name = `${firstName} ${lastName}`
         if (!isValidEmail(email)) {
           return json(400, { error: 'invalid_email' })
         }
@@ -107,7 +187,16 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (!topic) {
           return json(400, { error: 'invalid_topic' })
         }
-        if (!message || message.length > MESSAGE_MAX) {
+        // Only a listener question carries a show, and it must carry one.
+        const showValue = body?.show
+        const show =
+          topic.value === 'questions' && isShowSlug(showValue)
+            ? getShow(showValue)
+            : undefined
+        if (topic.value === 'questions' && !show) {
+          return json(400, { error: 'invalid_show' })
+        }
+        if (!message || message.length > CONTACT_MESSAGE_MAX) {
           return json(400, { error: 'invalid_message' })
         }
 
@@ -125,19 +214,33 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         const html =
           `<p><strong>From:</strong> ${escapeHtml(name)} ` +
           `(${escapeHtml(email)})</p>` +
+          (location ? `<p><strong>Location:</strong> ${escapeHtml(location)}</p>` : '') +
           `<p><strong>Topic:</strong> ${escapeHtml(topic.label)}</p>` +
+          (show ? `<p><strong>Show:</strong> ${escapeHtml(show.title)}</p>` : '') +
           `<p><strong>Message:</strong></p>` +
           `<p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>`
 
         const sent = await sendEmail(env, {
           to: topic.email,
-          subject: `[Contact — ${topic.label}] ${subjectSafeName(name) || '(no name)'}`,
+          subject: `[Contact — ${topic.label}${show ? ` — ${show.title}` : ''}] ${subjectSafeName(name) || '(no name)'}`,
           html,
           replyTo: email,
         })
         if (!sent) {
           return json(502, { error: 'send_failed' })
         }
+
+        await fileInAirtable(env, {
+          firstName,
+          lastName,
+          email,
+          location,
+          topic: topic.label,
+          topicSlug: topic.value,
+          show: show?.title ?? '',
+          showSlug: show?.slug ?? '',
+          message,
+        })
 
         return json(200, { ok: true })
       },

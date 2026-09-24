@@ -4,12 +4,16 @@ export type ShowSlug =
   | "call-me-back"
   | "call-me-back-plus"
   | "for-heavens-sake"
+  | "for-heavens-sake-plus"
   | "ark-news-daily"
-  | "chosen-people-problems";
+  | "ark-news-daily-plus"
+  | "chosen-people-problems"
+  | "chosen-people-problems-plus";
 
-type ShowRoute =
-  | `/podcasts/${Exclude<ShowSlug, "call-me-back-plus">}`
-  | "/plus";
+// The Ark+ (members-only) shows have no page of their own; see the entries.
+type ArkPlusShowSlug = Extract<ShowSlug, `${string}-plus`>;
+
+type ShowRoute = `/podcasts/${Exclude<ShowSlug, ArkPlusShowSlug>}` | "/plus";
 
 export type ListenPlatform =
   | "apple"
@@ -97,6 +101,22 @@ export const shows: Show[] = [
     listen: showListenLinks["for-heavens-sake"],
   },
   {
+    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
+    // The tagline and description are shown nowhere today (paid shows are
+    // left out of every listing); they're here because every show has them.
+    slug: "for-heavens-sake-plus",
+    route: "/plus",
+    title: "For Heaven's Sake | Ark+",
+    shortTitle: "For Heaven's Sake | Ark+",
+    tagline: "Members-only episodes of For Heaven's Sake, for Ark+ members.",
+    description:
+      "Members-only episodes of For Heaven's Sake, ad-free. Delivered as a private feed in the podcast app you already use.",
+    hosts: ["Donniel Hartman", "Yossi Klein Halevi"],
+    cadence: "",
+    paid: true,
+    listen: showListenLinks["for-heavens-sake-plus"],
+  },
+  {
     slug: "ark-news-daily",
     route: "/podcasts/ark-news-daily",
     title: "Ark News Daily",
@@ -110,6 +130,22 @@ export const shows: Show[] = [
     coverArt: "/shows/ark-news-daily.jpg",
     paid: false,
     listen: showListenLinks["ark-news-daily"],
+  },
+  {
+    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
+    // The tagline and description are shown nowhere today (paid shows are
+    // left out of every listing); they're here because every show has them.
+    slug: "ark-news-daily-plus",
+    route: "/plus",
+    title: "Ark News Daily | Ark+",
+    shortTitle: "Ark News Daily | Ark+",
+    tagline: "Members-only episodes of Ark News Daily, for Ark+ members.",
+    description:
+      "Members-only episodes of Ark News Daily, ad-free. Delivered as a private feed in the podcast app you already use.",
+    hosts: ["Ark Media newsroom"],
+    cadence: "",
+    paid: true,
+    listen: showListenLinks["ark-news-daily-plus"],
   },
   // PARTLY PLACEHOLDER. The cover art is now the show's own (finalised art, added
   // 2026-09-10), and the tagline/description/hosts match it. What is still Ask a
@@ -134,7 +170,27 @@ export const shows: Show[] = [
     paid: false,
     listen: showListenLinks["chosen-people-problems"],
   },
+  {
+    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
+    // The tagline and description are shown nowhere today (paid shows are
+    // left out of every listing); they're here because every show has them.
+    slug: "chosen-people-problems-plus",
+    route: "/plus",
+    title: "Chosen People Problems | Ark+",
+    shortTitle: "Chosen People Problems | Ark+",
+    tagline: "Members-only episodes of Chosen People Problems, for Ark+ members.",
+    description:
+      "Members-only episodes of Chosen People Problems, ad-free. Delivered as a private feed in the podcast app you already use.",
+    hosts: ["Yael Bar tur", "Chaya Leah Sufrin"],
+    cadence: "",
+    paid: true,
+    listen: showListenLinks["chosen-people-problems-plus"],
+  },
 ];
+
+export function isShowSlug(value: unknown): value is ShowSlug {
+  return shows.some((s) => s.slug === value);
+}
 
 export function getShow(slug: string): Show | undefined {
   return shows.find((s) => s.slug === slug);

@@ -3,6 +3,8 @@ import type { ServerResponse } from 'node:http'
 import { makeFakeReq } from './test-utils'
 import { contactRoutes, subjectSafeName } from './routes/contact'
 import { contactTopics } from '../src/config/urls'
+import { shows } from '../src/data/shows'
+import { CONTACT_MESSAGE_MAX } from '../shared/validation'
 import type { Deps } from './lib/route'
 
 function makeReq(opts: {
@@ -66,7 +68,8 @@ function getHandler(env: Record<string, string> = { RESEND_API_KEY: 'test' }) {
 }
 
 const VALID = {
-  name: 'Jane Listener',
+  firstName: 'Jane',
+  lastName: 'Listener',
   email: 'jane@example.com',
   topic: 'press',
   message: 'Loved the latest episode.\nCan we book an interview?',
@@ -77,10 +80,21 @@ const originalFetch = globalThis.fetch
 let lastInit: RequestInit | undefined
 let resendStatus = 200
 let fetchCalls = 0
+// Every request, in order: Resend first, then (for a listener question) Make.
+let calls: Array<{ url: string; init?: RequestInit }> = []
+let webhookStatus = 200
+let webhookThrows = false
+const WEBHOOK_URL = 'https://hook.example.make.com/contact'
 
-globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
   fetchCalls += 1
   lastInit = init
+  const url = String(input)
+  calls.push({ url, init })
+  if (url === WEBHOOK_URL) {
+    if (webhookThrows) throw new Error('network down')
+    return new Response('Accepted', { status: webhookStatus })
+  }
   return new Response('{}', { status: resendStatus })
 }) as typeof fetch
 
@@ -92,6 +106,9 @@ beforeEach(() => {
   lastInit = undefined
   resendStatus = 200
   fetchCalls = 0
+  calls = []
+  webhookStatus = 200
+  webhookThrows = false
 })
 
 describe('/api/contact', () => {
@@ -149,6 +166,18 @@ describe('/api/contact', () => {
     expect(res.statusCode).toBe(400)
     expect(JSON.parse(res.body).error).toBe('invalid_message')
     expect(fetchCalls).toBe(0)
+  })
+
+  test('accepts a message at the limit and rejects one past it', async () => {
+    const atLimit = makeRes()
+    await getHandler()(makeReq({ body: { ...VALID, message: 'x'.repeat(CONTACT_MESSAGE_MAX) } }), atLimit)
+    expect(atLimit.statusCode).toBe(200)
+
+    const over = makeRes()
+    await getHandler()(makeReq({ body: { ...VALID, message: 'x'.repeat(CONTACT_MESSAGE_MAX + 1) } }), over)
+    expect(over.statusCode).toBe(400)
+    expect(JSON.parse(over.body).error).toBe('invalid_message')
+    expect(CONTACT_MESSAGE_MAX).toBe(1200)
   })
 
   test('HTML-escapes user input in the forwarded email', async () => {
@@ -215,7 +244,7 @@ describe('/api/contact', () => {
     const res = makeRes()
     await handler(
       makeReq({
-        body: { ...VALID, name: 'Jane\r\nBcc: victim@example.com\t\u0000   Listener' },
+        body: { ...VALID, firstName: 'Jane\r\nBcc: victim@example.com\t\u0000  ' },
       }),
       res,
     )
@@ -233,13 +262,14 @@ describe('/api/contact', () => {
     const handler = getHandler()
     const res = makeRes()
     const longName = 'N'.repeat(200)
-    await handler(makeReq({ body: { ...VALID, name: longName } }), res)
+    await handler(makeReq({ body: { ...VALID, firstName: longName } }), res)
     expect(res.statusCode).toBe(200)
     const sent = JSON.parse(String(lastInit?.body)) as { subject: string; html: string }
+    const fullName = `${longName} Listener`
     expect(sent.subject.startsWith('[Contact — ')).toBe(true)
-    expect(subjectSafeName(longName)).toHaveLength(80)
-    expect(sent.subject.endsWith(subjectSafeName(longName))).toBe(true)
-    expect(sent.html).toContain(longName)
+    expect(subjectSafeName(fullName)).toHaveLength(80)
+    expect(sent.subject.endsWith(subjectSafeName(fullName))).toBe(true)
+    expect(sent.html).toContain(fullName)
   })
 
   // A flood spread over many IPs stays inside every per-IP budget; the daily
@@ -286,5 +316,161 @@ describe('/api/contact', () => {
       if (res.statusCode === 429) limited = true
     }
     expect(limited).toBe(true)
+  })
+})
+
+describe('/api/contact — inboxes and Airtable', () => {
+  const QUESTION = {
+    ...VALID,
+    topic: 'questions',
+    show: 'chosen-people-problems',
+    message: 'What is the best Shabbat dinner argument?',
+  }
+  const ENV = {
+    RESEND_API_KEY: 'test',
+    MAKE_CONTACT_WEBHOOK_URL: WEBHOOK_URL,
+    MAKE_CONTACT_WEBHOOK_KEY: 'make-key',
+  }
+
+  test('support goes to support@, every other topic to hello@', () => {
+    for (const t of contactTopics) {
+      expect(t.email).toBe(t.value === 'support' ? 'support@arkmedia.org' : 'hello@arkmedia.org')
+    }
+  })
+
+  test('emails the question with its show, then files it with Make', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect(calls.map((c) => c.url === WEBHOOK_URL)).toEqual([false, true])
+
+    const email = JSON.parse(String(calls[0].init?.body)) as { subject: string; html: string }
+    expect(email.subject).toBe('[Contact — Listener questions — Chosen People Problems] Jane Listener')
+    expect(email.html).toContain('<strong>Show:</strong> Chosen People Problems')
+
+    const hook = calls[1].init!
+    expect((hook.headers as Record<string, string>)['x-make-apikey']).toBe('make-key')
+    const payload = JSON.parse(String(hook.body)) as Record<string, string>
+    expect(payload).toMatchObject({
+      firstName: 'Jane',
+      lastName: 'Listener',
+      email: 'jane@example.com',
+      location: '',
+      topic: 'Listener questions',
+      topicSlug: 'questions',
+      show: 'Chosen People Problems',
+      showSlug: 'chosen-people-problems',
+      message: 'What is the best Shabbat dinner argument?',
+    })
+    expect(Number.isNaN(Date.parse(payload.submittedAt))).toBe(false)
+  })
+
+  test('requires both name parts, and caps each', async () => {
+    for (const body of [
+      { ...QUESTION, firstName: ' ' },
+      { ...QUESTION, lastName: '' },
+      { ...QUESTION, lastName: undefined },
+      { ...QUESTION, firstName: 'N'.repeat(201) },
+    ]) {
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body }), res)
+      expect(res.statusCode).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('invalid_name')
+    }
+    expect(fetchCalls).toBe(0)
+  })
+
+  test('passes an optional location to the email and Make, and caps it', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...QUESTION, location: '  Tel Aviv, <Israel> ' } }), res)
+    expect(res.statusCode).toBe(200)
+    const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
+    expect(email.html).toContain('<strong>Location:</strong> Tel Aviv, &lt;Israel&gt;')
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload.location).toBe('Tel Aviv, <Israel>')
+
+    const tooLong = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...QUESTION, location: 'x'.repeat(201) } }), tooLong)
+    expect(tooLong.statusCode).toBe(400)
+    expect(JSON.parse(tooLong.body).error).toBe('invalid_location')
+  })
+
+  test('leaves the Location line out of the email when none was given', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), res)
+    const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
+    expect(email.html).not.toContain('Location:')
+  })
+
+  test('accepts every show, free and Ark+', async () => {
+    for (const show of shows) {
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: show.slug } }), res)
+      expect(res.statusCode).toBe(200)
+    }
+  })
+
+  test('sends an Ark+ show under its display name and stable slug', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: 'call-me-back-plus' } }), res)
+    expect(res.statusCode).toBe(200)
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload.show).toBe('Call me Back | Ark+')
+    expect(payload.showSlug).toBe('call-me-back-plus')
+  })
+
+  test('rejects a question with no show, or a show not on the list', async () => {
+    for (const show of [undefined, '', 'whats-your-number', 'nonsense']) {
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body: { ...QUESTION, show } }), res)
+      expect(res.statusCode).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('invalid_show')
+    }
+    expect(fetchCalls).toBe(0)
+  })
+
+  test('files every other topic too, with no show even if one was sent', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...VALID, show: 'chosen-people-problems' } }), res)
+    expect(res.statusCode).toBe(200)
+    expect(calls.map((c) => c.url === WEBHOOK_URL)).toEqual([false, true])
+    const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
+    expect(email.html).not.toContain('Show:')
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload).toMatchObject({
+      topic: 'Press, interviews & media',
+      topicSlug: 'press',
+      show: '',
+      showSlug: '',
+      message: VALID.message,
+    })
+  })
+
+  test('does not file the question when the email fails', async () => {
+    resendStatus = 500
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), res)
+    expect(res.statusCode).toBe(502)
+    expect(calls.map((c) => c.url)).not.toContain(WEBHOOK_URL)
+  })
+
+  test('a Make failure or outage does not fail the submission', async () => {
+    webhookStatus = 500
+    const refused = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), refused)
+    expect(refused.statusCode).toBe(200)
+
+    webhookThrows = true
+    const down = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), down)
+    expect(down.statusCode).toBe(200)
+  })
+
+  test('still emails when no webhook is configured', async () => {
+    const res = makeRes()
+    await getHandler({ RESEND_API_KEY: 'test' })(makeReq({ body: QUESTION }), res)
+    expect(res.statusCode).toBe(200)
+    expect(fetchCalls).toBe(1)
   })
 })

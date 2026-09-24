@@ -42,6 +42,7 @@ import { Route as AdminMembersRouteImport } from './routes/admin/members'
 import { Route as AdminOpenHousesRouteImport } from './routes/admin/open-houses'
 import { Route as AdminPromosRouteImport } from './routes/admin/promos'
 import { Route as AdminSupportRouteImport } from './routes/admin/support'
+import { Route as AskShowRouteImport } from './routes/ask/$show'
 import { Route as CareersIndexRouteImport } from './routes/careers/index'
 import { Route as CareersSlugRouteImport } from './routes/careers/$slug'
 import { Route as HostsIndexRouteImport } from './routes/hosts/index'
@@ -226,6 +227,11 @@ const AdminSupportRoute = AdminSupportRouteImport.update({
   path: '/admin/support',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AskShowRoute = AskShowRouteImport.update({
+  id: '/ask/$show',
+  path: '/ask/$show',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CareersIndexRoute = CareersIndexRouteImport.update({
   id: '/careers/',
   path: '/careers/',
@@ -349,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/admin/open-houses': typeof AdminOpenHousesRoute
   '/admin/promos': typeof AdminPromosRoute
   '/admin/support': typeof AdminSupportRoute
+  '/ask/$show': typeof AskShowRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
@@ -401,6 +408,7 @@ export interface FileRoutesByTo {
   '/admin/open-houses': typeof AdminOpenHousesRoute
   '/admin/promos': typeof AdminPromosRoute
   '/admin/support': typeof AdminSupportRoute
+  '/ask/$show': typeof AskShowRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
@@ -455,6 +463,7 @@ export interface FileRoutesById {
   '/admin/open-houses': typeof AdminOpenHousesRoute
   '/admin/promos': typeof AdminPromosRoute
   '/admin/support': typeof AdminSupportRoute
+  '/ask/$show': typeof AskShowRoute
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
@@ -510,6 +519,7 @@ export interface FileRouteTypes {
     | '/admin/open-houses'
     | '/admin/promos'
     | '/admin/support'
+    | '/ask/$show'
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
@@ -562,6 +572,7 @@ export interface FileRouteTypes {
     | '/admin/open-houses'
     | '/admin/promos'
     | '/admin/support'
+    | '/ask/$show'
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
@@ -615,6 +626,7 @@ export interface FileRouteTypes {
     | '/admin/open-houses'
     | '/admin/promos'
     | '/admin/support'
+    | '/ask/$show'
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
@@ -665,6 +677,7 @@ export interface RootRouteChildren {
   AdminOpenHousesRoute: typeof AdminOpenHousesRoute
   AdminPromosRoute: typeof AdminPromosRoute
   AdminSupportRoute: typeof AdminSupportRoute
+  AskShowRoute: typeof AskShowRoute
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
@@ -919,6 +932,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSupportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ask/$show': {
+      id: '/ask/$show'
+      path: '/ask/$show'
+      fullPath: '/ask/$show'
+      preLoaderRoute: typeof AskShowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/careers/': {
       id: '/careers/'
       path: '/careers'
@@ -1107,6 +1127,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminOpenHousesRoute: AdminOpenHousesRoute,
   AdminPromosRoute: AdminPromosRoute,
   AdminSupportRoute: AdminSupportRoute,
+  AskShowRoute: AskShowRoute,
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,

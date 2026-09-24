@@ -17,9 +17,6 @@ import type { ListenLink, ShowSlug } from "../data/shows.js";
  * TODO(ark): values marked PLACEHOLDER need a real Ark Media URL before launch.
  */
 
-/** The apex domain, for building addresses without retyping it. */
-const ARK_DOMAIN = "ark-plus.xyz";
-
 // ---------------------------------------------------------------------------
 // Social profiles
 // ---------------------------------------------------------------------------
@@ -38,23 +35,19 @@ export const socialUrls = {
 // Contact addresses
 // ---------------------------------------------------------------------------
 export const contactEmails = {
-  /** Listener mail — show ideas, feedback, corrections. */
-  general: `hello@${ARK_DOMAIN}`,
-  /** Press, interviews, media inquiries. */
-  press: `press@${ARK_DOMAIN}`,
-  /** Sponsorships and partnerships. */
-  partnerships: `partners@${ARK_DOMAIN}`,
-  /** Membership and technical support. Deliberately on arkmedia.org, not
-      ARK_DOMAIN — this is the desk the team actually staffs. */
+  /** Every contact-form topic except support. On arkmedia.org because
+      ark-plus.xyz has no MX record, so it receives no mail. */
+  general: "hello@arkmedia.org",
+  /** Membership and technical support — the desk the team staffs. Also where
+      job applications go when a role has no apply link. */
   support: "support@arkmedia.org",
-  /** Job applications. */
-  careers: `careers@${ARK_DOMAIN}`,
 } as const;
 
 /**
  * Topics offered by the /contact form. Each maps to the inbox the submission
- * is forwarded to. Shared by the form (dropdown) and the server route
- * (topic → destination address), so the two can never drift.
+ * is forwarded to: support to support@, everything else to hello@. Shared by
+ * the form (dropdown) and the server route (topic → destination address), so
+ * the two can never drift.
  */
 export const contactTopics = [
   {
@@ -70,17 +63,17 @@ export const contactTopics = [
   {
     value: "press",
     label: "Press, interviews & media",
-    email: contactEmails.press,
+    email: contactEmails.general,
   },
   {
     value: "partnerships",
     label: "Sponsorships & partnerships",
-    email: contactEmails.partnerships,
+    email: contactEmails.general,
   },
   {
     value: "institutions",
     label: "Group & institutional subscriptions",
-    email: contactEmails.partnerships,
+    email: contactEmails.general,
   },
   {
     value: "support",
@@ -158,10 +151,12 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "spotify", url: "https://open.spotify.com/show/79j7N0DUYHOgrt3GUjiCzb" },
     { platform: "youtube", url: "https://www.youtube.com/@the.fhs.podcast" },
   ],
+  "for-heavens-sake-plus": [],
   "ark-news-daily": [
     { platform: "apple", url: "https://podcasts.apple.com/us/podcast/ark-news-daily/id1885015768" },
     { platform: "spotify", url: "https://open.spotify.com/show/1O5ohSo8vLhudPTdSpXSwZ" },
   ],
+  "ark-news-daily-plus": [],
   // PLACEHOLDER: these point at Ask a Jew, standing in until Chosen People
   // Problems has its own feeds. See the show entry in src/data/shows.ts.
   "chosen-people-problems": [
@@ -169,6 +164,7 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "spotify", url: "https://open.spotify.com/show/1kJ4K907e9FuRcJQU4Pdjf" },
     { platform: "youtube", url: "https://www.youtube.com/@AskAJew" },
   ],
+  "chosen-people-problems-plus": [],
 };
 
 /**

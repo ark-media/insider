@@ -160,6 +160,18 @@
   letter-spacing: var(--tracking-eyebrow);
 }
 
+/* A native <select> with its own chevron. Lives here, not as an arbitrary
+   `bg-[url(...)]` class: the SVG's quotes and spaces never survived Tailwind's
+   class scanning, so that class was never generated and the arrow never drew. */
+@utility select-chevron {
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 16px;
+}
+
 @utility meta {
   font-size: var(--text-xs);
   text-transform: uppercase;
