@@ -41,6 +41,7 @@ import { discussThreadsRoutes } from './routes/discuss-threads.js'
 import { faqRoutes } from './routes/faqs.js'
 import { giftRoutes } from './routes/gift.js'
 import { meRoutes } from './routes/me.js'
+import { offerRoutes } from './routes/offer.js'
 import { openHouseRoutes } from './routes/open-houses.js'
 import { pricingRoutes } from './routes/pricing.js'
 import { promoRoutes } from './routes/promo.js'
@@ -73,6 +74,7 @@ export function buildApi(env: Env): Api {
     ...feedActionRoutes(deps),
     ...stripeRoutes(deps),
     ...giftRoutes(deps),
+    ...offerRoutes(deps),
     ...authRoutes(deps),
     ...accountRoutes(deps),
     ...announcementRoutes(deps),

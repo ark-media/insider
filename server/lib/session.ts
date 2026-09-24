@@ -271,6 +271,13 @@ export type SessionProfile = {
   // sets up feeds like any other; it cannot move money — see `assurance` on
   // RequestIdentity and requireLoginAssurance in guards.ts.
   via?: 'email_link'
+  // Set only on a session minted from the welcome-offer email's link: what the
+  // link was for, and when it was signed (epoch seconds — when the email went
+  // out, not when it was clicked). Together they let /api/offer/redeem, and
+  // nothing else, accept the session while the link is fresh
+  // (freshLinkPurpose). Carried across re-mints like loginAt.
+  linkPurpose?: EmailLinkPurpose
+  linkIssuedAt?: number
   // Epoch seconds of the login this session descends from. A profile save
   // re-mints the cookie with a fresh 7-day expiry, so without this a stolen
   // cookie could be renewed forever by saving the profile once a week. Carried
@@ -294,6 +301,8 @@ export async function signSessionToken(profile: SessionProfile, env: Env): Promi
       ...(profile.nameSetByMember ? { name_set_by_member: true } : {}),
       ...(profile.sub ? { sub: profile.sub } : {}),
       ...(profile.via ? { via: profile.via } : {}),
+      ...(profile.linkPurpose ? { link_purpose: profile.linkPurpose } : {}),
+      ...(profile.linkIssuedAt ? { link_iat: profile.linkIssuedAt } : {}),
       login_at: profile.loginAt ?? Math.floor(Date.now() / 1000),
     },
     {
@@ -331,6 +340,8 @@ export async function verifySessionToken(token: string, env: Env): Promise<Sessi
     nameSetByMember: payload.name_set_by_member === true,
     sub: (payload.sub as string | undefined) ?? undefined,
     ...(payload.via === 'email_link' ? { via: 'email_link' as const } : {}),
+    ...(isEmailLinkPurpose(payload.link_purpose) ? { linkPurpose: payload.link_purpose } : {}),
+    ...(typeof payload.link_iat === 'number' ? { linkIssuedAt: payload.link_iat } : {}),
     ...(loginAt !== undefined ? { loginAt } : {}),
   }
 }
@@ -723,6 +734,35 @@ const EMAIL_LOGIN_ISSUER = 'ark-insider'
 const EMAIL_LOGIN_AUDIENCE = 'email-login'
 const EMAIL_LOGIN_TTL_SEC = 14 * 24 * 60 * 60
 
+// What an emailed link was sent for, when that grants it more than the plain
+// link session. Only the welcome offer does: its email exists to be clicked and
+// redeemed on the day, and redeeming bills the card already on the member's own
+// subscription, so a planted session can't be used to save anyone's card.
+export type EmailLinkPurpose = 'welcome_offer'
+
+function isEmailLinkPurpose(v: unknown): v is EmailLinkPurpose {
+  return v === 'welcome_offer'
+}
+
+// How long after the offer email goes out its link can redeem without a
+// sign-in. Measured from when the link was signed, so one opened a week later
+// asks for a code. 48 hours covers the day it is read, and the next.
+export const EMAIL_LINK_TRUST_SEC = 48 * 60 * 60
+
+// The purpose of the fresh emailed link behind this session, or null when it
+// has none or it is older than EMAIL_LINK_TRUST_SEC. A caller names the one
+// purpose it accepts (requireBillingEmail's `acceptFreshLink`).
+export function freshLinkPurpose(
+  session: SessionProfile,
+  nowSec = Date.now() / 1000,
+): EmailLinkPurpose | null {
+  if (session.via !== 'email_link' || !session.linkPurpose) return null
+  const issuedAt = session.linkIssuedAt
+  return issuedAt !== undefined && nowSec - issuedAt <= EMAIL_LINK_TRUST_SEC
+    ? session.linkPurpose
+    : null
+}
+
 export type EmailLoginToken = {
   email: string
   // The Auth0 `sub`, when provisioning resolved one. Carried so the minted
@@ -731,6 +771,10 @@ export type EmailLoginToken = {
   sub?: string
   givenName?: string
   familyName?: string
+  // Set by the welcome-offer send only (EmailLinkPurpose).
+  purpose?: EmailLinkPurpose
+  // When the link was signed (the token's `iat`). Read on verify only.
+  issuedAt?: number
 }
 
 export async function signEmailLoginToken(
@@ -745,6 +789,7 @@ export async function signEmailLoginToken(
       ...(claim.sub ? { sub: claim.sub } : {}),
       ...(claim.givenName ? { given_name: claim.givenName } : {}),
       ...(claim.familyName ? { family_name: claim.familyName } : {}),
+      ...(claim.purpose ? { purpose: claim.purpose } : {}),
     },
     {
       issuer: EMAIL_LOGIN_ISSUER,
@@ -771,6 +816,8 @@ export async function verifyEmailLoginToken(
     sub: (payload?.sub as string | undefined) ?? undefined,
     givenName: (payload?.given_name as string | undefined) ?? undefined,
     familyName: (payload?.family_name as string | undefined) ?? undefined,
+    ...(isEmailLinkPurpose(payload?.purpose) ? { purpose: payload.purpose } : {}),
+    issuedAt: typeof payload?.iat === 'number' ? payload.iat : undefined,
   }
 }
 

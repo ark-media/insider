@@ -47,6 +47,11 @@ type ChangeReply = { status: number; body: Record<string, unknown> };
 let previewReply: PreviewReply;
 let changeReply: ChangeReply;
 let changePosts: Array<Record<string, unknown>> = [];
+// The welcome-offer eligibility check, and how many times it was reached —
+// "nobody was asked" is a distinct assertion from "no card was shown", because
+// the check costs a Stripe read.
+let offerReply: { status: number; body: Record<string, unknown> };
+let offerChecks = 0;
 
 function stubFetch() {
   g.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -56,6 +61,13 @@ function stubFetch() {
         return new Response("nope", { status: previewReply.status });
       }
       return Response.json({ preview: previewReply.preview });
+    }
+    if (url.startsWith("/api/offer/check")) {
+      offerChecks += 1;
+      return new Response(JSON.stringify(offerReply.body), {
+        status: offerReply.status,
+        headers: { "content-type": "application/json" },
+      });
     }
     if (url.startsWith("/api/stripe/change-tier")) {
       changePosts.push(JSON.parse(String(init?.body ?? "{}")));
@@ -134,8 +146,8 @@ const preview = (over: Partial<BundleUpgradePreview> = {}): BundleUpgradePreview
 
 // Stands in for the membership tab: the notices full-width, then one card per
 // offer — the same title/body/CTA the real JumpCard draws.
-function Harness({ me }: { me: Me }) {
-  const { notices, offers } = useEntitlementOffers({ me, onRefresh: () => {} });
+function Harness({ me, now }: { me: Me; now?: number }) {
+  const { notices, offers } = useEntitlementOffers({ me, onRefresh: () => {}, now });
   return (
     <>
       {notices}
@@ -143,20 +155,26 @@ function Harness({ me }: { me: Me }) {
         <div key={offer.key}>
           <h3>{offer.title}</h3>
           <p>{offer.body}</p>
-          <button type="button" onClick={offer.onSelect} disabled={offer.disabled}>
-            {offer.cta} →
-          </button>
+          {/* JumpCard draws `to` as a link and everything else as a button;
+              mirrored here so a card that navigates is tested as one. */}
+          {offer.to ? (
+            <a href={offer.to}>{offer.cta} →</a>
+          ) : (
+            <button type="button" onClick={offer.onSelect} disabled={offer.disabled}>
+              {offer.cta} →
+            </button>
+          )}
         </div>
       ))}
     </>
   );
 }
 
-async function mount(me: Me = arkPlusMember()) {
+async function mount(me: Me = arkPlusMember(), now?: number) {
   return render(
     <ThemeProvider>
       <SubscriberAuthProvider>
-        <Harness me={me} />
+        <Harness me={me} now={now} />
       </SubscriberAuthProvider>
     </ThemeProvider>,
   );
@@ -188,6 +206,10 @@ beforeEach(() => {
   previewReply = { status: 200, preview: preview() };
   changeReply = { status: 200, body: { ok: true, changed: true, timing: "immediate" } };
   changePosts = [];
+  // Default: nobody is eligible for the welcome offer, so every pre-existing case
+  // keeps exercising the ordinary list-price switch.
+  offerReply = { status: 200, body: { eligible: false, reason: "not_eligible" } };
+  offerChecks = 0;
   stubFetch();
 });
 
@@ -383,5 +405,100 @@ describe("bundle switch — the success banner", () => {
     await confirmSwitch();
     expect(text()).toContain("You pay the new price today");
     expect(text()).toContain("renews a year from today");
+  });
+});
+
+// --- the ICMB welcome offer on the membership tab --------------------------
+//
+// An invited member must not be shown the list-price switch: they are holding a
+// discount, and the card that ignores it is the one that makes them pay more
+// than we offered. The card is a signpost — the confirm flow lives at /offer,
+// so there is exactly one place that quotes the numbers and asks the 18+ box.
+
+// Inside the redemption window (mailed 5 Oct, closes 31 Oct) and after it.
+const DURING_OFFER = Date.parse("2026-10-14T12:00:00Z");
+const AFTER_OFFER = Date.parse("2026-11-02T12:00:00Z");
+
+const linkWith = (label: string) =>
+  [...document.body.querySelectorAll<HTMLAnchorElement>("a")].find((a) =>
+    (a.textContent ?? "").includes(label),
+  );
+
+describe("the welcome offer on the membership tab", () => {
+  test("replaces the list-price switch with the member's own price", async () => {
+    offerReply = {
+      status: 200,
+      body: {
+        eligible: true,
+        offer: {
+          plan: "monthly",
+          currency: "usd",
+          minorFactor: 100,
+          bundleCents: 2500,
+          offerCents: 2000,
+          discountedTerms: 3,
+          dueTodayCents: 1467,
+          currentRenewsAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+    };
+    await mount(arkPlusMember(), DURING_OFFER);
+    expect(text()).toContain("the bundle at $20 a month for 3 months");
+    // A link, not a button that fires a flow here — and the list-price CTA is
+    // gone, so there is no way to take the switch at full price by mistake.
+    expect(linkWith("See your offer")?.getAttribute("href")).toBe("/offer");
+    expect(buttonWith("Add the Fold")).toBeUndefined();
+  });
+
+  test("quotes an annual member their year, not a month", async () => {
+    offerReply = {
+      status: 200,
+      body: {
+        eligible: true,
+        offer: {
+          plan: "yearly",
+          currency: "usd",
+          minorFactor: 100,
+          bundleCents: 25_000,
+          offerCents: 20_000,
+          discountedTerms: 1,
+          dueTodayCents: 14_521,
+          currentRenewsAt: "2027-03-01T00:00:00.000Z",
+        },
+      },
+    };
+    await mount(arkPlusMember(), DURING_OFFER);
+    expect(text()).toContain("the bundle at $200 for your first year");
+    expect(text()).not.toContain("a month");
+  });
+
+  test("leaves the ordinary switch alone for a member with no offer", async () => {
+    offerReply = { status: 200, body: { eligible: false, reason: "not_eligible" } };
+    await mount(arkPlusMember(), DURING_OFFER);
+    expect(buttonWith("Add the Fold")).toBeDefined();
+    expect(linkWith("See your offer")).toBeUndefined();
+  });
+
+  test("asks nobody once the offer has closed", async () => {
+    offerReply = { status: 200, body: { eligible: true, offer: null } };
+    await mount(arkPlusMember(), AFTER_OFFER);
+    // Not merely "no card": the eligibility check reads Stripe, so after the
+    // deadline it must not be reached at all.
+    expect(offerChecks).toBe(0);
+    expect(buttonWith("Add the Fold")).toBeDefined();
+  });
+
+  test("asks nobody whose other axis is a gift", async () => {
+    // A gift expires, so it can't be moved onto a bundle — the shape the offer
+    // needs isn't there, and the check is skipped rather than answered.
+    const gifted: Me = {
+      ...arkPlusMember(),
+      axes: {
+        arkPlus: axis({ active: true, source: "gift", expiresAt: "2027-01-01T00:00:00.000Z" }),
+        circle: axis(),
+      },
+    };
+    await mount(gifted, DURING_OFFER);
+    expect(offerChecks).toBe(0);
   });
 });

@@ -347,6 +347,11 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
             // can set up feeds and read the account but cannot touch billing
             // until the member signs in for real (requireLoginAssurance).
             via: 'email_link',
+            // The welcome-offer link alone may also redeem that offer while it
+            // is fresh (freshLinkPurpose, session.ts).
+            ...(claim.purpose && claim.issuedAt
+              ? { linkPurpose: claim.purpose, linkIssuedAt: claim.issuedAt }
+              : {}),
           },
           env,
         )

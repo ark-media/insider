@@ -333,6 +333,27 @@ describe('GET /api/auth/email-login', () => {
     expect(profile?.via).toBe('email_link')
   })
 
+  test('only a welcome-offer link stamps its purpose and send time on the session', async () => {
+    async function mint(claim: Parameters<typeof signEmailLoginToken>[0]) {
+      const res = makeRes()
+      await route(CONFIGURED, PATH)(
+        makeReq({ url: `${PATH}?lt=${encodeURIComponent(await link(claim))}&to=%2Foffer` }),
+        res,
+      )
+      const cookie = setCookies(res).find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))!
+      return verifySessionToken(cookie.slice(`${SESSION_COOKIE_NAME}=`.length).split(';')[0]!, CONFIGURED)
+    }
+
+    const offer = await mint({ email: 'member@example.com', purpose: 'welcome_offer' })
+    expect(offer?.linkPurpose).toBe('welcome_offer')
+    expect(offer?.linkIssuedAt).toBeCloseTo(Date.now() / 1000, -1)
+
+    // A lifecycle email's link gets the plain link session: no billing, ever.
+    const plain = await mint({ email: 'member@example.com' })
+    expect(plain?.linkPurpose).toBeUndefined()
+    expect(plain?.linkIssuedAt).toBeUndefined()
+  })
+
   test('a missing or forged token falls through to the normal login, keeping the destination', async () => {
     for (const query of ['', '?to=%2Fsetup', '?lt=not-a-jwt&to=%2Fsetup']) {
       const res = makeRes()

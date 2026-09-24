@@ -61,7 +61,7 @@ export async function findOrCreateSubscriber(
 // Statuses that count as a live membership for the single-active-subscription
 // guard (§8 risk 1). `incomplete`/`incomplete_expired` are excluded: those are a
 // buyer's own not-yet-paid attempt, which must not block them from retrying.
-const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
+export const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
   'active',
   'trialing',
   'past_due',

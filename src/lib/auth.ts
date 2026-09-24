@@ -103,23 +103,19 @@ export async function fetchMe(): Promise<Me | null> {
 // The server only lets those through for a member who actually signed in — an
 // emailed code or Google. A session that came from a link in one of our emails
 // (or the brief post-payment one) can read the account and set up feeds, but is
-// answered 401 `reauth_required` on billing. That isn't an error to show and
-// leave: send them through sign-in and straight back to the page they were on,
-// where the same click now works. The caller still gets the response, so the
-// server's sentence shows for the moment before the navigation lands.
+// answered 401 `reauth_required` on billing. A session that expired while the
+// page sat open (or was signed out in another tab) is answered a plain 401
+// `unauthenticated`. Neither is an error to show and leave: send them through
+// sign-in and straight back to the page they were on, where the same click now
+// works. The caller still gets the response, so the server's sentence shows for
+// the moment before the navigation lands.
 async function billingFetch(input: string, init: RequestInit): Promise<Response> {
   const res = await fetch(input, init);
   if (res.status === 401) {
-    const body = (await res
-      .clone()
-      .json()
-      .catch(() => null)) as { code?: string } | null;
-    if (body?.code === "reauth_required") {
-      const here = window.location.pathname + window.location.search;
-      window.location.assign(
-        `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
-      );
-    }
+    const here = window.location.pathname + window.location.search;
+    window.location.assign(
+      `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
+    );
   }
   return res;
 }
@@ -581,5 +577,88 @@ export async function sendFeedEmail(
     return { ok: false, error: "Could not send the email. Please try again." };
   } catch {
     return { ok: false, error: "Could not reach the server. Please try again." };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The ICMB launch welcome offer: an existing Ark+ member moves to the Bundle
+// keeping their cadence, at $200 for the first year / $20 for three months.
+// The server decides eligibility from who is signed in and their own
+// subscription, so nothing here passes anything about the offer.
+// ---------------------------------------------------------------------------
+
+export type WelcomeOffer = {
+  plan: "monthly" | "yearly";
+  currency: string;
+  minorFactor: number;
+  // What the Bundle lists at, and what this offer charges instead, for however
+  // many terms `discountedTerms` says.
+  bundleCents: number;
+  offerCents: number;
+  discountedTerms: number;
+  // Straight from Stripe: the Bundle term net of the credit for the member's
+  // unused Ark+ time. Null if that lookup failed — show the offer without it
+  // rather than blocking on a number.
+  dueTodayCents: number | null;
+  // The renewal date they have NOW. Redeeming re-anchors the cycle to today,
+  // so this is the date that changes, never the one to promise.
+  currentRenewsAt: string | null;
+  // They'd booked a cancellation, which redeeming calls off.
+  cancelBooked: boolean;
+};
+
+export type WelcomeOfferCheck =
+  | { kind: "offer"; offer: WelcomeOffer }
+  | { kind: "ineligible"; reason: string }
+  | { kind: "error" };
+
+export async function getWelcomeOffer(): Promise<WelcomeOfferCheck> {
+  try {
+    const res = await fetch("/api/offer/check", { credentials: "include" });
+    if (res.status === 401) return { kind: "ineligible", reason: "signed_out" };
+    if (!res.ok) return { kind: "error" };
+    const json = (await res.json()) as
+      | { eligible: true; offer: WelcomeOffer }
+      | { eligible: false; reason: string };
+    return json.eligible
+      ? { kind: "offer", offer: json.offer }
+      : { kind: "ineligible", reason: json.reason };
+  } catch {
+    return { kind: "error" };
+  }
+}
+
+export async function redeemWelcomeOffer(input: {
+  // The 18+ sentence the member ticked — this switch is what puts them in the
+  // Fold, so it is asked and recorded exactly as the account upgrade does.
+  ageStatement: string | null;
+}): Promise<{
+  ok: boolean;
+  plan?: "monthly" | "yearly";
+  renewsAt?: string | null;
+  reason?: string;
+  error?: string;
+}> {
+  try {
+    const res = await billingFetch("/api/offer/redeem", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ age_statement: input.ageStatement ?? undefined }),
+    });
+    // billingFetch is already on its way to sign-in; a lapsed session's bare
+    // `unauthenticated` code is not a sentence to show while it gets there.
+    if (res.status === 401) {
+      return { ok: false, error: "Please sign in again to take your offer." };
+    }
+    return (await res.json()) as {
+      ok: boolean;
+      plan?: "monthly" | "yearly";
+      renewsAt?: string | null;
+      reason?: string;
+      error?: string;
+    };
+  } catch {
+    return { ok: false, error: "Something went wrong — please try again." };
   }
 }

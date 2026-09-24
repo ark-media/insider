@@ -17,6 +17,7 @@ import { Route as FaqRouteImport } from './routes/faq'
 import { Route as FoldRouteImport } from './routes/fold'
 import { Route as IsraelVotesRouteImport } from './routes/israel-votes'
 import { Route as LogoutRouteImport } from './routes/logout'
+import { Route as OfferRouteImport } from './routes/offer'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as RedeemRouteImport } from './routes/redeem'
@@ -99,6 +100,11 @@ const IsraelVotesRoute = IsraelVotesRouteImport.update({
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
   path: '/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OfferRoute = OfferRouteImport.update({
+  id: '/offer',
+  path: '/offer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingRoute = PricingRouteImport.update({
@@ -327,6 +333,7 @@ export interface FileRoutesByFullPath {
   '/fold': typeof FoldRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
+  '/offer': typeof OfferRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/redeem': typeof RedeemRoute
@@ -379,6 +386,7 @@ export interface FileRoutesByTo {
   '/fold': typeof FoldRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
+  '/offer': typeof OfferRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/redeem': typeof RedeemRoute
@@ -433,6 +441,7 @@ export interface FileRoutesById {
   '/fold': typeof FoldRoute
   '/israel-votes': typeof IsraelVotesRoute
   '/logout': typeof LogoutRoute
+  '/offer': typeof OfferRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
   '/redeem': typeof RedeemRoute
@@ -488,6 +497,7 @@ export interface FileRouteTypes {
     | '/fold'
     | '/israel-votes'
     | '/logout'
+    | '/offer'
     | '/pricing'
     | '/privacy'
     | '/redeem'
@@ -540,6 +550,7 @@ export interface FileRouteTypes {
     | '/fold'
     | '/israel-votes'
     | '/logout'
+    | '/offer'
     | '/pricing'
     | '/privacy'
     | '/redeem'
@@ -593,6 +604,7 @@ export interface FileRouteTypes {
     | '/fold'
     | '/israel-votes'
     | '/logout'
+    | '/offer'
     | '/pricing'
     | '/privacy'
     | '/redeem'
@@ -647,6 +659,7 @@ export interface RootRouteChildren {
   FoldRoute: typeof FoldRoute
   IsraelVotesRoute: typeof IsraelVotesRoute
   LogoutRoute: typeof LogoutRoute
+  OfferRoute: typeof OfferRoute
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
   RedeemRoute: typeof RedeemRoute
@@ -742,6 +755,13 @@ declare module '@tanstack/react-router' {
       path: '/logout'
       fullPath: '/logout'
       preLoaderRoute: typeof LogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/offer': {
+      id: '/offer'
+      path: '/offer'
+      fullPath: '/offer'
+      preLoaderRoute: typeof OfferRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing': {
@@ -1089,6 +1109,7 @@ const rootRouteChildren: RootRouteChildren = {
   FoldRoute: FoldRoute,
   IsraelVotesRoute: IsraelVotesRoute,
   LogoutRoute: LogoutRoute,
+  OfferRoute: OfferRoute,
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
   RedeemRoute: RedeemRoute,

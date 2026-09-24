@@ -4,8 +4,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isSameOrigin, makeJsonRes } from './http.js'
 import {
   requireAdmin,
+  freshLinkPurpose,
   resolveRequestIdentity,
   type Auth0Profile,
+  type EmailLinkPurpose,
   type RequestIdentity,
 } from './session.js'
 
@@ -50,11 +52,25 @@ export async function requireAdminRequest(
 // On failure it writes the 401 and returns false. `code: 'reauth_required'` is
 // what the client keys on to send the member through sign-in and back
 // (src/lib/auth.ts); `error` is the sentence shown if it doesn't.
+//
+// `acceptFreshLink` is the one exception, and a route must name it: a session
+// from an emailed link sent for that purpose, still under EMAIL_LINK_TRUST_SEC
+// old (session.ts). Only /api/offer/redeem does, for the welcome-offer email.
+// That route only switches the member's own subscription on the card already
+// on it, so a planted offer session buys an attacker nothing.
 function requireLoginAssurance(
   identity: RequestIdentity,
   res: ServerResponse,
+  acceptFreshLink?: EmailLinkPurpose,
 ): boolean {
   if (identity.assurance === 'login') return true
+  if (
+    acceptFreshLink &&
+    identity.session &&
+    freshLinkPurpose(identity.session) === acceptFreshLink
+  ) {
+    return true
+  }
   makeJsonRes(res)(401, {
     ok: false,
     code: 'reauth_required',
@@ -71,12 +87,13 @@ export async function requireBillingEmail(
   req: IncomingMessage,
   res: ServerResponse,
   env: Env,
+  opts: { acceptFreshLink?: EmailLinkPurpose } = {},
 ): Promise<string | null> {
   const identity = await resolveRequestIdentity(req, env)
   if (!identity) {
     makeJsonRes(res)(401, { error: 'unauthenticated' })
     return null
   }
-  if (!requireLoginAssurance(identity, res)) return null
+  if (!requireLoginAssurance(identity, res, opts.acceptFreshLink)) return null
   return identity.email
 }
