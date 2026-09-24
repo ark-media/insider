@@ -292,6 +292,9 @@ function OfferConfirm({
           : ""}
         , and you'll renew {cadence === "a year" ? "each year" : "each month"}{" "}
         from now on.
+        {offer.cancelBooked
+          ? " This also calls off the cancellation you'd booked."
+          : ""}
       </p>
 
       <label className="mt-8 flex items-start gap-3">

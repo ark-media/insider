@@ -343,12 +343,15 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
             familyName: claim.familyName,
             ...(claim.sub ? { sub: claim.sub } : {}),
             // Marks the session as link-minted. The link is replayable for its
-            // whole 14 days and travels in a GET URL, so once it is more than
-            // 48 hours old the session it buys can set up feeds and read the
-            // account but cannot touch billing until the member signs in for
-            // real (EMAIL_LINK_TRUST_SEC, requireLoginAssurance).
+            // whole 14 days and travels in a GET URL, so the session it buys
+            // can set up feeds and read the account but cannot touch billing
+            // until the member signs in for real (requireLoginAssurance).
             via: 'email_link',
-            ...(claim.issuedAt ? { linkIssuedAt: claim.issuedAt } : {}),
+            // The welcome-offer link alone may also redeem that offer while it
+            // is fresh (freshLinkPurpose, session.ts).
+            ...(claim.purpose && claim.issuedAt
+              ? { linkPurpose: claim.purpose, linkIssuedAt: claim.issuedAt }
+              : {}),
           },
           env,
         )

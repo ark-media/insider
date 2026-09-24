@@ -991,9 +991,6 @@ describe('gift claim (magic-link) token', () => {
       giftToken: 'gt_1',
       email: 'r@x.com',
       name: 'Rae',
-      // When the claim email was signed — the session it mints trusts it for
-      // billing for 48 hours from then.
-      issuedAt: expect.any(Number),
     })
   })
 

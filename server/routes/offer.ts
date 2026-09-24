@@ -166,8 +166,8 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
   return [
     defineRoute({
       // Read-only, so a session minted from the offer email is enough to see
-      // the page at any age. Redeeming needs a real sign-in, or the offer
-      // email's link while it is under 48 hours old (below).
+      // the page. Redeeming needs a real sign-in, or the offer email's own
+      // link while it is fresh (below).
       path: '/api/offer/check',
       method: 'GET',
       handler: async (req, _res, json) => {
@@ -225,6 +225,9 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             // Today's renewal date, which this offer MOVES: redeeming re-anchors
             // the cycle, so the page must not present it as unchanged.
             currentRenewsAt: periodEndIso(sub),
+            // A cancellation they'd booked, which taking the offer calls off —
+            // the page says so rather than doing it quietly.
+            cancelBooked: sub.cancel_at_period_end,
           },
         })
       },
@@ -237,11 +240,14 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        // Signed in for real, or holding the offer email's link while it is
-        // under 48 hours old (guards.ts) — this bills a card. The client turns
-        // the 401's `reauth_required` into a round trip through sign-in and
-        // back.
-        const email = await requireBillingEmail(req, res, env)
+        // This bills a card, so it needs a real sign-in — or a session from
+        // the offer email's own link, sent under 48 hours ago, so the member
+        // who clicks it on the day takes the offer in one click. No other
+        // emailed link counts (guards.ts). The client turns the 401's
+        // `reauth_required` into a round trip through sign-in and back.
+        const email = await requireBillingEmail(req, res, env, {
+          acceptFreshLink: 'welcome_offer',
+        })
         if (!email) return
 
         // This switch is what puts the member in the Fold, so it asks the same
@@ -287,6 +293,11 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
               proration_behavior: 'always_invoice',
               payment_behavior: 'error_if_incomplete',
               discounts: await offerDiscounts(stripe, sub, plan),
+              // Taking a new Bundle term calls off a cancellation they'd
+              // booked, as accepting a save offer does. Left on, a monthly
+              // member would pay for the discounted term and still lapse at
+              // the end of its first month.
+              cancel_at_period_end: false,
               metadata: {
                 tier: 'bundle',
                 plan,

@@ -476,11 +476,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
             familyName: claimName.last,
             sub: auth0Sub,
             // A session bought with an emailed link, like the lifecycle emails'
-            // auto-login: enough to land signed in and set up feeds, and to
-            // change billing only while the claim email is under 48 hours old
-            // (EMAIL_LINK_TRUST_SEC, guards.ts).
+            // auto-login: enough to land signed in and set up feeds, not enough
+            // to change billing until they sign in for real (guards.ts).
             via: 'email_link',
-            ...(claim.issuedAt ? { linkIssuedAt: claim.issuedAt } : {}),
           },
           env,
         )

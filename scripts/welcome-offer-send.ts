@@ -203,7 +203,13 @@ async function main(): Promise<void> {
       plan: r.plan,
       ...pricesFor(r),
       discountedMonths: WELCOME_MONTHLY_DISCOUNT_MONTHS,
-      offerUrl: await emailLoginUrl(appBaseUrl, '/offer', { email: r.email }, env),
+      offerUrl: await emailLoginUrl(
+        appBaseUrl,
+        '/offer',
+        // Lets this link, alone among our emails, redeem for its first 48 hours.
+        { email: r.email, purpose: 'welcome_offer' },
+        env,
+      ),
     })
     const ok = await sendEmail(env, {
       to: r.email,

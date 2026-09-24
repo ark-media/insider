@@ -4,8 +4,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isSameOrigin, makeJsonRes } from './http.js'
 import {
   requireAdmin,
+  freshLinkPurpose,
   resolveRequestIdentity,
   type Auth0Profile,
+  type EmailLinkPurpose,
   type RequestIdentity,
 } from './session.js'
 
@@ -38,23 +40,37 @@ export async function requireAdminRequest(
 
 // Gate for anything that moves money or changes what a member is billed:
 // cancelling, reactivating, changing tier, taking a retention offer, replacing
-// the card. The caller must have signed in (an emailed code or Google), or be
-// holding a session from an emailed link that went out within the last 48 hours
-// (EMAIL_LINK_TRUST_SEC, session.ts) — which proves the same thing a code does.
+// the card. The caller must have actually signed in (an emailed code or Google).
 //
-// An older link session, or the post-payment checkout token, is not enough.
-// Those prove possession of a URL that has sat in an inbox for days and passed
-// through mail gateways, forwards and request logs — fine for landing on
-// /setup, not for charging the card on file.
+// A session minted from a link in an email, or the post-payment checkout token,
+// is not enough. Those prove possession of a URL that sits in an inbox for two
+// weeks and passes through mail gateways, forwards and request logs — fine for
+// landing on /setup, not for charging the card on file. It is also what makes a
+// planted session harmless: someone walked into another account by a crafted
+// link can't be led into saving their own card there.
 //
 // On failure it writes the 401 and returns false. `code: 'reauth_required'` is
 // what the client keys on to send the member through sign-in and back
 // (src/lib/auth.ts); `error` is the sentence shown if it doesn't.
+//
+// `acceptFreshLink` is the one exception, and a route must name it: a session
+// from an emailed link sent for that purpose, still under EMAIL_LINK_TRUST_SEC
+// old (session.ts). Only /api/offer/redeem does, for the welcome-offer email.
+// That route only switches the member's own subscription on the card already
+// on it, so a planted offer session buys an attacker nothing.
 function requireLoginAssurance(
   identity: RequestIdentity,
   res: ServerResponse,
+  acceptFreshLink?: EmailLinkPurpose,
 ): boolean {
   if (identity.assurance === 'login') return true
+  if (
+    acceptFreshLink &&
+    identity.session &&
+    freshLinkPurpose(identity.session) === acceptFreshLink
+  ) {
+    return true
+  }
   makeJsonRes(res)(401, {
     ok: false,
     code: 'reauth_required',
@@ -71,12 +87,13 @@ export async function requireBillingEmail(
   req: IncomingMessage,
   res: ServerResponse,
   env: Env,
+  opts: { acceptFreshLink?: EmailLinkPurpose } = {},
 ): Promise<string | null> {
   const identity = await resolveRequestIdentity(req, env)
   if (!identity) {
     makeJsonRes(res)(401, { error: 'unauthenticated' })
     return null
   }
-  if (!requireLoginAssurance(identity, res)) return null
+  if (!requireLoginAssurance(identity, res, opts.acceptFreshLink)) return null
   return identity.email
 }
