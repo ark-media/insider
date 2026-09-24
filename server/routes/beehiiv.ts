@@ -182,6 +182,7 @@ async function createBeehiivSubscription(
       // than a convenience one. A genuine returning reader can subscribe again
       // from Beehiiv's own confirmed flow.
       reactivate_existing: false,
+      send_welcome_email: true,
       // Tag the source so we can distinguish site signups in Beehiiv.
       utm_source: 'insider-site',
     }),
