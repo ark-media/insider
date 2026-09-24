@@ -38,14 +38,10 @@ export const socialUrls = {
 // Contact addresses
 // ---------------------------------------------------------------------------
 export const contactEmails = {
-  /** Listener mail — show ideas, feedback, corrections. */
-  general: `hello@${ARK_DOMAIN}`,
-  /** Press, interviews, media inquiries. */
-  press: `press@${ARK_DOMAIN}`,
-  /** Sponsorships and partnerships. */
-  partnerships: `partners@${ARK_DOMAIN}`,
-  /** Membership and technical support. Deliberately on arkmedia.org, not
-      ARK_DOMAIN — this is the desk the team actually staffs. */
+  /** Every contact-form topic except support. On arkmedia.org, not
+      ARK_DOMAIN: ark-plus.xyz has no MX record, so it receives no mail. */
+  general: "hello@arkmedia.org",
+  /** Membership and technical support — the desk the team staffs. */
   support: "support@arkmedia.org",
   /** Job applications. */
   careers: `careers@${ARK_DOMAIN}`,
@@ -53,8 +49,9 @@ export const contactEmails = {
 
 /**
  * Topics offered by the /contact form. Each maps to the inbox the submission
- * is forwarded to. Shared by the form (dropdown) and the server route
- * (topic → destination address), so the two can never drift.
+ * is forwarded to: support to support@, everything else to hello@. Shared by
+ * the form (dropdown) and the server route (topic → destination address), so
+ * the two can never drift.
  */
 export const contactTopics = [
   {
@@ -70,17 +67,17 @@ export const contactTopics = [
   {
     value: "press",
     label: "Press, interviews & media",
-    email: contactEmails.press,
+    email: contactEmails.general,
   },
   {
     value: "partnerships",
     label: "Sponsorships & partnerships",
-    email: contactEmails.partnerships,
+    email: contactEmails.general,
   },
   {
     value: "institutions",
     label: "Group & institutional subscriptions",
-    email: contactEmails.partnerships,
+    email: contactEmails.general,
   },
   {
     value: "support",

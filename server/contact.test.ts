@@ -316,6 +316,12 @@ describe('/api/contact — listener questions', () => {
     MAKE_LISTENER_QUESTIONS_WEBHOOK_KEY: 'make-key',
   }
 
+  test('support goes to support@, every other topic to hello@', () => {
+    for (const t of contactTopics) {
+      expect(t.email).toBe(t.value === 'support' ? 'support@arkmedia.org' : 'hello@arkmedia.org')
+    }
+  })
+
   test('emails the question with its show, then files it with Make', async () => {
     const res = makeRes()
     await getHandler(ENV)(makeReq({ body: QUESTION }), res)
