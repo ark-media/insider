@@ -416,7 +416,7 @@ describe('/api/contact — inboxes and Airtable', () => {
     await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: 'call-me-back-plus' } }), res)
     expect(res.statusCode).toBe(200)
     const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
-    expect(payload.show).toBe('Call Me Back | Ark+')
+    expect(payload.show).toBe('Call me Back | Ark+')
     expect(payload.showSlug).toBe('call-me-back-plus')
   })
 

@@ -101,7 +101,7 @@ export const shows: Show[] = [
     listen: showListenLinks["for-heavens-sake"],
   },
   {
-    // Members-only, like Call Me Back | Ark+: no page, so its home is /plus.
+    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
     // The tagline and description are shown nowhere today (paid shows are
     // left out of every listing); they're here because every show has them.
     slug: "for-heavens-sake-plus",
@@ -132,7 +132,7 @@ export const shows: Show[] = [
     listen: showListenLinks["ark-news-daily"],
   },
   {
-    // Members-only, like Call Me Back | Ark+: no page, so its home is /plus.
+    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
     // The tagline and description are shown nowhere today (paid shows are
     // left out of every listing); they're here because every show has them.
     slug: "ark-news-daily-plus",
@@ -171,7 +171,7 @@ export const shows: Show[] = [
     listen: showListenLinks["chosen-people-problems"],
   },
   {
-    // Members-only, like Call Me Back | Ark+: no page, so its home is /plus.
+    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
     // The tagline and description are shown nowhere today (paid shows are
     // left out of every listing); they're here because every show has them.
     slug: "chosen-people-problems-plus",
