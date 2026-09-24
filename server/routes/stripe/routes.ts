@@ -10,6 +10,8 @@
 //     buyer ticked onto their Checkout Session, just before it is confirmed.
 //   POST /api/stripe/cancel-subscription   — cancel at period end.
 //   POST /api/stripe/reactivate-subscription — undo a pending cancel.
+//   GET  /api/stripe/billing-currency      — the currency a returning member's
+//     existing Customer bills in, which checkout holds them to.
 //   GET  /api/stripe/my-subscription       — the signed-in member's cancel
 //     schedule, price and card on file, for the account page's plan card.
 //   POST /api/stripe/card-setup-intent     — a SetupIntent that mounts Stripe's
@@ -88,13 +90,14 @@ import { isValidEmail } from '../../../shared/validation.js'
 import { defineRoute, type Deps, type Route } from '../../lib/route.js'
 import {
   addCouponToFinalPhase,
+  billingCurrencyOf,
   cardOf,
   changeIsImmediate,
   coerceTier,
   customerIdOf,
   existingDiscountParams,
   findLiveSubscription,
-  findOrCreateSubscriber,
+  findReusableSubscriber,
   giftExtensionRunning,
   MAX_NAME_LEN,
   oneCycleFromNowIso,
@@ -303,6 +306,25 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
 
+        // Currency lock. A returning member's Customer already bills in one
+        // currency — the one their past subscription used, and the only one
+        // its balance can pay. The modal pins its picker to it (via
+        // /api/stripe/billing-currency), so a mismatch here is a stale or
+        // hand-rolled request: refuse it rather than re-read the PWYC amount,
+        // which is in the requested currency's minor units, as another.
+        // A Customer in a currency we no longer sell isn't reused at all — the
+        // member starts a fresh one in the currency they chose.
+        const found = provenEmail ? await findReusableSubscriber(stripe, email) : null
+        const lockedCurrency = billingCurrencyOf(found)
+        const reusable = found && (!found.currency || lockedCurrency) ? found : null
+        if (lockedCurrency && lockedCurrency !== currency) {
+          return json(409, {
+            error: `Your account is billed in ${lockedCurrency.toUpperCase()}, so your membership is too.`,
+            code: 'currency_locked',
+            currency: lockedCurrency,
+          })
+        }
+
         // Per-currency floor for this tier+plan from the catalog price's
         // currency_options. PWYC lets the buyer pay more, never less.
         const catalog = await resolveCatalogPrice(stripe, tier, plan)
@@ -340,18 +362,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 quantity: 1,
               }
 
-        // Find-or-reuse a customer so a signed-in member doesn't mint duplicates
-        // for their own email (and so the resulting subscription's customer
-        // always has an email). Reuse is for a PROVEN email only — an existing
-        // Customer carries a saved card, a balance and a billing history, none
-        // of which belong to whoever typed the address. Everyone else gets a
-        // fresh Customer; one email mapping to several is already a fact of life
-        // here (churn-then-resubscribe) and every lookup copes with it.
-        const customer = await findOrCreateSubscriber(stripe, {
-          email,
-          name: body.name,
-          reuseExisting: provenEmail,
-        })
+        // Reuse the member's own Customer (found above, for a PROVEN email only)
+        // so a signed-in member doesn't mint duplicates; everyone else gets a
+        // fresh one — see findReusableSubscriber. Either way the resulting
+        // subscription's customer always has an email.
+        const customer =
+          reusable ?? (await stripe.customers.create({ email, name: body.name }))
 
         const session = await stripe.checkout.sessions.create({
           mode: 'subscription',
@@ -1033,6 +1049,23 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           durationMonths: offer.durationMonths,
           next_charge_at: periodEndIso(updated),
         })
+      },
+    }),
+
+    defineRoute({
+      // The currency the checkout modal must hold its picker to: the one the
+      // signed-in member's existing Customer bills in, or null for anyone free
+      // to choose (signed out, never billed). Mirrors create-checkout-session's
+      // currency lock, which only engages for a durable login — the same test
+      // as its `provenEmail`, minus the typed address it doesn't have yet.
+      path: '/api/stripe/billing-currency',
+      method: 'GET',
+      handler: async (req, _res, json) => {
+        if (!stripe) return json(500, { error: 'not_configured' })
+        const identity = await resolveRequestIdentity(req, env)
+        if (identity?.source !== 'auth0') return json(200, { currency: null })
+        const customer = await findReusableSubscriber(stripe, identity.email)
+        json(200, { currency: billingCurrencyOf(customer) })
       },
     }),
 

@@ -24,6 +24,7 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
 import { getAttribution } from "../lib/attribution";
+import { getBillingCurrency } from "../lib/auth";
 import {
   type PricingResponse,
   browserCountry,
@@ -277,6 +278,10 @@ export function CheckoutModal({
   // seeded from the geo-detected default, changeable via the selector.
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
   const [currency, setCurrency] = useState<string>("usd");
+  // A returning member's account currency: their existing Stripe Customer
+  // already bills in it, so checkout charges it and the picker is replaced by
+  // a note. Null for everyone free to choose. The server holds the same line.
+  const [lockedCurrency, setLockedCurrency] = useState<string | null>(null);
   // Whether the buyer raised the amount above the floor — read at the bottom of
   // the funnel (after the session is gone) for the checkout_succeeded event.
   const customAmountRef = useRef<number | null>(null);
@@ -300,6 +305,7 @@ export function CheckoutModal({
     setPromo(null);
     setPricing(null);
     setCurrency("usd");
+    setLockedCurrency(null);
     // customAmountRef is deliberately not cleared here: it is written on every
     // submit and read only after one, so it cannot carry across a purchase —
     // and writing a ref during render is exactly what refs are not for.
@@ -358,14 +364,19 @@ export function CheckoutModal({
         // (local dev, or a proxy that strips it). In production the real geo IP
         // wins over this hint server-side — see server/routes/pricing.ts.
         const hint = browserCountry();
-        const res = await fetch(
-          `/api/pricing${hint ? `?locale_hint=${encodeURIComponent(hint)}` : ""}`,
-        );
+        const [res, locked] = await Promise.all([
+          fetch(`/api/pricing${hint ? `?locale_hint=${encodeURIComponent(hint)}` : ""}`),
+          getBillingCurrency(),
+        ]);
         if (!res.ok) return;
         const data = (await res.json().catch(() => null)) as PricingResponse | null;
         if (cancelled || !data?.tiers) return;
         setPricing(data);
-        if (typeof data.default_currency === "string") {
+        // The account currency beats the geo default — see lockedCurrency.
+        if (locked && data.currencies.includes(locked)) {
+          setLockedCurrency(locked);
+          setCurrency(locked);
+        } else if (typeof data.default_currency === "string") {
           setCurrency(data.default_currency);
         }
       } catch {
@@ -416,7 +427,17 @@ export function CheckoutModal({
           checkout_session_id?: string;
           error?: string;
           code?: string;
+          currency?: string;
         };
+        // The account bills in another currency than the one priced (the lock
+        // lookup failed or was beaten to the submit). Re-price in it and send
+        // the buyer back to the amount screen, which now names the currency.
+        if (res.status === 409 && data.code === "currency_locked" && data.currency) {
+          setLockedCurrency(data.currency);
+          setCurrency(data.currency);
+          setStep({ kind: "email" });
+          return;
+        }
         const signInStep = signInStepForRefusal(res.status, data, email);
         if (signInStep) {
           trackEvent("checkout_failed", {
@@ -521,6 +542,7 @@ export function CheckoutModal({
           promo={promo}
           floorMinor={floorMinor}
           currency={currency}
+          currencyLocked={lockedCurrency !== null}
           factor={factor}
           currencies={pricing?.currencies ?? null}
           onCurrencyChange={setCurrency}
@@ -686,6 +708,7 @@ export function EmailForm({
   promo,
   floorMinor,
   currency,
+  currencyLocked = false,
   factor,
   currencies,
   onCurrencyChange,
@@ -696,6 +719,9 @@ export function EmailForm({
   promo: PromoInfo | null;
   floorMinor: number | null;
   currency: string;
+  // The member's account already bills in `currency` — show it, don't offer
+  // a choice.
+  currencyLocked?: boolean;
   factor: number;
   currencies: string[] | null;
   onCurrencyChange: (currency: string) => void;
@@ -842,7 +868,11 @@ export function EmailForm({
       <div className="mt-6 border-t border-rule pt-5">
         <div className="flex items-center justify-between gap-3">
           <span className="eyebrow text-fg-muted">Choose your amount</span>
-          {currencies && currencies.length > 1 ? (
+          {currencyLocked ? (
+            <span className="text-body-sm text-fg-muted">
+              Your account bills in {currency.toUpperCase()}
+            </span>
+          ) : currencies && currencies.length > 1 ? (
             <CurrencySelect
               value={currency}
               options={currencies}

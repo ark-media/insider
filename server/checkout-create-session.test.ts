@@ -34,7 +34,7 @@ const stripeCalls: StripeCall[] = []
 //   existingCustomers   → what customers.list({ email }) returns
 //   subsByCustomer      → what subscriptions.list({ customer }) returns
 //   nextSessionId       → id stamped onto the returned Session
-let existingCustomers: Array<{ id: string; email: string }> = []
+let existingCustomers: Array<{ id: string; email: string; currency?: string }> = []
 let subsByCustomer: Record<string, Array<{ id: string; status?: string }>> = {}
 let nextSessionId = 'cs_test_1'
 
@@ -701,6 +701,98 @@ describe('POST /api/stripe/create-checkout-session — tier + currency', () => {
     expect(res.statusCode).toBe(200)
     expect(lastSessionCreateArgs().currency).toBe('usd')
     expect((res.__json() as Record<string, unknown>).currency).toBe('usd')
+  })
+})
+
+// A subscription keeps one currency for life and a Customer's balance only pays
+// invoices in its own, so a returning member's checkout is held to the currency
+// their reused Customer already bills in.
+describe('POST /api/stripe/create-checkout-session — currency lock', () => {
+  test('signed in, account bills in CAD, asks for USD → 409 currency_locked, nothing created', async () => {
+    existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly', currency: 'usd' },
+      { cookie: await sessionCookie('a@b.co') },
+    )
+    expect(res.statusCode).toBe(409)
+    expect(res.__json()).toMatchObject({ code: 'currency_locked', currency: 'cad' })
+    expect(stripeCalls.find((c) => c.method === 'customers.create')).toBeUndefined()
+    expect(stripeCalls.find((c) => c.method === 'checkout.sessions.create')).toBeUndefined()
+  })
+
+  test('signed in, asks for the account currency → reuses the Customer in it', async () => {
+    existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly', currency: 'cad' },
+      { cookie: await sessionCookie('a@b.co') },
+    )
+    expect(res.statusCode).toBe(200)
+    const args = lastSessionCreateArgs()
+    expect(args.customer).toBe('cus_cad')
+    expect(args.currency).toBe('cad')
+  })
+
+  test('unauthenticated → no lock: a fresh Customer in the chosen currency', async () => {
+    existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
+    const res = await post({ email: 'a@b.co', plan: 'monthly', currency: 'usd' })
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().customer).toBe('cus_new')
+    expect(lastSessionCreateArgs().currency).toBe('usd')
+  })
+
+  test('a never-billed Customer is reused in any currency', async () => {
+    existingCustomers = [{ id: 'cus_fresh', email: 'a@b.co' }]
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly', currency: 'eur' },
+      { cookie: await sessionCookie('a@b.co') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().customer).toBe('cus_fresh')
+    expect(lastSessionCreateArgs().currency).toBe('eur')
+  })
+
+  test('a Customer in a currency we do not sell → a fresh Customer, not a lock', async () => {
+    existingCustomers = [{ id: 'cus_kwd', email: 'a@b.co', currency: 'kwd' }]
+    const res = await post(
+      { email: 'a@b.co', plan: 'monthly', currency: 'usd' },
+      { cookie: await sessionCookie('a@b.co') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().customer).toBe('cus_new')
+  })
+})
+
+describe('GET /api/stripe/billing-currency', () => {
+  const BC_PATH = '/api/stripe/billing-currency'
+  async function get(cookie?: string): Promise<FakeRes> {
+    const res = makeRes()
+    await runHandler(
+      getHandler(BC_PATH),
+      makeFakeReq({ method: 'GET', url: BC_PATH, ...(cookie ? { cookie } : {}) }),
+      res,
+    )
+    return res
+  }
+
+  test('signed out → null, without asking Stripe', async () => {
+    existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
+    const res = await get()
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ currency: null })
+    expect(stripeCalls).toEqual([])
+  })
+
+  test('signed in → the currency their Customer bills in', async () => {
+    existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
+    const res = await get(await sessionCookie('a@b.co'))
+    expect(res.__json()).toEqual({ currency: 'cad' })
+  })
+
+  test('the checkout token is not a login → null', async () => {
+    existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
+    const token = await signCheckoutToken('a@b.co', BASE_ENV, null)
+    const res = await get(`${CHECKOUT_COOKIE_NAME}=${token}`)
+    expect(res.__json()).toEqual({ currency: null })
   })
 })
 

@@ -87,6 +87,33 @@ const usd = { currency: "usd", factor: 100, floorMinor: 500 };
 // JPY is zero-decimal, so it formats and scales differently from USD.
 const jpy = { currency: "jpy", factor: 1, floorMinor: 500 };
 
+// A returning member is held to the currency their account already bills in.
+describe("CheckoutModal account currency", () => {
+  test("a locked currency is named, and no picker is offered", async () => {
+    const { container } = await render(
+      <EmailForm
+        plan="monthly"
+        initialEmail=""
+        promo={null}
+        floorMinor={800}
+        currency="cad"
+        currencyLocked
+        factor={100}
+        currencies={["usd", "cad"]}
+        onCurrencyChange={() => {}}
+        onSubmit={() => {}}
+      />,
+    );
+    expect(container.textContent).toContain("Your account bills in CAD");
+    expect(container.querySelector('[aria-haspopup="listbox"]')).toBeNull();
+  });
+
+  test("unlocked, the picker is offered", async () => {
+    const { container } = await render(form(usd));
+    expect(container.querySelector('[aria-haspopup="listbox"]')).not.toBeNull();
+  });
+});
+
 describe("CheckoutModal amount selection", () => {
   test("starts at the floor for the given currency", async () => {
     const { container } = await render(form(usd));

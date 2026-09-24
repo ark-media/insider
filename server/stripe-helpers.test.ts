@@ -11,8 +11,9 @@ import { describe, test, expect } from 'bun:test'
 import type Stripe from 'stripe'
 import {
   existingDiscountParams,
+  billingCurrencyOf,
   findLiveSubscription,
-  findOrCreateSubscriber,
+  findReusableSubscriber,
   phaseDiscountParams,
   planFromSubscription,
   validatePwycAmount,
@@ -177,22 +178,34 @@ describe('by-email customer lookups are robust to case', () => {
       { id: 'cus_lower', email: 'member@example.com' },
       { id: 'cus_mixed', email: 'Member@Example.com' },
     ])
-    const c = await findOrCreateSubscriber(stripe, {
-      email: 'Member@Example.com',
-      reuseExisting: true,
-    })
+    const c = await findReusableSubscriber(stripe, 'Member@Example.com')
     // Two distinct customers found → the clean one (no active sub) is picked.
-    expect(c.id).toBe('cus_mixed')
+    expect(c?.id).toBe('cus_mixed')
   })
 
-  test('customers are created lowercase, and never looked up when the email is unproven', async () => {
-    const { stripe, asked, created } = fakeStripe([{ id: 'cus_lower', email: 'member@example.com' }])
-    const c = await findOrCreateSubscriber(stripe, {
-      email: ' Member@Example.com ',
-      reuseExisting: false,
-    })
-    expect(c.id).toBe('cus_new')
-    expect(created[0]!.email).toBe('member@example.com')
-    expect(asked).toEqual([])
+  test('no customer for the email → null, and nothing is created', async () => {
+    const { stripe, created } = fakeStripe([])
+    expect(await findReusableSubscriber(stripe, 'member@example.com')).toBeNull()
+    expect(created).toEqual([])
+  })
+})
+
+// A returning member is held to the currency their Customer already bills in.
+describe('billingCurrencyOf', () => {
+  const customer = (currency: string | null | undefined) =>
+    ({ id: 'cus_1', currency }) as unknown as Stripe.Customer
+
+  test('a billed Customer is held to its currency', () => {
+    expect(billingCurrencyOf(customer('cad'))).toBe('cad')
+  })
+
+  test('nothing to hold to: no Customer, or one never billed', () => {
+    expect(billingCurrencyOf(null)).toBeNull()
+    expect(billingCurrencyOf(customer(null))).toBeNull()
+    expect(billingCurrencyOf(customer(undefined))).toBeNull()
+  })
+
+  test('a currency we do not sell is not a lock', () => {
+    expect(billingCurrencyOf(customer('kwd'))).toBeNull()
   })
 })

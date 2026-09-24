@@ -387,6 +387,24 @@ export async function getBundleUpgradePreview(): Promise<BundleUpgradePreviewRes
   }
 }
 
+// The currency checkout must charge a returning member in — the one their
+// existing Stripe Customer already bills in — or null when they're free to
+// choose (signed out, or never billed). Failure degrades to null: the server
+// enforces the same lock, so the worst case is a refused Session, not a wrong
+// charge.
+export async function getBillingCurrency(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/stripe/billing-currency", {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { currency?: string | null };
+    return typeof json.currency === "string" ? json.currency : null;
+  } catch {
+    return null;
+  }
+}
+
 // The ordered save offers for a tier-aware cancel/debundle flow. The server
 // resolves cadence + amounts from Stripe and window-suppresses coupons. Any
 // failure degrades to no offers so the flow proceeds to reason/confirm. The two
