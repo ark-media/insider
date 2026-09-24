@@ -63,9 +63,7 @@ export const shows: Show[] = [
     // those same values go into the private RSS the member's podcast app reads
     // — so hardcoding them here would let the site and the app disagree.
     // Pointing at a different Beehiiv show is therefore a config change
-    // (BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS, or the legacy
-    // BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK — see server/routes/podcasts.ts),
-    // not a deploy. The slug was inside-call-me-back until the Ark+ rename.
+    // (BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS), not a deploy.
     slug: "call-me-back-plus",
     // No page of its own: members hear it through the private feed, so the
     // show's "home" is the membership page that sells it.

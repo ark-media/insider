@@ -454,7 +454,7 @@ describe('createCatchAllHandler — dispatch via _path query param', () => {
       APP_BASE_URL: 'http://localhost:5173',
       BEEHIIV_API_KEY: 'test-token',
       BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
-      BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: 'pod_icmb',
+      BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS: 'pod_icmb',
     })
     const res = makeRes()
     await handler(
