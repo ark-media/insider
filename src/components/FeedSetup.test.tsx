@@ -227,7 +227,6 @@ describe("FeedSetup — Spotify", () => {
 
     expect(container.textContent).toContain("Spotify didn't link");
     expect(container.textContent).not.toContain("Spotify is linked");
-    expect(container.textContent).not.toContain("Your account is linked");
     expect(followLink(container)).toBeNull();
     expect(spotifyCta(container).textContent).toContain("Try again");
     expect(

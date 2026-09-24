@@ -295,11 +295,11 @@ function SpotifyRow({
         <SpotifyIcon className="size-10 shrink-0" />
         <div className="min-w-0 flex-1">
           <h3 className="text-h4 font-bold">Spotify</h3>
-          <p className="mt-1 text-body-sm">
-            {linked
-              ? "Your account is linked, so every show is unlocked in Spotify on every device you use."
-              : `Two quick steps: link your account to unlock ${feeds.length === 1 ? "the show" : `all ${feeds.length} shows`}, then follow ${feeds.length === 1 ? "it" : "them"} so new episodes land in Your Library.`}
-          </p>
+          {linked ? null : (
+            <p className="mt-1 text-body-sm">
+              {`Two quick steps: link your account to unlock ${feeds.length === 1 ? "the show" : `all ${feeds.length} shows`}, then follow ${feeds.length === 1 ? "it" : "them"} so new episodes land in Your Library.`}
+            </p>
+          )}
         </div>
         {linked ? null : (
           <OutboundLink
