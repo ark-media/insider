@@ -66,7 +66,8 @@ function getHandler(env: Record<string, string> = { RESEND_API_KEY: 'test' }) {
 }
 
 const VALID = {
-  name: 'Jane Listener',
+  firstName: 'Jane',
+  lastName: 'Listener',
   email: 'jane@example.com',
   topic: 'press',
   message: 'Loved the latest episode.\nCan we book an interview?',
@@ -229,7 +230,7 @@ describe('/api/contact', () => {
     const res = makeRes()
     await handler(
       makeReq({
-        body: { ...VALID, name: 'Jane\r\nBcc: victim@example.com\t\u0000   Listener' },
+        body: { ...VALID, firstName: 'Jane\r\nBcc: victim@example.com\t\u0000  ' },
       }),
       res,
     )
@@ -247,13 +248,14 @@ describe('/api/contact', () => {
     const handler = getHandler()
     const res = makeRes()
     const longName = 'N'.repeat(200)
-    await handler(makeReq({ body: { ...VALID, name: longName } }), res)
+    await handler(makeReq({ body: { ...VALID, firstName: longName } }), res)
     expect(res.statusCode).toBe(200)
     const sent = JSON.parse(String(lastInit?.body)) as { subject: string; html: string }
+    const fullName = `${longName} Listener`
     expect(sent.subject.startsWith('[Contact — ')).toBe(true)
-    expect(subjectSafeName(longName)).toHaveLength(80)
-    expect(sent.subject.endsWith(subjectSafeName(longName))).toBe(true)
-    expect(sent.html).toContain(longName)
+    expect(subjectSafeName(fullName)).toHaveLength(80)
+    expect(sent.subject.endsWith(subjectSafeName(fullName))).toBe(true)
+    expect(sent.html).toContain(fullName)
   })
 
   // A flood spread over many IPs stays inside every per-IP budget; the daily
@@ -337,8 +339,10 @@ describe('/api/contact — inboxes and Airtable', () => {
     expect((hook.headers as Record<string, string>)['x-make-apikey']).toBe('make-key')
     const payload = JSON.parse(String(hook.body)) as Record<string, string>
     expect(payload).toMatchObject({
-      name: 'Jane Listener',
+      firstName: 'Jane',
+      lastName: 'Listener',
       email: 'jane@example.com',
+      location: '',
       topic: 'Listener questions',
       topicSlug: 'questions',
       show: 'Chosen People Problems',
@@ -346,6 +350,43 @@ describe('/api/contact — inboxes and Airtable', () => {
       message: 'What is the best Shabbat dinner argument?',
     })
     expect(Number.isNaN(Date.parse(payload.submittedAt))).toBe(false)
+  })
+
+  test('requires both name parts, and caps each', async () => {
+    for (const body of [
+      { ...QUESTION, firstName: ' ' },
+      { ...QUESTION, lastName: '' },
+      { ...QUESTION, lastName: undefined },
+      { ...QUESTION, firstName: 'N'.repeat(201) },
+    ]) {
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body }), res)
+      expect(res.statusCode).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('invalid_name')
+    }
+    expect(fetchCalls).toBe(0)
+  })
+
+  test('passes an optional location to the email and Make, and caps it', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...QUESTION, location: '  Tel Aviv, <Israel> ' } }), res)
+    expect(res.statusCode).toBe(200)
+    const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
+    expect(email.html).toContain('<strong>Location:</strong> Tel Aviv, &lt;Israel&gt;')
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload.location).toBe('Tel Aviv, <Israel>')
+
+    const tooLong = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...QUESTION, location: 'x'.repeat(201) } }), tooLong)
+    expect(tooLong.statusCode).toBe(400)
+    expect(JSON.parse(tooLong.body).error).toBe('invalid_location')
+  })
+
+  test('leaves the Location line out of the email when none was given', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), res)
+    const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
+    expect(email.html).not.toContain('Location:')
   })
 
   test('sends Call Me Back Ark+ under its current name and stable slug', async () => {

@@ -10,18 +10,24 @@ import {
  * user-facing `error` string otherwise. Mirrors `subscribeEmail` in beehiiv.ts.
  */
 export async function sendContactMessage(input: {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
+  /** Optional: where the sender listens from. */
+  location?: string;
   topic: ContactTopic;
   /** Required when `topic` is "questions"; ignored otherwise. */
   show?: ListenerQuestionShow | "";
   message: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const name = input.name.trim();
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
   const email = input.email.trim();
+  const location = input.location?.trim() ?? "";
   const message = input.message.trim();
 
-  if (!name) return { ok: false, error: "Please add your name." };
+  if (!firstName) return { ok: false, error: "Please add your first name." };
+  if (!lastName) return { ok: false, error: "Please add your last name." };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { ok: false, error: "That doesn't look like a valid email." };
   }
@@ -39,7 +45,15 @@ export async function sendContactMessage(input: {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ name, email, topic: input.topic, show, message }),
+      body: JSON.stringify({
+        firstName,
+        lastName,
+        email,
+        location,
+        topic: input.topic,
+        show,
+        message,
+      }),
     });
     if (res.ok) return { ok: true };
     const body = (await res.json().catch(() => ({}))) as { error?: string };

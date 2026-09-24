@@ -22,7 +22,9 @@ import { contactTopics } from '../../src/config/urls.js'
 import { getShow, isListenerQuestionShow } from '../../src/data/shows.js'
 import { escapeHtml, isValidEmail } from '../../shared/validation.js'
 
+// Per name part: first and last are separate fields, as in the team's Airtable.
 const NAME_MAX = 200
+const LOCATION_MAX = 200
 const MESSAGE_MAX = 5000
 // The sender's name rides in the subject so the inbox is scannable, but only a
 // tidy slice of it: a subject is a header, and a 200-character name is not one.
@@ -65,8 +67,10 @@ const WEBHOOK_TIMEOUT_MS = 5000
 async function fileInAirtable(
   env: Deps['env'],
   payload: {
-    name: string
+    firstName: string
+    lastName: string
     email: string
+    location: string
     topic: string
     topicSlug: string
     show: string
@@ -133,7 +137,9 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
 
         const body = await readJson<{
-          name?: unknown
+          firstName?: unknown
+          lastName?: unknown
+          location?: unknown
           email?: unknown
           topic?: unknown
           show?: unknown
@@ -147,15 +153,30 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(200, { ok: true })
         }
 
-        const name = typeof body?.name === 'string' ? body.name.trim() : ''
+        const firstName =
+          typeof body?.firstName === 'string' ? body.firstName.trim() : ''
+        const lastName =
+          typeof body?.lastName === 'string' ? body.lastName.trim() : ''
+        // Optional: where the sender listens from, for the team's Airtable.
+        const location =
+          typeof body?.location === 'string' ? body.location.trim() : ''
         const email = typeof body?.email === 'string' ? body.email.trim() : ''
         const topicValue = typeof body?.topic === 'string' ? body.topic : ''
         const message =
           typeof body?.message === 'string' ? body.message.trim() : ''
 
-        if (!name || name.length > NAME_MAX) {
+        if (
+          !firstName ||
+          !lastName ||
+          firstName.length > NAME_MAX ||
+          lastName.length > NAME_MAX
+        ) {
           return json(400, { error: 'invalid_name' })
         }
+        if (location.length > LOCATION_MAX) {
+          return json(400, { error: 'invalid_location' })
+        }
+        const name = `${firstName} ${lastName}`
         if (!isValidEmail(email)) {
           return json(400, { error: 'invalid_email' })
         }
@@ -190,6 +211,7 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         const html =
           `<p><strong>From:</strong> ${escapeHtml(name)} ` +
           `(${escapeHtml(email)})</p>` +
+          (location ? `<p><strong>Location:</strong> ${escapeHtml(location)}</p>` : '') +
           `<p><strong>Topic:</strong> ${escapeHtml(topic.label)}</p>` +
           (show ? `<p><strong>Show:</strong> ${escapeHtml(show.title)}</p>` : '') +
           `<p><strong>Message:</strong></p>` +
@@ -206,8 +228,10 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
 
         await fileInAirtable(env, {
-          name,
+          firstName,
+          lastName,
           email,
+          location,
           topic: topic.label,
           topicSlug: topic.value,
           show: show?.title ?? '',

@@ -49,12 +49,15 @@ function ContactPage() {
   // an effect that races /api/me resolving after mount. Typing anything (an
   // empty string included) takes ownership of the field from then on.
   const me = state.kind === "member" ? state.me : null;
-  const [nameInput, setNameInput] = useState<string | null>(null);
+  const [firstNameInput, setFirstNameInput] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState<string | null>(null);
   // The greeting rule from shared/profile-name.ts holds here too: a name we
   // were never given stays blank rather than being invented from the email.
-  const name = nameInput ?? me?.firstName ?? "";
+  // We hold no last name for anyone, so that one is always typed.
+  const firstName = firstNameInput ?? me?.firstName ?? "";
   const email = emailInput ?? me?.email ?? "";
+  const [lastName, setLastName] = useState("");
+  const [location, setLocation] = useState("");
 
   const [topic, setTopic] = useState<ContactTopic>(
     topicParam ?? contactTopics[0].value,
@@ -117,14 +120,24 @@ function ContactPage() {
     if (company.trim() !== "") return; // bot tripped the honeypot
     setStatus("submitting");
     setFeedback(null);
-    const r = await sendContactMessage({ name, email, topic, show, message });
+    const r = await sendContactMessage({
+      firstName,
+      lastName,
+      email,
+      location,
+      topic,
+      show,
+      message,
+    });
     if (r.ok) {
       setStatus("ok");
       setFeedback("Thanks — your message is on its way. We'll be in touch.");
       // Back to derived: a signed-in member sees their details again, a
       // signed-out one sees a blank form.
-      setNameInput(null);
+      setFirstNameInput(null);
+      setLastName("");
       setEmailInput(null);
+      setLocation("");
       setMessage("");
       setTopic(contactTopics[0].value);
       setShow("");
@@ -147,13 +160,24 @@ function ContactPage() {
           >
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <label className="block">
-                <span className={labelClass}>Name</span>
+                <span className={labelClass}>First name</span>
                 <input
                   type="text"
                   required
-                  value={name}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="Your name"
+                  autoComplete="given-name"
+                  value={firstName}
+                  onChange={(e) => setFirstNameInput(e.target.value)}
+                  className={`mt-3 ${inputClass}`}
+                />
+              </label>
+              <label className="block">
+                <span className={labelClass}>Last name</span>
+                <input
+                  type="text"
+                  required
+                  autoComplete="family-name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
                   className={`mt-3 ${inputClass}`}
                 />
               </label>
@@ -165,6 +189,20 @@ function ContactPage() {
                   value={email}
                   onChange={(e) => setEmailInput(e.target.value)}
                   placeholder="you@example.com"
+                  className={`mt-3 ${inputClass}`}
+                />
+              </label>
+              <label className="block">
+                <span className={labelClass}>
+                  Location <span className="text-fg-muted">(optional)</span>
+                </span>
+                <input
+                  type="text"
+                  autoComplete="address-level2"
+                  maxLength={200}
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="City, country"
                   className={`mt-3 ${inputClass}`}
                 />
               </label>
