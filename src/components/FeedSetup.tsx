@@ -345,8 +345,23 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
     markSpotifyFollowOpened(feed.id);
   };
 
+  // Spotify opens in a new tab, so this one stays put and the big button turns
+  // into the next show the instant it's tapped. A double-tap, or a second tap
+  // because the Spotify app was slow to come up, would open and tick the next
+  // show too — one the member never saw. Swallow taps for a moment after each.
+  const [cooling, setCooling] = useState(false);
+  useEffect(() => {
+    if (!cooling) return;
+    const timer = setTimeout(() => setCooling(false), 1500);
+    return () => clearTimeout(timer);
+  }, [cooling]);
+
   const followUrl = (feed: UserFeed) =>
     premiumSpotifyShows[feed.id] ?? spotifyLibraryUrl;
+
+  // Without a show page the link only reaches Your Library, so it mustn't
+  // promise a follow it can't deliver.
+  const hasShowPage = (feed: UserFeed) => feed.id in premiumSpotifyShows;
 
   return (
     <div className="border-t border-cyan/40 bg-navy-900/40 px-5 py-5">
@@ -379,12 +394,22 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
           href={followUrl(next)}
           platform="spotify"
           placement="feed_setup_follow_next"
-          onClick={() => markFollowed(next)}
+          onClick={(event) => {
+            if (cooling) {
+              event.preventDefault();
+              return;
+            }
+            setCooling(true);
+            markFollowed(next);
+          }}
+          aria-disabled={cooling ? true : undefined}
           data-follow-next=""
-          className="mt-4 flex w-full items-center justify-center gap-2 bg-cyan px-5 py-3.5 text-center button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:w-auto sm:justify-start"
+          className={`mt-4 flex w-full items-center justify-center gap-2 bg-cyan px-5 py-3.5 text-center button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:w-auto sm:justify-start ${cooling ? "pointer-events-none opacity-60" : ""}`}
         >
           <span>
-            Follow {next.name}
+            {hasShowPage(next)
+              ? `Follow ${next.name}`
+              : `Find ${next.name} in Your Library`}
             {feeds.length > 1 ? (
               <span className="font-normal"> ({done + 1} of {feeds.length})</span>
             ) : null}
@@ -424,7 +449,11 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
                 onClick={() => markFollowed(feed)}
                 className="button-text shrink-0 font-display font-bold tracking-cta text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
-                {isDone ? "Open again" : "Open"}
+                {isDone
+                  ? "Open again"
+                  : hasShowPage(feed)
+                    ? "Open"
+                    : "Find in Your Library"}
                 <span className="sr-only"> {feed.name} on Spotify</span>
               </OutboundLink>
             </li>
