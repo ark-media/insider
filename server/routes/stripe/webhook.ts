@@ -80,6 +80,52 @@ export async function catalogTierOfSubscription(
   return derived === 'free' ? null : derived
 }
 
+// The tier and cadence a subscription is HEADED for: the final phase of a
+// pending schedule when change-tier has booked one (a debundle, a cadence
+// switch, a PWYC cut), otherwise what it bills now. The save flow works off
+// this, not the live price. The account page opens a pending debundle's cancel
+// flow as the product being kept, so a bundle member with Ark+ monthly booked is
+// cancelling Ark+ monthly — reading the live price instead offered them the
+// bundle-yearly member's "switch to monthly" and then refused to honour it.
+// `scheduled` says the target came from a future phase, so a coupon lands there
+// rather than on the current one. Throws on a Stripe failure, like
+// catalogTierOfSubscription: guessing the tier here picks which coupon attaches.
+export async function saveFlowTargetOf(
+  sub: Stripe.Subscription,
+  stripe: Stripe,
+): Promise<{ tier: Tier | null; plan: Plan | null; scheduled: boolean }> {
+  const scheduleId = scheduleIdOf(sub)
+  if (scheduleId) {
+    const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId)
+    const last = schedule.phases[schedule.phases.length - 1]
+    const price = last?.items?.[0]?.price
+    // Only a phase that hasn't started yet is a pending change. A schedule
+    // down to its current phase changes nothing.
+    if (price && schedule.phases.length > 1 && last.start_date > Date.now() / 1000) {
+      const resolved = await stripe.prices.retrieve(
+        typeof price === 'string' ? price : price.id,
+        { expand: ['product'] },
+      )
+      const product = resolved.product
+      const derived =
+        typeof product === 'object' && !('deleted' in product && product.deleted)
+          ? tierFromEntitlementString(product.metadata?.entitlements)
+          : 'free'
+      const interval = resolved.recurring?.interval
+      return {
+        tier: derived === 'free' ? null : derived,
+        plan: interval === 'month' ? 'monthly' : interval === 'year' ? 'yearly' : null,
+        scheduled: true,
+      }
+    }
+  }
+  return {
+    tier: await catalogTierOfSubscription(sub, stripe),
+    plan: planFromSubscription(sub),
+    scheduled: false,
+  }
+}
+
 // Thrown by tierFromSubscription for a subscription that isn't ours. Its own
 // class so logs tell "not a membership" from "Stripe is down" without parsing a
 // message; export it when a caller needs to branch on it.

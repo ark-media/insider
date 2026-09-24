@@ -223,6 +223,8 @@ export type MySubscription = {
   cancelAt: string | null;
   pendingChange?: boolean;
   scheduledTier?: "ark-plus" | "circle" | "bundle" | "free" | null;
+  // The cadence that pending change lands on; null when nothing is scheduled.
+  scheduledPlan?: "monthly" | "yearly" | null;
   periodEnd?: string | null;
   plan?: "monthly" | "yearly" | null;
   // What the next bill is. `amountCents` is null when the subscription's price

@@ -109,6 +109,7 @@ import {
 import {
   catalogTierOfSubscription,
   dispatchWebhookEvent,
+  saveFlowTargetOf,
   tierFromSubscription,
 } from './webhook.js'
 
@@ -767,8 +768,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const empty = { offers: [], standalone: null }
         const sub = await findLiveSubscription(stripe, email)
         if (!sub) return json(200, empty)
-        const plan = planFromSubscription(sub)
-        if (!plan) return json(200, empty)
         // Quote in what the subscription bills in, not the USD base.
         const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
 
@@ -777,6 +776,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // shown on the confirm screen (Flows C/D/E). Null for a full cancel.
         let standalone = null
         try {
+          // Offers for where the subscription is headed (saveFlowTargetOf), and
+          // only for an intent that tier can open — the same gate
+          // accept-save-offer applies, so nothing is offered that accepting
+          // would then refuse.
+          const target = await saveFlowTargetOf(sub, stripe)
+          const plan = target.plan
+          if (!plan || !target.tier || !intentAllowedForTier(intent, target.tier)) {
+            return json(200, empty)
+          }
           offers = await deriveSaveOffers(stripe, intent, plan, currency)
           if (intent === 'debundle-remove-ark-plus') {
             standalone = await debundlePricePreview(stripe, 'circle', plan, currency)
@@ -847,17 +855,31 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // The intent is a claim from the client, not a fact. Derive the offer
         // set only for a flow this member's ACTUAL tier can open — otherwise a
         // caller picks the offer set (e.g. 'cancel-circle' while on Bundle) and
-        // lands another product's coupon on their own subscription.
-        const currentTier = await catalogTierOfSubscription(sub, stripe)
-        if (!currentTier || !intentAllowedForTier(body.intent, currentTier)) {
+        // lands another product's coupon on their own subscription. "Actual" is
+        // where the subscription is headed (saveFlowTargetOf), the same tier
+        // save-offers quoted from: a bundle member with a debundle booked is
+        // cancelling the product they're keeping.
+        const target = await saveFlowTargetOf(sub, stripe)
+        if (!target.tier || !target.plan || !intentAllowedForTier(body.intent, target.tier)) {
           return json(409, { error: 'No such save offer available.' })
         }
+
+        // A plan-switch offer is quoted to the cadence being LEFT (monthly_switch
+        // only exists for a yearly member), but by now change-tier has booked the
+        // switch, so the target reads the new cadence. Derive at the old one;
+        // the plan-switch branch below still refuses unless the switch landed.
+        const derivePlan =
+          wantKind === 'monthly_switch'
+            ? 'yearly'
+            : wantKind === 'annual_switch'
+              ? 'monthly'
+              : target.plan
 
         // Derived in the subscription's currency, so a fixed-amount coupon that
         // doesn't carry that currency is never picked — Stripe would refuse to
         // attach it.
         const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
-        const offers = await deriveSaveOffers(stripe, body.intent, plan, currency)
+        const offers = await deriveSaveOffers(stripe, body.intent, derivePlan, currency)
 
         const offer = offers.find((o) => o.kind === wantKind && o.couponId)
         // A pure plan switch (annual_switch, no coupon) is applied via
@@ -879,6 +901,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           if (blocked) return json(409, { error: 'Save offer already used recently.' })
         }
 
+        const pendingScheduleId = target.scheduled ? scheduleIdOf(sub) : null
         let updated
         if (isPlanSwitchKind(offer.kind)) {
           // change-tier is supposed to have scheduled the switch already, but
@@ -909,6 +932,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               discounts: [...existingDiscountParams(sub), { coupon: offer.couponId }],
             })
           }
+        } else if (pendingScheduleId) {
+          // The offer was derived for the pending phase (a booked debundle, say),
+          // so the coupon goes there: releasing the schedule would cancel the
+          // change the member already made and leave the coupon discounting a
+          // product it wasn't priced for. Its clock starts with that phase.
+          await addCouponToFinalPhase(stripe, pendingScheduleId, offer.couponId)
+          updated = sub
         } else {
           // Release any pending schedule so the coupon attaches cleanly, then
           // attach it and clear any pending cancel in one update. Existing
@@ -1009,6 +1039,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // The tier that change lands on, so the page can say "bundle → Ark+".
           // Null when nothing is scheduled (or the row is unreadable).
           scheduledTier,
+          // And the cadence it lands on, so a cancel flow opened on the pending
+          // tier quotes that tier's cadence. Null when nothing is scheduled.
+          scheduledPlan: hasSchedule && sub ? await scheduledPlanOf(stripe, sub) : null,
           // The current period end — the date any pending change / debundle takes
           // effect and through which access continues. Lets the account page show
           // a concrete date instead of "the end of your current billing period".
