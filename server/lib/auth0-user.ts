@@ -128,6 +128,10 @@ export async function ensureEmailCodeLogin(
 export type Auth0UserResult = {
   userId: string
   created: boolean
+  // When Auth0 made the account (ISO), for one that already existed. Lets a
+  // caller that lost a create race to a concurrent provisioner tell "made
+  // seconds ago by the same purchase" apart from "was already there".
+  createdAt?: string
 }
 
 export async function findOrCreateAuth0User(
@@ -175,7 +179,7 @@ export async function findOrCreateAuth0User(
     }
     // Also repairs members provisioned before this step existed.
     await linkEmailCodeLogin(mgmt, email, existing)
-    return { userId: found.user_id, created: false }
+    return { userId: found.user_id, created: false, createdAt: found.created_at }
   }
 
   // Auth0 requires a password on a Database account; nobody will ever use this
@@ -194,6 +198,16 @@ export async function findOrCreateAuth0User(
     })
     userId = created.user_id
   } catch (err) {
+    // The webhook and the browser's post-payment poll provision the same
+    // purchase concurrently, on different instances. Both can find no user,
+    // both create, and the loser gets "user already exists". Hand back the
+    // winner's account rather than nothing.
+    const raced = (await mgmt.users.listUsersByEmail({ email }).catch(() => [])).find(
+      (u) => identityOn(u, DB_CONNECTION),
+    )
+    if (raced?.user_id) {
+      return { userId: raced.user_id, created: false, createdAt: raced.created_at }
+    }
     console.error('[auth0] create user failed:', err)
     return null
   }
