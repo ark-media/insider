@@ -64,14 +64,32 @@ export async function recordFeedRevoked(
 // devices. Never downgrades a confirmed activation: `activated`/`activated_at`
 // are left untouched, and `pending_at` is only stamped once (coalesce keeps the
 // first). A brand-new row is inserted as not-yet-activated.
+//
+// `spotifyLinked` also stamps `spotify_linked_at` (once, the same way): the
+// member came back from a successful Spotify link, which unlocks every show at
+// once. It is what brings the follow checklist back on a later visit.
 export async function recordFeedsPending(
   sql: Sql,
   email: string,
   showIds: string[],
+  opts: { spotifyLinked?: boolean } = {},
 ): Promise<void> {
   if (showIds.length === 0) return
   const norm = normalizeEmail(email)
   const emails = showIds.map(() => norm)
+  if (opts.spotifyLinked) {
+    await sql`
+      insert into beehiiv_feed_activations (email, show_id, activated, pending_at, spotify_linked_at, updated_at)
+      select email, show_id, false, now(), now(), now() from unnest(
+        ${emails}::text[],
+        ${showIds}::text[]
+      ) as t(email, show_id)
+      on conflict (email, show_id) do update set
+        pending_at = coalesce(beehiiv_feed_activations.pending_at, now()),
+        spotify_linked_at = coalesce(beehiiv_feed_activations.spotify_linked_at, now()),
+        updated_at = now()`
+    return
+  }
   await sql`
     insert into beehiiv_feed_activations (email, show_id, activated, pending_at, updated_at)
     select email, show_id, false, now(), now() from unnest(
@@ -105,11 +123,13 @@ export async function recordSpotifyFollowOpened(
 // member took a setup action but the webhook hasn't landed yet. A revoked feed
 // reports neither. `spotifyFollowOpened` = the member opened the show on
 // Spotify from the follow checklist (independent of the other two).
+// `spotifyLinked` = the member came back from a successful Spotify link.
 export type FeedSetupState = {
   activated: boolean
   activatedAt: string | null
   pending: boolean
   spotifyFollowOpened: boolean
+  spotifyLinked: boolean
 }
 
 // Setup state keyed by show id: every show that is confirmed-activated,
@@ -122,7 +142,7 @@ export async function getSetupStates(
   email: string,
 ): Promise<Map<string, FeedSetupState>> {
   const rows = (await sql`
-    select show_id, activated, activated_at, pending_at, revoked_at, spotify_follow_opened_at
+    select show_id, activated, activated_at, pending_at, revoked_at, spotify_follow_opened_at, spotify_linked_at
     from beehiiv_feed_activations
     where email = ${normalizeEmail(email)}
       and (activated = true or pending_at is not null or spotify_follow_opened_at is not null)`) as Array<{
@@ -130,6 +150,7 @@ export async function getSetupStates(
     activated: boolean
     activated_at: string | null
     spotify_follow_opened_at?: string | null
+    spotify_linked_at?: string | null
     pending_at: string | null
     revoked_at: string | null
   }>
@@ -138,12 +159,14 @@ export async function getSetupStates(
     const activated = r.activated === true
     const pending = !activated && r.pending_at != null && r.revoked_at == null
     const spotifyFollowOpened = r.spotify_follow_opened_at != null
+    const spotifyLinked = r.spotify_linked_at != null
     if (!activated && !pending && !spotifyFollowOpened) continue
     map.set(r.show_id, {
       activated,
       activatedAt: r.activated_at,
       pending,
       spotifyFollowOpened,
+      spotifyLinked,
     })
   }
   return map
