@@ -281,10 +281,14 @@ function SpotifyRow({
   // Just back from a successful link: the route is moving the member on to
   // Spotify's success page, so this only has to say so for the moment it takes.
   const handingOff = status === "linked";
-  // Linked on an earlier visit (the server remembers). The follow checklist
-  // lives here for a member who comes back to finish following.
-  const linked = handingOff || feeds.some((f) => f.spotify_linked === true);
   const failed = status === "failed";
+  // Linked on an earlier visit (the server remembers). The follow checklist
+  // lives here for a member who comes back to finish following. Not while a
+  // fresh attempt has just failed, though: the failure notice is the answer
+  // to what they just did, and a "you're linked" checklist beside it would
+  // contradict it.
+  const linked =
+    !failed && (handingOff || feeds.some((f) => f.spotify_linked === true));
   return (
     <div className="mt-10 border border-cyan/40 bg-cyan/[0.06]">
       <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:gap-6">

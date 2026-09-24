@@ -55,37 +55,6 @@ function PodcastsTab() {
     }
   }, [state, navigate]);
 
-  // Coming back from Beehiiv's Spotify consent flow.
-  //
-  // Beehiiv honours the return URL we pass (see buildSpotifyHandoff), so this
-  // is the path that confirms the link — the CTA click doesn't, because the
-  // member may still cancel at Spotify's consent screen. A failed link returns
-  // to the same URL with `toast=error` and arrives here as "failed", so it
-  // records nothing and the page stays put to say so.
-  //
-  // A successful link records every show as set up AND Spotify-linked (one
-  // link covers them all), then hands the member on to Spotify's own success
-  // page, which lists what the link unlocked. `replace`, so Back doesn't land
-  // on this marker and bounce them to Spotify again. The link record is what
-  // brings the follow checklist back on this page next time.
-  //
-  // Beehiiv can't point redirect_path at Spotify's page directly: failures go
-  // to redirect_path too, and would land a member whose link failed on a page
-  // about a link they don't have.
-  const spotifyLinked = spotify === "linked";
-  const handedOff = useRef(false);
-  useEffect(() => {
-    if (!spotifyLinked || state.kind !== "member" || handedOff.current) return;
-    handedOff.current = true;
-    const ids = state.me.feeds.map((f) => f.id);
-    // Leave once the write lands, or after a beat if it hangs — the page is
-    // going away, and a lost marker only costs the checklist on a later visit.
-    void Promise.race([
-      persistFeedsSetUp(ids, { via: "spotify" }),
-      new Promise((resolve) => setTimeout(resolve, SPOTIFY_HANDOFF_WRITE_BUDGET_MS)),
-    ]).then(() => window.location.replace(spotifyLinkSuccessUrl));
-  }, [spotifyLinked, state]);
-
   // Entitled but holding nothing: the feeds are still being minted upstream.
   // Re-read /api/me until they land, then stop — `waiting` flips false the
   // moment one arrives, which tears the interval down.
@@ -108,6 +77,57 @@ function PodcastsTab() {
     }, FEED_POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [waiting, refresh]);
+
+  // Coming back from Beehiiv's Spotify consent flow.
+  //
+  // Beehiiv honours the return URL we pass (see buildSpotifyHandoff), so this
+  // is the path that confirms the link — the CTA click doesn't, because the
+  // member may still cancel at Spotify's consent screen. A failed link returns
+  // to the same URL with `toast=error` and arrives here as "failed", so it
+  // records nothing and the page stays put to say so.
+  //
+  // A successful link records every show as set up AND Spotify-linked (one
+  // link covers them all), then hands the member on to Spotify's own success
+  // page, which lists what the link unlocked. `replace`, so Back doesn't land
+  // on this marker and bounce them to Spotify again. The link record is what
+  // brings the follow checklist back on this page next time.
+  //
+  // Beehiiv can't point redirect_path at Spotify's page directly: failures go
+  // to redirect_path too, and would land a member whose link failed on a page
+  // about a link they don't have.
+  //
+  // The link is recorded per show, so it waits for the feeds: a member who
+  // lands here before /api/me holds any (still being minted, or a failed read)
+  // would otherwise leave with nothing written, and the checklist would never
+  // come back. The poll above keeps re-reading until they arrive. If it gives
+  // up, move on anyway — there's nothing left to record against.
+  //
+  // The hand-off is dropped if the member leaves this tab first, or turns out
+  // not to hold Ark+ (the effect at the top is already sending them away).
+  const spotifyLinked = spotify === "linked";
+  const handedOff = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!spotifyLinked || handedOff.current) return;
+    if (state.kind !== "member" || !state.me.entitlements.arkPlus) return;
+    const ids = state.me.feeds.map((f) => f.id);
+    if (ids.length === 0 && !pollExhausted) return;
+    handedOff.current = true;
+    // Leave once the write lands, or after a beat if it hangs — the page is
+    // going away, and a lost marker only costs the checklist on a later visit.
+    void Promise.race([
+      persistFeedsSetUp(ids, { via: "spotify" }),
+      new Promise((resolve) => setTimeout(resolve, SPOTIFY_HANDOFF_WRITE_BUDGET_MS)),
+    ]).then(() => {
+      if (mounted.current) window.location.replace(spotifyLinkSuccessUrl);
+    });
+  }, [spotifyLinked, state, pollExhausted]);
 
   if (state.kind !== "member" || !state.me.entitlements.arkPlus) return null;
 

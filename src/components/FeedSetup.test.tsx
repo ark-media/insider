@@ -234,6 +234,20 @@ describe("FeedSetup — Spotify", () => {
     ).not.toBeNull();
   });
 
+  // A member who linked before and then fails a fresh attempt: the failure is
+  // the answer to what they just did, so the remembered link mustn't put a
+  // "you're linked" checklist beside it.
+  test("a failed re-link doesn't also show the follow step", async () => {
+    const container = await render(
+      <FeedSetup feeds={linked([FEED])} spotify="failed" />,
+    );
+
+    expect(container.textContent).toContain("Spotify didn't link");
+    expect(container.textContent).not.toContain("Spotify is linked");
+    expect(followLink(container)).toBeNull();
+    expect(spotifyCta(container).textContent).toContain("Try again");
+  });
+
   test("the ticks come from the server's per-show flag", async () => {
     const FEEDS = [
       feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
