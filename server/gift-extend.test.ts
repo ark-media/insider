@@ -31,7 +31,16 @@ const RECIPIENT = { email: 'member@example.com', name: 'Mem Ber', auth0Sub: 'aut
 const DAY = 86_400
 
 const originalFetch = globalThis.fetch
-globalThis.fetch = (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch
+// Records Resend sends, for the unapplied-gift alert.
+const emailsSent: Array<{ to: string; subject: string; html: string; idempotencyKey?: string }> = []
+globalThis.fetch = (async (url: string, init?: RequestInit) => {
+  if (String(url).includes('api.resend.com')) {
+    const body = JSON.parse(String(init?.body)) as { to: string; subject: string; html: string }
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    emailsSent.push({ ...body, idempotencyKey: headers['Idempotency-Key'] })
+  }
+  return new Response('{}', { status: 200 })
+}) as unknown as typeof fetch
 silenceExpectedConsole()
 afterAll(() => {
   globalThis.fetch = originalFetch
@@ -107,6 +116,7 @@ beforeEach(() => {
   sqlCalls.length = 0
   updates.length = 0
   balanceTxns.length = 0
+  emailsSent.length = 0
   __resetPriceCacheForTests()
   nextSqlResult = (sql) => {
     if (/update gift set status = 'redeemed'/.test(sql)) return [{ redemption_token: 'tok_1' }]
@@ -216,5 +226,74 @@ describe('crediting a Bundle subscriber', () => {
       amount: 4800,
       currency: 'usd',
     })
+  })
+})
+
+// A gift whose Stripe half didn't happen is spent all the same, so the
+// recipient is told the truth and staff are alerted to handle it by hand.
+describe('a gift that could not be applied in Stripe', () => {
+  const ALERT_ENV = { ...ENV, RESEND_API_KEY: 're_test' }
+  const redeemAlerting = (g: GiftRow) =>
+    redeemGiftForRecipient({ sql: getDb(ALERT_ENV), stripe, env: ALERT_ENV, activator }, g, RECIPIENT)
+
+  test('a gift in another currency than the Bundle sub is held, and support is alerted', async () => {
+    membership = paidRow('bundle')
+    liveSub = { id: 'sub_m', currency: 'cad' }
+
+    const result = await redeemAlerting(gift('ark-plus', '1yr', 'usd'))
+    expect(result).toMatchObject({ ok: true, applied: 'held' })
+    expect(balanceTxns).toEqual([])
+    expect(emailsSent).toHaveLength(1)
+    expect(emailsSent[0]).toMatchObject({
+      to: 'support@arkmedia.org',
+      subject: 'Gift needs manual handling: member@example.com',
+      idempotencyKey: 'gift_unapplied_tok_1',
+    })
+    expect(emailsSent[0]!.html).toContain('different currency')
+    expect(emailsSent[0]!.html).toContain('CAD')
+  })
+
+  test('a failed extension is alerted too', async () => {
+    membership = paidRow('ark-plus')
+    liveSub = {
+      id: 'sub_m',
+      schedule: null,
+      pause_collection: null,
+      items: {
+        data: [
+          {
+            current_period_end: Math.floor(Date.now() / 1000) + 20 * DAY,
+            price: { recurring: { interval: 'month' } },
+          },
+        ],
+      },
+    }
+    const failing = {
+      ...stripe,
+      subscriptions: {
+        ...stripe.subscriptions,
+        update: async () => {
+          throw new Error('stripe down')
+        },
+      },
+    } as unknown as Stripe
+
+    const result = await redeemGiftForRecipient(
+      { sql: getDb(ALERT_ENV), stripe: failing, env: ALERT_ENV, activator },
+      gift('ark-plus', '6mo'),
+      RECIPIENT,
+    )
+    expect(result).toMatchObject({ ok: true, applied: 'held' })
+    expect(emailsSent).toHaveLength(1)
+    expect(emailsSent[0]!.html).toContain('extension')
+  })
+
+  test('an applied gift sends no alert', async () => {
+    membership = paidRow('bundle')
+    liveSub = { id: 'sub_m', currency: 'usd' }
+
+    const result = await redeemAlerting(gift('ark-plus', '1yr'))
+    expect(result).toMatchObject({ ok: true, applied: 'credit' })
+    expect(emailsSent).toEqual([])
   })
 })

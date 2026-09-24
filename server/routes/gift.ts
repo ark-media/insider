@@ -30,8 +30,9 @@ import {
 } from '../lib/beehiiv-sync.js'
 import { resolveEntitlementsForSub } from '../lib/entitlement-resolver.js'
 import { getDb } from '../lib/db.js'
+import { sendGiftUnappliedAlert, type GiftUnappliedReason } from '../lib/gift-unapplied-alert.js'
 import { sanitizeAttribution } from '../../shared/attribution.js'
-import { isValidEmail } from '../../shared/validation.js'
+import { isValidEmail, redactEmail } from '../../shared/validation.js'
 import { splitFullName } from '../../shared/profile-name.js'
 import { captureServerEvent, emailDistinctId } from '../lib/analytics-server.js'
 import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
@@ -620,6 +621,8 @@ export function planGiftRedemption(
 //
 // Exported for the race test (gift-redeem-race.test.ts); the routes above are
 // its only callers.
+export type GiftApplied = 'credit' | 'membership' | 'mixed' | 'extended' | 'held'
+
 export async function redeemGiftForRecipient(
   {
     sql,
@@ -635,7 +638,7 @@ export async function redeemGiftForRecipient(
   gift: GiftRow,
   recipient: { email: string; name?: string; auth0Sub: string },
 ): Promise<
-  | { ok: true; applied: 'credit' | 'membership' | 'mixed' | 'extended'; expiresAt?: string }
+  | { ok: true; applied: GiftApplied; expiresAt?: string }
   | { ok: false; error: 'already_redeemed' }
 > {
   const { email, name, auth0Sub } = recipient
@@ -721,16 +724,22 @@ export async function redeemGiftForRecipient(
   let extended = false
   let creditApplied = false
   let effect: GiftStripeEffect | null = null
+  // Set when the Stripe half of the plan didn't happen — staff are alerted and
+  // the recipient is told, rather than shown a success that isn't one.
+  let unapplied: GiftUnappliedReason | null = null
+  let subCurrencyForAlert: string | null = null
   if (plan.extendSub && existing?.stripe_subscription_id) {
     try {
       effect = await extendSubscription(stripe, env, existing.stripe_subscription_id, term)
       extended = true
     } catch (err) {
       console.error('[gift] subscription extend failed:', err)
+      unapplied = 'extend_failed'
     }
   } else if (plan.creditFull && existing != null) {
     const subCur = await subscriptionCurrency(stripe, existing)
     const currency = isSupportedCurrency(subCur) ? subCur : 'usd'
+    subCurrencyForAlert = currency
     // A gift row's tier is always a priced tier (never 'free').
     const list = (await resolveGiftPrice(stripe, gift.tier as PricedTier, term)).floors[currency]
     const creditCents = giftCreditCents({
@@ -745,6 +754,7 @@ export async function redeemGiftForRecipient(
         subscriptionCurrency: currency,
         amountCents: gift.amount_cents,
       })
+      unapplied = gift.amount_cents == null ? 'no_amount' : 'currency_mismatch'
     } else {
       try {
         effect = await applyGiftAsCredit(stripe, existing, creditCents, currency)
@@ -752,6 +762,23 @@ export async function redeemGiftForRecipient(
       } catch (err) {
         console.error('[gift] credit apply failed:', err)
       }
+      if (!creditApplied) unapplied = 'credit_failed'
+    }
+  }
+  if (unapplied) {
+    const sent = await sendGiftUnappliedAlert(env, {
+      reason: unapplied,
+      gift,
+      recipientEmail: email,
+      subscriptionCurrency: subCurrencyForAlert ?? existing?.currency ?? null,
+      stripeCustomerId: existing?.stripe_customer_id ?? null,
+      stripeSubscriptionId: existing?.stripe_subscription_id ?? null,
+    })
+    if (!sent) {
+      console.error('[gift] unapplied-gift alert NOT sent — handle by hand', {
+        reason: unapplied,
+        recipient: redactEmail(email),
+      })
     }
   }
   if (effect) {
@@ -776,16 +803,20 @@ export async function redeemGiftForRecipient(
 
   // Report what actually happened: 'membership' when a fresh term was granted,
   // 'extended' when only a live sub was deferred, 'mixed' when both (bundle gift
-  // on a single-axis sub), 'credit' for the bundle-subset case. Never claim a
-  // membership was created when only a sub was extended or credit applied.
+  // on a single-axis sub), 'credit' for the bundle-subset case, 'held' when the
+  // gift only had a Stripe half and it didn't happen (staff were alerted above).
+  // Never claim a membership was created when only a sub was extended or credit
+  // applied — or when nothing was.
   const grantedAny = grant.arkPlusEndsAt != null || grant.circleEndsAt != null
-  const applied: 'credit' | 'membership' | 'mixed' | 'extended' = creditApplied
+  const applied: GiftApplied = creditApplied
     ? 'credit'
     : grantedAny && extended
       ? 'mixed'
       : extended
         ? 'extended'
-        : 'membership'
+        : unapplied && !grantedAny
+          ? 'held'
+          : 'membership'
   const expiresAt = grant.arkPlusEndsAt ?? grant.circleEndsAt ?? undefined
 
   // Closes the gift loop server-side (BI plan §4.2). The client already fires
