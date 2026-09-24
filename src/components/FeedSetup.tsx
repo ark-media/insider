@@ -375,38 +375,23 @@ function SpotifyLinkFailed() {
 // a step only the member can take — Spotify has no network-level follow, and
 // adding shows for a member needs Web API access we can't get.
 //
-// So the page does the one thing it can: puts a single big "Follow <next
-// show>" button in front of them the moment they land, and moves it on to the
-// next show each time they tap it. A member works through all of them by
-// tapping the same spot, coming back to this tab between shows. The list
-// underneath is a way back to any one of them.
+// So the page does the one thing it can: lists the shows, each with an Open
+// link straight to its Spotify page, where the member can hit Follow.
 //
 // Nothing here says a show is followed. We only know a show was OPENED on
 // Spotify (`spotify_follow_opened`, from the server so it's the same on every
-// device), and Spotify sends nothing back about follows — so that flag only
-// moves the big button along; it never becomes a tick, a count or an "all
-// set". A show without a known Spotify page (premiumSpotifyShows) points at
-// the library instead, since private shows never turn up in search.
+// device), and Spotify sends nothing back about follows — so that flag never
+// becomes a tick, a count or an "all set". A show without a known Spotify page
+// (premiumSpotifyShows) points at the library instead, since private shows
+// never turn up in search.
 function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
   const { markSpotifyFollowOpened } = useSubscriberAuth();
-  const next = feeds.find((f) => f.spotify_follow_opened !== true) ?? null;
 
   const markFollowed = (feed: UserFeed) => {
     if (feed.spotify_follow_opened === true) return;
     trackEvent("feed_spotify_follow_opened", { show_id: feed.id });
     markSpotifyFollowOpened(feed.id);
   };
-
-  // Spotify opens in a new tab, so this one stays put and the big button turns
-  // into the next show the instant it's tapped. A double-tap, or a second tap
-  // because the Spotify app was slow to come up, would open and tick the next
-  // show too — one the member never saw. Swallow taps for a moment after each.
-  const [cooling, setCooling] = useState(false);
-  useEffect(() => {
-    if (!cooling) return;
-    const timer = setTimeout(() => setCooling(false), 1500);
-    return () => clearTimeout(timer);
-  }, [cooling]);
 
   const followUrl = (feed: UserFeed) =>
     premiumSpotifyShows[feed.id] ?? spotifyLibraryUrl;
@@ -421,42 +406,9 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
         {`Spotify is linked — now follow your ${feeds.length === 1 ? "show" : "shows"}`}
       </h4>
       <p className="mt-1 text-body-sm text-fg-muted">
-        Your exclusive episodes are unlocked, but Spotify won't add the shows to
-        Your Library by itself. Tap the button, hit Follow in Spotify, then come
-        back here for the next one.
+        Click Open to go to the show in Spotify, then follow it if you aren't
+        already.
       </p>
-
-      {next ? (
-        <OutboundLink
-          href={followUrl(next)}
-          platform="spotify"
-          placement="feed_setup_follow_next"
-          onClick={(event) => {
-            if (cooling) {
-              event.preventDefault();
-              return;
-            }
-            setCooling(true);
-            markFollowed(next);
-          }}
-          aria-disabled={cooling ? true : undefined}
-          data-follow-next=""
-          className={`mt-4 flex w-full items-center justify-center gap-2 bg-cyan px-5 py-3.5 text-center button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:w-auto sm:justify-start ${cooling ? "pointer-events-none opacity-60" : ""}`}
-        >
-          <span>
-            {hasShowPage(next)
-              ? `Follow ${next.name}`
-              : `Find ${next.name} in Your Library`}
-            {feeds.length > 1 ? (
-              <span className="font-normal">
-                {" "}
-                ({feeds.indexOf(next) + 1} of {feeds.length})
-              </span>
-            ) : null}
-          </span>
-          <span aria-hidden="true">→</span>
-        </OutboundLink>
-      ) : null}
 
       <ol className="mt-5 flex flex-col">
         {feeds.map((feed) => (

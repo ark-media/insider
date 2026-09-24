@@ -290,65 +290,23 @@ describe("FeedSetup — Spotify", () => {
     expect(followWrites).toEqual(["pod_b"]);
   });
 
-  test("one big button walks the member through each unfollowed show in turn", async () => {
-    const mapped = "pod_01a05d4d-d91e-7d23-b20e-7c225707635e";
-    const FEEDS = [
-      feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
-      feed(mapped, "Bravo Show"),
-      feed("pod_c", "Charlie Show"),
-    ];
-    const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
-    container.addEventListener("click", (e) => e.preventDefault());
-    const nextButton = () =>
-      container.querySelector<HTMLAnchorElement>("a[data-follow-next]");
-
-    // Skips the show already followed, and says how far through they are.
-    expect(nextButton()?.textContent).toContain("Follow Bravo Show");
-    expect(nextButton()?.textContent).toContain("2 of 3");
-    expect(nextButton()?.getAttribute("href")).toBe(
-      "https://open.spotify.com/show/4ILTO8EcAStnyj5n40blWM",
-    );
-
-    await click(nextButton()!);
-    expect(followWrites).toEqual([mapped]);
-  });
-
-  test("a quick second tap on the big button doesn't tick another show", async () => {
-    const FEEDS = [feed("pod_a", "Alpha Show"), feed("pod_b", "Bravo Show")];
-    const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
-    container.addEventListener("click", (e) => e.preventDefault());
-    const nextButton = () =>
-      container.querySelector<HTMLAnchorElement>("a[data-follow-next]")!;
-
-    await click(nextButton());
-    await click(nextButton());
-
-    // The member only ever saw the first show open.
-    expect(followWrites).toEqual(["pod_a"]);
-    expect(nextButton().getAttribute("aria-disabled")).toBe("true");
-  });
-
   test("a show without a Spotify page doesn't promise a follow", async () => {
     const container = await render(
       <FeedSetup feeds={linked([feed("pod_unmapped", "Unmapped Show")])} />,
     );
-    const nextButton = container.querySelector("a[data-follow-next]");
+    const link = container.querySelector("ol a");
 
-    expect(nextButton?.textContent).toContain("Find Unmapped Show in Your Library");
-    expect(nextButton?.textContent).not.toContain("Follow");
-    expect(container.querySelector("ol a")?.textContent).toContain(
-      "Find in Your Library",
-    );
+    expect(link?.textContent).toContain("Find in Your Library");
+    expect(link?.textContent).not.toContain("Follow");
   });
 
-  test("the big button goes away once every show has been opened", async () => {
+  test("opening every show doesn't announce an \"all set\"", async () => {
     const FEEDS = [
       feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
       feed("pod_b", "Bravo Show", { spotify_follow_opened: true }),
     ];
     const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
 
-    expect(container.querySelector("a[data-follow-next]")).toBeNull();
     // Opened isn't followed, so there's no "all set" to announce.
     expect(container.textContent).not.toContain("all set");
     expect(container.textContent).toContain("now follow your shows");
