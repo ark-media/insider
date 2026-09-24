@@ -34,4 +34,18 @@ describe('renderWelcomeOfferEmail', () => {
     const { html } = renderWelcomeOfferEmail({ ...base, plan: 'monthly', firstName: 'A<b>' })
     expect(html).toContain('Hi A&lt;b&gt;,')
   })
+
+  test('the claim button carries the member\'s own sign-in link', () => {
+    const { html } = renderWelcomeOfferEmail({ ...base, plan: 'monthly' })
+    expect(html).toMatch(
+      new RegExp(`<a href="${base.offerUrl.replace(/[.?]/g, '\\$&')}"[^>]*>Claim your offer to join the Fold`),
+    )
+  })
+
+  test('is transactional: no unsubscribe block or postal address', () => {
+    const { html } = renderWelcomeOfferEmail({ ...base, plan: 'monthly' })
+    expect(html.toLowerCase()).not.toContain('unsubscribe')
+    expect(html).not.toContain('RESEND_UNSUBSCRIBE_URL')
+    expect(html).not.toContain('Street Address')
+  })
 })
