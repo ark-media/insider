@@ -103,23 +103,19 @@ export async function fetchMe(): Promise<Me | null> {
 // The server only lets those through for a member who actually signed in — an
 // emailed code or Google. A session that came from a link in one of our emails
 // (or the brief post-payment one) can read the account and set up feeds, but is
-// answered 401 `reauth_required` on billing. That isn't an error to show and
-// leave: send them through sign-in and straight back to the page they were on,
-// where the same click now works. The caller still gets the response, so the
-// server's sentence shows for the moment before the navigation lands.
+// answered 401 `reauth_required` on billing. A session that expired while the
+// page sat open (or was signed out in another tab) is answered a plain 401
+// `unauthenticated`. Neither is an error to show and leave: send them through
+// sign-in and straight back to the page they were on, where the same click now
+// works. The caller still gets the response, so the server's sentence shows for
+// the moment before the navigation lands.
 async function billingFetch(input: string, init: RequestInit): Promise<Response> {
   const res = await fetch(input, init);
   if (res.status === 401) {
-    const body = (await res
-      .clone()
-      .json()
-      .catch(() => null)) as { code?: string } | null;
-    if (body?.code === "reauth_required") {
-      const here = window.location.pathname + window.location.search;
-      window.location.assign(
-        `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
-      );
-    }
+    const here = window.location.pathname + window.location.search;
+    window.location.assign(
+      `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
+    );
   }
   return res;
 }
@@ -648,6 +644,11 @@ export async function redeemWelcomeOffer(input: {
       credentials: "include",
       body: JSON.stringify({ age_statement: input.ageStatement ?? undefined }),
     });
+    // billingFetch is already on its way to sign-in; a lapsed session's bare
+    // `unauthenticated` code is not a sentence to show while it gets there.
+    if (res.status === 401) {
+      return { ok: false, error: "Please sign in again to take your offer." };
+    }
     return (await res.json()) as {
       ok: boolean;
       plan?: "monthly" | "yearly";

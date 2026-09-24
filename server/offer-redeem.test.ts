@@ -44,6 +44,8 @@ let idempotencyConflictNextUpdate = false
 // Set to make the post-charge metadata write (no `items`) fail.
 let failMetadataWrite = false
 let previewCalls: Array<Record<string, unknown>> = []
+// Every Stripe write in order, so a test can pin what happened before what.
+let writeLog: string[] = []
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -84,6 +86,7 @@ class FakeStripe {
       opts?: { idempotencyKey?: string },
     ) => {
       updateCalls.push({ id, params, opts })
+      writeLog.push(params.items ? 'update' : 'metadata')
       if (failMetadataWrite && !params.items) throw new Error('Stripe blip')
       if (idempotencyConflictNextUpdate) {
         idempotencyConflictNextUpdate = false
@@ -104,6 +107,12 @@ class FakeStripe {
         latest_invoice: 'in_new_1',
         items: { data: [{ id: 'si_1', current_period_end: NOW_SEC + 86_400 }] },
       }
+    },
+  }
+  subscriptionSchedules = {
+    release: async (id: string) => {
+      writeLog.push(`release:${id}`)
+      return { id, status: 'released' }
     },
   }
   invoices = {
@@ -210,6 +219,7 @@ beforeEach(() => {
   failMetadataWrite = false
   updateCalls = []
   previewCalls = []
+  writeLog = []
   __resetPriceCacheForTests()
 })
 
@@ -299,6 +309,45 @@ describe('POST /api/offer/redeem', () => {
     expect((res.__json() as { code: string }).code).toBe('payment_failed')
     // No follow-up metadata write: nothing was redeemed.
     expect(updateCalls).toHaveLength(1)
+  })
+
+  test('a declined card keeps the plan change the member had booked', async () => {
+    withArkPlusSub('year')
+    currentSub = { ...currentSub, schedule: 'sub_sched_1' }
+    declineNextUpdate = true
+
+    const res = await post({ age_statement: AGE_STATEMENT.self })
+    expect(res.statusCode).toBe(402)
+    expect(writeLog).toEqual(['update'])
+  })
+
+  test('releases a booked plan change only once the switch has landed', async () => {
+    withArkPlusSub('year')
+    currentSub = { ...currentSub, schedule: 'sub_sched_1' }
+
+    const res = await post({ age_statement: AGE_STATEMENT.self })
+    expect(res.statusCode).toBe(200)
+    expect(writeLog).toEqual(['update', 'release:sub_sched_1', 'metadata'])
+  })
+
+  test('turns away an annual member whose gifted time is running', async () => {
+    withArkPlusSub('year')
+    currentSub = { ...currentSub, status: 'trialing' }
+
+    const res = await post({ age_statement: AGE_STATEMENT.self })
+    expect(res.statusCode).toBe(409)
+    expect((res.__json() as { reason: string }).reason).toBe('gift_running')
+    expect(updateCalls).toHaveLength(0)
+  })
+
+  test('turns away a monthly member whose gifted time is running', async () => {
+    withArkPlusSub('month')
+    currentSub = { ...currentSub, pause_collection: { behavior: 'void' } }
+
+    const res = await post({ age_statement: AGE_STATEMENT.self })
+    expect(res.statusCode).toBe(409)
+    expect((res.__json() as { reason: string }).reason).toBe('gift_running')
+    expect(updateCalls).toHaveLength(0)
   })
 
   test('answers a second click still in flight with a wait, not an error', async () => {
@@ -396,5 +445,14 @@ describe('GET /api/offer/check', () => {
 
     await post({ age_statement: AGE_STATEMENT.self })
     expect(updateCalls[0]?.params.discounts).toEqual(previewCalls[0]?.discounts)
+  })
+
+  test('hides the offer while gifted time is running', async () => {
+    withArkPlusSub('year')
+    currentSub = { ...currentSub, status: 'trialing' }
+
+    const res = await check()
+    expect(res.__json()).toEqual({ eligible: false, reason: 'gift_running' })
+    expect(previewCalls).toHaveLength(0)
   })
 })

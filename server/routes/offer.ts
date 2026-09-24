@@ -75,6 +75,7 @@ import {
   customerIdOf,
   existingDiscountParams,
   findLiveSubscription,
+  giftExtensionRunning,
   periodEndIso,
   planFromSubscription,
   releaseScheduleIfAny,
@@ -87,8 +88,9 @@ import {
 } from '../../shared/checkout-consent.js'
 
 // Everything that can stop a redemption: blockFor's reasons, plus having no
-// live subscription to move at all.
-type Ineligible = OfferBlock | 'no_subscription'
+// live subscription to move at all, or gifted time still holding the renewal
+// off (see resolveOffer).
+type Ineligible = OfferBlock | 'no_subscription' | 'gift_running'
 
 // Stripe answering for another request with the same idempotency key: one
 // still in flight (409), or one that finished with different parameters.
@@ -128,6 +130,14 @@ async function resolveOffer(
   const tier = await catalogTierOfSubscription(sub, stripe)
   const block = blockFor(sub, tier)
   if (block) return { ok: false, reason: block }
+
+  // Redeeming charges today and restarts the cycle, which a gift-extended
+  // subscription can't take — the same reason change-tier refuses an immediate
+  // change during one. Stripe refuses the re-anchor on an annual sub whose
+  // trial_end sits past it, and on a paused monthly one the restarted paid
+  // month would eat into the gifted time. Checked here so the offer page says
+  // so up front instead of failing at the button.
+  if (giftExtensionRunning(sub)) return { ok: false, reason: 'gift_running' }
 
   const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
   const catalog = await resolveCatalogPrice(stripe, 'bundle', plan)
@@ -253,8 +263,12 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
 
         let updated: Stripe.Subscription
         try {
-          await releaseScheduleIfAny(stripe, sub, env)
-
+          // Any booked change (a switch to monthly at period end, say) is
+          // released only AFTER this succeeds, below. Stripe takes the update
+          // with the schedule still attached, and error_if_incomplete leaves
+          // both untouched on a declined card — so releasing first would
+          // silently throw away a plan change the member still has.
+          //
           // Every parameter here must come out the same for two submissions
           // from the same member, or Stripe rejects the second as a key reused
           // with different parameters instead of replaying the first. So
@@ -308,7 +322,22 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         }
 
         // From here Stripe has switched and charged the member, so nothing
-        // below may report failure. The redemption date is what ends the
+        // below may report failure.
+        //
+        // The booked change is released now the switch has landed; left
+        // attached, it would move the member off the Bundle at its phase end.
+        // A failure is logged for a manual release rather than reported.
+        try {
+          await releaseScheduleIfAny(stripe, sub, env)
+        } catch (err) {
+          console.error(
+            '[offer] REDEEMED BUT SCHEDULE NOT RELEASED — release it by hand or it will undo the switch',
+            { subscriptionId: updated.id },
+            err,
+          )
+        }
+
+        // The redemption date is what ends the
         // no-stacking window (welcomeDiscountActive), and the 18+ statement is
         // recorded under the same keys the account upgrade and checkout use.
         // A failure here is logged for a manual backfill; until then the

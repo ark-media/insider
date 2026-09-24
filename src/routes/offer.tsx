@@ -54,6 +54,11 @@ function ineligibleCopy(reason: string): { title: string; body: string } {
         title: "You're on the bundle.",
         body: "You have both Ark+ and the Fold. You can see what you're paying and when it renews on your account page.",
       };
+    case "gift_running":
+      return {
+        title: "Your gifted time is still running.",
+        body: "This offer starts a new paid term today, which would cut into the membership time you were gifted. Reply to the email we sent you and we'll help you take it without losing any of that time.",
+      };
     case "not_eligible":
       return {
         title: "This offer isn't attached to your account.",
