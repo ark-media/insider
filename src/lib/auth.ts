@@ -28,6 +28,9 @@ export type UserFeed = {
   // the only record — see persistSpotifyFollowOpened. Not a confirmed follow:
   // Spotify reports none.
   spotify_follow_opened?: boolean;
+  // The member came back from a successful Spotify link (one link unlocks
+  // every show). Brings the follow checklist back on later visits.
+  spotify_linked?: boolean;
 };
 
 // A feed counts as "set up" once it's either confirmed (Beehiiv reports it
@@ -503,14 +506,17 @@ export async function changeTier(input: {
 // because the in-memory optimistic state still stands and the webhook remains
 // authoritative — a persistence blip must never surface an error on a setup
 // click. Ids are SHOW ids (see UserFeed.id).
-export async function persistFeedsSetUp(feedIds: string[]): Promise<void> {
+export async function persistFeedsSetUp(
+  feedIds: string[],
+  opts: { via?: "spotify" } = {},
+): Promise<void> {
   if (feedIds.length === 0) return;
   try {
     await fetch("/api/me/feeds/setup", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ feed_ids: feedIds }),
+      body: JSON.stringify({ feed_ids: feedIds, ...opts }),
     });
   } catch {
     /* optimistic UI stands; webhook reconciles */

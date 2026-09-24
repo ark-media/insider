@@ -5,6 +5,8 @@ import {
   spotifyReturnFromSearch,
   type SpotifyReturn,
 } from "../../lib/spotifyReturn";
+import { spotifyLinkSuccessUrl } from "../../config/urls";
+import { persistFeedsSetUp } from "../../lib/auth";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 
 // Beehiiv mints the private feeds a short while AFTER the premium tier is
@@ -21,6 +23,10 @@ import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 // sitting in the background shouldn't burn through the window without looking.
 const FEED_POLL_INTERVAL_MS = 5_000;
 const FEED_POLL_TICKS = 24; // ~2 minutes of visible time
+
+// How long a successful Spotify return waits for its setup write before moving
+// on to Spotify's success page anyway.
+const SPOTIFY_HANDOFF_WRITE_BUDGET_MS = 3_000;
 
 type PodcastFeedSearch = { spotify?: SpotifyReturn };
 
@@ -41,7 +47,7 @@ export const Route = createFileRoute("/account/podcast-feed")({
 function PodcastsTab() {
   const navigate = useNavigate();
   const { spotify } = Route.useSearch();
-  const { state, markFeedsSetUp, refresh } = useSubscriberAuth();
+  const { state, refresh } = useSubscriberAuth();
 
   useEffect(() => {
     if (state.kind === "member" && !isArkPlusMember(state)) {
@@ -52,27 +58,33 @@ function PodcastsTab() {
   // Coming back from Beehiiv's Spotify consent flow.
   //
   // Beehiiv honours the return URL we pass (see buildSpotifyHandoff), so this
-  // is the path that confirms the link — the CTA is a same-tab hand-off and
-  // the follow step keys off this marker, not the click.
+  // is the path that confirms the link — the CTA click doesn't, because the
+  // member may still cancel at Spotify's consent screen. A failed link returns
+  // to the same URL with `toast=error` and arrives here as "failed", so it
+  // records nothing and the page stays put to say so.
   //
-  // It deliberately stays in the URL rather than being read into state: the URL
-  // is the one place that survives whatever the router and the auth refresh do
-  // to this subtree, and it stays true on a reload.
+  // A successful link records every show as set up AND Spotify-linked (one
+  // link covers them all), then hands the member on to Spotify's own success
+  // page, which lists what the link unlocked. `replace`, so Back doesn't land
+  // on this marker and bounce them to Spotify again. The link record is what
+  // brings the follow checklist back on this page next time.
   //
-  // This is the ONLY place a Spotify link checks the shows off — the CTA click
-  // doesn't, because the member may still cancel at Spotify's consent screen.
-  // A failed link returns to the same URL with `toast=error` and arrives here
-  // as "failed", so it marks nothing.
-  // One link covers every show. Marking is idempotent (it only ever flips a
-  // feed that isn't already set up), which is what makes it safe to leave the
-  // marker in the URL.
+  // Beehiiv can't point redirect_path at Spotify's page directly: failures go
+  // to redirect_path too, and would land a member whose link failed on a page
+  // about a link they don't have.
   const spotifyLinked = spotify === "linked";
-  const marked = useRef(false);
+  const handedOff = useRef(false);
   useEffect(() => {
-    if (!spotifyLinked || state.kind !== "member" || marked.current) return;
-    marked.current = true;
-    markFeedsSetUp(state.me.feeds.map((f) => f.id));
-  }, [spotifyLinked, state, markFeedsSetUp]);
+    if (!spotifyLinked || state.kind !== "member" || handedOff.current) return;
+    handedOff.current = true;
+    const ids = state.me.feeds.map((f) => f.id);
+    // Leave once the write lands, or after a beat if it hangs — the page is
+    // going away, and a lost marker only costs the checklist on a later visit.
+    void Promise.race([
+      persistFeedsSetUp(ids, { via: "spotify" }),
+      new Promise((resolve) => setTimeout(resolve, SPOTIFY_HANDOFF_WRITE_BUDGET_MS)),
+    ]).then(() => window.location.replace(spotifyLinkSuccessUrl));
+  }, [spotifyLinked, state]);
 
   // Entitled but holding nothing: the feeds are still being minted upstream.
   // Re-read /api/me until they land, then stop — `waiting` flips false the

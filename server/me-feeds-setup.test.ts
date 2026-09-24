@@ -252,6 +252,36 @@ describe('POST /api/me/feeds/setup', () => {
     expect(ids).toEqual(['pod_ok'])
   })
 
+  // A successful Spotify return also records the link (once), so the follow
+  // checklist can come back on a later visit. Any other setup action doesn't.
+  test('via: "spotify" also stamps spotify_linked_at; anything else does not', async () => {
+    const send = async (email: string, body: Record<string, unknown>) => {
+      sqlCalls.length = 0
+      const token = await signSessionToken({ email, roles: [] }, BASE_ENV)
+      const res = makeRes()
+      await runHandler(
+        buildHandler(PATH),
+        makeReq({ path: PATH, method: 'POST', cookie: `${SESSION_COOKIE_NAME}=${token}`, body }),
+        res,
+      )
+      expect(res.statusCode).toBe(200)
+      return sqlCalls.find((c) => c.sql.includes('insert into beehiiv_feed_activations'))
+    }
+
+    const linkedWrite = await send('linker@x.com', { feed_ids: ['pod_a', 'pod_b'], via: 'spotify' })
+    expect(linkedWrite?.sql.includes('coalesce(beehiiv_feed_activations.spotify_linked_at')).toBe(true)
+    expect(linkedWrite?.sql.includes('coalesce(beehiiv_feed_activations.pending_at')).toBe(true)
+    expect(linkedWrite?.values).toEqual([
+      ['linker@x.com', 'linker@x.com'],
+      ['pod_a', 'pod_b'],
+    ])
+
+    for (const [email, via] of [['plain@x.com', undefined], ['other@x.com', 'apple']] as const) {
+      const write = await send(email, { feed_ids: ['pod_a'], ...(via ? { via } : {}) })
+      expect(write?.sql.includes('spotify_linked_at')).toBe(false)
+    }
+  })
+
   test('checkout cookie (just-paid member) also authorizes the write', async () => {
     const token = await signCheckoutToken('fresh@x.com', BASE_ENV)
     const res = makeRes()
@@ -484,6 +514,22 @@ describe('GET /api/me feed setup enrichment', () => {
     // Opening a show on Spotify is not setup — the setup flags stay off.
     expect(feeds[0]).toMatchObject({ spotify_follow_opened: true, pending: false })
     expect(feeds[0].activated).toBe(false)
+  })
+
+  test('surfaces a remembered Spotify link', async () => {
+    stageStates([
+      {
+        show_id: SHOW_ID,
+        activated: false,
+        activated_at: null,
+        pending_at: '2026-01-06T00:00:00Z',
+        revoked_at: null,
+        spotify_linked_at: '2026-01-06T00:00:00Z',
+      },
+    ])
+    const res = await getMe('linkedbefore@x.com')
+    const feeds = (res.__json() as { feeds: Array<Record<string, unknown>> }).feeds
+    expect(feeds[0]).toMatchObject({ spotify_linked: true, pending: true })
   })
 
   test('a show with no mirror row carries no activation fields', async () => {

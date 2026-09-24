@@ -185,6 +185,20 @@ export const spotifyLibraryUrl = "https://open.spotify.com/collection/podcasts";
 export const spotifyContentAccessUrl = "https://content-access.spotify.com/";
 
 /**
+ * Beehiiv's Spotify Open Access partner ID. Public: it's in the
+ * `<spotify:access><partner id="…"/>` tag of the feed Beehiiv serves Spotify
+ * (confirmed 2026-09-24).
+ */
+const beehiivSpotifyPartnerId = "5l4n1gEAC81kHOQ6rFw3XU";
+
+/**
+ * Spotify's "you're linked" page for Beehiiv's partner ID, listing the shows the
+ * link unlocked. Where a member lands after a successful link — see the
+ * podcast-feed route. Spotify sends a signed-out visitor to its login first.
+ */
+export const spotifyLinkSuccessUrl = `https://content-access.spotify.com/oauth/success?partnerId=${beehiivSpotifyPartnerId}`;
+
+/**
  * The Spotify show page for each premium show, keyed by Beehiiv show id
  * (`pod_<uuid>`, the same id as UserFeed.id). Where the feed setup page sends a
  * member to follow a show once Open Access has linked their account.
