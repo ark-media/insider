@@ -1,6 +1,6 @@
 // ICMB launch welcome offer — the two Stripe coupons.
 //
-// Existing Inside Call Me Back subscribers move from Ark+ to the Bundle keeping
+// Existing Inside Call me Back subscribers move from Ark+ to the Bundle keeping
 // their cadence, at a fixed discounted price for a fixed term:
 //
 //   yearly   $200 for the first year, then $250   (duration: once)

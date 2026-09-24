@@ -1,6 +1,6 @@
 // ICMB launch welcome offer — eligibility, pricing and the no-stacking rule.
 //
-// Existing Inside Call Me Back subscribers are invited to move from Ark+ to the
+// Existing Inside Call me Back subscribers are invited to move from Ark+ to the
 // Bundle keeping their cadence, at a fixed discounted price for a fixed term
 // ($200 the first year / $20 for three months). The two Stripe coupons are
 // provisioned by scripts/welcome-offer-coupons.ts, and the invitation is sent

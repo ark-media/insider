@@ -164,7 +164,7 @@ function OfferBody({
     return (
       <div>
         <p className="body-text text-fg-muted">
-          Sign in with the email address your Inside Call Me Back subscription
+          Sign in with the email address your Inside Call me Back subscription
           is on, and we'll show you your offer.
         </p>
         <button type="button" className={`${primaryCta} mt-8`} onClick={onSignIn}>
