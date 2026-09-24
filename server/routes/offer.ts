@@ -39,10 +39,11 @@
 // grants the entitlement, and the webhook derives the new tier from the price's
 // product and fans out to Beehiiv, Circle and Neon.
 //
-// VERIFY-PENDING: `always_invoice` together with `billing_cycle_anchor: 'now'`
-// is written against the documented API. Confirm against a live test-mode
-// subscription that it raises ONE invoice (the reset cycle plus the proration
-// credit), not two, before this is exposed.
+// Verified against Stripe test mode (2026-09-24), through these routes: one
+// invoice (the Bundle term, the offer coupon and the Ark+ credit together),
+// paid on the spot, matching the check route's createPreview to the cent for
+// both cadences. The yearly `once` discount is gone from the subscription after
+// that invoice, which is why welcomeDiscountActive reads metadata instead.
 // ---------------------------------------------------------------------------
 
 import type Stripe from 'stripe'
