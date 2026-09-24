@@ -29,7 +29,7 @@ import {
 } from '../lib/feed-activations.js'
 import { fetchAuth0EmailVerified } from '../entitlement.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
-import { listDiscussThreadsByNewsletter } from '../lib/discuss-threads.js'
+import { listDiscussThreadsByNewsletterCached } from '../lib/discuss-threads.js'
 import {
   fetchWithTimeout,
   getClientIp,
@@ -40,6 +40,7 @@ import {
 import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { makeTTLCache } from '../../shared/ttl-cache.js'
+import { createSingleFlight } from '../../shared/single-flight.js'
 import { isNewsletterSlug, resolveBeehiivPublicationId } from './newsletter-slugs.js'
 
 // Cache the raw upstream Beehiiv response keyed by publication id. Projection
@@ -49,6 +50,7 @@ const BEEHIIV_RAW_CACHE_TTL_MS = 5 * 60 * 1000
 const beehiivRawCache = makeTTLCache<string, BeehiivPost[]>(
   BEEHIIV_RAW_CACHE_TTL_MS,
 )
+const beehiivRawFlight = createSingleFlight<string, BeehiivPost[]>()
 
 // Author for posts whose Beehiiv `authors[]` is empty. Beehiiv usually
 // populates authors, so this is just safety-net copy.
@@ -60,6 +62,15 @@ async function fetchBeehiivRaw(
 ): Promise<BeehiivPost[]> {
   const cached = beehiivRawCache.get(publicationId)
   if (cached) return cached
+  return beehiivRawFlight.run(publicationId, () =>
+    loadBeehiivRaw(publicationId, token),
+  )
+}
+
+async function loadBeehiivRaw(
+  publicationId: string,
+  token: string,
+): Promise<BeehiivPost[]> {
   // Beehiiv publication ids carry a stable `pub_` prefix. Validate before
   // interpolating into the upstream URL.
   if (!/^pub_[A-Za-z0-9-]+$/.test(publicationId)) return []
@@ -119,7 +130,7 @@ async function enrichWithDiscussUrls(
   if (!env.DATABASE_URL) return posts
   try {
     const sql = getDb(env)
-    const threads = await listDiscussThreadsByNewsletter(sql, newsletterSlug)
+    const threads = await listDiscussThreadsByNewsletterCached(sql, newsletterSlug)
     if (threads.length === 0) return posts
     const byPostId = new Map(threads.map((t) => [t.beehiivPostId, t.circleThreadUrl]))
     return posts.map((p) =>

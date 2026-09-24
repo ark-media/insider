@@ -17,6 +17,7 @@ import type { Deps } from './lib/route'
 let coupons: Array<Record<string, unknown>> = []
 let promotionCodes: Array<Record<string, unknown>> = []
 let couponsListThrows = false
+let couponsListCalls = 0
 
 const coupon = (
   id: string,
@@ -65,6 +66,7 @@ function priceFor(key: string) {
 const stripe = {
   coupons: {
     list: async () => {
+      couponsListCalls++
       if (couponsListThrows) throw new Error('stripe coupons.list failed')
       return { data: coupons, has_more: false }
     },
@@ -87,29 +89,37 @@ const [route] = promoRoutes({
   activator: null as unknown as Deps['activator'],
 })
 
-type Reply = { status: number; body: Record<string, unknown> }
+type Reply = {
+  status: number
+  body: Record<string, unknown>
+  headers: Record<string, string>
+}
 
 async function get(query: string): Promise<Reply> {
   const req = { url: `/api/promo/active?${query}`, method: 'GET' } as IncomingMessage
   let status = 0
   let body = ''
+  const headers: Record<string, string> = {}
   const res = {
     statusCode: 200,
     headersSent: false,
-    setHeader() {},
+    setHeader(name: string, value: string) {
+      headers[name.toLowerCase()] = value
+    },
     end(chunk?: string) {
       status = (res as unknown as { statusCode: number }).statusCode
       body = chunk ?? ''
     },
   } as unknown as ServerResponse
   await route.handler(req, res)
-  return { status, body: JSON.parse(body) as Record<string, unknown> }
+  return { status, body: JSON.parse(body) as Record<string, unknown>, headers }
 }
 
 beforeEach(() => {
   coupons = []
   promotionCodes = []
   couponsListThrows = false
+  couponsListCalls = 0
   __resetPromoCacheForTests()
   __resetPriceCacheForTests()
 })
@@ -211,5 +221,36 @@ describe('GET /api/promo/active', () => {
     const { status, body } = await get('plan=monthly')
     expect(status).toBe(200)
     expect(body).toEqual({ active: false })
+  })
+
+  test('a found answer is edge-cacheable, briefly', async () => {
+    coupons = [coupon('c1', { percent_off: 20 })]
+    promotionCodes = [code('SPRING60', 'c1')]
+    expect((await get('plan=monthly')).headers['cache-control']).toBe(
+      'public, s-maxage=30, stale-while-revalidate=30',
+    )
+    // "No sale" is as shareable as a sale — it depends only on the url.
+    coupons = []
+    __resetPromoCacheForTests()
+    expect((await get('plan=monthly')).headers['cache-control']).toBe(
+      'public, s-maxage=30, stale-while-revalidate=30',
+    )
+  })
+
+  test('a Stripe failure is never stored at the edge', async () => {
+    couponsListThrows = true
+    const { body, headers } = await get('plan=monthly')
+    expect(body).toEqual({ active: false })
+    expect(headers['cache-control']).toBe('private, no-store')
+  })
+
+  test('a burst of cold requests makes one Stripe list call', async () => {
+    coupons = [coupon('c1', { percent_off: 20 })]
+    promotionCodes = [code('SPRING60', 'c1')]
+    const replies = await Promise.all(
+      Array.from({ length: 20 }, () => get('plan=monthly')),
+    )
+    expect(replies.every((r) => r.body.code === 'SPRING60')).toBe(true)
+    expect(couponsListCalls).toBe(1)
   })
 })

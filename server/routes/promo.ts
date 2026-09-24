@@ -29,6 +29,7 @@ import {
   type Plan,
 } from '../lib/pricing.js'
 import { coerceTier } from './stripe/helpers.js'
+import { createSingleFlight } from '../../shared/single-flight.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // Short-lived cache of the coupon + code lists. This endpoint is public and
@@ -38,21 +39,25 @@ import { defineRoute, type Deps, type Route } from '../lib/route.js'
 // discount anyone it shouldn't — the worst case is a dead code the browser
 // tries once and drops.
 const PROMO_TTL_MS = 60_000
-let promoCache: {
+type PromoLists = {
   at: number
   coupons: Stripe.Coupon[]
   codes: Stripe.PromotionCode[]
-} | null = null
+}
+let promoCache: PromoLists | null = null
 
-async function getCachedPromos(stripe: Stripe) {
-  const now = Date.now()
-  if (promoCache && now - promoCache.at < PROMO_TTL_MS) return promoCache
-  const [coupons, codes] = await Promise.all([
-    listActiveCoupons(stripe),
-    listPromotionCodes(stripe, { active: true }),
-  ])
-  promoCache = { at: now, coupons, codes }
-  return promoCache
+const promoFlight = createSingleFlight<'promos', PromoLists>()
+
+async function getCachedPromos(stripe: Stripe): Promise<PromoLists> {
+  if (promoCache && Date.now() - promoCache.at < PROMO_TTL_MS) return promoCache
+  return promoFlight.run('promos', async () => {
+    const [coupons, codes] = await Promise.all([
+      listActiveCoupons(stripe),
+      listPromotionCodes(stripe, { active: true }),
+    ])
+    promoCache = { at: Date.now(), coupons, codes }
+    return promoCache
+  })
 }
 
 // Tests drive several different catalogs through one module instance; without
@@ -68,7 +73,7 @@ export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
       // ?term=6mo|1yr          — a gift; any auto-apply coupon qualifies
       // &tier=, &currency=     — what's being bought, and in what
       path: '/api/promo/active',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         const url = new URL(req.url ?? '/', appBaseUrl)
         const plan = url.searchParams.get('plan')
         const term = url.searchParams.get('term')
@@ -111,6 +116,11 @@ export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
             price.floors[currency],
             currency,
           )
+          // Not per-buyer — everything it depends on is in the url — so the edge
+          // can absorb a checkout spike. Kept short (and the stale window with
+          // it) so a promo started or ended in the admin shows within a minute
+          // or so; the coupon is re-validated at redemption regardless.
+          res.setHeader('cache-control', 'public, s-maxage=30, stale-while-revalidate=30')
           if (!best) return json(200, { active: false })
           return json(200, {
             active: true,
@@ -129,8 +139,10 @@ export function promoRoutes({ stripe, appBaseUrl }: Deps): Route[] {
             minor_factor: minorUnitFactors()[currency],
           })
         } catch (err) {
-          // Non-fatal: checkout still works at full price.
+          // Non-fatal: checkout still works at full price. Never stored, so a
+          // Stripe blip can't pin "no promo" at the edge.
           console.error('[promo] active lookup failed:', err)
+          res.setHeader('cache-control', 'private, no-store')
           return json(200, { active: false })
         }
       },
