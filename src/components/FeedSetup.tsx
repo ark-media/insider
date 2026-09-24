@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import QRCode from "qrcode";
 import {
   ApplePodcastsIcon,
@@ -11,6 +11,7 @@ import {
   premiumSpotifyShows,
   spotifyContentAccessUrl,
   spotifyLibraryUrl,
+  spotifyLinkSuccessUrl,
 } from "../config/urls";
 import { feedIsSetUp, sendFeedEmail, type UserFeed } from "../lib/auth";
 import { trackEvent } from "../lib/analytics";
@@ -277,8 +278,17 @@ function SpotifyRow({
   status?: SpotifyReturn;
   onLink: () => void;
 }) {
-  const linked = status === "linked";
+  // Just back from a successful link: the route is moving the member on to
+  // Spotify's success page, so this only has to say so for the moment it takes.
+  const handingOff = status === "linked";
   const failed = status === "failed";
+  // Linked on an earlier visit (the server remembers). The follow checklist
+  // lives here for a member who comes back to finish following. Not while a
+  // fresh attempt has just failed, though: the failure notice is the answer
+  // to what they just did, and a "you're linked" checklist beside it would
+  // contradict it.
+  const linked =
+    !failed && (handingOff || feeds.some((f) => f.spotify_linked === true));
   return (
     <div className="mt-10 border border-cyan/40 bg-cyan/[0.06]">
       <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:gap-6">
@@ -308,7 +318,22 @@ function SpotifyRow({
           {linked ? null : <span aria-hidden="true">→</span>}
         </OutboundLink>
       </div>
-      {linked ? <SpotifyFollowPanel feeds={feeds} /> : null}
+      {handingOff ? (
+        <p
+          role="status"
+          className="border-t border-cyan/40 bg-navy-900/40 px-5 py-4 text-body-sm text-fg-strong"
+        >
+          Spotify is linked. Taking you to Spotify to see your shows…{" "}
+          <a
+            href={spotifyLinkSuccessUrl}
+            className="text-cyan underline underline-offset-4 hover:text-fg-strong"
+          >
+            Go now
+          </a>
+        </p>
+      ) : linked ? (
+        <SpotifyFollowPanel feeds={feeds} />
+      ) : null}
       {failed ? <SpotifyLinkFailed /> : null}
     </div>
   );
@@ -345,7 +370,9 @@ function SpotifyLinkFailed() {
   );
 }
 
-// Step 2 of the Spotify path, shown once Beehiiv has sent the member back.
+// Step 2 of the Spotify path, for a member who linked on an earlier visit. A
+// fresh link goes straight on to Spotify's success page (see the podcast-feed
+// route), so this is where they finish following when they come back.
 // Linking unlocks the premium shows but follows none of them, and following is
 // a step only the member can take — Spotify has no network-level follow, and
 // adding shows for a member needs Web API access we can't get.
@@ -366,16 +393,6 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
   const done = feeds.filter((f) => f.spotify_follow_opened === true).length;
   const next = feeds.find((f) => f.spotify_follow_opened !== true) ?? null;
   const allDone = next === null;
-
-  // The member just came back from Spotify's consent screen, and this panel
-  // is the whole point of the return — bring it into view and put focus on it,
-  // rather than leaving it wherever the page happened to land.
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    const heading = headingRef.current;
-    heading?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-    heading?.focus({ preventScroll: true });
-  }, []);
 
   const markFollowed = (feed: UserFeed) => {
     if (feed.spotify_follow_opened === true) return;
@@ -404,11 +421,7 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
   return (
     <div className="border-t border-cyan/40 bg-navy-900/40 px-5 py-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
-        <h4
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-body font-bold text-fg-strong focus:outline-none"
-        >
+        <h4 className="text-body font-bold text-fg-strong">
           {allDone
             ? "You're all set on Spotify"
             : `Spotify is linked — now follow your ${feeds.length === 1 ? "show" : "shows"}`}

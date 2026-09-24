@@ -33,6 +33,9 @@ let currentSub: Record<string, unknown> | null = null
 // Lookup keys the catalog is missing, to model a mis-provisioned / unreachable
 // price without breaking the shared resolver cache for the other cases.
 let missingLookupKeys: string[] = []
+// What invoices.createPreview answers with, and the params it was asked with.
+let previewAmountDue: number | Error = 1740
+let previewCalls: Array<Record<string, unknown>> = []
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -45,6 +48,13 @@ class FakeStripe {
     list: async (args: { customer: string }) => ({
       data: currentSub && (currentSub.customer as string) === args.customer ? [currentSub] : [],
     }),
+  }
+  invoices = {
+    createPreview: async (args: Record<string, unknown>) => {
+      previewCalls.push(args)
+      if (previewAmountDue instanceof Error) throw previewAmountDue
+      return { amount_due: previewAmountDue }
+    },
   }
   prices = {
     // Bundle: $25/mo, $250/yr, with EUR at a distinct amount so a test can tell
@@ -119,6 +129,7 @@ type Preview = {
   minorFactor: number
   currentCents: number | null
   bundleCents: number | null
+  dueTodayCents: number | null
   renewsAt: string | null
 }
 
@@ -162,6 +173,8 @@ beforeEach(() => {
   existingCustomers = []
   currentSub = null
   missingLookupKeys = []
+  previewAmountDue = 1740
+  previewCalls = []
   // The resolver's price cache is module-level and `bun test` shares one
   // process: without this, a sibling suite's bundle amounts serve these cases
   // (and vice versa).
@@ -184,8 +197,9 @@ describe('GET /api/stripe/bundle-upgrade-preview', () => {
     expect((res.__json() as { preview: unknown }).preview).toBeNull()
   })
 
-  test('quotes the bundle price, the current price, and the unchanged renewal date', async () => {
+  test('quotes both prices, today\'s charge, and a renewal one cycle from today', async () => {
     withArkPlusSub()
+    const before = Date.now()
     const res = await get(await sessionCookie(EMAIL))
     const { preview } = res.__json() as { preview: Preview }
     expect(preview.plan).toBe('monthly')
@@ -193,7 +207,36 @@ describe('GET /api/stripe/bundle-upgrade-preview', () => {
     expect(preview.minorFactor).toBe(100)
     expect(preview.currentCents).toBe(800)
     expect(preview.bundleCents).toBe(2500)
-    expect(preview.renewsAt).toBe(new Date(NOW_SEC * 1000).toISOString())
+    expect(preview.dueTodayCents).toBe(1740)
+    // The switch restarts the cycle, so the old period end is NOT the renewal.
+    expect(preview.renewsAt).not.toBe(new Date(NOW_SEC * 1000).toISOString())
+    const renews = Date.parse(preview.renewsAt!)
+    expect(renews - before).toBeGreaterThan(27 * 86_400_000)
+    expect(renews - before).toBeLessThan(32 * 86_400_000)
+  })
+
+  test("asks Stripe for the charge with the same parameters change-tier sends", async () => {
+    withArkPlusSub()
+    await get(await sessionCookie(EMAIL))
+    expect(previewCalls).toHaveLength(1)
+    expect(previewCalls[0]).toMatchObject({
+      customer: 'cus_1',
+      subscription: 'sub_1',
+      subscription_details: {
+        items: [{ id: 'si_1', price: 'price_bundle_monthly' }],
+        proration_behavior: 'always_invoice',
+        billing_cycle_anchor: 'now',
+      },
+    })
+  })
+
+  test('a failed charge quote leaves dueTodayCents null but still returns a preview', async () => {
+    previewAmountDue = new Error('stripe down')
+    withArkPlusSub()
+    const res = await get(await sessionCookie(EMAIL))
+    const { preview } = res.__json() as { preview: Preview }
+    expect(preview.dueTodayCents).toBeNull()
+    expect(preview.bundleCents).toBe(2500)
   })
 
   test('prices the bundle in the SUBSCRIPTION currency, not USD', async () => {
@@ -215,6 +258,7 @@ describe('GET /api/stripe/bundle-upgrade-preview', () => {
     const { preview } = res.__json() as { preview: Preview }
     expect(preview.plan).toBe('yearly')
     expect(preview.bundleCents).toBeNull()
+    expect(preview.dueTodayCents).toBeNull()
     expect(preview.currentCents).toBe(800)
   })
 })

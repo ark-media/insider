@@ -16,11 +16,7 @@
 
 import type { GiftTerm } from './activation.js'
 import { greetingFirstName, splitFullName } from '../../shared/profile-name.js'
-import {
-  NOTHING_TO_PAY_TODAY,
-  nextBillLine,
-  perPeriod,
-} from '../../shared/billing-copy.js'
+import { perPeriod, renewsLine, SETTLED_TODAY } from '../../shared/billing-copy.js'
 import { circleUrls, contactEmails } from '../../src/config/urls.js'
 import { shows } from '../../src/data/shows.js'
 
@@ -618,17 +614,15 @@ export type AxisAddedEmailParams = {
 //   1. State the new price as what the membership costs, full stop. The fear
 //      it defuses — "is this on top of what I already pay?" — is better killed
 //      by "that covers everything" than by arguing the negative.
-//   2. Answer "what am I charged right now?" out loud, because the answer is
-//      NOTHING and nobody guesses that. The change is prorated onto the next
-//      invoice, so a member watching their card sees no charge and no
-//      explanation unless we give them one.
+//   2. Answer "what was I charged today, and when do I renew?" out loud. The
+//      switch charges the new price less credit for the old plan's unused time
+//      and restarts the cycle from today, so the renewal date has moved too.
 //
 // Both sentences come from shared/billing-copy.ts, which the account page's
 // confirm panel reads too: this email is the follow-up to a promise made
-// there, so the two cannot word the same facts differently. The next-bill
-// sentence takes that module's 'unknown' settlement — a pay-what-you-can member
-// who was paying MORE than the bundle is owed a credit rather than charged a
-// difference, and this renderer is told the new price, never the old one.
+// there, so the two cannot word the same facts differently. This renderer is
+// told the new price, never the charge, so it says how today's bill was worked
+// out and leaves the figure to Stripe's receipt.
 export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
   subject: string
   html: string
@@ -640,14 +634,10 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
   const priceSentence = p.price
     ? `Your membership is now <strong>${esc(p.price)} ${perPeriod(p.plan)}</strong>, and that covers everything: ${coversEverything}.`
     : `Your membership now covers everything: ${coversEverything}.`
-  // Same wording the confirm panel promised — see shared/billing-copy.ts.
-  // 'unknown' is the honest settlement here: this renderer is told what the
-  // membership costs NOW, never what it cost before, so it can't say which way
-  // the money went.
-  const billSentence = ` ${NOTHING_TO_PAY_TODAY} ${nextBillLine({
+  // Same facts the confirm panel promised — see shared/billing-copy.ts.
+  const billSentence = ` ${SETTLED_TODAY} ${renewsLine({
     plan: p.plan,
     renewsOn: p.renewsOn ? esc(p.renewsOn) : null,
-    settlement: 'unknown',
   })}`
 
   if (addedCircle) {

@@ -28,6 +28,9 @@ export type UserFeed = {
   // the only record — see persistSpotifyFollowOpened. Not a confirmed follow:
   // Spotify reports none.
   spotify_follow_opened?: boolean;
+  // The member came back from a successful Spotify link (one link unlocks
+  // every show). Brings the follow checklist back on later visits.
+  spotify_linked?: boolean;
 };
 
 // A feed counts as "set up" once it's either confirmed (Beehiiv reports it
@@ -357,6 +360,10 @@ export type BundleUpgradePreview = {
   minorFactor: number;
   currentCents: number | null;
   bundleCents: number | null;
+  // What the switch charges today: the Bundle price less credit for the unused
+  // part of the current plan. Null when Stripe couldn't quote it.
+  dueTodayCents: number | null;
+  // A full period from today — the switch restarts the billing cycle.
   renewsAt: string | null;
 };
 
@@ -445,8 +452,9 @@ export async function acceptSaveOffer(
 }
 
 // Switch tier / plan / PWYC amount on the member's existing subscription
-// (task 14). Gaining an entitlement applies immediately and prorated; losing one
-// lands at period end. The server derives direction and timing.
+// (task 14). A change the member pays more for applies now, is charged today and
+// restarts the billing cycle; one they pay less for lands at period end. The
+// server derives direction and timing.
 export async function changeTier(input: {
   tier: "ark-plus" | "circle" | "bundle";
   plan: "monthly" | "yearly";
@@ -466,6 +474,8 @@ export async function changeTier(input: {
   changed?: boolean;
   timing?: "immediate" | "period_end";
   effective_at?: string;
+  // Immediate changes only: the first renewal of the restarted cycle.
+  next_charge_at?: string;
   // On a debundle, the win-back row's id, so the survey that follows can attach
   // the member's reasons to it. Null for a plain upgrade/PWYC (no row written)
   // and in a DB-less preview env — the survey step then just no-ops.
@@ -491,6 +501,7 @@ export async function changeTier(input: {
       changed?: boolean;
       timing?: "immediate" | "period_end";
       effective_at?: string;
+      next_charge_at?: string;
       survey_id?: string | number | null;
       error?: string;
     };
@@ -505,14 +516,17 @@ export async function changeTier(input: {
 // because the in-memory optimistic state still stands and the webhook remains
 // authoritative — a persistence blip must never surface an error on a setup
 // click. Ids are SHOW ids (see UserFeed.id).
-export async function persistFeedsSetUp(feedIds: string[]): Promise<void> {
+export async function persistFeedsSetUp(
+  feedIds: string[],
+  opts: { via?: "spotify" } = {},
+): Promise<void> {
   if (feedIds.length === 0) return;
   try {
     await fetch("/api/me/feeds/setup", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ feed_ids: feedIds }),
+      body: JSON.stringify({ feed_ids: feedIds, ...opts }),
     });
   } catch {
     /* optimistic UI stands; webhook reconciles */

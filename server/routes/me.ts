@@ -123,6 +123,8 @@ type WireFeed = {
   // Opened on Spotify from the setup page's follow checklist (not a confirmed
   // follow — Spotify reports none). Only present when true.
   spotify_follow_opened?: boolean
+  // The member came back from a successful Spotify link. Only present when true.
+  spotify_linked?: boolean
 }
 
 // Project a Beehiiv feed onto the wire shape. Keeps `name`/`image_url` as the
@@ -172,6 +174,7 @@ async function enrichFeedsWithActivation(
         activated_at: w.activated_at ?? s.activatedAt,
         pending: s.pending,
         ...(s.spotifyFollowOpened ? { spotify_follow_opened: true } : {}),
+        ...(s.spotifyLinked ? { spotify_linked: true } : {}),
       }
     })
   } catch (err) {
@@ -271,7 +274,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // Show ids (`pod_<uuid>`), not the rotating feed token — see WireFeed.
         // Bounded length as well as shape: an authenticated caller must not be
         // able to script this endpoint into bloating the mirror with junk rows.
-        const body = await readJson<{ feed_ids?: unknown }>(req)
+        const body = await readJson<{ feed_ids?: unknown; via?: unknown }>(req)
         const showIds = Array.isArray(body?.feed_ids)
           ? body.feed_ids
               .filter(
@@ -283,7 +286,12 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         if (showIds.length === 0) return json(400, { error: 'no_feed_ids' })
 
         try {
-          await recordFeedsPending(getDb(env), email, showIds)
+          // `via: "spotify"` = the member just came back from a successful
+          // Spotify link, which unlocks every show. Also recorded, so the
+          // follow checklist can come back on a later visit.
+          await recordFeedsPending(getDb(env), email, showIds, {
+            spotifyLinked: body?.via === 'spotify',
+          })
           json(200, { ok: true })
         } catch (err) {
           console.error('[me] feed pending write failed:', err)

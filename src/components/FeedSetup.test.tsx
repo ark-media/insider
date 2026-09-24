@@ -7,9 +7,10 @@
 // Two behaviours, both of which broke in front of a member:
 //
 // 1. The Spotify hand-off is a same-tab round trip back to
-//    `?spotify=linked`. The follow step keys off that marker, not the click —
-//    a background-tab return would be worse than useless, and claiming "linked"
-//    on click would congratulate a member who cancelled at Spotify.
+//    `?spotify=linked`, which moves the member on to Spotify's success page.
+//    Nothing keys off the click — claiming "linked" then would congratulate a
+//    member who cancelled at Spotify. The follow step comes back on later
+//    visits from the server's record of the link.
 // 2. A member holds a feed per premium show, and four of them turned this page
 //    into an unreadable stack. Each show is a disclosure row: the checklist
 //    stays visible, one show is open, and finishing one moves to the next.
@@ -63,6 +64,11 @@ const FEED: UserFeed = {
 
 function feed(id: string, name: string, extra: Partial<UserFeed> = {}): UserFeed {
   return { ...FEED, id, name, ...extra };
+}
+
+/** Feeds as /api/me returns them once the member has linked Spotify. */
+function linked(feeds: UserFeed[]): UserFeed[] {
+  return feeds.map((f) => ({ ...f, spotify_linked: true }));
 }
 
 /** The disclosure button for one show, by its title. */
@@ -176,8 +182,23 @@ describe("FeedSetup — Spotify", () => {
     expect(spotifyCta(container).textContent).toContain("Link Spotify");
   });
 
-  test("shows the follow step when Beehiiv returns the marker", async () => {
+  // A fresh link goes straight on to Spotify's success page (the route does
+  // the redirect), so the marker only has to say that's happening.
+  test("on the marker, says it's taking the member to Spotify's success page", async () => {
     const container = await render(<FeedSetup feeds={[FEED]} spotify="linked" />);
+
+    expect(container.textContent).toContain("Taking you to Spotify");
+    expect(followLink(container)).toBeNull();
+    expect(
+      container.querySelector(
+        'a[href="https://content-access.spotify.com/oauth/success?partnerId=5l4n1gEAC81kHOQ6rFw3XU"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  // A member who linked on an earlier visit comes back to finish following.
+  test("shows the follow step when the server remembers the link", async () => {
+    const container = await render(<FeedSetup feeds={linked([FEED])} />);
 
     expect(followLink(container)).not.toBeNull();
     expect(container.textContent).toContain("Spotify is linked");
@@ -213,12 +234,26 @@ describe("FeedSetup — Spotify", () => {
     ).not.toBeNull();
   });
 
+  // A member who linked before and then fails a fresh attempt: the failure is
+  // the answer to what they just did, so the remembered link mustn't put a
+  // "you're linked" checklist beside it.
+  test("a failed re-link doesn't also show the follow step", async () => {
+    const container = await render(
+      <FeedSetup feeds={linked([FEED])} spotify="failed" />,
+    );
+
+    expect(container.textContent).toContain("Spotify didn't link");
+    expect(container.textContent).not.toContain("Spotify is linked");
+    expect(followLink(container)).toBeNull();
+    expect(spotifyCta(container).textContent).toContain("Try again");
+  });
+
   test("the ticks come from the server's per-show flag", async () => {
     const FEEDS = [
       feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
       feed("pod_b", "Bravo Show"),
     ];
-    const container = await render(<FeedSetup feeds={FEEDS} spotify="linked" />);
+    const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
     const buttons = [
       ...container.querySelectorAll<HTMLAnchorElement>(
         'ol a[href^="https://open.spotify.com"]',
@@ -235,7 +270,7 @@ describe("FeedSetup — Spotify", () => {
       feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
       feed("pod_b", "Bravo Show"),
     ];
-    const container = await render(<FeedSetup feeds={FEEDS} spotify="linked" />);
+    const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
     // Stop happy-dom from trying to navigate to Spotify.
     container.addEventListener("click", (e) => e.preventDefault());
     const buttons = [
@@ -258,7 +293,7 @@ describe("FeedSetup — Spotify", () => {
       feed(mapped, "Bravo Show"),
       feed("pod_c", "Charlie Show"),
     ];
-    const container = await render(<FeedSetup feeds={FEEDS} spotify="linked" />);
+    const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
     container.addEventListener("click", (e) => e.preventDefault());
     const nextButton = () =>
       container.querySelector<HTMLAnchorElement>("a[data-follow-next]");
@@ -276,7 +311,7 @@ describe("FeedSetup — Spotify", () => {
 
   test("a quick second tap on the big button doesn't tick another show", async () => {
     const FEEDS = [feed("pod_a", "Alpha Show"), feed("pod_b", "Bravo Show")];
-    const container = await render(<FeedSetup feeds={FEEDS} spotify="linked" />);
+    const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
     container.addEventListener("click", (e) => e.preventDefault());
     const nextButton = () =>
       container.querySelector<HTMLAnchorElement>("a[data-follow-next]")!;
@@ -291,7 +326,7 @@ describe("FeedSetup — Spotify", () => {
 
   test("a show without a Spotify page doesn't promise a follow", async () => {
     const container = await render(
-      <FeedSetup feeds={[feed("pod_unmapped", "Unmapped Show")]} spotify="linked" />,
+      <FeedSetup feeds={linked([feed("pod_unmapped", "Unmapped Show")])} />,
     );
     const nextButton = container.querySelector("a[data-follow-next]");
 
@@ -307,7 +342,7 @@ describe("FeedSetup — Spotify", () => {
       feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
       feed("pod_b", "Bravo Show", { spotify_follow_opened: true }),
     ];
-    const container = await render(<FeedSetup feeds={FEEDS} spotify="linked" />);
+    const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
 
     expect(container.querySelector("a[data-follow-next]")).toBeNull();
     expect(container.textContent).toContain("You're all set on Spotify");
@@ -315,7 +350,7 @@ describe("FeedSetup — Spotify", () => {
   });
 
   test("points at Spotify's own list of unlocked shows", async () => {
-    const container = await render(<FeedSetup feeds={[FEED]} spotify="linked" />);
+    const container = await render(<FeedSetup feeds={linked([FEED])} />);
 
     expect(
       container.querySelector('a[href="https://content-access.spotify.com/"]'),
@@ -334,8 +369,7 @@ describe("FeedSetup — Spotify", () => {
     const mapped = "pod_01a05d4d-d91e-7d23-b20e-7c225707635e";
     const container = await render(
       <FeedSetup
-        feeds={[feed(mapped, "Mapped Show"), feed("pod_unmapped", "Unmapped Show")]}
-        spotify="linked"
+        feeds={linked([feed(mapped, "Mapped Show"), feed("pod_unmapped", "Unmapped Show")])}
       />,
     );
 

@@ -3,63 +3,58 @@
 // the SAME event minutes apart, and the wording has to stay identical.
 
 import { describe, expect, test } from 'bun:test'
-import { nextBillLine, perPeriod, restOfPeriod, NOTHING_TO_PAY_TODAY } from './billing-copy'
+import { dueTodayLine, perPeriod, renewsLine, SETTLED_TODAY } from './billing-copy'
 
-describe('cadence', () => {
-  test('a price is quoted in the member’s own billing period', () => {
-    expect(perPeriod('monthly')).toBe('a month')
-    expect(perPeriod('yearly')).toBe('a year')
+test('a price is quoted in the member’s own billing period', () => {
+  expect(perPeriod('monthly')).toBe('a month')
+  expect(perPeriod('yearly')).toBe('a year')
+})
+
+describe('dueTodayLine', () => {
+  test('names the figure that comes off the card today', () => {
+    expect(dueTodayLine({ amount: '£172.40' })).toBe(
+      "You pay £172.40 today: the new price, less credit for what's left of your current plan.",
+    )
   })
 
-  test('so is the remainder of the period the change settles over', () => {
-    expect(restOfPeriod('monthly')).toBe('the rest of this month')
-    expect(restOfPeriod('yearly')).toBe('the rest of this year')
+  test('a member whose unused time covers the new price is told nothing is due', () => {
+    const line = dueTodayLine('nothing')
+    expect(line.startsWith('Nothing to pay today')).toBe(true)
+  })
+
+  test('without a quote it still says the charge is today, with no made-up figure', () => {
+    const line = dueTodayLine('unknown')
+    expect(line).toContain('today')
+    expect(line).not.toMatch(/[$£€]/)
   })
 })
 
-describe('nextBillLine', () => {
-  test('a yearly member is never told about a month', () => {
-    const line = nextBillLine({ plan: 'yearly', renewsOn: 'March 1, 2027', settlement: 'charged' })
-    expect(line).toContain('the rest of this year')
-    expect(line).not.toContain('month')
-  })
-
-  test('a member who was paying MORE is owed credit, not charged a difference', () => {
-    const line = nextBillLine({ plan: 'monthly', renewsOn: 'March 1, 2027', settlement: 'credited' })
-    expect(line).toContain("credit for what you've already paid")
-    expect(line).not.toContain('difference')
-  })
-
-  test("'unknown' takes the phrasing that is true whichever way the money went", () => {
-    // What the email renderer gets: it is told the new price, never the old one.
-    const line = nextBillLine({ plan: 'monthly', renewsOn: 'March 1, 2027', settlement: 'unknown' })
-    expect(line).toContain('at the new price')
-    expect(line).not.toContain('difference')
-    expect(line).not.toContain('credit')
-  })
-
-  test('an unreadable date drops the date, not the sentence', () => {
-    // Glued from clauses this ran together into "Your next bill with the
-    // difference…", which is why each variant is written whole.
-    for (const settlement of ['charged', 'credited', 'unknown'] as const) {
-      const line = nextBillLine({ plan: 'monthly', renewsOn: null, settlement })
-      expect(line.startsWith('Your next bill')).toBe(true)
-      expect(line.endsWith('.')).toBe(true)
-      expect(line).not.toContain('null')
-      expect(line).not.toContain('undefined')
-    }
-  })
-
+describe('renewsLine', () => {
   test('the date is placed, not appended', () => {
-    expect(
-      nextBillLine({ plan: 'monthly', renewsOn: 'March 1, 2027', settlement: 'charged' }),
-    ).toBe('Your next bill is March 1, 2027, with the difference for the rest of this month added on.')
+    expect(renewsLine({ plan: 'yearly', renewsOn: 'September 24, 2027' })).toBe(
+      'Your membership then renews on September 24, 2027.',
+    )
+  })
+
+  test('an unreadable date falls back to the cadence, not to "null"', () => {
+    expect(renewsLine({ plan: 'yearly', renewsOn: null })).toBe(
+      'Your membership then renews a year from today.',
+    )
+    expect(renewsLine({ plan: 'monthly', renewsOn: null })).toBe(
+      'Your membership then renews a month from today.',
+    )
   })
 })
 
-test('the answer to "what comes off my card today" is stated out loud', () => {
-  // Nobody guesses "nothing" — the change settles on the next bill instead, so
-  // a member watching their card sees no charge and no explanation unless the
-  // copy gives them one.
-  expect(NOTHING_TO_PAY_TODAY).toBe('Nothing to pay today.')
+test('none of it speaks our billing vocabulary', () => {
+  const all = [
+    dueTodayLine({ amount: '$17' }),
+    dueTodayLine('nothing'),
+    dueTodayLine('unknown'),
+    renewsLine({ plan: 'monthly', renewsOn: null }),
+    SETTLED_TODAY,
+  ].join(' ').toLowerCase()
+  for (const jargon of ['prorat', 'invoice', 'billing period', 'next bill']) {
+    expect(all).not.toContain(jargon)
+  }
 })

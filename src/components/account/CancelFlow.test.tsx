@@ -34,6 +34,10 @@ let surveyPosts: Array<Record<string, unknown>> = [];
 // Set by the debundle tests to prove the flow keeps its hands off the survey
 // when the server wrote no row to annotate.
 let changeTierSurveyId: string | number | null = 11;
+// Overridden by the plan-switch tests; the default keeps every other flow on
+// the plain "Are you sure?" step.
+let saveOffers: Array<Record<string, unknown>> = [];
+let changeTierReply: Record<string, unknown> | null = null;
 
 function stubFetch() {
   g.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -41,7 +45,7 @@ function stubFetch() {
     // No save offers: the offer screen still shows as the "Are you sure?" step,
     // and declining it commits the cancel.
     if (url.startsWith("/api/stripe/save-offers"))
-      return Response.json({ offers: [], standalone: null });
+      return Response.json({ offers: saveOffers, standalone: null });
     if (url.startsWith("/api/stripe/bundle-breakdown"))
       return Response.json({ breakdown: null });
     if (url.startsWith("/api/stripe/cancel-subscription"))
@@ -51,7 +55,7 @@ function stubFetch() {
         survey_id: 7,
       });
     if (url.startsWith("/api/stripe/change-tier"))
-      return Response.json({
+      return Response.json(changeTierReply ?? {
         ok: true,
         changed: true,
         timing: "period_end",
@@ -82,6 +86,8 @@ async function render(ui: React.ReactElement) {
 beforeEach(() => {
   surveyPosts = [];
   changeTierSurveyId = 11;
+  saveOffers = [];
+  changeTierReply = null;
   stubFetch();
 });
 
@@ -344,5 +350,75 @@ describe("a member dropping the Fold but keeping Ark+", () => {
     await closeModal();
     expect(surveyPosts).toEqual([]);
     expect(finished).toEqual(["debundled"]);
+  });
+});
+
+describe("a monthly member switching to annual", () => {
+  const annual = (over: Record<string, unknown> = {}) => ({
+    kind: "annual_switch",
+    couponId: null,
+    label: null,
+    percentOff: null,
+    amountOff: null,
+    durationMonths: null,
+    currency: "usd",
+    minorFactor: 100,
+    targetPlan: "yearly",
+    currentPriceCents: 800,
+    targetPriceCents: 8000,
+    dueTodayCents: 7240,
+    ...over,
+  });
+
+  async function openOffers() {
+    await render(
+      <CancelFlow
+        tier="ark-plus"
+        plan="monthly"
+        onClose={noop}
+        onSaved={noop}
+        onCancelled={noop}
+        onDebundled={noop}
+      />,
+    );
+    await click("Continue to cancel");
+  }
+
+  test("is told what comes off the card today before switching", async () => {
+    saveOffers = [annual()];
+    await openOffers();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("You pay $72.40 today");
+    expect(text).toContain("less credit for what's left of your current plan");
+  });
+
+  test("without a quote, still hears the charge is today", async () => {
+    saveOffers = [annual({ dueTodayCents: null })];
+    await openOffers();
+    expect(document.body.textContent).toContain("You pay the new price today");
+  });
+
+  test("with a debundle booked, hears the switch starts later and nothing is due today", async () => {
+    saveOffers = [annual({ dueTodayCents: null, startsAt: "2026-10-24T12:00:00.000Z" })];
+    await openOffers();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Annual billing starts on");
+    expect(text).toContain("nothing to pay today");
+    expect(text).not.toContain("You pay the new price today");
+  });
+
+  test("sees the restarted cycle's renewal date after switching", async () => {
+    saveOffers = [annual()];
+    changeTierReply = {
+      ok: true,
+      changed: true,
+      timing: "immediate",
+      next_charge_at: "2027-09-24T12:00:00.000Z",
+    };
+    await openOffers();
+    await click("Switch to annual");
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Next payment date");
+    expect(text).toContain("2027");
   });
 });
