@@ -398,6 +398,15 @@ describe("a monthly member switching to annual", () => {
     expect(document.body.textContent).toContain("You pay the new price today");
   });
 
+  test("with a debundle booked, hears the switch starts later and nothing is due today", async () => {
+    saveOffers = [annual({ dueTodayCents: null, startsAt: "2026-10-24T12:00:00.000Z" })];
+    await openOffers();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Annual billing starts on");
+    expect(text).toContain("nothing to pay today");
+    expect(text).not.toContain("You pay the new price today");
+  });
+
   test("sees the restarted cycle's renewal date after switching", async () => {
     saveOffers = [annual()];
     changeTierReply = {

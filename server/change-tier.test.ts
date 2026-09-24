@@ -729,6 +729,35 @@ describe('POST /api/stripe/change-tier — upgrades are paid for up front', () =
     )
     expect(res.statusCode).toBe(502)
   })
+
+  // A gift holds the renewal off with trial_end (annual) or pause_collection
+  // (monthly). Stripe refuses anchor=now under a later trial_end, and a
+  // restarted paid month would eat into a pause — so neither is attempted.
+  test('an upgrade while a gift-pushed trial runs is refused before Stripe is written', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as Record<string, unknown>).status = 'trialing'
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(409)
+    expect(String((res.__json() as Record<string, unknown>).error)).toContain('gifted')
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+
+  test('an upgrade while a gift pause runs is refused before Stripe is written', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as Record<string, unknown>).pause_collection = {
+      behavior: 'keep_as_draft',
+      resumes_at: NOW_SEC + 90 * 86400,
+    }
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
 })
 
 // F4 — a retention coupon is priced for one product at one cadence, and must
@@ -1093,8 +1122,15 @@ describe('GET /api/stripe/save-offers', () => {
         items: [{ price: 'price_ark_plus_monthly' }],
       },
     ]
-    const body = await get('cancel-ark-plus')
+    const body = (await get('cancel-ark-plus')) as {
+      offers: Array<{ kind: string; dueTodayCents?: number | null; startsAt?: string | null }>
+    }
     expect(body.offers.map((o) => o.kind)).toEqual(['annual_switch'])
+    // Accepting moves bundle → Ark+ yearly, which loses the Fold: change-tier
+    // books that for period end, so nothing is quoted as due today.
+    expect(body.offers[0]?.dueTodayCents).toBeNull()
+    expect(body.offers[0]?.startsAt).toBe(new Date((NOW_SEC + 1000) * 1000).toISOString())
+    expect(stripeCalls.some((c) => c.method === 'invoices.createPreview')).toBe(false)
   })
 
   test("the annual switch quotes today's charge, asked the way change-tier bills it", async () => {
@@ -1109,6 +1145,24 @@ describe('GET /api/stripe/save-offers', () => {
       subscription: 'sub_1',
       subscription_details: { proration_behavior: 'always_invoice', billing_cycle_anchor: 'now' },
     })
+  })
+
+  test('the annual-switch quote drops a retention coupon the switch drops', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as { discounts: string[] }).discounts = ['di_monthly', 'di_promo']
+    expandedDiscounts = [
+      {
+        id: 'di_monthly',
+        source: {
+          type: 'coupon',
+          coupon: { id: 'c_monthly', metadata: { retention_offer: 'true', plan: 'monthly' } },
+        },
+      },
+      { id: 'di_promo', source: { type: 'coupon', coupon: { id: 'c_promo', metadata: {} } } },
+    ]
+    await get('cancel-ark-plus')
+    const quote = stripeCalls.find((c) => c.method === 'invoices.createPreview')
+    expect(quote?.args[0]).toMatchObject({ discounts: [{ discount: 'di_promo' }] })
   })
 
   test('a bundle member with nothing booked gets no Ark+ offers', async () => {

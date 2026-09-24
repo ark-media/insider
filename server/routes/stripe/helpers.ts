@@ -8,6 +8,7 @@ import {
   type Plan,
   type PricedTier,
 } from '../../lib/pricing.js'
+import { discountsSurvivingChange } from '../../lib/retention.js'
 import type { Env } from '../../lib/route.js'
 
 // Stripe's hard limit is 256; we cap a touch lower to leave room.
@@ -211,20 +212,25 @@ export function periodEndIso(sub: Stripe.Subscription): string | null {
 
 // What an immediate change onto `priceId` takes off the card today: the full
 // new price less credit for the unused part of the current one. Asked of
-// Stripe with the same parameters change-tier sends, never re-derived here.
+// Stripe with the same parameters change-tier sends, never re-derived here —
+// including the retention coupons that change drops (`landing` is where it
+// lands), which the preview would otherwise keep and quote too low.
 // Null when it can't be quoted — callers then describe the charge without a
 // figure.
 export async function quoteChargeToday(
   stripe: Stripe,
   sub: Stripe.Subscription,
   priceId: string,
+  landing: { tier: PricedTier; plan: Plan },
 ): Promise<number | null> {
   const itemId = sub.items.data[0]?.id
   if (!itemId) return null
   try {
+    const discounts = await discountsSurvivingChange(stripe, sub, landing)
     const invoice = await stripe.invoices.createPreview({
       customer: customerIdOf(sub),
       subscription: sub.id,
+      ...(discounts !== null ? { discounts } : {}),
       subscription_details: {
         items: [{ id: itemId, price: priceId }],
         proration_behavior: 'always_invoice',
@@ -236,6 +242,14 @@ export async function quoteChargeToday(
     console.error('[stripe] charge-today quote failed:', err)
     return null
   }
+}
+
+// Whether a gift is currently holding the subscription's renewal off: an
+// annual sub's period pushed out by trial_end, or a monthly sub's collection
+// paused (routes/gift.ts extendSubscription). Gifts are the only thing that
+// puts our subscriptions in either state.
+export function giftExtensionRunning(sub: Stripe.Subscription): boolean {
+  return sub.status === 'trialing' || sub.pause_collection != null
 }
 
 // When a cycle re-anchored to now next renews: one month or one year out,

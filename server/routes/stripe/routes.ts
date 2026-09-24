@@ -94,6 +94,7 @@ import {
   existingDiscountParams,
   findLiveSubscription,
   findOrCreateSubscriber,
+  giftExtensionRunning,
   MAX_NAME_LEN,
   oneCycleFromNowIso,
   periodEndIso,
@@ -788,22 +789,48 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             return json(200, empty)
           }
           offers = await deriveSaveOffers(stripe, intent, plan, currency)
-          // Switching to annual is charged today and restarts the cycle (see
-          // change-tier), so the card quotes that charge. It moves the member's
-          // current tier to yearly at the catalog price, which is what
-          // change-tier bills when the offer is accepted.
-          const tier = target.tier
+          // Accepting the annual switch calls change-tier with the flow's tier
+          // at yearly, catalog price. change-tier decides its timing against
+          // the LIVE subscription, so this does too: normally that's a switch
+          // charged today that restarts the cycle, and the card quotes the
+          // charge. With a debundle booked, the flow's tier is the one being
+          // moved to — the switch then loses an entitlement and lands at
+          // period end, so there is nothing to charge today and the card says
+          // when it starts instead.
+          const tier = coerceTier(target.tier)
           offers = await Promise.all(
             offers.map(async (o) => {
               if (o.kind !== 'annual_switch') return o
               // A quote that fails drops the figure, never the offer.
-              const yearly = await resolveCatalogPrice(stripe, coerceTier(tier), 'yearly').catch(
-                () => null,
-              )
-              const dueTodayCents = yearly
-                ? await quoteChargeToday(stripe, sub, yearly.priceId)
-                : null
-              return { ...o, dueTodayCents }
+              try {
+                const yearly = await resolveCatalogPrice(stripe, tier, 'yearly')
+                const liveTier = target.scheduled
+                  ? await catalogTierOfSubscription(sub, stripe)
+                  : tier
+                const livePrice = sub.items.data[0]?.price
+                const liveAmount = livePrice
+                  ? await subscriptionAmount(stripe, sub, livePrice)
+                  : null
+                const immediate =
+                  liveTier !== null &&
+                  changeIsImmediate(
+                    deriveEntitlements(liveTier),
+                    deriveEntitlements(tier),
+                    liveAmount,
+                    yearly.floors[currency] ?? yearly.floors.usd,
+                  )
+                if (!immediate) return { ...o, dueTodayCents: null, startsAt: periodEndIso(sub) }
+                return {
+                  ...o,
+                  dueTodayCents: await quoteChargeToday(stripe, sub, yearly.priceId, {
+                    tier,
+                    plan: 'yearly',
+                  }),
+                }
+              } catch (err) {
+                console.error('[stripe] annual-switch quote failed:', err)
+                return { ...o, dueTodayCents: null }
+              }
             }),
           )
           if (intent === 'debundle-remove-ark-plus') {
@@ -1287,7 +1314,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // this switch. Null when it can't be quoted; the panel then says what
         // happens without the figure.
         const dueTodayCents = bundlePriceId
-          ? await quoteChargeToday(stripe, sub, bundlePriceId)
+          ? await quoteChargeToday(stripe, sub, bundlePriceId, { tier: 'bundle', plan })
           : null
 
         return json(200, {
@@ -1480,6 +1507,18 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               },
             }
         const immediate = changeIsImmediate(prevEnt, nextEnt, prevAmount, amountCents)
+        // An immediate change is charged today and restarts the cycle, which a
+        // gift-extended subscription can't take: Stripe refuses the re-anchor
+        // on an annual sub whose trial_end sits past it, and on a paused
+        // monthly one the restarted paid month would eat into the gifted time.
+        // Refused until the gift runs out rather than charging wrongly or
+        // spending the gift.
+        if (immediate && giftExtensionRunning(sub)) {
+          return json(409, {
+            error:
+              'Your gifted membership time is still running, so this change can’t be made yet. Please contact us and we’ll help.',
+          })
+        }
 
         // Win-back record for a debundle (retained_product set): the member is
         // leaving one product but keeping another. Records the tier left, what

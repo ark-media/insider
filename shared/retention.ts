@@ -130,6 +130,10 @@ export type RetentionOffer = {
   // price less credit for the unused part of the current month). Null when
   // Stripe couldn't quote it.
   dueTodayCents?: number | null
+  // annual_switch only: set when the switch can't happen today (a debundle is
+  // booked, so it lands with that change at period end) — the ISO date it
+  // starts. Nothing is charged today then, and dueTodayCents is null.
+  startsAt?: string | null
   // The list price (minor units) the offer is measured against: the current plan's
   // price for a plan switch, and the price the coupon discounts for a coupon
   // offer — the struck-through figure in the design's "$8 $6/month". Absent when

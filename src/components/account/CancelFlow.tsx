@@ -134,16 +134,20 @@ function offerCopy(
         yearOfMonthly > 0
           ? Math.round(((yearOfMonthly - yearly) / yearOfMonthly) * 100)
           : 0;
-      // Switching is charged today and restarts the billing cycle, so the card
-      // says what comes off the card now — see shared/billing-copy.ts.
-      const due = dueTodayOf(o.dueTodayCents, (c) => priceIn(c, o));
+      // Switching is normally charged today and restarts the billing cycle, so
+      // the card says what comes off the card now — see shared/billing-copy.ts.
+      // With a debundle booked it lands with that change instead (startsAt).
+      const starts = o.startsAt ? formatDate(o.startsAt) : "";
+      const timing = o.startsAt
+        ? `Annual billing starts ${starts ? `on ${starts}` : "when your current plan ends"}, with nothing to pay today.`
+        : dueTodayLine(dueTodayOf(o.dueTodayCents, (c) => priceIn(c, o)));
       return {
         heading: "Get a full year of Ark+ for less",
         body: `${
           percent > 0
             ? `Save ${percent}% when you switch to annual billing.`
             : `Switch to annual billing at ${priceIn(yearly, o)}/year.`
-        } ${dueTodayLine(due)}`,
+        } ${timing}`,
       };
     }
     case "monthly_switch": {
