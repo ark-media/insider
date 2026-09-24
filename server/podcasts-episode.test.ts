@@ -15,13 +15,16 @@ import { clearPodcastCaches } from './routes/podcasts'
 const PUBLIC_SHOW = 'pod_aaaa1111'
 const PAID_SHOW = 'pod_bbbb2222'
 
-function buildHandler() {
+// The paid show's id sits under its LEGACY env key (the slug was
+// inside-call-me-back), which is what every environment still carries.
+function buildHandler(extraEnv: Record<string, string> = {}) {
   return createCatchAllHandler({
     APP_BASE_URL: 'http://localhost:5173',
     BEEHIIV_API_KEY: 'test-token',
     BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
     BEEHIIV_PODCAST_ID_CALL_ME_BACK: PUBLIC_SHOW,
     BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: PAID_SHOW,
+    ...extraEnv,
   })
 }
 
@@ -64,9 +67,9 @@ function respondWith(data: unknown, status = 200) {
   fetchImpl = async () => new Response(JSON.stringify({ data }), { status })
 }
 
-async function getEpisode(show: string, id: string) {
+async function getEpisode(show: string, id: string, extraEnv: Record<string, string> = {}) {
   const res = makeRes()
-  await buildHandler()(
+  await buildHandler(extraEnv)(
     makeReq({ url: `/api/handler?_path=podcasts/episode&show=${show}&id=${id}` }),
     res,
   )
@@ -171,11 +174,23 @@ describe('/api/podcasts/episode — episode ownership', () => {
   test('a paid show still withholds audio from a caller with no membership', async () => {
     respondWith(beehiivEpisode({ show: { id: PAID_SHOW } }))
 
-    const { body, cacheControl } = await getEpisode('inside-call-me-back', 'ep_1')
+    const { body, cacheControl } = await getEpisode('call-me-back-plus', 'ep_1')
 
     expect(body.episode?.id).toBe('ep_1')
     expect(body.episode?.audioUrl).toBe('')
     expect(cacheControl).toBe('private, no-store')
+  })
+
+  test("the renamed show's own env key wins over the legacy one", async () => {
+    const RENAMED = 'pod_cccc3333'
+    respondWith(beehiivEpisode({ show: { id: RENAMED } }))
+
+    const { body } = await getEpisode('call-me-back-plus', 'ep_1', {
+      BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS: RENAMED,
+    })
+
+    expect(body.episode?.id).toBe('ep_1')
+    expect(fetchCalls[0]).toContain(RENAMED)
   })
 })
 

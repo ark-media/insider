@@ -459,7 +459,7 @@ describe('createCatchAllHandler — dispatch via _path query param', () => {
     const res = makeRes()
     await handler(
       makeReq({
-        url: '/api/handler?_path=podcasts/episodes&show=inside-call-me-back',
+        url: '/api/handler?_path=podcasts/episodes&show=call-me-back-plus',
       }),
       res,
     )
@@ -849,7 +849,7 @@ describe('/api/podcasts/latest', () => {
 // ===========================================================================
 
 describe('paid shows never enter a shared cache', () => {
-  // A paid show has no entry in src/data/shows.ts right now (inside-call-me-back
+  // A paid show has no entry in src/data/shows.ts right now (call-me-back-plus
   // is commented out), and resolveAudioAccess fails closed on a slug it doesn't
   // recognise — so an env-configured slug that isn't in the catalog is exactly
   // the gated path, and the one we can exercise today.

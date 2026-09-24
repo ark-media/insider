@@ -4,6 +4,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 // old links and bookmarks still land on the show.
 export const Route = createFileRoute("/plus/inside-call-me-back")({
   beforeLoad: () => {
-    throw redirect({ href: "/plus/call-me-back-ark-plus", replace: true });
+    throw redirect({ href: "/plus/call-me-back-plus", replace: true });
   },
 });

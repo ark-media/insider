@@ -2,14 +2,14 @@ import { showListenLinks } from "../config/urls.js";
 
 export type ShowSlug =
   | "call-me-back"
-  | "inside-call-me-back"
+  | "call-me-back-plus"
   | "for-heavens-sake"
   | "ark-news-daily"
   | "chosen-people-problems";
 
 type ShowRoute =
-  | `/podcasts/${Exclude<ShowSlug, "inside-call-me-back">}`
-  | "/plus/call-me-back-ark-plus";
+  | `/podcasts/${Exclude<ShowSlug, "call-me-back-plus">}`
+  | "/plus/call-me-back-plus";
 
 export type ListenPlatform =
   | "apple"
@@ -63,9 +63,11 @@ export const shows: Show[] = [
     // those same values go into the private RSS the member's podcast app reads
     // — so hardcoding them here would let the site and the app disagree.
     // Pointing at a different Beehiiv show is therefore a config change
-    // (BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK), not a deploy.
-    slug: "inside-call-me-back",
-    route: "/plus/call-me-back-ark-plus",
+    // (BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS, or the legacy
+    // BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK — see server/routes/podcasts.ts),
+    // not a deploy. The slug was inside-call-me-back until the Ark+ rename.
+    slug: "call-me-back-plus",
+    route: "/plus/call-me-back-plus",
     title: "Call Me Back Ark+",
     shortTitle: "Call Me Back Ark+",
     tagline:
@@ -77,7 +79,7 @@ export const shows: Show[] = [
     coverArt: "/inside-cmb.jpg",
     paid: true,
     // Deliberately empty: a private feed has no public "listen on" links.
-    listen: showListenLinks["inside-call-me-back"],
+    listen: showListenLinks["call-me-back-plus"],
   },
   {
     slug: "for-heavens-sake",
@@ -157,7 +159,7 @@ export function showAtmosphere(slug: ShowSlug): string {
   switch (slug) {
     case "call-me-back":
       return "cmb-bg";
-    case "inside-call-me-back":
+    case "call-me-back-plus":
       return "icmb-bg";
     case "for-heavens-sake":
       return "fhs-bg";

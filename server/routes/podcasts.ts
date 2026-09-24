@@ -170,12 +170,22 @@ export function clearPodcastCaches(): void {
 // validate the id's exact format.
 const BEEHIIV_ID = /^[A-Za-z0-9_-]{1,64}$/
 
+// The env key a show's id was set under before its slug changed. Call Me Back
+// Ark+ was `inside-call-me-back`, and every environment still carries
+// BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: without this fallback the rename
+// would blank the members' show and feed setup until each environment's var
+// was renamed. Drop the entry once Vercel (Preview + Production) and
+// .env.local all have BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS.
+const LEGACY_PODCAST_ID_KEYS: Record<string, string[]> = {
+  'call-me-back-plus': ['BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK'],
+}
+
 function resolvePodcastId(env: Env, showSlug: string): string | undefined {
   // Accept only the slug pattern we expect so a caller can't probe arbitrary
   // env keys by injecting an unusual `show` value.
   if (!/^[a-z0-9-]+$/.test(showSlug)) return undefined
   const key = `BEEHIIV_PODCAST_ID_${showSlug.toUpperCase().replace(/-/g, '_')}`
-  const value = env[key]?.trim()
+  const value = (env[key] ?? LEGACY_PODCAST_ID_KEYS[showSlug]?.map((k) => env[k]).find(Boolean))?.trim()
   if (!value) return undefined
   // Beehiiv enforces `^pod_[0-9a-fA-F-]+$` on this path segment and rejects a
   // bare UUID with a 400. The dashboard and several of their own surfaces show
