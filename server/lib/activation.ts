@@ -437,8 +437,8 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       // adding the Fold (or the reverse), which moves their subscription onto
       // the Bundle. `wasUnprovisioned` keeps the welcome copy away from them
       // so they get this upgrade notice instead: a pointer to the thing they
-      // just bought, and the new recurring price (Stripe's receipt doesn't
-      // arrive until the next invoice, since the change is prorated onto it).
+      // just bought, the new recurring price, and the renewal date the switch
+      // moved to today (Stripe's receipt carries only the figure).
       //
       // Gated (see gainedNewAxis above) on the provisioning having SUCCEEDED,
       // not merely been attempted: "the Fold is yours now" must not go out

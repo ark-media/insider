@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { formatMinor } from "../../lib/currency";
-import { AXIS, fmtDate, settlementOf, type AxisKey } from "../../lib/entitlement-axes";
+import { AXIS, dueTodayOf, fmtDate, type AxisKey } from "../../lib/entitlement-axes";
 import type { BundleUpgradePreview } from "../../lib/auth";
-import { NOTHING_TO_PAY_TODAY, nextBillLine, perPeriod } from "../../../shared/billing-copy";
+import { dueTodayLine, perPeriod, renewsLine } from "../../../shared/billing-copy";
 import { AGE_STATEMENT, type AgeAttestation } from "../../../shared/checkout-consent";
 
 // The confirm step for D9. Every line answers a question a member asks at
@@ -14,8 +14,9 @@ import { AGE_STATEMENT, type AgeAttestation } from "../../../shared/checkout-con
 //   1. Show the move as "$8 → $25", not as a price plus an argument. The fear
 //      here is that the new price is charged ON TOP of the old one, and an
 //      arrow between two numbers settles that faster than a sentence can.
-//   2. Say "nothing to pay today" out loud. It's the true answer and nobody
-//      guesses it, because the change is settled on the next bill instead.
+//   2. Say what comes off the card today, with the figure. The switch charges
+//      now and restarts the billing cycle from today, so the renewal date
+//      moves too — say that as well.
 //   3. No "prorated", no "invoice", no "billing period". Members have bills and
 //      months; proration is our word for our machinery.
 export function BundleConfirm({
@@ -63,12 +64,10 @@ export function BundleConfirm({
     preview.currentCents === null
       ? null
       : formatMinor(preview.currentCents, currency, minorFactor);
-  const renews = fmtDate(preview.renewsAt);
-  const billLine = nextBillLine({
+  const billLine = `${dueTodayLine(dueTodayOf(preview))} ${renewsLine({
     plan,
-    renewsOn: renews,
-    settlement: settlementOf(preview),
-  });
+    renewsOn: fmtDate(preview.renewsAt),
+  })}`;
 
   return (
     <div className="mb-6 border border-cyan/50 bg-cyan/5 px-4 py-4">
@@ -102,7 +101,7 @@ export function BundleConfirm({
               : "Your private feed is ready right away."}
         </li>
         <li>
-          {NOTHING_TO_PAY_TODAY} {billLine}
+          {billLine}
         </li>
       </ul>
       {age ? (

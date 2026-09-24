@@ -127,6 +127,7 @@ const preview = (over: Partial<BundleUpgradePreview> = {}): BundleUpgradePreview
   minorFactor: 100,
   currentCents: 800,
   bundleCents: 2500,
+  dueTodayCents: 1740,
   renewsAt: "2026-10-01T00:00:00.000Z",
   ...over,
 });
@@ -356,29 +357,31 @@ describe("bundle switch — the 18+ confirmation", () => {
 });
 
 describe("bundle switch — the success banner", () => {
-  test("a monthly member is told the settlement in months", async () => {
+  test("says what came off the card today and when the restarted cycle renews", async () => {
     await openConfirm();
     await confirmSwitch();
-    expect(text()).toContain("Nothing to pay today.");
-    expect(text()).toContain("the rest of this month");
+    expect(text()).toContain("You pay $17.40 today");
+    expect(text()).toContain("renews on");
+    expect(text()).not.toContain("Nothing to pay today");
   });
 
-  test("a yearly member is not told about a month", async () => {
-    previewReply = { status: 200, preview: preview({ plan: "yearly", currentCents: 8000, bundleCents: 25_000 }) };
+  test("a member whose unused time covers the bundle is told nothing is due", async () => {
+    // Pay-what-you-can above the bundle price: the credit for their unused time
+    // covers the new price, so Stripe quotes zero.
+    previewReply = {
+      status: 200,
+      preview: preview({ currentCents: 4000, bundleCents: 2500, dueTodayCents: 0 }),
+    };
     await openConfirm();
     await confirmSwitch();
-    expect(text()).toContain("the rest of this year");
-    expect(text()).not.toContain("the rest of this month");
+    expect(text()).toContain("Nothing to pay today");
   });
 
-  test("a member who was paying MORE than the bundle is told about credit, not a charge", async () => {
-    // Pay-what-you-can above the bundle price: the switch owes them the unused
-    // remainder rather than charging a difference. The confirm panel said so
-    // and the banner has to agree.
-    previewReply = { status: 200, preview: preview({ currentCents: 4000, bundleCents: 2500 }) };
+  test("an unquoted charge still says it happens today, without a figure", async () => {
+    previewReply = { status: 200, preview: preview({ plan: "yearly", dueTodayCents: null, renewsAt: null }) };
     await openConfirm();
     await confirmSwitch();
-    expect(text()).toContain("credit for what you've already paid");
-    expect(text()).not.toContain("with the difference");
+    expect(text()).toContain("You pay the new price today");
+    expect(text()).toContain("renews a year from today");
   });
 });

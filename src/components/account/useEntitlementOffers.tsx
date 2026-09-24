@@ -4,13 +4,13 @@ import { changeTier, getBundleUpgradePreview } from "../../lib/auth";
 import {
   AXIS,
   fmtDate,
-  settlementOf,
+  dueTodayOf,
   type AxisKey,
   type StandaloneTier,
 } from "../../lib/entitlement-axes";
 import { CheckoutModal } from "../CheckoutModal";
 import { BundleConfirm } from "./BundleConfirm";
-import { NOTHING_TO_PAY_TODAY, nextBillLine } from "../../../shared/billing-copy";
+import { dueTodayLine, renewsLine } from "../../../shared/billing-copy";
 
 // "What you don't have yet" on the membership tab (T7.2/T7.3/T7.4, decisions
 // D6–D9).
@@ -285,13 +285,12 @@ export function useEntitlementOffers({
       >
         {bundle.immediate
           ? // Same facts the panel stated a moment ago, from the same module.
-            `You're in — your membership covers Ark+ and the Fold now. ${NOTHING_TO_PAY_TODAY} ${nextBillLine(
-              {
-                plan: bundle.preview.plan,
-                renewsOn: fmtDate(bundle.preview.renewsAt),
-                settlement: settlementOf(bundle.preview),
-              },
-            )}`
+            `You're in — your membership covers Ark+ and the Fold now. ${dueTodayLine(
+              dueTodayOf(bundle.preview),
+            )} ${renewsLine({
+              plan: bundle.preview.plan,
+              renewsOn: fmtDate(bundle.preview.renewsAt),
+            })}`
           : bundle.effectiveAt
             ? `Your membership covers Ark+ and the Fold from ${fmtDate(bundle.effectiveAt)}.`
             : "Your membership covers Ark+ and the Fold now."}

@@ -262,13 +262,11 @@ describe('renderCircleWelcomeEmail', () => {
 })
 
 describe('renderAxisAddedEmail', () => {
-  test('states the new price as the whole cost, and that nothing is due today', () => {
-    // The two things this email exists to say beyond the copy doc's version,
-    // which carries no price at all. "Covers everything" is what defuses the
-    // fear the price is charged ON TOP of the old one, and "nothing to pay
-    // today" is the answer to the question a member actually has — the change
-    // is settled on the next bill, so their card shows nothing and no one
-    // guesses why.
+  test("states the new price as the whole cost, how today's bill worked, and the new renewal date", () => {
+    // The things this email exists to say beyond the copy doc's version, which
+    // carries no price at all. "Covers everything" is what defuses the fear the
+    // price is charged ON TOP of the old one; the switch charges today and
+    // restarts the cycle, so the renewal date has moved and has to be said.
     const { subject, html } = renderAxisAddedEmail({
       ...URLS,
       name: 'Alice Smith',
@@ -282,8 +280,8 @@ describe('renderAxisAddedEmail', () => {
     expect(html).toContain('Hi Alice,')
     expect(html).toContain('$25 a month')
     expect(html).toContain('covers everything')
-    expect(html).toContain('Nothing to pay today')
-    expect(html).toContain('September 14, 2026')
+    expect(html).toContain("Today's bill was the new price")
+    expect(html).toContain('renews on September 14, 2026')
     expect(html).toContain('Enter the Fold')
     // Not a first-purchase welcome, and never a set-password email: this member
     // has had a login since the day they first subscribed.
@@ -315,24 +313,24 @@ describe('renderAxisAddedEmail', () => {
       plan: 'yearly',
     })
     expect(html).toContain('$250 a year')
-    expect(html).toContain('the rest of this year')
+    expect(html).toContain('renews a year from today')
     expect(html).not.toContain('a month')
   })
 
   test('an unreadable price drops the figure rather than guessing one', () => {
     // The price is omitted when it can't be read in the currency the member is
     // actually charged in. The email still has to say what their membership
-    // covers, and still owes them the "nothing today" answer.
+    // covers, and still owes them the "what happened today" answer.
     const { html } = renderAxisAddedEmail({
       ...URLS,
       axis: 'circle',
       plan: 'monthly',
     })
     expect(html).toContain('covers everything')
-    expect(html).toContain('Nothing to pay today')
+    expect(html).toContain("Today's bill was the new price")
     expect(html).not.toContain('$')
-    // No date given → no promise about which day the bill lands.
-    expect(html).not.toContain('Your next bill is')
+    // No date given → the cadence stands in, never a made-up day.
+    expect(html).toContain('renews a month from today')
   })
 
   test('adding the Fold: carries the app links and the profile setup link', () => {
