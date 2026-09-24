@@ -13,18 +13,18 @@ import {
 } from "../../../data/shows";
 import { fetchEpisodeById, getEpisode } from "../../../lib/podcasts";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
-import { isArkPlusMember, useSubscriberAuth } from "../../../lib/subscriberAuth";
 import { Breadcrumbs } from "../../../components/Breadcrumbs";
 import { EpisodeMeta } from "../../../components/EpisodeMeta";
 import { ShowCover } from "../../../components/ShowCover";
 import { ListenLinks } from "../../../components/ListenLinks";
-import { ArkPlusMark } from "../../../components/ArkPlusMark";
 import { AudioPlayer } from "../../../components/AudioPlayer";
 
 export const Route = createFileRoute("/podcasts/$show/$episode")({
   loader: ({ params }) => {
     const show = getShow(params.show);
-    if (!show) throw notFound();
+    // The members' show has no pages on the site; its episodes are heard in
+    // the member's podcast app through the private feed.
+    if (!show || show.paid) throw notFound();
     return { show };
   },
   component: EpisodePage,
@@ -79,7 +79,6 @@ function EpisodePage() {
     return <EpisodeNotFound show={show} />;
   }
 
-  const isPaid = show.paid;
   const detailed = detail && detail.id === episodeId ? detail.value : null;
   const notesPending = Boolean(episodeId) && detail?.id !== episodeId;
 
@@ -103,11 +102,7 @@ function EpisodePage() {
                 <EpisodeMeta episode={episode} />
               </div>
               <div className="rise rise-2 mt-6">
-                {isPaid ? (
-                  <PaidEpisodeBlock episode={episode} show={show} />
-                ) : (
-                  <PlayerBlock episode={episode} show={show} />
-                )}
+                <PlayerBlock episode={episode} show={show} />
               </div>
 
               <h2 className="mt-14 label text-cyan">
@@ -203,7 +198,7 @@ function EpisodeBreadcrumbs({
 const SHOW_NOTES_CLASS = [
   "mt-6 max-w-2xl text-body-lg",
   "[&_p]:mt-4 [&_p:first-child]:mt-0",
-  // Bulleted lists (e.g. Call Me Back's "More Ark Media" link directory) drop
+  // Bulleted lists (e.g. Call me Back's "More Ark Media" link directory) drop
   // their markers entirely and read as a clean line-per-item stack, rather than
   // a bulleted list. Ordered lists (e.g. "Chapters") keep their numbers.
   "[&_ul]:mt-5 [&_ul]:list-none [&_ul]:space-y-1.5 [&_ul]:pl-0",
@@ -264,45 +259,6 @@ function PlayerBlock({ episode, show }: { episode: Episode; show: Show }) {
       artworkUrl={episodeImage(episode, show)}
       fallbackDurationMinutes={episode.durationMinutes}
     />
-  );
-}
-
-function PaidEpisodeBlock({
-  episode,
-  show,
-}: {
-  episode: Episode;
-  show: Show;
-}) {
-  const { state } = useSubscriberAuth();
-  // Gate on the paid tier, not just a signed-in session: a free user is still
-  // `kind: "member"`, and a Beehiiv audio URL carries no auth of its own, so
-  // this check is the only app-level gate on paid audio.
-  if (isArkPlusMember(state)) {
-    return <PlayerBlock episode={episode} show={show} />;
-  }
-
-  return (
-    <div className="border border-cyan/40 bg-navy-800/40 p-8">
-      <div className="flex items-center gap-4">
-        <ArkPlusMark className="h-12 w-12" />
-        <div className="label text-cyan">
-          Ark+ members only
-        </div>
-      </div>
-      {/* The player carries the episode title on unlocked episodes; when it's
-          swapped out for this card, the card has to name the episode itself. */}
-      <div className="mt-4 max-w-2xl text-h3 text-fg-strong">{episode.title}</div>
-      <p className="mt-4 max-w-2xl text-body-sm text-fg">
-        This episode is exclusively available to Ark+ members. Join Ark+ to listen.
-      </p>
-      <Link
-        to="/plus"
-        className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-      >
-        Subscribe →
-      </Link>
-    </div>
   );
 }
 

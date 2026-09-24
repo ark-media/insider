@@ -22,7 +22,7 @@ const properties: NetworkProperty[] = [
     title: "Ark Media podcasts",
     kind: "Podcast network",
     description:
-      "Four shows — Call Me Back, For Heaven's Sake, Ark News Daily, and Chosen People Problems.",
+      "Four shows — Call me Back, For Heaven's Sake, Ark News Daily, and Chosen People Problems.",
     to: "/podcasts",
   },
   {

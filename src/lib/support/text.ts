@@ -140,7 +140,7 @@ export function stripHtml(html: string): string {
  *
  * The product pass runs BEFORE punctuation is stripped, which is the whole
  * point: `ark+` would otherwise lose its `+` and collide with the bare word
- * `ark`, and "Call Me Back" would become three of the most common and least
+ * `ark`, and "Call me Back" would become three of the most common and least
  * useful tokens in the corpus.
  */
 export function normalizeText(input: string): string {

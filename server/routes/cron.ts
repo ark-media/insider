@@ -111,7 +111,7 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
     }),
     defineRoute({
       // The feed-migration check-in series: the escalating 30-day / 60-day /
-      // final notices sent to members carried over from the old Call Me Back
+      // final notices sent to members carried over from the old Call me Back
       // feed who still haven't moved. Distinct from the reminder above — that
       // one counts from a member's join date, this one from two fixed calendar
       // dates. See shared/feed-migration.ts.

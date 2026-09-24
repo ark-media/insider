@@ -32,12 +32,12 @@ export const hosts: Host[] = [
     slug: "dan-senor",
     name: "Dan Senor",
     kind: "host",
-    role: "Host, Call Me Back",
+    role: "Host, Call me Back",
     shortBio:
       "Author of The Genius of Israel and Start-Up Nation. Former foreign policy advisor.",
     longBio:
-      "Dan Senor is the host of Call Me Back. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.",
-    shows: ["call-me-back", "inside-call-me-back"],
+      "Dan Senor is the host of Call me Back. He is the co-author of The Genius of Israel (2023) and Start-Up Nation (2009), and previously served as a senior foreign policy advisor in two White Houses. He writes and speaks regularly on the structural forces shaping Israel and the diaspora.",
+    shows: ["call-me-back", "call-me-back-plus"],
     initials: "DS",
     headshot: "/hosts/dan-senor.jpg",
   },
@@ -71,12 +71,12 @@ export const hosts: Host[] = [
     slug: "nadav-eyal",
     name: "Nadav Eyal",
     kind: "contributor",
-    role: "Call Me Back Contributor",
+    role: "Call me Back Contributor",
     shortBio:
       "Columnist at Yedioth Ahronoth. Author of Revolt. One of Israel's most read journalists.",
     longBio:
-      "Nadav Eyal is one of Israel's leading journalists and a columnist at Yedioth Ahronoth. His book Revolt (Ecco, 2021) won the Bernstein Prize. He appears regularly on Call Me Back for analysis on Israeli politics and security.",
-    shows: ["call-me-back", "inside-call-me-back"],
+      "Nadav Eyal is one of Israel's leading journalists and a columnist at Yedioth Ahronoth. His book Revolt (Ecco, 2021) won the Bernstein Prize. He appears regularly on Call me Back for analysis on Israeli politics and security.",
+    shows: ["call-me-back", "call-me-back-plus"],
     initials: "NE",
     headshot: "/hosts/nadav-eyal.jpg",
   },
@@ -84,12 +84,12 @@ export const hosts: Host[] = [
     slug: "amit-segal",
     name: "Amit Segal",
     kind: "contributor",
-    role: "Call Me Back Contributor",
+    role: "Call me Back Contributor",
     shortBio:
       "Chief political analyst for Channel 12 News. The most quoted political voice in Israel.",
     longBio:
       "Amit Segal is the chief political analyst for Channel 12 News in Israel and a columnist at Yedioth Ahronoth. He is widely regarded as one of the most influential political journalists in Israel.",
-    shows: ["call-me-back", "inside-call-me-back"],
+    shows: ["call-me-back", "call-me-back-plus"],
     initials: "AS",
     headshot: "/hosts/amit-segal.jpg",
   },
@@ -99,12 +99,12 @@ export const hosts: Host[] = [
     slug: "tal-becker",
     name: "Tal Becker",
     kind: "contributor",
-    role: "Call Me Back Contributor",
+    role: "Call me Back Contributor",
     shortBio:
       "Vice President at the Shalom Hartman Institute. Former Legal Adviser to Israel's Ministry of Foreign Affairs.",
     longBio:
       "Dr. Tal Becker is Vice President at the Shalom Hartman Institute, where he directs its educational initiatives on Israel and the Jewish world and is a lead faculty member of the iEngage Project. Previously, he served as Legal Adviser of the Israeli Ministry of Foreign Affairs and was a senior member of Israel's peace negotiation team, including a key role in negotiating the Abraham Accords with the UAE, Bahrain, and Morocco. He holds a doctorate from Columbia University and is the author of Terrorism and the State.",
-    shows: ["call-me-back", "inside-call-me-back"],
+    shows: ["call-me-back", "call-me-back-plus"],
     initials: "TB",
   },
   {

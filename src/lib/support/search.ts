@@ -28,7 +28,7 @@ type Field = (typeof FIELDS)[number]
  * vocabulary, so they should be nearly as authoritative as the real question
  * text without overriding it. Category is held low on purpose: one of the five
  * section headings is an entire sentence ("I am already subscribed to Inside
- * Call Me Back. What does this mean for me?"), and weighting it up would make
+ * Call me Back. What does this mean for me?"), and weighting it up would make
  * every FAQ in that section a magnet for generic phrasing.
  */
 const FIELD_WEIGHTS: Record<Field, number> = {

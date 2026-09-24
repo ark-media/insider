@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getShow,
   showAtmosphere,
@@ -26,9 +26,12 @@ import { ArkPlusMark } from "./ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 import { trackEvent } from "../lib/analytics";
 
+// Public shows only. The members' show (Call me Back | Ark+) has no page of its
+// own: members hear it in their podcast app through the private feed, and the
+// membership pitch lives on /plus.
 export function ShowPage({ slug }: { slug: ShowSlug }) {
   const show = getShow(slug);
-  if (!show) {
+  if (!show || show.paid) {
     return (
       <PageShell
         breadcrumbs={
@@ -51,7 +54,7 @@ export function ShowPage({ slug }: { slug: ShowSlug }) {
     );
   }
 
-  return show.paid ? <PaidShowPage show={show} /> : <PublicShowPage show={show} />;
+  return <PublicShowPage show={show} />;
 }
 
 function PublicShowPage({ show }: { show: Show }) {
@@ -73,87 +76,6 @@ function PublicShowPage({ show }: { show: Show }) {
 
       <ShowPeopleSections show={show} />
     </main>
-  );
-}
-
-function PaidShowPage({ show }: { show: Show }) {
-  const { state } = useSubscriberAuth();
-  const isMember = state.kind === "member";
-
-  // Only fetch for members; non-members see the join CTA, not the browser. The
-  // hook re-runs (and resets to loading) when membership flips, so a stale list
-  // from a prior session can't flash.
-  const { status, data: episodes, retry } = useAsyncResource(
-    () => (isMember ? listEpisodes(show.slug) : Promise.resolve<Episode[]>([])),
-    [show.slug, isMember],
-  );
-
-  return (
-    <main className="relative">
-      <ShowHero show={show} />
-
-      {isMember ? (
-        <EpisodeBrowser
-          show={show}
-          episodes={episodes}
-          error={status === "error"}
-          onRetry={retry}
-          headerLink={
-            <Link
-              to="/account/podcast-feed"
-              className="whitespace-nowrap label text-fg-muted transition hover:text-cyan"
-            >
-              Set up private feed →
-            </Link>
-          }
-        />
-      ) : (
-        <PaidShowJoinCta show={show} />
-      )}
-      <ShowPeopleSections show={show} />
-    </main>
-  );
-}
-
-function PaidShowJoinCta({ show }: { show: Show }) {
-  return (
-    <section>
-      <div className="page-section">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <div className="lg:col-span-7">
-            <div className="flex items-center gap-4">
-              <ArkPlusMark className="h-14 w-14" />
-              <div className="label text-cyan">
-                This episode is exclusively available to Ark+ members
-              </div>
-            </div>
-            <h2 className="mt-6 max-w-2xl font-display text-[clamp(1.5rem,3vw,2.4rem)] leading-[1.1] text-fg-strong">
-              Join Ark+ to listen to {show.title}.
-            </h2>
-            <p className="mt-4 max-w-2xl text-body-lg">
-            Subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
-            </p>
-          </div>
-          <div className="lg:col-span-5">
-            <div className="border border-rule bg-navy-800/40 p-8">
-              <div className="label text-cyan">
-                Get Ark+
-              </div>
-              <p className="mt-4 text-body-sm text-fg">
-                Full access to {show.title} plus everything else in Ark+.
-              </p>
-              <Link
-                to="/plus"
-                className="mt-8 inline-flex w-full items-center justify-between bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900"
-              >
-                See Ark+ membership
-                <span aria-hidden="true">→</span>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -200,9 +122,7 @@ function ShowHero({ show }: { show: Show }) {
               {description}
             </p>
             <ListenLinks listen={show.listen} className="mt-8" />
-            {/* Paid shows already give non-members a dedicated join CTA in place
-                of the episode list — don't stack a second one here. */}
-            {show.paid ? null : <ShowUpsell />}
+            <ShowUpsell />
           </div>
         </div>
       </div>
@@ -211,7 +131,7 @@ function ShowHero({ show }: { show: Show }) {
 }
 
 // Ark+ pitch shown on every free show's hero. The benefits named here are the
-// membership-wide ones — not per-show extras, since only Call Me Back has a
+// membership-wide ones — not per-show extras, since only Call me Back has a
 // paid feed. Members already have all of it, so they never see this; the root
 // blocks rendering while /api/me is in flight, so the tier is settled by the
 // time this runs and no upsell flashes at a member.
@@ -269,13 +189,11 @@ function EpisodeBrowser({
   episodes,
   error,
   onRetry,
-  headerLink,
 }: {
   show: Show;
   episodes: Episode[] | null;
   error?: boolean;
   onRetry?: () => void;
-  headerLink?: ReactNode;
 }) {
   // Reset the player selection when navigating between shows so an episode
   // chosen on one show can't linger in the player on the next.
@@ -351,7 +269,6 @@ function EpisodeBrowser({
               {episodes && episodes.length > 4 ? (
                 <EpisodeSearch value={query} onChange={setQuery} />
               ) : null}
-              {headerLink}
             </div>
           </div>
 

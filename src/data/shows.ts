@@ -2,14 +2,14 @@ import { showListenLinks } from "../config/urls.js";
 
 export type ShowSlug =
   | "call-me-back"
-  | "inside-call-me-back"
+  | "call-me-back-plus"
   | "for-heavens-sake"
   | "ark-news-daily"
   | "chosen-people-problems";
 
 type ShowRoute =
-  | `/podcasts/${Exclude<ShowSlug, "inside-call-me-back">}`
-  | "/plus/inside-call-me-back";
+  | `/podcasts/${Exclude<ShowSlug, "call-me-back-plus">}`
+  | "/plus";
 
 export type ListenPlatform =
   | "apple"
@@ -45,12 +45,12 @@ export const shows: Show[] = [
   {
     slug: "call-me-back",
     route: "/podcasts/call-me-back",
-    title: "Call Me Back",
-    shortTitle: "Call Me Back",
+    title: "Call me Back",
+    shortTitle: "Call me Back",
     tagline:
-      "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
+      "Call me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     description:
-      "Call Me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
+      "Call me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     hosts: ["Dan Senor"],
     cadence: "New episodes Mondays and Thursdays",
     coverArt: "/shows/call-me-back.jpg",
@@ -63,11 +63,13 @@ export const shows: Show[] = [
     // those same values go into the private RSS the member's podcast app reads
     // — so hardcoding them here would let the site and the app disagree.
     // Pointing at a different Beehiiv show is therefore a config change
-    // (BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK), not a deploy.
-    slug: "inside-call-me-back",
-    route: "/plus/inside-call-me-back",
-    title: "Call Me Back AMA",
-    shortTitle: "CMB AMA",
+    // (BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS), not a deploy.
+    slug: "call-me-back-plus",
+    // No page of its own: members hear it through the private feed, so the
+    // show's "home" is the membership page that sells it.
+    route: "/plus",
+    title: "Call me Back | Ark+",
+    shortTitle: "Call me Back | Ark+",
     tagline:
       "Presenting the challenges and dilemmas facing Israelis to a global audience.",
     description:
@@ -77,7 +79,7 @@ export const shows: Show[] = [
     coverArt: "/inside-cmb.jpg",
     paid: true,
     // Deliberately empty: a private feed has no public "listen on" links.
-    listen: showListenLinks["inside-call-me-back"],
+    listen: showListenLinks["call-me-back-plus"],
   },
   {
     slug: "for-heavens-sake",
@@ -157,7 +159,7 @@ export function showAtmosphere(slug: ShowSlug): string {
   switch (slug) {
     case "call-me-back":
       return "cmb-bg";
-    case "inside-call-me-back":
+    case "call-me-back-plus":
       return "icmb-bg";
     case "for-heavens-sake":
       return "fhs-bg";

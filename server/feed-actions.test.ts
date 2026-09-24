@@ -69,7 +69,7 @@ const BASE_ENV: Record<string, string> = {
   SESSION_SECRET: 'session-secret-for-tests-32-chars__',
   BEEHIIV_API_KEY: 'bk_test',
   BEEHIIV_PUBLICATION_ID_ARK_DAILY: 'pub_test',
-  BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: SHOW,
+  BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS: SHOW,
   BEEHIIV_SUBSCRIBER_HOST: 'arkmedia.beehiiv.com',
   DATABASE_URL: 'postgres://stub-feed-actions-test',
 }

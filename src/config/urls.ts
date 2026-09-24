@@ -152,7 +152,7 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
     { platform: "spotify", url: "https://open.spotify.com/show/3btft3E1KPwj0yCOcOvqhR" },
     { platform: "youtube", url: "https://www.youtube.com/@CallMeBackPodcast" },
   ],
-  "inside-call-me-back": [],
+  "call-me-back-plus": [],
   "for-heavens-sake": [
     { platform: "apple", url: "https://podcasts.apple.com/us/podcast/for-heavens-sake/id1522222281" },
     { platform: "spotify", url: "https://open.spotify.com/show/79j7N0DUYHOgrt3GUjiCzb" },

@@ -413,7 +413,7 @@ function MigrationCampaignForm() {
           {dateField(
             "deadlineDate",
             "Old feed switch-off date",
-            "The day the old Call Me Back feed stops working. This date is named in all three emails.",
+            "The day the old Call me Back feed stops working. This date is named in all three emails.",
           )}
           {numField(
             "firstCheckInDays",

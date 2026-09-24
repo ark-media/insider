@@ -1,5 +1,5 @@
 // Feed-migration check-in cron logic. Scans the members carried over from the
-// old Call Me Back feed, finds the ones who still haven't set up their new Ark+
+// old Call me Back feed, finds the ones who still haven't set up their new Ark+
 // feed, and sends whichever stage of the escalating series they are owed.
 //
 // Shares the ledger (`feed_reminder_sends`) and the activation lookup with the

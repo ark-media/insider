@@ -48,7 +48,7 @@ function AboutPage() {
             </p>
             <div className="text-body-sm lg:col-span-5">
               <p>
-                The company sits behind <em>Call Me Back with Dan Senor</em>,{" "}
+                The company sits behind <em>Call me Back with Dan Senor</em>,{" "}
                 <em>For Heaven's Sake</em> with Donniel Hartman and Yossi
                 Klein Halevi, <em>Ark News Daily</em>, and an Ark+ membership
                 that funds the work.

@@ -21,7 +21,7 @@ function buildHandler() {
     BEEHIIV_API_KEY: 'test-token',
     BEEHIIV_PUBLICATION_ID_PODCASTS: 'pub_test',
     BEEHIIV_PODCAST_ID_CALL_ME_BACK: PUBLIC_SHOW,
-    BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK: PAID_SHOW,
+    BEEHIIV_PODCAST_ID_CALL_ME_BACK_PLUS: PAID_SHOW,
   })
 }
 
@@ -171,7 +171,7 @@ describe('/api/podcasts/episode — episode ownership', () => {
   test('a paid show still withholds audio from a caller with no membership', async () => {
     respondWith(beehiivEpisode({ show: { id: PAID_SHOW } }))
 
-    const { body, cacheControl } = await getEpisode('inside-call-me-back', 'ep_1')
+    const { body, cacheControl } = await getEpisode('call-me-back-plus', 'ep_1')
 
     expect(body.episode?.id).toBe('ep_1')
     expect(body.episode?.audioUrl).toBe('')

@@ -50,7 +50,6 @@ import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index
 import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as PlusIndexRouteImport } from './routes/plus/index'
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
-import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
 import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
 import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-news-daily'
 import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-me-back'
@@ -267,11 +266,6 @@ const PlusGiftRoute = PlusGiftRouteImport.update({
   path: '/plus/gift',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlusInsideCallMeBackRoute = PlusInsideCallMeBackRouteImport.update({
-  id: '/plus/inside-call-me-back',
-  path: '/plus/inside-call-me-back',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PodcastsIndexRoute = PodcastsIndexRouteImport.update({
   id: '/podcasts/',
   path: '/podcasts/',
@@ -359,7 +353,6 @@ export interface FileRoutesByFullPath {
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
-  '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
@@ -412,7 +405,6 @@ export interface FileRoutesByTo {
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
-  '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
@@ -467,7 +459,6 @@ export interface FileRoutesById {
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
   '/plus/gift': typeof PlusGiftRoute
-  '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
@@ -523,7 +514,6 @@ export interface FileRouteTypes {
     | '/hosts/$slug'
     | '/newsletters/$post'
     | '/plus/gift'
-    | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
@@ -576,7 +566,6 @@ export interface FileRouteTypes {
     | '/hosts/$slug'
     | '/newsletters/$post'
     | '/plus/gift'
-    | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
@@ -630,7 +619,6 @@ export interface FileRouteTypes {
     | '/hosts/$slug'
     | '/newsletters/$post'
     | '/plus/gift'
-    | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
@@ -681,7 +669,6 @@ export interface RootRouteChildren {
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
   PlusGiftRoute: typeof PlusGiftRoute
-  PlusInsideCallMeBackRoute: typeof PlusInsideCallMeBackRoute
   PodcastsArkNewsDailyRoute: typeof PodcastsArkNewsDailyRoute
   PodcastsCallMeBackRoute: typeof PodcastsCallMeBackRoute
   PodcastsChosenPeopleProblemsRoute: typeof PodcastsChosenPeopleProblemsRoute
@@ -988,13 +975,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlusGiftRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plus/inside-call-me-back': {
-      id: '/plus/inside-call-me-back'
-      path: '/plus/inside-call-me-back'
-      fullPath: '/plus/inside-call-me-back'
-      preLoaderRoute: typeof PlusInsideCallMeBackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/podcasts/': {
       id: '/podcasts/'
       path: '/podcasts'
@@ -1131,7 +1111,6 @@ const rootRouteChildren: RootRouteChildren = {
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,
   PlusGiftRoute: PlusGiftRoute,
-  PlusInsideCallMeBackRoute: PlusInsideCallMeBackRoute,
   PodcastsArkNewsDailyRoute: PodcastsArkNewsDailyRoute,
   PodcastsCallMeBackRoute: PodcastsCallMeBackRoute,
   PodcastsChosenPeopleProblemsRoute: PodcastsChosenPeopleProblemsRoute,
