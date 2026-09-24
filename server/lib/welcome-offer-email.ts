@@ -63,7 +63,7 @@ export function renderWelcomeOfferEmail(p: WelcomeOfferEmailParams): {
     p.plan === 'yearly'
       ? `${offer} for your first year (then ${list} a year)`
       : `${offer} a month for your first ${p.discountedMonths} months (then ${list} a month)`
-  const preheader = `Add the Fold to your membership for ${offer}${p.plan === 'yearly' ? ' for the year' : ' a month'}. Open until ${WELCOME_OFFER_CLOSES_LABEL}.`
+  const preheader = `Add the Fold to your membership for ${offer}${p.plan === 'yearly' ? ' for the year' : ' a month'}. Valid until ${WELCOME_OFFER_CLOSES_LABEL}.`
   const para = (html: string, margin = '0 0 16px') =>
     `<p style="margin:${margin};font:400 16px/1.6 ${FONT};color:${FG};">${html}</p>`
 
@@ -95,7 +95,7 @@ export function renderWelcomeOfferEmail(p: WelcomeOfferEmailParams): {
               <td style="padding:32px 8px 8px;">
                 ${para(first ? `Hi ${esc(first)},` : 'Hi there,')}
                 ${para('Thank you for being with us from the start. Today we&rsquo;re opening the Fold, our members&rsquo; community, and as an existing subscriber you can move to the bundle &mdash; Ark+ and the Fold together &mdash; at a welcome price.')}
-                ${para(`The bundle is yours at <strong style="color:${INK};">${terms}</strong>. You keep your ${p.plan === 'yearly' ? 'annual' : 'monthly'} plan, and the offer is open until ${WELCOME_OFFER_CLOSES_LABEL}.`, '0')}
+                ${para(`The bundle is yours at <strong style="color:${INK};">${terms}</strong>. You keep your ${p.plan === 'yearly' ? 'annual' : 'monthly'} plan, and the offer is valid until ${WELCOME_OFFER_CLOSES_LABEL}.`, '0')}
               </td>
             </tr>
             <tr>

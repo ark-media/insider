@@ -79,6 +79,7 @@ import {
   periodEndIso,
   planFromSubscription,
   releaseScheduleIfAny,
+  subscriptionAmount,
 } from './stripe/helpers.js'
 import { catalogTierOfSubscription } from './stripe/webhook.js'
 import {
@@ -187,6 +188,13 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         // credit for their unused Ark+ time, and only Stripe knows how far
         // through that term they are. Soft-fails to null: the confirm screen
         // can still render (and still let them proceed) without the line.
+        // What they pay for Ark+ now, in their own currency — the "Current
+        // plan" line. Null (line shows no figure) if Stripe can't say.
+        const currentPrice = sub.items.data[0]?.price
+        const currentCents = currentPrice
+          ? await subscriptionAmount(stripe, sub, currentPrice)
+          : null
+
         let dueTodayCents: number | null = null
         try {
           const item = sub.items.data[0]
@@ -221,6 +229,7 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             bundleCents: amounts.bundleMinor,
             offerCents: amounts.offerMinor,
             discountedTerms: plan === 'yearly' ? 1 : WELCOME_MONTHLY_DISCOUNT_MONTHS,
+            currentCents,
             dueTodayCents,
             // Today's renewal date, which this offer MOVES: redeeming re-anchors
             // the cycle, so the page must not present it as unchanged.
