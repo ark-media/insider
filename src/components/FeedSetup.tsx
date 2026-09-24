@@ -265,9 +265,9 @@ function SetupProgress({ feeds }: { feeds: UserFeed[] }) {
 // buildSpotifyHandoff), so the member comes back here either way. A return
 // that landed in a background tab would be worse than useless — OutboundLink
 // defaults to `_blank`, so this has to override it. Once linked, the follow
-// step takes over the row and "Link again" drops to a quiet text link. A
-// failed link keeps the big button, relabelled "Try again", with a note on
-// the one cause we know of.
+// step takes over the row and the button goes: a Spotify account links once,
+// and a second attempt only comes back as a failure. A failed link keeps the
+// big button, relabelled "Try again", with a note on the one cause we know of.
 function SpotifyRow({
   feeds,
   status,
@@ -301,22 +301,20 @@ function SpotifyRow({
               : `Two quick steps: link your account to unlock ${feeds.length === 1 ? "the show" : `all ${feeds.length} shows`}, then follow ${feeds.length === 1 ? "it" : "them"} so new episodes land in Your Library.`}
           </p>
         </div>
-        <OutboundLink
-          href={SPOTIFY_HANDOFF_PATH}
-          platform="spotify"
-          placement="feed_setup"
-          target="_self"
-          rel="noreferrer"
-          onClick={onLink}
-          className={
-            linked
-              ? "button-text shrink-0 self-start font-display font-bold tracking-cta text-fg-muted underline underline-offset-4 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:self-center"
-              : "inline-flex shrink-0 items-center justify-center gap-2 bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          }
-        >
-          {linked ? "Link again" : failed ? "Try again" : "Link Spotify"}
-          {linked ? null : <span aria-hidden="true">→</span>}
-        </OutboundLink>
+        {linked ? null : (
+          <OutboundLink
+            href={SPOTIFY_HANDOFF_PATH}
+            platform="spotify"
+            placement="feed_setup"
+            target="_self"
+            rel="noreferrer"
+            onClick={onLink}
+            className="inline-flex shrink-0 items-center justify-center gap-2 bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            {failed ? "Try again" : "Link Spotify"}
+            <span aria-hidden="true">→</span>
+          </OutboundLink>
+        )}
       </div>
       {handingOff ? (
         <p
@@ -380,19 +378,18 @@ function SpotifyLinkFailed() {
 // So the page does the one thing it can: puts a single big "Follow <next
 // show>" button in front of them the moment they land, and moves it on to the
 // next show each time they tap it. A member works through all of them by
-// tapping the same spot, coming back to this tab between shows. The checklist
-// underneath is the map — what's done, what's left, and a way back to any one.
+// tapping the same spot, coming back to this tab between shows. The list
+// underneath is a way back to any one of them.
 //
-// "Followed" means "opened on Spotify", not a confirmed follow — Spotify sends
-// nothing back. The ticks come from the server (`spotify_follow_opened` on
-// each feed), so the checklist is the same on every device. A show without a
-// known Spotify page (premiumSpotifyShows) points at the library instead,
-// since private shows never turn up in search.
+// Nothing here says a show is followed. We only know a show was OPENED on
+// Spotify (`spotify_follow_opened`, from the server so it's the same on every
+// device), and Spotify sends nothing back about follows — so that flag only
+// moves the big button along; it never becomes a tick, a count or an "all
+// set". A show without a known Spotify page (premiumSpotifyShows) points at
+// the library instead, since private shows never turn up in search.
 function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
   const { markSpotifyFollowOpened } = useSubscriberAuth();
-  const done = feeds.filter((f) => f.spotify_follow_opened === true).length;
   const next = feeds.find((f) => f.spotify_follow_opened !== true) ?? null;
-  const allDone = next === null;
 
   const markFollowed = (feed: UserFeed) => {
     if (feed.spotify_follow_opened === true) return;
@@ -420,24 +417,13 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
 
   return (
     <div className="border-t border-cyan/40 bg-navy-900/40 px-5 py-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
-        <h4 className="text-body font-bold text-fg-strong">
-          {allDone
-            ? "You're all set on Spotify"
-            : `Spotify is linked — now follow your ${feeds.length === 1 ? "show" : "shows"}`}
-        </h4>
-        <span
-          role="status"
-          className="font-display text-[15px] font-bold tracking-cta text-cyan"
-        >
-          {done}
-          <span className="text-fg-muted">/{feeds.length} followed</span>
-        </span>
-      </div>
+      <h4 className="text-body font-bold text-fg-strong">
+        {`Spotify is linked — now follow your ${feeds.length === 1 ? "show" : "shows"}`}
+      </h4>
       <p className="mt-1 text-body-sm text-fg-muted">
-        {allDone
-          ? "New episodes will land in Your Library on Spotify."
-          : "Your exclusive episodes are unlocked, but Spotify won't add the shows to Your Library by itself. Tap the button, hit Follow in Spotify, then come back here for the next one."}
+        Your exclusive episodes are unlocked, but Spotify won't add the shows to
+        Your Library by itself. Tap the button, hit Follow in Spotify, then come
+        back here for the next one.
       </p>
 
       {next ? (
@@ -462,7 +448,10 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
               ? `Follow ${next.name}`
               : `Find ${next.name} in Your Library`}
             {feeds.length > 1 ? (
-              <span className="font-normal"> ({done + 1} of {feeds.length})</span>
+              <span className="font-normal">
+                {" "}
+                ({feeds.indexOf(next) + 1} of {feeds.length})
+              </span>
             ) : null}
           </span>
           <span aria-hidden="true">→</span>
@@ -470,46 +459,24 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
       ) : null}
 
       <ol className="mt-5 flex flex-col">
-        {feeds.map((feed) => {
-          const isDone = feed.spotify_follow_opened === true;
-          return (
-            <li
-              key={feed.id}
-              className="flex items-center justify-between gap-5 border-t border-rule py-2.5 first:border-t-0"
+        {feeds.map((feed) => (
+          <li
+            key={feed.id}
+            className="flex items-center justify-between gap-5 border-t border-rule py-2.5 first:border-t-0"
+          >
+            <span className="min-w-0 text-body-sm text-fg-strong">{feed.name}</span>
+            <OutboundLink
+              href={followUrl(feed)}
+              platform="spotify"
+              placement="feed_setup_follow"
+              onClick={() => markFollowed(feed)}
+              className="button-text shrink-0 font-display font-bold tracking-cta text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              <span className="flex min-w-0 items-center gap-3 text-body-sm">
-                <span
-                  aria-hidden="true"
-                  className={
-                    isDone
-                      ? "inline-flex size-5 shrink-0 items-center justify-center bg-cyan text-[12px] font-bold text-navy"
-                      : "inline-block size-5 shrink-0 border border-fg-muted"
-                  }
-                >
-                  {isDone ? "✓" : null}
-                </span>
-                <span className={isDone ? "text-fg-muted" : "text-fg-strong"}>
-                  {feed.name}
-                  <span className="sr-only">{isDone ? " — followed" : ""}</span>
-                </span>
-              </span>
-              <OutboundLink
-                href={followUrl(feed)}
-                platform="spotify"
-                placement="feed_setup_follow"
-                onClick={() => markFollowed(feed)}
-                className="button-text shrink-0 font-display font-bold tracking-cta text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-              >
-                {isDone
-                  ? "Open again"
-                  : hasShowPage(feed)
-                    ? "Open"
-                    : "Find in Your Library"}
-                <span className="sr-only"> {feed.name} on Spotify</span>
-              </OutboundLink>
-            </li>
-          );
-        })}
+              {hasShowPage(feed) ? "Open" : "Find in Your Library"}
+              <span className="sr-only"> {feed.name} on Spotify</span>
+            </OutboundLink>
+          </li>
+        ))}
       </ol>
 
       <p className="mt-4 text-body-sm text-fg-muted">
