@@ -126,13 +126,19 @@ class FakeStripe {
       stripeCalls.push({ method: 'prices.create', args: [args] })
       return { id: 'price_dyn_1' }
     },
-    retrieve: async (id: string) => {
-      stripeCalls.push({ method: 'prices.retrieve', args: [id] })
+    retrieve: async (id: string, args?: { expand?: string[] }) => {
+      stripeCalls.push({ method: 'prices.retrieve', args: [id, args] })
+      // Catalog ids read price_<tier>_<plan>; the product comes back expanded
+      // when asked for, the way saveFlowTargetOf reads a schedule phase's tier.
+      const productId = `prod_${id.replace(/^price_/, '').replace(/_(monthly|yearly)$/, '')}`
       return {
         id,
         currency: 'usd',
         currency_options: priceCurrencyOptions,
         recurring: { interval: id.includes('yearly') ? 'year' : 'month' },
+        product: args?.expand?.includes('product')
+          ? { id: productId, metadata: { entitlements: productEntitlements[productId] ?? '' } }
+          : productId,
       }
     },
   }
@@ -915,5 +921,126 @@ describe('POST /api/stripe/accept-save-offer', () => {
     const phases = (upd!.args[1] as { phases: Array<{ discounts?: unknown }> }).phases
     expect(phases[0].discounts).toEqual([{ discount: 'di_promo' }])
     expect(phases[1].discounts).toEqual([{ coupon: 'save20' }])
+  })
+  // A bundle-yearly member with Ark+ monthly booked (a debundle). The account
+  // page opens their cancel flow as Ark+, so that is what the server must read:
+  // the live bundle price refused the intent outright, and releasing the
+  // schedule to attach the coupon would have undone the debundle.
+  const pendingDebundle = () => {
+    withSub({ tier: 'bundle', amountCents: 25000, scheduleId: 'sched_1' })
+    const item = ((currentSub as { items: { data: Array<{ price: Record<string, unknown> }> } })
+      .items.data[0])
+    item.price.recurring = { interval: 'year' }
+    schedulePhases = [
+      {
+        start_date: NOW_SEC - 100,
+        end_date: NOW_SEC + 1000,
+        items: [{ price: 'price_bundle_yearly', quantity: 1 }],
+      },
+      {
+        start_date: NOW_SEC + 1000,
+        end_date: null,
+        items: [{ price: 'price_ark_plus_monthly', quantity: 1 }],
+      },
+    ]
+  }
+
+  test('a booked debundle: the kept Ark+ monthly coupon lands on the pending phase', async () => {
+    pendingDebundle()
+    activeCoupons = [supporter()]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.release')).toBe(false)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    const upd = stripeCalls.find((c) => c.method === 'subscriptionSchedules.update')
+    const phases = (upd!.args[1] as { phases: Array<{ discounts?: unknown }> }).phases
+    expect(phases[0].discounts).toBeUndefined()
+    expect(phases[1].discounts).toEqual([{ coupon: 'save20' }])
+  })
+
+  test('a booked debundle still refuses a bundle intent', async () => {
+    pendingDebundle()
+    activeCoupons = [supporter()]
+    const res = await post(
+      { intent: 'debundle-remove-circle', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.update')).toBe(false)
+  })
+
+  test('with no debundle booked, a bundle member cannot take the Ark+ coupon', async () => {
+    withSub({ tier: 'bundle', amountCents: 25000 })
+    activeCoupons = [supporter()]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+})
+
+// save-offers quotes from the same place accept-save-offer checks, so it never
+// shows an offer that accepting would refuse.
+describe('GET /api/stripe/save-offers', () => {
+  const OFFERS = '/api/stripe/save-offers'
+
+  async function get(intent: string) {
+    const handler = createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(OFFERS)
+    const req = makeReq(
+      {},
+      await sessionCookie('member@example.com'),
+      `${OFFERS}?intent=${intent}`,
+    )
+    ;(req as { method?: string }).method = 'GET'
+    const res = makeRes()
+    await new Promise<void>((resolve, reject) => {
+      const orig = res.end.bind(res)
+      res.end = ((chunk?: string | Buffer) => {
+        orig(chunk)
+        resolve()
+      }) as typeof res.end
+      handler(req, res as unknown as ServerResponse, (err) =>
+        err ? reject(err) : reject(new Error('not handled')),
+      )
+    })
+    return res.__json() as { offers: Array<{ kind: string }> }
+  }
+
+  test('a booked debundle to Ark+ monthly gets the Ark+ monthly offers', async () => {
+    withSub({ tier: 'bundle', amountCents: 25000, scheduleId: 'sched_1' })
+    const item = ((currentSub as { items: { data: Array<{ price: Record<string, unknown> }> } })
+      .items.data[0])
+    item.price.recurring = { interval: 'year' }
+    schedulePhases = [
+      {
+        start_date: NOW_SEC - 100,
+        end_date: NOW_SEC + 1000,
+        items: [{ price: 'price_bundle_yearly' }],
+      },
+      {
+        start_date: NOW_SEC + 1000,
+        end_date: null,
+        items: [{ price: 'price_ark_plus_monthly' }],
+      },
+    ]
+    const body = await get('cancel-ark-plus')
+    expect(body.offers.map((o) => o.kind)).toEqual(['annual_switch'])
+  })
+
+  test('a bundle member with nothing booked gets no Ark+ offers', async () => {
+    withSub({ tier: 'bundle', amountCents: 25000 })
+    const body = await get('cancel-ark-plus')
+    expect(body.offers).toEqual([])
   })
 })

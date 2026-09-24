@@ -47,6 +47,9 @@ function BillingPage() {
   // The member's billing cadence, passed to the cancel flow so it can branch
   // copy by monthly vs annual (Flows A/D). Null until loaded.
   const [plan, setPlan] = useState<"monthly" | "yearly" | null>(null);
+  // The cadence a pending change lands on, for a cancel flow opened on that
+  // change's tier (flowPlan below). Null when nothing is scheduled.
+  const [scheduledPlan, setScheduledPlan] = useState<"monthly" | "yearly" | null>(null);
   // The card the membership bills to, for the payment-method panel.
   const [card, setCard] = useState<CardOnFile | null>(null);
   // Whether there's a subscription to put a card against. Undefined until the
@@ -89,6 +92,7 @@ function BillingPage() {
       setScheduledTier(s.scheduledTier ?? null);
       setPeriodEnd(s.periodEnd ?? null);
       setPlan(s.plan ?? null);
+      setScheduledPlan(s.scheduledPlan ?? null);
       setCard(s.card ?? null);
       // Every live subscription has a current period; no subscription reports
       // none. That's the one field here that tells the two apart.
@@ -142,6 +146,10 @@ function BillingPage() {
     pendingChange && (scheduledTier === "ark-plus" || scheduledTier === "circle")
       ? scheduledTier
       : cancelTier;
+  // And its cadence: a bundle-yearly member with Ark+ monthly booked is
+  // cancelling Ark+ monthly, which is what the server derives offers for.
+  const flowPlan =
+    flowTier !== cancelTier && scheduledPlan ? scheduledPlan : plan;
 
   const onReactivate = async () => {
     setStatus({ kind: "reactivating" });
@@ -355,17 +363,17 @@ function BillingPage() {
       {flowOpen ? (
         <CancelFlow
           tier={flowTier}
-          plan={plan}
+          plan={flowPlan}
           onClose={() => setFlowOpen(false)}
           onSaved={() => {
             // The flow's own "Thanks for sticking around" screen shows the
             // confirmation, so we just close + resync here (no status banner).
             setFlowOpen(false);
             setScheduledCancelAt(null);
-            // Accepting a save offer releases any pending schedule, so the
-            // pending-change banner no longer applies.
-            setPendingChange(false);
-            setScheduledTier(null);
+            // Whether a change is still pending depends on the offer: a coupon
+            // on a booked debundle keeps it, a plan switch books one. The
+            // refresh re-reads my-subscription (the effect above), so the
+            // banner follows the server rather than a guess made here.
             refresh();
           }}
           onCancelled={(accessUntil) => {
