@@ -182,11 +182,11 @@ describe('renderSubscriberWelcomeEmail', () => {
     expect(html).not.toContain('hannah.waxman8')
   })
 
-  test('existing account: the CTA is setup itself, and says no new account is needed', () => {
+  test('existing account: the CTA is setup itself, with no sign-in line', () => {
     const { html } = renderSubscriberWelcomeEmail({ ...URLS, tier: 'ark-plus' })
     expect(html).toContain('Finish setup')
     expect(html).toContain(URLS.setupUrl)
-    expect(html).toContain('no new account to make')
+    expect(html).not.toContain('login you already have')
     expect(html).not.toMatch(/password/i)
     expect(html).toContain('Hi there,')
   })
