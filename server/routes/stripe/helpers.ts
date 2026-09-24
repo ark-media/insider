@@ -209,6 +209,17 @@ export function periodEndIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.items.data[0]?.current_period_end)
 }
 
+// When a cycle re-anchored to now next renews: one month or one year out,
+// Stripe's own arithmetic for a `billing_cycle_anchor: 'now'` change.
+export function oneCycleFromNowIso(plan: 'monthly' | 'yearly', now = new Date()): string {
+  const next = new Date(now)
+  if (plan === 'yearly') next.setUTCFullYear(next.getUTCFullYear() + 1)
+  else next.setUTCMonth(next.getUTCMonth() + 1)
+  // Jan 31 + 1 month overflows into March; Stripe clamps to the month's last day.
+  if (next.getUTCDate() !== now.getUTCDate()) next.setUTCDate(0)
+  return next.toISOString()
+}
+
 // The card the next bill will actually be charged to, for the account page's
 // plan card. Stripe charges the subscription's own default payment method when
 // it names one, and otherwise falls back to the customer's invoice default —

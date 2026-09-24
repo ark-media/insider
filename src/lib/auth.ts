@@ -357,6 +357,10 @@ export type BundleUpgradePreview = {
   minorFactor: number;
   currentCents: number | null;
   bundleCents: number | null;
+  // What the switch charges today: the Bundle price less credit for the unused
+  // part of the current plan. Null when Stripe couldn't quote it.
+  dueTodayCents: number | null;
+  // A full period from today — the switch restarts the billing cycle.
   renewsAt: string | null;
 };
 

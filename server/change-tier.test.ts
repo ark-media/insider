@@ -630,6 +630,9 @@ describe('POST /api/stripe/change-tier — upgrades are paid for up front', () =
     // a year out — so the Bundle could be taken on credit.
     expect(update.proration_behavior).toBe('always_invoice')
     expect(update.payment_behavior).toBe('error_if_incomplete')
+    // Charged the full new price less the unused old time, and renews a full
+    // period from today rather than on the old date.
+    expect(update.billing_cycle_anchor).toBe('now')
   })
 
   test('a same-entitlement PWYC raise keeps the deferred proration', async () => {
@@ -642,6 +645,7 @@ describe('POST /api/stripe/change-tier — upgrades are paid for up front', () =
     const update = lastSubUpdate()
     expect(update.proration_behavior).toBe('create_prorations')
     expect(update.payment_behavior).toBeUndefined()
+    expect(update.billing_cycle_anchor).toBeUndefined()
   })
 
   test('a declined card is a clean 402, not a 502 — and nothing is recorded as changed', async () => {

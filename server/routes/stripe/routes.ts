@@ -95,6 +95,7 @@ import {
   findLiveSubscription,
   findOrCreateSubscriber,
   MAX_NAME_LEN,
+  oneCycleFromNowIso,
   periodEndIso,
   phaseDiscountParams,
   planFromSubscription,
@@ -1254,11 +1255,38 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const currentCents = price ? await subscriptionAmount(stripe, sub, price) : null
 
         let bundleCents: number | null = null
+        let bundlePriceId: string | null = null
         try {
           const catalog = await resolveCatalogPrice(stripe, 'bundle', plan)
           bundleCents = catalog.floors[currency] ?? catalog.floors.usd
+          bundlePriceId = catalog.priceId
         } catch (err) {
           console.error('[stripe] bundle-upgrade-preview price lookup failed:', err)
+        }
+
+        // What comes off the card today. change-tier re-anchors the cycle on
+        // this switch, so the charge is the full Bundle price less credit for
+        // the unused part of the current one — Stripe's own proration, asked
+        // for with the same parameters change-tier sends rather than
+        // re-derived here. Null when it can't be quoted; the panel then says
+        // what happens without the figure.
+        let dueTodayCents: number | null = null
+        const itemId = sub.items.data[0]?.id
+        if (bundlePriceId && itemId) {
+          try {
+            const invoice = await stripe.invoices.createPreview({
+              customer: customerIdOf(sub),
+              subscription: sub.id,
+              subscription_details: {
+                items: [{ id: itemId, price: bundlePriceId }],
+                proration_behavior: 'always_invoice',
+                billing_cycle_anchor: 'now',
+              },
+            })
+            dueTodayCents = invoice.amount_due
+          } catch (err) {
+            console.error('[stripe] bundle-upgrade-preview invoice preview failed:', err)
+          }
         }
 
         return json(200, {
@@ -1268,10 +1296,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             minorFactor: minorUnitFactors()[currency] ?? 100,
             currentCents,
             bundleCents,
-            // Unchanged by the switch: gaining an entitlement updates the item
-            // in place and only re-anchors the cycle on a cadence change, so
-            // this is still the member's renewal date afterwards.
-            renewsAt: periodEndIso(sub),
+            dueTodayCents,
+            // The switch re-anchors the cycle to today, so the member renews
+            // one full period from now — not on their current renewal date.
+            renewsAt: oneCycleFromNowIso(plan),
           },
         })
       },
@@ -1567,8 +1595,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                   }
                 : { proration_behavior: 'create_prorations' as const }),
               ...(survivingDiscounts !== null ? { discounts: survivingDiscounts } : {}),
-              // monthly→yearly resets the billing cycle to now (§6 table).
-              ...(prevPlan !== plan ? { billing_cycle_anchor: 'now' as const } : {}),
+              // monthly→yearly resets the billing cycle to now (§6 table), and
+              // so does gaining an entitlement: the member pays the full new
+              // price today, less credit for the unused part of the old one,
+              // and renews a full period from today. Without the re-anchor the
+              // charge was only the difference to the OLD renewal date, which
+              // members read as paying for the Bundle twice in one year.
+              ...(prevPlan !== plan || gainsEntitlement ? { billing_cycle_anchor: 'now' as const } : {}),
               metadata: {
                 ...sub.metadata,
                 tier: newTier,

@@ -9,13 +9,18 @@
 // monthly wording for yearly members. This module is the only place that
 // wording lives.
 //
+// Gaining an entitlement is charged today and restarts the billing cycle from
+// today (change-tier sends `billing_cycle_anchor: 'now'`): the member pays the
+// full new price less credit for the unused part of the old one, then renews a
+// full period from today.
+//
 // Three rules hold the copy together, and they are the reason these are
 // functions rather than template fragments callers glue together:
 //
 //   1. Quote a price per billing period, in the member's own cadence. A yearly
 //      member reading "a month" is being told the wrong number.
-//   2. Say "nothing to pay today" out loud. It is the true answer and nobody
-//      guesses it, because the change settles on the next bill instead.
+//   2. Say what comes off the card today, out loud, with the figure when we
+//      have it. Nobody should learn the answer from their bank statement.
 //   3. No "prorated", no "invoice", no "billing period". Members have bills and
 //      months; proration is our word for our machinery.
 // ---------------------------------------------------------------------------
@@ -27,50 +32,33 @@ export function perPeriod(plan: BillingPlan): string {
   return plan === 'yearly' ? 'a year' : 'a month'
 }
 
-/** "the rest of this month" / "the rest of this year". */
-export function restOfPeriod(plan: BillingPlan): string {
-  return plan === 'yearly' ? 'the rest of this year' : 'the rest of this month'
+/**
+ * What today's charge is. `nothing` is a pay-what-you-can member whose unused
+ * time already covers the new price; `unknown` is a quote we couldn't get, and
+ * takes the phrasing that is true whatever the figure.
+ */
+export type DueToday = { amount: string } | 'nothing' | 'unknown'
+
+/** Rule 2, as a sentence. `amount` is formatted (and escaped for HTML) by the caller. */
+export function dueTodayLine(due: DueToday): string {
+  if (due === 'nothing') return "Nothing to pay today: what's left of your current plan covers it."
+  if (due === 'unknown') {
+    return "You pay the new price today, less credit for what's left of your current plan."
+  }
+  return `You pay ${due.amount} today: the new price, less credit for what's left of your current plan.`
 }
 
-/** Rule 2, as a sentence. Always precedes a next-bill line. */
-export const NOTHING_TO_PAY_TODAY = 'Nothing to pay today.'
-
-/**
- * Which way the change settles on the next bill. A pay-what-you-can member
- * paying MORE than the bundle is owed the unused remainder rather than charged
- * a difference — same "nothing today", opposite direction afterwards.
- *
- * `unknown` is a real answer, not a missing one: the email renderer is told
- * what the membership costs now, never what it cost before, so it takes the
- * phrasing that is true whichever way the money went.
- */
-export type Settlement = 'charged' | 'credited' | 'unknown'
-
-/**
- * What the next bill does about the change. Built whole rather than glued from
- * clauses: without a readable date the clause-by-clause version ran together
- * into "Your next bill with the difference…".
- *
- * `renewsOn` is a formatted date, already escaped by the caller when the
- * destination is HTML.
- */
-export function nextBillLine(p: {
-  plan: BillingPlan
-  renewsOn: string | null
-  settlement: Settlement
-}): string {
-  const rest = restOfPeriod(p.plan)
-  if (p.settlement === 'credited') {
-    return p.renewsOn
-      ? `Your next bill is ${p.renewsOn}, with credit for what you've already paid.`
-      : `Your next bill comes with credit for what you've already paid.`
-  }
-  if (p.settlement === 'charged') {
-    return p.renewsOn
-      ? `Your next bill is ${p.renewsOn}, with the difference for ${rest} added on.`
-      : `Your next bill picks up the difference for ${rest}.`
-  }
+/** When the restarted cycle next renews. Without a readable date, says it by cadence. */
+export function renewsLine(p: { plan: BillingPlan; renewsOn: string | null }): string {
   return p.renewsOn
-    ? `Your next bill is ${p.renewsOn}, and it covers ${rest} at the new price.`
-    : `Your next bill covers ${rest} at the new price.`
+    ? `Your membership then renews on ${p.renewsOn}.`
+    : `Your membership then renews ${perPeriod(p.plan)} from today.`
 }
+
+/**
+ * The same facts after the fact, for the follow-up email. That renderer is told
+ * the new price, never the old one or the charge, so it states how today's bill
+ * was worked out rather than a figure — Stripe's receipt carries the figure.
+ */
+export const SETTLED_TODAY =
+  "Today's bill was the new price, less credit for what was left of your old plan."

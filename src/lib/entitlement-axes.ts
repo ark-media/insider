@@ -3,8 +3,9 @@
 // bundle confirm panel it opens — one place to name a product, so "the Fold"
 // can't drift into "The Fold" mid-sentence on one screen and not the other.
 import { formatTimestamp } from "../../shared/format-date";
+import { formatMinor } from "./currency";
 import type { BundleUpgradePreview } from "./auth";
-import type { Settlement } from "../../shared/billing-copy";
+import type { DueToday } from "../../shared/billing-copy";
 
 export type AxisKey = "arkPlus" | "circle";
 export type StandaloneTier = "ark-plus" | "circle";
@@ -36,15 +37,11 @@ export function fmtDate(iso: string | null): string | null {
   return formatTimestamp(iso, "long") || null;
 }
 
-// Which way a switch to the bundle settles on the member's next bill. A
-// pay-what-you-can member paying above the bundle price is owed the unused
-// remainder rather than charged a difference — same "nothing today", opposite
-// direction afterwards. Never 'unknown' here: unlike the follow-up email, this
-// side knows both prices.
-export function settlementOf(preview: BundleUpgradePreview): Settlement {
-  return preview.currentCents !== null &&
-    preview.bundleCents !== null &&
-    preview.currentCents > preview.bundleCents
-    ? "credited"
-    : "charged";
+// What a switch to the bundle takes off the card today, in the member's own
+// currency. A pay-what-you-can member whose unused time covers the bundle price
+// owes nothing today.
+export function dueTodayOf(preview: BundleUpgradePreview): DueToday {
+  if (preview.dueTodayCents === null) return "unknown";
+  if (preview.dueTodayCents <= 0) return "nothing";
+  return { amount: formatMinor(preview.dueTodayCents, preview.currency, preview.minorFactor) };
 }
