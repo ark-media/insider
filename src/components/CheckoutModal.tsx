@@ -24,6 +24,7 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { useTheme } from "../lib/theme";
 import { trackEvent } from "../lib/analytics";
 import { getAttribution } from "../lib/attribution";
+import { getBillingCurrency, type BillingCurrencyLock } from "../lib/auth";
 import {
   type PricingResponse,
   browserCountry,
@@ -277,6 +278,12 @@ export function CheckoutModal({
   // seeded from the geo-detected default, changeable via the selector.
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
   const [currency, setCurrency] = useState<string>("usd");
+  // A signed-in returning member's account currency and address: their
+  // existing Stripe Customer already bills in it, so a purchase under that
+  // address is charged in it and the picker gives way to a note (see
+  // EmailForm). Null for everyone free to choose. The server holds the same
+  // line.
+  const [currencyLock, setCurrencyLock] = useState<BillingCurrencyLock | null>(null);
   // Whether the buyer raised the amount above the floor — read at the bottom of
   // the funnel (after the session is gone) for the checkout_succeeded event.
   const customAmountRef = useRef<number | null>(null);
@@ -300,6 +307,7 @@ export function CheckoutModal({
     setPromo(null);
     setPricing(null);
     setCurrency("usd");
+    setCurrencyLock(null);
     // customAmountRef is deliberately not cleared here: it is written on every
     // submit and read only after one, so it cannot carry across a purchase —
     // and writing a ref during render is exactly what refs are not for.
@@ -358,14 +366,22 @@ export function CheckoutModal({
         // (local dev, or a proxy that strips it). In production the real geo IP
         // wins over this hint server-side — see server/routes/pricing.ts.
         const hint = browserCountry();
-        const res = await fetch(
-          `/api/pricing${hint ? `?locale_hint=${encodeURIComponent(hint)}` : ""}`,
-        );
+        const [res, locked] = await Promise.all([
+          fetch(`/api/pricing${hint ? `?locale_hint=${encodeURIComponent(hint)}` : ""}`),
+          getBillingCurrency(),
+        ]);
         if (!res.ok) return;
         const data = (await res.json().catch(() => null)) as PricingResponse | null;
         if (cancelled || !data?.tiers) return;
         setPricing(data);
-        if (typeof data.default_currency === "string") {
+        // The account currency beats the geo default — see currencyLock. It
+        // only seeds the picker here: most signed-in buyers are buying for
+        // themselves, and it saves their chosen amount a reset when the
+        // address they type engages the lock.
+        if (locked && data.currencies.includes(locked.currency)) {
+          setCurrencyLock(locked);
+          setCurrency(locked.currency);
+        } else if (typeof data.default_currency === "string") {
           setCurrency(data.default_currency);
         }
       } catch {
@@ -416,7 +432,19 @@ export function CheckoutModal({
           checkout_session_id?: string;
           error?: string;
           code?: string;
+          currency?: string;
         };
+        // The account bills in another currency than the one priced (the lock
+        // lookup failed or was beaten to the submit). Re-price in it and send
+        // the buyer back to the amount screen, which now names the currency.
+        // The server only locks a purchase under the login's own address, so
+        // the lock belongs to the address just submitted.
+        if (res.status === 409 && data.code === "currency_locked" && data.currency) {
+          setCurrencyLock({ currency: data.currency, email: email.trim().toLowerCase() });
+          setCurrency(data.currency);
+          setStep({ kind: "email" });
+          return;
+        }
         const signInStep = signInStepForRefusal(res.status, data, email);
         if (signInStep) {
           trackEvent("checkout_failed", {
@@ -521,6 +549,7 @@ export function CheckoutModal({
           promo={promo}
           floorMinor={floorMinor}
           currency={currency}
+          currencyLock={currencyLock}
           factor={factor}
           currencies={pricing?.currencies ?? null}
           onCurrencyChange={setCurrency}
@@ -686,6 +715,7 @@ export function EmailForm({
   promo,
   floorMinor,
   currency,
+  currencyLock = null,
   factor,
   currencies,
   onCurrencyChange,
@@ -696,6 +726,10 @@ export function EmailForm({
   promo: PromoInfo | null;
   floorMinor: number | null;
   currency: string;
+  // The signed-in member's account currency and address. A purchase under
+  // that address is held to the currency — show it, don't offer a choice; for
+  // any other address the buyer chooses freely.
+  currencyLock?: BillingCurrencyLock | null;
   factor: number;
   currencies: string[] | null;
   onCurrencyChange: (currency: string) => void;
@@ -718,6 +752,19 @@ export function EmailForm({
   const intervalLabel = plan === "yearly" ? "year" : "month";
   const shortInterval = plan === "yearly" ? "yr" : "mo";
   const floorReady = floorMinor !== null;
+
+  // The lock engages only once the typed address is the member's own —
+  // exactly when the server would reuse their Customer.
+  const currencyLocked =
+    currencyLock !== null && email.trim().toLowerCase() === currencyLock.email;
+  // Engaging it pulls the currency back to the account's, in case the buyer
+  // picked another while the address was still someone else's. An effect,
+  // not a render-time adjustment: the currency is the parent's state.
+  useEffect(() => {
+    if (currencyLocked && currency !== currencyLock.currency) {
+      onCurrencyChange(currencyLock.currency);
+    }
+  }, [currencyLocked, currency, currencyLock, onCurrencyChange]);
 
   // Switching currency resets the chosen amount to the new floor — a raw number
   // carried across currencies is meaningless (300 USD ≠ 300 JPY). Adjusted
@@ -842,7 +889,11 @@ export function EmailForm({
       <div className="mt-6 border-t border-rule pt-5">
         <div className="flex items-center justify-between gap-3">
           <span className="eyebrow text-fg-muted">Choose your amount</span>
-          {currencies && currencies.length > 1 ? (
+          {currencyLocked ? (
+            <span className="text-body-sm text-fg-muted">
+              Your account bills in {currency.toUpperCase()}
+            </span>
+          ) : currencies && currencies.length > 1 ? (
             <CurrencySelect
               value={currency}
               options={currencies}

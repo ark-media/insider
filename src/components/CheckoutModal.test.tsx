@@ -87,6 +87,66 @@ const usd = { currency: "usd", factor: 100, floorMinor: 500 };
 // JPY is zero-decimal, so it formats and scales differently from USD.
 const jpy = { currency: "jpy", factor: 1, floorMinor: 500 };
 
+// A returning member is held to the currency their account already bills in —
+// but only for a purchase under their own address, which is when the server
+// reuses their Customer.
+describe("CheckoutModal account currency", () => {
+  const lock = { currency: "cad", email: "member@b.co" };
+  function locked(props: {
+    initialEmail: string;
+    currency: string;
+    onCurrencyChange?: (c: string) => void;
+  }) {
+    return (
+      <EmailForm
+        plan="monthly"
+        initialEmail={props.initialEmail}
+        promo={null}
+        floorMinor={800}
+        currency={props.currency}
+        currencyLock={lock}
+        factor={100}
+        currencies={["usd", "cad"]}
+        onCurrencyChange={props.onCurrencyChange ?? (() => {})}
+        onSubmit={() => {}}
+      />
+    );
+  }
+
+  test("buying under their own address, the currency is named and no picker is offered", async () => {
+    const { container } = await render(
+      locked({ initialEmail: "Member@B.co ", currency: "cad" }),
+    );
+    expect(container.textContent).toContain("Your account bills in CAD");
+    expect(container.querySelector('[aria-haspopup="listbox"]')).toBeNull();
+  });
+
+  test("buying for another address, the picker is offered", async () => {
+    const { container } = await render(
+      locked({ initialEmail: "friend@b.co", currency: "cad" }),
+    );
+    expect(container.textContent).not.toContain("Your account bills in");
+    expect(container.querySelector('[aria-haspopup="listbox"]')).not.toBeNull();
+  });
+
+  test("engaging the lock pulls a different currency back to the account's", async () => {
+    const changes: string[] = [];
+    await render(
+      locked({
+        initialEmail: "member@b.co",
+        currency: "usd",
+        onCurrencyChange: (c) => changes.push(c),
+      }),
+    );
+    expect(changes).toEqual(["cad"]);
+  });
+
+  test("unlocked, the picker is offered", async () => {
+    const { container } = await render(form(usd));
+    expect(container.querySelector('[aria-haspopup="listbox"]')).not.toBeNull();
+  });
+});
+
 describe("CheckoutModal amount selection", () => {
   test("starts at the floor for the given currency", async () => {
     const { container } = await render(form(usd));

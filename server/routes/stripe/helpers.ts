@@ -4,9 +4,11 @@ import { listStripeCustomersByEmail } from '../../lib/entitlement-resolver.js'
 import { clearMembershipPending } from '../../lib/membership.js'
 import {
   formatMinorUnits,
+  isSupportedCurrency,
   requiresWholeUnits,
   type Plan,
   type PricedTier,
+  type SupportedCurrency,
 } from '../../lib/pricing.js'
 import { discountsSurvivingChange } from '../../lib/retention.js'
 import type { Env } from '../../lib/route.js'
@@ -14,36 +16,30 @@ import type { Env } from '../../lib/route.js'
 // Stripe's hard limit is 256; we cap a touch lower to leave room.
 export const MAX_NAME_LEN = 250
 
-// Find a Customer for this email or create one. Checkout has historically
-// created a Customer per Session, so one email can map to several customers
-// (churn-then-resubscribe). Prefer one without an active subscription so a
-// new sub doesn't end up on a customer that already has one — bounded scan
-// keeps the API cost modest even with many matches.
+// The existing Customer checkout may reuse for this email, or null when there is
+// none. Checkout has historically created a Customer per Session, so one email
+// can map to several customers (churn-then-resubscribe). Prefer one without an
+// active subscription so a new sub doesn't end up on a customer that already
+// has one — bounded scan keeps the API cost modest even with many matches.
 //
-// `reuseExisting` is the caller's statement that the request is a durable login
-// AS this email. Checkout takes the address from an unauthenticated form, and a
-// Customer is not a neutral container: it carries a saved card, a balance (a
-// credited gift lands there), a billing address and an invoice history. Attaching
-// a stranger's Checkout Session to it hands them all of that on the strength of
-// knowing an email address. So an unproven email always gets a fresh Customer;
-// the duplicate is the cheap side of that trade, and the lookups here already
-// cope with several Customers per email.
+// Only call this for a PROVEN email — a durable login AS this address. Checkout
+// takes the address from an unauthenticated form, and a Customer is not a
+// neutral container: it carries a saved card, a balance (a credited gift lands
+// there), a billing address and an invoice history. Attaching a stranger's
+// Checkout Session to it hands them all of that on the strength of knowing an
+// email address. So an unproven email always gets a fresh Customer; the
+// duplicate is the cheap side of that trade, and the lookups here already cope
+// with several Customers per email.
 //
-// The email is lowercased on the way in. Stripe's `customers.list({ email })` is
-// an exact, case-sensitive match, so one address stored in two casings is two
-// people to every guard built on that list — the single-active-subscription
-// guard included.
-export async function findOrCreateSubscriber(
+// Stripe's `customers.list({ email })` is an exact, case-sensitive match, so one
+// address stored in two casings is two people to every guard built on that list
+// — listStripeCustomersByEmail asks under both.
+export async function findReusableSubscriber(
   stripe: Stripe,
-  opts: { email: string; name?: string; reuseExisting: boolean },
-): Promise<Stripe.Customer> {
-  const email = opts.email.trim().toLowerCase()
-  const { name, reuseExisting } = opts
-  if (!reuseExisting) return stripe.customers.create({ email, name })
-  const matches = await listStripeCustomersByEmail(stripe, opts.email)
-  if (matches.length === 0) {
-    return stripe.customers.create({ email, name })
-  }
+  email: string,
+): Promise<Stripe.Customer | null> {
+  const matches = await listStripeCustomersByEmail(stripe, email)
+  if (matches.length === 0) return null
   if (matches.length === 1) return matches[0]
   // Multiple matches — try to pick a clean one. Cap the scan so a pathological
   // case (many duplicates) doesn't fan out to dozens of Stripe calls.
@@ -56,6 +52,18 @@ export async function findOrCreateSubscriber(
     if (subs.data.length === 0) return c
   }
   return matches[0]
+}
+
+// The currency a returning member's checkout is held to: the one their reused
+// Customer already bills in. A subscription keeps one currency for life, and a
+// Customer's balance only pays invoices in its own currency, so a member who
+// once paid in CAD comes back in CAD whatever the geo default says. Null when
+// there is nothing to hold to: no Customer, one that has never been billed, or
+// a currency we don't sell in (checkout then starts a fresh Customer rather
+// than inherit one it can't charge).
+export function billingCurrencyOf(customer: Stripe.Customer | null): SupportedCurrency | null {
+  const currency = customer?.currency?.toLowerCase()
+  return currency && isSupportedCurrency(currency) ? currency : null
 }
 
 // Statuses that count as a live membership for the single-active-subscription
