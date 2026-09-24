@@ -17,9 +17,6 @@ import type { ListenLink, ShowSlug } from "../data/shows.js";
  * TODO(ark): values marked PLACEHOLDER need a real Ark Media URL before launch.
  */
 
-/** The apex domain, for building addresses without retyping it. */
-const ARK_DOMAIN = "ark-plus.xyz";
-
 // ---------------------------------------------------------------------------
 // Social profiles
 // ---------------------------------------------------------------------------
@@ -38,13 +35,12 @@ export const socialUrls = {
 // Contact addresses
 // ---------------------------------------------------------------------------
 export const contactEmails = {
-  /** Every contact-form topic except support. On arkmedia.org, not
-      ARK_DOMAIN: ark-plus.xyz has no MX record, so it receives no mail. */
+  /** Every contact-form topic except support. On arkmedia.org because
+      ark-plus.xyz has no MX record, so it receives no mail. */
   general: "hello@arkmedia.org",
-  /** Membership and technical support — the desk the team staffs. */
+  /** Membership and technical support — the desk the team staffs. Also where
+      job applications go when a role has no apply link. */
   support: "support@arkmedia.org",
-  /** Job applications. */
-  careers: `careers@${ARK_DOMAIN}`,
 } as const;
 
 /**

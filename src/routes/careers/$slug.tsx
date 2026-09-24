@@ -21,10 +21,10 @@ function CareerDetailPage() {
     .join(" · ");
 
   // External application link (e.g. the role's TestGorilla assessment). Falls
-  // back to the careers inbox when no apply URL is configured.
+  // back to the support inbox when no apply URL is configured.
   const applyHref =
     career.applyUrl ??
-    `mailto:${contactEmails.careers}?subject=${encodeURIComponent(
+    `mailto:${contactEmails.support}?subject=${encodeURIComponent(
       `Application: ${career.title}`,
     )}`;
   const applyIsExternal = Boolean(career.applyUrl);
