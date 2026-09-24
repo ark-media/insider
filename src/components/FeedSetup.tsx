@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import QRCode from "qrcode";
 import {
   ApplePodcastsIcon,
@@ -7,7 +7,11 @@ import {
   SpotifyIcon,
 } from "./PlatformIcons";
 import { OutboundLink } from "./OutboundLink";
-import { premiumSpotifyShows, spotifyLibraryUrl } from "../config/urls";
+import {
+  premiumSpotifyShows,
+  spotifyContentAccessUrl,
+  spotifyLibraryUrl,
+} from "../config/urls";
 import { feedIsSetUp, sendFeedEmail, type UserFeed } from "../lib/auth";
 import { trackEvent } from "../lib/analytics";
 import { useCopyToClipboard } from "../lib/useCopyToClipboard";
@@ -248,11 +252,17 @@ function SetupProgress({ feeds }: { feeds: UserFeed[] }) {
 // links an account rather than a device, so it needs no QR code and no
 // per-show repetition.
 //
-// The hand-off is a same-tab round trip. Beehiiv now honours `redirect_path`
-// (see buildSpotifyHandoff), so the member comes back carrying
-// `?spotify=linked` and the panel below is the "now follow the show" half.
-// A return that landed in a background tab would be worse than useless —
-// OutboundLink defaults to `_blank`, so this has to override it.
+// Two steps, and the row says so up front: link (unlocks every show at once),
+// then follow each show (the only way new episodes land in Your Library —
+// Spotify won't follow on the member's behalf, Beehiiv confirmed 2026-09-24).
+// Telling them about step 2 before they leave is what gets them to finish it.
+//
+// The hand-off is a same-tab round trip. Beehiiv honours `redirect_path` (see
+// buildSpotifyHandoff) and only redirects after the member approves, so the
+// return carrying `?spotify=linked` is the confirmation. A return that landed
+// in a background tab would be worse than useless — OutboundLink defaults to
+// `_blank`, so this has to override it. Once linked, the follow step takes
+// over the row and "Link again" drops to a quiet text link.
 function SpotifyRow({
   feeds,
   linked,
@@ -270,8 +280,9 @@ function SpotifyRow({
         <div className="min-w-0 flex-1">
           <h3 className="text-h4 font-bold">Spotify</h3>
           <p className="mt-1 text-body-sm">
-            Link your account once and every show unlocks in Spotify — on
-            every device you use.
+            {linked
+              ? "Your account is linked, so every show is unlocked in Spotify on every device you use."
+              : `Two quick steps: link your account to unlock ${feeds.length === 1 ? "the show" : `all ${feeds.length} shows`}, then follow ${feeds.length === 1 ? "it" : "them"} so new episodes land in Your Library.`}
           </p>
         </div>
         <OutboundLink
@@ -281,10 +292,14 @@ function SpotifyRow({
           target="_self"
           rel="noreferrer"
           onClick={onLink}
-          className="inline-flex shrink-0 items-center justify-center gap-2 bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          className={
+            linked
+              ? "button-text shrink-0 self-start font-display font-bold tracking-cta text-fg-muted underline underline-offset-4 transition hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:self-center"
+              : "inline-flex shrink-0 items-center justify-center gap-2 bg-cyan px-5 py-3 button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          }
         >
           {linked ? "Link again" : "Link Spotify"}
-          <span aria-hidden="true">→</span>
+          {linked ? null : <span aria-hidden="true">→</span>}
         </OutboundLink>
       </div>
       {linked ? <SpotifyFollowPanel feeds={feeds} /> : null}
@@ -292,12 +307,16 @@ function SpotifyRow({
   );
 }
 
-// The second half of the Spotify path, shown once Beehiiv has sent the member
-// back. Linking unlocks the premium shows in their Spotify; following each one
-// is what makes new episodes turn up in their library, and that is a step only
-// they can take — Spotify has no network-level follow, and adding shows for a
-// member needs Web API access we can't get. So it's a checklist: one row per
-// show, ticked off as it's opened, with the next one to do highlighted.
+// Step 2 of the Spotify path, shown once Beehiiv has sent the member back.
+// Linking unlocks the premium shows but follows none of them, and following is
+// a step only the member can take — Spotify has no network-level follow, and
+// adding shows for a member needs Web API access we can't get.
+//
+// So the page does the one thing it can: puts a single big "Follow <next
+// show>" button in front of them the moment they land, and moves it on to the
+// next show each time they tap it. A member works through all of them by
+// tapping the same spot, coming back to this tab between shows. The checklist
+// underneath is the map — what's done, what's left, and a way back to any one.
 //
 // "Followed" means "opened on Spotify", not a confirmed follow — Spotify sends
 // nothing back. The ticks come from the server (`spotify_follow_opened` on
@@ -307,7 +326,18 @@ function SpotifyRow({
 function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
   const { markSpotifyFollowOpened } = useSubscriberAuth();
   const done = feeds.filter((f) => f.spotify_follow_opened === true).length;
-  const nextId = feeds.find((f) => f.spotify_follow_opened !== true)?.id ?? null;
+  const next = feeds.find((f) => f.spotify_follow_opened !== true) ?? null;
+  const allDone = next === null;
+
+  // The member just came back from Spotify's consent screen, and this panel
+  // is the whole point of the return — bring it into view and put focus on it,
+  // rather than leaving it wherever the page happened to land.
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const heading = headingRef.current;
+    heading?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    heading?.focus({ preventScroll: true });
+  }, []);
 
   const markFollowed = (feed: UserFeed) => {
     if (feed.spotify_follow_opened === true) return;
@@ -315,34 +345,86 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
     markSpotifyFollowOpened(feed.id);
   };
 
+  // Spotify opens in a new tab, so this one stays put and the big button turns
+  // into the next show the instant it's tapped. A double-tap, or a second tap
+  // because the Spotify app was slow to come up, would open and tick the next
+  // show too — one the member never saw. Swallow taps for a moment after each.
+  const [cooling, setCooling] = useState(false);
+  useEffect(() => {
+    if (!cooling) return;
+    const timer = setTimeout(() => setCooling(false), 1500);
+    return () => clearTimeout(timer);
+  }, [cooling]);
+
+  const followUrl = (feed: UserFeed) =>
+    premiumSpotifyShows[feed.id] ?? spotifyLibraryUrl;
+
+  // Without a show page the link only reaches Your Library, so it mustn't
+  // promise a follow it can't deliver.
+  const hasShowPage = (feed: UserFeed) => feed.id in premiumSpotifyShows;
+
   return (
-    <div
-      role="status"
-      className="border-t border-cyan/40 bg-navy-900/40 px-5 py-4"
-    >
+    <div className="border-t border-cyan/40 bg-navy-900/40 px-5 py-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
-        <p className="text-body-sm text-fg-strong">
-          Spotify is linked — your exclusive episodes are unlocked.
-        </p>
-        <span className="font-display text-[15px] font-bold tracking-cta text-cyan">
+        <h4
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-body font-bold text-fg-strong focus:outline-none"
+        >
+          {allDone
+            ? "You're all set on Spotify"
+            : `Spotify is linked — now follow your ${feeds.length === 1 ? "show" : "shows"}`}
+        </h4>
+        <span
+          role="status"
+          className="font-display text-[15px] font-bold tracking-cta text-cyan"
+        >
           {done}
           <span className="text-fg-muted">/{feeds.length} followed</span>
         </span>
       </div>
       <p className="mt-1 text-body-sm text-fg-muted">
-        {done === feeds.length
-          ? "All set — new episodes will land in Your Library on Spotify."
-          : "Spotify doesn't add them to Your Library on its own. Open each show and hit Follow."}
+        {allDone
+          ? "New episodes will land in Your Library on Spotify."
+          : "Your exclusive episodes are unlocked, but Spotify won't add the shows to Your Library by itself. Tap the button, hit Follow in Spotify, then come back here for the next one."}
       </p>
-      <ol className="mt-4 flex flex-col">
+
+      {next ? (
+        <OutboundLink
+          href={followUrl(next)}
+          platform="spotify"
+          placement="feed_setup_follow_next"
+          onClick={(event) => {
+            if (cooling) {
+              event.preventDefault();
+              return;
+            }
+            setCooling(true);
+            markFollowed(next);
+          }}
+          aria-disabled={cooling ? true : undefined}
+          data-follow-next=""
+          className={`mt-4 flex w-full items-center justify-center gap-2 bg-cyan px-5 py-3.5 text-center button-text font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:w-auto sm:justify-start ${cooling ? "pointer-events-none opacity-60" : ""}`}
+        >
+          <span>
+            {hasShowPage(next)
+              ? `Follow ${next.name}`
+              : `Find ${next.name} in Your Library`}
+            {feeds.length > 1 ? (
+              <span className="font-normal"> ({done + 1} of {feeds.length})</span>
+            ) : null}
+          </span>
+          <span aria-hidden="true">→</span>
+        </OutboundLink>
+      ) : null}
+
+      <ol className="mt-5 flex flex-col">
         {feeds.map((feed) => {
-          const showUrl = premiumSpotifyShows[feed.id];
           const isDone = feed.spotify_follow_opened === true;
-          const isNext = feed.id === nextId;
           return (
             <li
               key={feed.id}
-              className="flex flex-col gap-2 border-t border-rule py-3 first:border-t-0 sm:flex-row sm:items-center sm:justify-between sm:gap-5"
+              className="flex items-center justify-between gap-5 border-t border-rule py-2.5 first:border-t-0"
             >
               <span className="flex min-w-0 items-center gap-3 text-body-sm">
                 <span
@@ -361,27 +443,36 @@ function SpotifyFollowPanel({ feeds }: { feeds: UserFeed[] }) {
                 </span>
               </span>
               <OutboundLink
-                href={showUrl ?? spotifyLibraryUrl}
+                href={followUrl(feed)}
                 platform="spotify"
                 placement="feed_setup_follow"
                 onClick={() => markFollowed(feed)}
-                className={
-                  isNext
-                    ? "button-text inline-flex shrink-0 items-center justify-center gap-2 bg-cyan px-4 py-2.5 font-display font-bold tracking-cta text-navy transition hover:bg-fg-strong hover:text-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                    : "button-text inline-flex shrink-0 items-center justify-center gap-2 border border-cyan px-4 py-2.5 font-display font-bold tracking-cta text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                }
+                className="button-text shrink-0 font-display font-bold tracking-cta text-cyan underline-offset-4 transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
               >
                 {isDone
                   ? "Open again"
-                  : showUrl
-                    ? "Follow on Spotify"
-                    : "Find it in Your Library"}
-                <span aria-hidden="true">→</span>
+                  : hasShowPage(feed)
+                    ? "Open"
+                    : "Find in Your Library"}
+                <span className="sr-only"> {feed.name} on Spotify</span>
               </OutboundLink>
             </li>
           );
         })}
       </ol>
+
+      <p className="mt-4 text-body-sm text-fg-muted">
+        Not seeing your episodes?{" "}
+        <OutboundLink
+          href={spotifyContentAccessUrl}
+          platform="spotify"
+          placement="feed_setup_content_access"
+          className="text-cyan underline underline-offset-4 hover:text-fg-strong"
+        >
+          Check what's unlocked on Spotify
+        </OutboundLink>
+        .
+      </p>
     </div>
   );
 }

@@ -178,6 +178,13 @@ export const showListenLinks: Record<ShowSlug, ListenLink[]> = {
 export const spotifyLibraryUrl = "https://open.spotify.com/collection/podcasts";
 
 /**
+ * Spotify's Open Access page listing the member's linked accounts and the
+ * shows each one unlocks (Beehiiv's recommendation, 2026-09-24). Also where a
+ * member goes to unlink.
+ */
+export const spotifyContentAccessUrl = "https://content-access.spotify.com/";
+
+/**
  * The Spotify show page for each premium show, keyed by Beehiiv show id
  * (`pod_<uuid>`, the same id as UserFeed.id). Where the feed setup page sends a
  * member to follow a show once Open Access has linked their account.

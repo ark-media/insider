@@ -191,7 +191,7 @@ describe("FeedSetup — Spotify", () => {
     const container = await render(<FeedSetup feeds={FEEDS} spotifyLinked />);
     const buttons = [
       ...container.querySelectorAll<HTMLAnchorElement>(
-        'a[href^="https://open.spotify.com"]',
+        'ol a[href^="https://open.spotify.com"]',
       ),
     ];
 
@@ -210,7 +210,7 @@ describe("FeedSetup — Spotify", () => {
     container.addEventListener("click", (e) => e.preventDefault());
     const buttons = [
       ...container.querySelectorAll<HTMLAnchorElement>(
-        'a[href^="https://open.spotify.com"]',
+        'ol a[href^="https://open.spotify.com"]',
       ),
     ];
 
@@ -219,6 +219,85 @@ describe("FeedSetup — Spotify", () => {
     await click(buttons[0]);
 
     expect(followWrites).toEqual(["pod_b"]);
+  });
+
+  test("one big button walks the member through each unfollowed show in turn", async () => {
+    const mapped = "pod_01a05d4d-d91e-7d23-b20e-7c225707635e";
+    const FEEDS = [
+      feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
+      feed(mapped, "Bravo Show"),
+      feed("pod_c", "Charlie Show"),
+    ];
+    const container = await render(<FeedSetup feeds={FEEDS} spotifyLinked />);
+    container.addEventListener("click", (e) => e.preventDefault());
+    const nextButton = () =>
+      container.querySelector<HTMLAnchorElement>("a[data-follow-next]");
+
+    // Skips the show already followed, and says how far through they are.
+    expect(nextButton()?.textContent).toContain("Follow Bravo Show");
+    expect(nextButton()?.textContent).toContain("2 of 3");
+    expect(nextButton()?.getAttribute("href")).toBe(
+      "https://open.spotify.com/show/4ILTO8EcAStnyj5n40blWM",
+    );
+
+    await click(nextButton()!);
+    expect(followWrites).toEqual([mapped]);
+  });
+
+  test("a quick second tap on the big button doesn't tick another show", async () => {
+    const FEEDS = [feed("pod_a", "Alpha Show"), feed("pod_b", "Bravo Show")];
+    const container = await render(<FeedSetup feeds={FEEDS} spotifyLinked />);
+    container.addEventListener("click", (e) => e.preventDefault());
+    const nextButton = () =>
+      container.querySelector<HTMLAnchorElement>("a[data-follow-next]")!;
+
+    await click(nextButton());
+    await click(nextButton());
+
+    // The member only ever saw the first show open.
+    expect(followWrites).toEqual(["pod_a"]);
+    expect(nextButton().getAttribute("aria-disabled")).toBe("true");
+  });
+
+  test("a show without a Spotify page doesn't promise a follow", async () => {
+    const container = await render(
+      <FeedSetup feeds={[feed("pod_unmapped", "Unmapped Show")]} spotifyLinked />,
+    );
+    const nextButton = container.querySelector("a[data-follow-next]");
+
+    expect(nextButton?.textContent).toContain("Find Unmapped Show in Your Library");
+    expect(nextButton?.textContent).not.toContain("Follow");
+    expect(container.querySelector("ol a")?.textContent).toContain(
+      "Find in Your Library",
+    );
+  });
+
+  test("the big button goes away once every show is followed", async () => {
+    const FEEDS = [
+      feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
+      feed("pod_b", "Bravo Show", { spotify_follow_opened: true }),
+    ];
+    const container = await render(<FeedSetup feeds={FEEDS} spotifyLinked />);
+
+    expect(container.querySelector("a[data-follow-next]")).toBeNull();
+    expect(container.textContent).toContain("You're all set on Spotify");
+    expect(container.textContent).toContain("2/2 followed");
+  });
+
+  test("points at Spotify's own list of unlocked shows", async () => {
+    const container = await render(<FeedSetup feeds={[FEED]} spotifyLinked />);
+
+    expect(
+      container.querySelector('a[href="https://content-access.spotify.com/"]'),
+    ).not.toBeNull();
+  });
+
+  test("tells the member about the follow step before they leave", async () => {
+    const container = await render(
+      <FeedSetup feeds={[feed("pod_a", "Alpha"), feed("pod_b", "Bravo")]} />,
+    );
+
+    expect(container.textContent).toContain("then follow them");
   });
 
   test("links each show to its own Spotify page, falling back to the library", async () => {
@@ -232,7 +311,7 @@ describe("FeedSetup — Spotify", () => {
 
     const hrefs = [
       ...container.querySelectorAll<HTMLAnchorElement>(
-        'a[href^="https://open.spotify.com"]',
+        'ol a[href^="https://open.spotify.com"]',
       ),
     ].map((a) => a.getAttribute("href"));
     expect(hrefs).toEqual([
