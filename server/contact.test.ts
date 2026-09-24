@@ -4,6 +4,7 @@ import { makeFakeReq } from './test-utils'
 import { contactRoutes, subjectSafeName } from './routes/contact'
 import { contactTopics } from '../src/config/urls'
 import { shows } from '../src/data/shows'
+import { CONTACT_MESSAGE_MAX } from '../shared/validation'
 import type { Deps } from './lib/route'
 
 function makeReq(opts: {
@@ -165,6 +166,18 @@ describe('/api/contact', () => {
     expect(res.statusCode).toBe(400)
     expect(JSON.parse(res.body).error).toBe('invalid_message')
     expect(fetchCalls).toBe(0)
+  })
+
+  test('accepts a message at the limit and rejects one past it', async () => {
+    const atLimit = makeRes()
+    await getHandler()(makeReq({ body: { ...VALID, message: 'x'.repeat(CONTACT_MESSAGE_MAX) } }), atLimit)
+    expect(atLimit.statusCode).toBe(200)
+
+    const over = makeRes()
+    await getHandler()(makeReq({ body: { ...VALID, message: 'x'.repeat(CONTACT_MESSAGE_MAX + 1) } }), over)
+    expect(over.statusCode).toBe(400)
+    expect(JSON.parse(over.body).error).toBe('invalid_message')
+    expect(CONTACT_MESSAGE_MAX).toBe(1200)
   })
 
   test('HTML-escapes user input in the forwarded email', async () => {

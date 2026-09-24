@@ -21,6 +21,7 @@ import {
   type SupportStepKind,
 } from "../../../shared/support";
 import type { ContactTopic } from "../../config/urls";
+import { CONTACT_MESSAGE_MAX } from "../../../shared/validation";
 
 const STORE_KEY = "ark.support.session";
 const DRAFT_KEY = "ark.support.draft";
@@ -188,9 +189,9 @@ export type SupportDraft = {
 
 /**
  * A transcript for a person to read — a few lines of what was tried, not a
- * verbatim log. Kept far below the 5000-char MESSAGE_MAX the contact endpoint
- * enforces, because a support desk wants the shape of the problem and the
- * member still has to be able to edit around it.
+ * verbatim log. Capped at half the contact form's message limit, because a
+ * support desk wants the shape of the problem and the member still needs room
+ * to write their own message around it.
  */
 export function supportTranscript(): string {
   const steps = supportSteps();
@@ -231,7 +232,9 @@ export function supportTranscript(): string {
   if (stuck.length) lines.push(`Found no answer for: ${quoteList(stuck)}`);
   if (lines.length === 0) return "";
 
-  return ["— From the help widget —", ...lines].join("\n").slice(0, 1200);
+  return ["— From the help widget —", ...lines]
+    .join("\n")
+    .slice(0, Math.floor(CONTACT_MESSAGE_MAX / 2));
 }
 
 function quoteList(items: string[]): string {

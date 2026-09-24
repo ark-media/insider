@@ -20,12 +20,15 @@ import { sendEmail } from '../lib/email.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { contactTopics } from '../../src/config/urls.js'
 import { getShow, isShowSlug } from '../../src/data/shows.js'
-import { escapeHtml, isValidEmail } from '../../shared/validation.js'
+import {
+  CONTACT_MESSAGE_MAX,
+  escapeHtml,
+  isValidEmail,
+} from '../../shared/validation.js'
 
 // Per name part: first and last are separate fields, as in the team's Airtable.
 const NAME_MAX = 200
 const LOCATION_MAX = 200
-const MESSAGE_MAX = 5000
 // The sender's name rides in the subject so the inbox is scannable, but only a
 // tidy slice of it: a subject is a header, and a 200-character name is not one.
 const SUBJECT_NAME_MAX = 80
@@ -193,7 +196,7 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (topic.value === 'questions' && !show) {
           return json(400, { error: 'invalid_show' })
         }
-        if (!message || message.length > MESSAGE_MAX) {
+        if (!message || message.length > CONTACT_MESSAGE_MAX) {
           return json(400, { error: 'invalid_message' })
         }
 

@@ -1,4 +1,5 @@
 import { contactTopics, type ContactTopic } from "../config/urls";
+import { CONTACT_MESSAGE_MAX } from "../../shared/validation";
 import {
   isShowSlug,
   type ShowSlug,
@@ -39,6 +40,12 @@ export async function sendContactMessage(input: {
     return { ok: false, error: "Please choose a show." };
   }
   if (!message) return { ok: false, error: "Please add a message." };
+  if (message.length > CONTACT_MESSAGE_MAX) {
+    return {
+      ok: false,
+      error: `Please keep your message to ${CONTACT_MESSAGE_MAX} characters.`,
+    };
+  }
 
   try {
     const res = await fetch("/api/contact", {

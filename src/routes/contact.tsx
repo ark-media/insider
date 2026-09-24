@@ -8,6 +8,7 @@ import {
   type ShowSlug,
 } from "../data/shows";
 import { sendContactMessage } from "../lib/contact";
+import { CONTACT_MESSAGE_MAX } from "../../shared/validation";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import {
   SUPPORT_DRAFT_EVENT,
@@ -249,6 +250,8 @@ function ContactPage() {
               <span className={labelClass}>Message</span>
               <textarea
                 required
+                maxLength={CONTACT_MESSAGE_MAX}
+                aria-describedby="contact-message-count"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="What's on your mind?"
@@ -256,6 +259,14 @@ function ContactPage() {
                 className={`mt-3 ${inputClass} resize-y`}
               />
             </label>
+            {/* Not a live region: announcing every keystroke would drown out
+                the typing. Screen readers read it with the field instead. */}
+            <p
+              id="contact-message-count"
+              className="mt-2 text-body-sm text-fg-muted tabular-nums"
+            >
+              {message.length} of {CONTACT_MESSAGE_MAX} max characters.
+            </p>
 
             {/* Honeypot: visually hidden, off the tab order, ignored by humans. */}
             <div aria-hidden className="hidden">

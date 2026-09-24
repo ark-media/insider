@@ -1,6 +1,10 @@
 // Shared input-validation / output-encoding primitives. One audited definition
 // per boundary so "valid email" and "escaped HTML" can't drift between routes.
 
+// The longest message the /contact form accepts, matching the old site's form.
+// The form counts down to it and the server enforces it.
+export const CONTACT_MESSAGE_MAX = 1200
+
 // Loose RFC-shaped check — rejects obvious junk (whitespace, missing @/TLD)
 // before an address reaches Stripe/Beehiiv/email sends. Downstream services
 // validate canonical form; this just stops us minting rows for "  foo".
