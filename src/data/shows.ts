@@ -9,7 +9,7 @@ export type ShowSlug =
 
 type ShowRoute =
   | `/podcasts/${Exclude<ShowSlug, "call-me-back-plus">}`
-  | "/plus/call-me-back-plus";
+  | "/plus";
 
 export type ListenPlatform =
   | "apple"
@@ -67,7 +67,9 @@ export const shows: Show[] = [
     // BEEHIIV_PODCAST_ID_INSIDE_CALL_ME_BACK — see server/routes/podcasts.ts),
     // not a deploy. The slug was inside-call-me-back until the Ark+ rename.
     slug: "call-me-back-plus",
-    route: "/plus/call-me-back-plus",
+    // No page of its own: members hear it through the private feed, so the
+    // show's "home" is the membership page that sells it.
+    route: "/plus",
     title: "Call Me Back Ark+",
     shortTitle: "Call Me Back Ark+",
     tagline:

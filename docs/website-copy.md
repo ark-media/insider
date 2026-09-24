@@ -495,7 +495,7 @@ single member only ever sees some of them.
 - **HOSTS**: Ark Media newsroom
 - **CADENCE**: Weekdays
 
-### Call Me Back Ark+ (currently commented out in code — not live)
+### Call Me Back Ark+ (no show page — members hear it through the private feed)
 - **TITLE**: Call Me Back Ark+
 - **SHORT TITLE**: Call Me Back Ark+
 - **TAGLINE**: Presenting the challenges and dilemmas facing Israelis to a global audience.

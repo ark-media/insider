@@ -49,7 +49,6 @@ import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
 import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
 import { Route as PlusIndexRouteImport } from './routes/plus/index'
-import { Route as PlusCallMeBackPlusRouteImport } from './routes/plus/call-me-back-plus'
 import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as PlusInsideCallMeBackRouteImport } from './routes/plus/inside-call-me-back'
 import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
@@ -263,11 +262,6 @@ const PlusIndexRoute = PlusIndexRouteImport.update({
   path: '/plus/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlusCallMeBackPlusRoute = PlusCallMeBackPlusRouteImport.update({
-  id: '/plus/call-me-back-plus',
-  path: '/plus/call-me-back-plus',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PlusGiftRoute = PlusGiftRouteImport.update({
   id: '/plus/gift',
   path: '/plus/gift',
@@ -364,7 +358,6 @@ export interface FileRoutesByFullPath {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/call-me-back-plus': typeof PlusCallMeBackPlusRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -418,7 +411,6 @@ export interface FileRoutesByTo {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/call-me-back-plus': typeof PlusCallMeBackPlusRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -474,7 +466,6 @@ export interface FileRoutesById {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/call-me-back-plus': typeof PlusCallMeBackPlusRoute
   '/plus/gift': typeof PlusGiftRoute
   '/plus/inside-call-me-back': typeof PlusInsideCallMeBackRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
@@ -531,7 +522,6 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/call-me-back-plus'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -585,7 +575,6 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/call-me-back-plus'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -640,7 +629,6 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/call-me-back-plus'
     | '/plus/gift'
     | '/plus/inside-call-me-back'
     | '/podcasts/ark-news-daily'
@@ -692,7 +680,6 @@ export interface RootRouteChildren {
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
-  PlusCallMeBackPlusRoute: typeof PlusCallMeBackPlusRoute
   PlusGiftRoute: typeof PlusGiftRoute
   PlusInsideCallMeBackRoute: typeof PlusInsideCallMeBackRoute
   PodcastsArkNewsDailyRoute: typeof PodcastsArkNewsDailyRoute
@@ -994,13 +981,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlusIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plus/call-me-back-plus': {
-      id: '/plus/call-me-back-plus'
-      path: '/plus/call-me-back-plus'
-      fullPath: '/plus/call-me-back-plus'
-      preLoaderRoute: typeof PlusCallMeBackPlusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/plus/gift': {
       id: '/plus/gift'
       path: '/plus/gift'
@@ -1150,7 +1130,6 @@ const rootRouteChildren: RootRouteChildren = {
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,
-  PlusCallMeBackPlusRoute: PlusCallMeBackPlusRoute,
   PlusGiftRoute: PlusGiftRoute,
   PlusInsideCallMeBackRoute: PlusInsideCallMeBackRoute,
   PodcastsArkNewsDailyRoute: PodcastsArkNewsDailyRoute,
