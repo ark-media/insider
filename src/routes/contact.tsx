@@ -39,8 +39,6 @@ const inputClass =
   "min-h-11 w-full border border-rule-strong bg-transparent px-3 py-2 text-body text-fg-strong outline-none transition placeholder:text-fg-muted focus:border-cyan";
 const labelClass =
   "label text-cyan";
-const selectClass =
-  "appearance-none bg-[length:16px] bg-[right_1rem_center] bg-no-repeat pr-10 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>')]";
 
 function ContactPage() {
   const { topic: topicParam, show: showParam } = Route.useSearch();
@@ -177,7 +175,7 @@ function ContactPage() {
               <select
                 value={topic}
                 onChange={(e) => setTopic(e.target.value as ContactTopic)}
-                className={`mt-3 ${inputClass} ${selectClass}`}
+                className={`mt-3 ${inputClass} select-chevron`}
               >
                 {contactTopics.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -196,7 +194,7 @@ function ContactPage() {
                   onChange={(e) =>
                     setShow(e.target.value as ListenerQuestionShow | "")
                   }
-                  className={`mt-3 ${inputClass} ${selectClass}`}
+                  className={`mt-3 ${inputClass} select-chevron`}
                 >
                   <option value="" disabled>
                     Which show is your question for?
