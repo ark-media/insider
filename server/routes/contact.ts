@@ -3,8 +3,9 @@
 //   POST /api/contact — public. Forwards a "Get in touch" submission to the
 //     inbox for the chosen topic via Resend. The form replaces the old
 //     mailto: links on /contact so visitors never see the raw addresses.
-//     A listener question must name a show, and after its email is sent it is
-//     also posted to a Make webhook that files it in the team's Airtable.
+//     A listener question must name a show. After the email is sent, every
+//     submission is also posted to a Make webhook that files it in the team's
+//     "Get in touch" Airtable.
 //
 // Validation is strict and the body is HTML-escaped before it goes into the
 // email, since every field is attacker-controlled. Same-origin only, rate-limited
@@ -50,32 +51,36 @@ const topicsByValue = new Map(contactTopics.map((t) => [t.value, t]))
 
 const WEBHOOK_TIMEOUT_MS = 5000
 
-// Files a listener question in the team's Airtable, via a Make "Custom
-// webhook" scenario the team owns (MAKE_LISTENER_QUESTIONS_WEBHOOK_URL). The
-// key goes in Make's API-key header; Make answers 401 without it.
+// Files a submission in the team's "Get in touch" Airtable, via a Make
+// "Custom webhook" scenario the team owns (MAKE_CONTACT_WEBHOOK_URL). The key
+// goes in Make's API-key header; Make answers 401 without it.
 //
 // Best effort, and only ever after the email went out: the inbox is the record
 // of the submission, so a Make outage is logged rather than shown to the
-// listener, and a failed email (which the listener will retry) never leaves a
-// row behind to be duplicated. `showSlug` is the stable handle for filtering in
-// Make; `show` is the display name, which changes when a show is renamed.
-async function postListenerQuestion(
+// sender, and a failed email (which the sender will retry) never leaves a row
+// behind to be duplicated. The slugs are the stable handles for filtering in
+// Make (e.g. CPP questions → their own table); `topic` and `show` are display
+// names, which change when a label or a show is renamed. `show`/`showSlug` are
+// empty strings on anything but a listener question.
+async function fileInAirtable(
   env: Deps['env'],
   payload: {
     name: string
     email: string
+    topic: string
+    topicSlug: string
     show: string
     showSlug: string
-    question: string
+    message: string
   },
 ): Promise<void> {
-  const url = env.MAKE_LISTENER_QUESTIONS_WEBHOOK_URL
+  const url = env.MAKE_CONTACT_WEBHOOK_URL
   if (!url) {
-    console.warn('[contact] MAKE_LISTENER_QUESTIONS_WEBHOOK_URL unset; question not sent to Airtable')
+    console.warn('[contact] MAKE_CONTACT_WEBHOOK_URL unset; submission not sent to Airtable')
     return
   }
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  const key = env.MAKE_LISTENER_QUESTIONS_WEBHOOK_KEY
+  const key = env.MAKE_CONTACT_WEBHOOK_KEY
   if (key) headers['x-make-apikey'] = key
   try {
     const res = await fetchWithTimeout(
@@ -88,10 +93,10 @@ async function postListenerQuestion(
       WEBHOOK_TIMEOUT_MS,
     )
     if (!res.ok) {
-      console.error(`[contact] listener-question webhook answered ${res.status}`)
+      console.error(`[contact] Make webhook answered ${res.status}`)
     }
   } catch (err) {
-    console.error('[contact] listener-question webhook failed', err)
+    console.error('[contact] Make webhook failed', err)
   }
 }
 
@@ -200,15 +205,15 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(502, { error: 'send_failed' })
         }
 
-        if (show) {
-          await postListenerQuestion(env, {
-            name,
-            email,
-            show: show.title,
-            showSlug: show.slug,
-            question: message,
-          })
-        }
+        await fileInAirtable(env, {
+          name,
+          email,
+          topic: topic.label,
+          topicSlug: topic.value,
+          show: show?.title ?? '',
+          showSlug: show?.slug ?? '',
+          message,
+        })
 
         return json(200, { ok: true })
       },

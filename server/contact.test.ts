@@ -81,7 +81,7 @@ let fetchCalls = 0
 let calls: Array<{ url: string; init?: RequestInit }> = []
 let webhookStatus = 200
 let webhookThrows = false
-const WEBHOOK_URL = 'https://hook.example.make.com/listener-questions'
+const WEBHOOK_URL = 'https://hook.example.make.com/contact'
 
 globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
   fetchCalls += 1
@@ -303,7 +303,7 @@ describe('/api/contact', () => {
   })
 })
 
-describe('/api/contact — listener questions', () => {
+describe('/api/contact — inboxes and Airtable', () => {
   const QUESTION = {
     ...VALID,
     topic: 'questions',
@@ -312,8 +312,8 @@ describe('/api/contact — listener questions', () => {
   }
   const ENV = {
     RESEND_API_KEY: 'test',
-    MAKE_LISTENER_QUESTIONS_WEBHOOK_URL: WEBHOOK_URL,
-    MAKE_LISTENER_QUESTIONS_WEBHOOK_KEY: 'make-key',
+    MAKE_CONTACT_WEBHOOK_URL: WEBHOOK_URL,
+    MAKE_CONTACT_WEBHOOK_KEY: 'make-key',
   }
 
   test('support goes to support@, every other topic to hello@', () => {
@@ -339,9 +339,11 @@ describe('/api/contact — listener questions', () => {
     expect(payload).toMatchObject({
       name: 'Jane Listener',
       email: 'jane@example.com',
+      topic: 'Listener questions',
+      topicSlug: 'questions',
       show: 'Chosen People Problems',
       showSlug: 'chosen-people-problems',
-      question: 'What is the best Shabbat dinner argument?',
+      message: 'What is the best Shabbat dinner argument?',
     })
     expect(Number.isNaN(Date.parse(payload.submittedAt))).toBe(false)
   })
@@ -365,13 +367,21 @@ describe('/api/contact — listener questions', () => {
     expect(fetchCalls).toBe(0)
   })
 
-  test('ignores a show on any other topic and never calls Make', async () => {
+  test('files every other topic too, with no show even if one was sent', async () => {
     const res = makeRes()
     await getHandler(ENV)(makeReq({ body: { ...VALID, show: 'chosen-people-problems' } }), res)
     expect(res.statusCode).toBe(200)
-    expect(calls.map((c) => c.url)).not.toContain(WEBHOOK_URL)
+    expect(calls.map((c) => c.url === WEBHOOK_URL)).toEqual([false, true])
     const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
     expect(email.html).not.toContain('Show:')
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload).toMatchObject({
+      topic: 'Press, interviews & media',
+      topicSlug: 'press',
+      show: '',
+      showSlug: '',
+      message: VALID.message,
+    })
   })
 
   test('does not file the question when the email fails', async () => {
