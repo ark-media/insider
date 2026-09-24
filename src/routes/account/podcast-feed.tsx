@@ -1,6 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { FeedSetup } from "../../components/FeedSetup";
+import {
+  spotifyReturnFromSearch,
+  type SpotifyReturn,
+} from "../../lib/spotifyReturn";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 
 // Beehiiv mints the private feeds a short while AFTER the premium tier is
@@ -18,14 +22,17 @@ import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 const FEED_POLL_INTERVAL_MS = 5_000;
 const FEED_POLL_TICKS = 24; // ~2 minutes of visible time
 
-type PodcastFeedSearch = { spotify?: "linked" };
+type PodcastFeedSearch = { spotify?: SpotifyReturn };
 
 export const Route = createFileRoute("/account/podcast-feed")({
   component: PodcastsTab,
-  // `spotify=linked` is the marker Beehiiv redirects back with once Open
-  // Access has been authorized (see buildSpotifyHandoff).
-  validateSearch: (search: Record<string, unknown>): PodcastFeedSearch =>
-    search.spotify === "linked" ? { spotify: "linked" as const } : {},
+  // `spotify=linked` is the marker on the URL Beehiiv redirects back to (see
+  // buildSpotifyHandoff). Beehiiv sends failures back there too, adding
+  // `toast=error` — that's a failed link, not a linked one.
+  validateSearch: (search: Record<string, unknown>): PodcastFeedSearch => {
+    const spotify = spotifyReturnFromSearch(search);
+    return spotify ? { spotify } : {};
+  },
 });
 
 // The Podcasts tab. Auth and the greeting belong to the /account layout; this
@@ -54,6 +61,8 @@ function PodcastsTab() {
   //
   // This is the ONLY place a Spotify link checks the shows off — the CTA click
   // doesn't, because the member may still cancel at Spotify's consent screen.
+  // A failed link returns to the same URL with `toast=error` and arrives here
+  // as "failed", so it marks nothing.
   // One link covers every show. Marking is idempotent (it only ever flips a
   // feed that isn't already set up), which is what makes it safe to leave the
   // marker in the URL.
@@ -93,7 +102,7 @@ function PodcastsTab() {
   return (
     <FeedSetup
       feeds={state.me.feeds}
-      spotifyLinked={spotifyLinked}
+      spotify={spotify}
       provisioning={waiting && !pollExhausted}
     />
   );
