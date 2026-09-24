@@ -248,7 +248,9 @@ async function main(): Promise<void> {
 
     let existing: Stripe.Coupon | null = null
     try {
-      existing = await stripe.coupons.retrieve(id)
+      // applies_to and currency_options only come back when expanded; without
+      // them every existing coupon reads as drifted.
+      existing = await stripe.coupons.retrieve(id, { expand: ['applies_to', 'currency_options'] })
     } catch {
       existing = null
     }
