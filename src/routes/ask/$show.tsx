@@ -7,8 +7,8 @@ import type { ListenerQuestionShow } from "../../data/shows";
 const askLinks: Record<string, ListenerQuestionShow> = {
   cpp: "chosen-people-problems",
   "chosen-people-problems": "chosen-people-problems",
-  cmb: "inside-call-me-back",
-  "call-me-back-ark-plus": "inside-call-me-back",
+  cmb: "call-me-back-plus",
+  "call-me-back-plus": "call-me-back-plus",
 };
 
 export const Route = createFileRoute("/ask/$show")({

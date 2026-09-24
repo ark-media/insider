@@ -143,7 +143,7 @@ export const shows: Show[] = [
  */
 export const listenerQuestionShows = [
   "chosen-people-problems",
-  "inside-call-me-back",
+  "call-me-back-plus",
 ] as const satisfies readonly ShowSlug[];
 
 export type ListenerQuestionShow = (typeof listenerQuestionShows)[number];

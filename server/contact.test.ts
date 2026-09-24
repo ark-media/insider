@@ -342,11 +342,11 @@ describe('/api/contact — listener questions', () => {
 
   test('sends Call Me Back Ark+ under its current name and stable slug', async () => {
     const res = makeRes()
-    await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: 'inside-call-me-back' } }), res)
+    await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: 'call-me-back-plus' } }), res)
     expect(res.statusCode).toBe(200)
     const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
     expect(payload.show).toBe('Call Me Back Ark+')
-    expect(payload.showSlug).toBe('inside-call-me-back')
+    expect(payload.showSlug).toBe('call-me-back-plus')
   })
 
   test('rejects a question with no show, or a show not on the list', async () => {
