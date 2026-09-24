@@ -202,7 +202,8 @@ describe("FeedSetup — Spotify", () => {
 
     expect(followLink(container)).not.toBeNull();
     expect(container.textContent).toContain("Spotify is linked");
-    expect(spotifyCta(container).textContent).toContain("Link again");
+    // A Spotify account links once; a second attempt only fails.
+    expect(container.querySelector('a[href="/api/me/feeds/spotify"]')).toBeNull();
   });
 
   // Beehiiv sends a failed link back to the same redirect_path — our own
@@ -248,7 +249,9 @@ describe("FeedSetup — Spotify", () => {
     expect(spotifyCta(container).textContent).toContain("Try again");
   });
 
-  test("the ticks come from the server's per-show flag", async () => {
+  // Spotify never tells us about a follow, and opening a show isn't one — so
+  // an opened show gets no tick, no count and no different label.
+  test("never claims a show is followed", async () => {
     const FEEDS = [
       feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
       feed("pod_b", "Bravo Show"),
@@ -260,9 +263,10 @@ describe("FeedSetup — Spotify", () => {
       ),
     ];
 
-    expect(container.textContent).toContain("1/2 followed");
-    expect(buttons[0].textContent).toContain("Open again");
-    expect(buttons[1].textContent).not.toContain("Open again");
+    expect(container.textContent).not.toContain("followed");
+    expect(container.textContent).not.toContain("✓");
+    expect(buttons[0].textContent).toBe(buttons[1].textContent!.replace("Bravo", "Alpha"));
+    expect(buttons[0].textContent).not.toContain("again");
   });
 
   test("opening a show writes it to the server, once", async () => {
@@ -337,7 +341,7 @@ describe("FeedSetup — Spotify", () => {
     );
   });
 
-  test("the big button goes away once every show is followed", async () => {
+  test("the big button goes away once every show has been opened", async () => {
     const FEEDS = [
       feed("pod_a", "Alpha Show", { spotify_follow_opened: true }),
       feed("pod_b", "Bravo Show", { spotify_follow_opened: true }),
@@ -345,8 +349,9 @@ describe("FeedSetup — Spotify", () => {
     const container = await render(<FeedSetup feeds={linked(FEEDS)} />);
 
     expect(container.querySelector("a[data-follow-next]")).toBeNull();
-    expect(container.textContent).toContain("You're all set on Spotify");
-    expect(container.textContent).toContain("2/2 followed");
+    // Opened isn't followed, so there's no "all set" to announce.
+    expect(container.textContent).not.toContain("all set");
+    expect(container.textContent).toContain("now follow your shows");
   });
 
   test("points at Spotify's own list of unlocked shows", async () => {
