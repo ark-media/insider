@@ -1,27 +1,26 @@
-// ICMB launch welcome offer — roster, eligibility and bookkeeping.
+// ICMB launch welcome offer — eligibility, pricing and the no-stacking rule.
 //
 // Existing Inside Call Me Back subscribers are invited to move from Ark+ to the
 // Bundle keeping their cadence, at a fixed discounted price for a fixed term
 // ($200 the first year / $20 for three months). The two Stripe coupons are
-// provisioned by scripts/welcome-offer-coupons.ts; the roster of who may use
-// them lives in `welcome_offer_codes` (migration 0008) rather than as Stripe
-// promotion codes, because stripe-promos.ts pages promotion codes 100 at a time
-// for 20 pages and a few thousand personal codes would push the house-sale code
-// past the end of that scan.
+// provisioned by scripts/welcome-offer-coupons.ts, and the invitation is sent
+// by scripts/welcome-offer-send.ts.
 //
-// The code is the link-carrier, not the credential. Redeeming charges a card,
-// so the route behind this runs `requireBillingEmail` — a real sign-in, never
-// an emailed link — and eligibility is decided by the SIGNED-IN member's email
-// matching a roster row. A forwarded email is therefore worthless to anyone but
-// its owner, and the code only has to be unguessable enough not to be a nuisance.
+// There is no roster. Who may redeem is a fact Stripe already holds — an Ark+
+// subscription that predates launch (WELCOME_OFFER_ELIGIBLE_BEFORE_ISO) — and
+// who HAS redeemed is written onto the subscription itself. Redeeming charges a
+// card, so the route behind this runs `requireBillingEmail` (a real sign-in,
+// never an emailed link) and reads the SIGNED-IN member's own subscription. A
+// forwarded email is therefore worthless to anyone but its owner.
 //
-// Everything here is either a constant shared with the provisioning script or a
-// small SQL helper. The Stripe side of redemption lives in routes/offer.ts.
+// Everything here is pure. The Stripe side of redemption lives in
+// routes/offer.ts.
 
-import type { Sql } from './db.js'
-import { normalizeEmail } from './feed-activations.js'
 import { roundMinorFor, type Plan } from './pricing.js'
-import { welcomeOfferIsOpen } from '../../shared/welcome-offer.js'
+import {
+  WELCOME_MONTHLY_DISCOUNT_MONTHS,
+  welcomeOfferIsOpen,
+} from '../../shared/welcome-offer.js'
 
 // Re-exported so the server side reaches the offer's constants through this
 // module. The browser-only ones (the closing-date label, the window predicate)
@@ -31,8 +30,7 @@ export {
   WELCOME_OFFER_REDEEM_BY_ISO,
 } from '../../shared/welcome-offer.js'
 
-// The campaign. One roster row per (email, cohort), so a second campaign later
-// reuses this table without a schema change.
+// The campaign, as stamped on a redeemed subscription and in the lock key.
 export const WELCOME_OFFER_COHORT = 'icmb_launch_2026'
 
 // Coupon ids, fixed so the provisioning script is idempotent and the route can
@@ -73,147 +71,81 @@ export function offerAmountFor(
   return { bundleMinor, offerMinor, discountMinor: bundleMinor - offerMinor }
 }
 
-// A claim older than this is treated as abandoned and may be re-taken. Long
-// enough that two rapid clicks can't both proceed, short enough that a request
-// which died mid-Stripe-call doesn't lock a member out of the offer.
-const CLAIM_TTL_SECONDS = 300
+// The audience, stated as a fact Stripe already holds: every subscription that
+// was on Ark+ before launch. At launch nobody is on the Circle or the Bundle
+// yet, so "on Stripe before 5 October" and "an existing ICMB subscriber" are
+// the same set of people — and deciding it from Stripe means there is no roster
+// to generate, keep in sync, or lose. Midnight Eastern on launch day (EDT, so
+// UTC-4); the send script and the redeem route read the same constant, so
+// whoever is mailed is exactly whoever may redeem.
+export const WELCOME_OFFER_ELIGIBLE_BEFORE_ISO = '2026-10-05T04:00:00Z'
 
-// Codes are read off a screen and typed into nothing — they travel in a link —
-// but they do get read aloud to support, so the alphabet drops the characters
-// that get confused (0/O, 1/I/L, 5/S, 8/B). 2 groups of 4 from a 30-character
-// alphabet is ~39 bits, which is plenty when the code is not the credential.
-const CODE_ALPHABET = 'ACDEFGHJKMNPQRTUVWXYZ234679'
-const CODE_PREFIX = 'CMB'
-
-export function generateOfferCode(): string {
-  const bytes = new Uint8Array(8)
-  crypto.getRandomValues(bytes)
-  const chars = Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length])
-  return `${CODE_PREFIX}-${chars.slice(0, 4).join('')}-${chars.slice(4).join('')}`
-}
-
-export type OfferRow = {
-  code: string
-  email: string
-  cohort: string
-  sent_at: string | null
-  claimed_at: string | null
-  redeemed_at: string | null
-  redeemed_subscription_id: string | null
-  redeemed_plan: string | null
-}
+// Written onto the subscription when the offer is redeemed. Stripe is the only
+// record of who took it: the cohort marker says which campaign, and the date
+// and cadence say when the discounted terms run out (welcomeDiscountActive).
+export const WELCOME_OFFER_KEY = 'welcome_offer'
+export const WELCOME_OFFER_REDEEMED_AT_KEY = 'welcome_offer_redeemed_at'
+export const WELCOME_OFFER_PLAN_KEY = 'welcome_offer_plan'
 
 // Why a member can't take the offer, or null if they can. `expired` is checked
 // here as well as by Stripe's `redeem_by` so the page can say so plainly rather
 // than surfacing a Stripe error.
-export type OfferBlock = 'not_invited' | 'already_redeemed' | 'expired'
+export type OfferBlock = 'not_eligible' | 'already_bundle' | 'expired'
 
 export function blockFor(
-  row: OfferRow | null,
+  sub: { created: number; metadata?: Record<string, string> | null },
+  tier: string | null,
   now: Date = new Date(),
 ): OfferBlock | null {
-  if (!row) return 'not_invited'
-  if (row.redeemed_at) return 'already_redeemed'
+  // Before the window check: someone who took it should hear that, not
+  // "closed", when they come back in November.
+  if (tier === 'bundle' || sub.metadata?.[WELCOME_OFFER_KEY]) return 'already_bundle'
+  if (tier !== 'ark-plus') return 'not_eligible'
+  if (sub.created * 1000 >= Date.parse(WELCOME_OFFER_ELIGIBLE_BEFORE_ISO)) return 'not_eligible'
   if (!welcomeOfferIsOpen(now)) return 'expired'
   return null
 }
 
-export async function findOffer(
-  sql: Sql,
-  email: string,
-  cohort: string = WELCOME_OFFER_COHORT,
-): Promise<OfferRow | null> {
-  const rows = (await sql`
-    select code, email, cohort, sent_at, claimed_at, redeemed_at,
-           redeemed_subscription_id, redeemed_plan
-      from welcome_offer_codes
-     where email = ${normalizeEmail(email)} and cohort = ${cohort}
-     limit 1
-  `) as OfferRow[]
-  return rows[0] ?? null
+// Whether the member is still inside their discounted terms — the first year,
+// or the first three months. The cancel flow's coupon saves are priced off the
+// list price, so layering one over the welcome price would quote the member a
+// number they won't be charged and compound two discounts. Plan switches stay
+// on offer; only the coupons wait until the welcome price has run out.
+//
+// Read from the metadata the redemption writes rather than from the discount
+// itself: a `duration: once` coupon's discount carries no end date, so "is it
+// still running" can't be answered from Stripe's discount object for the
+// yearly offer. A marker without a readable date (the post-charge metadata
+// write failed) counts as active — the safe direction is withholding a second
+// discount, not granting one.
+export function welcomeDiscountActive(
+  metadata: Record<string, string> | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!metadata?.[WELCOME_OFFER_KEY]) return false
+  const redeemedAt = Date.parse(metadata[WELCOME_OFFER_REDEEMED_AT_KEY] ?? '')
+  if (Number.isNaN(redeemedAt)) return true
+  const ends = new Date(redeemedAt)
+  ends.setUTCMonth(
+    ends.getUTCMonth() +
+      (metadata[WELCOME_OFFER_PLAN_KEY] === 'yearly' ? 12 : WELCOME_MONTHLY_DISCOUNT_MONTHS),
+  )
+  return now.getTime() < ends.getTime()
 }
 
-// Take the offer for this member, atomically. Returns the code on success and
-// null when there is nothing to claim — already redeemed, never invited, or
-// another request is mid-redemption. The condition IS the lock: two concurrent
-// calls both run this UPDATE and exactly one matches a row.
-export async function claimOffer(
-  sql: Sql,
-  email: string,
-  cohort: string = WELCOME_OFFER_COHORT,
-): Promise<string | null> {
-  const rows = (await sql`
-    update welcome_offer_codes
-       set claimed_at = now()
-     where email = ${normalizeEmail(email)}
-       and cohort = ${cohort}
-       and redeemed_at is null
-       and (claimed_at is null
-            or claimed_at < now() - make_interval(secs => ${CLAIM_TTL_SECONDS}))
-    returning code
-  `) as Array<{ code: string }>
-  return rows[0]?.code ?? null
-}
-
-// Hand the offer back after a failed upgrade, so the member can try again with
-// a working card instead of waiting out the claim window.
-export async function releaseClaim(sql: Sql, code: string): Promise<void> {
-  await sql`
-    update welcome_offer_codes
-       set claimed_at = null
-     where code = ${code} and redeemed_at is null
-  `
-}
-
-export async function markRedeemed(
-  sql: Sql,
-  code: string,
-  result: {
-    subscriptionId: string
-    invoiceId: string | null
-    plan: Plan
-    couponId: string
-  },
-): Promise<void> {
-  await sql`
-    update welcome_offer_codes
-       set redeemed_at              = now(),
-           redeemed_subscription_id = ${result.subscriptionId},
-           redeemed_invoice_id      = ${result.invoiceId},
-           redeemed_plan            = ${result.plan},
-           redeemed_coupon_id       = ${result.couponId}
-     where code = ${code}
-  `
-}
-
-// Roster insert, used by scripts/welcome-offer-codes.ts. `on conflict do
-// nothing` on (email, cohort) so re-running the generator over a superset of
-// the list tops it up instead of handing anyone a second code.
-export async function insertOfferCode(
-  sql: Sql,
-  entry: { code: string; email: string; cohort?: string },
-): Promise<boolean> {
-  const rows = (await sql`
-    insert into welcome_offer_codes (code, email, cohort)
-    values (${entry.code}, ${normalizeEmail(entry.email)}, ${entry.cohort ?? WELCOME_OFFER_COHORT})
-    on conflict (email, cohort) do nothing
-    returning code
-  `) as Array<{ code: string }>
-  return rows.length > 0
-}
-
-// Stamp the whole cohort as mailed, on the day the send goes out. Kept separate
-// from the insert because the roster is generated before the email is sent, and
-// `sent_at` should say when it actually went.
-export async function markCohortSent(
-  sql: Sql,
-  cohort: string = WELCOME_OFFER_COHORT,
-): Promise<number> {
-  const rows = (await sql`
-    update welcome_offer_codes
-       set sent_at = now()
-     where cohort = ${cohort} and sent_at is null
-    returning code
-  `) as Array<{ code: string }>
-  return rows.length
+// The lock against a double charge, with no table to hold it: Stripe's own
+// idempotency. Two concurrent redemptions send the same key, so the second
+// gets Stripe's answer to the first instead of a second charge. The card is in
+// the key because Stripe also replays a DECLINE for 24 hours — a member who
+// updates their card (which lands on the subscription's default_payment_method)
+// gets a fresh key and a real retry, while one who retries on the same card
+// hears the same decline. After a success the subscription is on the Bundle,
+// so blockFor stops any later attempt before it reaches Stripe.
+export function redeemIdempotencyKey(sub: {
+  id: string
+  default_payment_method?: string | { id: string } | null
+}): string {
+  const pm = sub.default_payment_method
+  const pmId = typeof pm === 'string' ? pm : (pm?.id ?? 'customer-default')
+  return `welcome-offer:${WELCOME_OFFER_COHORT}:${sub.id}:${pmId}`
 }

@@ -30,6 +30,11 @@
 //   discounts               whatever survives the product change, plus the
 //                           offer coupon
 //
+// And one request option: an idempotency key (redeemIdempotencyKey), which is
+// what stops a double submission billing twice. There is no roster to lock —
+// eligibility comes from the member's own subscription (blockFor), and once the
+// switch lands the subscription is on the Bundle, which blockFor refuses.
+//
 // Access is immediate and independent of any of that: the item swap is what
 // grants the entitlement, and the webhook derives the new tier from the price's
 // product and fans out to Beehiiv, Circle and Neon.
@@ -41,7 +46,6 @@
 // ---------------------------------------------------------------------------
 
 import type Stripe from 'stripe'
-import { getDb } from '../lib/db.js'
 import { requireBillingEmail } from '../lib/guards.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
 import {
@@ -56,12 +60,13 @@ import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { getSessionEmail } from '../lib/session.js'
 import {
   blockFor,
-  claimOffer,
-  findOffer,
-  markRedeemed,
   offerAmountFor,
-  releaseClaim,
+  redeemIdempotencyKey,
+  WELCOME_OFFER_COHORT,
   WELCOME_OFFER_COUPON_ID,
+  WELCOME_OFFER_KEY,
+  WELCOME_OFFER_PLAN_KEY,
+  WELCOME_OFFER_REDEEMED_AT_KEY,
   WELCOME_MONTHLY_DISCOUNT_MONTHS,
   type OfferBlock,
 } from '../lib/welcome-offer.js'
@@ -80,9 +85,16 @@ import {
   consentStatementKey,
 } from '../../shared/checkout-consent.js'
 
-// Everything that can stop a redemption, roster reasons (welcome-offer.ts)
-// plus the subscription-shaped ones only this route can see.
-type Ineligible = OfferBlock | 'no_subscription' | 'already_bundle'
+// Everything that can stop a redemption: blockFor's reasons, plus having no
+// live subscription to move at all.
+type Ineligible = OfferBlock | 'no_subscription'
+
+// Stripe answering for another request with the same idempotency key: one
+// still in flight (409), or one that finished with different parameters.
+function isIdempotencyConflict(err: unknown): boolean {
+  const e = err as { type?: unknown; statusCode?: unknown } | null
+  return e?.type === 'StripeIdempotencyError' || e?.statusCode === 409
+}
 
 function isCardPaymentError(err: unknown): boolean {
   const e = err as { type?: unknown; statusCode?: unknown } | null
@@ -94,35 +106,49 @@ function isCardPaymentError(err: unknown): boolean {
 // offer can't apply, so both routes reject on exactly the same grounds.
 async function resolveOffer(
   stripe: Stripe,
-  env: Record<string, string>,
   email: string,
 ): Promise<
   | { ok: false; reason: Ineligible }
   | {
       ok: true
-      code: string
       sub: Stripe.Subscription
       plan: Plan
       currency: SupportedCurrency
       catalog: Awaited<ReturnType<typeof resolveCatalogPrice>>
     }
 > {
-  const row = await findOffer(getDb(env), email)
-  const block = blockFor(row)
-  if (block || !row) return { ok: false, reason: block ?? 'not_invited' }
-
   const sub = await findLiveSubscription(stripe, email)
   const plan = sub ? planFromSubscription(sub) : null
   if (!sub || !plan) return { ok: false, reason: 'no_subscription' }
 
-  // Nothing to sell someone already on it. Not a product rule — at launch
-  // nobody is — but it stops a double submission from re-billing a full term.
+  // The product the subscription is on, from the price (not metadata a member
+  // could have been left with). Refusing the Bundle is also what stops a
+  // second redemption once the first has landed.
   const tier = await catalogTierOfSubscription(sub, stripe)
-  if (tier === 'bundle') return { ok: false, reason: 'already_bundle' }
+  const block = blockFor(sub, tier)
+  if (block) return { ok: false, reason: block }
 
   const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
   const catalog = await resolveCatalogPrice(stripe, 'bundle', plan)
-  return { ok: true, code: row.code, sub, plan, currency, catalog }
+  return { ok: true, sub, plan, currency, catalog }
+}
+
+// The discounts the member ends up with: whatever survives the product change,
+// plus the offer coupon. A retention coupon priced for Ark+ doesn't follow the
+// member onto the Bundle; anything that still fits does. null from
+// discountsSurvivingChange means "nothing to drop", which is not the same as
+// "clear them" — the offer coupon is being ADDED, so the array is built either
+// way. Shared by the preview and the update so the quoted "due today" and the
+// real charge see the same discounts.
+async function offerDiscounts(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+  plan: Plan,
+): Promise<Array<{ discount: string } | { coupon: string }>> {
+  const surviving = await discountsSurvivingChange(stripe, sub, { tier: 'bundle', plan })
+  const carried =
+    surviving === null ? existingDiscountParams(sub) : surviving === '' ? [] : surviving
+  return [...carried, { coupon: WELCOME_OFFER_COUPON_ID[plan] }]
 }
 
 export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
@@ -134,15 +160,14 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       method: 'GET',
       handler: async (req, _res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
-        if (!env.DATABASE_URL) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const resolved = await resolveOffer(stripe, env, email)
+        const resolved = await resolveOffer(stripe, email)
         if (!resolved.ok) return json(200, { eligible: false, reason: resolved.reason })
 
-        const { code, sub, plan, currency, catalog } = resolved
+        const { sub, plan, currency, catalog } = resolved
         const amounts = offerAmountFor(catalog.floors, plan, currency)
 
         // The exact figure the member will be charged, straight from Stripe
@@ -162,7 +187,10 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
                 billing_cycle_anchor: 'now',
                 proration_behavior: 'always_invoice',
               },
-              discounts: [{ coupon: WELCOME_OFFER_COUPON_ID[plan] }],
+              // The top-level list REPLACES the subscription's own discounts in
+              // the preview rather than adding to them (preview params have no
+              // subscription-level discounts), so it carries the survivors too.
+              discounts: await offerDiscounts(stripe, sub, plan),
             })
             dueTodayCents = preview.amount_due
           }
@@ -173,7 +201,6 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         return json(200, {
           eligible: true,
           offer: {
-            code,
             plan,
             currency,
             minorFactor: minorUnitFactors()[currency] ?? 100,
@@ -197,7 +224,6 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       handler: async (req, res, json) => {
         if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
-        if (!env.DATABASE_URL) return json(500, { error: 'not_configured' })
 
         // Signed in for real, not merely holding the link from the offer email
         // (guards.ts) — this bills a card. The client turns the 401's
@@ -217,86 +243,57 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             ? body.age_statement
             : null
 
-        const resolved = await resolveOffer(stripe, env, email)
+        const resolved = await resolveOffer(stripe, email)
         if (!resolved.ok) return json(409, { error: 'ineligible', reason: resolved.reason })
         const { sub, plan, currency, catalog } = resolved
 
-        const sql = getDb(env)
-        // The claim IS the lock: a conditional UPDATE that exactly one of two
-        // concurrent requests can match. Taken BEFORE Stripe is touched, so a
-        // double submission can't bill twice, and handed back below if the
-        // upgrade doesn't go through.
-        const code = await claimOffer(sql, email)
-        if (!code) return json(409, { error: 'ineligible', reason: 'already_redeemed' })
-
         const item = sub.items.data[0]
-        if (!item) {
-          await releaseClaim(sql, code)
-          return json(500, { error: 'Could not read your subscription.' })
-        }
+        if (!item) return json(500, { error: 'Could not read your subscription.' })
 
+        let updated: Stripe.Subscription
         try {
           await releaseScheduleIfAny(stripe, sub, env)
 
-          // A retention coupon priced for Ark+ doesn't follow the member onto
-          // the Bundle; anything that still fits does. null means "nothing to
-          // drop", which is not the same as "clear them" — the offer coupon is
-          // being ADDED, so the array has to be built either way.
-          const surviving = await discountsSurvivingChange(stripe, sub, { tier: 'bundle', plan })
-          const carried =
-            surviving === null ? existingDiscountParams(sub) : surviving === '' ? [] : surviving
-
-          const updated = await stripe.subscriptions.update(sub.id, {
-            items: [{ id: item.id, price: catalog.priceId }],
-            // Start the Bundle term today, so the invoice this raises is the
-            // first Bundle year / month and the coupon lands on it.
-            billing_cycle_anchor: 'now',
-            proration_behavior: 'always_invoice',
-            payment_behavior: 'error_if_incomplete',
-            discounts: [...carried, { coupon: WELCOME_OFFER_COUPON_ID[plan] }],
-            metadata: {
-              ...sub.metadata,
-              tier: 'bundle',
-              plan,
-              // The list price of what they're now on. The offer is a discount
-              // against it, not a different price.
-              amount_cents: String(catalog.floors[currency] ?? catalog.floors.usd),
-              currency,
-              welcome_offer_code: code,
-              ...(ageStatement
-                ? {
-                    [consentStatementKey(0)]: ageStatement,
-                    [CONSENT_ACCEPTED_AT_KEY]: new Date().toISOString(),
-                  }
-                : {}),
+          // Every parameter here must come out the same for two submissions
+          // from the same member, or Stripe rejects the second as a key reused
+          // with different parameters instead of replaying the first. So
+          // nothing time-dependent goes in this call: the redemption date and
+          // the consent timestamp are written by the metadata update below.
+          // (Stripe merges metadata keys, so nothing needs spreading in.)
+          updated = await stripe.subscriptions.update(
+            sub.id,
+            {
+              items: [{ id: item.id, price: catalog.priceId }],
+              // Start the Bundle term today, so the invoice this raises is the
+              // first Bundle year / month and the coupon lands on it.
+              billing_cycle_anchor: 'now',
+              proration_behavior: 'always_invoice',
+              payment_behavior: 'error_if_incomplete',
+              discounts: await offerDiscounts(stripe, sub, plan),
+              metadata: {
+                tier: 'bundle',
+                plan,
+                // The list price of what they're now on. The offer is a
+                // discount against it, not a different price.
+                amount_cents: String(catalog.floors[currency] ?? catalog.floors.usd),
+                currency,
+                [WELCOME_OFFER_KEY]: WELCOME_OFFER_COHORT,
+                [WELCOME_OFFER_PLAN_KEY]: plan,
+              },
             },
-          })
-
-          const invoiceId =
-            typeof updated.latest_invoice === 'string'
-              ? updated.latest_invoice
-              : (updated.latest_invoice?.id ?? null)
-
-          await markRedeemed(sql, code, {
-            subscriptionId: updated.id,
-            invoiceId,
-            plan,
-            couponId: WELCOME_OFFER_COUPON_ID[plan],
-          })
-
-          // Entitlement is already live — the item swap granted it, and the
-          // webhook is fanning it out to Beehiiv, Circle and Neon.
-          return json(200, {
-            ok: true,
-            plan,
-            renewsAt: periodEndIso(updated),
-          })
-        } catch (err) {
-          // error_if_incomplete means nothing changed in Stripe, so the offer
-          // must go back on the shelf rather than wait out the claim window.
-          await releaseClaim(sql, code).catch((e) =>
-            console.error('[offer] could not release claim', code, e),
+            { idempotencyKey: redeemIdempotencyKey(sub) },
           )
+        } catch (err) {
+          if (isIdempotencyConflict(err)) {
+            // A second click while the first is still with Stripe. Not an
+            // error to act on — the first request is the one that decides.
+            return json(409, {
+              error:
+                'Your offer is already being applied. Give it a minute, then refresh this page.',
+              code: 'in_progress',
+            })
+          }
+          // error_if_incomplete means nothing changed in Stripe.
           if (isCardPaymentError(err)) {
             console.warn('[offer] redeem payment failed:', (err as { code?: string }).code)
             return json(402, {
@@ -308,6 +305,40 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
           console.error('[offer] redeem failed:', err)
           return json(502, { error: 'Could not apply your offer. Please try again.' })
         }
+
+        // From here Stripe has switched and charged the member, so nothing
+        // below may report failure. The redemption date is what ends the
+        // no-stacking window (welcomeDiscountActive), and the 18+ statement is
+        // recorded under the same keys the account upgrade and checkout use.
+        // A failure here is logged for a manual backfill; until then the
+        // marker without a date keeps the cancel flow's coupons withheld.
+        try {
+          await stripe.subscriptions.update(updated.id, {
+            metadata: {
+              [WELCOME_OFFER_REDEEMED_AT_KEY]: new Date().toISOString(),
+              ...(ageStatement
+                ? {
+                    [consentStatementKey(0)]: ageStatement,
+                    [CONSENT_ACCEPTED_AT_KEY]: new Date().toISOString(),
+                  }
+                : {}),
+            },
+          })
+        } catch (err) {
+          console.error(
+            '[offer] REDEEMED BUT DATE/CONSENT NOT RECORDED — backfill subscription metadata',
+            { subscriptionId: updated.id, plan, ageStatement: ageStatement !== null },
+            err,
+          )
+        }
+
+        // Entitlement is already live — the item swap granted it, and the
+        // webhook is fanning it out to Beehiiv, Circle and Neon.
+        return json(200, {
+          ok: true,
+          plan,
+          renewsAt: periodEndIso(updated),
+        })
       },
     }),
   ]

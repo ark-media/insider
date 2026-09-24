@@ -573,12 +573,11 @@ export async function sendFeedEmail(
 // ---------------------------------------------------------------------------
 // The ICMB launch welcome offer: an existing Ark+ member moves to the Bundle
 // keeping their cadence, at $200 for the first year / $20 for three months.
-// The code in the email link is a handle, not a credential — the server
-// decides eligibility from who is signed in — so nothing here passes it.
+// The server decides eligibility from who is signed in and their own
+// subscription, so nothing here passes anything about the offer.
 // ---------------------------------------------------------------------------
 
 export type WelcomeOffer = {
-  code: string;
   plan: "monthly" | "yearly";
   currency: string;
   minorFactor: number;

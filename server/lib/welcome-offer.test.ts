@@ -7,27 +7,17 @@
 // scaling reproduces the quoted USD figures exactly and stays chargeable in
 // the currencies Stripe is fussy about.
 
-import { describe, test, expect, mock } from 'bun:test'
-import { neonMockModule, type SqlCall } from '../test-utils'
-
-const sqlCalls: SqlCall[] = []
-let nextSqlResult: (sql: string) => unknown = () => []
-
-mock.module('@neondatabase/serverless', () =>
-  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
-)
-
-const {
+import { describe, test, expect } from 'bun:test'
+import {
   blockFor,
-  claimOffer,
-  generateOfferCode,
   offerAmountFor,
+  redeemIdempotencyKey,
+  welcomeDiscountActive,
+  WELCOME_OFFER_COHORT,
+  WELCOME_OFFER_ELIGIBLE_BEFORE_ISO,
   WELCOME_OFFER_REDEEM_BY_ISO,
   WELCOME_OFFER_USD_MINOR,
-} = await import('./welcome-offer')
-const { getDb } = await import('./db')
-
-const ENV = { DATABASE_URL: 'postgres://stub-welcome-offer' }
+} from './welcome-offer'
 
 // A slice of the catalog's Bundle floors, as resolveCatalogPrice returns them.
 // USD/EUR/CHF are ordinary 2-decimal currencies; JPY is zero-decimal; HUF and
@@ -87,78 +77,83 @@ describe('offerAmountFor', () => {
 })
 
 describe('blockFor', () => {
-  const row = {
-    code: 'CMB-ACDE-FGHJ',
-    email: 'reader@example.com',
-    cohort: 'icmb_launch_2026',
-    sent_at: null,
-    claimed_at: null,
-    redeemed_at: null,
-    redeemed_subscription_id: null,
-    redeemed_plan: null,
-  }
+  const launch = Date.parse(WELCOME_OFFER_ELIGIBLE_BEFORE_ISO) / 1000
+  const sub = { created: launch - 86_400, metadata: {} }
   const during = new Date('2026-10-14T12:00:00Z')
 
-  test('lets an invited, unredeemed member through during the window', () => {
-    expect(blockFor(row, during)).toBeNull()
+  test('lets a pre-launch Ark+ subscriber through during the window', () => {
+    expect(blockFor(sub, 'ark-plus', during)).toBeNull()
   })
 
-  test('turns away someone with no roster row', () => {
-    expect(blockFor(null, during)).toBe('not_invited')
+  test('turns away a subscription from launch day on', () => {
+    expect(blockFor({ ...sub, created: launch }, 'ark-plus', during)).toBe('not_eligible')
+  })
+
+  test('turns away anything that is not Ark+', () => {
+    expect(blockFor(sub, 'circle', during)).toBe('not_eligible')
+    expect(blockFor(sub, null, during)).toBe('not_eligible')
   })
 
   test('turns away a second redemption', () => {
-    expect(blockFor({ ...row, redeemed_at: '2026-10-10T00:00:00Z' }, during)).toBe(
-      'already_redeemed',
-    )
+    expect(blockFor(sub, 'bundle', during)).toBe('already_bundle')
+    // The marker alone is enough, e.g. after a later debundle back to Ark+.
+    const taken = { ...sub, metadata: { welcome_offer: WELCOME_OFFER_COHORT } }
+    expect(blockFor(taken, 'ark-plus', during)).toBe('already_bundle')
   })
 
   test('closes at the same moment the coupons stop being redeemable', () => {
     const deadline = Date.parse(WELCOME_OFFER_REDEEM_BY_ISO)
-    expect(blockFor(row, new Date(deadline))).toBeNull()
-    expect(blockFor(row, new Date(deadline + 1000))).toBe('expired')
+    expect(blockFor(sub, 'ark-plus', new Date(deadline))).toBeNull()
+    expect(blockFor(sub, 'ark-plus', new Date(deadline + 1000))).toBe('expired')
   })
 
-  test('a redeemed row reads as redeemed even after the window shuts', () => {
+  test('someone who took it hears that, not "closed", after the window', () => {
     const after = new Date(Date.parse(WELCOME_OFFER_REDEEM_BY_ISO) + 86_400_000)
-    expect(blockFor({ ...row, redeemed_at: '2026-10-10T00:00:00Z' }, after)).toBe(
-      'already_redeemed',
+    expect(blockFor(sub, 'bundle', after)).toBe('already_bundle')
+  })
+})
+
+describe('welcomeDiscountActive', () => {
+  const redeemed = (plan: string, at = '2026-10-10T12:00:00Z') => ({
+    welcome_offer: WELCOME_OFFER_COHORT,
+    welcome_offer_plan: plan,
+    welcome_offer_redeemed_at: at,
+  })
+
+  test('is off for a subscription that never took the offer', () => {
+    expect(welcomeDiscountActive({ tier: 'ark-plus' })).toBe(false)
+    expect(welcomeDiscountActive(null)).toBe(false)
+  })
+
+  test('runs three months for a monthly member', () => {
+    expect(welcomeDiscountActive(redeemed('monthly'), new Date('2027-01-10T11:00:00Z'))).toBe(true)
+    expect(welcomeDiscountActive(redeemed('monthly'), new Date('2027-01-10T13:00:00Z'))).toBe(false)
+  })
+
+  test('runs a year for an annual member', () => {
+    expect(welcomeDiscountActive(redeemed('yearly'), new Date('2027-10-10T11:00:00Z'))).toBe(true)
+    expect(welcomeDiscountActive(redeemed('yearly'), new Date('2027-10-10T13:00:00Z'))).toBe(false)
+  })
+
+  test('holds back a second discount when the date never got written', () => {
+    const noDate = { welcome_offer: WELCOME_OFFER_COHORT, welcome_offer_plan: 'monthly' }
+    expect(welcomeDiscountActive(noDate, new Date('2030-01-01T00:00:00Z'))).toBe(true)
+  })
+})
+
+describe('redeemIdempotencyKey', () => {
+  test('is the subscription plus its card', () => {
+    expect(redeemIdempotencyKey({ id: 'sub_1', default_payment_method: 'pm_1' })).toBe(
+      `welcome-offer:${WELCOME_OFFER_COHORT}:sub_1:pm_1`,
+    )
+    expect(redeemIdempotencyKey({ id: 'sub_1', default_payment_method: { id: 'pm_2' } })).toBe(
+      `welcome-offer:${WELCOME_OFFER_COHORT}:sub_1:pm_2`,
     )
   })
-})
 
-describe('generateOfferCode', () => {
-  test('is prefixed, grouped, and free of look-alike characters', () => {
-    for (let i = 0; i < 200; i++) {
-      expect(generateOfferCode()).toMatch(/^CMB-[ACDEFGHJKMNPQRTUVWXYZ234679]{4}-[ACDEFGHJKMNPQRTUVWXYZ234679]{4}$/)
-    }
-  })
-
-  test('does not repeat itself', () => {
-    const seen = new Set(Array.from({ length: 500 }, generateOfferCode))
-    expect(seen.size).toBe(500)
-  })
-})
-
-describe('claimOffer', () => {
-  test('claims only a row that is unredeemed and not already in flight', async () => {
-    sqlCalls.length = 0
-    nextSqlResult = () => [{ code: 'CMB-ACDE-FGHJ' }]
-    const code = await claimOffer(getDb(ENV), 'Reader@Example.com ')
-    expect(code).toBe('CMB-ACDE-FGHJ')
-
-    const call = sqlCalls[0]!
-    expect(call.sql).toContain('update welcome_offer_codes')
-    expect(call.sql).toContain('redeemed_at is null')
-    expect(call.sql).toContain('claimed_at is null')
-    // The email is normalized before it reaches the query, so a member who
-    // signs in with different casing still matches their roster row.
-    expect(call.values[0]).toBe('reader@example.com')
-  })
-
-  test('returns null when the conditional update matches nothing', async () => {
-    sqlCalls.length = 0
-    nextSqlResult = () => []
-    expect(await claimOffer(getDb(ENV), 'reader@example.com')).toBeNull()
+  test('falls back to the customer default when the subscription names no card', () => {
+    expect(redeemIdempotencyKey({ id: 'sub_1', default_payment_method: null })).toBe(
+      `welcome-offer:${WELCOME_OFFER_COHORT}:sub_1:customer-default`,
+    )
   })
 })

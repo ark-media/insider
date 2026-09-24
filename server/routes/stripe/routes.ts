@@ -54,6 +54,7 @@ import {
   MAX_CANCELLATION_NOTE_LEN,
 } from '../../../shared/cancellation.js'
 import { listActiveCoupons } from '../../lib/stripe-promos.js'
+import { welcomeDiscountActive } from '../../lib/welcome-offer.js'
 import { membershipRowsForEmail } from '../../lib/entitlement-resolver.js'
 import {
   formatMinorUnits,
@@ -798,12 +799,18 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
         // Window-suppress promotional coupons (keep plan switches). A read
         // failure fails closed: drop coupon offers rather than risk a repeat.
-        if (env.DATABASE_URL) {
-          let blocked = true
-          try {
-            blocked = await hasAcceptedRetention(getDb(env), email)
-          } catch (err) {
-            console.error('[stripe] save-offers eligibility check failed:', err)
+        // A member still on the welcome offer's price is suppressed the same
+        // way — the coupons are quoted off the list price, and stacking one on
+        // the welcome discount would quote a number they won't be charged.
+        {
+          let blocked = welcomeDiscountActive(sub.metadata)
+          if (!blocked && env.DATABASE_URL) {
+            blocked = true
+            try {
+              blocked = await hasAcceptedRetention(getDb(env), email)
+            } catch (err) {
+              console.error('[stripe] save-offers eligibility check failed:', err)
+            }
           }
           // A spent window removes the discount, not the switch itself: the
           // member can still change plan, just at the plain catalog price.
@@ -886,6 +893,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // change-tier, not here — nothing to attach.
         if (!offer || !offer.couponId) {
           return json(409, { error: 'No such save offer available.' })
+        }
+
+        // Never on top of the welcome offer's price while it runs (see
+        // save-offers, which doesn't offer it).
+        if (welcomeDiscountActive(sub.metadata)) {
+          return json(409, { error: 'Save offer not available on your welcome price.' })
         }
 
         // One temporary promotional discount per rolling 12 months, so a member

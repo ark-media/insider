@@ -205,9 +205,9 @@ beforeEach(() => {
   previewReply = { status: 200, preview: preview() };
   changeReply = { status: 200, body: { ok: true, changed: true, timing: "immediate" } };
   changePosts = [];
-  // Default: nobody is on the welcome-offer roster, so every pre-existing case
+  // Default: nobody is eligible for the welcome offer, so every pre-existing case
   // keeps exercising the ordinary list-price switch.
-  offerReply = { status: 200, body: { eligible: false, reason: "not_invited" } };
+  offerReply = { status: 200, body: { eligible: false, reason: "not_eligible" } };
   offerChecks = 0;
   stubFetch();
 });
@@ -428,7 +428,6 @@ describe("the welcome offer on the membership tab", () => {
       body: {
         eligible: true,
         offer: {
-          code: "CMB-ACDE-FGHJ",
           plan: "monthly",
           currency: "usd",
           minorFactor: 100,
@@ -454,7 +453,6 @@ describe("the welcome offer on the membership tab", () => {
       body: {
         eligible: true,
         offer: {
-          code: "CMB-ACDE-FGHJ",
           plan: "yearly",
           currency: "usd",
           minorFactor: 100,
@@ -472,7 +470,7 @@ describe("the welcome offer on the membership tab", () => {
   });
 
   test("leaves the ordinary switch alone for a member with no offer", async () => {
-    offerReply = { status: 200, body: { eligible: false, reason: "not_invited" } };
+    offerReply = { status: 200, body: { eligible: false, reason: "not_eligible" } };
     await mount(arkPlusMember(), DURING_OFFER);
     expect(buttonWith("Add the Fold")).toBeDefined();
     expect(linkWith("See your offer")).toBeUndefined();

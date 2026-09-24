@@ -976,6 +976,44 @@ describe('POST /api/stripe/accept-save-offer', () => {
     expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.update')).toBe(false)
   })
 
+  // A welcome-offer member who booked a debundle back to Ark+ is the realistic
+  // way in; the rule reads the subscription's welcome-offer marker, so a plain
+  // Ark+ sub carrying it stands in here.
+  const onWelcomePrice = (redeemedAt: string) => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as { metadata: Record<string, string> }).metadata = {
+      tier: 'ark-plus',
+      welcome_offer: 'icmb_launch_2026',
+      welcome_offer_plan: 'monthly',
+      welcome_offer_redeemed_at: redeemedAt,
+    }
+  }
+
+  test('no coupon on top of the welcome price while it runs', async () => {
+    onWelcomePrice(new Date().toISOString())
+    activeCoupons = [supporter()]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+
+  test('the coupon is back on offer once the welcome price has run out', async () => {
+    onWelcomePrice('2020-01-01T00:00:00Z')
+    activeCoupons = [supporter()]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(200)
+  })
+
   test('with no debundle booked, a bundle member cannot take the Ark+ coupon', async () => {
     withSub({ tier: 'bundle', amountCents: 25000 })
     activeCoupons = [supporter()]
@@ -1036,6 +1074,34 @@ describe('GET /api/stripe/save-offers', () => {
     ]
     const body = await get('cancel-ark-plus')
     expect(body.offers.map((o) => o.kind)).toEqual(['annual_switch'])
+  })
+
+  test('a member on the welcome price is not offered a coupon', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    activeCoupons = [
+      {
+        id: 'save20',
+        valid: true,
+        name: 'Stay 20',
+        percent_off: 20,
+        amount_off: null,
+        currency: null,
+        duration: 'repeating',
+        duration_in_months: 3,
+        metadata: { retention_offer: 'true', offer_kind: 'supporter_coupon', plan: 'monthly' },
+      },
+    ]
+    const before = await get('cancel-ark-plus')
+    expect(before.offers.map((o) => o.kind)).toContain('supporter_coupon')
+
+    ;(currentSub as { metadata: Record<string, string> }).metadata = {
+      tier: 'ark-plus',
+      welcome_offer: 'icmb_launch_2026',
+      welcome_offer_plan: 'monthly',
+      welcome_offer_redeemed_at: new Date().toISOString(),
+    }
+    const during = await get('cancel-ark-plus')
+    expect(during.offers.map((o) => o.kind)).not.toContain('supporter_coupon')
   })
 
   test('a bundle member with nothing booked gets no Ark+ offers', async () => {

@@ -11,18 +11,15 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { AGE_STATEMENT } from "../../shared/checkout-consent";
 import { WELCOME_OFFER_CLOSES_LABEL } from "../../shared/welcome-offer";
 
-// Where an invited Inside Call Me Back subscriber lands from the welcome-offer
-// email (mailed 2026-10-05, open until 2026-10-31).
+// Where an existing Ark+ subscriber lands from the welcome-offer email (mailed
+// 2026-10-05, open until 2026-10-31).
 //
-// `?code=` is carried for continuity with the email and for support to quote
-// back, and is deliberately NOT sent to the server: redeeming bills a card, so
-// the server decides eligibility from who is signed in, never from a string in
-// a URL that has sat in an inbox. A forwarded link is therefore harmless — it
-// shows the recipient their own status, not the sender's offer.
+// The link carries nothing about the offer: the server decides eligibility from
+// who is signed in and what their own subscription is. A forwarded link is
+// therefore harmless — it shows the recipient their own status, not the
+// sender's offer.
 export const Route = createFileRoute("/offer")({
   component: OfferPage,
-  validateSearch: (search: Record<string, unknown>): { code?: string } =>
-    typeof search.code === "string" ? { code: search.code } : {},
 });
 
 const primaryCta =
@@ -42,11 +39,6 @@ type View =
 // generates the support email.
 function ineligibleCopy(reason: string): { title: string; body: string } {
   switch (reason) {
-    case "already_redeemed":
-      return {
-        title: "You've already taken this offer.",
-        body: "Your membership is on the bundle — Ark+ and the Fold. You can see what you're paying and when it renews on your account page.",
-      };
     case "expired":
       return {
         title: "This offer has closed.",
@@ -59,13 +51,13 @@ function ineligibleCopy(reason: string): { title: string; body: string } {
       };
     case "already_bundle":
       return {
-        title: "You're already on the bundle.",
-        body: "You have both Ark+ and the Fold, so there's nothing here to add.",
+        title: "You're on the bundle.",
+        body: "You have both Ark+ and the Fold. You can see what you're paying and when it renews on your account page.",
       };
-    case "not_invited":
+    case "not_eligible":
       return {
         title: "This offer isn't attached to your account.",
-        body: "It went out to Inside Call Me Back subscribers on the address they subscribed with. If you have more than one email with us, try signing in with the other one — or reply to the email and we'll help.",
+        body: "It went out to Ark+ subscribers who joined before 5 October, on the address they subscribed with. If you have more than one email with us, try signing in with the other one — or reply to the email and we'll help.",
       };
     default:
       return {
@@ -334,7 +326,7 @@ function OfferConfirm({
       </div>
 
       <p className="mt-6 body-text text-sm text-fg-muted">
-        Offer code {offer.code}. Open until {WELCOME_OFFER_CLOSES_LABEL}.
+        Open until {WELCOME_OFFER_CLOSES_LABEL}.
       </p>
     </div>
   );

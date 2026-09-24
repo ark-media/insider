@@ -10,22 +10,20 @@
 //   proration_behavior   always_invoice   credit the unused Ark+ time and settle
 //                                on the spot.
 //   payment_behavior     error_if_incomplete   a decline leaves the subscription
-//                                untouched, so the roster claim can be handed back.
+//                                untouched.
 //   discounts            the coupon for the member's OWN cadence.
 //
-// Plus the two-phase claim: taken before Stripe, released on failure, and only
-// converted to a redemption once Stripe has confirmed.
+// Plus what stands in for a lock with no roster: eligibility read off the
+// member's own subscription, and Stripe's idempotency key on the one write.
 
 import { describe, test, expect, afterAll, beforeEach, mock } from 'bun:test'
 import {
   createDevApiHarness,
   makeFakeReq,
   makeFakeRes,
-  neonMockModule,
   runMiddleware,
   silenceExpectedConsole,
   type Middleware,
-  type SqlCall,
 } from './test-utils'
 
 const NOW_SEC = 1_800_000_000
@@ -34,9 +32,18 @@ const NOW_SEC = 1_800_000_000
 
 let existingCustomers: Array<{ id: string; email: string }> = []
 let currentSub: Record<string, unknown> | null = null
-let updateCalls: Array<{ id: string; params: Record<string, unknown> }> = []
+let updateCalls: Array<{
+  id: string
+  params: Record<string, unknown>
+  opts?: { idempotencyKey?: string }
+}> = []
 // Set to make subscriptions.update fail the way a declined card does.
 let declineNextUpdate = false
+// Set to make it fail the way Stripe answers a key already in flight.
+let idempotencyConflictNextUpdate = false
+// Set to make the post-charge metadata write (no `items`) fail.
+let failMetadataWrite = false
+let previewCalls: Array<Record<string, unknown>> = []
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -71,8 +78,20 @@ class FakeStripe {
       data: currentSub && (currentSub.customer as string) === args.customer ? [currentSub] : [],
     }),
     retrieve: async () => currentSub,
-    update: async (id: string, params: Record<string, unknown>) => {
-      updateCalls.push({ id, params })
+    update: async (
+      id: string,
+      params: Record<string, unknown>,
+      opts?: { idempotencyKey?: string },
+    ) => {
+      updateCalls.push({ id, params, opts })
+      if (failMetadataWrite && !params.items) throw new Error('Stripe blip')
+      if (idempotencyConflictNextUpdate) {
+        idempotencyConflictNextUpdate = false
+        throw Object.assign(new Error('There is currently another in-progress request'), {
+          type: 'StripeIdempotencyError',
+          statusCode: 409,
+        })
+      }
       if (declineNextUpdate) {
         throw Object.assign(new Error('Your card was declined.'), {
           type: 'StripeCardError',
@@ -88,7 +107,10 @@ class FakeStripe {
     },
   }
   invoices = {
-    createPreview: async () => ({ amount_due: 14_521 }),
+    createPreview: async (params: Record<string, unknown>) => {
+      previewCalls.push(params)
+      return { amount_due: 14_521 }
+    },
   }
   webhooks = {
     constructEvent: () => {
@@ -99,25 +121,6 @@ class FakeStripe {
 
 mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 
-// --- Neon mock --------------------------------------------------------------
-
-const sqlCalls: SqlCall[] = []
-// The roster row this member has, or null for "never invited".
-let rosterRow: Record<string, unknown> | null = null
-// Whether the conditional claim UPDATE matches — false models "already claimed
-// by a request still in flight".
-let claimSucceeds = true
-
-mock.module('@neondatabase/serverless', () =>
-  neonMockModule(sqlCalls, (merged) => {
-    if (merged.includes('select code, email, cohort')) return rosterRow ? [rosterRow] : []
-    if (merged.includes('set claimed_at = now()')) {
-      return claimSucceeds && rosterRow ? [{ code: rosterRow.code }] : []
-    }
-    return []
-  }),
-)
-
 // Static imports AFTER the mocks so the plugin picks them up.
 import { devApiPlugin } from './dev-api'
 import { signSessionToken } from './lib/session'
@@ -126,6 +129,7 @@ import { SUPPORTED_CURRENCIES, __resetPriceCacheForTests } from './lib/pricing'
 import {
   WELCOME_OFFER_COHORT,
   WELCOME_OFFER_COUPON_ID,
+  WELCOME_OFFER_ELIGIBLE_BEFORE_ISO,
   WELCOME_OFFER_REDEEM_BY_ISO,
 } from './lib/welcome-offer'
 import { AGE_STATEMENT, consentStatementKey } from '../shared/checkout-consent'
@@ -134,12 +138,11 @@ const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
-  DATABASE_URL: 'postgres://stub-offer',
 }
 
 const PATH = '/api/offer/redeem'
 const EMAIL = 'reader@example.com'
-const CODE = 'CMB-ACDE-FGHJ'
+const BEFORE_LAUNCH = Math.floor(Date.parse(WELCOME_OFFER_ELIGIBLE_BEFORE_ISO) / 1000) - 86_400
 
 function getHandler(path: string): Middleware {
   return createDevApiHarness(devApiPlugin(BASE_ENV)).getHandler(path)
@@ -166,12 +169,14 @@ async function post(body: unknown = {}, opts: { cookie?: string; origin?: string
   return res
 }
 
-// A live Ark+ subscription for EMAIL, on the given cadence.
+// A live Ark+ subscription for EMAIL, on the given cadence, from before launch.
 function withArkPlusSub(interval: 'month' | 'year' = 'month') {
   existingCustomers = [{ id: 'cus_1', email: EMAIL }]
   currentSub = {
     id: 'sub_1',
     customer: 'cus_1',
+    created: BEFORE_LAUNCH,
+    default_payment_method: 'pm_card_1',
     status: 'active',
     currency: 'usd',
     schedule: null,
@@ -195,30 +200,16 @@ function withArkPlusSub(interval: 'month' | 'year' = 'month') {
   }
 }
 
-function withRoster(over: Record<string, unknown> = {}) {
-  rosterRow = {
-    code: CODE,
-    email: EMAIL,
-    cohort: WELCOME_OFFER_COHORT,
-    sent_at: null,
-    claimed_at: null,
-    redeemed_at: null,
-    redeemed_subscription_id: null,
-    redeemed_plan: null,
-    ...over,
-  }
-}
-
 silenceExpectedConsole()
 
 beforeEach(() => {
   existingCustomers = []
   currentSub = null
-  rosterRow = null
-  claimSucceeds = true
   declineNextUpdate = false
+  idempotencyConflictNextUpdate = false
+  failMetadataWrite = false
   updateCalls = []
-  sqlCalls.length = 0
+  previewCalls = []
   __resetPriceCacheForTests()
 })
 
@@ -229,13 +220,13 @@ afterAll(() => {
 describe('POST /api/offer/redeem', () => {
   test('moves a monthly member to the Bundle, re-anchored to today', async () => {
     withArkPlusSub('month')
-    withRoster()
 
     const res = await post({ age_statement: AGE_STATEMENT.self })
     expect(res.statusCode).toBe(200)
     expect((res.__json() as { ok: boolean }).ok).toBe(true)
 
-    expect(updateCalls).toHaveLength(1)
+    // The charge, then the metadata write that dates it.
+    expect(updateCalls).toHaveLength(2)
     const params = updateCalls[0]!.params
     expect(params.billing_cycle_anchor).toBe('now')
     expect(params.proration_behavior).toBe('always_invoice')
@@ -248,7 +239,6 @@ describe('POST /api/offer/redeem', () => {
 
   test('gives an annual member the annual coupon and the annual price', async () => {
     withArkPlusSub('year')
-    withRoster()
 
     await post({ age_statement: AGE_STATEMENT.self })
     const params = updateCalls[0]!.params
@@ -256,81 +246,102 @@ describe('POST /api/offer/redeem', () => {
     expect(params.discounts).toEqual([{ coupon: WELCOME_OFFER_COUPON_ID.yearly }])
   })
 
-  test('records the tier, the code and the 18+ confirmation on the subscription', async () => {
+  test('marks the subscription as the offer’s, in the charge and then the date', async () => {
     withArkPlusSub('month')
-    withRoster()
 
     await post({ age_statement: AGE_STATEMENT.self })
+    expect(updateCalls).toHaveLength(2)
     const metadata = updateCalls[0]!.params.metadata as Record<string, string>
     expect(metadata.tier).toBe('bundle')
     expect(metadata.plan).toBe('monthly')
-    expect(metadata.welcome_offer_code).toBe(CODE)
+    expect(metadata.welcome_offer).toBe(WELCOME_OFFER_COHORT)
+    expect(metadata.welcome_offer_plan).toBe('monthly')
     // The list price of what they're now on — the offer is a discount against
     // it, not a different price.
     expect(metadata.amount_cents).toBe('2500')
-    expect(metadata[consentStatementKey(0)]).toBe(AGE_STATEMENT.self)
-    expect(metadata.consent_accepted_at).toBeTruthy()
+
+    // Anything time-dependent stays OUT of the charging call, or a second
+    // submission would present different parameters under the same key.
+    expect(metadata.welcome_offer_redeemed_at).toBeUndefined()
+    expect(metadata.consent_accepted_at).toBeUndefined()
+    const after = updateCalls[1]!.params.metadata as Record<string, string>
+    expect(Date.parse(after.welcome_offer_redeemed_at!)).not.toBeNaN()
+    expect(after[consentStatementKey(0)]).toBe(AGE_STATEMENT.self)
+    expect(after.consent_accepted_at).toBeTruthy()
   })
 
-  test('claims the roster row BEFORE Stripe, and marks it redeemed after', async () => {
+  test('charges under a key made of the subscription and the card on file', async () => {
     withArkPlusSub('month')
-    withRoster()
 
     await post({ age_statement: AGE_STATEMENT.self })
-    const writes = sqlCalls.map((c) => c.sql)
-    const claimAt = writes.findIndex((s) => s.includes('set claimed_at = now()'))
-    const redeemAt = writes.findIndex((s) => s.includes('set redeemed_at'))
-    expect(claimAt).toBeGreaterThanOrEqual(0)
-    expect(redeemAt).toBeGreaterThan(claimAt)
-    expect(writes.some((s) => s.includes('set claimed_at = null'))).toBe(false)
+    expect(updateCalls[0]!.opts?.idempotencyKey).toBe(
+      `welcome-offer:${WELCOME_OFFER_COHORT}:sub_1:pm_card_1`,
+    )
   })
 
-  test('hands the offer back and changes nothing when the card declines', async () => {
+  test('a new card is a new key, so a retry after a decline is a real retry', async () => {
     withArkPlusSub('month')
-    withRoster()
+    declineNextUpdate = true
+    await post({ age_statement: AGE_STATEMENT.self })
+
+    declineNextUpdate = false
+    currentSub = { ...currentSub, default_payment_method: 'pm_card_2' }
+    await post({ age_statement: AGE_STATEMENT.self })
+    expect(updateCalls[0]!.opts?.idempotencyKey).not.toBe(updateCalls[1]!.opts?.idempotencyKey)
+  })
+
+  test('changes nothing when the card declines', async () => {
+    withArkPlusSub('month')
     declineNextUpdate = true
 
     const res = await post({ age_statement: AGE_STATEMENT.self })
     expect(res.statusCode).toBe(402)
     expect((res.__json() as { code: string }).code).toBe('payment_failed')
-    // The claim is released, and nothing is recorded as redeemed.
-    const writes = sqlCalls.map((c) => c.sql)
-    expect(writes.some((s) => s.includes('set claimed_at = null'))).toBe(true)
-    expect(writes.some((s) => s.includes('set redeemed_at'))).toBe(false)
+    // No follow-up metadata write: nothing was redeemed.
+    expect(updateCalls).toHaveLength(1)
   })
 
-  test('refuses a second, concurrent redemption without touching Stripe', async () => {
+  test('answers a second click still in flight with a wait, not an error', async () => {
     withArkPlusSub('month')
-    withRoster()
-    claimSucceeds = false
+    idempotencyConflictNextUpdate = true
 
     const res = await post({ age_statement: AGE_STATEMENT.self })
     expect(res.statusCode).toBe(409)
-    expect((res.__json() as { reason: string }).reason).toBe('already_redeemed')
-    expect(updateCalls).toHaveLength(0)
+    const body = res.__json() as { code?: string; reason?: string }
+    expect(body.code).toBe('in_progress')
+    expect(body.reason).toBeUndefined()
+    expect(updateCalls).toHaveLength(1)
   })
 
-  test('turns away someone who was never invited', async () => {
+  test('reports success when Stripe charged but the date write failed', async () => {
     withArkPlusSub('month')
-    rosterRow = null
+    failMetadataWrite = true
+
+    const res = await post({ age_statement: AGE_STATEMENT.self })
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { ok: boolean }).ok).toBe(true)
+  })
+
+  test('turns away a subscription that started after launch', async () => {
+    withArkPlusSub('month')
+    currentSub = { ...currentSub, created: BEFORE_LAUNCH + 2 * 86_400 }
 
     const res = await post({ age_statement: AGE_STATEMENT.self })
     expect(res.statusCode).toBe(409)
-    expect((res.__json() as { reason: string }).reason).toBe('not_invited')
+    expect((res.__json() as { reason: string }).reason).toBe('not_eligible')
     expect(updateCalls).toHaveLength(0)
   })
 
-  test('turns away a row that has already been redeemed', async () => {
+  test('turns away a member who has already taken it', async () => {
     withArkPlusSub('month')
-    withRoster({ redeemed_at: '2026-10-10T00:00:00Z' })
+    currentSub = { ...currentSub, metadata: { welcome_offer: WELCOME_OFFER_COHORT } }
 
     const res = await post({ age_statement: AGE_STATEMENT.self })
-    expect((res.__json() as { reason: string }).reason).toBe('already_redeemed')
+    expect((res.__json() as { reason: string }).reason).toBe('already_bundle')
     expect(updateCalls).toHaveLength(0)
   })
 
   test('turns away a member with no live subscription', async () => {
-    withRoster()
 
     const res = await post({ age_statement: AGE_STATEMENT.self })
     expect((res.__json() as { reason: string }).reason).toBe('no_subscription')
@@ -339,7 +350,6 @@ describe('POST /api/offer/redeem', () => {
 
   test('is not a billing endpoint a cross-site form can reach', async () => {
     withArkPlusSub('month')
-    withRoster()
 
     const res = await post({ age_statement: AGE_STATEMENT.self }, { origin: 'https://evil.example' })
     expect(res.statusCode).toBe(403)
@@ -348,15 +358,43 @@ describe('POST /api/offer/redeem', () => {
 
   test('needs a session at all', async () => {
     withArkPlusSub('month')
-    withRoster()
 
     const res = await post({ age_statement: AGE_STATEMENT.self }, { cookie: '' })
     expect(res.statusCode).toBe(401)
     expect(updateCalls).toHaveLength(0)
   })
 
-  test('the roster deadline is the coupons’ own redeem_by', () => {
+  test('the deadline is the coupons’ own redeem_by', () => {
     // Oct 31 2026, 23:59:59 Eastern — Eastern is still UTC-4 that night.
     expect(WELCOME_OFFER_REDEEM_BY_ISO).toBe('2026-11-01T03:59:59Z')
+  })
+})
+
+describe('GET /api/offer/check', () => {
+  async function check() {
+    const res = makeFakeRes()
+    await runMiddleware(
+      getHandler('/api/offer/check'),
+      makeFakeReq({ method: 'GET', url: '/api/offer/check', cookie: await sessionCookie(EMAIL) }),
+      res,
+    )
+    return res
+  }
+
+  test('previews with the same discounts the redemption will apply', async () => {
+    withArkPlusSub('month')
+    currentSub = { ...currentSub, discounts: ['di_checkout_promo'] }
+
+    const res = await check()
+    expect(res.statusCode).toBe(200)
+    // The top-level list replaces the subscription's own discounts in a
+    // preview, so a surviving promo must be restated alongside the coupon.
+    expect(previewCalls[0]?.discounts).toEqual([
+      { discount: 'di_checkout_promo' },
+      { coupon: WELCOME_OFFER_COUPON_ID.monthly },
+    ])
+
+    await post({ age_statement: AGE_STATEMENT.self })
+    expect(updateCalls[0]?.params.discounts).toEqual(previewCalls[0]?.discounts)
   })
 })
