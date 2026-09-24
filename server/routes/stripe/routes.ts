@@ -99,6 +99,7 @@ import {
   periodEndIso,
   phaseDiscountParams,
   planFromSubscription,
+  quoteChargeToday,
   readCardOnFile,
   releaseScheduleIfAny,
   scheduledPlanOf,
@@ -787,6 +788,24 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             return json(200, empty)
           }
           offers = await deriveSaveOffers(stripe, intent, plan, currency)
+          // Switching to annual is charged today and restarts the cycle (see
+          // change-tier), so the card quotes that charge. It moves the member's
+          // current tier to yearly at the catalog price, which is what
+          // change-tier bills when the offer is accepted.
+          const tier = target.tier
+          offers = await Promise.all(
+            offers.map(async (o) => {
+              if (o.kind !== 'annual_switch') return o
+              // A quote that fails drops the figure, never the offer.
+              const yearly = await resolveCatalogPrice(stripe, coerceTier(tier), 'yearly').catch(
+                () => null,
+              )
+              const dueTodayCents = yearly
+                ? await quoteChargeToday(stripe, sub, yearly.priceId)
+                : null
+              return { ...o, dueTodayCents }
+            }),
+          )
           if (intent === 'debundle-remove-ark-plus') {
             standalone = await debundlePricePreview(stripe, 'circle', plan, currency)
           } else if (intent === 'debundle-remove-circle') {
@@ -1264,30 +1283,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           console.error('[stripe] bundle-upgrade-preview price lookup failed:', err)
         }
 
-        // What comes off the card today. change-tier re-anchors the cycle on
-        // this switch, so the charge is the full Bundle price less credit for
-        // the unused part of the current one — Stripe's own proration, asked
-        // for with the same parameters change-tier sends rather than
-        // re-derived here. Null when it can't be quoted; the panel then says
-        // what happens without the figure.
-        let dueTodayCents: number | null = null
-        const itemId = sub.items.data[0]?.id
-        if (bundlePriceId && itemId) {
-          try {
-            const invoice = await stripe.invoices.createPreview({
-              customer: customerIdOf(sub),
-              subscription: sub.id,
-              subscription_details: {
-                items: [{ id: itemId, price: bundlePriceId }],
-                proration_behavior: 'always_invoice',
-                billing_cycle_anchor: 'now',
-              },
-            })
-            dueTodayCents = invoice.amount_due
-          } catch (err) {
-            console.error('[stripe] bundle-upgrade-preview invoice preview failed:', err)
-          }
-        }
+        // What comes off the card today — change-tier re-anchors the cycle on
+        // this switch. Null when it can't be quoted; the panel then says what
+        // happens without the figure.
+        const dueTodayCents = bundlePriceId
+          ? await quoteChargeToday(stripe, sub, bundlePriceId)
+          : null
 
         return json(200, {
           preview: {
@@ -1575,33 +1576,24 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               tier: newTier,
               plan,
             })
-            // Gaining an entitlement is access granted NOW, so it is paid for
-            // now. `create_prorations` only parked the difference on the next
-            // invoice — up to a year out on an annual plan — so a member could
-            // take the Bundle on credit and cancel before ever being charged for
-            // it. `always_invoice` bills the proration immediately, and
+            // Every immediate change is one the member pays MORE for — gaining an
+            // entitlement, monthly→yearly, a PWYC raise (the no-op returned above,
+            // and anything cheaper is period-end) — and all of them are charged
+            // today and restart the billing cycle from today: the full new price
+            // less credit for the unused part of the old one, renewing a full
+            // period from now. `always_invoice` bills that immediately, and
             // `error_if_incomplete` makes Stripe REFUSE the update (HTTP 402,
-            // nothing changed) when that charge fails, instead of applying it and
-            // leaving an open invoice behind. A same-entitlement change (a PWYC
-            // raise) grants nothing new and keeps the deferred proration.
-            const gainsEntitlement =
-              (nextEnt.arkPlus && !prevEnt.arkPlus) || (nextEnt.circle && !prevEnt.circle)
-            await stripe.subscriptions.update(sub.id, {
+            // nothing changed) when the charge fails, instead of applying it and
+            // leaving the member on the dearer plan with an open invoice. Before
+            // this, a deferred proration let a member take the Bundle on credit
+            // and cancel before ever paying for it, and a declined card still
+            // moved a monthly member onto an unpaid annual plan.
+            const updated = await stripe.subscriptions.update(sub.id, {
               items: [{ id: item.id, ...priceField }],
-              ...(gainsEntitlement
-                ? {
-                    proration_behavior: 'always_invoice' as const,
-                    payment_behavior: 'error_if_incomplete' as const,
-                  }
-                : { proration_behavior: 'create_prorations' as const }),
+              proration_behavior: 'always_invoice',
+              payment_behavior: 'error_if_incomplete',
+              billing_cycle_anchor: 'now',
               ...(survivingDiscounts !== null ? { discounts: survivingDiscounts } : {}),
-              // monthly→yearly resets the billing cycle to now (§6 table), and
-              // so does gaining an entitlement: the member pays the full new
-              // price today, less credit for the unused part of the old one,
-              // and renews a full period from today. Without the re-anchor the
-              // charge was only the difference to the OLD renewal date, which
-              // members read as paying for the Bundle twice in one year.
-              ...(prevPlan !== plan || gainsEntitlement ? { billing_cycle_anchor: 'now' as const } : {}),
               metadata: {
                 ...sub.metadata,
                 tier: newTier,
@@ -1629,6 +1621,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               ok: true,
               changed: true,
               timing: 'immediate',
+              // The restarted cycle's first renewal.
+              next_charge_at: periodEndIso(updated),
               survey_id: surveyId,
             })
           }

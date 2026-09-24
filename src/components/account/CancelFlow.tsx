@@ -9,6 +9,7 @@ import {
   OTHER_REASON_SLUG,
 } from "../../../shared/cancellation";
 import { formatTimestamp } from "../../../shared/format-date";
+import { dueTodayLine, dueTodayOf } from "../../../shared/billing-copy";
 import {
   acceptSaveOffer,
   cancelSubscription,
@@ -133,12 +134,16 @@ function offerCopy(
         yearOfMonthly > 0
           ? Math.round(((yearOfMonthly - yearly) / yearOfMonthly) * 100)
           : 0;
+      // Switching is charged today and restarts the billing cycle, so the card
+      // says what comes off the card now — see shared/billing-copy.ts.
+      const due = dueTodayOf(o.dueTodayCents, (c) => priceIn(c, o));
       return {
         heading: "Get a full year of Ark+ for less",
-        body:
+        body: `${
           percent > 0
-            ? `Save ${percent}% when you switch to annual billing`
-            : `Switch to annual billing at ${priceIn(yearly, o)}/year`,
+            ? `Save ${percent}% when you switch to annual billing.`
+            : `Switch to annual billing at ${priceIn(yearly, o)}/year.`
+        } ${dueTodayLine(due)}`,
       };
     }
     case "monthly_switch": {
@@ -407,7 +412,10 @@ export function CancelFlow({
           ? null
           : (applyCouponDiscount(list, offer.percentOff, offer.amountOff) ?? list);
       const detail = rate != null ? `${priceIn(rate, offer)}/${cadence}` : "";
-      setSaved({ detail, nextChargeAt: r.effective_at ?? "" });
+      // An immediate switch (to annual) restarts the cycle and reports its
+      // first renewal; a period-end one (to monthly) next charges on the day
+      // it lands.
+      setSaved({ detail, nextChargeAt: r.next_charge_at ?? r.effective_at ?? "" });
       setScreen("saved");
       return;
     }

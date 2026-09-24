@@ -39,6 +39,16 @@ export function perPeriod(plan: BillingPlan): string {
  */
 export type DueToday = { amount: string } | 'nothing' | 'unknown'
 
+/** A quoted charge (minor units, null when unquoted) as a DueToday. */
+export function dueTodayOf(
+  cents: number | null | undefined,
+  format: (cents: number) => string,
+): DueToday {
+  if (cents == null) return 'unknown'
+  if (cents <= 0) return 'nothing'
+  return { amount: format(cents) }
+}
+
 /** Rule 2, as a sentence. `amount` is formatted (and escaped for HTML) by the caller. */
 export function dueTodayLine(due: DueToday): string {
   if (due === 'nothing') return "Nothing to pay today: what's left of your current plan covers it."

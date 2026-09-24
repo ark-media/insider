@@ -73,6 +73,12 @@ class FakeStripe {
       return { ...currentSub, discounts: expandedDiscounts }
     },
   }
+  invoices = {
+    createPreview: async (args: Record<string, unknown>) => {
+      stripeCalls.push({ method: 'invoices.createPreview', args: [args] })
+      return { amount_due: 5200 }
+    },
+  }
   subscriptionSchedules = {
     create: async (args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptionSchedules.create', args: [args] })
@@ -635,7 +641,9 @@ describe('POST /api/stripe/change-tier — upgrades are paid for up front', () =
     expect(update.billing_cycle_anchor).toBe('now')
   })
 
-  test('a same-entitlement PWYC raise keeps the deferred proration', async () => {
+  test('a PWYC raise is charged today and restarts the cycle too', async () => {
+    // Every change a member pays more for behaves the same way, not only
+    // gaining an entitlement.
     withSub({ tier: 'ark-plus', amountCents: 800 })
     const res = await post(
       { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1500 },
@@ -643,9 +651,56 @@ describe('POST /api/stripe/change-tier — upgrades are paid for up front', () =
     )
     expect(res.statusCode).toBe(200)
     const update = lastSubUpdate()
-    expect(update.proration_behavior).toBe('create_prorations')
-    expect(update.payment_behavior).toBeUndefined()
-    expect(update.billing_cycle_anchor).toBeUndefined()
+    expect(update.proration_behavior).toBe('always_invoice')
+    expect(update.payment_behavior).toBe('error_if_incomplete')
+    expect(update.billing_cycle_anchor).toBe('now')
+  })
+
+  test('monthly → annual is charged today, restarts the cycle, and reports the new renewal', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'yearly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    const update = lastSubUpdate()
+    expect(update.proration_behavior).toBe('always_invoice')
+    expect(update.payment_behavior).toBe('error_if_incomplete')
+    expect(update.billing_cycle_anchor).toBe('now')
+    const body = res.__json() as Record<string, unknown>
+    expect(body.timing).toBe('immediate')
+    expect(typeof body.next_charge_at).toBe('string')
+  })
+
+  test('a declined card refuses the switch to annual rather than leaving it unpaid', async () => {
+    // Before, a declined card still moved the member onto the annual plan with
+    // an open invoice — the subscription then went past due.
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    subscriptionUpdateError = Object.assign(new Error('Your card was declined.'), {
+      type: 'StripeCardError',
+      code: 'card_declined',
+      statusCode: 402,
+    })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'yearly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(402)
+    expect((res.__json() as Record<string, unknown>).code).toBe('payment_failed')
+  })
+
+  test('a price decrease still waits for the end of the period', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 1500 })
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_current' }] },
+    ]
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 800 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.update')).toBe(true)
   })
 
   test('a declined card is a clean 402, not a 502 — and nothing is recorded as changed', async () => {
@@ -1040,6 +1095,20 @@ describe('GET /api/stripe/save-offers', () => {
     ]
     const body = await get('cancel-ark-plus')
     expect(body.offers.map((o) => o.kind)).toEqual(['annual_switch'])
+  })
+
+  test("the annual switch quotes today's charge, asked the way change-tier bills it", async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    const body = (await get('cancel-ark-plus')) as {
+      offers: Array<{ kind: string; dueTodayCents?: number | null }>
+    }
+    const annual = body.offers.find((o) => o.kind === 'annual_switch')
+    expect(annual?.dueTodayCents).toBe(5200)
+    const quote = stripeCalls.find((c) => c.method === 'invoices.createPreview')
+    expect(quote?.args[0]).toMatchObject({
+      subscription: 'sub_1',
+      subscription_details: { proration_behavior: 'always_invoice', billing_cycle_anchor: 'now' },
+    })
   })
 
   test('a bundle member with nothing booked gets no Ark+ offers', async () => {

@@ -449,8 +449,9 @@ export async function acceptSaveOffer(
 }
 
 // Switch tier / plan / PWYC amount on the member's existing subscription
-// (task 14). Gaining an entitlement applies immediately and prorated; losing one
-// lands at period end. The server derives direction and timing.
+// (task 14). A change the member pays more for applies now, is charged today and
+// restarts the billing cycle; one they pay less for lands at period end. The
+// server derives direction and timing.
 export async function changeTier(input: {
   tier: "ark-plus" | "circle" | "bundle";
   plan: "monthly" | "yearly";
@@ -470,6 +471,8 @@ export async function changeTier(input: {
   changed?: boolean;
   timing?: "immediate" | "period_end";
   effective_at?: string;
+  // Immediate changes only: the first renewal of the restarted cycle.
+  next_charge_at?: string;
   // On a debundle, the win-back row's id, so the survey that follows can attach
   // the member's reasons to it. Null for a plain upgrade/PWYC (no row written)
   // and in a DB-less preview env — the survey step then just no-ops.
@@ -495,6 +498,7 @@ export async function changeTier(input: {
       changed?: boolean;
       timing?: "immediate" | "period_end";
       effective_at?: string;
+      next_charge_at?: string;
       survey_id?: string | number | null;
       error?: string;
     };

@@ -5,7 +5,7 @@
 import { formatTimestamp } from "../../shared/format-date";
 import { formatMinor } from "./currency";
 import type { BundleUpgradePreview } from "./auth";
-import type { DueToday } from "../../shared/billing-copy";
+import { dueTodayOf as dueTodayOfCents, type DueToday } from "../../shared/billing-copy";
 
 export type AxisKey = "arkPlus" | "circle";
 export type StandaloneTier = "ark-plus" | "circle";
@@ -41,7 +41,7 @@ export function fmtDate(iso: string | null): string | null {
 // currency. A pay-what-you-can member whose unused time covers the bundle price
 // owes nothing today.
 export function dueTodayOf(preview: BundleUpgradePreview): DueToday {
-  if (preview.dueTodayCents === null) return "unknown";
-  if (preview.dueTodayCents <= 0) return "nothing";
-  return { amount: formatMinor(preview.dueTodayCents, preview.currency, preview.minorFactor) };
+  return dueTodayOfCents(preview.dueTodayCents, (c) =>
+    formatMinor(c, preview.currency, preview.minorFactor),
+  );
 }

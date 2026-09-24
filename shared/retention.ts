@@ -126,6 +126,10 @@ export type RetentionOffer = {
   // the client can render concrete savings without re-fetching the catalog.
   targetPlan?: 'monthly' | 'yearly'
   targetPriceCents?: number
+  // annual_switch only: what switching takes off the card today (the yearly
+  // price less credit for the unused part of the current month). Null when
+  // Stripe couldn't quote it.
+  dueTodayCents?: number | null
   // The list price (minor units) the offer is measured against: the current plan's
   // price for a plan switch, and the price the coupon discounts for a coupon
   // offer — the struck-through figure in the design's "$8 $6/month". Absent when

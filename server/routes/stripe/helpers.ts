@@ -209,6 +209,35 @@ export function periodEndIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.items.data[0]?.current_period_end)
 }
 
+// What an immediate change onto `priceId` takes off the card today: the full
+// new price less credit for the unused part of the current one. Asked of
+// Stripe with the same parameters change-tier sends, never re-derived here.
+// Null when it can't be quoted — callers then describe the charge without a
+// figure.
+export async function quoteChargeToday(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+  priceId: string,
+): Promise<number | null> {
+  const itemId = sub.items.data[0]?.id
+  if (!itemId) return null
+  try {
+    const invoice = await stripe.invoices.createPreview({
+      customer: customerIdOf(sub),
+      subscription: sub.id,
+      subscription_details: {
+        items: [{ id: itemId, price: priceId }],
+        proration_behavior: 'always_invoice',
+        billing_cycle_anchor: 'now',
+      },
+    })
+    return invoice.amount_due
+  } catch (err) {
+    console.error('[stripe] charge-today quote failed:', err)
+    return null
+  }
+}
+
 // When a cycle re-anchored to now next renews: one month or one year out,
 // Stripe's own arithmetic for a `billing_cycle_anchor: 'now'` change.
 export function oneCycleFromNowIso(plan: 'monthly' | 'yearly', now = new Date()): string {
