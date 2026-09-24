@@ -15,12 +15,12 @@ from (values
   (
     'icmb-what-happened',
     $Q$What happened to Inside Call Me Back?$Q$,
-    $A$<p>You are not losing Inside Call Me Back. The weekly series is continuing under a new name, Call Me Back Ark+, and will remain available in the Call Me Back subscriber feed as part of your Ark+ subscription.</p>$A$
+    $A$<p>You are not losing Inside Call Me Back. The weekly series is continuing under a new name, Call Me Back | Ark+, and will remain available in the Call Me Back subscriber feed as part of your Ark+ subscription.</p>$A$
   ),
   (
     'plan-ark-plus-includes',
     $Q$What does an Ark+ subscription include?$Q$,
-    $A$<p>Ark+ is the premium podcast subscription for Ark Media's podcast network. Ark+ includes:</p><ul><li>Subscriber-only episodes, including Call Me Back Ark+</li><li>Early access to select episodes, including the mid-week Call Me Back episode</li><li>Ad-free listening across all Ark Media podcasts</li></ul><p>Ark+ subscriptions purchased through the Ark Media website also include our paid newsletter.</p>$A$
+    $A$<p>Ark+ is the premium podcast subscription for Ark Media's podcast network. Ark+ includes:</p><ul><li>Subscriber-only episodes, including Call Me Back | Ark+</li><li>Early access to select episodes, including the mid-week Call Me Back episode</li><li>Ad-free listening across all Ark Media podcasts</li></ul><p>Ark+ subscriptions purchased through the Ark Media website also include our paid newsletter.</p>$A$
   )
 ) as v(key, question, answer)
 where faqs.key = v.key;

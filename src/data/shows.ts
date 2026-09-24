@@ -68,8 +68,8 @@ export const shows: Show[] = [
     // No page of its own: members hear it through the private feed, so the
     // show's "home" is the membership page that sells it.
     route: "/plus",
-    title: "Call Me Back Ark+",
-    shortTitle: "Call Me Back Ark+",
+    title: "Call Me Back | Ark+",
+    shortTitle: "Call Me Back | Ark+",
     tagline:
       "Presenting the challenges and dilemmas facing Israelis to a global audience.",
     description:

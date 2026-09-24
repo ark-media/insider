@@ -392,7 +392,7 @@ single member only ever sees some of them.
 
 ### Ark+ upsell in hero (free shows, non-members only)
 - **LABEL**: Want more?
-- **BODY**: Ark+ members get the members-only newsletter and the ad-free Call Me Back Ark+ feed — add the Fold, or get both in the bundle.
+- **BODY**: Ark+ members get the members-only newsletter and the ad-free Call Me Back | Ark+ feed — add the Fold, or get both in the bundle.
 - **CTA**: Join Ark+ →
 
 ### Ark+ members-only gate (paid shows, non-members — replaces the episode browser)
@@ -455,7 +455,7 @@ single member only ever sees some of them.
 
 ### Ark+ members-only gate (paid episodes, replaces the player)
 - **LABEL**: Ark+ members only
-- **BODY**: This episode is part of Call Me Back Ark+. Join Ark+ to listen.
+- **BODY**: This episode is part of Call Me Back | Ark+. Join Ark+ to listen.
 - **CTA**: Become an Ark+ member →
 
 ### Show notes
@@ -495,9 +495,9 @@ single member only ever sees some of them.
 - **HOSTS**: Ark Media newsroom
 - **CADENCE**: Weekdays
 
-### Call Me Back Ark+ (no show page — members hear it through the private feed)
-- **TITLE**: Call Me Back Ark+
-- **SHORT TITLE**: Call Me Back Ark+
+### Call Me Back | Ark+ (no show page — members hear it through the private feed)
+- **TITLE**: Call Me Back | Ark+
+- **SHORT TITLE**: Call Me Back | Ark+
 - **TAGLINE**: Presenting the challenges and dilemmas facing Israelis to a global audience.
 - **DESCRIPTION**: Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.
 - **HOSTS**: Dan Senor
@@ -535,7 +535,7 @@ single member only ever sees some of them.
 - **EYEBROW**: Ark+
 - **HEADLINE**: The full Ark Media experience. ("experience." in the cyan accent)
 - **LEAD**: Ark+ is our premium membership, offering ad-free podcasts, unlimited access to all written content, and full access to the Fold.
-- **BULLET**: Call Me Back Ark+ — extended interviews, ad-free
+- **BULLET**: Call Me Back | Ark+ — extended interviews, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
 - **BULLET**: The Fold — join the hosts and other members in the room
 - **BULLET**: Live events and Q&As
@@ -549,7 +549,7 @@ single member only ever sees some of them.
 ### Hero — Ark+ member without the Fold ("add the Fold")
 - **EYEBROW**: The Fold
 - **HEADLINE**: You have the feed. Now join the Fold. ("the Fold." in the cyan accent)
-- **LEAD**: You already get Call Me Back Ark+ ad-free and the members-only newsletters. Add the Fold — conversations with the hosts, live member events, and Dan's book club.
+- **LEAD**: You already get Call Me Back | Ark+ ad-free and the members-only newsletters. Add the Fold — conversations with the hosts, live member events, and Dan's book club.
 - **BULLET**: The Fold — talk with the hosts and fellow members
 - **BULLET**: Live member events and Q&As
 - **BULLET**: Dan's book club
@@ -563,8 +563,8 @@ single member only ever sees some of them.
 ### Hero — Fold member without Ark+ ("add Ark+")
 - **EYEBROW**: Ark+
 - **HEADLINE**: You're in the room. Now go ad-free. ("ad-free." in the cyan accent)
-- **LEAD**: You're already part of the Fold. Add Ark+ — Call Me Back Ark+ as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
-- **BULLET**: Call Me Back Ark+ — private, ad-free feed
+- **LEAD**: You're already part of the Fold. Add Ark+ — Call Me Back | Ark+ as a private, ad-free feed, the full network ad-free, and the members-only newsletters.
+- **BULLET**: Call Me Back | Ark+ — private, ad-free feed
 - **BULLET**: The full Ark Media network, ad-free
 - **BULLET**: Members-only newsletters — sharper analysis, weekly
 - **BULLET**: Early access to new shows
@@ -578,7 +578,7 @@ single member only ever sees some of them.
 - **EYEBROW**: Membership
 - **HEADLINE**: You have the full Ark Media experience. ("experience." in the cyan accent)
 - **LEAD**: You have Ark+ and the Fold — the private, ad-free feed, the members-only newsletters, and the Fold in full. Thank you for being a member.
-- **BULLET**: Call Me Back Ark+ — private, ad-free feed
+- **BULLET**: Call Me Back | Ark+ — private, ad-free feed
 - **BULLET**: Members-only newsletters
 - **BULLET**: The Fold, live events, and Dan's book club
 - **PRIMARY CTA**: Manage your membership
@@ -617,10 +617,10 @@ single member only ever sees some of them.
 ### Tier copy (shared by cards and comparison table)
 - **TIER NAME (ARK+)**: Ark+
 - **TIER BLURB (ARK+)**: Every Ark Media podcast, ad-free, plus the members-only newsletters.
-- **TIER FEATURES (ARK+)**: Call Me Back Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters
+- **TIER FEATURES (ARK+)**: Call Me Back | Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters
 - **TIER NAME (BUNDLE, FEATURED)**: Ark+ & The Fold
 - **TIER BLURB (BUNDLE)**: Both — the private feed and the Fold, one membership.
-- **TIER FEATURES (BUNDLE)**: Call Me Back Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Fold / Live member events & Q&As
+- **TIER FEATURES (BUNDLE)**: Call Me Back | Ark+ — private, ad-free feed / The full network, ad-free / Members-only newsletters / The Fold / Live member events & Q&As
 - **TIER NAME (FOLD)**: The Fold
 - **TIER BLURB (FOLD)**: The Fold — conversations, member events, and Dan's book club.
 - **TIER FEATURES (FOLD)**: The Fold / Live member events & Q&As / Dan's book club
@@ -665,7 +665,7 @@ single member only ever sees some of them.
 - **ENTRY BULLETS**: Call Me Back / Ark News Daily / For Heaven's Sake / Chosen People Problems
 - **ENTRY**: Subscriber-exclusive content
 - **ENTRY SUMMARY**: Episodes only members hear.
-- **ENTRY BULLETS**: Call Me Back Ark+ — in your Call Me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
+- **ENTRY BULLETS**: Call Me Back | Ark+ — in your Call Me Back feed / Chosen People Problems AMA / Ark News Daily 6th episode
 - **ENTRY**: Early access
 - **ENTRY SUMMARY**: Hear it before everyone else.
 - **ENTRY BULLETS**: Mid-week Call Me Back episode — Wednesdays, not Fridays / History show
@@ -1104,7 +1104,7 @@ single member only ever sees some of them.
 - **LEDE**: Our The Fold puts your hosts and other Ark+ members in the room with you: weekly Q&As, live conversations, and thousands of members talking through the day's news. On iOS, Android, and the web.
 
 ### Feature block 01
-- **TITLE**: Call Me Back Ark+
+- **TITLE**: Call Me Back | Ark+
 - **KICKER**: Weekly Q&As with your favorite Ark Media hosts.
 - **BODY**: Ask questions. Get actual answers - not a comments section, not a bot. Bring what's on your mind to the people making the show.
 

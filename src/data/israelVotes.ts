@@ -54,7 +54,7 @@ export const EXPLAINERS: Explainer[] = [
 
 // Ordering is editorial, not chronological — leave it alone unless Ava asks.
 //
-// The Call Me Back Ark+ show is paid, so its audio can't be served from a
+// The Call Me Back | Ark+ show is paid, so its audio can't be served from a
 // public page — the API gates paid audio behind membership — and it has no
 // Beehiiv podcast configured to fetch from either.
 export const PLAYLIST: CuratedEpisode[] = [
