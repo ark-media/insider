@@ -2,6 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import { contactTopics, type ContactTopic } from "../config/urls";
+import {
+  getShow,
+  isListenerQuestionShow,
+  listenerQuestionShows,
+  type ListenerQuestionShow,
+} from "../data/shows";
 import { sendContactMessage } from "../lib/contact";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import {
@@ -11,13 +17,20 @@ import {
 
 export const Route = createFileRoute("/contact")({
   // Allow a topic to be pre-selected via ?topic=… (e.g. links that want the
-  // form to open on a specific desk). Unknown/missing values fall through to
-  // the form's default. Only known topic values are accepted.
-  validateSearch: (search): { topic?: ContactTopic } => {
+  // form to open on a specific desk), and a listener question's show via
+  // ?show=… (a show page linking to its own question box). Unknown/missing
+  // values fall through to the form's defaults. Only known values are accepted.
+  validateSearch: (
+    search,
+  ): { topic?: ContactTopic; show?: ListenerQuestionShow } => {
     const t = search.topic;
-    return typeof t === "string" && contactTopics.some((x) => x.value === t)
-      ? { topic: t as ContactTopic }
-      : {};
+    const s = search.show;
+    return {
+      ...(typeof t === "string" && contactTopics.some((x) => x.value === t)
+        ? { topic: t as ContactTopic }
+        : {}),
+      ...(isListenerQuestionShow(s) ? { show: s } : {}),
+    };
   },
   component: ContactPage,
 });
@@ -26,9 +39,11 @@ const inputClass =
   "min-h-11 w-full border border-rule-strong bg-transparent px-3 py-2 text-body text-fg-strong outline-none transition placeholder:text-fg-muted focus:border-cyan";
 const labelClass =
   "label text-cyan";
+const selectClass =
+  "appearance-none bg-[length:16px] bg-[right_1rem_center] bg-no-repeat pr-10 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>')]";
 
 function ContactPage() {
-  const { topic: topicParam } = Route.useSearch();
+  const { topic: topicParam, show: showParam } = Route.useSearch();
   const { state } = useSubscriberAuth();
 
   // Name and email are DERIVED, not copied: null means "the member hasn't
@@ -47,6 +62,9 @@ function ContactPage() {
     topicParam ?? contactTopics[0].value,
   );
   const [message, setMessage] = useState("");
+  // No default: a listener question has to name its show, and preselecting
+  // one would quietly file every unconsidered question under it.
+  const [show, setShow] = useState<ListenerQuestionShow | "">(showParam ?? "");
 
   // Handoff from the help widget: it stashes a short transcript in
   // sessionStorage and navigates here with the desk already preselected.
@@ -65,7 +83,7 @@ function ContactPage() {
   // already standing on /contact changes only the search param on a matched
   // route: TanStack updates the params without remounting, so neither a
   // mount-only draft read nor a `useState` initializer for `topic` would fire.
-  // Hence ?topic=… is treated as a live input, and the widget announces the
+  // Hence ?topic=… (and ?show=…) is treated as a live input, and the widget announces the
   // draft with an event — otherwise the transcript sits in sessionStorage and
   // ambushes some later visit.
   //
@@ -83,10 +101,11 @@ function ContactPage() {
     };
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (topicParam) setTopic(topicParam);
+    if (showParam) setShow(showParam);
     applyDraft();
     window.addEventListener(SUPPORT_DRAFT_EVENT, applyDraft);
     return () => window.removeEventListener(SUPPORT_DRAFT_EVENT, applyDraft);
-  }, [topicParam]);
+  }, [topicParam, showParam]);
 
   // Honeypot — see server/routes/contact.ts. Real users leave it blank.
   const [company, setCompany] = useState("");
@@ -100,7 +119,7 @@ function ContactPage() {
     if (company.trim() !== "") return; // bot tripped the honeypot
     setStatus("submitting");
     setFeedback(null);
-    const r = await sendContactMessage({ name, email, topic, message });
+    const r = await sendContactMessage({ name, email, topic, show, message });
     if (r.ok) {
       setStatus("ok");
       setFeedback("Thanks — your message is on its way. We'll be in touch.");
@@ -110,6 +129,7 @@ function ContactPage() {
       setEmailInput(null);
       setMessage("");
       setTopic(contactTopics[0].value);
+      setShow("");
     } else {
       setStatus("error");
       setFeedback(r.error ?? "Could not send. Please try again.");
@@ -157,7 +177,7 @@ function ContactPage() {
               <select
                 value={topic}
                 onChange={(e) => setTopic(e.target.value as ContactTopic)}
-                className={`mt-3 ${inputClass} appearance-none bg-[length:16px] bg-[right_1rem_center] bg-no-repeat pr-10 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%226 9 12 15 18 9%22/></svg>')]`}
+                className={`mt-3 ${inputClass} ${selectClass}`}
               >
                 {contactTopics.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -166,6 +186,29 @@ function ContactPage() {
                 ))}
               </select>
             </label>
+
+            {topic === "questions" ? (
+              <label className="mt-6 block">
+                <span className={labelClass}>Show</span>
+                <select
+                  required
+                  value={show}
+                  onChange={(e) =>
+                    setShow(e.target.value as ListenerQuestionShow | "")
+                  }
+                  className={`mt-3 ${inputClass} ${selectClass}`}
+                >
+                  <option value="" disabled>
+                    Which show is your question for?
+                  </option>
+                  {listenerQuestionShows.map((slug) => (
+                    <option key={slug} value={slug}>
+                      {getShow(slug)?.title ?? slug}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <label className="mt-6 block">
               <span className={labelClass}>Message</span>

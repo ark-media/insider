@@ -77,10 +77,21 @@ const originalFetch = globalThis.fetch
 let lastInit: RequestInit | undefined
 let resendStatus = 200
 let fetchCalls = 0
+// Every request, in order: Resend first, then (for a listener question) Make.
+let calls: Array<{ url: string; init?: RequestInit }> = []
+let webhookStatus = 200
+let webhookThrows = false
+const WEBHOOK_URL = 'https://hook.example.make.com/listener-questions'
 
-globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
   fetchCalls += 1
   lastInit = init
+  const url = String(input)
+  calls.push({ url, init })
+  if (url === WEBHOOK_URL) {
+    if (webhookThrows) throw new Error('network down')
+    return new Response('Accepted', { status: webhookStatus })
+  }
   return new Response('{}', { status: resendStatus })
 }) as typeof fetch
 
@@ -92,6 +103,9 @@ beforeEach(() => {
   lastInit = undefined
   resendStatus = 200
   fetchCalls = 0
+  calls = []
+  webhookStatus = 200
+  webhookThrows = false
 })
 
 describe('/api/contact', () => {
@@ -286,5 +300,98 @@ describe('/api/contact', () => {
       if (res.statusCode === 429) limited = true
     }
     expect(limited).toBe(true)
+  })
+})
+
+describe('/api/contact — listener questions', () => {
+  const QUESTION = {
+    ...VALID,
+    topic: 'questions',
+    show: 'chosen-people-problems',
+    message: 'What is the best Shabbat dinner argument?',
+  }
+  const ENV = {
+    RESEND_API_KEY: 'test',
+    MAKE_LISTENER_QUESTIONS_WEBHOOK_URL: WEBHOOK_URL,
+    MAKE_LISTENER_QUESTIONS_WEBHOOK_KEY: 'make-key',
+  }
+
+  test('emails the question with its show, then files it with Make', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect(calls.map((c) => c.url === WEBHOOK_URL)).toEqual([false, true])
+
+    const email = JSON.parse(String(calls[0].init?.body)) as { subject: string; html: string }
+    expect(email.subject).toBe('[Contact — Listener questions — Chosen People Problems] Jane Listener')
+    expect(email.html).toContain('<strong>Show:</strong> Chosen People Problems')
+
+    const hook = calls[1].init!
+    expect((hook.headers as Record<string, string>)['x-make-apikey']).toBe('make-key')
+    const payload = JSON.parse(String(hook.body)) as Record<string, string>
+    expect(payload).toMatchObject({
+      name: 'Jane Listener',
+      email: 'jane@example.com',
+      show: 'Chosen People Problems',
+      showSlug: 'chosen-people-problems',
+      question: 'What is the best Shabbat dinner argument?',
+    })
+    expect(Number.isNaN(Date.parse(payload.submittedAt))).toBe(false)
+  })
+
+  test('sends Call Me Back Ark+ under its current name and stable slug', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...QUESTION, show: 'inside-call-me-back' } }), res)
+    expect(res.statusCode).toBe(200)
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload.show).toBe('Call Me Back Ark+')
+    expect(payload.showSlug).toBe('inside-call-me-back')
+  })
+
+  test('rejects a question with no show, or a show not on the list', async () => {
+    for (const show of [undefined, '', 'call-me-back', 'nonsense']) {
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body: { ...QUESTION, show } }), res)
+      expect(res.statusCode).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('invalid_show')
+    }
+    expect(fetchCalls).toBe(0)
+  })
+
+  test('ignores a show on any other topic and never calls Make', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...VALID, show: 'chosen-people-problems' } }), res)
+    expect(res.statusCode).toBe(200)
+    expect(calls.map((c) => c.url)).not.toContain(WEBHOOK_URL)
+    const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
+    expect(email.html).not.toContain('Show:')
+  })
+
+  test('does not file the question when the email fails', async () => {
+    resendStatus = 500
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), res)
+    expect(res.statusCode).toBe(502)
+    expect(calls.map((c) => c.url)).not.toContain(WEBHOOK_URL)
+  })
+
+  test('a Make failure or outage does not fail the submission', async () => {
+    webhookStatus = 500
+    const refused = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), refused)
+    expect(refused.statusCode).toBe(200)
+
+    webhookThrows = true
+    const down = makeRes()
+    await getHandler(ENV)(makeReq({ body: QUESTION }), down)
+    expect(down.statusCode).toBe(200)
+  })
+
+  test('still emails when no webhook is configured', async () => {
+    const res = makeRes()
+    await getHandler({ RESEND_API_KEY: 'test' })(makeReq({ body: QUESTION }), res)
+    expect(res.statusCode).toBe(200)
+    expect(fetchCalls).toBe(1)
   })
 })

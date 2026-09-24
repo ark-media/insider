@@ -136,6 +136,24 @@ export const shows: Show[] = [
   },
 ];
 
+/**
+ * The shows a listener can send a question to from the /contact form (topic
+ * "questions"). The form must name one, so each question lands in Ava's
+ * Airtable tagged with its show. Shared by the form and server/routes/contact.ts.
+ */
+export const listenerQuestionShows = [
+  "chosen-people-problems",
+  "inside-call-me-back",
+] as const satisfies readonly ShowSlug[];
+
+export type ListenerQuestionShow = (typeof listenerQuestionShows)[number];
+
+export function isListenerQuestionShow(
+  value: unknown,
+): value is ListenerQuestionShow {
+  return (listenerQuestionShows as readonly unknown[]).includes(value);
+}
+
 export function getShow(slug: string): Show | undefined {
   return shows.find((s) => s.slug === slug);
 }

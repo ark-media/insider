@@ -1,4 +1,8 @@
 import { contactTopics, type ContactTopic } from "../config/urls";
+import {
+  isListenerQuestionShow,
+  type ListenerQuestionShow,
+} from "../data/shows";
 
 /**
  * Posts a "Get in touch" submission to `/api/contact`, which forwards it to the
@@ -9,6 +13,8 @@ export async function sendContactMessage(input: {
   name: string;
   email: string;
   topic: ContactTopic;
+  /** Required when `topic` is "questions"; ignored otherwise. */
+  show?: ListenerQuestionShow | "";
   message: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const name = input.name.trim();
@@ -22,6 +28,10 @@ export async function sendContactMessage(input: {
   if (!contactTopics.some((t) => t.value === input.topic)) {
     return { ok: false, error: "Please choose a topic." };
   }
+  const show = input.topic === "questions" ? input.show : undefined;
+  if (input.topic === "questions" && !isListenerQuestionShow(show)) {
+    return { ok: false, error: "Please choose a show." };
+  }
   if (!message) return { ok: false, error: "Please add a message." };
 
   try {
@@ -29,13 +39,15 @@ export async function sendContactMessage(input: {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ name, email, topic: input.topic, message }),
+      body: JSON.stringify({ name, email, topic: input.topic, show, message }),
     });
     if (res.ok) return { ok: true };
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     switch (body.error) {
       case "invalid_email":
         return { ok: false, error: "That doesn't look like a valid email." };
+      case "invalid_show":
+        return { ok: false, error: "Please choose a show." };
       case "too_many_requests":
         return { ok: false, error: "Too many attempts. Please wait a moment." };
       default:
