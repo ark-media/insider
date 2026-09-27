@@ -554,6 +554,15 @@ describe('new account', () => {
     })
   })
 
+  test('creates the Database account verified, so Auth0 sends no verification email', async () => {
+    await findOrCreateAuth0User(PROVISION_EMAIL, 'Hannah Waxman', BASE_ENV)
+    expect(creates[0]).toMatchObject({
+      connection: 'Username-Password-Authentication',
+      email_verified: true,
+      verify_email: false,
+    })
+  })
+
   test('leaves the name unset when there is no hint', async () => {
     // Never fall back to the email local part: that would fill Auth0 with
     // members called "hannah.waxman8".
