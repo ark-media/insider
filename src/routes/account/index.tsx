@@ -11,6 +11,7 @@ import { ProfileNameCard } from "../../components/account/ProfileNameCard";
 import { OutboundLink } from "../../components/OutboundLink";
 import { circleAppDownloads } from "../../lib/circle";
 import { circleUrls } from "../../config/urls";
+import { giftEndsAt } from "../../lib/gift";
 
 export const Route = createFileRoute("/account/")({
   component: MembershipTab,
@@ -65,6 +66,7 @@ function PaidMembership({ me, onRefresh }: { me: Me; onRefresh: () => void }) {
           tier={me.tier as "ark-plus" | "circle" | "bundle"}
           subscription={subscription}
           loading={loading}
+          giftEndsAt={giftEndsAt(me)}
         />
 
         {/* Full-width and deliberately above "Jump back in": a gift running out

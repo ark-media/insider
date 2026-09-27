@@ -108,6 +108,7 @@ import {
   findReusableSubscriber,
   cancelBooked,
   clearCancelParams,
+  giftExtensionEndIso,
   giftExtensionRunning,
   giftPauseEndSec,
   MAX_NAME_LEN,
@@ -1200,6 +1201,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // { brand, last4, expMonth, expYear } or null.
           card,
           canChangeAmount,
+          // When a gift holding the renewal off runs out (ISO), or null. While
+          // set, nothing is charged until this date, whatever periodEnd says.
+          giftExtendedUntil: sub ? giftExtensionEndIso(sub) : null,
         })
       },
     }),

@@ -1,4 +1,5 @@
 import { getAttribution } from "./attribution";
+import type { Me } from "./auth";
 
 export type GiftTerm = "6mo" | "1yr";
 
@@ -228,4 +229,14 @@ export async function fetchGiftStatus(
   } catch {
     return null;
   }
+}
+
+// When a gifted membership ends: the later of the gifted axes' end dates (a
+// Bundle gift sets both to the same day). Null when neither axis is a gift.
+export function giftEndsAt(me: Me): string | null {
+  const ends = [me.axes?.arkPlus, me.axes?.circle]
+    .filter((a) => a?.active && a.source === "gift" && a.expiresAt)
+    .map((a) => a!.expiresAt as string)
+    .sort();
+  return ends.length ? ends[ends.length - 1] : null;
 }
