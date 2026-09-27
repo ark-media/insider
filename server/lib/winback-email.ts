@@ -1,8 +1,12 @@
-// The 180-day win-back email. Sent by the win-back cron to members who left
-// Ark+ six months ago and haven't come back, inviting them to resubscribe.
+// The 180-day win-back emails. Sent by the win-back cron to members who left
+// six months ago and haven't come back, inviting them to resubscribe: one for
+// Ark+ leavers, one for Fold leavers.
 //
-// Copy is the "Lifecycle Emails & Member Communications" doc, "Ark+ 180 Day
-// Winback". Pure (no I/O) so it's trivially testable.
+// The Ark+ copy is the "Lifecycle Emails & Member Communications" doc, "Ark+
+// 180 Day Winback". The Fold one isn't in the doc; Hannah approved its wording
+// 2026-09-27, and it only repeats claims the site already makes about the Fold
+// (the tier card, /fold, the Fold welcome email). Pure (no I/O) so both are
+// trivially testable.
 
 import {
   ARK_MEDIA_TEAM,
@@ -70,4 +74,44 @@ export function renderWinbackEmail(p: WinbackEmailParams): {
   })
 
   return { subject: 'We saved your seat', html }
+}
+
+// Same shape as the Ark+ email, for a member who fully left a Fold-only
+// membership. "Your profile is still there" holds because cancelling moves a
+// member to the Fold's cancelled access group; it never deletes them.
+export function renderFoldWinbackEmail(p: WinbackEmailParams): {
+  subject: string
+  html: string
+} {
+  const first = p.firstName?.trim() || undefined
+
+  const html = renderShell({
+    preheader:
+      'Six months of conversations, member events and Dan&rsquo;s book club since you left.',
+    eyebrow: 'The conversation kept going',
+    headlineHtml: 'The conversation kept going.',
+    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    bodyHtml:
+      'It&rsquo;s been six months since you left the Fold, and the conversation hasn&rsquo;t stopped. Some days that means debating the hardest questions facing Jewish life right now. Other days it&rsquo;s a good recipe or a joke only a few people will get.',
+    bodySecondHtml:
+      'We&rsquo;d love to have you back. Rejoining takes less than a minute, and you&rsquo;ll be back inside right away.',
+    ctaHref: p.rejoinUrl,
+    ctaLabel: 'Rejoin the Fold',
+    ctaFollowupHtml:
+      'Your profile is still there, just as you left it, and you can cancel any time.',
+    sections: [
+      {
+        heading: "When you're in the Fold, you get:",
+        bullets: [
+          'Conversations with members who share a curiosity about the Jewish experience',
+          'Live member events and Q&amp;As',
+          'Dan&rsquo;s book club',
+        ],
+      },
+    ],
+    signoffHtml: `Hope to see you again soon.<br />&mdash; ${ARK_MEDIA_TEAM}`,
+    footerHtml: `You’re getting this because you were a member of the Fold. <a href="${p.unsubscribeUrl}" style="color:${BRAND_FG_MUTED};">Unsubscribe from win-back emails</a>.`,
+  })
+
+  return { subject: 'The conversation kept going', html }
 }
