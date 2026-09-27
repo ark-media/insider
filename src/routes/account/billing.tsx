@@ -1,15 +1,20 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  getChangePreview,
   getMySubscription,
   reactivateSubscription,
   type CardOnFile,
+  type ChangePreview,
 } from "../../lib/auth";
 import { isPaidMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { trackEvent } from "../../lib/analytics";
 import { formatTimestamp } from "../../../shared/format-date";
 import { CancelFlow } from "../../components/account/CancelFlow";
 import { PaymentMethodPanel } from "../../components/account/PaymentMethodPanel";
+import { PlanChangePanel } from "../../components/account/PlanChangePanel";
+import { formatMinor } from "../../lib/currency";
+import { perPeriod } from "../../../shared/billing-copy";
 import { giftEndsAt } from "../../lib/gift";
 
 export const Route = createFileRoute("/account/billing")({
@@ -69,6 +74,25 @@ function BillingPage() {
   );
   // The tier-aware cancel/debundle flow lives in <CancelFlow>; this just opens it.
   const [flowOpen, setFlowOpen] = useState(false);
+  // What they pay now, for the plan section's summary line.
+  const [price, setPrice] = useState<{
+    amountCents: number;
+    currency: string;
+    minorFactor: number;
+  } | null>(null);
+  // Whether "Change what I pay" is offered (members who chose above the
+  // minimum at checkout).
+  const [canChangeAmount, setCanChangeAmount] = useState(false);
+  // The plan section's switch / amount change, from opening to done.
+  const [planPanel, setPlanPanel] = useState<
+    | { kind: "idle" }
+    | { kind: "loading"; which: "cadence" | "amount" }
+    | { kind: "open"; heading: string; preview: ChangePreview }
+    | { kind: "error"; message: string }
+    | { kind: "done"; message: string }
+  >({ kind: "idle" });
+  // Bumped after a plan change so the subscription is read again.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // The post-flow confirmation message (cancelled / saved / debundled). When the
   // flow closes it replaces the trigger button, so focus is moved here.
@@ -101,6 +125,12 @@ function BillingPage() {
       setPlan(s.plan ?? null);
       setScheduledPlan(s.scheduledPlan ?? null);
       setCard(s.card ?? null);
+      setPrice(
+        typeof s.amountCents === "number" && s.currency
+          ? { amountCents: s.amountCents, currency: s.currency, minorFactor: s.minorFactor ?? 100 }
+          : null,
+      );
+      setCanChangeAmount(Boolean(s.canChangeAmount));
       setGiftExtendedUntil(s.giftExtendedUntil ?? null);
       // Every live subscription has a current period; no subscription reports
       // none. That's the one field here that tells the two apart.
@@ -109,7 +139,7 @@ function BillingPage() {
     return () => {
       active = false;
     };
-  }, [state]);
+  }, [state, reloadKey]);
 
   // After the flow closes on success, move focus to the confirmation message so
   // focus isn't stranded on <body> when the trigger button it would restore to
@@ -163,6 +193,39 @@ function BillingPage() {
   // cancelling Ark+ monthly, which is what the server derives offers for.
   const flowPlan =
     flowTier !== cancelTier && scheduledPlan ? scheduledPlan : plan;
+
+  // Open the plan section's confirm step: read what the change would cost
+  // first, so the panel states it before anything is billed.
+  const openPlanChange = async (which: "cadence" | "amount") => {
+    if (!plan) return;
+    setPlanPanel({ kind: "loading", which });
+    const target = which === "amount" ? plan : plan === "monthly" ? "yearly" : "monthly";
+    const r = await getChangePreview({ tier: cancelTier, plan: target });
+    if (r.kind === "preview") {
+      setPlanPanel({
+        kind: "open",
+        heading:
+          which === "amount"
+            ? "Change what you pay"
+            : target === "yearly"
+              ? "Switch to annual billing"
+              : "Switch to monthly billing",
+        preview: r.preview,
+      });
+    } else {
+      setPlanPanel({
+        kind: "error",
+        message:
+          r.kind === "error" && r.message
+            ? r.message
+            : "We couldn't read what this change would cost. Nothing has been charged.",
+      });
+    }
+  };
+
+  // Offered on a membership that renews normally: a booked cancel or a
+  // scheduled change has its own actions below, and a gift has no bill.
+  const showPlan = Boolean(billsToCard && plan && !scheduledCancelAt && !pendingChange);
 
   const onReactivate = async () => {
     setStatus({ kind: "reactivating" });
@@ -237,6 +300,68 @@ function BillingPage() {
                 }
                 onCardChanged={setCard}
               />
+            </div>
+          ) : null}
+          {showPlan || planPanel.kind === "done" ? (
+            <div className="mb-6 max-w-xl border border-rule bg-navy-800/40 p-8">
+              <h2 className="label text-cyan">Your plan</h2>
+              <p className="mt-4 max-w-md text-body-sm text-fg">
+                {price && plan
+                  ? `You pay ${formatMinor(price.amountCents, price.currency, price.minorFactor)} ${perPeriod(plan)}.`
+                  : plan === "yearly"
+                    ? "You're billed once a year."
+                    : "You're billed every month."}
+              </p>
+              {planPanel.kind === "open" ? (
+                <div className="mt-6">
+                  <PlanChangePanel
+                    heading={planPanel.heading}
+                    initial={planPanel.preview}
+                    onDone={(message) => {
+                      setPlanPanel({ kind: "done", message });
+                      setReloadKey((k) => k + 1);
+                      refresh();
+                    }}
+                    onCancel={() => setPlanPanel({ kind: "idle" })}
+                  />
+                </div>
+              ) : planPanel.kind === "done" ? (
+                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                  {planPanel.message}
+                </p>
+              ) : (
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => void openPlanChange("cadence")}
+                    disabled={planPanel.kind === "loading"}
+                    className="inline-flex items-center justify-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  >
+                    {planPanel.kind === "loading" && planPanel.which === "cadence"
+                      ? "Checking…"
+                      : plan === "monthly"
+                        ? "Switch to annual billing"
+                        : "Switch to monthly billing"}
+                  </button>
+                  {canChangeAmount ? (
+                    <button
+                      type="button"
+                      onClick={() => void openPlanChange("amount")}
+                      disabled={planPanel.kind === "loading"}
+                      className="inline-flex items-center justify-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                    >
+                      {planPanel.kind === "loading" && planPanel.which === "amount"
+                        ? "Checking…"
+                        : "Change what I pay"}
+                    </button>
+                  ) : null}
+                </div>
+              )}
+              {planPanel.kind === "error" ? (
+                <p className="mt-3 text-body-sm text-danger" role="alert">
+                  {planPanel.message}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {giftOnly ? (

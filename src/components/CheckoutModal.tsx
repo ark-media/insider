@@ -28,32 +28,15 @@ import { getBillingCurrency, type BillingCurrencyLock } from "../lib/auth";
 import {
   type PricingResponse,
   browserCountry,
-  currencySymbol,
-  decimalsForCurrency,
   formatMajor,
-  toMajor,
   toMinor,
 } from "../lib/currency";
-import {
-  SLIDER_STEPS,
-  amountFromPos,
-  posFromAmount,
-  snapStep,
-} from "../lib/pwycSlider";
+import { AmountPicker, resolveAmount } from "./AmountPicker";
 import { ProductMarks } from "./FoldLogo";
 import type { ProductMark } from "../data/pricingTiers";
 
 type Plan = "monthly" | "yearly";
 type Tier = "ark-plus" | "circle" | "bundle";
-
-// The slider's drag ceiling and the typed safety cap are expressed as multiples
-// of the plan's floor so they hold in any currency (a fixed "$3,600" is
-// meaningless in ¥ or ₪). SLIDER_MAX = the top of the *drag range* (not a hard
-// cap — the field accepts up to INPUT_MAX beyond it). ~14.4× the floor mirrors
-// the $250 → $3,600 USD range (bundle yearly); ~400× is the typed ceiling.
-// The curve/snap math lives in ../lib/pwycSlider.
-const SLIDER_MAX_MULTIPLE = 14.4;
-const INPUT_MAX_MULTIPLE = 400;
 
 // The SKU label shown in the modal chrome. Checkout derives entitlements from
 // the tier's catalog product server-side; this is copy only.
@@ -743,13 +726,8 @@ export function EmailForm({
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   // The chosen amount lives here as a string in MAJOR units of the selected
-  // currency ("" = give the floor / catalog price). Slider + tap-to-type write it.
+  // currency ("" = give the floor / catalog price). The picker writes it.
   const [customAmount, setCustomAmount] = useState("");
-  // Tap-to-type: while editing, the hero amount becomes an input backed by this
-  // draft so the slider doesn't twitch on every keystroke — it commits on blur.
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const intervalLabel = plan === "yearly" ? "year" : "month";
   const shortInterval = plan === "yearly" ? "yr" : "mo";
   const floorReady = floorMinor !== null;
 
@@ -770,15 +748,15 @@ export function EmailForm({
   // carried across currencies is meaningless (300 USD ≠ 300 JPY). Adjusted
   // during render rather than in an effect so the reset lands in the same pass
   // as the currency change, with no interim frame showing the stale amount.
+  // The picker itself is keyed on the currency, which drops a half-typed figure.
   const [prevCurrency, setPrevCurrency] = useState(currency);
   if (prevCurrency !== currency) {
     setPrevCurrency(currency);
     setCustomAmount("");
-    setEditing(false);
   }
 
   // Visual hint on the slider once the floor is in — a jump, then a pulsing
-  // ring — without changing the charged amount. Stripped on pointerdown.
+  // ring — without changing the charged amount. Stripped on first interaction.
   // Latched rather than read straight off `floorReady`, so it plays once: a
   // currency the floor map doesn't cover would otherwise drop it back to
   // "pending" and replay the hint on the way back. Reduced motion needs no
@@ -791,64 +769,11 @@ export function EmailForm({
     if (nudge) setHint("done");
   };
 
-  // Everything below works in MAJOR units of the selected currency. The floor is
-  // what we charge if the buyer doesn't raise it; the slider drags up to
-  // sliderMax (the common range) and the field accepts up to inputMax (an
-  // effectively-unlimited safety ceiling) — both scaled off the floor so they
-  // hold in any currency. The effective amount is clamped into [floor, inputMax],
-  // so a sub-floor entry snaps up and anything above sliderMax pegs the thumb.
-  const floorMajor = floorMinor !== null ? toMajor(floorMinor, factor) : null;
-  // Display/input decimals follow the currency (0 for JPY/HUF/TWD), NOT the
-  // charge factor — HUF/TWD charge in hundredths but show whole units, so the
-  // field must round to whole to keep the minor amount divisible by 100.
-  const decimals = decimalsForCurrency(currency, factor);
-  const sliderMaxMajor = floorMajor !== null ? floorMajor * SLIDER_MAX_MULTIPLE : 0;
-  const inputMaxMajor = floorMajor !== null ? floorMajor * INPUT_MAX_MULTIPLE : 0;
-  const step = floorMajor !== null ? snapStep(floorMajor) : 1;
-
-  const parsedCustom = customAmount.trim() === "" ? null : Number(customAmount);
-  const effectiveAmount =
-    floorMajor === null
-      ? null
-      : parsedCustom !== null && Number.isFinite(parsedCustom)
-        ? Math.min(inputMaxMajor, Math.max(floorMajor, parsedCustom))
-        : floorMajor;
-  // Custom = strictly above the floor. At/below the floor we hand checkout the
-  // fixed catalog price (null) rather than an equal custom amount.
-  const isCustom =
-    effectiveAmount !== null && floorMajor !== null && effectiveAmount > floorMajor;
-
-  // Thumb position + fill %, derived from the amount via the eased curve. Above
-  // sliderMax the thumb pegs at the far right (posFromAmount clamps).
-  const sliderPos =
-    floorMajor !== null && effectiveAmount !== null
-      ? posFromAmount(effectiveAmount, floorMajor, sliderMaxMajor)
-      : 0;
-  const sliderPct = (sliderPos / SLIDER_STEPS) * 100;
-
-  const roundMajor = (v: number) =>
-    decimals === 0 ? Math.round(v) : Math.round(v * 100) / 100;
-
-  const commitDraft = () => {
-    setEditing(false);
-    const n = Number(draft);
-    if (draft.trim() === "" || !Number.isFinite(n) || floorMajor === null) return;
-    const clean = roundMajor(Math.min(inputMaxMajor, Math.max(floorMajor, n)));
-    setCustomAmount(clean <= floorMajor ? "" : String(clean));
-    trackEvent("custom_amount_entered", {
-      plan,
-      amount: clean,
-      currency,
-      valid: clean > floorMajor,
-    });
-  };
-
-  const startEdit = () => {
-    if (floorMajor === null) return;
-    stopNudge();
-    setDraft(effectiveAmount !== null ? String(effectiveAmount) : "");
-    setEditing(true);
-  };
+  const { floorMajor, effectiveMajor: effectiveAmount, isCustom } = resolveAmount(
+    customAmount,
+    floorMinor,
+    factor,
+  );
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -903,120 +828,20 @@ export function EmailForm({
           ) : null}
         </div>
 
-        {/* Hero amount — the focal point. Tap to type an exact figure. */}
-        <div className="mt-3 flex items-baseline gap-2">
-          {editing ? (
-            <>
-              <span className="display-upright text-[clamp(2.25rem,8vw,3rem)] leading-none text-fg-strong">
-                {currencySymbol(currency)}
-              </span>
-              <input
-                type="number"
-                inputMode="decimal"
-                aria-label={`Amount per ${intervalLabel}`}
-                autoFocus
-                min={floorMajor ?? undefined}
-                max={inputMaxMajor}
-                step={decimals === 0 ? 1 : "any"}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onFocus={(e) => e.target.select()}
-                onBlur={commitDraft}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    commitDraft();
-                  } else if (e.key === "Escape") {
-                    setEditing(false);
-                  }
-                }}
-                className="pwyc-amount-input display-upright min-w-0 bg-transparent text-[clamp(2.25rem,8vw,3rem)] leading-none text-fg-strong outline-none"
-              />
-              <span className="text-lg text-fg-muted">/{shortInterval}</span>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={startEdit}
-              disabled={floorMajor === null}
-              className="group inline-flex items-baseline gap-2 rounded-sm text-left outline-none transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan"
-              aria-label={
-                effectiveAmount !== null
-                  ? `Amount: ${formatMajor(effectiveAmount, currency)} per ${intervalLabel}. Tap to type an exact figure.`
-                  : "Amount, tap to type"
-              }
-            >
-              <span className="display-upright text-[clamp(2.25rem,8vw,3rem)] leading-none text-fg-strong tabular-nums">
-                {effectiveAmount !== null
-                  ? formatMajor(effectiveAmount, currency)
-                  : "—"}
-              </span>
-              <span className="text-lg text-fg-muted">/{shortInterval}</span>
-              {/* Pencil affordance — signals the amount is editable. */}
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4 shrink-0 self-center text-fg-faint transition group-hover:text-cyan"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-            </button>
-          )}
-        </div>
-
-        <input
-          type="range"
-          aria-label={`Amount per ${intervalLabel}`}
-          aria-valuetext={
-            effectiveAmount !== null
-              ? `${formatMajor(effectiveAmount, currency)} per ${intervalLabel}`
-              : undefined
+        <AmountPicker
+          key={currency}
+          plan={plan}
+          currency={currency}
+          factor={factor}
+          floorMinor={floorMinor}
+          value={customAmount}
+          onChange={setCustomAmount}
+          nudge={nudge}
+          onInteract={stopNudge}
+          onCommit={(amount, valid) =>
+            trackEvent("custom_amount_entered", { plan, amount, currency, valid })
           }
-          min={0}
-          max={SLIDER_STEPS}
-          step={1}
-          value={sliderPos}
-          disabled={floorMajor === null}
-          onPointerDown={stopNudge}
-          onChange={(e) => {
-            if (floorMajor === null) return;
-            stopNudge();
-            const a = amountFromPos(
-              Number(e.target.value),
-              floorMajor,
-              sliderMaxMajor,
-              step,
-            );
-            // The leftmost stop maps back to the floor; clearing to "" hands
-            // checkout the fixed catalog price.
-            setCustomAmount(a <= floorMajor ? "" : String(a));
-          }}
-          onBlur={() => {
-            if (effectiveAmount === null) return;
-            trackEvent("custom_amount_entered", {
-              plan,
-              amount: effectiveAmount,
-              currency,
-              valid: isCustom,
-            });
-          }}
-          className={`pwyc-slider mt-5 w-full${nudge ? " pwyc-slider--nudge" : ""}`}
-          style={{ "--pct": `${sliderPct}%` } as React.CSSProperties}
         />
-
-        {/* Floor label only — we intentionally don't advertise a maximum, since
-            the amount field accepts more than the slider's drag range. */}
-        {floorMajor !== null ? (
-          <div className="mt-2 text-xs tabular-nums text-fg-faint">
-            {formatMajor(floorMajor, currency)} minimum
-          </div>
-        ) : null}
 
         <p className="mt-3 text-body-sm">
           {floorMajor === null

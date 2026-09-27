@@ -11,6 +11,9 @@
 //   ark_auth_txn — a 10-minute httpOnly cookie holding the in-flight OAuth
 //     transaction (PKCE verifier, state, nonce, returnTo) between /login and
 //     /callback.
+//   ark_gift_claim — a short-lived httpOnly handoff for a gift claim while the
+//     recipient completes the Auth0 round trip. The browser never reads the
+//     bearer token, so an XSS cannot copy it from Web Storage.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
@@ -26,6 +29,9 @@ export const SESSION_PRESENT_COOKIE_NAME = 'ark_session_present'
 
 export const AUTH_TXN_TTL_SEC = 10 * 60
 export const AUTH_TXN_COOKIE_NAME = 'ark_auth_txn'
+
+export const GIFT_CLAIM_TTL_SEC = 15 * 60
+export const GIFT_CLAIM_COOKIE_NAME = 'ark_gift_claim'
 
 export function readCookie(req: IncomingMessage, name: string): string | null {
   const raw = req.headers.cookie
@@ -168,6 +174,31 @@ export function clearAuthTxnCookie(res: ServerResponse, env: Env): void {
       httpOnly: true,
       secure: isSecureOrigin(env),
       sameSite: sameSite(env),
+    }),
+  ])
+}
+
+// Always Lax: this handoff must survive the top-level cross-site GET back from
+// Auth0. It remains HttpOnly and Secure in deployments, and its short lifetime
+// bounds how long a stolen or abandoned claim can be presented.
+export function setGiftClaimCookie(res: ServerResponse, token: string, env: Env): void {
+  appendSetCookie(res, [
+    buildCookie(GIFT_CLAIM_COOKIE_NAME, token, {
+      maxAgeSec: GIFT_CLAIM_TTL_SEC,
+      httpOnly: true,
+      secure: isSecureOrigin(env),
+      sameSite: 'Lax',
+    }),
+  ])
+}
+
+export function clearGiftClaimCookie(res: ServerResponse, env: Env): void {
+  appendSetCookie(res, [
+    buildCookie(GIFT_CLAIM_COOKIE_NAME, '', {
+      maxAgeSec: 0,
+      httpOnly: true,
+      secure: isSecureOrigin(env),
+      sameSite: 'Lax',
     }),
   ])
 }

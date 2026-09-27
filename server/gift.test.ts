@@ -303,6 +303,8 @@ beforeEach(() => {
 
 const CREATE_PATH = '/api/gift/create-checkout'
 const STATUS_PATH = '/api/gift/status'
+const PREPARE_PATH = '/api/gift/prepare-claim'
+const PENDING_PATH = '/api/gift/claim-pending'
 const CLAIM_PATH = '/api/gift/claim'
 const WEBHOOK_PATH = '/api/stripe/webhook'
 
@@ -1029,5 +1031,44 @@ describe('POST /api/gift/claim — guards', () => {
     expect((res.__json() as { error: string }).error).toBe('expired_link')
     // Never reached Stripe or the DB — verification fails first.
     expect(stripeCalls.length).toBe(0)
+  })
+})
+
+describe('legacy gift claim handoff', () => {
+  test('rejects malformed raw claim tokens before setting a cookie', async () => {
+    const res = makeRes()
+    await runHandler(
+      getHandler(PREPARE_PATH),
+      makeReq({ method: 'POST', body: { token: 'not-a-token' } }),
+      res,
+    )
+    expect(res.statusCode).toBe(400)
+    expect(res.__header('set-cookie')).toBeUndefined()
+  })
+
+  test('sets a short-lived HttpOnly handoff cookie', async () => {
+    const token = giftTokenForPaymentIntent('pi_handoff', BASE_ENV)
+    const res = makeRes()
+    await runHandler(
+      getHandler(PREPARE_PATH),
+      makeReq({ method: 'POST', body: { token } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__header('set-cookie')).toContain(`ark_gift_claim=${token}`)
+    expect(res.__header('set-cookie')).toContain('HttpOnly')
+    expect(res.__header('set-cookie')).toContain('Max-Age=900')
+  })
+
+  test('reports only the presence of a valid-shaped handoff cookie', async () => {
+    const token = giftTokenForPaymentIntent('pi_handoff', BASE_ENV)
+    const res = makeRes()
+    await runHandler(
+      getHandler(PENDING_PATH),
+      makeReq({ method: 'GET', headers: { cookie: `ark_gift_claim=${token}` } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toEqual({ pending: true })
   })
 })

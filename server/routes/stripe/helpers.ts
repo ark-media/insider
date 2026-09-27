@@ -126,7 +126,7 @@ export function coerceTier(raw: unknown): PricedTier {
 // flat cap can't serve 40 currencies — a high-denomination floor (e.g. IDR
 // 12,900,000) would exceed any USD-scaled constant and reject every valid
 // amount. Scale off the floor, but never below the original ~$10k USD cap.
-function pwycMaxAmount(floor: number): number {
+export function pwycMaxAmount(floor: number): number {
   return Math.max(1_000_000, floor * 1000)
 }
 
@@ -218,7 +218,22 @@ export function periodEndIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.items.data[0]?.current_period_end)
 }
 
-// What an immediate change onto `priceId` takes off the card today: the full
+// Where a change lands, as a subscription item: the catalog Price at the floor,
+// or an inline price for a pay-what-you-can amount above it (on the catalog
+// product, so entitlements still derive from it).
+export type DestinationItem =
+  | { price: string }
+  | {
+      price_data: {
+        currency: string
+        product: string
+        unit_amount: number
+        recurring: { interval: 'month' | 'year' }
+        tax_behavior: 'exclusive'
+      }
+    }
+
+// What an immediate change onto `destination` takes off the card today: the full
 // new price less credit for the unused part of the current one. Asked of
 // Stripe with the same parameters change-tier sends, never re-derived here —
 // including the retention coupons that change drops (`landing` is where it
@@ -228,7 +243,7 @@ export function periodEndIso(sub: Stripe.Subscription): string | null {
 export async function quoteChargeToday(
   stripe: Stripe,
   sub: Stripe.Subscription,
-  priceId: string,
+  destination: DestinationItem,
   landing: { tier: PricedTier; plan: Plan },
 ): Promise<number | null> {
   const itemId = sub.items.data[0]?.id
@@ -240,7 +255,7 @@ export async function quoteChargeToday(
       subscription: sub.id,
       ...(discounts !== null ? { discounts } : {}),
       subscription_details: {
-        items: [{ id: itemId, price: priceId }],
+        items: [{ id: itemId, ...destination }],
         proration_behavior: 'always_invoice',
         billing_cycle_anchor: 'now',
       },

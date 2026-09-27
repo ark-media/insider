@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import {
   claimGiftWithMagicToken,
+  giftClaimPending,
   GIFT_TIER_LABEL,
   giftTierFromClaimToken,
+  prepareGiftClaim,
   redeemGift,
   type RedeemGiftResult,
 } from "../lib/gift";
@@ -84,9 +86,8 @@ function RedeemPage() {
   // navigation to /redeem; the effect below gives that case the same treatment.
   // Captured once via lazy initializers so clearing the URL can't blank them.
   //
-  // `token` additionally survives the sign-in round trip through
-  // sessionStorage (see stashUrlCredentials) — `returnTo` is built from the
-  // address bar, which no longer has it.
+  // `token` is exchanged for an HttpOnly server cookie before the sign-in round
+  // trip (see TokenClaimBody). The browser never persists the bearer token.
   const [magicToken] = useState(() => search.mt ?? getLandingCredential("mt"));
   const [token] = useState(
     () => search.token ?? getLandingCredential("token"),
@@ -192,10 +193,7 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
   const claiming = claim.kind === "claiming";
   return (
     <Card>
-      <p className="text-body-sm">
-        Your gift starts today.
-      </p>
-      <div className="mt-8">
+      <div>
         <button
           type="button"
           onClick={onClaim}
@@ -203,10 +201,10 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
           className={primaryCta}
         >
           {claiming
-            ? "Starting…"
+            ? "Activating…"
             : tierLabel
-              ? `Start your ${tierLabel} membership`
-              : "Start your membership"}{" "}
+              ? `Activate your ${tierLabel} gift`
+              : "Activate your gift"}{" "}
           →
         </button>
       </div>
@@ -218,13 +216,27 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
 function TokenClaimBody({ token }: { token: string | undefined }) {
   const { state, signIn, refresh } = useSubscriberAuth();
   const [claim, setClaim] = useState<ClaimState>({ kind: "idle" });
+  const [claimReady, setClaimReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const ready = token ? prepareGiftClaim(token) : giftClaimPending();
+    void ready.then((ok) => {
+      if (!active) return;
+      if (ok && token) clearLandingCredentials();
+      setClaimReady(ok);
+    });
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   const onClaim = async () => {
-    if (!token) return;
     setClaim({ kind: "claiming" });
-    const result = await redeemGift(token);
+    const result = await redeemGift();
     if (result.ok) {
-      // Spent — drop the copy kept in sessionStorage for the sign-in round trip.
+      // The server clears its HttpOnly handoff cookie on this outcome; clear
+      // any in-memory copy here as well.
       clearLandingCredentials();
       trackEvent("gift_redeemed", { applied: result.applied });
       await refresh();
@@ -236,7 +248,15 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
     }
   };
 
-  if (!token) {
+  if (claimReady === null) {
+    return (
+      <Card>
+        <p className="text-body-sm text-fg-muted">Preparing your gift…</p>
+      </Card>
+    );
+  }
+
+  if (!claimReady) {
     return (
       <Card>
         <p className="text-body-sm">
@@ -276,15 +296,12 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
   const claiming = claim.kind === "claiming";
   return (
     <Card>
-      <p className="text-body-sm">
-        Your gift starts today.
-      </p>
       {claim.kind === "error" ? (
-        <p role="alert" className="mt-5 text-body-sm text-danger">
+        <p role="alert" className="mb-8 text-body-sm text-danger">
           {claim.message}
         </p>
       ) : null}
-      <div className="mt-8 flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3">
         {claim.kind === "error" && claim.terminal ? (
           <Link to="/account" className={secondaryCta}>
             Go to your account
@@ -296,7 +313,7 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
             disabled={claiming}
             className={primaryCta}
           >
-            {claiming ? "Claiming…" : "Claim your gift"} →
+            {claiming ? "Activating…" : "Activate your gift"} →
           </button>
         )}
       </div>

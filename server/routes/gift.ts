@@ -46,7 +46,13 @@ import {
   type GiftStripeEffect,
   type MembershipRow,
 } from '../lib/membership.js'
-import { setSessionCookies } from '../lib/cookies.js'
+import {
+  clearGiftClaimCookie,
+  GIFT_CLAIM_COOKIE_NAME,
+  readCookie,
+  setGiftClaimCookie,
+  setSessionCookies,
+} from '../lib/cookies.js'
 import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import {
@@ -360,6 +366,45 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
     }),
 
     defineRoute({
+      // Move the fallback gift token into an HttpOnly cookie before the caller
+      // leaves for Auth0. Keeping it in sessionStorage made the bearer token
+      // readable to every same-origin script during the sign-in round trip.
+      path: '/api/gift/prepare-claim',
+      method: 'POST',
+      handler: async (req, res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+
+        const body = await readJson<{ token?: unknown }>(req)
+        const token = typeof body?.token === 'string' ? body.token.trim() : ''
+        if (!token) return json(400, { error: 'token required' })
+        // Legacy claim links carry the raw, high-entropy redemption token. The
+        // gift row remains the authority at redemption; this shape check keeps
+        // arbitrary values out of the handoff cookie without needing to expose
+        // recipient or gift existence to an unauthenticated caller.
+        if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+          return json(400, { error: 'expired_link' })
+        }
+
+        setGiftClaimCookie(res, token, env)
+        res.setHeader('cache-control', 'private, no-store')
+        return json(200, { ready: true })
+      },
+    }),
+
+    defineRoute({
+      // The cookie is HttpOnly, so the SPA needs a non-sensitive presence check
+      // after the Auth0 redirect. This reveals no gift or recipient details.
+      path: '/api/gift/claim-pending',
+      method: 'GET',
+      handler: async (req, res, json) => {
+        const token = readCookie(req, GIFT_CLAIM_COOKIE_NAME)
+        const pending = token ? /^[A-Za-z0-9_-]{43}$/.test(token) : false
+        res.setHeader('cache-control', 'private, no-store')
+        return json(200, { pending })
+      },
+    }),
+
+    defineRoute({
       // Redeem a gift the recipient received by email. Requires a signed-in
       // session (the claim writes a membership row keyed on the recipient's Auth0
       // sub). Branches on whether they already hold an active paid membership
@@ -376,14 +421,20 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const session = await getSessionProfile(req, env)
         if (!session) return json(401, { error: 'unauthenticated' })
 
-        const body = await readJson<{ token?: string }>(req)
-        const token = typeof body?.token === 'string' ? body.token.trim() : ''
-        if (!token) return json(400, { error: 'token required' })
+        const token = readCookie(req, GIFT_CLAIM_COOKIE_NAME)
+        if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
+          clearGiftClaimCookie(_res, env)
+          return json(400, { error: 'token required' })
+        }
 
         const sql = getDb(env)
         const gift = await getGiftByToken(sql, token)
-        if (!gift) return json(404, { error: 'invalid_gift' })
+        if (!gift) {
+          clearGiftClaimCookie(_res, env)
+          return json(404, { error: 'invalid_gift' })
+        }
         if (gift.status !== 'pending') {
+          clearGiftClaimCookie(_res, env)
           return json(409, {
             error: gift.status === 'void' ? 'gift_voided' : 'already_redeemed',
           })
@@ -401,7 +452,12 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           gift,
           { email: session.email, name: sessionName(session), auth0Sub },
         )
-        if (!result.ok) return json(409, { error: result.error })
+        if (!result.ok) {
+          clearGiftClaimCookie(_res, env)
+          return json(409, { error: result.error })
+        }
+
+        clearGiftClaimCookie(_res, env)
         return json(200, {
           redeemed: true,
           applied: result.applied,

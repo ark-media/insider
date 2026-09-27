@@ -140,27 +140,15 @@ export function scrubSentryPayload<T>(payload: T): T {
 //   mt    — memory only. One-click claim, no sign-in round trip; a reload loses
 //           it and the recipient re-opens the email link (same as before).
 //   token — the legacy claim token needs a signed-in session, so a guest leaves
-//           for Auth0 and comes back to /redeem. `returnTo` is built from the
-//           (now clean) address bar, so the token has to survive that trip
-//           somewhere else: sessionStorage — per-tab, gone when the tab closes,
-//           cleared on a finished claim. If sessionStorage is unavailable the
-//           token is left in the URL: a working gift beats a tidy URL, and the
-//           redaction hooks above still cover it.
+//           for Auth0 and comes back to /redeem. It stays in this module only
+//           long enough for the redeem page to exchange it for an HttpOnly
+//           server cookie; it is never persisted in browser-readable storage.
 // ---------------------------------------------------------------------------
 
 type LandingCredentialKey = 'mt' | 'token'
 
-const GIFT_TOKEN_STORAGE_KEY = 'ark_gift_claim_token'
 const landingCredentials: Partial<Record<LandingCredentialKey, string>> = {}
-
-function persistGiftToken(token: string): boolean {
-  try {
-    window.sessionStorage.setItem(GIFT_TOKEN_STORAGE_KEY, token)
-    return true
-  } catch {
-    return false
-  }
-}
+const LEGACY_GIFT_TOKEN_STORAGE_KEY = 'ark_gift_claim_token'
 
 // Only /redeem takes these params. `token` in particular is too generic a name
 // to strip site-wide.
@@ -180,10 +168,11 @@ export function stashUrlCredentials(): void {
   const token = url.searchParams.get('token')
   if (token) {
     landingCredentials.token = token
-    if (persistGiftToken(token)) {
-      url.searchParams.delete('token')
-      changed = true
-    }
+    // The redeem page exchanges this in memory-held state for an HttpOnly
+    // cookie before sign-in. Never leave a bearer token in sessionStorage or
+    // keep it in the address bar merely because storage is unavailable.
+    url.searchParams.delete('token')
+    changed = true
   }
 
   if (changed) {
@@ -192,13 +181,7 @@ export function stashUrlCredentials(): void {
 }
 
 export function getLandingCredential(key: LandingCredentialKey): string | undefined {
-  const held = landingCredentials[key]
-  if (held || key !== 'token') return held
-  try {
-    return window.sessionStorage.getItem(GIFT_TOKEN_STORAGE_KEY) ?? undefined
-  } catch {
-    return undefined
-  }
+  return landingCredentials[key]
 }
 
 // Called once a claim has reached an outcome retrying can't change, so a spent
@@ -206,10 +189,12 @@ export function getLandingCredential(key: LandingCredentialKey): string | undefi
 export function clearLandingCredentials(): void {
   delete landingCredentials.mt
   delete landingCredentials.token
+  // Remove the pre-hardening key once for users who had an unfinished claim
+  // before the token handoff moved behind an HttpOnly cookie.
   try {
-    window.sessionStorage.removeItem(GIFT_TOKEN_STORAGE_KEY)
+    window.sessionStorage.removeItem(LEGACY_GIFT_TOKEN_STORAGE_KEY)
   } catch {
-    // Nothing was stored there either, then.
+    // Storage may be unavailable; there is no new browser-readable copy.
   }
 }
 

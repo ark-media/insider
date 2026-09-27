@@ -18,9 +18,9 @@
 //     Payment Element on the billing page, to collect a replacement card.
 //   POST /api/stripe/update-card           — make that confirmed card the one
 //     the membership is billed to.
-//   GET  /api/stripe/bundle-upgrade-preview — what a single-axis member's
-//     subscription becomes when they add the other axis: the Bundle price that
-//     REPLACES their current one, and the renewal date that doesn't move.
+//   POST /api/stripe/change-preview        — what a plan change would do
+//     before it's made: the Bundle upgrade, a cadence switch, a new amount.
+//     The price move, today's charge or start date, and the amount picker.
 //   POST /api/stripe/webhook               — server-to-server signal from
 //     Stripe; the source of truth for membership + entitlement state.
 
@@ -79,6 +79,12 @@ import { requireBillingEmail } from '../../lib/guards.js'
 import { sendEmail } from '../../lib/email.js'
 import { renderCardUpdatedEmail } from '../../lib/billing-notice-emails.js'
 import {
+  CHOSE_ABOVE_FLOOR_KEY,
+  amountChoiceOpen,
+  destinationItem,
+  previewChange,
+} from './plan-change.js'
+import {
   renderCancellationEmail,
   renderDebundleEmail,
   type CancellableTier,
@@ -106,7 +112,6 @@ import {
   giftExtensionRunning,
   giftPauseEndSec,
   MAX_NAME_LEN,
-  oneCycleFromNowIso,
   periodEndIso,
   phaseDiscountParams,
   planFromSubscription,
@@ -412,6 +417,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               plan,
               amount_cents: String(amountCents),
               currency,
+              // Who chose more than the minimum: they keep the amount controls
+              // on the billing page for good (plan-change.ts amountChoiceOpen).
+              ...(amountCents > floor ? { [CHOSE_ABOVE_FLOOR_KEY]: 'true' } : {}),
               // Acquisition channel, captured in the browser on first visit and
               // forwarded here (BI plan §4.1). The webhook reads it straight
               // back off the subscription so every server-side revenue event —
@@ -857,7 +865,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 if (!immediate) return { ...o, dueTodayCents: null, startsAt: periodEndIso(sub) }
                 return {
                   ...o,
-                  dueTodayCents: await quoteChargeToday(stripe, sub, yearly.priceId, {
+                  dueTodayCents: await quoteChargeToday(stripe, sub, { price: yearly.priceId }, {
                     tier,
                     plan: 'yearly',
                   }),
@@ -1146,6 +1154,23 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             console.error('[stripe] my-subscription scheduled-tier read failed:', err)
           }
         }
+        // Whether the billing page offers "Change what I pay" and the amount
+        // picker on a plan change (plan-change.ts amountChoiceOpen). Needs the
+        // current tier's minimum; a lookup failure withholds the controls
+        // rather than offering them on a guess.
+        let canChangeAmount = false
+        const subPlan = sub ? planFromSubscription(sub) : null
+        if (sub && subPlan) {
+          try {
+            const tier = await catalogTierOfSubscription(sub, stripe)
+            if (tier && tier !== 'free' && currency && isSupportedCurrency(currency)) {
+              const floor = (await resolveCatalogPrice(stripe, tier, subPlan)).floors[currency] ?? null
+              canChangeAmount = amountChoiceOpen(sub, amountCents, floor)
+            }
+          } catch (err) {
+            console.error('[stripe] my-subscription amount-choice read failed:', err)
+          }
+        }
         json(200, {
           // Named for the common case; true for any booked cancel, including
           // one set to end with a gift (cancelBooked).
@@ -1175,6 +1200,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           minorFactor,
           // { brand, last4, expMonth, expYear } or null.
           card,
+          canChangeAmount,
           // When a gift holding the renewal off runs out (ISO), or null. While
           // set, nothing is charged until this date, whatever periodEnd says.
           giftExtendedUntil: sub ? giftExtensionEndIso(sub) : null,
@@ -1365,69 +1391,49 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     }),
 
     defineRoute({
-      // The mirror of bundle-breakdown, for the other direction: what happens
-      // to a single-axis member's subscription when they add the axis they
-      // don't have. The account page needs it to say the switch out loud before
-      // it bills — the Bundle price REPLACES what they pay now, it is not a
-      // second charge beside it — and to name the date they'll still renew on.
-      // Amounts come back in the SUBSCRIPTION's currency, which is the one that
-      // will actually be charged (change-tier bills in sub.currency, not the
-      // page's geo-detected one).
-      //
-      // Fails soft: `preview: null` only when there's no live sub to change; a
-      // price-lookup hiccup leaves `bundleCents: null` so the confirm step can
-      // still render (and still let the member proceed) without price lines.
-      path: '/api/stripe/bundle-upgrade-preview',
-      method: 'GET',
+      // What a plan change would do, before it's made: the price move, today's
+      // charge or the date it starts, and the amount the picker pre-fills (see
+      // plan-change.ts). Drives the billing page's cadence switch and "Change
+      // what I pay", and the Bundle upgrade panel, which re-ask as the member
+      // moves the amount. `preview: null` means there's no live subscription to
+      // change, which is a different instruction from a failed read (non-200).
+      path: '/api/stripe/change-preview',
+      method: 'POST',
       handler: async (req, _res, json) => {
+        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
         if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const sub = await findLiveSubscription(stripe, email)
-        const plan = sub ? planFromSubscription(sub) : null
-        if (!sub || !plan) return json(200, { preview: null })
-
-        const currency = isSupportedCurrency(sub.currency) ? sub.currency : 'usd'
-        // What the member pays today, in their own currency — see
-        // subscriptionAmount. Dropping the line for everyone outside the base
-        // currency was worse here than on the plan card: `bundleCents` below IS
-        // localized, so a non-USD member was shown what the Bundle costs with
-        // nothing to compare it against, which is the entire point of a preview.
-        const price = sub.items.data[0]?.price
-        const currentCents = price ? await subscriptionAmount(stripe, sub, price) : null
-
-        let bundleCents: number | null = null
-        let bundlePriceId: string | null = null
-        try {
-          const catalog = await resolveCatalogPrice(stripe, 'bundle', plan)
-          bundleCents = catalog.floors[currency] ?? catalog.floors.usd
-          bundlePriceId = catalog.priceId
-        } catch (err) {
-          console.error('[stripe] bundle-upgrade-preview price lookup failed:', err)
+        const body =
+          (await readJson<{ tier?: unknown; plan?: unknown; custom_amount_cents?: unknown }>(req)) ??
+          {}
+        // No plan means "on the cadence they're on now" (the Bundle upgrade).
+        if (body.plan !== undefined && body.plan !== 'monthly' && body.plan !== 'yearly') {
+          return json(400, { error: 'plan must be "monthly" or "yearly"' })
+        }
+        const amount = body.custom_amount_cents
+        if (amount !== undefined && (typeof amount !== 'number' || !Number.isInteger(amount))) {
+          return json(400, { error: 'Amount must be a whole number.' })
         }
 
-        // What comes off the card today — change-tier re-anchors the cycle on
-        // this switch. Null when it can't be quoted; the panel then says what
-        // happens without the figure.
-        const dueTodayCents = bundlePriceId
-          ? await quoteChargeToday(stripe, sub, bundlePriceId, { tier: 'bundle', plan })
-          : null
+        const sub = await findLiveSubscription(stripe, email)
+        const plan = body.plan ?? (sub ? planFromSubscription(sub) : null)
+        if (!sub || !plan) return json(200, { preview: null })
 
-        return json(200, {
-          preview: {
+        try {
+          const result = await previewChange(stripe, sub, {
+            tier: coerceTier(body.tier),
             plan,
-            currency,
-            minorFactor: minorUnitFactors()[currency] ?? 100,
-            currentCents,
-            bundleCents,
-            dueTodayCents,
-            // The switch re-anchors the cycle to today, so the member renews
-            // one full period from now — not on their current renewal date.
-            renewsAt: oneCycleFromNowIso(plan),
-          },
-        })
+            ...(typeof amount === 'number' ? { amountCents: amount } : {}),
+          })
+          if ('error' in result) return json(400, { error: result.error })
+          return json(200, { preview: result })
+        } catch (err) {
+          console.error('[stripe] change-preview failed:', err)
+          return json(502, { error: 'Could not read what this change would cost.' })
+        }
       },
     }),
 
@@ -1503,7 +1509,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           ? body.offer_outcome
           : 'not_offered'
         const plan = body.plan
-        const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
         const newTier = coerceTier(body.tier)
 
         const sub = await findLiveSubscription(stripe, email)
@@ -1581,6 +1586,19 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const prevAmount = item.price ? await subscriptionAmount(stripe, sub, item.price) : null
         const prevPlan = planFromSubscription(sub)
 
+        // Choosing an amount above the minimum is for members who chose one at
+        // checkout (plan-change.ts amountChoiceOpen). Everyone else changes
+        // plan at the standard price, which is what the billing page offers.
+        if (!isDebundle && amountCents !== floor) {
+          const currentFloor =
+            prevPlan && currentTier !== 'free'
+              ? ((await resolveCatalogPrice(stripe, currentTier, prevPlan)).floors[currency] ?? null)
+              : null
+          if (!amountChoiceOpen(sub, prevAmount, currentFloor)) {
+            return json(400, { error: 'Your plan changes at the standard price.' })
+          }
+        }
+
         // No-op: identical tier, plan, and amount.
         if (currentTier === newTier && prevPlan === plan && prevAmount === amountCents) {
           return json(200, { ok: true, changed: false })
@@ -1592,18 +1610,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // catalog Price id, above it we mint an inline price for the chosen
         // amount. (Recording amountCents in Neon while billing the floor was a
         // silent undercharge + Neon↔Stripe drift.)
-        const atFloor = amountCents === floor
-        const destinationPrice = atFloor
-          ? { price: catalog.priceId }
-          : {
-              price_data: {
-                currency,
-                product: catalog.productId,
-                unit_amount: amountCents,
-                recurring: { interval },
-                tax_behavior: 'exclusive' as const,
-              },
-            }
+        const destinationPrice = destinationItem(catalog, amountCents, floor, currency, plan)
         const immediate = changeIsImmediate(prevEnt, nextEnt, prevAmount, amountCents)
         // An immediate change is charged today and restarts the cycle, which a
         // gift-extended subscription can't take: Stripe refuses the re-anchor

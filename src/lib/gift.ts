@@ -110,16 +110,48 @@ export type RedeemGiftResult =
   | { ok: true; applied: "membership" | "credit" | "mixed" | "extended" | "held"; expiresAt?: string }
   | { ok: false; error: string; status?: number };
 
+// Exchange the legacy URL credential for the server's short-lived HttpOnly
+// handoff cookie before Auth0 navigation. The raw token never enters Web
+// Storage and is not needed by the browser after this request succeeds.
+export async function prepareGiftClaim(token: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/gift/prepare-claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ token }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// After the Auth0 round trip the token is intentionally invisible to the SPA;
+// this endpoint reports only whether the HttpOnly handoff is still valid.
+export async function giftClaimPending(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/gift/claim-pending", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json().catch(() => ({}))) as { pending?: unknown };
+    return data.pending === true;
+  } catch {
+    return false;
+  }
+}
+
 // Claim a gift the recipient received by email. Requires a signed-in session
 // (the server keys the grant on the recipient's Auth0 sub); the /redeem page
 // gates on auth before calling this. Rides the httpOnly session cookie.
-export async function redeemGift(token: string): Promise<RedeemGiftResult> {
+export async function redeemGift(): Promise<RedeemGiftResult> {
   try {
     const res = await fetch("/api/gift/redeem", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ token }),
     });
     const data = (await res.json().catch(() => ({}))) as {
       redeemed?: boolean;

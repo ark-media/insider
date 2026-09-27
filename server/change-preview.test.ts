@@ -1,15 +1,14 @@
-// Unit tests for GET /api/stripe/bundle-upgrade-preview — the numbers the
-// account page quotes before it moves a single-axis member onto the Bundle.
-// The whole point of the endpoint is that the confirm step can say "this
-// REPLACES what you pay" with a real figure, so the cases that matter are the
-// ones where a figure would be wrong money:
+// Unit tests for POST /api/stripe/change-preview — what a plan change would do,
+// quoted before the account page bills it: the Bundle upgrade panel, and the
+// billing page's cadence switch and "Change what I pay". The cases that matter
+// are the ones where a figure would be wrong money:
 //
-//   1. The current-price line is dropped (null) when the subscription bills in
-//      a currency_options currency — `unit_amount` is then the USD base, not
-//      what the member is charged.
-//   2. A catalog price lookup that fails leaves `bundleCents: null` but still
-//      returns a preview, so the confirm step renders (and the member can still
-//      switch) without price lines.
+//   1. Amounts are in the SUBSCRIPTION's currency; the current-price line is
+//      dropped (null) when the price is quoted through currency_options.
+//   2. Today's charge is asked of Stripe with the same parameters change-tier
+//      sends, inline price included for an amount above the minimum.
+//   3. Only a member who chose above the minimum gets the amount picker, and
+//      it starts at the same proportion above the new minimum.
 //
 // Harness mirrors my-subscription.test.ts: mock.module('stripe', …) swaps the
 // SDK, and a signed session cookie drives the registered middleware.
@@ -57,21 +56,24 @@ class FakeStripe {
     },
   }
   prices = {
-    // Bundle: $25/mo, $250/yr, with EUR at a distinct amount so a test can tell
-    // the per-currency floor apart from the USD base.
+    // Ark+ $8/$80, Bundle $25/$250, with EUR at a distinct amount so a test
+    // can tell the per-currency floor apart from the USD base.
     list: async (args: { lookup_keys?: string[] }) => {
       const key = args.lookup_keys?.[0] ?? ''
       if (missingLookupKeys.includes(key)) return { data: [] }
-      const base = key.endsWith('_monthly') ? 2500 : 25_000
+      const bundle = key.startsWith('bundle_')
+      const monthly = key.endsWith('_monthly')
+      const base = bundle ? (monthly ? 2500 : 25_000) : monthly ? 800 : 8000
+      const eur = bundle ? (monthly ? 2300 : 23_000) : monthly ? 750 : 7500
       const currency_options: Record<string, { unit_amount: number }> = {}
       for (const cur of SUPPORTED_CURRENCIES) {
-        if (cur !== 'usd') currency_options[cur] = { unit_amount: cur === 'eur' ? 2300 : base }
+        if (cur !== 'usd') currency_options[cur] = { unit_amount: cur === 'eur' ? eur : base }
       }
       return {
         data: [
           {
             id: `price_${key}`,
-            product: 'prod_bundle',
+            product: bundle ? 'prod_bundle' : 'prod_ark_plus',
             unit_amount: base,
             currency: 'usd',
             currency_options,
@@ -79,6 +81,12 @@ class FakeStripe {
         ],
       }
     },
+  }
+  products = {
+    retrieve: async (id: string) => ({
+      id,
+      metadata: { entitlements: id === 'prod_bundle' ? 'ark_plus,circle' : 'ark_plus' },
+    }),
   }
   webhooks = {
     constructEvent: () => {
@@ -101,7 +109,7 @@ const BASE_ENV = {
   STRIPE_SECRET_KEY: 'sk_test_fake',
 }
 
-const PATH = '/api/stripe/bundle-upgrade-preview'
+const PATH = '/api/stripe/change-preview'
 const EMAIL = 'member@example.com'
 
 function getHandler(): Middleware {
@@ -113,24 +121,37 @@ async function sessionCookie(email: string): Promise<string> {
   return `${SESSION_COOKIE_NAME}=${token}`
 }
 
-async function get(cookie?: string) {
+async function post(body: Record<string, unknown>, cookie?: string) {
   const res = makeFakeRes()
   await runMiddleware(
     getHandler(),
-    makeFakeReq({ method: 'GET', url: PATH, ...(cookie ? { cookie } : {}) }),
+    makeFakeReq({
+      method: 'POST',
+      url: PATH,
+      body,
+      headers: { origin: BASE_ENV.APP_BASE_URL },
+      ...(cookie ? { cookie } : {}),
+    }),
     res,
   )
   return res
 }
 
 type Preview = {
+  tier: string
   plan: string
   currency: string
   minorFactor: number
   currentCents: number | null
-  bundleCents: number | null
+  currentPlan: string | null
+  floorCents: number
+  amountCents: number
+  pwyc: { suggestedCents: number; maxCents: number } | null
+  timing: string
   dueTodayCents: number | null
   renewsAt: string | null
+  startsAt: string | null
+  blocked: string | null
 }
 
 // A live Ark+ subscription for EMAIL. `priceCurrency` defaults to the sub's own
@@ -141,6 +162,7 @@ function withArkPlusSub(opts: {
   priceCurrency?: string
   amountCents?: number
   interval?: 'month' | 'year'
+  metadata?: Record<string, string>
 } = {}) {
   const currency = opts.currency ?? 'usd'
   existingCustomers = [{ id: 'cus_1', email: EMAIL }]
@@ -150,7 +172,7 @@ function withArkPlusSub(opts: {
     status: 'active',
     currency,
     schedule: null,
-    metadata: {},
+    metadata: opts.metadata ?? {},
     items: {
       data: [
         {
@@ -176,8 +198,7 @@ beforeEach(() => {
   previewAmountDue = 1740
   previewCalls = []
   // The resolver's price cache is module-level and `bun test` shares one
-  // process: without this, a sibling suite's bundle amounts serve these cases
-  // (and vice versa).
+  // process: without this, a sibling suite's amounts serve these cases.
   __resetPriceCacheForTests()
 })
 
@@ -185,39 +206,40 @@ afterAll(() => {
   __resetPriceCacheForTests()
 })
 
-describe('GET /api/stripe/bundle-upgrade-preview', () => {
+const previewOf = (res: { __json: () => unknown }) => (res.__json() as { preview: Preview }).preview
+
+describe('POST /api/stripe/change-preview', () => {
   test('401 without a session cookie', async () => {
-    const res = await get()
+    const res = await post({ tier: 'bundle' })
     expect(res.statusCode).toBe(401)
   })
 
   test('preview is null when the member has no live subscription', async () => {
-    const res = await get(await sessionCookie(EMAIL))
+    const res = await post({ tier: 'bundle' }, await sessionCookie(EMAIL))
     expect(res.statusCode).toBe(200)
     expect((res.__json() as { preview: unknown }).preview).toBeNull()
   })
 
-  test('quotes both prices, today\'s charge, and a renewal one cycle from today', async () => {
+  test('the Bundle upgrade: both prices, today\'s charge, a renewal one cycle out', async () => {
     withArkPlusSub()
     const before = Date.now()
-    const res = await get(await sessionCookie(EMAIL))
-    const { preview } = res.__json() as { preview: Preview }
+    const preview = previewOf(await post({ tier: 'bundle' }, await sessionCookie(EMAIL)))
+    // No plan asked for: the cadence they're on now.
     expect(preview.plan).toBe('monthly')
-    expect(preview.currency).toBe('usd')
-    expect(preview.minorFactor).toBe(100)
     expect(preview.currentCents).toBe(800)
-    expect(preview.bundleCents).toBe(2500)
+    expect(preview.amountCents).toBe(2500)
+    expect(preview.timing).toBe('immediate')
     expect(preview.dueTodayCents).toBe(1740)
-    // The switch restarts the cycle, so the old period end is NOT the renewal.
-    expect(preview.renewsAt).not.toBe(new Date(NOW_SEC * 1000).toISOString())
+    // A minimum payer gets no picker.
+    expect(preview.pwyc).toBeNull()
     const renews = Date.parse(preview.renewsAt!)
     expect(renews - before).toBeGreaterThan(27 * 86_400_000)
     expect(renews - before).toBeLessThan(32 * 86_400_000)
   })
 
-  test("asks Stripe for the charge with the same parameters change-tier sends", async () => {
+  test('asks Stripe for the charge with the same parameters change-tier sends', async () => {
     withArkPlusSub()
-    await get(await sessionCookie(EMAIL))
+    await post({ tier: 'bundle' }, await sessionCookie(EMAIL))
     expect(previewCalls).toHaveLength(1)
     expect(previewCalls[0]).toMatchObject({
       customer: 'cus_1',
@@ -230,35 +252,102 @@ describe('GET /api/stripe/bundle-upgrade-preview', () => {
     })
   })
 
+  test('a member who chose above the minimum gets the picker, pre-filled at the same proportion', async () => {
+    withArkPlusSub({ amountCents: 1200, metadata: { chose_above_floor: 'true' } })
+    const preview = previewOf(
+      await post({ tier: 'ark-plus', plan: 'yearly' }, await sessionCookie(EMAIL)),
+    )
+    expect(preview.pwyc?.suggestedCents).toBe(12000)
+    expect(preview.amountCents).toBe(12000)
+    // Above the minimum → quoted as an inline price on the catalog product.
+    expect(previewCalls[0]).toMatchObject({
+      subscription_details: {
+        items: [
+          {
+            id: 'si_1',
+            price_data: {
+              currency: 'usd',
+              product: 'prod_ark_plus',
+              unit_amount: 12000,
+              recurring: { interval: 'year' },
+            },
+          },
+        ],
+      },
+    })
+  })
+
+  test('changing only the amount opens on what they pay today', async () => {
+    withArkPlusSub({ amountCents: 1250, metadata: { chose_above_floor: 'true' } })
+    const preview = previewOf(
+      await post({ tier: 'ark-plus', plan: 'monthly' }, await sessionCookie(EMAIL)),
+    )
+    expect(preview.amountCents).toBe(1250)
+  })
+
+  test('a lower amount starts at period end, with nothing to pay today', async () => {
+    withArkPlusSub({ amountCents: 1200, metadata: { chose_above_floor: 'true' } })
+    const preview = previewOf(
+      await post(
+        { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1000 },
+        await sessionCookie(EMAIL),
+      ),
+    )
+    expect(preview.timing).toBe('period_end')
+    expect(preview.dueTodayCents).toBeNull()
+    expect(preview.startsAt).toBe(new Date(NOW_SEC * 1000).toISOString())
+    expect(previewCalls).toHaveLength(0)
+  })
+
+  test('a minimum payer asking for a custom amount is refused', async () => {
+    withArkPlusSub()
+    const res = await post(
+      { tier: 'ark-plus', plan: 'yearly', custom_amount_cents: 12000 },
+      await sessionCookie(EMAIL),
+    )
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('an amount below the minimum is refused', async () => {
+    withArkPlusSub({ amountCents: 1200, metadata: { chose_above_floor: 'true' } })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 500 },
+      await sessionCookie(EMAIL),
+    )
+    expect(res.statusCode).toBe(400)
+  })
+
   test('a failed charge quote leaves dueTodayCents null but still returns a preview', async () => {
     previewAmountDue = new Error('stripe down')
     withArkPlusSub()
-    const res = await get(await sessionCookie(EMAIL))
-    const { preview } = res.__json() as { preview: Preview }
+    const preview = previewOf(await post({ tier: 'bundle' }, await sessionCookie(EMAIL)))
     expect(preview.dueTodayCents).toBeNull()
-    expect(preview.bundleCents).toBe(2500)
+    expect(preview.amountCents).toBe(2500)
   })
 
-  test('prices the bundle in the SUBSCRIPTION currency, not USD', async () => {
+  test('prices the change in the SUBSCRIPTION currency, not USD', async () => {
     // EUR sub on a USD-based catalog price: the bundle figure comes from
     // currency_options (2300), and the current-price line is dropped rather
     // than quoting the price's USD `unit_amount` as euros.
     withArkPlusSub({ currency: 'eur', priceCurrency: 'usd' })
-    const res = await get(await sessionCookie(EMAIL))
-    const { preview } = res.__json() as { preview: Preview }
+    const preview = previewOf(await post({ tier: 'bundle' }, await sessionCookie(EMAIL)))
     expect(preview.currency).toBe('eur')
-    expect(preview.bundleCents).toBe(2300)
+    expect(preview.amountCents).toBe(2300)
     expect(preview.currentCents).toBeNull()
   })
 
-  test('a failed price lookup leaves bundleCents null but still returns a preview', async () => {
+  test('a gift extension running says the change is blocked, and quotes nothing', async () => {
+    withArkPlusSub()
+    currentSub!.status = 'trialing'
+    const preview = previewOf(await post({ tier: 'bundle' }, await sessionCookie(EMAIL)))
+    expect(preview.blocked).toBe('gift_extension')
+    expect(previewCalls).toHaveLength(0)
+  })
+
+  test('a failed price lookup is a 502, not a preview with made-up numbers', async () => {
     missingLookupKeys = ['bundle_yearly']
     withArkPlusSub({ interval: 'year' })
-    const res = await get(await sessionCookie(EMAIL))
-    const { preview } = res.__json() as { preview: Preview }
-    expect(preview.plan).toBe('yearly')
-    expect(preview.bundleCents).toBeNull()
-    expect(preview.dueTodayCents).toBeNull()
-    expect(preview.currentCents).toBe(800)
+    const res = await post({ tier: 'bundle' }, await sessionCookie(EMAIL))
+    expect(res.statusCode).toBe(502)
   })
 })
