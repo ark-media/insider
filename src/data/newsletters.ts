@@ -34,6 +34,12 @@ export type NewsletterPost = {
    */
   bodyHtml?: SanitizedHtml;
   tier: "free" | "ark-plus";
+  /**
+   * No free edition at all — the issue went to Ark+ members only. Listings
+   * hide these from non-members; `tier` alone can't tell them apart from an
+   * issue whose free edition just lacks the members' sections.
+   */
+  membersOnly: boolean;
   authorName: string;
   /**
    * Source-system identifier for the post (currently a Beehiiv post id). Set

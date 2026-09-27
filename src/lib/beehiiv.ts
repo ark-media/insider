@@ -37,15 +37,6 @@ export const beehiivSource: NewsletterSource = {
 };
 
 /**
- * Listing for public landing-page teasers (e.g. the homepage newsletter
- * preview). Identical to `beehiivSource.listPosts` now that auth rides the
- * cookie — a guest simply has no cookie and gets the preview.
- */
-export function listPostsPublic(slug: NewsletterSlug): Promise<NewsletterPost[]> {
-  return fetchPosts(slug);
-}
-
-/**
  * Subscribe an email to a newsletter via `/api/beehiiv/subscribe`, which calls
  * Beehiiv's v2 Subscriptions API server-side. Returns `ok: true` on success,
  * with a user-facing `error` string otherwise.

@@ -1,10 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { shows, getShow, type ShowSlug } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
 import { LinkCard } from "../components/ContentCard";
-import { formatPostDate, type NewsletterPost } from "../data/newsletters";
-import { listPostsPublic } from "../lib/beehiiv";
+import arkWordmark from "../assets/logo-wordmark.png";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { ArkPlusMark } from "../components/ArkPlusMark";
@@ -29,61 +28,69 @@ const bandCtaClass =
   "inline-flex min-h-12 w-fit items-center gap-2 border border-rule-strong px-5 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan";
 
 // ---------------------------------------------------------------------------
-// Newsletter visual — styled to read like an actual email/newsletter: a navy
-// masthead over a white "paper" body with a real issue (latest free ark-daily
-// post). Fixed colors (not theme tokens) so it reads as a real email in both
-// the light and dark site themes — the same convention the app mockups use.
+// Newsletter visual — an illustrative issue as it lands in the inbox, not a
+// real one: most issues are members-only, so the home page can't show a live
+// one to everyone. The body gives way to placeholder lines and fades out at
+// the bottom, like the Fold phone. Fixed colors (not theme tokens) so it reads
+// as a real email in both the light and dark site themes — the same convention
+// the app mockups use.
 // ---------------------------------------------------------------------------
 function NewsletterVisual() {
-  const [post, setPost] = useState<NewsletterPost | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    void listPostsPublic("ark-daily").then((posts) => {
-      if (alive && posts.length) setPost(posts[0]);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   return (
-    <div className="relative isolate mx-auto w-full max-w-md">
+    <div
+      className="relative isolate mx-auto w-full max-w-md select-none"
+      aria-hidden="true"
+    >
       <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-cyan/10 blur-2xl" />
-      <div className="overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
-        {/* Masthead */}
-        <div className="bg-navy px-6 py-6 text-center">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-cyan">
-            The Ark Media Newsletter
+      <div className="relative h-[420px] overflow-hidden rounded-t-2xl [-webkit-mask-image:linear-gradient(to_bottom,#000_60%,transparent)] [mask-image:linear-gradient(to_bottom,#000_60%,transparent)]">
+        <div className="rounded-2xl bg-[#f2f4f9] px-4 pt-3 shadow-2xl ring-1 ring-black/10">
+          {/* Pre-header */}
+          <div className="flex items-center justify-center gap-2 text-[10px] text-[#0b153c]/70">
+            <span>Weekly</span>
+            <span className="text-[#0b153c]/35">|</span>
+            <span className="underline">Read online</span>
+            <span className="text-[#0b153c]/35">|</span>
+            <span>2 min read</span>
           </div>
-          <div className="mt-2 font-display text-[26px] font-bold leading-none text-white">
-            Ark Media
-          </div>
-          <div className="mx-auto mt-3 h-px w-10 bg-cyan/60" />
-        </div>
 
-        {/* Issue body — real latest issue, with an evergreen fallback. */}
-        <div className="bg-white px-6 py-6">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-[#0b153c]/45">
-            {post ? formatPostDate(post.publishedAt) : "Weekly dispatch"}
-          </div>
-          <h4 className="mt-2 font-display text-[19px] font-bold leading-snug text-[#0b153c]">
-            {post ? post.title : "This week from Ark Media"}
-          </h4>
-          <p className="mt-3 line-clamp-4 text-[12.5px] leading-relaxed text-[#0b153c]/65">
-            {post
-              ? post.excerpt
-              : "The through-lines from this week's interviews — and what they tell us about the week ahead."}
-          </p>
-          <div className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-navy px-4 py-2 text-[11px] font-bold text-white">
-            Read the issue →
-          </div>
-        </div>
+          <div className="mt-3 rounded-t-lg border border-b-0 border-[#d6e2f5] bg-white px-6 pb-10 pt-5">
+            <img
+              src={arkWordmark}
+              width={1200}
+              height={177}
+              alt=""
+              className="mx-auto h-[16px] w-auto"
+            />
 
-        {/* Email footer */}
-        <div className="border-t border-black/[0.08] bg-[#f5f6f9] px-6 py-3 text-center text-[10px] text-[#0b153c]/40">
-          You&apos;re reading the free weekly edition ·{" "}
-          <span className="underline">Unsubscribe</span>
+            {/* Masthead */}
+            <div className="mt-5 bg-[#fcfcfd] px-3 py-5 text-center">
+              <div className="bg-[linear-gradient(to_bottom,#0b153c_52%,#4a88d0_66%)] bg-clip-text font-display text-[42px] font-black leading-none tracking-[-0.03em] text-transparent">
+                The Current
+              </div>
+              <div className="mt-1.5 font-display text-[12px] font-bold tracking-[-0.01em] text-[#0b153c]">
+                Your weekly window into the Jewish world
+              </div>
+            </div>
+
+            <p className="mt-5 text-[12px] leading-relaxed text-[#0b153c]">
+              <strong>Hello and welcome to The Current,</strong> your weekly
+              briefing on the news, debates, and ideas shaping the Jewish
+              world.
+            </p>
+
+            {/* Placeholder body — reads as "the issue continues" */}
+            <div className="mt-5 space-y-2">
+              <div className="h-2 w-full rounded-full bg-[#0b153c]/10" />
+              <div className="h-2 w-11/12 rounded-full bg-[#0b153c]/10" />
+              <div className="h-2 w-4/5 rounded-full bg-[#0b153c]/10" />
+            </div>
+            <div className="mt-5 h-3 w-1/2 rounded-full bg-[#0b153c]/20" />
+            <div className="mt-3 space-y-2">
+              <div className="h-2 w-full rounded-full bg-[#0b153c]/10" />
+              <div className="h-2 w-10/12 rounded-full bg-[#0b153c]/10" />
+              <div className="h-2 w-full rounded-full bg-[#0b153c]/10" />
+            </div>
+          </div>
         </div>
       </div>
     </div>

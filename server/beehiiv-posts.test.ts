@@ -218,6 +218,45 @@ describe('projectBeehiivPost', () => {
     expect(out!.bodyHtml).not.toContain('The whole issue')
   })
 
+  test('a post whose free edition is only the header is members-only', () => {
+    const out = projectBeehiivPost(
+      {
+        ...base,
+        title: 'The Friday File',
+        subtitle: undefined,
+        audience: 'free',
+        authors: [{ name: 'Marc Fink' }],
+        content: {
+          free: { web: '<h1>The Friday File</h1><p>Marc Fink</p><p>September 11, 2026</p>' },
+          premium: { web: '<h1>The Friday File</h1><p>Marc Fink</p><p>September 11, 2026</p><p>The whole issue.</p>' },
+        },
+      },
+      'ark-daily',
+      'Author',
+    )
+    expect(out!.membersOnly).toBe(true)
+  })
+
+  test('an audience=premium post is members-only', () => {
+    const out = projectBeehiivPost({ ...base, audience: 'premium' }, 'ark-daily', 'Author')
+    expect(out!.membersOnly).toBe(true)
+  })
+
+  test('a post with a real free edition plus members sections is not members-only', () => {
+    const out = projectBeehiivPost(base, 'ark-daily', 'Author')
+    expect(out!.tier).toBe('ark-plus')
+    expect(out!.membersOnly).toBe(false)
+  })
+
+  test('a free post is not members-only', () => {
+    const out = projectBeehiivPost(
+      { ...base, content: { free: { web: '<p>Only free.</p>' } } },
+      'ark-daily',
+      'Author',
+    )
+    expect(out!.membersOnly).toBe(false)
+  })
+
   test('a free post with no premium body is free', () => {
     const out = projectBeehiivPost(
       { ...base, content: { free: { web: '<p>Only free.</p>' } } },
