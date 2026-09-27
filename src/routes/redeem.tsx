@@ -48,18 +48,18 @@ function messageForError(error: string): { message: string; terminal: boolean } 
     case "expired_link":
       return {
         message:
-          "This gift link has expired. Reply to your gift email and we'll send you a fresh one.",
+          "This link has expired. Reply to your gift email and we'll send a new one.",
         terminal: true,
       };
     case "invalid_gift":
       return {
         message:
-          "We couldn't find this gift. Use the link from your gift email, or reply to it and we'll help.",
+          "We couldn't find this gift. Reply to your gift email and we'll help.",
         terminal: true,
       };
     default:
       return {
-        message: "Something went wrong claiming your gift. Please try again.",
+        message: "Something went wrong. Please try again.",
         terminal: false,
       };
   }
@@ -193,8 +193,7 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
   return (
     <Card>
       <p className="text-body-sm">
-        You're one click away. Start your membership — you'll be signed in
-        automatically, and your access runs from today and won't auto-renew.
+        Your gift starts today.
       </p>
       <div className="mt-8">
         <button
@@ -241,9 +240,8 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
     return (
       <Card>
         <p className="text-body-sm">
-          This link is missing its gift code. Open the{" "}
-          <span className="text-fg-strong">Start your membership</span> button in
-          your gift email, or reply to that email and we'll help.
+          This link is incomplete. Use the button in your gift email, or reply to
+          it and we'll help.
         </p>
       </Card>
     );
@@ -263,7 +261,7 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
     return (
       <Card>
         <p className="text-body-sm">
-          Sign in to claim your gift, then come back to this page.
+          Sign in to claim your gift.
         </p>
         <div className="mt-8">
           <button type="button" onClick={() => signIn()} className={primaryCta}>
@@ -279,8 +277,7 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
   return (
     <Card>
       <p className="text-body-sm">
-        You're signed in. Claim your gift to start your membership — your access
-        runs from today and won't auto-renew.
+        Your gift starts today.
       </p>
       {claim.kind === "error" ? (
         <p role="alert" className="mt-5 text-body-sm text-danger">
@@ -322,12 +319,12 @@ function ClaimDoneCard({
     applied === "credit" || applied === "extended" || applied === "held";
   const message =
     applied === "credit"
-      ? "You already have an active membership, so your gift has been added as account credit toward your future renewals."
+      ? "You're already a member, so we've added your gift as credit toward your next renewals."
       : applied === "extended"
-        ? "You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift."
+        ? "You're already a member, so your gift pushes back your next payment."
         : applied === "held"
-          ? "You already have an active membership, so we couldn't apply your gift automatically. It's safely recorded, and our team will apply it by hand and email you when it's done."
-          : "Your gift membership is active. Your welcome page walks you through getting set up.";
+          ? "You're already a member, so our team will add your gift by hand and email you when it's done."
+          : "Your membership is active.";
   return (
     <Card>
       <p className="eyebrow text-cyan">
