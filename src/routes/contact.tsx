@@ -59,12 +59,13 @@ function ContactPage() {
   const [lastName, setLastName] = useState("");
   const [location, setLocation] = useState("");
 
-  const [topic, setTopic] = useState<ContactTopic>(
-    topicParam ?? contactTopics[0].value,
-  );
+  // No default topic: the sender picks one, so nothing lands on a desk by
+  // accident. A ?topic=… link or the help widget's handoff still preselects.
+  const [topic, setTopic] = useState<ContactTopic | "">(topicParam ?? "");
   const [message, setMessage] = useState("");
-  // No default: a listener question has to name its show, and preselecting
-  // one would quietly file every unconsidered question under it.
+  // Optional on every topic except a listener question, which has to name its
+  // show. No default: preselecting one would quietly file every unconsidered
+  // message under it.
   const [show, setShow] = useState<ShowSlug | "">(showParam ?? "");
 
   // Handoff from the help widget: it stashes a short transcript in
@@ -139,7 +140,7 @@ function ContactPage() {
       setEmailInput(null);
       setLocation("");
       setMessage("");
-      setTopic(contactTopics[0].value);
+      setTopic("");
       setShow("");
     } else {
       setStatus("error");
@@ -211,10 +212,14 @@ function ContactPage() {
             <label className="mt-6 block">
               <span className={labelClass}>Topic</span>
               <select
+                required
                 value={topic}
                 onChange={(e) => setTopic(e.target.value as ContactTopic)}
                 className={`mt-3 ${inputClass} select-chevron`}
               >
+                <option value="" disabled>
+                  Choose a topic…
+                </option>
                 {contactTopics.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
@@ -223,28 +228,29 @@ function ContactPage() {
               </select>
             </label>
 
-            {topic === "questions" ? (
-              <label className="mt-6 block">
-                <span className={labelClass}>Show</span>
-                <select
-                  required
-                  value={show}
-                  onChange={(e) =>
-                    setShow(e.target.value as ShowSlug | "")
-                  }
-                  className={`mt-3 ${inputClass} select-chevron`}
-                >
-                  <option value="" disabled>
-                    Which show is your question for?
+            <label className="mt-6 block">
+              <span className={labelClass}>
+                Podcast
+                {topic === "questions" ? null : (
+                  <span className="text-fg-muted"> (optional)</span>
+                )}
+              </span>
+              {/* The placeholder stays selectable so an optional pick can be
+                  undone; `required` still refuses it for a question. */}
+              <select
+                required={topic === "questions"}
+                value={show}
+                onChange={(e) => setShow(e.target.value as ShowSlug | "")}
+                className={`mt-3 ${inputClass} select-chevron`}
+              >
+                <option value="">Choose a podcast…</option>
+                {shows.map((s) => (
+                  <option key={s.slug} value={s.slug}>
+                    {s.title}
                   </option>
-                  {shows.map((s) => (
-                    <option key={s.slug} value={s.slug}>
-                      {s.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
+                ))}
+              </select>
+            </label>
 
             <label className="mt-6 block">
               <span className={labelClass}>Message</span>

@@ -3,7 +3,7 @@
 //   POST /api/contact — public. Forwards a "Get in touch" submission to the
 //     inbox for the chosen topic via Resend. The form replaces the old
 //     mailto: links on /contact so visitors never see the raw addresses.
-//     A listener question must name a show. After the email is sent, every
+//     Any topic may name a podcast; a listener question must. After the email is sent, every
 //     submission is also posted to a Make webhook that files it in the team's
 //     "Get in touch" Airtable.
 //
@@ -66,7 +66,7 @@ const WEBHOOK_TIMEOUT_MS = 5000
 // behind to be duplicated. The slugs are the stable handles for filtering in
 // Make (e.g. CPP questions → their own table); `topic` and `show` are display
 // names, which change when a label or a show is renamed. `show`/`showSlug` are
-// empty strings on anything but a listener question.
+// empty strings when the sender didn't pick a podcast.
 async function fileInAirtable(
   env: Deps['env'],
   payload: {
@@ -187,13 +187,12 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
         if (!topic) {
           return json(400, { error: 'invalid_topic' })
         }
-        // Only a listener question carries a show, and it must carry one.
+        // Any topic may name a podcast; a listener question must. A podcast
+        // that isn't one of ours is refused rather than quietly dropped.
         const showValue = body?.show
-        const show =
-          topic.value === 'questions' && isShowSlug(showValue)
-            ? getShow(showValue)
-            : undefined
-        if (topic.value === 'questions' && !show) {
+        const show = isShowSlug(showValue) ? getShow(showValue) : undefined
+        const showGiven = showValue !== undefined && showValue !== null && showValue !== ''
+        if ((showGiven && !show) || (topic.value === 'questions' && !show)) {
           return json(400, { error: 'invalid_show' })
         }
         if (!message || message.length > CONTACT_MESSAGE_MAX) {
@@ -216,7 +215,7 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
           `(${escapeHtml(email)})</p>` +
           (location ? `<p><strong>Location:</strong> ${escapeHtml(location)}</p>` : '') +
           `<p><strong>Topic:</strong> ${escapeHtml(topic.label)}</p>` +
-          (show ? `<p><strong>Show:</strong> ${escapeHtml(show.title)}</p>` : '') +
+          (show ? `<p><strong>Podcast:</strong> ${escapeHtml(show.title)}</p>` : '') +
           `<p><strong>Message:</strong></p>` +
           `<p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>`
 

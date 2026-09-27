@@ -962,12 +962,15 @@ single member only ever sees some of them.
 - **FIELD LABEL**: Email
 - **PLACEHOLDER (EMAIL)**: you@example.com
 - **FIELD LABEL**: Topic
+- **PLACEHOLDER (TOPIC)**: Choose a topic…
+- **TOPIC OPTION**: Membership and technical support
 - **TOPIC OPTION**: Show ideas, feedback & corrections
-- **TOPIC OPTION**: Listener questions
+- **TOPIC OPTION**: Submit a question for an episode
 - **TOPIC OPTION**: Press, interviews & media
 - **TOPIC OPTION**: Sponsorships & partnerships
 - **TOPIC OPTION**: Group & institutional subscriptions
-- **TOPIC OPTION**: Ark+ membership support
+- **FIELD LABEL**: Podcast (optional; required for a question)
+- **PLACEHOLDER (PODCAST)**: Choose a podcast…
 - **FIELD LABEL**: Message
 - **PLACEHOLDER (MESSAGE)**: What's on your mind?
 - **SUBMIT BUTTON**: Send message
@@ -978,6 +981,7 @@ single member only ever sees some of them.
 - **ERROR (EMPTY NAME)**: Please add your name.
 - **ERROR (INVALID EMAIL)**: That doesn't look like a valid email.
 - **ERROR (NO TOPIC)**: Please choose a topic.
+- **ERROR (NO PODCAST, QUESTION)**: Please choose a podcast.
 - **ERROR (EMPTY MESSAGE)**: Please add a message.
 - **ERROR (TOO MANY ATTEMPTS)**: Too many attempts. Please wait a moment.
 - **ERROR (SEND FAILED)**: Could not send. Please try again.

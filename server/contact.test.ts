@@ -346,8 +346,8 @@ describe('/api/contact — inboxes and Airtable', () => {
     expect(calls.map((c) => c.url === WEBHOOK_URL)).toEqual([false, true])
 
     const email = JSON.parse(String(calls[0].init?.body)) as { subject: string; html: string }
-    expect(email.subject).toBe('[Contact — Listener questions — Chosen People Problems] Jane Listener')
-    expect(email.html).toContain('<strong>Show:</strong> Chosen People Problems')
+    expect(email.subject).toBe('[Contact — Submit a question for an episode — Chosen People Problems] Jane Listener')
+    expect(email.html).toContain('<strong>Podcast:</strong> Chosen People Problems')
 
     const hook = calls[1].init!
     expect((hook.headers as Record<string, string>)['x-make-apikey']).toBe('make-key')
@@ -357,7 +357,7 @@ describe('/api/contact — inboxes and Airtable', () => {
       lastName: 'Listener',
       email: 'jane@example.com',
       location: '',
-      topic: 'Listener questions',
+      topic: 'Submit a question for an episode',
       topicSlug: 'questions',
       show: 'Chosen People Problems',
       showSlug: 'chosen-people-problems',
@@ -430,13 +430,13 @@ describe('/api/contact — inboxes and Airtable', () => {
     expect(fetchCalls).toBe(0)
   })
 
-  test('files every other topic too, with no show even if one was sent', async () => {
+  test('files every other topic too, with no podcast when none was picked', async () => {
     const res = makeRes()
-    await getHandler(ENV)(makeReq({ body: { ...VALID, show: 'chosen-people-problems' } }), res)
+    await getHandler(ENV)(makeReq({ body: VALID }), res)
     expect(res.statusCode).toBe(200)
     expect(calls.map((c) => c.url === WEBHOOK_URL)).toEqual([false, true])
     const email = JSON.parse(String(calls[0].init?.body)) as { html: string }
-    expect(email.html).not.toContain('Show:')
+    expect(email.html).not.toContain('Podcast:')
     const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
     expect(payload).toMatchObject({
       topic: 'Press, interviews & media',
@@ -445,6 +445,25 @@ describe('/api/contact — inboxes and Airtable', () => {
       showSlug: '',
       message: VALID.message,
     })
+  })
+
+  test('any topic may name a podcast', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...VALID, show: 'chosen-people-problems' } }), res)
+    expect(res.statusCode).toBe(200)
+    const email = JSON.parse(String(calls[0].init?.body)) as { subject: string; html: string }
+    expect(email.subject).toBe('[Contact — Press, interviews & media — Chosen People Problems] Jane Listener')
+    expect(email.html).toContain('<strong>Podcast:</strong> Chosen People Problems')
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload).toMatchObject({ show: 'Chosen People Problems', showSlug: 'chosen-people-problems' })
+  })
+
+  test('refuses a podcast that is not one of ours on any topic', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...VALID, show: 'nonsense' } }), res)
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body).error).toBe('invalid_show')
+    expect(calls).toHaveLength(0)
   })
 
   test('does not file the question when the email fails', async () => {

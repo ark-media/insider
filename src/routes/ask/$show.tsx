@@ -2,7 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { isShowSlug, type ShowSlug } from "../../data/shows";
 
 // Short links for show notes: /ask/cpp, /ask/cpp-plus and so on open the
-// contact form with "Listener questions" and that show already picked. A
+// contact form with "Submit a question for an episode" and that show already picked. A
 // show's full slug (/ask/chosen-people-problems) works too. Anything else
 // still lands on the question form, just without a show picked.
 const shortLinks: Record<string, ShowSlug> = {
