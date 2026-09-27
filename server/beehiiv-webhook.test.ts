@@ -79,11 +79,13 @@ function makeReq(opts: {
   url?: string
   body?: unknown
   rawBody?: string
+  headers?: Record<string, string>
 }) {
   return makeFakeReq({
     method: opts.method ?? 'POST',
     url: opts.url ?? `${WEBHOOK_PATH}?key=${WEBHOOK_SECRET}`,
     body: opts.rawBody !== undefined ? opts.rawBody : opts.body,
+    headers: opts.headers,
   })
 }
 
@@ -143,6 +145,33 @@ describe('webhook auth + transport', () => {
     const handler = buildHandler()
     const res = makeRes()
     await runHandler(handler, makeReq({ url: `${WEBHOOK_PATH}?key=wrong` }), res)
+    expect(res.statusCode).toBe(401)
+  })
+
+  test('accepts the secret in the dedicated header without a query string', async () => {
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(
+      handler,
+      makeReq({
+        url: WEBHOOK_PATH,
+        headers: { 'x-beehiiv-webhook-secret': WEBHOOK_SECRET },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('does not fall back to the query secret when a header is present but wrong', async () => {
+    const handler = buildHandler()
+    const res = makeRes()
+    await runHandler(
+      handler,
+      makeReq({
+        headers: { 'x-beehiiv-webhook-secret': 'wrong' },
+      }),
+      res,
+    )
     expect(res.statusCode).toBe(401)
   })
 

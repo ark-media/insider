@@ -2,9 +2,12 @@ import { describe, test, expect } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   AUTH_TXN_COOKIE_NAME,
+  clearGiftClaimCookie,
   CHECKOUT_COOKIE_NAME,
   CHECKOUT_PRESENT_COOKIE_NAME,
   CHECKOUT_TOKEN_TTL_SEC,
+  GIFT_CLAIM_COOKIE_NAME,
+  GIFT_CLAIM_TTL_SEC,
   SESSION_COOKIE_NAME,
   SESSION_PRESENT_COOKIE_NAME,
   SESSION_TOKEN_TTL_SEC,
@@ -13,6 +16,7 @@ import {
   clearSessionCookies,
   readCookie,
   setAuthTxnCookie,
+  setGiftClaimCookie,
   setCheckoutCookies,
   setSessionCookies,
 } from './cookies'
@@ -155,6 +159,28 @@ describe('auth txn cookie', () => {
     clearAuthTxnCookie(res, PROD)
     const cookies = res.getHeader!('Set-Cookie') as string[]
     expect(cookies[0]).toContain('Max-Age=0')
+  })
+})
+
+describe('gift claim handoff cookie', () => {
+  test('is short-lived, HttpOnly, Secure in production, and Lax for Auth0 return', () => {
+    const res = makeRes()
+    setGiftClaimCookie(res, 'gift-token', PROD)
+    const [cookie] = res.getHeader!('Set-Cookie') as string[]
+    expect(cookie).toContain(`${GIFT_CLAIM_COOKIE_NAME}=gift-token`)
+    expect(cookie).toContain('HttpOnly')
+    expect(cookie).toContain('Secure')
+    expect(cookie).toContain('SameSite=Lax')
+    expect(cookie).toContain(`Max-Age=${GIFT_CLAIM_TTL_SEC}`)
+  })
+
+  test('clears the handoff cookie', () => {
+    const res = makeRes()
+    clearGiftClaimCookie(res, PROD)
+    const [cookie] = res.getHeader!('Set-Cookie') as string[]
+    expect(cookie).toContain(`${GIFT_CLAIM_COOKIE_NAME}=`)
+    expect(cookie).toContain('Max-Age=0')
+    expect(cookie).toContain('HttpOnly')
   })
 })
 

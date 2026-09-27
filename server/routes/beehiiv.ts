@@ -346,16 +346,18 @@ export function beehiivRoutes({ env }: Deps): Route[] {
     defineRoute({
       // Inbound webhook from Beehiiv.
       //
-      // Auth: Beehiiv doesn't publish a documented HMAC signature scheme,
-      // so we gate the route with a shared secret in the query string
-      // (`?key=…`). Register the URL in Beehiiv as
+      // Auth: prefer a shared secret in the dedicated header when the delivery
+      // path can supply one. Beehiiv's current webhook configuration does not
+      // document custom headers, so the query-string form (`?key=…`) remains a
+      // compatibility fallback for the configured provider URL. Register the
+      // URL in Beehiiv as
       //   https://<APP_BASE_URL>/api/beehiiv/webhook?key=$BEEHIIV_WEBHOOK_SECRET
       // and subscribe to the subscription.* AND podcasts.private_feed.*
       // event types — the latter are what mirror private-feed activation
       // (this endpoint is the single provider webhook, so
       // there is one secret and one registration).
       //
-      // Caveat — query-string secret leakage. The `?key=` value appears in
+      // Caveat — legacy query-string secret leakage. The `?key=` value appears in
       // upstream HTTP access logs (Vercel / CDN / proxy) more than headers
       // would. We accept the trade-off because (a) Beehiiv's webhook
       // configuration doesn't support custom headers, and (b) the impact of
@@ -370,7 +372,12 @@ export function beehiivRoutes({ env }: Deps): Route[] {
         const secret = env.BEEHIIV_WEBHOOK_SECRET
         if (!secret) return json(500, { error: 'not_configured' })
         const url = new URL(req.url ?? '', 'http://x')
-        if (!secretEquals(url.searchParams.get('key') ?? '', secret)) {
+        const headerValue = req.headers['x-beehiiv-webhook-secret']
+        const provided =
+          typeof headerValue === 'string'
+            ? headerValue
+            : url.searchParams.get('key') ?? ''
+        if (!secretEquals(provided, secret)) {
           return json(401, { error: 'unauthorized' })
         }
 

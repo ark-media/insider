@@ -229,28 +229,20 @@ describe("stashUrlCredentials", () => {
     expect(JSON.stringify({ ...window.sessionStorage })).not.toContain("MAGIC");
   });
 
-  test("the legacy token survives the sign-in round trip via sessionStorage", () => {
+  test("the legacy token is kept in memory only and never enters sessionStorage", () => {
     setURL("https://ark-plus.xyz/redeem?token=gift_abc");
     stashUrlCredentials();
     // The address bar is what signIn() builds `returnTo` from.
     expect(window.location.pathname + window.location.search).toBe("/redeem");
     expect(getLandingCredential("token")).toBe("gift_abc");
+    expect(window.sessionStorage.getItem("ark_gift_claim_token")).toBeNull();
 
-    // Back from Auth0: a new document, so the in-memory holder is empty and the
-    // URL is the clean returnTo. Simulated by re-stashing on the clean URL after
-    // dropping the memory copy but not the stored one.
-    const stored = window.sessionStorage.getItem("ark_gift_claim_token");
-    clearLandingCredentials();
-    window.sessionStorage.setItem("ark_gift_claim_token", stored!);
-    stashUrlCredentials();
-    expect(getLandingCredential("token")).toBe("gift_abc");
-
-    // …and a finished claim spends it.
+    // A finished claim spends the in-memory copy.
     clearLandingCredentials();
     expect(getLandingCredential("token")).toBeUndefined();
   });
 
-  test("if sessionStorage is unavailable the token STAYS in the URL (a working gift beats a tidy URL)", () => {
+  test("if sessionStorage is unavailable the token still leaves the URL", () => {
     setURL("https://ark-plus.xyz/redeem?token=gift_abc&mt=MAGIC");
     const original = Object.getOwnPropertyDescriptor(window, "sessionStorage");
     Object.defineProperty(window, "sessionStorage", {
@@ -261,7 +253,7 @@ describe("stashUrlCredentials", () => {
     });
     try {
       stashUrlCredentials();
-      expect(window.location.search).toBe("?token=gift_abc");
+      expect(window.location.search).toBe("");
       expect(getLandingCredential("token")).toBe("gift_abc");
       expect(getLandingCredential("mt")).toBe("MAGIC");
     } finally {
