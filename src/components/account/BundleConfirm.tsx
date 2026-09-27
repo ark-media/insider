@@ -4,7 +4,8 @@ import { AXIS, type AxisKey } from "../../lib/entitlement-axes";
 import type { ChangePreview } from "../../lib/auth";
 import { perPeriod } from "../../../shared/billing-copy";
 import { AGE_STATEMENT, type AgeAttestation } from "../../../shared/checkout-consent";
-import { ChangeAmountField, GIFT_BLOCKED_LINE, useChangeQuote, whenLine } from "./planChange";
+import { ChangeAmountField, GIFT_BLOCKED_LINE } from "./planChange";
+import { useChangeQuote, whenLine } from "../../lib/planChange";
 
 // The confirm step for D9. Every line answers a question a member asks at
 // exactly this moment, in the order they ask it: what does it cost, when do I

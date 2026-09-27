@@ -31,7 +31,8 @@ import {
   formatMajor,
   toMinor,
 } from "../lib/currency";
-import { AmountPicker, resolveAmount } from "./AmountPicker";
+import { AmountPicker } from "./AmountPicker";
+import { resolveAmount } from "../lib/pwycAmount";
 import { ProductMarks } from "./FoldLogo";
 import { formatTimestamp } from "../../shared/format-date";
 import type { ProductMark } from "../data/pricingTiers";

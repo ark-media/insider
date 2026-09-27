@@ -6,10 +6,8 @@ import { perPeriod } from "../../../shared/billing-copy";
 import {
   ChangeAmountField,
   GIFT_BLOCKED_LINE,
-  priceMoveLine,
-  useChangeQuote,
-  whenLine,
 } from "./planChange";
+import { priceMoveLine, useChangeQuote, whenLine } from "../../lib/planChange";
 
 // The billing page's confirm step for a change to what a member pays without
 // changing what they get: monthly ↔ annual, or a new amount on the same plan.

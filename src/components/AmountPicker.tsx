@@ -3,7 +3,6 @@ import {
   currencySymbol,
   decimalsForCurrency,
   formatMajor,
-  toMajor,
 } from "../lib/currency";
 import {
   SLIDER_STEPS,
@@ -11,6 +10,7 @@ import {
   posFromAmount,
   snapStep,
 } from "../lib/pwycSlider";
+import { INPUT_MAX_MULTIPLE, resolveAmount } from "../lib/pwycAmount";
 
 type Plan = "monthly" | "yearly";
 
@@ -21,27 +21,6 @@ type Plan = "monthly" | "yearly";
 // mirrors the $250 → $3,600 USD range (bundle yearly); ~400× is the typed
 // ceiling. The curve/snap math lives in ../lib/pwycSlider.
 const SLIDER_MAX_MULTIPLE = 14.4;
-const INPUT_MAX_MULTIPLE = 400;
-
-// The amount a picker value stands for, in MAJOR units: `value` is what the
-// member chose ("" = the floor), clamped into [floor, input max] so a sub-floor
-// entry snaps up. `isCustom` = strictly above the floor, which is when a
-// caller sends an amount at all rather than the catalog price.
-export function resolveAmount(
-  value: string,
-  floorMinor: number | null,
-  factor: number,
-): { floorMajor: number | null; effectiveMajor: number | null; isCustom: boolean } {
-  const floorMajor = floorMinor !== null ? toMajor(floorMinor, factor) : null;
-  if (floorMajor === null) return { floorMajor, effectiveMajor: null, isCustom: false };
-  const inputMax = floorMajor * INPUT_MAX_MULTIPLE;
-  const parsed = value.trim() === "" ? null : Number(value);
-  const effectiveMajor =
-    parsed !== null && Number.isFinite(parsed)
-      ? Math.min(inputMax, Math.max(floorMajor, parsed))
-      : floorMajor;
-  return { floorMajor, effectiveMajor, isCustom: effectiveMajor > floorMajor };
-}
 
 // Pay what you choose: a hero amount that can be tapped to type an exact
 // figure, a slider on an eased curve, and the minimum beneath. Controlled —
