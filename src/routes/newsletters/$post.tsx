@@ -6,7 +6,6 @@ import {
   forgetNewsletterPosts,
   sourceFor,
 } from "../../lib/newsletterSources";
-import { newsletterCommentUrl } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { ArkPlusMark } from "../../components/ArkPlusMark";
@@ -169,30 +168,29 @@ function PostPage() {
         </div>
       </article>
 
-      {gated ? null : (
+      {/* Only posts with their own Fold thread get a discuss link. The
+          generic per-newsletter "Comment in the app" fallback is hidden until
+          that Circle link is set up. */}
+      {!gated && post.discussUrl ? (
         <section>
           <div className="mx-auto flex max-w-[1040px] flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10">
             <div>
-              <div className="label text-cyan">
-                {post.discussUrl ? "Discuss this piece" : "Keep the conversation going"}
-              </div>
+              <div className="label text-cyan">Discuss this piece</div>
               <p className="mt-2 text-body-sm text-fg">
-                {post.discussUrl
-                  ? "There's an open thread on this post in the Fold."
-                  : "Comments and replies live in the Fold. Sign in once and they open straight to the thread."}
+                There&rsquo;s an open thread on this post in the Fold.
               </p>
             </div>
             <a
-              href={post.discussUrl ?? newsletterCommentUrl(newsletter.slug)}
+              href={post.discussUrl}
               target="_blank"
               rel="noreferrer noopener"
               className="inline-flex shrink-0 items-center justify-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              {post.discussUrl ? "Discuss on forum →" : "Comment in the app →"}
+              Discuss on forum →
             </a>
           </div>
         </section>
-      )}
+      ) : null}
 
       {gated ? (
         <section className="border-t border-cyan/30">
