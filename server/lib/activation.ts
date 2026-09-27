@@ -174,9 +174,10 @@ type MembershipProvisionResult = {
   // The buyer's email is typed, never proven, so an account that already
   // existed belongs to whoever owns that inbox — not necessarily to whoever
   // paid. /api/auth/checkout-session hands out its post-payment session on this
-  // and nothing else. Read off the `auth0_account_created` marker, not the
-  // in-memory result of the create call: the webhook usually provisions first,
-  // and by the time the browser's poll arrives the account "already exists".
+  // and nothing else. Not just the in-memory result of the create call: the
+  // webhook usually provisions first, and by the time the browser's poll
+  // arrives the account "already exists". So also the `auth0_account_created`
+  // marker once stamped, and before that, an account born after the sub.
   accountCreated: boolean
   // The tier grants the Fold, Circle is configured, and THIS call tried to put
   // the member in the subscriber group and failed. The webhook turns this into
@@ -187,6 +188,18 @@ type MembershipProvisionResult = {
 
 // Stamped on the subscription by the activation that created the account.
 const ACCOUNT_CREATED_MARKER = 'auth0_account_created'
+
+// Allowance for Auth0's clock running behind Stripe's. An account needs at
+// least a webhook round-trip after the subscription exists, so real ones land
+// well clear of it; one made this close before the purchase was not a
+// member's long-standing login either.
+const CLOCK_SKEW_SEC = 30
+
+function createdSince(createdAt: string | undefined, subCreated: number): boolean {
+  if (!createdAt) return false
+  const ms = Date.parse(createdAt)
+  return Number.isFinite(ms) && ms / 1000 >= subCreated - CLOCK_SKEW_SEC
+}
 
 export type Activator = {
   // Tier-aware provisioning: Auth0 login for every paid tier, the Beehiiv
@@ -238,7 +251,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
   const ensureAuth0Login = async (
     email: string,
     name: string | undefined,
-  ): Promise<{ userId: string | null; created: boolean }> => {
+  ): Promise<{ userId: string | null; created: boolean; createdAt?: string }> => {
     let auth0Result: Awaited<ReturnType<typeof findOrCreateAuth0User>> = null
     try {
       auth0Result = await findOrCreateAuth0User(email, name, env)
@@ -248,6 +261,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     return {
       userId: auth0Result?.userId ?? null,
       created: auth0Result?.created ?? false,
+      createdAt: auth0Result?.createdAt,
     }
   }
 
@@ -313,7 +327,13 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     if (!auth0Sub) {
       const login = await ensureAuth0Login(email, name)
       auth0Sub = login.userId
-      isNewAccount = login.created
+      // The webhook and the browser's poll run this concurrently. The loser
+      // finds the account the winner just made, and the winner only stamps the
+      // marker after the slow Beehiiv/Circle steps — so neither `created` nor
+      // the marker says "ours" yet. An account born after this subscription
+      // was, though: nothing but this purchase provisions a login that late.
+      isNewAccount =
+        login.created || createdSince(login.createdAt, fresh.created)
     }
     const accountCreated =
       isNewAccount || fresh.metadata?.[ACCOUNT_CREATED_MARKER] === 'true'
