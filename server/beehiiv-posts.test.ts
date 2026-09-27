@@ -7,7 +7,9 @@ import { describe, test, expect } from 'bun:test'
 import {
   isPublishedBeehiivPost,
   projectBeehiivPost,
+  sanitizeBeehiivDocument,
   sanitizeBeehiivHtml,
+  selectBeehiivWebHtml,
   type BeehiivPost,
 } from './beehiiv-posts'
 
@@ -350,3 +352,52 @@ describe('isPublishedBeehiivPost', () => {
   })
 })
 
+// The iframe document keeps Beehiiv's markup and styles whole; only what
+// executes or escapes the frame goes.
+describe('sanitizeBeehiivDocument', () => {
+  const doc = sanitizeBeehiivDocument(
+    '<!DOCTYPE html><html><head><style>.w > * { color: red }</style>' +
+      '<script>alert(1)</script><link rel="stylesheet" href="https://x.test/f.css">' +
+      '<base href="https://evil.test/"><meta http-equiv="refresh" content="0;url=https://evil.test"></head>' +
+      '<body onload="x()"><div id="web-header"><h1>Title</h1></div>' +
+      '<h6 style="color:#2349B2">THE BIG STORY</h6><mark>hi</mark>' +
+      '<a href="javascript:alert(1)" onclick="y()">bad</a><a href="https://ok.test">ok</a>' +
+      '<img src="https://x.test/a.png" onerror="z()"><iframe src="https://x.test"></iframe>' +
+      '<form action="https://evil.test"><input name="p"></form></body></html>',
+  )
+
+  test('keeps styles, styled tags and inline style attributes', () => {
+    expect(doc).toContain('.w > * { color: red }')
+    expect(doc).toContain('<h6 style="color:#2349B2">THE BIG STORY</h6>')
+    expect(doc).toContain('<mark>hi</mark>')
+    expect(doc).toContain('href="https://ok.test"')
+  })
+
+  test('drops scripts, handlers, embeds, forms, and head escapes', () => {
+    for (const bad of ['<script', 'alert(1)', 'onload', 'onclick', 'onerror', '<iframe', '<form', '<input', '<link', 'evil.test', 'javascript:']) {
+      expect(doc).not.toContain(bad)
+    }
+  })
+
+  test('starts a standards-mode document with our base target and header hide', () => {
+    expect(doc.startsWith('<!doctype html><html><head><base target="_blank">')).toBe(true)
+    expect(doc).toContain('#web-header{display:none!important}')
+  })
+})
+
+describe('selectBeehiivWebHtml', () => {
+  const post: BeehiivPost = {
+    audience: 'premium',
+    content: { free: { web: '<p>free</p>' }, premium: { web: '<p>premium</p>' } },
+    content_html: '<p>whole</p>',
+  }
+
+  test('members get the premium edition, everyone else the free one', () => {
+    expect(selectBeehiivWebHtml(post, 'premium')).toBe('<p>premium</p>')
+    expect(selectBeehiivWebHtml(post, 'free')).toBe('<p>free</p>')
+  })
+
+  test('free view of a gated post never falls back to content_html', () => {
+    expect(selectBeehiivWebHtml({ ...post, content: {} }, 'free')).toBe('')
+  })
+})

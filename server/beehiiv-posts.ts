@@ -96,6 +96,54 @@ export function sanitizeBeehiivHtml(html: string): SanitizedHtml {
   }) as SanitizedHtml
 }
 
+// Tags with no place in a static, script-free document: anything that runs
+// code, embeds another context, submits, or reaches outside the frame
+// (`<base>`, `<meta http-equiv=refresh>`). `<link>` only pulls Beehiiv's
+// Google Fonts stylesheet, whose family ("Helvetica") doesn't exist there.
+const DOCUMENT_DROPPED_TAGS = new Set([
+  'script', 'noscript', 'iframe', 'frame', 'frameset', 'object', 'embed',
+  'applet', 'form', 'input', 'textarea', 'select', 'link', 'meta', 'base',
+  'title',
+])
+
+// Our page already shows the title, byline and date; Beehiiv's header repeats
+// them with its share buttons. Links open outside the frame, which is
+// sandboxed without navigation of the top window.
+const DOCUMENT_HEAD =
+  '<base target="_blank">' +
+  '<style>#web-header{display:none!important}html,body{margin:0}</style>'
+
+/**
+ * Beehiiv's web HTML kept whole — its own styles and layout — for rendering
+ * inside a sandboxed iframe (`<NewsletterFrame>`), so the issue looks the way
+ * it does on Beehiiv. Unlike `sanitizeBeehiivHtml` this keeps every tag and
+ * attribute except the ones that execute or escape: scripts, event handlers,
+ * embeds, forms, and non-http(s)/mailto urls. The iframe's sandbox (no
+ * `allow-scripts`) is the second wall, not the only one.
+ */
+export function sanitizeBeehiivDocument(html: string): SanitizedHtml {
+  const body = sanitizeHtml(html, {
+    allowedTags: false,
+    allowedAttributes: false,
+    allowVulnerableTags: true,
+    allowedSchemes: ['http', 'https', 'mailto'],
+    allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+    exclusiveFilter: (frame) => DOCUMENT_DROPPED_TAGS.has(frame.tag),
+    transformTags: {
+      '*': (tagName, attribs) => ({
+        tagName,
+        attribs: Object.fromEntries(
+          Object.entries(attribs).filter(([k]) => !/^on/i.test(k)),
+        ),
+      }),
+    },
+  })
+  const withHead = /<head[^>]*>/i.test(body)
+    ? body.replace(/<head[^>]*>/i, (m) => m + DOCUMENT_HEAD)
+    : DOCUMENT_HEAD + body
+  return `<!doctype html>${withHead}` as SanitizedHtml
+}
+
 function firstAuthorName(p: BeehiivPost, fallback: string): string {
   const a = p.authors?.[0]
   if (!a) return fallback
@@ -127,6 +175,35 @@ export function isPublishedBeehiivPost(p: BeehiivPost): boolean {
   return Boolean(p.id) && Boolean(p.publish_date || p.displayed_date)
 }
 
+// `view: 'free'` picks the above-divider HTML (or the whole body for
+// `audience: 'free'` posts). `view: 'premium'` picks the full premium body
+// and falls back to free.web when no premium variant is present (e.g.
+// pure-free posts that a member happens to request). Callers are responsible
+// for only requesting `premium` after authenticating an Ark+ reader — this
+// function trusts that decision.
+//
+// The free view reaches for the flat `content_html` ONLY on a post whose
+// audience is `free`. That field carries no free/premium split — it is the
+// post's body, whole — so on a `premium` or `both` post it may be exactly the
+// text the paywall exists to withhold, and a missing `free.web` there (Beehiiv
+// omits it when nothing sits above the divider) must render as an empty
+// preview rather than fall through to it. An empty body is what a gated post
+// with no preview looks like; the title and excerpt still carry the card.
+export function selectBeehiivWebHtml(
+  p: BeehiivPost,
+  view: 'free' | 'premium',
+): string {
+  const audience = (p.audience ?? 'free').toLowerCase()
+  return view === 'premium'
+    ? p.content?.premium?.web?.trim() ||
+        p.content?.free?.web ||
+        p.content_html ||
+        ''
+    : (p.content?.free?.web ??
+        (audience === 'free' ? p.content_html : undefined) ??
+        '')
+}
+
 export function projectBeehiivPost(
   p: BeehiivPost,
   newsletterSlug: NewsletterSlug,
@@ -137,30 +214,8 @@ export function projectBeehiivPost(
   const publishedAt = toIsoDate(p.publish_date ?? p.displayed_date)
   if (!publishedAt) return null
 
-  // `view: 'free'` picks the above-divider HTML (or the whole body for
-  // `audience: 'free'` posts). `view: 'premium'` picks the full premium body
-  // and falls back to free.web when no premium variant is present (e.g.
-  // pure-free posts that a member happens to request). Callers are responsible
-  // for only requesting `premium` after authenticating an Ark+ reader — this
-  // function trusts that decision.
-  //
-  // The free view reaches for the flat `content_html` ONLY on a post whose
-  // audience is `free`. That field carries no free/premium split — it is the
-  // post's body, whole — so on a `premium` or `both` post it may be exactly the
-  // text the paywall exists to withhold, and a missing `free.web` there (Beehiiv
-  // omits it when nothing sits above the divider) must render as an empty
-  // preview rather than fall through to it. An empty body is what a gated post
-  // with no preview looks like; the title and excerpt still carry the card.
   const audience = (p.audience ?? 'free').toLowerCase()
-  const rawHtml =
-    view === 'premium'
-      ? p.content?.premium?.web?.trim() ||
-        p.content?.free?.web ||
-        p.content_html ||
-        ''
-      : (p.content?.free?.web ??
-        (audience === 'free' ? p.content_html : undefined) ??
-        '')
+  const rawHtml = selectBeehiivWebHtml(p, view)
   const bodyHtml = sanitizeBeehiivHtml(rawHtml)
   const plain = stripHtml(rawHtml)
 

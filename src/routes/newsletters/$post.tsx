@@ -12,6 +12,8 @@ import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { NewsletterArticle } from "../../lib/newsletter-renderer";
+import { fetchPostDocument } from "../../lib/beehiiv";
+import { NewsletterFrame } from "../../components/NewsletterFrame";
 
 export const Route = createFileRoute("/newsletters/$post")({
   beforeLoad: ({ params }) => {
@@ -22,16 +24,21 @@ export const Route = createFileRoute("/newsletters/$post")({
   },
   // The session cookie rides the request, so the server already answers with
   // the edition this reader is entitled to — no tier lookup needed here.
-  loader: async () => {
-    const posts = await sourceFor(newsletter.slug).listPosts(newsletter.slug);
-    return { posts };
+  // The issue's own Beehiiv HTML rides a separate request (it's ~70 KB, too
+  // heavy for the list); both are the edition the cookie is entitled to.
+  loader: async ({ params }) => {
+    const [posts, documentHtml] = await Promise.all([
+      sourceFor(newsletter.slug).listPosts(newsletter.slug),
+      fetchPostDocument(newsletter.slug, params.post),
+    ]);
+    return { posts, documentHtml };
   },
   component: PostPage,
 });
 
 function PostPage() {
   const router = useRouter();
-  const { posts } = Route.useLoaderData();
+  const { posts, documentHtml } = Route.useLoaderData();
   const { post: postSlug } = Route.useParams();
   const { state } = useSubscriberAuth();
   const isArkPlusSubscriber = isArkPlusMember(state);
@@ -141,7 +148,11 @@ function PostPage() {
 
       <article>
         <div className="mx-auto max-w-[1040px] px-6 pb-16 sm:px-10">
-          {post.bodyHtml ? (
+          {/* A members-only issue's free edition is just the header the frame
+              hides, so a non-member gets the paywall below, not an empty box. */}
+          {documentHtml && !(gated && post.membersOnly) ? (
+            <NewsletterFrame html={documentHtml} title={post.title} />
+          ) : post.bodyHtml ? (
             <NewsletterArticle html={post.bodyHtml} postTitle={post.title} />
           ) : (
             <div className="space-y-5 text-body leading-[1.75]">

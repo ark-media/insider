@@ -4,6 +4,10 @@ import {
   type NewsletterSlug,
 } from "../data/newsletters";
 import type { NewsletterSource } from "./newsletterSources";
+import {
+  unsafeAssumeSanitized,
+  type SanitizedHtml,
+} from "../../shared/sanitized-html";
 
 /**
  * Beehiiv client.
@@ -29,6 +33,29 @@ async function fetchPosts(slug: NewsletterSlug): Promise<NewsletterPost[]> {
     return body.posts ?? [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * One issue's Beehiiv web HTML, whole and sanitized server-side, for
+ * `<NewsletterFrame>`. The server picks the edition from the session cookie,
+ * exactly as the list does. `null` when there's nothing to frame or the
+ * fetch fails — the page falls back to the list's `bodyHtml`.
+ */
+export async function fetchPostDocument(
+  slug: NewsletterSlug,
+  postSlug: string,
+): Promise<SanitizedHtml | null> {
+  try {
+    const res = await fetch(
+      `/api/beehiiv/post-document?newsletter=${encodeURIComponent(slug)}&post=${encodeURIComponent(postSlug)}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { html?: string | null };
+    return body.html ? unsafeAssumeSanitized(body.html) : null;
+  } catch {
+    return null;
   }
 }
 

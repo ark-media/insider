@@ -10,6 +10,8 @@ import { isValidEmail, redactEmail } from '../../shared/validation.js'
 import {
   isPublishedBeehiivPost,
   projectBeehiivPost,
+  sanitizeBeehiivDocument,
+  selectBeehiivWebHtml,
   type BeehiivPost,
 } from '../beehiiv-posts.js'
 import type {
@@ -257,6 +259,45 @@ export function beehiivRoutes({ env }: Deps): Route[] {
           json(200, { posts: enriched })
         } catch (err) {
           console.error('[beehiiv] posts fetch failed:', err)
+          json(502, { error: 'beehiiv_unavailable' })
+        }
+      },
+    }),
+    // One issue's Beehiiv web HTML, whole, for the post page's sandboxed
+    // iframe. Kept off the list endpoint: each document is ~70 KB and the list
+    // carries fifty. Same edition rule as the list — members get premium.web,
+    // everyone else the free one — so the paywall is enforced here, not in
+    // the browser.
+    defineRoute({
+      path: '/api/beehiiv/post-document',
+      method: 'GET',
+      handler: async (req, res, json) => {
+        const url = new URL(req.url ?? '', 'http://x')
+        const slug = url.searchParams.get('newsletter')
+        const postSlug = url.searchParams.get('post')
+        if (!slug || !isNewsletterSlug(slug)) {
+          return json(400, { error: 'invalid `newsletter`' })
+        }
+        if (!postSlug) return json(400, { error: 'missing `post`' })
+
+        const resolved = await resolveMembership(req, env)
+        const isMember = resolved?.entitlements.arkPlus ?? false
+        setReadCacheControl(res, { gated: true })
+
+        const token = env.BEEHIIV_API_KEY
+        const publicationId = resolveBeehiivPublicationId(env, slug)
+        if (!token || !publicationId) return json(404, { error: 'not_found' })
+
+        try {
+          const raw = await fetchBeehiivRaw(publicationId, token)
+          const post = raw.find(
+            (p) => p.slug === postSlug && isPublishedBeehiivPost(p),
+          )
+          if (!post) return json(404, { error: 'not_found' })
+          const html = selectBeehiivWebHtml(post, isMember ? 'premium' : 'free')
+          json(200, { html: html.trim() ? sanitizeBeehiivDocument(html) : null })
+        } catch (err) {
+          console.error('[beehiiv] post document fetch failed:', err)
           json(502, { error: 'beehiiv_unavailable' })
         }
       },
