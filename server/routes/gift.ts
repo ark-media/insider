@@ -452,7 +452,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           gift,
           { email: session.email, name: sessionName(session), auth0Sub },
         )
-        if (!result.ok) return json(409, { error: result.error })
+        if (!result.ok) {
+          clearGiftClaimCookie(_res, env)
+          return json(409, { error: result.error })
+        }
 
         clearGiftClaimCookie(_res, env)
         return json(200, {
