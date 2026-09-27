@@ -260,6 +260,18 @@ export function giftExtensionRunning(sub: Stripe.Subscription): boolean {
   return sub.status === 'trialing' || sub.pause_collection != null
 }
 
+// When the gift holding the renewal off (giftExtensionRunning) runs out, as an
+// ISO date: a monthly sub's pause resumes, or an annual sub's pushed-out period
+// ends. Null when no gift is holding it. The account page shows this in place
+// of the next charge: a paused sub keeps its old period end, which otherwise
+// reads as a charge next month that isn't coming.
+export function giftExtensionEndIso(sub: Stripe.Subscription): string | null {
+  const resumesAt = sub.pause_collection?.resumes_at
+  if (resumesAt != null) return tsToIso(resumesAt)
+  if (sub.status === 'trialing') return tsToIso(sub.trial_end)
+  return null
+}
+
 // Whether the subscription is set to end: at period end (the normal cancel), or
 // at a fixed date (a cancel made while a gift pause runs ends when the gift
 // does, see giftPauseEndSec).

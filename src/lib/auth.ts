@@ -233,6 +233,9 @@ export type MySubscription = {
   currency?: string | null;
   minorFactor?: number;
   card?: CardOnFile | null;
+  // When a gift redeemed onto this subscription stops holding its renewal off
+  // (ISO), or null. Nothing is charged before it, whatever periodEnd says.
+  giftExtendedUntil?: string | null;
 };
 
 // The signed-in member's plan, cancel schedule, price and card on file, from

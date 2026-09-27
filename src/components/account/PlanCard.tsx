@@ -21,14 +21,22 @@ export function PlanCard({
   tier,
   subscription,
   loading,
+  giftEndsAt = null,
 }: {
   tier: PaidTier;
   // Null while the subscription is still loading; a resolved object after.
   subscription: MySubscription | null;
   loading: boolean;
+  // When a gift-only membership ends (ISO) — the latest of the gifted axes.
+  // Only read when there's no subscription.
+  giftEndsAt?: string | null;
 }) {
   const meta = TIERS.find((t) => t.key === tier);
   const sub = subscription;
+  // A gifted membership with nothing behind it: the read succeeded and found no
+  // subscription (every live one has a period end). Nothing to bill, change or
+  // cancel — so no billing link, and the date shown is when the gift ends.
+  const giftOnly = Boolean(sub && !sub.periodEnd);
   // Only ever the interval we actually read. `plan` is null for an interval
   // that isn't month or year, and defaulting that to "/month" labels a price as
   // monthly on a subscription that isn't — the more alarming of the two guesses,
@@ -44,7 +52,7 @@ export function PlanCard({
   // The renewal line answers one of three different questions depending on
   // what's scheduled, so the label changes with it rather than always saying
   // "renews" over a date that is really an ending.
-  const renewal = renewalCell(sub);
+  const renewal = giftOnly ? giftOnlyCell(giftEndsAt) : renewalCell(sub);
 
   return (
     <div className="border border-rule bg-navy-800/40">
@@ -54,7 +62,11 @@ export function PlanCard({
             <h2 className="font-display text-[22px] font-bold leading-tight text-fg-strong">
               {meta?.label ?? "Your membership"}
             </h2>
-            <StatusBadge subscription={sub} loading={loading} />
+            <StatusBadge
+              subscription={sub}
+              loading={loading}
+              giftOnly={giftOnly}
+            />
           </div>
           {meta ? (
             <p className="mt-2 text-body-sm text-fg">{meta.blurb}</p>
@@ -74,11 +86,15 @@ export function PlanCard({
           put in them, so a gifted member (no subscription) gets no empty grid. */}
       {renewal || price || sub?.card ? (
         <dl className="grid grid-cols-1 border-t border-rule sm:grid-cols-3">
-          {renewal ? (
-            <Cell label={renewal.label}>{renewal.value}</Cell>
-          ) : null}
+          {renewal ? <Cell label={renewal.label}>{renewal.value}</Cell> : null}
           {price && renewal?.kind !== "ending" ? (
-            <Cell label="Next charge">{price}</Cell>
+            <Cell label="Next charge">
+              {/* Under a gift, the next charge is when the gift runs out, not
+                  the "Renews" date a plain subscription would have here. */}
+              {renewal?.kind === "gift"
+                ? `${price} on ${renewal.value}`
+                : price}
+            </Cell>
           ) : null}
           {sub?.card ? (
             <Cell
@@ -99,19 +115,35 @@ export function PlanCard({
         </dl>
       ) : null}
 
-      <div className="flex flex-col gap-4 border-t border-rule p-6 sm:flex-row sm:items-center sm:p-8">
-        <Link
-          to="/account/billing"
-          className="inline-flex min-h-12 shrink-0 items-center justify-center border border-rule-strong px-6 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          Manage billing →
-        </Link>
-        <p className="text-body-sm text-fg-muted">
-          Payment method and cancellation.
+      {giftOnly ? (
+        <p className="border-t border-rule p-6 text-body-sm text-fg-muted sm:p-8">
+          This membership is a gift, so there's nothing to pay and it won't
+          renew.
         </p>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-4 border-t border-rule p-6 sm:flex-row sm:items-center sm:p-8">
+          <Link
+            to="/account/billing"
+            className="inline-flex min-h-12 shrink-0 items-center justify-center border border-rule-strong px-6 button-text font-display font-bold text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            Manage billing →
+          </Link>
+          <p className="text-body-sm text-fg-muted">
+            Payment method and cancellation.
+          </p>
+        </div>
+      )}
     </div>
   );
+}
+
+// A gift-only membership's one date: when it ends. Null when we don't know it,
+// which drops the cell like every other unknown on this card.
+function giftOnlyCell(
+  giftEndsAt: string | null,
+): { kind: "ending"; label: string; value: string } | null {
+  const on = formatTimestamp(giftEndsAt, "long");
+  return on ? { kind: "ending", label: "Gift ends", value: on } : null;
 }
 
 function Cell({
@@ -139,7 +171,11 @@ function Cell({
 // renewal nor an ending — so the label follows the state.
 function renewalCell(
   sub: MySubscription | null,
-): { kind: "renews" | "ending" | "changing"; label: string; value: string } | null {
+): {
+  kind: "renews" | "ending" | "changing" | "gift";
+  label: string;
+  value: string;
+} | null {
   if (!sub) return null;
   // Long form ("September 18, 2026") to match the per-axis access rows
   // directly below it — the same date in two formats on one screen reads as
@@ -152,6 +188,12 @@ function renewalCell(
       ? { kind: "ending", label: "Access until", value: until }
       : null;
   }
+  // A gift is holding the renewal off: the period end is last month's news and
+  // the first charge is when the gift runs out.
+  const giftUntil = formatTimestamp(sub.giftExtendedUntil ?? null, "long");
+  if (giftUntil && !sub.pendingChange) {
+    return { kind: "gift", label: "Gift covers you until", value: giftUntil };
+  }
   const on = formatTimestamp(sub.periodEnd, "long");
   if (!on) return null;
   return sub.pendingChange
@@ -162,9 +204,11 @@ function renewalCell(
 function StatusBadge({
   subscription,
   loading,
+  giftOnly,
 }: {
   subscription: MySubscription | null;
   loading: boolean;
+  giftOnly: boolean;
 }) {
   // No badge at all while we're still reading Stripe: "Active" that flips to
   // "Ending" a beat later is worse than a badge that arrives late. And none
@@ -173,11 +217,16 @@ function StatusBadge({
   // someone's money that we are in no position to make.
   if (loading || !subscription) return null;
 
-  const { text, tone } = subscription.cancelAtPeriodEnd
-    ? { text: "Ending", tone: "border-danger/50 bg-danger/10 text-danger" }
-    : subscription.pendingChange
-      ? { text: "Change scheduled", tone: "border-cyan/50 bg-cyan/10 text-cyan" }
-      : { text: "Active", tone: "border-cyan/50 bg-cyan/10 text-cyan" };
+  const { text, tone } = giftOnly
+    ? { text: "Gift", tone: "border-cyan/50 bg-cyan/10 text-cyan" }
+    : subscription.cancelAtPeriodEnd
+      ? { text: "Ending", tone: "border-danger/50 bg-danger/10 text-danger" }
+      : subscription.pendingChange
+        ? {
+            text: "Change scheduled",
+            tone: "border-cyan/50 bg-cyan/10 text-cyan",
+          }
+        : { text: "Active", tone: "border-cyan/50 bg-cyan/10 text-cyan" };
 
   return (
     <span

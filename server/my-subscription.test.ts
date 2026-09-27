@@ -50,6 +50,10 @@ let subsByCustomer: Record<
     price_currency?: string
     interval?: 'month' | 'year'
     default_payment_method?: string | null
+    // A gift extension: a monthly sub's pause, or an annual sub's trial.
+    pause_collection?: { behavior: string; resumes_at: number | null } | null
+    status?: string
+    trial_end?: number | null
   }>
 > = {}
 
@@ -89,7 +93,9 @@ class FakeStripe {
         customer: args.customer,
         // The account page reads the member's live subscription; default to
         // 'active' so the (status-filtered) live-subscription lookup matches it.
-        status: 'active',
+        status: s.status ?? 'active',
+        pause_collection: s.pause_collection ?? null,
+        trial_end: s.trial_end ?? null,
         currency: s.currency,
         cancel_at_period_end: s.cancel_at_period_end ?? false,
         cancel_at: s.cancel_at ?? null,
@@ -200,7 +206,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const cookie = await sessionCookie('member@example.com')
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null, giftExtendedUntil: null })
   })
 
   test('normally renewing subscription → no pending cancel', async () => {
@@ -220,6 +226,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       currency: undefined,
       minorFactor: 100,
       card: null,
+      giftExtendedUntil: null,
     })
   })
 
@@ -249,6 +256,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       currency: undefined,
       minorFactor: 100,
       card: null,
+      giftExtendedUntil: null,
     })
   })
 
@@ -278,6 +286,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       currency: undefined,
       minorFactor: 100,
       card: null,
+      giftExtendedUntil: null,
     })
   })
 
@@ -296,7 +305,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const cookie = await sessionCookie('member@example.com')
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: true, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: undefined, minorFactor: 100, card: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: true, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: undefined, minorFactor: 100, card: null, giftExtendedUntil: null })
   })
 
   test('only the session email is consulted — never a client-supplied one', async () => {
@@ -318,7 +327,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
     // member@ has no sub of their own, so other@'s pending cancel must not leak.
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null, giftExtendedUntil: null })
     const customerList = stripeCalls.find((c) => c.method === 'customers.list')
     expect((customerList!.args[0] as { email: string }).email).toBe(
       'member@example.com',
@@ -451,5 +460,43 @@ describe('GET /api/stripe/my-subscription — price + card on file', () => {
     const body = res.__json() as Record<string, unknown>
     expect(body.card).toBeNull()
     expect(body.periodEnd).toBe(new Date(PERIOD_END * 1000).toISOString())
+  })
+})
+
+describe('GET /api/stripe/my-subscription — gift extension', () => {
+  // A gift redeemed onto a live sub holds its renewal off (routes/gift.ts
+  // extendSubscription). The account page needs that date: the sub's own
+  // period end is next month's, and a charge isn't coming then.
+  const RESUMES_AT = PERIOD_END + 365 * 24 * 60 * 60
+
+  test("a gift-paused monthly sub reports the pause's resume date", async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        {
+          id: 'sub_1',
+          current_period_end: PERIOD_END,
+          pause_collection: { behavior: 'keep_as_draft', resumes_at: RESUMES_AT },
+        },
+      ],
+    }
+    const res = await get({ cookie: await sessionCookie('member@example.com') })
+    const body = res.__json() as Record<string, unknown>
+    expect(body.giftExtendedUntil).toBe(new Date(RESUMES_AT * 1000).toISOString())
+    // The period end is untouched — the page, not the API, decides which to show.
+    expect(body.periodEnd).toBe(new Date(PERIOD_END * 1000).toISOString())
+  })
+
+  test('a gift-extended annual sub (trialing) reports its trial end', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        { id: 'sub_1', current_period_end: RESUMES_AT, status: 'trialing', trial_end: RESUMES_AT },
+      ],
+    }
+    const res = await get({ cookie: await sessionCookie('member@example.com') })
+    expect((res.__json() as Record<string, unknown>).giftExtendedUntil).toBe(
+      new Date(RESUMES_AT * 1000).toISOString(),
+    )
   })
 })
