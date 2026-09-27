@@ -807,9 +807,8 @@ single member only ever sees some of them.
 - **HEADLINE**: Claim your Ark+ gift. ("Ark+" in the cyan accent)
 
 ### Magic-link path (normal path from the gift email)
-- **BODY**: Your gift starts today.
-- **CTA**: Start your Ark+ membership →
-- **CTA (CLAIMING)**: Starting… →
+- **CTA**: Activate your Ark+ gift →
+- **CTA (CLAIMING)**: Activating… →
 - **CTA (RETRYABLE ERROR)**: Try again →
 - **CTA (TERMINAL ERROR)**: Go to your account
 
@@ -818,9 +817,8 @@ single member only ever sees some of them.
 - **BODY (LOADING)**: Checking your account…
 - **BODY (SIGNED OUT)**: Sign in to claim your gift.
 - **CTA (SIGNED OUT)**: Sign in to claim →
-- **BODY (SIGNED IN)**: Your gift starts today.
-- **CTA (SIGNED IN)**: Claim your gift →
-- **CTA (CLAIMING)**: Claiming… →
+- **CTA (SIGNED IN)**: Activate your gift →
+- **CTA (CLAIMING)**: Activating… →
 
 ### Success states
 - **EYEBROW**: You're all set

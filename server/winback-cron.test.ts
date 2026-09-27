@@ -25,6 +25,17 @@ mock.module('@neondatabase/serverless', () =>
   neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
 )
 
+// --- Stripe mock -----------------------------------------------------------
+// Only the Fold leaver's "already back?" check reaches Stripe: email → Stripe
+// customers → the membership rows keyed on them.
+let stripeCustomers: { id: string }[] = []
+class FakeStripe {
+  customers = {
+    list: async () => ({ data: stripeCustomers }),
+  }
+}
+mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
+
 import { devApiPlugin } from './dev-api'
 import { winbackUnsubToken } from './routes/winback'
 
@@ -38,6 +49,7 @@ const BASE_ENV: Record<string, string> = {
   CRON_SECRET,
   RESEND_API_KEY: 'rk_test',
   DATABASE_URL: 'postgres://stub-winback-cron',
+  STRIPE_SECRET_KEY: 'sk_test_fake',
 }
 
 function envWithout(key: string): Record<string, string> {
@@ -99,9 +111,15 @@ function stageRun(opts: {
   roster?: RosterRow[]
   suppressed?: boolean
   alreadySent?: boolean
+  /** The membership row behind the leaver's Stripe customer, if any. */
+  membership?: Record<string, unknown>
 }) {
+  stripeCustomers = opts.membership ? [{ id: 'cus_back' }] : []
   nextSqlResult = (sql) => {
     if (sql.includes('from cancellation_survey')) return opts.roster ?? []
+    if (sql.includes('from membership where stripe_customer_id')) {
+      return opts.membership ? [opts.membership] : []
+    }
     if (sql.includes('from winback_suppression')) {
       return opts.suppressed ? [{ '?column?': 1 }] : []
     }
@@ -207,6 +225,53 @@ describe('winback cron — run', () => {
     await runHandler(getHandler(CRON_PATH), cronReq(), res)
     expect(res.__json()).toMatchObject({ scanned: 2, eligible: 1, sent: 1 })
     expect(resendCalls()).toHaveLength(1)
+  })
+
+  test('a Fold leaver gets the Fold email, pointing at /fold, on its own ledger cohort', async () => {
+    stageRun({ roster: [leaver({ canceled_tier: 'circle' })] })
+    const res = makeRes()
+    await runHandler(getHandler(CRON_PATH), cronReq(), res)
+    expect(res.__json()).toMatchObject({ scanned: 1, eligible: 1, sent: 1, failed: 0 })
+
+    const sends = resendCalls()
+    expect(sends).toHaveLength(1)
+    const body = parseJsonInitBody(sends[0]!.init) as Record<string, unknown>
+    expect(body.subject).toBe('The conversation kept going')
+    expect(String(body.html)).toContain('https://ark.example/fold')
+    expect(String(body.html)).toContain('/api/winback/unsubscribe?e=')
+    expect((sends[0]!.init?.headers as Record<string, string>)['Idempotency-Key']).toBe(
+      'winback_fold_180d_left@example.com',
+    )
+    const ledger = sqlCalls.find((c) => c.sql.includes('insert into winback_sends'))
+    expect(ledger?.values).toContain('fold_180d')
+  })
+
+  test('a Fold leaver who holds the Fold again is not invited back', async () => {
+    stageRun({
+      roster: [leaver({ canceled_tier: 'circle' })],
+      membership: {
+        auth0_sub: 'auth0|back',
+        stripe_customer_id: 'cus_back',
+        stripe_subscription_id: null,
+        tier: 'circle',
+        status: 'active',
+        ark_plus_gift_expires_at: null,
+        circle_gift_expires_at: null,
+      },
+    })
+    const res = makeRes()
+    await runHandler(getHandler(CRON_PATH), cronReq(), res)
+    expect(res.__json()).toMatchObject({ scanned: 1, eligible: 0, sent: 0, failed: 0 })
+    expect(resendCalls()).toHaveLength(0)
+  })
+
+  test('a Fold leaver is skipped, not guessed at, when the Fold check cannot run', async () => {
+    stageRun({ roster: [leaver({ canceled_tier: 'circle' })] })
+    const res = makeRes()
+    await runHandler(getHandler(CRON_PATH, envWithout('STRIPE_SECRET_KEY')), cronReq(), res)
+    expect(res.__json()).toMatchObject({ eligible: 0, sent: 0, failed: 1 })
+    expect(resendCalls()).toHaveLength(0)
+    expect(sqlCalls.some((c) => c.sql.includes('insert into winback_sends'))).toBe(false)
   })
 
   test('a send failure leaves the ledger untouched so the next run retries', async () => {

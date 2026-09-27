@@ -15,6 +15,7 @@ import { PaymentMethodPanel } from "../../components/account/PaymentMethodPanel"
 import { PlanChangePanel } from "../../components/account/PlanChangePanel";
 import { formatMinor } from "../../lib/currency";
 import { perPeriod } from "../../../shared/billing-copy";
+import { giftEndsAt } from "../../lib/gift";
 
 export const Route = createFileRoute("/account/billing")({
   component: BillingPage,
@@ -64,6 +65,12 @@ function BillingPage() {
   // card because Stripe hiccuped once is the worse failure.
   const [billsToCard, setBillsToCard] = useState<boolean | undefined>(
     undefined,
+  );
+  // When a gift redeemed onto the subscription stops holding its billing off
+  // (ISO), or null. Until then that date, not the period end, is when the next
+  // charge lands and when a cancel takes effect.
+  const [giftExtendedUntil, setGiftExtendedUntil] = useState<string | null>(
+    null,
   );
   // The tier-aware cancel/debundle flow lives in <CancelFlow>; this just opens it.
   const [flowOpen, setFlowOpen] = useState(false);
@@ -124,6 +131,7 @@ function BillingPage() {
           : null,
       );
       setCanChangeAmount(Boolean(s.canChangeAmount));
+      setGiftExtendedUntil(s.giftExtendedUntil ?? null);
       // Every live subscription has a current period; no subscription reports
       // none. That's the one field here that tells the two apart.
       setBillsToCard(Boolean(s.periodEnd));
@@ -156,6 +164,11 @@ function BillingPage() {
   // Long form throughout the account section — the plan card one click away
   // states the same date that way, and two formats read as two dates.
   const periodEndLabel = formatTimestamp(periodEnd, "long") || null;
+  const giftUntilLabel = formatTimestamp(giftExtendedUntil, "long") || null;
+  // A gifted membership with no subscription behind it: nothing to bill or
+  // cancel, so the page says so instead of offering either.
+  const giftOnly = billsToCard === false;
+  const giftEndsLabel = formatTimestamp(giftEndsAt(me), "long") || null;
 
   // A human noun phrase for a tier, so the pending-change banner can name the
   // change ("from the Ark+ & The Fold bundle to Ark+").
@@ -282,7 +295,9 @@ function BillingPage() {
               <PaymentMethodPanel
                 card={card}
                 // A membership that's set to end has no next charge to name.
-                nextChargeLabel={scheduledCancelAt ? null : periodEndLabel}
+                nextChargeLabel={
+                  scheduledCancelAt ? null : (giftUntilLabel ?? periodEndLabel)
+                }
                 onCardChanged={setCard}
               />
             </div>
@@ -349,139 +364,153 @@ function BillingPage() {
               ) : null}
             </div>
           ) : null}
-          <div className="max-w-xl border border-rule bg-navy-800/40 p-8">
-            <h2 className="label text-cyan">Cancel</h2>
-            <p className="mt-4 max-w-md text-body-sm text-fg">
-              {scheduledCancelAt
-                ? "Your membership is set to cancel and won't renew."
-                : pendingChange
-                  ? "Changed your mind? You can undo the scheduled change and keep your full membership, or cancel it entirely."
-                  : periodEndLabel
-                    ? `Cancel anytime. You'll keep access through the end of your current billing period, on ${periodEndLabel}.`
-                    : "Cancel anytime. You'll keep access through the end of your current billing period."}
-            </p>
+          {giftOnly ? (
+            <div className="max-w-xl border border-rule bg-navy-800/40 p-8">
+              <h2 className="label text-cyan">Gift membership</h2>
+              <p className="mt-4 max-w-md text-body-sm text-fg">
+                {giftEndsLabel
+                  ? `Your membership is a gift, so there's nothing to pay or cancel. It ends on ${giftEndsLabel} and won't renew.`
+                  : "Your membership is a gift, so there's nothing to pay or cancel. It won't renew."}
+              </p>
+            </div>
+          ) : (
+            <div className="max-w-xl border border-rule bg-navy-800/40 p-8">
+              <h2 className="label text-cyan">Cancel</h2>
+              <p className="mt-4 max-w-md text-body-sm text-fg">
+                {scheduledCancelAt
+                  ? "Your membership is set to cancel and won't renew."
+                  : pendingChange
+                    ? "Changed your mind? You can undo the scheduled change and keep your full membership, or cancel it entirely."
+                    : giftUntilLabel
+                      ? `Cancel anytime. You'll keep access until ${giftUntilLabel}, when your gift ends, and won't be charged again.`
+                      : periodEndLabel
+                        ? `Cancel anytime. You'll keep access through the end of your current billing period, on ${periodEndLabel}.`
+                        : "Cancel anytime. You'll keep access through the end of your current billing period."}
+              </p>
 
-            {status.kind === "ok" ? (
-              <p
-                ref={confirmationRef}
-                tabIndex={-1}
-                className="mt-6 text-body-sm text-cyan focus:outline-none"
-                aria-live="polite"
-              >
-                Cancellation confirmed.{" "}
-                {status.until
-                  ? `Access continues until ${formatTimestamp(status.until, "long")}.`
-                  : ""}
-              </p>
-            ) : status.kind === "debundled" ? (
-              <p
-                ref={confirmationRef}
-                tabIndex={-1}
-                className="mt-6 text-body-sm text-cyan focus:outline-none"
-                aria-live="polite"
-              >
-                Done — you'll keep{" "}
-                {status.kept === "ark-plus" ? "Ark+" : "the Fold"} on its
-                own. The change takes effect at the end of your current billing
-                period{periodEndLabel ? `, on ${periodEndLabel}` : ""}.
-              </p>
-            ) : status.kind === "resumed" ? (
-              <p
-                ref={confirmationRef}
-                tabIndex={-1}
-                className="mt-6 text-body-sm text-cyan focus:outline-none"
-                aria-live="polite"
-              >
-                Your membership is back on.{" "}
-                {status.nextChargeAt
-                  ? `It renews on ${formatTimestamp(status.nextChargeAt, "long")}.`
-                  : ""}
-              </p>
-            ) : status.kind === "reverted" ? (
-              <p
-                ref={confirmationRef}
-                tabIndex={-1}
-                className="mt-6 text-body-sm text-cyan focus:outline-none"
-                aria-live="polite"
-              >
-                The scheduled change was cancelled — your membership continues
-                unchanged.{" "}
-                {status.nextChargeAt
-                  ? `It renews on ${formatTimestamp(status.nextChargeAt, "long")}.`
-                  : ""}
-              </p>
-            ) : scheduledCancelAt ? (
-              <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
-                You'll keep access until {formatTimestamp(scheduledCancelAt, "long")}.
-              </p>
-            ) : null}
+              {status.kind === "ok" ? (
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
+                  Cancellation confirmed.{" "}
+                  {status.until
+                    ? `Access continues until ${formatTimestamp(status.until, "long")}.`
+                    : ""}
+                </p>
+              ) : status.kind === "debundled" ? (
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
+                  Done — you'll keep{" "}
+                  {status.kept === "ark-plus" ? "Ark+" : "the Fold"} on its own.
+                  The change takes effect at the end of your current billing
+                  period{periodEndLabel ? `, on ${periodEndLabel}` : ""}.
+                </p>
+              ) : status.kind === "resumed" ? (
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
+                  Your membership is back on.{" "}
+                  {status.nextChargeAt
+                    ? `It renews on ${formatTimestamp(status.nextChargeAt, "long")}.`
+                    : ""}
+                </p>
+              ) : status.kind === "reverted" ? (
+                <p
+                  ref={confirmationRef}
+                  tabIndex={-1}
+                  className="mt-6 text-body-sm text-cyan focus:outline-none"
+                  aria-live="polite"
+                >
+                  The scheduled change was cancelled — your membership continues
+                  unchanged.{" "}
+                  {status.nextChargeAt
+                    ? `It renews on ${formatTimestamp(status.nextChargeAt, "long")}.`
+                    : ""}
+                </p>
+              ) : scheduledCancelAt ? (
+                <p className="mt-6 text-body-sm text-cyan" aria-live="polite">
+                  You'll keep access until{" "}
+                  {formatTimestamp(scheduledCancelAt, "long")}.
+                </p>
+              ) : null}
 
-            {/* Actions reflect the current membership state, not the last
+              {/* Actions reflect the current membership state, not the last
                 action: a pending cancel → reactivate; a pending change →
                 undo/cancel; otherwise the normal cancel-or-change entry. The
                 confirmation message above is what changes per action, so the
                 member is never left without a next step (e.g. after accepting
                 a save offer or undoing a change). */}
-            {scheduledCancelAt ? (
-              <button
-                type="button"
-                onClick={onReactivate}
-                disabled={status.kind === "reactivating"}
-                className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
-              >
-                {status.kind === "reactivating"
-                  ? "Reactivating…"
-                  : "Reactivate membership"}
-              </button>
-            ) : pendingChange ? (
-              // A period-end change is scheduled (e.g. a debundle): the two
-              // useful actions are undoing it (keep the full membership) or
-              // cancelling outright — not the generic change tree.
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              {scheduledCancelAt ? (
                 <button
                   type="button"
-                  onClick={onUndoChange}
+                  onClick={onReactivate}
                   disabled={status.kind === "reactivating"}
-                  className="inline-flex items-center justify-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  className="mt-6 inline-flex items-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                 >
                   {status.kind === "reactivating"
-                    ? "Undoing…"
-                    : `Keep ${tierLabel(cancelTier)}`}
+                    ? "Reactivating…"
+                    : "Reactivate membership"}
                 </button>
+              ) : pendingChange ? (
+                // A period-end change is scheduled (e.g. a debundle): the two
+                // useful actions are undoing it (keep the full membership) or
+                // cancelling outright — not the generic change tree.
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={onUndoChange}
+                    disabled={status.kind === "reactivating"}
+                    className="inline-flex items-center justify-center gap-2 border border-cyan bg-cyan/10 px-5 py-3 button-text font-display font-bold text-cyan transition hover:bg-cyan/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  >
+                    {status.kind === "reactivating"
+                      ? "Undoing…"
+                      : `Keep ${tierLabel(cancelTier)}`}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={status.kind === "reactivating"}
+                    onClick={() => {
+                      setStatus({ kind: "idle" });
+                      setFlowOpen(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  >
+                    Cancel my membership
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
-                  disabled={status.kind === "reactivating"}
                   onClick={() => {
                     setStatus({ kind: "idle" });
                     setFlowOpen(true);
                   }}
-                  className="inline-flex items-center justify-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
+                  className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
-                  Cancel my membership
+                  {cancelTier === "bundle"
+                    ? "Cancel or change my membership"
+                    : cancelTier === "circle"
+                      ? "Cancel the Fold"
+                      : "Cancel Ark+"}
                 </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setStatus({ kind: "idle" });
-                  setFlowOpen(true);
-                }}
-                className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-              >
-                {cancelTier === "bundle"
-                  ? "Cancel or change my membership"
-                  : cancelTier === "circle"
-                    ? "Cancel the Fold"
-                    : "Cancel Ark+"}
-              </button>
-            )}
-            {status.kind === "error" ? (
-              <p className="mt-3 text-body-sm text-danger" aria-live="polite">
-                {status.message}
-              </p>
-            ) : null}
-          </div>
+              )}
+              {status.kind === "error" ? (
+                <p className="mt-3 text-body-sm text-danger" aria-live="polite">
+                  {status.message}
+                </p>
+              ) : null}
+            </div>
+          )}
         </div>
       </section>
 

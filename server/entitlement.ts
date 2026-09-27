@@ -1011,6 +1011,30 @@ async function listCircleAccessGroupMembers(
     if (out.length >= memberIds.size) break
     if (records.length < 100 || body.has_next_page === false) break
   }
+
+  // 3. The roster lists ACTIVE members only. A member who was added to the
+  // group but is inactive in Circle (checked 2026-09-27: half the live group
+  // was) never appears in it, so without this they'd have no email, be left
+  // alone forever, and a lapsed one would keep the group for good — ready to
+  // use the day they activate. Fetch each one directly; a failed lookup keeps
+  // email null, which leaves that member alone as before.
+  const found = new Set(out.map((m) => m.communityMemberId))
+  for (const id of memberIds) {
+    if (found.has(id)) continue
+    let email: string | null = null
+    try {
+      const res = await fetchWithTimeout(`${CIRCLE_API}/community_members/${id}`, { headers })
+      if (res.ok) {
+        const member = (await res.json()) as CircleMemberRecord
+        email = typeof member.email === 'string' ? member.email.toLowerCase() : null
+      } else {
+        console.warn(`[reconcile] Circle member ${id} lookup ${res.status} — left alone`)
+      }
+    } catch (err) {
+      console.warn(`[reconcile] Circle member ${id} lookup failed — left alone:`, err)
+    }
+    out.push({ communityMemberId: id, email })
+  }
   return out
 }
 

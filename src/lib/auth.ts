@@ -237,6 +237,9 @@ export type MySubscription = {
   // billing page, and the amount picker on a plan change. Only for members
   // who chose more than the minimum at checkout.
   canChangeAmount?: boolean;
+  // When a gift redeemed onto this subscription stops holding its renewal off
+  // (ISO), or null. Nothing is charged before it, whatever periodEnd says.
+  giftExtendedUntil?: string | null;
 };
 
 // The signed-in member's plan, cancel schedule, price and card on file, from

@@ -6,7 +6,8 @@
 // <CRON_SECRET>` matching the secret set in the project's environment.
 
 import { secretEquals } from '../lib/timing-safe.js'
-import { reconcileEntitlements, type ReconcileAxis } from '../entitlement.js'
+import { liveAxes, reconcileEntitlements, type ReconcileAxis } from '../entitlement.js'
+import { membershipRowsForEmail } from '../lib/entitlement-resolver.js'
 import { getDb } from '../lib/db.js'
 import { getMigrationConfig, getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
@@ -246,7 +247,7 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       },
     }),
     defineRoute({
-      // Invite members who left Ark+ six months ago to come back. Scans the
+      // Invite members who left Ark+ or the Fold six months ago to come back. Scans the
       // cancellation record (which outlives the membership row), skips anyone
       // who has resubscribed or opted out, sends a one-time Resend invitation,
       // and records each send so nobody is mailed twice. See lib/winback.ts.
@@ -270,6 +271,14 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             appBaseUrl,
             nowMs: Date.now(),
             unsubscribeUrlFor: (email) => winbackUnsubUrl(email, env, appBaseUrl),
+            // Any row for the address that still grants the Fold — a new
+            // subscription, a gift, a comp. Throws (that leaver waits a day)
+            // rather than guess when a lookup can't run.
+            isOnFold: async (email) => {
+              if (!stripe) throw new Error('Stripe not configured')
+              const rows = await membershipRowsForEmail(env, stripe, email)
+              return rows.some((row) => liveAxes(row).circle)
+            },
           })
           json(200, summary)
         } catch (err) {
