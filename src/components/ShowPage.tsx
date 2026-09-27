@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   getShow,
   showAtmosphere,
@@ -177,13 +177,12 @@ function ShowArtwork({ show }: { show: Show }) {
 // How many rows to reveal per "Show more" press (search results).
 const ARCHIVE_PAGE_SIZE = 8;
 
-// Owns the show's episode-listening experience: an in-place player plus the
-// grid and archive that feed it. Any episode is playable without leaving the
-// page — clicking Play swaps the player's source to that episode and scrolls
-// it into view (the Crooked-style "listen here, browse here" model). The
-// player defaults to the latest episode; the grid and archive skip whatever
-// the player is showing only by skipping the latest, so the layout stays
-// stable as the selection changes.
+// Owns the show's episode-listening experience: the player with its playlist,
+// then the latest episodes as cards (and search). Any episode is playable
+// without leaving the page — picking a playlist row swaps the player's source
+// in place (the Crooked-style "listen here, browse here" model). The player
+// defaults to the latest episode; the cards skip the player's opening episode,
+// not the current pick, so the layout stays stable as the selection changes.
 function EpisodeBrowser({
   show,
   episodes,
@@ -204,7 +203,6 @@ function EpisodeBrowser({
     setSelected({ slug: show.slug, id: null });
   }
   const [query, setQuery] = useState("");
-  const playerRef = useRef<HTMLDivElement>(null);
 
   // The newest episode and the one the player opens on are not always the same
   // episode: the player needs audio, and the newest drop can be sitting there
@@ -216,12 +214,13 @@ function EpisodeBrowser({
     (ep) => ep.slug !== featuredEpisode?.slug,
   );
   const latest = remaining.slice(0, 3);
-  const archive = remaining.slice(3);
 
   const selectedEpisode =
     (selected.id ? episodes?.find((ep) => ep.id === selected.id) : null) ??
     featuredEpisode;
-  const activeId = selectedEpisode?.id ?? null;
+  // Everything the player can actually play, newest first — the playlist under
+  // the player, the way Crooked's show pages run theirs.
+  const playable = (episodes ?? []).filter((ep) => ep.audioUrl && ep.id);
   // Against `newest`, not `featuredEpisode`: when the newest episode has no
   // audio yet, the player opens on the one below it, and calling that "Latest
   // episode" with a "New" badge puts the label on the wrong episode while the
@@ -231,10 +230,9 @@ function EpisodeBrowser({
   function play(ep: Episode) {
     // Needs audio to play at all, and an id to be the selected episode.
     if (!ep.audioUrl || !ep.id) return;
-    // Single chokepoint for every Play button (grid, archive, upsell row).
+    // Single chokepoint for every playlist row.
     trackEvent("episode_play_clicked", { show: show.slug, episode: ep.slug });
     setSelected({ slug: show.slug, id: ep.id });
-    playerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   const q = query.trim().toLowerCase();
@@ -249,15 +247,18 @@ function EpisodeBrowser({
 
   return (
     <>
-      <div ref={playerRef}>
-        {selectedEpisode ? (
-          <ShowPlayer
-            episode={selectedEpisode}
-            show={show}
-            isLatest={isLatest}
-          />
-        ) : null}
-      </div>
+      {selectedEpisode ? (
+        <ShowPlayer
+          episode={selectedEpisode}
+          show={show}
+          isLatest={isLatest}
+          // Only a pick from the playlist starts audio; the episode the page
+          // opens on waits for the listener to press play.
+          autoPlay={selected.id !== null}
+          playlist={playable}
+          onPlay={play}
+        />
+      ) : null}
 
       <section>
         <div className="page-section">
@@ -291,37 +292,21 @@ function EpisodeBrowser({
             <EpisodeList
               show={show}
               episodes={matches}
-              onPlay={play}
-              activeId={activeId}
               label={`${matches.length} ${
                 matches.length === 1 ? "result" : "results"
               } for “${query.trim()}”`}
               emptyLabel={`No episodes match “${query.trim()}”.`}
             />
           ) : (
-            <>
-              <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-                {latest.map((ep) => (
-                  <EpisodeCard
-                    key={ep.slug}
-                    show={show}
-                    episode={ep}
-                    onPlay={() => play(ep)}
-                    isActive={Boolean(ep.id) && ep.id === activeId}
-                  />
-                ))}
-              </div>
-              {archive.length > 0 ? (
-                <EpisodeList
+            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+              {latest.map((ep) => (
+                <EpisodeCard
+                  key={ep.slug}
                   show={show}
-                  episodes={archive}
-                  onPlay={play}
-                  activeId={activeId}
-                  label="All episodes"
-                  maxVisibleRows={4}
+                  episode={ep}
                 />
-              ) : null}
-            </>
+              ))}
+            </div>
           )}
         </div>
       </section>
@@ -350,65 +335,22 @@ function EpisodeSearch({
   );
 }
 
-// A flat episode list used for both the back catalog and search results.
-// Search results paginate via "Show more". The back catalog passes
-// maxVisibleRows to become a fixed-height scroll box sized to exactly that
-// many rows instead.
+// Search results: a flat episode list, paginated via "Show more".
 function EpisodeList({
   show,
   episodes,
-  onPlay,
-  activeId,
   label,
   emptyLabel,
-  maxVisibleRows,
 }: {
   show: Show;
   episodes: Episode[];
-  onPlay: (ep: Episode) => void;
-  activeId: string | null;
   label: string;
   emptyLabel?: string;
-  maxVisibleRows?: number;
 }) {
   const [visible, setVisible] = useState(ARCHIVE_PAGE_SIZE);
 
-  // When capped, the list scrolls inside a box sized to maxVisibleRows. The
-  // height is measured from the rendered rows so it tracks whatever the real
-  // row height is rather than assuming a fixed pixel value. We track the raw
-  // measurement and derive the applied height — when the list shrinks below
-  // the cap, `scrollable` flips false and we render with no maxHeight without
-  // needing a state reset in the effect.
-  const scrollable =
-    maxVisibleRows != null && episodes.length > maxVisibleRows;
-  const listRef = useRef<HTMLUListElement>(null);
-  const [measuredHeight, setMeasuredHeight] = useState<number>();
-  useEffect(() => {
-    if (!scrollable) return;
-    const ul = listRef.current;
-    if (!ul) return;
-    const rows = Array.from(ul.children).slice(
-      0,
-      maxVisibleRows,
-    ) as HTMLElement[];
-    // Add the ul's own top/bottom border so the scroll box doesn't clip its
-    // bottom rule. Derived from computed style rather than hardcoded so a
-    // theme change to border thickness doesn't silently break the math.
-    const cs = window.getComputedStyle(ul);
-    const borderY =
-      (parseFloat(cs.borderTopWidth) || 0) +
-      (parseFloat(cs.borderBottomWidth) || 0);
-    setMeasuredHeight(
-      rows.reduce((h, row) => h + row.offsetHeight, 0) + borderY,
-    );
-  }, [scrollable, maxVisibleRows, episodes]);
-  const maxHeight = scrollable ? measuredHeight : undefined;
-
-  const shown =
-    maxVisibleRows != null ? episodes : episodes.slice(0, visible);
-
   return (
-    <div id="all-episodes" className="mt-16">
+    <div className="mt-16">
       <div className="label text-fg-muted">
         {label}
       </div>
@@ -418,24 +360,16 @@ function EpisodeList({
         </p>
       ) : (
         <>
-          <ul
-            ref={listRef}
-            style={maxHeight != null ? { maxHeight } : undefined}
-            className={`mt-6 divide-y divide-rule border-y border-rule${
-              scrollable ? " overflow-y-auto" : ""
-            }`}
-          >
-            {shown.map((ep) => (
+          <ul className="mt-6 divide-y divide-rule border-y border-rule">
+            {episodes.slice(0, visible).map((ep) => (
               <EpisodeRow
                 key={ep.slug}
                 show={show}
                 episode={ep}
-                onPlay={onPlay}
-                isActive={Boolean(ep.id) && ep.id === activeId}
               />
             ))}
           </ul>
-          {maxVisibleRows == null && episodes.length > visible ? (
+          {episodes.length > visible ? (
             <button
               type="button"
               onClick={() => setVisible((v) => v + ARCHIVE_PAGE_SIZE)}
@@ -451,36 +385,10 @@ function EpisodeList({
   );
 }
 
-function EpisodeRow({
-  show,
-  episode,
-  onPlay,
-  isActive,
-}: {
-  show: Show;
-  episode: Episode;
-  onPlay: (ep: Episode) => void;
-  isActive: boolean;
-}) {
+function EpisodeRow({ show, episode }: { show: Show; episode: Episode }) {
   const image = episodeImage(episode, show);
   return (
-    <li
-      className={`group flex items-center gap-4 py-4 transition ${
-        isActive ? "text-cyan" : "text-fg"
-      }`}
-    >
-      {episode.audioUrl ? (
-        <button
-          type="button"
-          onClick={() => onPlay(episode)}
-          aria-label={`Play ${episode.title}`}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-rule-strong text-fg-muted transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-        >
-          {isActive ? <EqualizerGlyph /> : <PlayGlyph />}
-        </button>
-      ) : (
-        <span className="h-8 w-8 shrink-0" aria-hidden="true" />
-      )}
+    <li className="group flex items-center gap-4 py-4 text-fg transition">
       {image ? (
         <Link
           to="/podcasts/$show/$episode"
@@ -521,24 +429,10 @@ function EpisodeRow({
   );
 }
 
-function EpisodeCard({
-  show,
-  episode,
-  onPlay,
-  isActive,
-}: {
-  show: Show;
-  episode: Episode;
-  onPlay: () => void;
-  isActive: boolean;
-}) {
+function EpisodeCard({ show, episode }: { show: Show; episode: Episode }) {
   const image = episodeImage(episode, show);
   return (
-    <div
-      className={`group flex h-full flex-col border bg-navy-800/40 p-6 transition ${
-        isActive ? "border-cyan" : "border-rule"
-      }`}
-    >
+    <div className="group flex h-full flex-col border border-rule bg-navy-800/40 p-6 transition">
       {image ? (
         <Link
           to="/podcasts/$show/$episode"
@@ -555,16 +449,8 @@ function EpisodeCard({
           />
         </Link>
       ) : null}
-      <div className="flex items-center justify-between gap-3">
-        <div className="episode-meta text-cyan">
-          <EpisodeMeta episode={episode} />
-        </div>
-        {isActive ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 label tracking-[0.14em] text-cyan">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan" aria-hidden="true" />
-            Now playing
-          </span>
-        ) : null}
+      <div className="episode-meta text-cyan">
+        <EpisodeMeta episode={episode} />
       </div>
       <Link
         to="/podcasts/$show/$episode"
@@ -583,16 +469,6 @@ function EpisodeCard({
         {episode.description}
       </p>
       <div className="mt-auto flex items-center gap-4 pt-6">
-        {episode.audioUrl ? (
-          <button
-            type="button"
-            onClick={onPlay}
-            className="button-text inline-flex items-center gap-2 border border-cyan px-3 py-2 text-cyan transition hover:bg-cyan hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-          >
-            <PlayGlyph />
-            Play
-          </button>
-        ) : null}
         <Link
           to="/podcasts/$show/$episode"
           params={{ show: show.slug, episode: episode.slug } as never}
@@ -609,10 +485,16 @@ function ShowPlayer({
   episode,
   show,
   isLatest,
+  autoPlay,
+  playlist,
+  onPlay,
 }: {
   episode: Episode;
   show: Show;
   isLatest: boolean;
+  autoPlay: boolean;
+  playlist: Episode[];
+  onPlay: (ep: Episode) => void;
 }) {
   return (
     <section>
@@ -650,9 +532,66 @@ function ShowPlayer({
           title={episode.title}
           artworkUrl={episodeImage(episode, show)}
           fallbackDurationMinutes={episode.durationMinutes}
+          autoPlay={autoPlay}
         />
+        {playlist.length > 1 ? (
+          <Playlist playlist={playlist} activeId={episode.id ?? null} onPlay={onPlay} />
+        ) : null}
       </div>
     </section>
+  );
+}
+
+// The episode list attached under the player. Picking a row swaps the player's
+// episode in place — nothing on the page moves — so the list is a fixed-height
+// scroll box rather than growing the section.
+function Playlist({
+  playlist,
+  activeId,
+  onPlay,
+}: {
+  playlist: Episode[];
+  activeId: string | null;
+  onPlay: (ep: Episode) => void;
+}) {
+  return (
+    <ol
+      aria-label="Episodes"
+      className="max-h-[18.5rem] divide-y divide-rule overflow-y-auto border border-t-0 border-rule bg-navy-800/40"
+    >
+      {playlist.map((ep) => {
+        const isActive = ep.id === activeId;
+        return (
+          <li key={ep.slug}>
+            <button
+              type="button"
+              onClick={() => onPlay(ep)}
+              aria-current={isActive ? "true" : undefined}
+              className={`flex w-full items-center gap-4 px-4 py-3 text-left transition hover:bg-navy-800/60 hover:text-cyan focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-cyan sm:px-5 ${
+                isActive ? "text-cyan" : "text-fg"
+              }`}
+            >
+              <span
+                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border ${
+                  isActive ? "border-cyan" : "border-rule-strong text-fg-muted"
+                }`}
+              >
+                {isActive ? <EqualizerGlyph /> : <PlayGlyph />}
+              </span>
+              <span
+                className="line-clamp-1 min-w-0 flex-1 text-body-sm font-display tracking-[-0.005em]"
+                title={ep.title}
+              >
+                {ep.title}
+              </span>
+              <span className="meta hidden shrink-0 sm:inline">
+                <EpisodeMeta episode={ep} />
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
