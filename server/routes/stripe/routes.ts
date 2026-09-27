@@ -116,6 +116,7 @@ import {
   MAX_NAME_LEN,
   periodEndIso,
   phaseDiscountParams,
+  phaseTrialParams,
   planFromSubscription,
   quoteChargeToday,
   readCardOnFile,
@@ -1854,6 +1855,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                 })),
                 start_date: currentPhase.start_date,
                 end_date: currentPhase.end_date,
+                // A gift holding the renewal off is a trial; without this the
+                // rebuild ends it today and bills the member for the gift.
+                ...phaseTrialParams(currentPhase),
                 ...(currentDiscounts.length > 0 ? { discounts: currentDiscounts } : {}),
               },
               {
