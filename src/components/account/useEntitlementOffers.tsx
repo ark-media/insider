@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { BundleUpgradePreview, Me, WelcomeOffer } from "../../lib/auth";
+import type { ChangePreview, Me, WelcomeOffer } from "../../lib/auth";
 import {
   changeTier,
-  getBundleUpgradePreview,
+  getChangePreview,
   getWelcomeOffer,
 } from "../../lib/auth";
 import {
@@ -69,13 +69,13 @@ function daysUntil(iso: string | null, now: number): number | null {
 type BundleState =
   | { kind: "idle" }
   | { kind: "loading"; axis: AxisKey }
-  | { kind: "confirm"; axis: AxisKey; preview: BundleUpgradePreview }
-  | { kind: "working"; axis: AxisKey; preview: BundleUpgradePreview }
-  | { kind: "error"; axis: AxisKey; preview: BundleUpgradePreview; message: string }
+  | { kind: "confirm"; axis: AxisKey; preview: ChangePreview }
+  | { kind: "working"; axis: AxisKey; preview: ChangePreview }
+  | { kind: "error"; axis: AxisKey; preview: ChangePreview; message: string }
   // The preview itself failed, so there are no numbers to confirm against and
   // nothing to retry inside the panel. Distinct from `error` for that reason.
   | { kind: "preview-error"; axis: AxisKey }
-  | { kind: "ok"; immediate: boolean; preview: BundleUpgradePreview; effectiveAt?: string };
+  | { kind: "ok"; immediate: boolean; preview: ChangePreview; effectiveAt?: string };
 
 // One axis the member could add, in the shape a jump card renders: what it's
 // called, what they're missing, and the single action that starts the flow.
@@ -162,7 +162,8 @@ export function useEntitlementOffers({
   // buying the missing axis standalone, as before.
   const openBundleConfirm = async (axis: AxisKey) => {
     setBundle({ kind: "loading", axis });
-    const result = await getBundleUpgradePreview();
+    // On the cadence they're on now; the server fills it in.
+    const result = await getChangePreview({ tier: "bundle" });
     // "No live subscription to change" and "the request failed" are opposite
     // instructions. Only the first is a reason to sell a standalone
     // subscription instead: doing that on a failure drops a member who already
@@ -185,13 +186,20 @@ export function useEntitlementOffers({
   // so the axis they're adding rides that same subscription — D9's "switch to
   // Bundle via change-tier" rather than a second standalone sub billed
   // alongside it. Gaining an entitlement is immediate + prorated server-side.
-  const confirmBundle = async (ageStatement: string | null) => {
-    if (bundle.kind !== "confirm") return;
-    const { axis, preview } = bundle;
+  const confirmBundle = async (ageStatement: string | null, quoted: ChangePreview) => {
+    if (bundle.kind !== "confirm" && bundle.kind !== "error") return;
+    const { axis } = bundle;
+    // The panel keeps the quote it opened on, so a failure re-renders from the
+    // same starting point; the success message states what was just billed.
+    const preview = bundle.preview;
     setBundle({ kind: "working", axis, preview });
     const r = await changeTier({
       tier: "bundle",
-      plan: preview.plan,
+      plan: quoted.plan,
+      // A chosen amount above the minimum; at it, the catalog price.
+      ...(quoted.amountCents > quoted.floorCents
+        ? { customAmountCents: quoted.amountCents }
+        : {}),
       // The sentence the member just ticked, recorded on the subscription the
       // switch lands on. This route has no Checkout Session to stamp, so the
       // subscription is where the attestation lives — see change-tier.
@@ -201,7 +209,7 @@ export function useEntitlementOffers({
       setBundle({
         kind: "ok",
         immediate: r.timing !== "period_end",
-        preview,
+        preview: quoted,
         effectiveAt: r.effective_at,
       });
       onRefresh();

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { formatMinor } from "../../lib/currency";
-import { AXIS, dueTodayOf, fmtDate, type AxisKey } from "../../lib/entitlement-axes";
-import type { BundleUpgradePreview } from "../../lib/auth";
-import { dueTodayLine, perPeriod, renewsLine } from "../../../shared/billing-copy";
+import { AXIS, type AxisKey } from "../../lib/entitlement-axes";
+import type { ChangePreview } from "../../lib/auth";
+import { perPeriod } from "../../../shared/billing-copy";
 import { AGE_STATEMENT, type AgeAttestation } from "../../../shared/checkout-consent";
+import { ChangeAmountField, GIFT_BLOCKED_LINE, useChangeQuote, whenLine } from "./planChange";
 
 // The confirm step for D9. Every line answers a question a member asks at
 // exactly this moment, in the order they ask it: what does it cost, when do I
@@ -37,15 +38,18 @@ export function BundleConfirm({
   // Null for the other direction (adding Ark+ to a membership that already has
   // the Fold), which reaches nothing new to confirm.
   age: AgeAttestation | null;
-  preview: BundleUpgradePreview;
+  // The quote the panel opens on, at the pre-filled amount. A member who
+  // chooses their own amount moves it here and the panel re-quotes.
+  preview: ChangePreview;
   working: boolean;
   // A failed attempt, rendered INSIDE the panel, so the numbers the member is
   // deciding on stay on screen to retry from.
   error: string | null;
   // Handed the exact sentence the member ticked, so what we record is the copy
   // that was on screen rather than a second copy assembled by the caller. Null
-  // when nothing was asked.
-  onConfirm: (ageStatement: string | null) => void;
+  // when nothing was asked. The quote on screen rides along: its amount is
+  // what the switch bills.
+  onConfirm: (ageStatement: string | null, quoted: ChangePreview) => void;
   onCancel: () => void;
 }) {
   // The checkout modals fold this clause into the terms box, which they already
@@ -55,43 +59,35 @@ export function BundleConfirm({
   const [confirmedAge, setConfirmedAge] = useState(false);
   const [ageMissing, setAgeMissing] = useState(false);
   const meta = AXIS[axis];
-  const { currency, minorFactor, plan } = preview;
-  const bundle =
-    preview.bundleCents === null
-      ? null
-      : formatMinor(preview.bundleCents, currency, minorFactor);
+  const quote = useChangeQuote(preview);
+  const quoted = quote.preview;
+  const { currency, minorFactor, plan } = quoted;
+  const bundle = formatMinor(quoted.amountCents, currency, minorFactor);
   const current =
-    preview.currentCents === null
+    quoted.currentCents === null
       ? null
-      : formatMinor(preview.currentCents, currency, minorFactor);
-  const billLine = `${dueTodayLine(dueTodayOf(preview))} ${renewsLine({
-    plan,
-    renewsOn: fmtDate(preview.renewsAt),
-  })}`;
+      : formatMinor(quoted.currentCents, currency, minorFactor);
+  const billLine =
+    quoted.blocked === "gift_extension" ? GIFT_BLOCKED_LINE : whenLine(quoted);
 
   return (
     <div className="mb-6 border border-cyan/50 bg-cyan/5 px-4 py-4">
       <h3 className="font-display text-[18px] leading-tight text-fg-strong">
         Add {meta.inline} to your membership
       </h3>
+      <ChangeAmountField preview={preview} value={quote.value} onChange={quote.setValue} />
       <ul className="mt-3 space-y-2 text-body-sm text-fg">
         <li>
-          {bundle ? (
-            <>
-              {current ? (
-                <span className="font-semibold text-fg-strong">
-                  {current} → {bundle} {perPeriod(plan)}.
-                </span>
-              ) : (
-                <span className="font-semibold text-fg-strong">
-                  {bundle} {perPeriod(plan)}.
-                </span>
-              )}{" "}
-              One price for everything.
-            </>
+          {current ? (
+            <span className="font-semibold text-fg-strong">
+              {current} → {bundle} {perPeriod(plan)}.
+            </span>
           ) : (
-            <>One price for everything, not a second subscription.</>
-          )}
+            <span className="font-semibold text-fg-strong">
+              {bundle} {perPeriod(plan)}.
+            </span>
+          )}{" "}
+          One price for everything.
         </li>
         <li>
           {alreadyActive
@@ -125,12 +121,18 @@ export function BundleConfirm({
           Please tick the box above to continue.
         </p>
       ) : null}
+      {quote.quoteError ? (
+        <p className="mt-4 text-body-sm text-danger" role="alert">
+          {quote.quoteError}
+        </p>
+      ) : null}
       {error ? (
         <p className="mt-4 text-body-sm text-danger" role="alert">
           {error}
         </p>
       ) : null}
       <div className="mt-4 flex flex-wrap gap-3">
+        {quoted.blocked ? null : (
         <button
           type="button"
           // The button stays enabled while the box is empty, as in checkout, so
@@ -142,17 +144,18 @@ export function BundleConfirm({
               return;
             }
             setAgeMissing(false);
-            onConfirm(age ? AGE_STATEMENT[age] : null);
+            onConfirm(age ? AGE_STATEMENT[age] : null, quoted);
           }}
-          disabled={working}
+          disabled={working || !quote.settled}
           className="inline-flex items-center gap-2 border border-cyan bg-cyan px-4 py-2 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
         >
           {working
             ? "Switching…"
-            : bundle
-              ? `Switch to ${bundle} ${perPeriod(plan)}`
-              : `Add ${meta.inline}`}
+            : !quote.settled
+              ? "Updating…"
+              : `Switch to ${bundle} ${perPeriod(plan)}`}
         </button>
+        )}
         <button
           type="button"
           onClick={onCancel}

@@ -284,6 +284,10 @@ function withSub(opts: {
   tier: 'ark-plus' | 'bundle'
   amountCents: number
   scheduleId?: string
+  // Whether the member chose above the minimum at checkout, which is what lets
+  // them pick an amount at all (plan-change.ts amountChoiceOpen). On by default:
+  // most of these tests are about how a chosen amount is billed.
+  choseAboveFloor?: boolean
 }) {
   existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
   productEntitlements = {
@@ -296,7 +300,7 @@ function withSub(opts: {
     status: 'active',
     currency: 'usd',
     schedule: opts.scheduleId ?? null,
-    metadata: {},
+    metadata: opts.choseAboveFloor === false ? {} : { chose_above_floor: 'true' },
     items: {
       data: [
         {
@@ -737,6 +741,25 @@ describe('POST /api/stripe/change-tier — upgrades are paid for up front', () =
     expect(clear).toBeGreaterThanOrEqual(0)
     expect(stripeCalls[clear].args[1]).toEqual({ cancel_at_period_end: false })
     expect(clear).toBeLessThan(schedule)
+  })
+
+  test('a member who took the minimum at checkout cannot pick an amount', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800, choseAboveFloor: false })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'yearly', custom_amount_cents: 12000 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(400)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+
+  test('the same member still switches plan at the minimum', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800, choseAboveFloor: false })
+    const res = await post(
+      { tier: 'ark-plus', plan: 'yearly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
   })
 
   test('a price decrease still waits for the end of the period', async () => {

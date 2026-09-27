@@ -4,7 +4,7 @@
 // can't drift into "The Fold" mid-sentence on one screen and not the other.
 import { formatTimestamp } from "../../shared/format-date";
 import { formatMinor } from "./currency";
-import type { BundleUpgradePreview } from "./auth";
+import type { ChangePreview } from "./auth";
 import { dueTodayOf as dueTodayOfCents, type DueToday } from "../../shared/billing-copy";
 
 export type AxisKey = "arkPlus" | "circle";
@@ -37,10 +37,12 @@ export function fmtDate(iso: string | null): string | null {
   return formatTimestamp(iso, "long") || null;
 }
 
-// What a switch to the bundle takes off the card today, in the member's own
-// currency. A pay-what-you-can member whose unused time covers the bundle price
+// What an immediate plan change takes off the card today, in the member's own
+// currency. A pay-what-you-can member whose unused time covers the new price
 // owes nothing today.
-export function dueTodayOf(preview: BundleUpgradePreview): DueToday {
+export function dueTodayOf(
+  preview: Pick<ChangePreview, "dueTodayCents" | "currency" | "minorFactor">,
+): DueToday {
   return dueTodayOfCents(preview.dueTodayCents, (c) =>
     formatMinor(c, preview.currency, preview.minorFactor),
   );

@@ -233,6 +233,10 @@ export type MySubscription = {
   currency?: string | null;
   minorFactor?: number;
   card?: CardOnFile | null;
+  // Whether this member picks their own amount: "Change what I pay" on the
+  // billing page, and the amount picker on a plan change. Only for members
+  // who chose more than the minimum at checkout.
+  canChangeAmount?: boolean;
 };
 
 // The signed-in member's plan, cancel schedule, price and card on file, from
@@ -350,17 +354,27 @@ export async function getBundleBreakdown(): Promise<BundleBreakdown | null> {
 // renewal date the switch leaves untouched. Null when there's no live
 // subscription to change; `bundleCents` alone is null when Stripe's price
 // lookup failed, and the confirm step then renders without price lines.
-export type BundleUpgradePreview = {
+// What a plan change would do, before it's made (POST /api/stripe/change-
+// preview): the price move, today's charge or the date it starts, and — for a
+// member who picks their own amount — where the picker starts.
+export type ChangePreview = {
+  tier: "ark-plus" | "circle" | "bundle";
   plan: "monthly" | "yearly";
   currency: string;
   minorFactor: number;
   currentCents: number | null;
-  bundleCents: number | null;
-  // What the switch charges today: the Bundle price less credit for the unused
-  // part of the current plan. Null when Stripe couldn't quote it.
+  currentPlan: "monthly" | "yearly" | null;
+  floorCents: number;
+  // The amount this quote is for.
+  amountCents: number;
+  // Null: no picker, the change is at the minimum.
+  pwyc: { suggestedCents: number; maxCents: number } | null;
+  timing: "immediate" | "period_end";
   dueTodayCents: number | null;
-  // A full period from today — the switch restarts the billing cycle.
   renewsAt: string | null;
+  startsAt: string | null;
+  // Set when the change can't be made yet (a gift is extending the plan).
+  blocked: "gift_extension" | null;
 };
 
 // Deliberately three outcomes, not two. "No live subscription to change" and
@@ -368,19 +382,37 @@ export type BundleUpgradePreview = {
 // means fall back to buying the axis standalone, the second means say so and
 // offer a retry — and collapsing them into `null` routed a member with a
 // perfectly healthy subscription into a SECOND one whenever the endpoint
-// hiccuped.
-export type BundleUpgradePreviewResult =
-  | { kind: "preview"; preview: BundleUpgradePreview }
+// hiccuped. An error carries the server's own message when it refused the
+// amount.
+export type ChangePreviewResult =
+  | { kind: "preview"; preview: ChangePreview }
   | { kind: "none" }
-  | { kind: "error" };
+  | { kind: "error"; message?: string };
 
-export async function getBundleUpgradePreview(): Promise<BundleUpgradePreviewResult> {
+export async function getChangePreview(input: {
+  tier: "ark-plus" | "circle" | "bundle";
+  // Omitted: the cadence they're on now.
+  plan?: "monthly" | "yearly";
+  customAmountCents?: number;
+}): Promise<ChangePreviewResult> {
   try {
-    const res = await fetch("/api/stripe/bundle-upgrade-preview", {
+    const res = await fetch("/api/stripe/change-preview", {
+      method: "POST",
       credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tier: input.tier,
+        ...(input.plan ? { plan: input.plan } : {}),
+        ...(input.customAmountCents !== undefined
+          ? { custom_amount_cents: input.customAmountCents }
+          : {}),
+      }),
     });
-    if (!res.ok) return { kind: "error" };
-    const json = (await res.json()) as { preview: BundleUpgradePreview | null };
+    const json = (await res.json().catch(() => ({}))) as {
+      preview?: ChangePreview | null;
+      error?: string;
+    };
+    if (!res.ok) return { kind: "error", message: json.error };
     return json.preview ? { kind: "preview", preview: json.preview } : { kind: "none" };
   } catch {
     return { kind: "error" };

@@ -35,13 +35,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThemeProvider } from "../../lib/theme";
 import { SubscriberAuthProvider } from "../../lib/subscriberAuth";
-import type { AxisAccess, BundleUpgradePreview, Me } from "../../lib/auth";
+import type { AxisAccess, ChangePreview, Me } from "../../lib/auth";
 
 // --- fetch stub -------------------------------------------------------------
 // The two endpoints this flow talks to, driven per test. Stubbing fetch rather
-// than the auth module keeps the real getBundleUpgradePreview/changeTier in the
+// than the auth module keeps the real getChangePreview/changeTier in the
 // path — the three-way preview result is half of what's under test.
-type PreviewReply = { status: number; preview: BundleUpgradePreview | null };
+type PreviewReply = { status: number; preview: ChangePreview | null };
 type ChangeReply = { status: number; body: Record<string, unknown> };
 
 let previewReply: PreviewReply;
@@ -56,7 +56,7 @@ let offerChecks = 0;
 function stubFetch() {
   g.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : String(input);
-    if (url.startsWith("/api/stripe/bundle-upgrade-preview")) {
+    if (url.startsWith("/api/stripe/change-preview")) {
       if (previewReply.status !== 200) {
         return new Response("nope", { status: previewReply.status });
       }
@@ -133,14 +133,21 @@ function arkPlusMember(): Me {
   };
 }
 
-const preview = (over: Partial<BundleUpgradePreview> = {}): BundleUpgradePreview => ({
+const preview = (over: Partial<ChangePreview> = {}): ChangePreview => ({
+  tier: "bundle",
   plan: "monthly",
   currency: "usd",
   minorFactor: 100,
   currentCents: 800,
-  bundleCents: 2500,
+  currentPlan: "monthly",
+  floorCents: 2500,
+  amountCents: 2500,
+  pwyc: null,
+  timing: "immediate",
   dueTodayCents: 1740,
   renewsAt: "2026-10-01T00:00:00.000Z",
+  startsAt: null,
+  blocked: null,
   ...over,
 });
 
@@ -378,6 +385,38 @@ describe("bundle switch — the 18+ confirmation", () => {
   });
 });
 
+describe("bundle switch — a member who chooses their own amount", () => {
+  test("sees the picker at the pre-filled amount, and the switch bills that amount", async () => {
+    previewReply = {
+      status: 200,
+      preview: preview({
+        currentCents: 1200,
+        amountCents: 3800,
+        pwyc: { suggestedCents: 3800, maxCents: 2_500_000 },
+      }),
+    };
+    await openConfirm();
+    expect(text()).toContain("Choose your amount");
+    expect(text()).toContain("$12 → $38 a month");
+    await confirmSwitch();
+    expect(changePosts[0]!.custom_amount_cents).toBe(3800);
+  });
+
+  test("a member at the minimum gets no picker and switches at the catalog price", async () => {
+    await openConfirm();
+    expect(text()).not.toContain("Choose your amount");
+    await confirmSwitch();
+    expect(changePosts[0]!.custom_amount_cents).toBeUndefined();
+  });
+
+  test("a gift extending the plan says so instead of offering the switch", async () => {
+    previewReply = { status: 200, preview: preview({ blocked: "gift_extension", dueTodayCents: null }) };
+    await openConfirm();
+    expect(text()).toContain("gifted membership time is still running");
+    expect(buttonWith("Switch to")).toBeUndefined();
+  });
+});
+
 describe("bundle switch — the success banner", () => {
   test("says what came off the card today and when the restarted cycle renews", async () => {
     await openConfirm();
@@ -392,7 +431,7 @@ describe("bundle switch — the success banner", () => {
     // covers the new price, so Stripe quotes zero.
     previewReply = {
       status: 200,
-      preview: preview({ currentCents: 4000, bundleCents: 2500, dueTodayCents: 0 }),
+      preview: preview({ currentCents: 4000, dueTodayCents: 0 }),
     };
     await openConfirm();
     await confirmSwitch();
