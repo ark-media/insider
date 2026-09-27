@@ -263,3 +263,32 @@ describe('run', () => {
     expect(sqlCalls.some((c) => c.sql.includes('insert into feed_reminder_sends'))).toBe(false)
   })
 })
+
+// A11 — the migrated cohort is only members who predate launch: premium_since
+// strictly before the END of launch day (launch 00:00Z + 1 day). A member who
+// joined after launch day never enters the roster.
+describe('A11 roster query — pre-launch members only', () => {
+  test('A11: selects premium readers with premium_since < launch + 1 day (bound as a value)', async () => {
+    stageRun({ config: storedConfig({ launchDate: '2020-01-01' }) })
+    const res = makeRes()
+    await runHandler(getHandler(), req(), res)
+    expect(res.statusCode).toBe(200)
+
+    const roster = sqlCalls.find((c) => c.sql.includes('from beehiiv_subscription'))
+    expect(roster).toBeDefined()
+    const q = roster!.sql.replace(/\s+/g, ' ')
+    expect(q).toContain('has_premium = true')
+    expect(q).toContain('premium_since is not null')
+    expect(q).toContain('premium_since < ?')
+    // End of launch day, not launch-day midnight and not "now".
+    expect(roster!.values).toEqual(['2020-01-02T00:00:00.000Z'])
+  })
+
+  test('A11: the cutoff tracks the configured launch date', async () => {
+    stageRun({ config: storedConfig({ launchDate: '2021-06-15' }) })
+    const res = makeRes()
+    await runHandler(getHandler(), req(), res)
+    const roster = sqlCalls.find((c) => c.sql.includes('from beehiiv_subscription'))
+    expect(roster!.values).toEqual(['2021-06-16T00:00:00.000Z'])
+  })
+})

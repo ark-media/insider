@@ -42,7 +42,7 @@ type FakeSession = {
   payment_intent: FakePI | string | null
 }
 
-let existingCustomer: { id: string; email: string } | null = null
+let existingCustomer: { id: string; email: string; currency?: string | null } | null = null
 let nextPIStatus: FakePI['status'] = 'succeeded'
 let retrievedPI: FakePI | null = null
 let retrievedSession: FakeSession | null = null
@@ -1070,5 +1070,93 @@ describe('legacy gift claim handoff', () => {
     )
     expect(res.statusCode).toBe(200)
     expect(res.__json()).toEqual({ pending: true })
+  })
+})
+
+// ===========================================================================
+// Membership Change Matrix B3 — gift checkout is not currency-locked
+// ===========================================================================
+// The subscription checkout refuses (currency_locked) a returning member whose
+// Stripe Customer already bills in another currency. A gift is a one-time
+// payment-mode purchase, so the giver's own billing currency is irrelevant: the
+// gift route must accept any supported currency, even while reusing a Customer
+// that bills in something else.
+
+describe('B3 — gift checkout ignores the giver\'s billing currency', () => {
+  const sessionCookie = async (email: string) =>
+    `ark_session=${await signSessionToken({ email, roles: [] }, BASE_ENV)}`
+
+  test('signed-in giver whose Customer bills in GBP can buy a EUR gift — no currency_locked', async () => {
+    existingCustomer = { id: 'cus_gbp', email: 'giver@example.com', currency: 'gbp' }
+    const res = makeRes()
+    await runHandler(
+      getHandler(CREATE_PATH),
+      makeReq({
+        body: {
+          giver_email: 'giver@example.com',
+          recipient_email: 'r@x.com',
+          term: '1yr',
+          currency: 'eur',
+        },
+        headers: { cookie: await sessionCookie('giver@example.com') },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as { currency: string; error?: string }
+    expect(body.error).toBeUndefined()
+    expect(body.currency).toBe('eur')
+    const args = sessionCreateArgs()
+    // Their own Customer is reused, and the Session charges in EUR.
+    expect(args.customer).toBe('cus_gbp')
+    expect(args.currency).toBe('eur')
+    expect(args.payment_intent_data.metadata.currency).toBe('eur')
+  })
+
+  test('signed-in USD-billing giver can buy a GBP gift', async () => {
+    existingCustomer = { id: 'cus_usd', email: 'giver@example.com', currency: 'usd' }
+    const res = makeRes()
+    await runHandler(
+      getHandler(CREATE_PATH),
+      makeReq({
+        body: {
+          giver_email: 'giver@example.com',
+          recipient_email: 'r@x.com',
+          term: '6mo',
+          currency: 'GBP',
+        },
+        headers: { cookie: await sessionCookie('giver@example.com') },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(sessionCreateArgs().currency).toBe('gbp')
+    expect(sessionCreateArgs().customer).toBe('cus_usd')
+  })
+
+  test('anonymous giver: a non-USD currency is accepted as-is', async () => {
+    const res = makeRes()
+    await runHandler(
+      getHandler(CREATE_PATH),
+      makeReq({
+        body: { giver_email: 'g@x.com', recipient_email: 'r@x.com', term: '1yr', currency: 'jpy' },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(sessionCreateArgs().currency).toBe('jpy')
+  })
+
+  test('an unsupported currency falls back to USD rather than refusing', async () => {
+    const res = makeRes()
+    await runHandler(
+      getHandler(CREATE_PATH),
+      makeReq({
+        body: { giver_email: 'g@x.com', recipient_email: 'r@x.com', term: '1yr', currency: 'xyz' },
+      }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(sessionCreateArgs().currency).toBe('usd')
   })
 })

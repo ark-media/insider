@@ -12,6 +12,7 @@ import {
   test,
   expect,
   beforeEach,
+  afterAll,
   mock,
 } from 'bun:test'
 import { Readable } from 'node:stream'
@@ -46,8 +47,18 @@ let subsByCustomer: Record<
     schedule?: string
     discounts?: string[]
     interval?: 'month' | 'year'
+    // Stripe status (default 'active'); 'canceled' models a sub that has ended.
+    status?: string
+    // The price's product id (default prod_ark_plus); PRODUCT_ENTITLEMENTS
+    // below maps it to the catalog entitlements stamp.
+    product?: string
   }>
 > = {}
+const PRODUCT_ENTITLEMENTS: Record<string, string> = {
+  prod_ark_plus: 'ark_plus',
+  prod_circle: 'circle',
+  prod_bundle: 'ark_plus,circle',
+}
 // The subscription's discounts with coupons expanded — what the route re-reads
 // before deciding which retention coupons survive the released schedule.
 let expandedDiscounts: Array<Record<string, unknown>> = []
@@ -70,7 +81,7 @@ class FakeStripe {
         id: s.id,
         // These flows manage the member's live subscription; default to 'active'
         // so the (status-filtered) live-subscription lookup matches it.
-        status: 'active',
+        status: s.status ?? 'active',
         cancel_at_period_end: s.cancel_at_period_end ?? false,
         cancel_at: s.cancel_at ?? null,
         customer: args.customer,
@@ -84,7 +95,7 @@ class FakeStripe {
                   {
                     current_period_end: s.current_period_end,
                     price: {
-                      product: 'prod_ark_plus',
+                      product: s.product ?? 'prod_ark_plus',
                       recurring: { interval: s.interval ?? 'month' },
                     },
                   },
@@ -113,7 +124,10 @@ class FakeStripe {
     },
   }
   products = {
-    retrieve: async (id: string) => ({ id, metadata: { entitlements: 'ark_plus' } }),
+    retrieve: async (id: string) => ({
+      id,
+      metadata: { entitlements: PRODUCT_ENTITLEMENTS[id] ?? 'ark_plus' },
+    }),
   }
   webhooks = {
     constructEvent: () => {
@@ -136,7 +150,22 @@ const BASE_ENV = {
   SESSION_SECRET: 'test-secret-0123456789abcdef0123456789abcdef',
   APP_BASE_URL: 'http://localhost:5173',
   STRIPE_SECRET_KEY: 'sk_test_fake',
+  // Set so a send WOULD go out if the route tried one (U3); the fetch spy
+  // below keeps it off the network.
+  RESEND_API_KEY: 'rk_test',
 }
+
+// --- Outbound fetch spy (Resend) ------------------------------------------
+const originalFetch = globalThis.fetch
+let fetchUrls: string[] = []
+globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+  const url = typeof input === 'string' ? input : input.toString()
+  fetchUrls.push(url)
+  return new Response('{"id":"email_1"}', { status: 200 })
+}) as typeof fetch
+afterAll(() => {
+  globalThis.fetch = originalFetch
+})
 
 const PATH = '/api/stripe/reactivate-subscription'
 
@@ -171,6 +200,7 @@ beforeEach(() => {
   existingCustomers = []
   subsByCustomer = {}
   expandedDiscounts = []
+  fetchUrls = []
 })
 
 // A signed ark_session cookie for `email`, so getSessionEmail authenticates.
@@ -200,6 +230,8 @@ function withSub(
     schedule?: string
     discounts?: string[]
     interval?: 'month' | 'year'
+    status?: string
+    product?: string
   } = {},
 ) {
   existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
@@ -213,6 +245,8 @@ function withSub(
         schedule: over.schedule,
         discounts: over.discounts,
         interval: over.interval,
+        status: over.status,
+        product: over.product,
       },
     ],
   }
@@ -365,5 +399,74 @@ describe('POST /api/stripe/reactivate-subscription — a released schedule takes
     expect(stripeCalls.some((c) => c.method === 'subscriptions.retrieve')).toBe(false)
     const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
     expect(update!.args[1]).toEqual({ cancel_at_period_end: false })
+  })
+})
+
+// ===========================================================================
+// Membership Change Matrix — U2 / U3 / U4
+// ===========================================================================
+describe('POST /api/stripe/reactivate-subscription — matrix U2/U3/U4', () => {
+  test('U2: the only subscription has ended (status canceled) → 404, nothing touched', async () => {
+    withSub({ status: 'canceled', cancel_at_period_end: true })
+
+    const res = await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
+    expect(res.statusCode).toBe(404)
+    expect(res.__json()).toEqual({ error: 'No active subscription found' })
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.release')).toBe(false)
+  })
+
+  test('U3: reactivating a scheduled cancel sends no email', async () => {
+    withSub({ cancel_at_period_end: true })
+
+    const res = await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(true)
+    expect(fetchUrls.filter((u) => u.includes('api.resend.com'))).toHaveLength(0)
+  })
+
+  test('U4: a Bundle with a booked debundle schedule and a pending cancel → schedule released, cancel cleared', async () => {
+    withSub({
+      product: 'prod_bundle',
+      schedule: 'sched_debundle',
+      cancel_at_period_end: true,
+    })
+
+    const res = await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
+    expect(res.statusCode).toBe(200)
+    const releaseIdx = stripeCalls.findIndex((c) => c.method === 'subscriptionSchedules.release')
+    const updateIdx = stripeCalls.findIndex((c) => c.method === 'subscriptions.update')
+    expect(releaseIdx).toBeGreaterThanOrEqual(0)
+    expect(stripeCalls[releaseIdx]!.args[0]).toBe('sched_debundle')
+    expect(updateIdx).toBeGreaterThan(releaseIdx)
+    // No discounts on the sub → nothing to drop; only the cancel is cleared.
+    expect(stripeCalls[updateIdx]!.args).toEqual(['sub_1', { cancel_at_period_end: false }])
+  })
+
+  test('U4: a Bundle with only a booked debundle schedule → released; no subscription update needed', async () => {
+    withSub({ product: 'prod_bundle', schedule: 'sched_debundle' })
+
+    const res = await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(stripeCalls.find((c) => c.method === 'subscriptionSchedules.release')?.args[0]).toBe(
+      'sched_debundle',
+    )
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
   })
 })

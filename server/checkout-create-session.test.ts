@@ -645,6 +645,27 @@ describe('POST /api/stripe/create-checkout-session — session shape', () => {
     expect(priceData.tax_behavior).toBe('exclusive')
   })
 
+  test('an amount above the floor is stamped chose_above_floor; the floor is not', async () => {
+    // The stamp is what keeps "Change what I pay" open for this member later.
+    await post({ email: 'a@b.co', plan: 'monthly', custom_amount_cents: 1500 })
+    const above = lastSessionCreateArgs().subscription_data as Record<string, unknown>
+    expect((above.metadata as Record<string, unknown>).chose_above_floor).toBe('true')
+
+    await post({ email: 'a@b.co', plan: 'monthly' })
+    const floor = lastSessionCreateArgs().subscription_data as Record<string, unknown>
+    expect((floor.metadata as Record<string, unknown>).chose_above_floor).toBeUndefined()
+  })
+
+  test('a new subscription bills from today: no billing_cycle_anchor', async () => {
+    const res = await post({ email: 'a@b.co', plan: 'yearly' })
+    expect(res.statusCode).toBe(200)
+    const args = lastSessionCreateArgs()
+    expect(args.mode).toBe('subscription')
+    const subData = args.subscription_data as Record<string, unknown>
+    expect(subData.billing_cycle_anchor).toBeUndefined()
+    expect(subData.trial_end).toBeUndefined()
+  })
+
   test('does not enable Adaptive Pricing (currency_options is incompatible)', async () => {
     const res = await post({ email: 'a@b.co', plan: 'monthly' })
     expect(res.statusCode).toBe(200)

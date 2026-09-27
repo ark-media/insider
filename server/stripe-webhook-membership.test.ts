@@ -1158,3 +1158,186 @@ describe('webhook DB path — a free (fully discounted) gift', () => {
     expect(statements.some((s) => s.text.includes('insert into gift'))).toBe(false)
   })
 })
+
+// Membership Change Matrix — renewal, dunning, Fold cancel and debundle rows.
+describe('webhook DB path — membership change matrix', () => {
+  const MATRIX_CIRCLE_ENV = {
+    ...ENV,
+    CIRCLE_ADMIN_API_TOKEN: 'circle-tok',
+    CIRCLE_SUBSCRIBER_ACCESS_GROUP_ID: 'ag-99',
+    CIRCLE_CANCELLED_ACCESS_GROUP_ID: 'ag-cancelled',
+  }
+  const SUBSCRIBER_GROUP = '/access_groups/ag-99/community_members'
+  const CANCELLED_GROUP = '/access_groups/ag-cancelled/community_members'
+
+  // Beehiiv holds the member on premium (so a downgrade issues a real PUT), and
+  // Circle answers every access-group write 200 (the member WAS in the group).
+  function premiumMemberEverywhere() {
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      fetchCalls.push({ url, method, init })
+      if (url.includes('api.beehiiv.com') && (url.includes('/by_email/') || method === 'PUT')) {
+        const tier = method === 'PUT' ? 'free' : 'premium'
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: 'sub_bh_1',
+              email: 'buyer@example.com',
+              status: 'active',
+              subscription_tier: tier,
+            },
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+  }
+  function beehiivDowngradePut() {
+    return fetchCalls.find(
+      (c) => c.url.includes('api.beehiiv.com') && c.method === 'PUT',
+    )
+  }
+  function circleCall(method: string, groupPath: string) {
+    return fetchCalls.find(
+      (c) => c.url.includes('circle.so') && c.method === method && c.url.includes(groupPath),
+    )
+  }
+
+  test('R1: subscription.updated with a later period end writes the new current_period_end', async () => {
+    const renewedEnd = 1896134400 // a month after the fixture's 1893456000
+    const renewed = makeSub() as { items: { data: Array<{ current_period_end: number }> } }
+    renewed.items.data[0]!.current_period_end = renewedEnd
+    currentSub = renewed
+    priorRow = {
+      ...SUB_ROW,
+      current_period_end: new Date(1893456000 * 1000).toISOString(),
+    }
+    webhookEvent = {
+      type: 'customer.subscription.updated',
+      data: { object: renewed, previous_attributes: { items: {} } },
+    }
+    const res = await runWebhook()
+    expect(res.statusCode).toBe(200)
+    // values: auth0_sub, customer, sub, tier, status, plan, amount, currency, current_period_end, cancel_at
+    expect(upsertStmt()!.values[8]).toBe(new Date(renewedEnd * 1000).toISOString())
+  })
+
+  test('R3: payment_failed Idempotency-Key is per invoice AND attempt — one email per attempt', async () => {
+    priorRow = { tier: 'ark-plus', auth0_sub: 'auth0|abc' }
+    webhookEvent = {
+      type: 'invoice.payment_failed',
+      data: { object: { id: 'in_r3', customer: 'cus_1', attempt_count: 1 } },
+    }
+    await runWebhook()
+    webhookEvent = {
+      type: 'invoice.payment_failed',
+      data: { object: { id: 'in_r3', customer: 'cus_1', attempt_count: 2 } },
+    }
+    await runWebhook()
+
+    const keys = resendCalls().map(
+      (c) => (c.init?.headers as Record<string, string>)['Idempotency-Key'],
+    )
+    expect(keys).toEqual(['payment_failed_in_r3_1', 'payment_failed_in_r3_2'])
+  })
+
+  test('R4: a Bundle ended over failed payments revokes Beehiiv premium AND the Circle group, and says why', async () => {
+    subProductId = 'prod_bundle'
+    priorRow = { ...SUB_ROW, tier: 'bundle' }
+    premiumMemberEverywhere()
+    const sub = { ...(makeSub() as object), cancellation_details: { reason: 'payment_failed' } }
+    webhookEvent = { type: 'customer.subscription.deleted', data: { object: sub } }
+
+    const res = await runWebhook(MATRIX_CIRCLE_ENV)
+
+    expect(res.statusCode).toBe(200)
+    // Beehiiv: premium dropped to free.
+    const put = beehiivDowngradePut()
+    expect(put).toBeDefined()
+    expect(JSON.parse(String(put!.init?.body))).toMatchObject({ tier: 'free' })
+    // Circle: out of the subscriber group.
+    expect(circleCall('DELETE', SUBSCRIBER_GROUP)).toBeDefined()
+    // Access-ended email names the failed payment.
+    const sends = resendCalls()
+    expect(sends).toHaveLength(1)
+    const body = JSON.parse(String(sends[0]!.init?.body)) as Record<string, unknown>
+    expect(String(body.html)).toContain('take payment after several tries')
+    expect(statements.some((s) => s.text.includes('delete from membership'))).toBe(true)
+  })
+
+  test('C6: a Fold subscription ending MOVES the member subscriber → cancelled, never deletes them', async () => {
+    subProductId = 'prod_circle'
+    priorRow = { ...SUB_ROW, tier: 'circle' }
+    premiumMemberEverywhere()
+    webhookEvent = { type: 'customer.subscription.deleted', data: { object: makeSub() } }
+
+    const res = await runWebhook(MATRIX_CIRCLE_ENV)
+
+    expect(res.statusCode).toBe(200)
+    const removed = circleCall('DELETE', SUBSCRIBER_GROUP)
+    expect(removed).toBeDefined()
+    expect(removed!.url).toContain('email=buyer%40example.com')
+    const tagged = circleCall('POST', CANCELLED_GROUP)
+    expect(tagged).toBeDefined()
+    expect(JSON.parse(String(tagged!.init?.body))).toEqual({ email: 'buyer@example.com' })
+    // The only Circle DELETE is the access-group removal — no member delete.
+    const circleDeletes = fetchCalls.filter((c) => c.url.includes('circle.so') && c.method === 'DELETE')
+    expect(circleDeletes).toHaveLength(1)
+    expect(circleDeletes[0]!.url).toContain(SUBSCRIBER_GROUP)
+  })
+
+  test('D4: a debundle to Ark+ taking effect moves Circle subscriber → cancelled, keeps premium', async () => {
+    subProductId = 'prod_arkplus'
+    priorRow = { ...SUB_ROW, tier: 'bundle' }
+    premiumMemberEverywhere()
+    webhookEvent = {
+      type: 'customer.subscription.updated',
+      data: { object: makeSub(), previous_attributes: { items: {} } },
+    }
+
+    const res = await runWebhook(MATRIX_CIRCLE_ENV)
+
+    expect(res.statusCode).toBe(200)
+    expect(upsertStmt()!.values[3]).toBe('ark-plus')
+    expect(circleCall('DELETE', SUBSCRIBER_GROUP)).toBeDefined()
+    expect(circleCall('POST', CANCELLED_GROUP)).toBeDefined()
+    expect(beehiivDowngradePut()).toBeUndefined()
+  })
+
+  test('D4: a debundle to the Fold taking effect runs the Beehiiv downgrade, keeps Circle', async () => {
+    subProductId = 'prod_circle'
+    priorRow = { ...SUB_ROW, tier: 'bundle' }
+    premiumMemberEverywhere()
+    webhookEvent = {
+      type: 'customer.subscription.updated',
+      data: { object: makeSub(), previous_attributes: { items: {} } },
+    }
+
+    const res = await runWebhook(MATRIX_CIRCLE_ENV)
+
+    expect(res.statusCode).toBe(200)
+    expect(upsertStmt()!.values[3]).toBe('circle')
+    const put = beehiivDowngradePut()
+    expect(put).toBeDefined()
+    expect(JSON.parse(String(put!.init?.body))).toMatchObject({ tier: 'free' })
+    expect(circleCall('DELETE', SUBSCRIBER_GROUP)).toBeUndefined()
+  })
+
+  test('D5: the debundle taking effect sends no email (the notice went out at booking)', async () => {
+    for (const product of ['prod_arkplus', 'prod_circle']) {
+      fetchCalls.length = 0
+      subProductId = product
+      priorRow = { ...SUB_ROW, tier: 'bundle' }
+      premiumMemberEverywhere()
+      webhookEvent = {
+        type: 'customer.subscription.updated',
+        data: { object: makeSub(), previous_attributes: { items: {} } },
+      }
+      const res = await runWebhook(MATRIX_CIRCLE_ENV)
+      expect(res.statusCode).toBe(200)
+      expect(resendCalls()).toHaveLength(0)
+    }
+  })
+})

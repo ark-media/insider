@@ -1,8 +1,9 @@
 // Win-back cron logic. Scans the cancellation record for members who left
 // around 180 days ago, drops anyone who has since come back or opted out, and
-// sends a one-time invitation to resubscribe: the Ark+ email to anyone who left
-// a tier with Ark+ in it, the Fold email to anyone who left the Fold on its own.
-// A ledger (winback_sends) prevents double-mailing.
+// sends a one-time invitation to resubscribe: the Bundle email to anyone who
+// left both Ark+ and the Fold (as a Bundle, or each on its own), otherwise the
+// Ark+ or the Fold email for the one they left. A ledger (winback_sends) keeps
+// it to one win-back per person.
 //
 // The roster is `cancellation_survey`, not `membership`: a member who cancelled
 // has no membership row (subscription.deleted deletes it), and the survey row is
@@ -13,11 +14,12 @@
 // because each is cheaper than the next:
 //
 //   1. Opted out of this campaign (winback_suppression).
-//   2. Already mailed for this cohort (winback_sends).
+//   2. Already sent any win-back (winback_sends).
 //   3. Already back. For Ark+, `beehiiv_subscription.has_premium`, the same
 //      email-keyed premium mirror the feed reminders read. For the Fold, which
 //      Beehiiv knows nothing about, a live Fold axis on any membership row for
-//      the address (isOnFold, via Auth0 — `membership` stores no email).
+//      the address (isOnFold, via Auth0 — `membership` stores no email). A
+//      Bundle leaver back on either one is a customer again.
 //
 // The decision core (candidateFor) is a pure function so the rules are
 // unit-testable without the DB or email. The orchestrator wires it to the
@@ -26,21 +28,27 @@
 import type { Sql } from './db.js'
 import { normalizeEmail } from './feed-activations.js'
 import { mailableStatus } from './beehiiv-status.js'
-import { renderFoldWinbackEmail, renderWinbackEmail } from './winback-email.js'
+import {
+  renderBundleWinbackEmail,
+  renderFoldWinbackEmail,
+  renderWinbackEmail,
+} from './winback-email.js'
 import { sendEmail } from './email.js'
 
 type Env = Record<string, string>
 
 // Which email a leaver gets. Stored on every ledger row (as the cohort) so the
 // two campaigns, or a second horizon later (a 30-day nudge, say), never collide.
-type WinbackCampaign = 'ark_plus' | 'fold'
+type WinbackCampaign = 'ark_plus' | 'fold' | 'bundle'
 const WINBACK_COHORT: Record<WinbackCampaign, string> = {
   ark_plus: 'ark_plus_180d',
   fold: 'fold_180d',
+  bundle: 'bundle_180d',
 }
 const RENDER: Record<WinbackCampaign, typeof renderWinbackEmail> = {
   ark_plus: renderWinbackEmail,
   fold: renderFoldWinbackEmail,
+  bundle: renderBundleWinbackEmail,
 }
 
 // How long after cancelling the invitation goes out. The doc's copy says "six
@@ -57,15 +65,17 @@ const WINBACK_WINDOW_DAYS = 30
 // Which email a full exit gets, by the tier they left. The Ark+ copy speaks
 // entirely about Ark+ ("since you left Ark+", ad-free listening, early access),
 // so a Fold-only canceller gets the Fold email instead — never one inviting them
-// back to something they never had. A Bundle leaver lost both and gets the Ark+
-// one: one win-back per person.
+// back to something they never had. A Bundle leaver lost both and gets the
+// Bundle email (Hannah, 2026-09-27), as does someone who left each on its own
+// (the run folds those into a 'bundle' row: bundleRowIfLeftBoth).
 function campaignFor(row: Pick<WinbackRow, 'canceled_tier' | 'retained_product'>): WinbackCampaign | null {
   // A debundle keeps a product: someone who dropped the Fold is still an Ark+
   // member (Hannah, 2026-09-27: no Fold win-back for them — that would be an
   // upsell to a customer), and someone who dropped Ark+ never "left Ark+" in
   // the sense the copy means. Only a full exit qualifies.
   if (row.retained_product !== 'full-exit') return null
-  if (row.canceled_tier === 'ark-plus' || row.canceled_tier === 'bundle') return 'ark_plus'
+  if (row.canceled_tier === 'bundle') return 'bundle'
+  if (row.canceled_tier === 'ark-plus') return 'ark_plus'
   if (row.canceled_tier === 'circle') return 'fold'
   return null
 }
@@ -98,7 +108,7 @@ export function candidateFor(
   // also stops a Fold leaver who has since taken Ark+ being pitched the Fold
   // cold: they're a customer again.
   if (row.has_premium === true) return null
-  if (campaign === 'fold' && opts.onFold) return null
+  if (campaign !== 'ark_plus' && opts.onFold) return null
   if (!mailableStatus(row.status)) return null
   return { email: normalizeEmail(row.email), campaign }
 }
@@ -111,12 +121,34 @@ async function isSuppressed(sql: Sql, email: string): Promise<boolean> {
   return rows.length > 0
 }
 
-async function hasBeenSent(sql: Sql, email: string, cohort: string): Promise<boolean> {
+// Any win-back, whichever campaign: one per person. Someone who left Ark+ and
+// the Fold months apart would otherwise hear from both campaigns.
+async function hasBeenSent(sql: Sql, email: string): Promise<boolean> {
   const rows = (await sql`
     select 1 from winback_sends
-    where email = ${normalizeEmail(email)} and cohort = ${cohort}
+    where email = ${normalizeEmail(email)}
     limit 1`) as unknown[]
   return rows.length > 0
+}
+
+// Which products an address has ever fully left, from every full exit it has
+// made up to now, not only the one inside the window.
+async function productsLeft(sql: Sql, email: string): Promise<Set<string>> {
+  const rows = (await sql`
+    select distinct canceled_tier from cancellation_survey
+    where lower(email) = lower(${email})
+      and retained_product = 'full-exit'`) as Array<{ canceled_tier: string | null }>
+  return new Set(rows.map((r) => r.canceled_tier ?? ''))
+}
+
+// A single-product leaver who has also fully left the other product (in the
+// window or before it) left both, so they get the Bundle email: their row is
+// returned as a 'bundle' exit. Anyone else's row comes back as it was.
+export function bundleRowIfLeftBoth(row: WinbackRow, left: Set<string>): WinbackRow {
+  if (row.canceled_tier === 'bundle') return row
+  const leftArkPlus = left.has('ark-plus') || left.has('bundle')
+  const leftFold = left.has('circle') || left.has('bundle')
+  return leftArkPlus && leftFold ? { ...row, canceled_tier: 'bundle' } : row
 }
 
 async function recordSent(sql: Sql, email: string, cohort: string): Promise<void> {
@@ -191,6 +223,7 @@ export async function runWinbackCampaign(deps: {
   const rejoinUrl: Record<WinbackCampaign, string> = {
     ark_plus: `${appBaseUrl}/plus`,
     fold: `${appBaseUrl}/fold`,
+    bundle: `${appBaseUrl}/plus`,
   }
   let eligible = 0
   let sent = 0
@@ -202,21 +235,27 @@ export async function runWinbackCampaign(deps: {
   // still be counted as eligible. Collapse here instead.
   const seen = new Set<string>()
 
-  for (const row of rows) {
-    const email = normalizeEmail(row.email ?? '')
+  for (const inWindow of rows) {
+    const email = normalizeEmail(inWindow.email ?? '')
     if (!email || seen.has(email)) continue
     seen.add(email)
-
-    const campaign = campaignFor(row)
-    if (!campaign) continue
-    const cohort = WINBACK_COHORT[campaign]
+    if (!campaignFor(inWindow)) continue
 
     const suppressed = await isSuppressed(sql, email)
-    const alreadySent = suppressed ? false : await hasBeenSent(sql, email, cohort)
+    const alreadySent = suppressed ? false : await hasBeenSent(sql, email)
+    if (suppressed || alreadySent) continue
+
+    // Whether they left the other product too decides between the single
+    // product's email and the Bundle one. Every row of theirs counts, so the
+    // row the roster happened to return first can't change the answer.
+    const row = bundleRowIfLeftBoth(inWindow, await productsLeft(sql, email))
+    const campaign = campaignFor(row)!
+    const cohort = WINBACK_COHORT[campaign]
+
     // The Fold check costs an Auth0 call, so it runs last and only for someone
     // who'd otherwise be mailed.
     let onFold = false
-    if (campaign === 'fold' && !suppressed && !alreadySent && row.has_premium !== true) {
+    if (campaign !== 'ark_plus' && row.has_premium !== true) {
       try {
         onFold = await isOnFold(email)
       } catch (err) {

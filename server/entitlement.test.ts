@@ -19,11 +19,20 @@ let neonMembershipRows: unknown[] = []
 // The reconciler's arkPlus roster: emails currently holding the Beehiiv premium
 // tier, read from the mirror.
 let premiumEmails: string[] = []
+// Every SQL statement the fake Neon saw (X1 reads the gift-cleanup DELETE).
+let neonSql: string[] = []
+let deletedGiftRows: unknown[] = []
+let failGiftCleanup = false
 mock.module('@neondatabase/serverless', () => ({
   neon:
     (_url: string) =>
     (strings: TemplateStringsArray, ..._values: unknown[]) => {
       const merged = strings.join('?')
+      neonSql.push(merged)
+      if (merged.includes('delete from membership')) {
+        if (failGiftCleanup) return Promise.reject(new Error('neon down'))
+        return Promise.resolve(deletedGiftRows)
+      }
       if (merged.includes('from membership')) {
         return Promise.resolve(neonMembershipRows)
       }
@@ -106,6 +115,9 @@ beforeEach(() => {
   calls = []
   neonMembershipRows = []
   premiumEmails = []
+  neonSql = []
+  deletedGiftRows = []
+  failGiftCleanup = false
   auth0SubsByEmail = new Map()
   onAuth0Lookup = null
 })
@@ -993,5 +1005,70 @@ describe('liveAxes / membershipIsLive — status and period end', () => {
     expect(
       liveAxes(subRow({ stripe_subscription_id: null, current_period_end: null, status: 'comp' })),
     ).toEqual({ arkPlus: true, circle: true })
+  })
+})
+
+// --- Membership Change Matrix X1: nightly expired-gift cleanup ---------------
+//
+// The reconciler deletes customer-less gift rows whose every gift axis has
+// lapsed (deleteExpiredGiftMemberships). The fake Neon can't evaluate SQL, so
+// the "a future gift survives" guarantee is pinned on the statement's shape:
+// BOTH axes' expiries must be <= now() (ANDed), and only customer-less rows.
+
+describe('X1 — reconcile deletes expired gift-only memberships', () => {
+  const giftDelete = () => neonSql.filter((q) => q.includes('delete from membership'))
+  const norm = (q: string) => q.replace(/\s+/g, ' ').trim()
+
+  test('the nightly (ark-plus) run issues the expired-gift DELETE', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    deletedGiftRows = [{ auth0_sub: 'auth0|lapsed' }]
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(giftDelete()).toHaveLength(1)
+    expect(summary.errors).toBe(0)
+  })
+
+  test('the DELETE only targets customer-less rows whose every gift axis has lapsed', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    installFetch(reconcilerFetch({}))
+    await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    const q = norm(giftDelete()[0]!)
+    // Never a real subscription.
+    expect(q).toContain('where stripe_customer_id is null')
+    // Must actually be a gift row.
+    expect(q).toContain(
+      '(ark_plus_gift_expires_at is not null or circle_gift_expires_at is not null)',
+    )
+    // A future expiry on EITHER axis keeps the row: both lapsed-checks are
+    // ANDed, and a null axis counts as lapsed (epoch) so it doesn't pin the row.
+    expect(q).toContain(
+      "and coalesce(ark_plus_gift_expires_at, 'epoch') <= now() and coalesce(circle_gift_expires_at, 'epoch') <= now()",
+    )
+    // No bound values: the cutoff is the DB's now(), not a client clock.
+    expect(q).not.toContain('?')
+    expect(q).not.toMatch(/<=\s*now\(\)\s*or/)
+  })
+
+  test('axis=circle skips the cleanup (it rides with the once-a-day ark-plus pass)', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'bundle' })]
+    installFetch(reconcilerFetch({}))
+    await reconcileEntitlements(BASE_ENV, {} as Stripe, { axis: 'circle' })
+    expect(giftDelete()).toHaveLength(0)
+    await reconcileEntitlements(BASE_ENV, {} as Stripe, { axis: 'ark-plus' })
+    expect(giftDelete()).toHaveLength(1)
+  })
+
+  test('a failed cleanup counts an error but the reconcile still runs', async () => {
+    failGiftCleanup = true
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'ark-plus' })]
+    premiumEmails = ['keep@x.com', 'drift@x.com']
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['drift@x.com', ['auth0|gone']],
+    ])
+    installFetch(reconcilerFetch({}))
+    const summary = await reconcileEntitlements(BASE_ENV, {} as Stripe)
+    expect(summary.errors).toBe(1)
+    expect(summary.arkPlusRemoved).toBe(1)
   })
 })

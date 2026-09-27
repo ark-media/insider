@@ -173,3 +173,56 @@ describe('resolveMembershipForIdentity — true-tier by-email fallback', () => {
     expect(res.tier).toBe('free')
   })
 })
+
+// R5 — the period-end grace. A paid row whose renewal webhook never landed keeps
+// granting for 7 days past current_period_end, then fails closed. Covers both the
+// by-sub path and the by-email (Stripe customer) path.
+describe('resolveMembershipForIdentity — R5 period-end grace (7 days)', () => {
+  const DAY = 86_400_000
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
+
+  test('R5: paid row 6 days past current_period_end still grants (by sub)', async () => {
+    membershipRows = [row({ tier: 'bundle', current_period_end: ago(6 * DAY) })]
+    const res = await resolveMembershipForIdentity(IDENTITY, ENV)
+    expect(res.tier).toBe('bundle')
+    expect(res.origin).toBe('neon')
+  })
+
+  test('R5: paid row 8 days past current_period_end grants nothing (by sub)', async () => {
+    membershipRows = [row({ tier: 'bundle', current_period_end: ago(8 * DAY) })]
+    const res = await resolveMembershipForIdentity(IDENTITY, ENV)
+    expect(res.tier).toBe('free')
+    expect(res.entitlements).toEqual({ arkPlus: false, circle: false })
+    expect(res.origin).toBe('none')
+  })
+
+  test('R5: boundary — just inside 7 days grants, just past 7 days does not', async () => {
+    membershipRows = [row({ tier: 'ark-plus', current_period_end: ago(7 * DAY - 60_000) })]
+    expect((await resolveMembershipForIdentity(IDENTITY, ENV)).tier).toBe('ark-plus')
+    membershipRows = [row({ tier: 'ark-plus', current_period_end: ago(7 * DAY + 60_000) })]
+    expect((await resolveMembershipForIdentity(IDENTITY, ENV)).tier).toBe('free')
+  })
+
+  test('R5: past_due (dunning) row inside the grace still grants', async () => {
+    membershipRows = [
+      row({ tier: 'circle', status: 'past_due', current_period_end: ago(3 * DAY) }),
+    ]
+    expect((await resolveMembershipForIdentity(IDENTITY, ENV)).tier).toBe('circle')
+  })
+
+  test('R5: by-email fallback applies the same grace (inside grants, outside free)', async () => {
+    membershipRows = [row({ tier: 'bundle', current_period_end: ago(6 * DAY) })]
+    const inside = await resolveMembershipForIdentity(SUBLESS, ENV, {
+      emailFallback: true,
+      stripe: fakeStripe,
+    })
+    expect(inside.tier).toBe('bundle')
+
+    membershipRows = [row({ tier: 'bundle', current_period_end: ago(8 * DAY) })]
+    const outside = await resolveMembershipForIdentity(SUBLESS, ENV, {
+      emailFallback: true,
+      stripe: fakeStripe,
+    })
+    expect(outside.tier).toBe('free')
+  })
+})
