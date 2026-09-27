@@ -969,6 +969,7 @@ single member only ever sees some of them.
 - **TOPIC OPTION**: Press, interviews & media
 - **TOPIC OPTION**: Sponsorships & partnerships
 - **TOPIC OPTION**: Group & institutional subscriptions
+- **TOPIC OPTION**: Other
 - **FIELD LABEL**: Podcast (optional; required for a question)
 - **PLACEHOLDER (PODCAST)**: Choose a podcast…
 - **FIELD LABEL**: Message

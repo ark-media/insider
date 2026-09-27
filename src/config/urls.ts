@@ -80,6 +80,11 @@ export const contactTopics = [
     label: "Group & institutional subscriptions",
     email: contactEmails.general,
   },
+  {
+    value: "other",
+    label: "Other",
+    email: contactEmails.general,
+  },
 ] as const;
 
 export type ContactTopic = (typeof contactTopics)[number]["value"];
