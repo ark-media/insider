@@ -97,7 +97,13 @@ function PaidMembership({ me, onRefresh }: { me: Me; onRefresh: () => void }) {
           ) : null}
           <JumpCard
             icon={<EnvelopeIcon />}
-            title="The members-only newsletter"
+            // The members' edition rides the Ark+ axis — a Fold-only member
+            // gets the free edition like anyone else.
+            title={
+              me.entitlements.arkPlus
+                ? "The members-only newsletter"
+                : "The weekly free newsletter"
+            }
             cta="Email preferences"
             to="/account/settings"
           />

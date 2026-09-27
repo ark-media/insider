@@ -143,7 +143,7 @@ describe("a free reader", () => {
   test("is told they get the free edition", async () => {
     await mount({ canPremium: false, premium: false });
     expect(on()).toBe(true);
-    expect(document.body.textContent).toContain("The free edition");
+    expect(document.body.textContent).toContain("The weekly free edition");
     expect(document.body.textContent).not.toContain("You get the members' edition");
   });
 });
