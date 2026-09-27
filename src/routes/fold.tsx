@@ -6,7 +6,6 @@ import { BookCover } from "../components/BookCover";
 import { CheckoutModal } from "../components/CheckoutModal";
 import { OutboundLink } from "../components/OutboundLink";
 import { PriceSkeleton } from "../components/PriceSkeleton";
-import { PlayGlyph } from "../components/PlayGlyph";
 import {
   BillingPeriodToggle,
   type Plan,
@@ -187,21 +186,18 @@ function InviteVideo() {
     <section>
       <div className="page-gutter py-14 sm:py-20">
         <h2 className={`text-center ${SECTION_HEADING}`}>You are invited.</h2>
-        {/* Placeholder frame until the captioned welcome video is supplied —
-            swap the inner block for the <video> and drop the caption. */}
-        <div className="mx-auto mt-10 flex aspect-video max-w-4xl flex-col items-center justify-center gap-5 border border-rule bg-navy-800/40">
-          <span
-            aria-hidden="true"
-            className="flex size-16 items-center justify-center rounded-full bg-cyan text-navy"
-          >
-            <span className="ml-1 block scale-[2.2]">
-              <PlayGlyph />
-            </span>
-          </span>
-          <span className="meta px-6 text-center">
-            Welcome video — captioned, to be supplied
-          </span>
-        </div>
+        {/* Web-encoded from the 134 MB master (~7 MB, faststart). The poster
+            is the closing logo card; preload="metadata" keeps the file off the
+            wire until someone presses play. */}
+        <video
+          className="mx-auto mt-10 block aspect-video w-full max-w-4xl border border-rule bg-navy-800/40"
+          src="/fold/promo.mp4"
+          poster="/fold/promo-poster.jpg"
+          controls
+          playsInline
+          preload="metadata"
+          aria-label="The Fold promo video"
+        />
       </div>
     </section>
   );
