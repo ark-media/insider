@@ -119,7 +119,7 @@ describe("an Ark+ member", () => {
   test("is told they get the members' edition", async () => {
     await mount();
     expect(on()).toBe(true);
-    expect(document.body.textContent).toContain("You get the members' edition");
+    expect(document.body.textContent).toContain("The weekly members' edition");
   });
 
   test("turning it off sends only `free` — the tier is left alone", async () => {
@@ -144,6 +144,6 @@ describe("a free reader", () => {
     await mount({ canPremium: false, premium: false });
     expect(on()).toBe(true);
     expect(document.body.textContent).toContain("The free edition");
-    expect(document.body.textContent).not.toContain("You get the members' edition");
+    expect(document.body.textContent).not.toContain("The weekly members' edition");
   });
 });
