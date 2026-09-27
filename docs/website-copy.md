@@ -1575,7 +1575,7 @@ The reasons asked follow what the member gave up — including a debundle, where
 ### Preference card
 > One switch: whether the newsletter arrives. The edition follows the membership and isn't a setting.
 - **ROW TITLE**: The Ark Media Newsletter
-- **ROW DESCRIPTION (ARK+ MEMBERS)**: Weekly. You get the members' edition, with the members-only sections.
+- **ROW DESCRIPTION (ARK+ MEMBERS)**: The weekly members' edition
 - **ROW DESCRIPTION (FREE ACCOUNTS)**: Weekly. The free edition — Ark+ members get the members' edition.
 - **STATUS**: Subscribed / Not subscribed
 - **BUTTON**: Unsubscribe (when subscribed) / Subscribe (when not)
