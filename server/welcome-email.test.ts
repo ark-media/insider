@@ -70,6 +70,7 @@ describe('renderGiftRedemptionEmail', () => {
     expect(fold.subject).toBe('Bob sent you the Fold')
     expect(fold.html).toContain('gifted you 6 months of the Fold.')
     expect(fold.html).not.toContain('Ark+')
+    expect(fold.html).toContain('Claim your gift to start your membership.</')
 
     const bundle = renderGiftRedemptionEmail({
       term: '1yr',

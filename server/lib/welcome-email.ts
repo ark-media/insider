@@ -440,13 +440,12 @@ export type GiftRedemptionEmailParams = {
 type GiftTier = 'ark-plus' | 'circle' | 'bundle'
 
 // How each gifted tier is named in the claim email: `name` after "sent you" /
-// "gifted you 1 year of", `includes` as the body's one sentence on what it is.
-const GIFT_TIER_COPY: Record<GiftTier, { name: string; includes: string }> = {
+// "gifted you 1 year of", `includes` as the body's sentence on what it
+// includes. The Fold has no approved line yet, so its body is the claim
+// sentence alone.
+const GIFT_TIER_COPY: Record<GiftTier, { name: string; includes: string | null }> = {
   'ark-plus': { name: 'Ark+', includes: `It includes ${FEED_INCLUDED}.` },
-  circle: {
-    name: 'the Fold',
-    includes: 'The Fold is our members-only community, with voices from across the Ark Media network.',
-  },
+  circle: { name: 'the Fold', includes: null },
   bundle: { name: 'Ark+ and the Fold', includes: `It includes ${FEED_INCLUDED}, plus the Fold.` },
 }
 
@@ -532,7 +531,9 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
     eyebrow: 'A gift for you',
     headlineHtml,
     greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
-    bodyHtml: `Claim your gift to start your membership. ${gift.includes}`,
+    bodyHtml: gift.includes
+      ? `Claim your gift to start your membership. ${gift.includes}`
+      : 'Claim your gift to start your membership.',
     messageBlockHtml,
     footerHtml: `Gifts are one-time — once claimed, your access runs for ${termLabel} and won't auto-renew. Redeem whenever you like; there's no deadline. Need help? Just reply to this email.`,
     ctaHref: p.claimUrl,
