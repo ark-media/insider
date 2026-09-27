@@ -98,7 +98,10 @@ import {
   existingDiscountParams,
   findLiveSubscription,
   findReusableSubscriber,
+  cancelBooked,
+  clearCancelParams,
   giftExtensionRunning,
+  giftPauseEndSec,
   MAX_NAME_LEN,
   oneCycleFromNowIso,
   periodEndIso,
@@ -604,9 +607,20 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         await releaseScheduleIfAny(stripe, sub, env)
 
         // Cancel at period end so they keep access until the billing cycle ends.
-        await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true })
+        // A monthly sub a gift has paused past that point ends when the gift
+        // does instead: billing stays paused until then, so nothing is charged,
+        // and ending at period end would throw the gifted months away. No
+        // proration: the date falls mid-cycle, and there's nothing to credit on
+        // a period that was never billed.
+        const giftEnd = giftPauseEndSec(sub)
+        await stripe.subscriptions.update(
+          sub.id,
+          giftEnd !== null
+            ? { cancel_at: giftEnd, proration_behavior: 'none' }
+            : { cancel_at_period_end: true },
+        )
 
-        const accessUntilIso = periodEndIso(sub)
+        const accessUntilIso = giftEnd !== null ? tsToIso(giftEnd) : periodEndIso(sub)
 
         // The confirmation email. Sent HERE rather than off
         // customer.subscription.deleted, which is the other obvious hook and the
@@ -754,12 +768,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             plan: planFromSubscription(sub),
           })
         }
+        const resumeParams = {
+          ...clearCancelParams(sub),
+          ...(survivingDiscounts !== null ? { discounts: survivingDiscounts } : {}),
+        }
         const updated =
-          sub.cancel_at_period_end || hadSchedule
-            ? await stripe.subscriptions.update(sub.id, {
-                cancel_at_period_end: false,
-                ...(survivingDiscounts !== null ? { discounts: survivingDiscounts } : {}),
-              })
+          Object.keys(resumeParams).length > 0
+            ? await stripe.subscriptions.update(sub.id, resumeParams)
             : sub
 
         json(200, { ok: true, next_charge_at: periodEndIso(updated) })
@@ -1024,7 +1039,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           await releaseScheduleIfAny(stripe, sub, env)
           updated = await stripe.subscriptions.update(sub.id, {
             discounts: [...existingDiscountParams(sub), { coupon: offer.couponId }],
-            cancel_at_period_end: false,
+            ...clearCancelParams(sub),
           })
         }
         if (env.DATABASE_URL) {
@@ -1097,7 +1112,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // When cancel_at_period_end is set, Stripe populates cancel_at; fall back
         // to the current period end so we always have a date to show.
         let cancelAt: string | null = null
-        if (sub?.cancel_at_period_end) {
+        if (sub && cancelBooked(sub)) {
           cancelAt = tsToIso(sub.cancel_at) ?? periodEndIso(sub)
         }
         const hasSchedule = Boolean(sub && scheduleIdOf(sub))
@@ -1129,7 +1144,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
         json(200, {
-          cancelAtPeriodEnd: Boolean(sub?.cancel_at_period_end),
+          // Named for the common case; true for any booked cancel, including
+          // one set to end with a gift (cancelBooked).
+          cancelAtPeriodEnd: Boolean(sub && cancelBooked(sub)),
           cancelAt,
           // A schedule-managed sub has a pending period-end tier/PWYC change
           // (task 14). The account page can surface "a plan change is scheduled".
@@ -1684,6 +1701,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               payment_behavior: 'error_if_incomplete',
               billing_cycle_anchor: 'now',
               ...(survivingDiscounts !== null ? { discounts: survivingDiscounts } : {}),
+              // A member paying for more is staying: call off a booked cancel,
+              // or they'd be charged for a term that then lapses.
+              ...clearCancelParams(sub),
               metadata: {
                 ...sub.metadata,
                 tier: newTier,
@@ -1719,6 +1739,15 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
 
           // Period-end: schedule the destination price to start at the current
           // period end; entitlement isn't revoked until it lands.
+          //
+          // A booked cancel is called off first. Choosing a plan to continue on
+          // means staying. Stripe would accept the schedule with the cancel
+          // still on (checked in test mode), and the subscription would then
+          // end at period end before the new phase ever started. (A cancel
+          // releases any schedule, so one can't already be attached here.)
+          if (cancelBooked(sub)) {
+            await stripe.subscriptions.update(sub.id, clearCancelParams(sub))
+          }
           let scheduleId = scheduleIdOf(sub)
           if (!scheduleId) {
             const created = await stripe.subscriptionSchedules.create({

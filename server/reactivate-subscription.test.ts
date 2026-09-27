@@ -40,6 +40,7 @@ let subsByCustomer: Record<
     id: string
     current_period_end: number | null
     cancel_at_period_end?: boolean
+    cancel_at?: number
     // A pending period-end change (what the annual→monthly save schedules), the
     // subscription's discount ids, and its billing interval.
     schedule?: string
@@ -71,6 +72,7 @@ class FakeStripe {
         // so the (status-filtered) live-subscription lookup matches it.
         status: 'active',
         cancel_at_period_end: s.cancel_at_period_end ?? false,
+        cancel_at: s.cancel_at ?? null,
         customer: args.customer,
         schedule: s.schedule ?? null,
         discounts: s.discounts ?? [],
@@ -193,6 +195,7 @@ const PERIOD_END = 1798761600 // 2027-01-01, distinct from UPDATED_PERIOD_END
 function withSub(
   over: {
     cancel_at_period_end?: boolean
+    cancel_at?: number
     current_period_end?: number | null
     schedule?: string
     discounts?: string[]
@@ -206,6 +209,7 @@ function withSub(
         id: 'sub_1',
         current_period_end: over.current_period_end === undefined ? PERIOD_END : over.current_period_end,
         cancel_at_period_end: over.cancel_at_period_end ?? false,
+        cancel_at: over.cancel_at,
         schedule: over.schedule,
         discounts: over.discounts,
         interval: over.interval,
@@ -320,7 +324,7 @@ describe('POST /api/stripe/reactivate-subscription — a released schedule takes
     expect(res.statusCode).toBe(200)
     expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.release')).toBe(true)
     const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
-    expect(update!.args[1]).toEqual({ cancel_at_period_end: false, discounts: '' })
+    expect(update!.args[1]).toEqual({ discounts: '' })
   })
 
   test('a coupon that fits the resumed plan stays, as does anything that is not a retention coupon', async () => {
@@ -332,9 +336,21 @@ describe('POST /api/stripe/reactivate-subscription — a released schedule takes
       origin: BASE_ENV.APP_BASE_URL,
     })
 
+    // Nothing dropped and no cancel booked: releasing the schedule was the
+    // whole undo, so the subscription itself isn't updated.
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+
+  test('a cancel set to end with a gift is cleared by unsetting cancel_at', async () => {
+    withSub({ cancel_at: PERIOD_END + 182 * 86400 })
+
+    await post({
+      cookie: await sessionCookie('member@example.com'),
+      origin: BASE_ENV.APP_BASE_URL,
+    })
+
     const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
-    // Nothing dropped → the param is omitted and Stripe leaves discounts alone.
-    expect(update!.args[1]).toEqual({ cancel_at_period_end: false })
+    expect(update!.args[1]).toEqual({ cancel_at: '' })
   })
 
   test('no schedule released → discounts are never read or touched', async () => {

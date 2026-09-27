@@ -1062,6 +1062,7 @@ async function handleGiftPurchase(purchase: GiftPurchase, env: Env): Promise<voi
     recipientEmail,
     giverName: metadata.giver_name || undefined,
     term,
+    tier,
     message: metadata.message || undefined,
     claimUrl,
   })

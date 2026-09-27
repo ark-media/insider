@@ -49,7 +49,8 @@ let subsByCustomer: Record<
   // `entitlements` metadata is the only thing tierFromSubscription reads — it no
   // longer falls back to the sub's own (client-stamped) metadata. A sub with no
   // tier has no items product, i.e. is not one of our memberships.
-  Array<{ id: string; current_period_end: number; tier?: string }>
+  // `resumes_at`: a gift's pause on a monthly sub (routes/gift.ts).
+  Array<{ id: string; current_period_end: number; tier?: string; resumes_at?: number }>
 > = {}
 // Coupons returned by coupons.list — part of the shared stripe mock harness.
 let activeCoupons: Array<Record<string, unknown>> = []
@@ -81,6 +82,8 @@ class FakeStripe {
         // so the (status-filtered) live-subscription lookup matches it.
         status: 'active',
         metadata: {},
+        pause_collection:
+          s.resumes_at != null ? { behavior: 'keep_as_draft', resumes_at: s.resumes_at } : null,
         items: {
           data: [
             {
@@ -268,6 +271,45 @@ describe('POST /api/stripe/cancel-subscription — cancel behavior', () => {
     const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
     expect(update).toBeTruthy()
     expect(update!.args[0]).toBe('sub_1')
+    expect(update!.args[1]).toEqual({ cancel_at_period_end: true })
+  })
+
+  test('a monthly sub paused by a gift ends when the gift does, not at period end', async () => {
+    // Cancelling at period end would throw away the gifted months: Stripe ends
+    // the sub on the paid date and knows nothing of the gift.
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    const periodEnd = 1893456000
+    const giftEnd = periodEnd + 182 * 86400
+    subsByCustomer = {
+      cus_1: [{ id: 'sub_1', current_period_end: periodEnd, resumes_at: giftEnd, tier: 'ark-plus' }],
+    }
+    const res = await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as Record<string, unknown>).access_until).toBe(
+      new Date(giftEnd * 1000).toISOString(),
+    )
+    const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
+    expect(update!.args[1]).toEqual({ cancel_at: giftEnd, proration_behavior: 'none' })
+    // The email promises the gift's end date too.
+    const body = parseJsonInitBody(resendCalls()[0]!.init) as Record<string, unknown>
+    expect(String(body.html)).toContain('July 1, 2030 ET')
+  })
+
+  test('a gift pause that ends inside the paid period changes nothing', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    const periodEnd = 1893456000
+    subsByCustomer = {
+      cus_1: [{ id: 'sub_1', current_period_end: periodEnd, resumes_at: periodEnd - 86400 }],
+    }
+    await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+    const update = stripeCalls.find((c) => c.method === 'subscriptions.update')
     expect(update!.args[1]).toEqual({ cancel_at_period_end: true })
   })
 

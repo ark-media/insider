@@ -72,6 +72,8 @@ import {
   type OfferBlock,
 } from '../lib/welcome-offer.js'
 import {
+  cancelBooked,
+  clearCancelParams,
   customerIdOf,
   existingDiscountParams,
   findLiveSubscription,
@@ -236,7 +238,7 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
             currentRenewsAt: periodEndIso(sub),
             // A cancellation they'd booked, which taking the offer calls off —
             // the page says so rather than doing it quietly.
-            cancelBooked: sub.cancel_at_period_end,
+            cancelBooked: cancelBooked(sub),
           },
         })
       },
@@ -306,7 +308,7 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
               // booked, as accepting a save offer does. Left on, a monthly
               // member would pay for the discounted term and still lapse at
               // the end of its first month.
-              cancel_at_period_end: false,
+              ...clearCancelParams(sub),
               metadata: {
                 tier: 'bundle',
                 plan,
