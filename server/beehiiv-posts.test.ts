@@ -379,9 +379,10 @@ describe('sanitizeBeehiivDocument', () => {
     }
   })
 
-  test('starts a standards-mode document with our base target and header hide', () => {
+  test('starts a standards-mode document with our base target, keeping the header but not its share buttons', () => {
     expect(doc.startsWith('<!doctype html><html><head><base target="_blank">')).toBe(true)
-    expect(doc).toContain('#web-header{display:none!important}')
+    expect(doc).not.toContain('#web-header{display:none')
+    expect(doc).toContain('#web-header .bh__byline_social_wrapper')
   })
 })
 

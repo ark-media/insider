@@ -12,6 +12,10 @@ import type { SanitizedHtml } from "../../shared/sanitized-html";
 //
 // `src` isn't an option: vercel.json sends `X-Frame-Options: DENY` on every
 // response, and srcdoc isn't subject to it.
+// Beehiiv's page background for our publication (its `bg-wt-background`).
+// The frame and the band around it share it so their edges don't show.
+export const NEWSLETTER_PAPER = "#F1F4F9";
+
 export function NewsletterFrame({
   html,
   title,
@@ -55,8 +59,12 @@ export function NewsletterFrame({
       srcDoc={html}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       referrerPolicy="no-referrer-when-downgrade"
-      className="block w-full border-0 bg-[#F1F4F9]"
-      style={{ height: height ?? "80vh", colorScheme: "light" }}
+      className="block w-full border-0"
+      style={{
+        height: height ?? "80vh",
+        backgroundColor: NEWSLETTER_PAPER,
+        colorScheme: "light",
+      }}
     />
   );
 }
