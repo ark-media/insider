@@ -103,6 +103,23 @@ function firstAuthorName(p: BeehiivPost, fallback: string): string {
   return a.name ?? fallback
 }
 
+const HEADER_DATE_RE =
+  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2},? \d{4}\b/gi
+
+// True when nothing is left of the free edition once the header — title,
+// subtitle, author names, publish date — is taken out.
+function freeIsHeaderOnly(freeText: string, p: BeehiivPost): boolean {
+  let rest = freeText.replace(HEADER_DATE_RE, ' ')
+  const names = (p.authors ?? []).map((a) =>
+    typeof a === 'string' ? a : (a.name ?? ''),
+  )
+  for (const part of [p.title, p.subtitle, ...names]) {
+    const t = part?.trim()
+    if (t) rest = rest.split(t).join(' ')
+  }
+  return rest.trim() === ''
+}
+
 export function isPublishedBeehiivPost(p: BeehiivPost): boolean {
   // Beehiiv post statuses observed: 'confirmed' (published), 'draft',
   // 'scheduled', 'archived'. Only 'confirmed' should reach the public site.
@@ -164,6 +181,15 @@ export function projectBeehiivPost(
       ? 'ark-plus'
       : 'free'
 
+  // Members-only = the free edition carries no issue at all, only the
+  // title/byline/date header Beehiiv renders above every body (the
+  // premium-segment-only sends described above). The list hides these from
+  // non-members; a post with a real free edition plus members' sections stays
+  // listed for everyone.
+  const membersOnly =
+    audience === 'premium' ||
+    (tier === 'ark-plus' && freeIsHeaderOnly(freeText, p))
+
   const excerpt = (p.preview_text && p.preview_text.trim()) ||
     (p.subtitle && p.subtitle.trim()) ||
     plain.slice(0, 200)
@@ -177,6 +203,7 @@ export function projectBeehiivPost(
     body: plain,
     bodyHtml,
     tier,
+    membersOnly,
     authorName: firstAuthorName(p, authorFallback),
     beehiivPostId: p.id,
   }

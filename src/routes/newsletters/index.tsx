@@ -97,7 +97,11 @@ function NewslettersPage() {
     );
   }
 
-  const { posts } = load;
+  // Members-only issues have no free edition to read, so non-members don't
+  // see them listed. A direct link still lands on the post's paywall.
+  const posts = isSubscriber
+    ? load.posts
+    : load.posts.filter((p) => !p.membersOnly);
 
   // The side column is whatever this reader is missing: guests get the email
   // form, signed-in readers who are off the list get a pointer to Settings
@@ -131,7 +135,7 @@ function NewslettersPage() {
                 : "Recent issues"}
             </div>
             {posts.length === 0 ? (
-              <p className="mt-8 text-body-sm">No recent issues yet.</p>
+              <p className="mt-8 text-body-sm">There are no recent issues.</p>
             ) : (
               <ul
                 className={`mt-8 divide-y divide-rule border-y border-rule overflow-y-auto overscroll-y-contain ${
@@ -153,9 +157,6 @@ function NewslettersPage() {
                         </span>
                         <span className="meta shrink-0 group-hover:text-cyan">
                           {formatPostDate(p.publishedAt)}
-                          {p.tier === "ark-plus" && !isSubscriber
-                            ? " · Ark+"
-                            : ""}
                         </span>
                       </div>
                       <p className="mt-2 max-w-2xl text-body-sm">{p.excerpt}</p>

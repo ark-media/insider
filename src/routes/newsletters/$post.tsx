@@ -123,8 +123,7 @@ function PostPage() {
             ) : null}
             <div className="rise rise-2">
               <div className="label tracking-[0.28em] text-cyan">
-                {newsletter.shortTitle}
-                {post.tier === "ark-plus" ? " · Ark+" : " · Newsletter"}
+                {newsletter.shortTitle} · Newsletter
               </div>
               <h1 className="mt-4 font-display text-[clamp(2rem,4.5vw,3.4rem)] font-bold leading-[1.05] tracking-[-0.01em] text-fg-strong">
                 {post.title}
