@@ -77,6 +77,7 @@ import { createSharedRateLimiter } from '../../lib/shared-rate-limit.js'
 import { getSessionEmail, resolveRequestIdentity } from '../../lib/session.js'
 import { requireBillingEmail } from '../../lib/guards.js'
 import { sendEmail } from '../../lib/email.js'
+import { renderCardUpdatedEmail } from '../../lib/billing-notice-emails.js'
 import {
   renderCancellationEmail,
   renderDebundleEmail,
@@ -91,6 +92,7 @@ import { defineRoute, type Deps, type Route } from '../../lib/route.js'
 import {
   addCouponToFinalPhase,
   billingCurrencyOf,
+  cardBrandLabel,
   cardOf,
   changeIsImmediate,
   coerceTier,
@@ -1285,7 +1287,31 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           })
         }
 
-        json(200, { ok: true, card: typeof pm === 'string' ? null : cardOf(pm) })
+        const card = typeof pm === 'string' ? null : cardOf(pm)
+
+        // The security notice: if someone else changed the card, this is how
+        // the member finds out. Best-effort and after every write has landed;
+        // keyed on the intent, so retrying the same save sends it once.
+        try {
+          const identity = await resolveRequestIdentity(req, env)
+          const { subject, html } = renderCardUpdatedEmail({
+            firstName: identity?.firstName ?? undefined,
+            brand: card ? cardBrandLabel(card.brand) : null,
+            last4: card?.last4 ?? null,
+            accountUrl: `${appBaseUrl}/account/billing`,
+          })
+          const sent = await sendEmail(env, {
+            to: email,
+            subject,
+            html,
+            idempotencyKey: `card_updated_${setupIntentId}`,
+          })
+          if (!sent) console.error('[email] card-updated email did not send:', sub.id)
+        } catch (err) {
+          console.error('[email] card-updated email failed:', err)
+        }
+
+        json(200, { ok: true, card })
       },
     }),
 

@@ -85,6 +85,10 @@
       "schedule": "0 16 * * *"
     },
     {
+      "path": "/api/cron/renewal-reminders",
+      "schedule": "30 16 * * *"
+    },
+    {
       "path": "/api/cron/winback",
       "schedule": "0 17 * * *"
     },

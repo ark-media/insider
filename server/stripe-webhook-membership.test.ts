@@ -693,6 +693,53 @@ describe('webhook DB path — subscription ended', () => {
     expect(fetchCalls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
   })
 
+  test('the end of a subscription sends the "access ended" email, once per subscription', async () => {
+    priorRow = SUB_ROW
+    webhookEvent = { type: 'customer.subscription.deleted', data: { object: makeSub() } }
+    await runWebhook()
+    const sends = resendCalls()
+    expect(sends).toHaveLength(1)
+    const body = JSON.parse(String(sends[0]!.init?.body)) as Record<string, unknown>
+    expect(body.subject).toBe('Your Ark+ membership has ended')
+    expect(String(body.html)).not.toContain('take payment')
+    expect((sends[0]!.init?.headers as Record<string, string>)['Idempotency-Key']).toBe(
+      'access_ended_sub_1',
+    )
+  })
+
+  test('a subscription Stripe ended over failed payments says so', async () => {
+    priorRow = SUB_ROW
+    const sub = { ...(makeSub() as object), cancellation_details: { reason: 'payment_failed' } }
+    webhookEvent = { type: 'customer.subscription.deleted', data: { object: sub } }
+    await runWebhook()
+    const body = JSON.parse(String(resendCalls()[0]!.init?.body)) as Record<string, unknown>
+    expect(String(body.html)).toContain('take payment after several tries')
+  })
+
+  test('a gift still covering everything the subscription gave means no email', async () => {
+    priorRow = { ...SUB_ROW, ark_plus_gift_expires_at: FUTURE }
+    webhookEvent = { type: 'customer.subscription.deleted', data: { object: makeSub() } }
+    await runWebhook()
+    expect(resendCalls()).toHaveLength(0)
+  })
+
+  test('a Bundle whose Fold half a gift still holds names only Ark+ as ended', async () => {
+    subProductId = 'prod_bundle'
+    priorRow = { ...SUB_ROW, tier: 'bundle', circle_gift_expires_at: FUTURE }
+    webhookEvent = { type: 'customer.subscription.deleted', data: { object: makeSub() } }
+    await runWebhook()
+    const body = JSON.parse(String(resendCalls()[0]!.init?.body)) as Record<string, unknown>
+    expect(body.subject).toBe('Your Ark+ membership has ended')
+  })
+
+  test('a paused subscription can resume, so it sends no "ended" email', async () => {
+    priorRow = SUB_ROW
+    currentSub = { ...(makeSub() as object), status: 'paused' }
+    webhookEvent = { type: 'customer.subscription.paused', data: { object: makeSub() } }
+    await runWebhook()
+    expect(resendCalls()).toHaveLength(0)
+  })
+
   test('a stale paused (resumed since) revokes nothing', async () => {
     priorRow = SUB_ROW
     // currentSub defaults to the active fixture.

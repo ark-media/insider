@@ -358,6 +358,23 @@ export async function readCardOnFile(
 
 // The account page's view of a payment method, or null for anything that isn't
 // a card (Link, a bank debit) — there is no "ending 4242" to show for those.
+// A card network as members know it. Stripe's `card.brand` is a lowercase
+// slug ("visa", "amex"); anything unlisted is title-cased rather than dropped.
+const CARD_BRAND_LABELS: Record<string, string> = {
+  visa: 'Visa',
+  mastercard: 'Mastercard',
+  amex: 'American Express',
+  discover: 'Discover',
+  diners: 'Diners Club',
+  jcb: 'JCB',
+  unionpay: 'UnionPay',
+}
+
+export function cardBrandLabel(brand: string): string | null {
+  if (!brand || brand === 'unknown') return null
+  return CARD_BRAND_LABELS[brand] ?? brand.charAt(0).toUpperCase() + brand.slice(1)
+}
+
 export function cardOf(pm: Stripe.PaymentMethod): CardOnFile | null {
   const card = pm.card
   if (!card) return null

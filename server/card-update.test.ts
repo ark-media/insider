@@ -12,7 +12,7 @@
 // Harness mirrors my-subscription.test.ts: mock.module('stripe', …) swaps the
 // SDK, and we drive the registered middleware with fake req/res.
 
-import { describe, test, expect, beforeEach, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import {
   createDevApiHarness,
   makeFakeReq,
@@ -401,5 +401,64 @@ describe('POST /api/stripe/update-card — saving', () => {
     // member@ has no subscription of their own, so there is nothing to update.
     expect(res.statusCode).toBe(404)
     expect(writes()).toEqual([])
+  })
+})
+
+// The security notice after a card change. A separate plugin with a Resend key
+// so the email actually renders and "sends"; fetch is stubbed to capture it.
+describe('POST /api/stripe/update-card — card-updated email', () => {
+  const emailHandler = () =>
+    createDevApiHarness(devApiPlugin({ ...BASE_ENV, RESEND_API_KEY: 'rk_test' })).getHandler(
+      UPDATE_PATH,
+    )
+  const realFetch = globalThis.fetch
+  let sends: { body: Record<string, unknown>; headers: Record<string, string> }[] = []
+  beforeEach(() => {
+    sends = []
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(input).includes('api.resend.com')) {
+        sends.push({
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+          headers: init?.headers as Record<string, string>,
+        })
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+  })
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  test('names the new card, keyed on the intent', async () => {
+    memberWithSub()
+    setupIntents = {
+      seti_ok: { customer: 'cus_me', status: 'succeeded', payment_method: { id: 'pm_new', card: VISA } },
+    }
+    const res = await post(UPDATE_PATH, {
+      cookie: await sessionCookie('member@example.com'),
+      body: { setup_intent_id: 'seti_ok' },
+      handler: emailHandler(),
+    })
+    expect(res.statusCode).toBe(200)
+    expect(sends).toHaveLength(1)
+    expect(sends[0].body.to).toBe('member@example.com')
+    expect(sends[0].body.subject).toBe('Your payment card was updated')
+    expect(String(sends[0].body.html)).toContain('Visa ending in 4242')
+    expect(sends[0].headers['Idempotency-Key']).toBe('card_updated_seti_ok')
+  })
+
+  test('no email when the card could not be switched over', async () => {
+    memberWithSub()
+    failSubscriptionUpdate = true
+    setupIntents = {
+      seti_ok: { customer: 'cus_me', status: 'succeeded', payment_method: { id: 'pm_new', card: VISA } },
+    }
+    const res = await post(UPDATE_PATH, {
+      cookie: await sessionCookie('member@example.com'),
+      body: { setup_intent_id: 'seti_ok' },
+      handler: emailHandler(),
+    })
+    expect(res.statusCode).toBe(502)
+    expect(sends).toHaveLength(0)
   })
 })
