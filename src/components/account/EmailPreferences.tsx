@@ -114,7 +114,7 @@ export function EmailPreferences({ email }: { email: string }) {
             description={
               prefs.canPremium
                 ? "The weekly members' edition"
-                : "Weekly. The free edition — Ark+ members get the members' edition."
+                : "The weekly free edition"
             }
             on={prefs.free}
             busy={saving}
