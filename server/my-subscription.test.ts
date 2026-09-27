@@ -200,7 +200,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const cookie = await sessionCookie('member@example.com')
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null, canChangeAmount: false })
   })
 
   test('normally renewing subscription → no pending cancel', async () => {
@@ -220,6 +220,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       currency: undefined,
       minorFactor: 100,
       card: null,
+      canChangeAmount: false,
     })
   })
 
@@ -249,6 +250,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       currency: undefined,
       minorFactor: 100,
       card: null,
+      canChangeAmount: false,
     })
   })
 
@@ -278,6 +280,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
       currency: undefined,
       minorFactor: 100,
       card: null,
+      canChangeAmount: false,
     })
   })
 
@@ -296,7 +299,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const cookie = await sessionCookie('member@example.com')
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: true, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: undefined, minorFactor: 100, card: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: true, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: undefined, minorFactor: 100, card: null, canChangeAmount: false })
   })
 
   test('only the session email is consulted — never a client-supplied one', async () => {
@@ -318,7 +321,7 @@ describe('GET /api/stripe/my-subscription — cancel schedule', () => {
     const res = await get({ cookie })
     expect(res.statusCode).toBe(200)
     // member@ has no sub of their own, so other@'s pending cancel must not leak.
-    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null })
+    expect(res.__json()).toEqual({ cancelAtPeriodEnd: false, cancelAt: null, pendingChange: false, scheduledTier: null, scheduledPlan: null, periodEnd: null, plan: null, amountCents: null, currency: null, minorFactor: 100, card: null, canChangeAmount: false })
     const customerList = stripeCalls.find((c) => c.method === 'customers.list')
     expect((customerList!.args[0] as { email: string }).email).toBe(
       'member@example.com',
