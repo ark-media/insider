@@ -5,7 +5,31 @@ import { useEffect, useId, useRef, useState } from "react";
 // with no way to cap its height. This is a custom listbox — a trigger button
 // plus a fixed-height, inner-scrolling panel — so the list stays inside the
 // modal. Keyboard + ARIA are wired to the listbox pattern (arrow keys, Home/End,
-// Enter/Space, Escape).
+// Enter/Space, Escape, and type-ahead — typing "u", "us" or "euro" jumps to the
+// matching currency, from the closed trigger as well as the open list).
+
+// "GBP" alone is read letter by letter by screen readers, so each option's
+// accessible name also carries the currency's English name.
+const currencyNames = (() => {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "currency" });
+  } catch {
+    return null;
+  }
+})();
+
+function currencyName(code: string): string | undefined {
+  try {
+    const name = currencyNames?.of(code.toUpperCase());
+    return name && name.toUpperCase() !== code.toUpperCase() ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// How long a pause ends a type-ahead run (the APG listbox's usual ~500ms).
+const TYPEAHEAD_RESET_MS = 500;
+
 export function CurrencySelect({
   value,
   options,
@@ -25,7 +49,9 @@ export function CurrencySelect({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const optionRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const typeahead = useRef({ query: "", at: 0 });
   const baseId = useId();
+  const listId = `${baseId}-list`;
   const optionId = (i: number) => `${baseId}-opt-${i}`;
 
   // While open: focus the list so it takes keyboard input, and close on any
@@ -47,10 +73,37 @@ export function CurrencySelect({
     optionRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
   }, [open, activeIndex]);
 
-  const openMenu = () => {
-    setActiveIndex(Math.max(0, options.indexOf(value)));
+  const openMenu = (index = Math.max(0, options.indexOf(value))) => {
+    setActiveIndex(index);
     setOpen(true);
   };
+
+  // Type-ahead: accumulate keystrokes typed within TYPEAHEAD_RESET_MS and jump
+  // to the first option whose code or name starts with them. A repeated single
+  // letter ("s", "s", "s") cycles through the matches instead, as native
+  // selects do. Returns the index to move to, or null for no match.
+  const matchTypeahead = (e: React.KeyboardEvent, from: number): number | null => {
+    const now = e.timeStamp;
+    const t = typeahead.current;
+    const char = e.key.toLowerCase();
+    t.query = now - t.at > TYPEAHEAD_RESET_MS ? char : t.query + char;
+    t.at = now;
+    const cycling = t.query.length > 1 && [...t.query].every((c) => c === char);
+    const query = cycling ? char : t.query;
+    // A fresh or cycling search starts after the current option so repeated
+    // presses advance; an extended query ("u" → "us") re-checks the current one.
+    const start = query.length === 1 ? from + 1 : from;
+    for (let n = 0; n < options.length; n++) {
+      const i = (start + n) % options.length;
+      const code = options[i].toLowerCase();
+      const name = currencyName(options[i])?.toLowerCase() ?? "";
+      if (code.startsWith(query) || name.startsWith(query)) return i;
+    }
+    return null;
+  };
+
+  const isTypeaheadKey = (e: React.KeyboardEvent) =>
+    e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey;
 
   const close = (returnFocus: boolean) => {
     setOpen(false);
@@ -68,6 +121,10 @@ export function CurrencySelect({
     if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       openMenu();
+    } else if (isTypeaheadKey(e)) {
+      e.preventDefault();
+      const current = Math.max(0, options.indexOf(value));
+      openMenu(matchTypeahead(e, current) ?? current);
     }
   };
 
@@ -104,6 +161,12 @@ export function CurrencySelect({
         e.preventDefault();
         commit(activeIndex);
         break;
+      default:
+        if (isTypeaheadKey(e)) {
+          e.preventDefault();
+          const match = matchTypeahead(e, activeIndex);
+          if (match !== null) setActiveIndex(match);
+        }
     }
   };
 
@@ -115,6 +178,7 @@ export function CurrencySelect({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         aria-label={`Currency: ${value.toUpperCase()}`}
         onClick={() => (open ? close(false) : openMenu())}
         onKeyDown={onTriggerKeyDown}
@@ -138,7 +202,9 @@ export function CurrencySelect({
       {open ? (
         <ul
           ref={listRef}
+          id={listId}
           role="listbox"
+          aria-label="Currency"
           tabIndex={-1}
           aria-activedescendant={optionId(activeIndex)}
           onKeyDown={onListKeyDown}
@@ -147,6 +213,7 @@ export function CurrencySelect({
           {options.map((c, i) => {
             const selected = c === value;
             const active = i === activeIndex;
+            const name = currencyName(c);
             return (
               <li
                 key={c}
@@ -156,6 +223,7 @@ export function CurrencySelect({
                 }}
                 role="option"
                 aria-selected={selected}
+                aria-label={name ? `${c.toUpperCase()}, ${name}` : undefined}
                 onClick={() => commit(i)}
                 onMouseEnter={() => setActiveIndex(i)}
                 className={`cursor-pointer px-3 py-2 text-body-sm tabular-nums ${
