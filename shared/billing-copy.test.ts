@@ -13,7 +13,7 @@ test('a price is quoted in the member’s own billing period', () => {
 describe('dueTodayLine', () => {
   test('names the figure that comes off the card today', () => {
     expect(dueTodayLine({ amount: '£172.40' })).toBe(
-      "You pay £172.40 today: the new price, less credit for what's left of your current plan.",
+      "You pay £172.40 today, which includes credit for the time left on your current plan.",
     )
   })
 
@@ -32,16 +32,16 @@ describe('dueTodayLine', () => {
 describe('renewsLine', () => {
   test('the date is placed, not appended', () => {
     expect(renewsLine({ plan: 'yearly', renewsOn: 'September 24, 2027' })).toBe(
-      'Your membership then renews on September 24, 2027.',
+      'Your membership renews on September 24, 2027.',
     )
   })
 
   test('an unreadable date falls back to the cadence, not to "null"', () => {
     expect(renewsLine({ plan: 'yearly', renewsOn: null })).toBe(
-      'Your membership then renews a year from today.',
+      'Your membership renews a year from today.',
     )
     expect(renewsLine({ plan: 'monthly', renewsOn: null })).toBe(
-      'Your membership then renews a month from today.',
+      'Your membership renews a month from today.',
     )
   })
 })

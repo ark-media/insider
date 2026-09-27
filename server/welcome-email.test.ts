@@ -315,7 +315,7 @@ describe('renderAxisAddedEmail', () => {
     expect(html).toContain('Hi Alice,')
     expect(html).toContain('$25 a month')
     expect(html).toContain('covers everything')
-    expect(html).toContain("Today's bill was the new price")
+    expect(html).toContain("Today's bill included credit for the time left")
     expect(html).toContain('renews on September 14, 2026')
     expect(html).toContain('Enter the Fold')
     // Not a first-purchase welcome, and never a set-password email: this member
@@ -362,7 +362,7 @@ describe('renderAxisAddedEmail', () => {
       plan: 'monthly',
     })
     expect(html).toContain('covers everything')
-    expect(html).toContain("Today's bill was the new price")
+    expect(html).toContain("Today's bill included credit for the time left")
     expect(html).not.toContain('$')
     // No date given → the cadence stands in, never a made-up day.
     expect(html).toContain('renews a month from today')

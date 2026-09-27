@@ -389,7 +389,7 @@ describe("a monthly member switching to annual", () => {
     await openOffers();
     const text = document.body.textContent ?? "";
     expect(text).toContain("You pay $72.40 today");
-    expect(text).toContain("less credit for what's left of your current plan");
+    expect(text).toContain("which includes credit for the time left on your current plan");
   });
 
   test("without a quote, still hears the charge is today", async () => {
