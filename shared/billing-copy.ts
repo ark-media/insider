@@ -53,16 +53,16 @@ export function dueTodayOf(
 export function dueTodayLine(due: DueToday): string {
   if (due === 'nothing') return "Nothing to pay today: what's left of your current plan covers it."
   if (due === 'unknown') {
-    return "You pay the new price today, less credit for what's left of your current plan."
+    return "You pay the new price today, which includes credit for the time left on your current plan."
   }
-  return `You pay ${due.amount} today: the new price, less credit for what's left of your current plan.`
+  return `You pay ${due.amount} today, which includes credit for the time left on your current plan.`
 }
 
 /** When the restarted cycle next renews. Without a readable date, says it by cadence. */
 export function renewsLine(p: { plan: BillingPlan; renewsOn: string | null }): string {
   return p.renewsOn
-    ? `Your membership then renews on ${p.renewsOn}.`
-    : `Your membership then renews ${perPeriod(p.plan)} from today.`
+    ? `Your membership renews on ${p.renewsOn}.`
+    : `Your membership renews ${perPeriod(p.plan)} from today.`
 }
 
 /**
@@ -71,4 +71,4 @@ export function renewsLine(p: { plan: BillingPlan; renewsOn: string | null }): s
  * was worked out rather than a figure — Stripe's receipt carries the figure.
  */
 export const SETTLED_TODAY =
-  "Today's bill was the new price, less credit for what was left of your old plan."
+  "Today's bill included credit for the time left on your old plan."
