@@ -7,8 +7,8 @@
 // 2026-09-27, and it only repeats claims the site already makes about the Fold
 // (the tier card, /fold, the Fold welcome email). The Bundle one isn't in the
 // doc either: it is the Ark+ and Fold emails merged, making no claim the two of
-// them don't already make (DRAFT, awaiting Hannah's sign-off). Pure (no I/O) so
-// all three are trivially testable.
+// them don't already make; Hannah approved it 2026-09-27. Pure (no I/O) so all
+// three are trivially testable.
 
 import {
   ARK_MEDIA_TEAM,
