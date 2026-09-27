@@ -121,14 +121,20 @@ function PostPage() {
     <main className="relative">
       {framed ? (
         <>
-          {/* The issue's own header (title, byline, date) and masthead lead
-              the frame, so the page adds only a way back and the h1. */}
-          {/* Sized to the issue's column (672px, 40px gutters) so the
-              breadcrumb lines up with its title. */}
+          {/* The issue's masthead leads, so the page adds one quiet strip:
+              a way back, then byline and date. Sized to the issue's column
+              (672px, 40px gutters) so it lines up with the masthead. */}
           <section className="section-hero relative">
-            <div className="mx-auto max-w-[672px] px-10 pt-10 pb-8 sm:pt-14 sm:pb-10">
+            <div className="mx-auto flex max-w-[672px] flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-10 py-6 sm:py-7">
               {breadcrumbs}
               <h1 className="sr-only">{post.title}</h1>
+              <p className="meta">
+                {post.authorName}
+                <span className="mx-2 text-fg-faint">·</span>
+                <time dateTime={post.publishedAt}>
+                  {formatPostDate(post.publishedAt)}
+                </time>
+              </p>
             </div>
           </section>
           {/* Full-bleed in the issue's own paper colour: one seam where the

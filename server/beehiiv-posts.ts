@@ -106,19 +106,13 @@ const DOCUMENT_DROPPED_TAGS = new Set([
   'title',
 ])
 
-// The issue's own header (title, byline, date) is the page's header, so it
-// stays; only its share buttons (they share the beehiiv.com copy) and
-// Beehiiv's placeholder avatar go. Links open outside the frame, which is
-// sandboxed without navigation of the top window.
+// The page's own strip carries the title, byline and date; Beehiiv's header
+// repeats them (plus share buttons to the beehiiv.com copy) at a size that
+// pushes the issue's masthead below the fold. Links open outside the frame,
+// which is sandboxed without navigation of the top window.
 const DOCUMENT_HEAD =
   '<base target="_blank">' +
-  '<style>' +
-  '#web-header .bh__byline_social_wrapper,' +
-  '#web-header img[src*="/static_assets/gradient_avatar_"]{display:none!important}' +
-  // The byline is nudged right to clear the avatar; without it, align to the title.
-  '#web-header .bh__byline_wrapper p{left:0!important}' +
-  'html,body{margin:0}' +
-  '</style>'
+  '<style>#web-header{display:none!important}html,body{margin:0}</style>'
 
 /**
  * Beehiiv's web HTML kept whole — its own styles and layout — for rendering
