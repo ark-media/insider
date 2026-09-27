@@ -140,6 +140,11 @@ mock.module('@neondatabase/serverless', () => ({
     ((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join('?')
       sqlTexts.push(text)
+      if (text.includes('from membership where auth0_sub = ?') && !text.includes('any')) {
+        if (membershipQueryFails) return Promise.reject(new Error('neon down'))
+        const row = membershipRowsBySub[values[0] as string]
+        return Promise.resolve(row ? [row] : [])
+      }
       if (text.includes('from membership where auth0_sub = any')) {
         if (membershipQueryFails) return Promise.reject(new Error('neon down'))
         const subs = values[0] as string[]
@@ -202,8 +207,8 @@ function getHandler(path: string, env: Record<string, string> = BASE_ENV): Middl
 }
 
 // A durable login (the ark_session cookie) as this address.
-async function sessionCookie(email: string): Promise<string> {
-  return `${SESSION_COOKIE_NAME}=${await signSessionToken({ email, roles: [] }, BASE_ENV)}`
+async function sessionCookie(email: string, sub?: string): Promise<string> {
+  return `${SESSION_COOKIE_NAME}=${await signSessionToken({ email, roles: [], ...(sub ? { sub } : {}) }, BASE_ENV)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -828,5 +833,77 @@ describe('POST /api/stripe/create-checkout-session — rate limit', () => {
     const blocked = await postWith(handler, body)
     expect(blocked.statusCode).toBe(429)
     expect(blocked.__header('retry-after')).toBeTruthy()
+  })
+})
+
+// ===========================================================================
+// A gift recipient subscribing before their gift runs out starts paying when it
+// ends: the Session asks Stripe for a trial to the gift's end (gift-trial.ts).
+describe('POST /api/stripe/create-checkout-session — billing starts when the gift ends', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const inDays = (d: number) => new Date(Date.now() + d * DAY).toISOString()
+  const giftRow = (extra: Record<string, unknown>) => ({
+    auth0_sub: 'auth0|gifted',
+    stripe_customer_id: null,
+    stripe_subscription_id: null,
+    tier: 'ark-plus',
+    status: 'active',
+    ark_plus_gift_expires_at: null,
+    circle_gift_expires_at: null,
+    ...extra,
+  })
+  const trialEndOf = () =>
+    (lastSessionCreateArgs().subscription_data as Record<string, unknown>).trial_end
+
+  test('signed in with a running Ark+ gift → trial_end at the gift end', async () => {
+    const ends = inDays(40)
+    auth0SubsByEmail.set('gifted@b.co', ['auth0|gifted'])
+    membershipRowsBySub = { 'auth0|gifted': giftRow({ ark_plus_gift_expires_at: ends }) }
+    const res = await post(
+      { email: 'gifted@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { env: DB_ENV, cookie: await sessionCookie('gifted@b.co', 'auth0|gifted') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(trialEndOf()).toBe(Math.floor(Date.parse(ends) / 1000))
+  })
+
+  test('a gift that does not cover the whole plan → billed today', async () => {
+    auth0SubsByEmail.set('gifted@b.co', ['auth0|gifted'])
+    membershipRowsBySub = { 'auth0|gifted': giftRow({ ark_plus_gift_expires_at: inDays(40) }) }
+    const res = await post(
+      { email: 'gifted@b.co', plan: 'monthly', tier: 'bundle' },
+      { env: DB_ENV, cookie: await sessionCookie('gifted@b.co', 'auth0|gifted') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(trialEndOf()).toBeUndefined()
+  })
+
+  test('not signed in as the row owner → no trial (the typed-email guard answers)', async () => {
+    auth0SubsByEmail.set('gifted@b.co', ['auth0|gifted'])
+    membershipRowsBySub = { 'auth0|gifted': giftRow({ ark_plus_gift_expires_at: inDays(40) }) }
+    const res = await post(
+      { email: 'gifted@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { env: DB_ENV },
+    )
+    expect(res.statusCode).toBe(409)
+  })
+
+  test('no gift → no trial', async () => {
+    const res = await post(
+      { email: 'reader@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { env: DB_ENV, cookie: await sessionCookie('reader@b.co', 'auth0|reader') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(trialEndOf()).toBeUndefined()
+  })
+
+  test('fails CLOSED when the gift lookup errors — never bills gifted months', async () => {
+    membershipQueryFails = true
+    const res = await post(
+      { email: 'gifted@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { env: DB_ENV, cookie: await sessionCookie('gifted@b.co', 'auth0|gifted') },
+    )
+    expect(res.statusCode).toBe(502)
+    expect(stripeCalls.find((c) => c.method === 'checkout.sessions.create')).toBeUndefined()
   })
 })

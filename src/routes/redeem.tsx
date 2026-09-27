@@ -8,7 +8,9 @@ import {
   giftTierFromClaimToken,
   prepareGiftClaim,
   redeemGift,
+  resendGiftClaim,
   type RedeemGiftResult,
+  type ResendClaimResult,
 } from "../lib/gift";
 import { trackEvent } from "../lib/analytics";
 import {
@@ -39,7 +41,7 @@ type ClaimState =
   | { kind: "idle" }
   | { kind: "claiming" }
   | { kind: "done"; result: Extract<RedeemGiftResult, { ok: true }> }
-  | { kind: "error"; message: string; terminal: boolean };
+  | { kind: "error"; message: string; terminal: boolean; expired?: boolean };
 
 // Server error slugs → recipient-facing copy. `terminal` errors hide the retry
 // button (retrying can't change the outcome).
@@ -48,11 +50,8 @@ function messageForError(error: string): { message: string; terminal: boolean } 
     case "already_redeemed":
       return { message: "This gift has already been claimed.", terminal: true };
     case "expired_link":
-      return {
-        message:
-          "This link has expired. Reply to your gift email and we'll send a new one.",
-        terminal: true,
-      };
+      // The page offers a fresh link right under this (ResendLink).
+      return { message: "This link has expired.", terminal: true };
     case "invalid_gift":
       return {
         message:
@@ -164,7 +163,7 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
     const failure = messageForError(result.error);
     // A terminal failure (claimed / expired / unknown) is as spent as a success.
     if (failure.terminal) clearLandingCredentials();
-    setClaim({ kind: "error", ...failure });
+    setClaim({ kind: "error", ...failure, expired: result.error === "expired_link" });
   };
 
   if (claim.kind === "done") return <ClaimDoneCard applied={claim.result.applied} />;
@@ -175,8 +174,9 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
         <p role="alert" className="text-body-sm text-danger">
           {claim.message}
         </p>
+        {claim.expired ? <ResendLink mt={mt} /> : null}
         <div className="mt-8 flex flex-wrap gap-3">
-          {claim.terminal ? (
+          {claim.expired ? null : claim.terminal ? (
             <Link to="/account" className={secondaryCta}>
               Go to your account
             </Link>
@@ -209,6 +209,56 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
         </button>
       </div>
     </Card>
+  );
+}
+
+// An expired magic link can be swapped for a fresh one. It goes to the inbox
+// the old link was sent to (the server reads the address off the link), which
+// is why the page can offer it to whoever is holding the link.
+function ResendLink({ mt }: { mt: string }) {
+  const [state, setState] = useState<"idle" | "sending" | ResendClaimResult>("idle");
+
+  const onResend = async () => {
+    setState("sending");
+    setState(await resendGiftClaim(mt));
+  };
+
+  if (state === "sent") {
+    return (
+      <p role="status" className="mt-5 text-body-sm">
+        We've emailed you a new link. It's the same gift, so use the newest email.
+      </p>
+    );
+  }
+  if (state === "claimed") {
+    return (
+      <p role="status" className="mt-5 text-body-sm">
+        This gift has already been claimed.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-8">
+      <button
+        type="button"
+        onClick={onResend}
+        disabled={state === "sending"}
+        className={primaryCta}
+      >
+        {state === "sending" ? "Sending…" : "Email me a new link"} →
+      </button>
+      {state === "too_many" ? (
+        <p role="alert" className="mt-5 text-body-sm text-danger">
+          We've already sent a few new links today. Check your inbox, or reply to
+          your gift email and we'll help.
+        </p>
+      ) : state === "failed" ? (
+        <p role="alert" className="mt-5 text-body-sm text-danger">
+          We couldn't send a new link. Please try again, or reply to your gift
+          email and we'll help.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

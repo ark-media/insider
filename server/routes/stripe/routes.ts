@@ -29,6 +29,7 @@ import { deriveEntitlements } from '../../entitlement.js'
 import { getDb } from '../../lib/db.js'
 import {
   clearMembershipPending,
+  getMembershipByAuth0Sub,
   getScheduledTierByCustomer,
   setMembershipPending,
 } from '../../lib/membership.js'
@@ -58,6 +59,7 @@ import {
 import { listActiveCoupons } from '../../lib/stripe-promos.js'
 import { welcomeDiscountActive } from '../../lib/welcome-offer.js'
 import { membershipRowsForEmail } from '../../lib/entitlement-resolver.js'
+import { giftTrialEndSec } from './gift-trial.js'
 import {
   formatMinorUnits,
   isSupportedCurrency,
@@ -336,6 +338,22 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           })
         }
 
+        // A signed-in gift recipient subscribing before the gift runs out
+        // starts paying when it ends (gift-trial.ts). Only for a PROVEN login:
+        // the row is theirs, not whoever's address was typed. Fails closed like
+        // the account check above — charging today would bill them for gifted
+        // months.
+        let trialEndSec: number | null = null
+        if (provenEmail && identity?.sub && env.DATABASE_URL) {
+          try {
+            const row = await getMembershipByAuth0Sub(getDb(env), identity.sub)
+            trialEndSec = giftTrialEndSec(row, tier, Math.floor(Date.now() / 1000))
+          } catch (err) {
+            console.error('[stripe] checkout gift lookup failed:', err)
+            return json(502, { error: 'Could not start checkout. Please try again.' })
+          }
+        }
+
         // Per-currency floor for this tier+plan from the catalog price's
         // currency_options. PWYC lets the buyer pay more, never less.
         const catalog = await resolveCatalogPrice(stripe, tier, plan)
@@ -412,6 +430,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           // is authoritative for the tier via the price product's entitlements;
           // this metadata is a cross-check + the source of amount_cents/plan.
           subscription_data: {
+            ...(trialEndSec !== null ? { trial_end: trialEndSec } : {}),
             metadata: {
               tier,
               plan,

@@ -6,7 +6,7 @@
 //      auto-login link is opened. Lives in an httpOnly cookie or a Bearer header.
 
 import type { IncomingMessage } from 'node:http'
-import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from 'jose'
+import { createRemoteJWKSet, errors, jwtVerify, SignJWT, type JWTPayload } from 'jose'
 import { AUTH0_DOMAIN, getManagementClient } from '../auth0.js'
 import {
   AUTH0_AUDIENCE,
@@ -407,6 +407,48 @@ export async function verifyGiftClaimToken(
   const email = payload?.email as string | undefined
   if (!giftToken || !email) return null
   return { giftToken, email, name: (payload?.name as string | undefined) ?? undefined }
+}
+
+// The claim an EXPIRED gift link still vouches for — our signature, our issuer
+// and audience, only past its 14 days. Null for anything else, including a
+// link that is still live (that one should just be used).
+//
+// Only the resend endpoint reads this, and all it can do with it is mail a
+// fresh link to the address the link itself names: an old link never logs
+// anyone in or redeems anything, so its lifetime isn't extended.
+export async function verifyExpiredGiftClaimToken(
+  token: string,
+  env: Env,
+): Promise<GiftClaimToken | null> {
+  const secret = secretFor(env, 'GIFT_CLAIM_SECRET')
+  if (!secret) return null
+  try {
+    await jwtVerify(token, hmacKey(secret), {
+      issuer: GIFT_CLAIM_ISSUER,
+      audience: GIFT_CLAIM_AUDIENCE,
+      algorithms: ['HS256'],
+    })
+    return null
+  } catch (err) {
+    // jose checks the signature before any claim, so a JWTExpired payload is
+    // authentic. The issuer/audience checks may not have run before expiry
+    // did, so they are repeated here: another class of token signed with the
+    // same fallback secret must not pass as a gift link.
+    if (!(err instanceof errors.JWTExpired)) return null
+    const payload = err.payload
+    const aud = payload.aud
+    const audOk = Array.isArray(aud) ? aud.includes(GIFT_CLAIM_AUDIENCE) : aud === GIFT_CLAIM_AUDIENCE
+    if (payload.iss !== GIFT_CLAIM_ISSUER || !audOk) return null
+    const giftToken = payload.giftToken
+    const email = payload.email
+    if (typeof giftToken !== 'string' || typeof email !== 'string') return null
+    return {
+      giftToken,
+      email,
+      name: typeof payload.name === 'string' ? payload.name : undefined,
+      tier: typeof payload.tier === 'string' ? payload.tier : undefined,
+    }
+  }
 }
 
 // --- ark_auth_txn: the in-flight OAuth transaction -----------------------

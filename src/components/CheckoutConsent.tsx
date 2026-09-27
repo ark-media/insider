@@ -71,7 +71,7 @@ export function CheckoutConsent({
               label carries no links, so there is nothing to gain from a second
               copy of the sentence and a whole variant (the one with no amount)
               to keep in step. */}
-          {renewalStatement(renewal.amount, renewal.period)}
+          {renewalStatement(renewal.amount, renewal.period, renewal.startsOn ?? null)}
         </ConsentCheckbox>
       ) : null}
       {message ? (

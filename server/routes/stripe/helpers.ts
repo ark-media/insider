@@ -269,8 +269,9 @@ export async function quoteChargeToday(
 
 // Whether a gift is currently holding the subscription's renewal off: an
 // annual sub's period pushed out by trial_end, or a monthly sub's collection
-// paused (routes/gift.ts extendSubscription). Gifts are the only thing that
-// puts our subscriptions in either state.
+// paused (routes/gift.ts extendSubscription), or a new subscription whose
+// billing waits for the recipient's gift to end (gift-trial.ts). Gifts are the
+// only thing that puts our subscriptions in either state.
 export function giftExtensionRunning(sub: Stripe.Subscription): boolean {
   return sub.status === 'trialing' || sub.pause_collection != null
 }

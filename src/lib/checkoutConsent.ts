@@ -15,7 +15,12 @@ import {
  * when the renewal figure can't be read off the Session — the sentence is still
  * asked, without a number in it. See renewalDisclosure in CheckoutModal.
  */
-export type Renewal = { amount: string | null; period: string };
+export type Renewal = {
+  amount: string | null;
+  period: string;
+  /** The first charge's date when it isn't today (a gift-covered trial). */
+  startsOn?: string | null;
+};
 
 /**
  * How long the consent write gets before the charge goes ahead without it.
@@ -41,7 +46,7 @@ function consentStatements(
   const terms = termsStatement(age);
   return renewal === null
     ? [terms]
-    : [terms, renewalStatement(renewal.amount, renewal.period)];
+    : [terms, renewalStatement(renewal.amount, renewal.period, renewal.startsOn ?? null)];
 }
 
 export type CheckoutConsentState = {

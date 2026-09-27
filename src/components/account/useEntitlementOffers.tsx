@@ -253,7 +253,13 @@ export function useEntitlementOffers({
           {typeof days === "number"
             ? ` — ${days === 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`}`
             : ""}
-          . Keep it going so you don't lose access.
+          . Keep it going so you don't lose access
+          {/* A standalone checkout starts billing when the gift ends (server
+              gift-trial.ts), except inside Stripe's 48-hour trial floor — say so
+              only clear of it. The bundle switch charges today. */}
+          {!otherIsSub && typeof days === "number" && days >= 3
+            ? " — you won't pay anything until then."
+            : "."}
         </p>
         <div className="mt-3 flex flex-wrap gap-3">
           {otherIsSub ? (
