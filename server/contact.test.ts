@@ -447,6 +447,16 @@ describe('/api/contact — inboxes and Airtable', () => {
     })
   })
 
+  test('files "Other" to hello@ with its own slug', async () => {
+    const res = makeRes()
+    await getHandler(ENV)(makeReq({ body: { ...VALID, topic: 'other' } }), res)
+    expect(res.statusCode).toBe(200)
+    const email = JSON.parse(String(calls[0].init?.body)) as { to: string }
+    expect(email.to).toBe('hello@arkmedia.org')
+    const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
+    expect(payload).toMatchObject({ topic: 'Other', topicSlug: 'other' })
+  })
+
   test('any topic may name a podcast', async () => {
     const res = makeRes()
     await getHandler(ENV)(makeReq({ body: { ...VALID, show: 'chosen-people-problems' } }), res)
