@@ -807,34 +807,36 @@ single member only ever sees some of them.
 - **HEADLINE**: Claim your Ark+ gift. ("Ark+" in the cyan accent)
 
 ### Magic-link path (normal path from the gift email)
-- **BODY**: You're one click away. Start your membership — you'll be signed in automatically, and your access runs from today and won't auto-renew.
+- **BODY**: Your gift starts today.
 - **CTA**: Start your Ark+ membership →
 - **CTA (CLAIMING)**: Starting… →
 - **CTA (RETRYABLE ERROR)**: Try again →
 - **CTA (TERMINAL ERROR)**: Go to your account
 
 ### Fallback path (older token links)
-- **BODY (MISSING TOKEN)**: This link is missing its gift code. Open the Start your membership button in your gift email, or reply to that email and we'll help.
+- **BODY (MISSING TOKEN)**: This link is incomplete. Use the button in your gift email, or reply to it and we'll help.
 - **BODY (LOADING)**: Checking your account…
-- **BODY (SIGNED OUT)**: Sign in to claim your gift, then come back to this page.
+- **BODY (SIGNED OUT)**: Sign in to claim your gift.
 - **CTA (SIGNED OUT)**: Sign in to claim →
-- **BODY (SIGNED IN)**: You're signed in. Claim your gift to start your membership — your access runs from today and won't auto-renew.
+- **BODY (SIGNED IN)**: Your gift starts today.
 - **CTA (SIGNED IN)**: Claim your gift →
 - **CTA (CLAIMING)**: Claiming… →
 
 ### Success states
 - **EYEBROW**: You're all set
-- **BODY (GIFT ADDED AS CREDIT)**: You already have an active membership, so your gift has been added as account credit toward your future renewals.
-- **BODY (SUBSCRIPTION EXTENDED)**: You already have an active subscription, so your gift has extended it — your next paid renewal is deferred by the length of the gift.
-- **BODY (NEW MEMBERSHIP)**: Your Ark+ membership is active. Set up your private podcast feed and join the Fold from your welcome page.
+- **BODY (GIFT ADDED AS CREDIT)**: You're already a member, so we've added your gift as credit toward your next renewals.
+- **BODY (SUBSCRIPTION EXTENDED)**: You're already a member, so your gift pushes back your next payment.
+- **EYEBROW (HELD)**: Gift received
+- **BODY (HELD — COULDN'T APPLY AUTOMATICALLY)**: You're already a member, so our team will add your gift by hand and email you when it's done.
+- **BODY (NEW MEMBERSHIP)**: Your membership is active.
 - **CTA (CREDIT / EXTENDED)**: Go to your account →
 - **CTA (NEW MEMBERSHIP)**: Get started →
 
 ### Error messages
 - **ERROR (ALREADY REDEEMED)**: This gift has already been claimed.
-- **ERROR (EXPIRED LINK)**: This gift link has expired. Reply to your gift email and we'll send you a fresh one.
-- **ERROR (INVALID GIFT)**: We couldn't find this gift. Use the link from your gift email, or reply to it and we'll help.
-- **ERROR (DEFAULT)**: Something went wrong claiming your gift. Please try again.
+- **ERROR (EXPIRED LINK)**: This link has expired. Reply to your gift email and we'll send a new one.
+- **ERROR (INVALID GIFT)**: We couldn't find this gift. Reply to your gift email and we'll help.
+- **ERROR (DEFAULT)**: Something went wrong. Please try again.
 - **ERROR (REDEEM FALLBACK)**: Could not redeem this gift.
 # About, Hosts & Company Pages
 
