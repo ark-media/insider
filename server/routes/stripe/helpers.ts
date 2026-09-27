@@ -260,6 +260,39 @@ export function giftExtensionRunning(sub: Stripe.Subscription): boolean {
   return sub.status === 'trialing' || sub.pause_collection != null
 }
 
+// Whether the subscription is set to end: at period end (the normal cancel), or
+// at a fixed date (a cancel made while a gift pause runs ends when the gift
+// does, see giftPauseEndSec).
+export function cancelBooked(
+  sub: Pick<Stripe.Subscription, 'cancel_at_period_end' | 'cancel_at'>,
+): boolean {
+  return sub.cancel_at_period_end || sub.cancel_at != null
+}
+
+// Update params that call off a booked cancel, whichever kind it is; empty when
+// none is booked. Every change a member accepts spreads these in: someone who
+// pays for an upgrade, or takes a plan switch, is staying, and leaving the
+// cancel on would charge them for a term they then lose.
+export function clearCancelParams(
+  sub: Pick<Stripe.Subscription, 'cancel_at_period_end' | 'cancel_at'>,
+): { cancel_at_period_end?: false; cancel_at?: '' } {
+  if (sub.cancel_at_period_end) return { cancel_at_period_end: false }
+  if (sub.cancel_at != null) return { cancel_at: '' }
+  return {}
+}
+
+// When a gift's pause holds a monthly subscription's billing off past the end
+// of the paid period: the date it resumes, in unix seconds. Null otherwise
+// (no pause, or one that ends inside the paid period). A cancel then ends the
+// membership on this date, not at period end: at period end would throw away
+// the gifted months, which Stripe does not know are owed.
+export function giftPauseEndSec(sub: Stripe.Subscription): number | null {
+  const resumesAt = sub.pause_collection?.resumes_at ?? null
+  const periodEnd = sub.items.data[0]?.current_period_end ?? null
+  if (resumesAt == null || periodEnd == null) return null
+  return resumesAt > periodEnd ? resumesAt : null
+}
+
 // When a cycle re-anchored to now next renews: one month or one year out,
 // Stripe's own arithmetic for a `billing_cycle_anchor: 'now'` change.
 export function oneCycleFromNowIso(plan: 'monthly' | 'yearly', now = new Date()): string {

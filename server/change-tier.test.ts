@@ -689,6 +689,56 @@ describe('POST /api/stripe/change-tier — upgrades are paid for up front', () =
     expect((res.__json() as Record<string, unknown>).code).toBe('payment_failed')
   })
 
+  test('an upgrade calls off a booked cancel, so the member keeps what they paid for', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as Record<string, unknown>).cancel_at_period_end = true
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    const update = lastSubUpdate()
+    expect(update.billing_cycle_anchor).toBe('now')
+    expect(update.cancel_at_period_end).toBe(false)
+  })
+
+  test('an upgrade calls off a cancel set to end with a gift', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as Record<string, unknown>).cancel_at = NOW_SEC + 200 * 86400
+    const res = await post(
+      { tier: 'bundle', plan: 'monthly' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSubUpdate().cancel_at).toBe('')
+  })
+
+  test('an upgrade with no cancel booked leaves the cancel fields alone', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    await post({ tier: 'bundle', plan: 'monthly' }, await sessionCookie('member@example.com'))
+    const update = lastSubUpdate()
+    expect(update).not.toHaveProperty('cancel_at_period_end')
+    expect(update).not.toHaveProperty('cancel_at')
+  })
+
+  test('a period-end change calls off a booked cancel before the schedule is built', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 1500 })
+    ;(currentSub as Record<string, unknown>).cancel_at_period_end = true
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_current' }] },
+    ]
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 800 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    const clear = stripeCalls.findIndex((c) => c.method === 'subscriptions.update')
+    const schedule = stripeCalls.findIndex((c) => c.method.startsWith('subscriptionSchedules.'))
+    expect(clear).toBeGreaterThanOrEqual(0)
+    expect(stripeCalls[clear].args[1]).toEqual({ cancel_at_period_end: false })
+    expect(clear).toBeLessThan(schedule)
+  })
+
   test('a price decrease still waits for the end of the period', async () => {
     withSub({ tier: 'ark-plus', amountCents: 1500 })
     schedulePhases = [
@@ -961,6 +1011,21 @@ describe('POST /api/stripe/accept-save-offer', () => {
     )
     expect(res.statusCode).toBe(200)
     expect(lastSubUpdate().discounts).toEqual([{ discount: 'di_promo' }, { coupon: 'save20' }])
+    // No cancel was booked, so there's nothing to call off.
+    expect(lastSubUpdate()).not.toHaveProperty('cancel_at_period_end')
+  })
+
+  test('accepting a save calls off a booked cancel', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 800 })
+    ;(currentSub as Record<string, unknown>).cancel_at_period_end = true
+    activeCoupons = [supporter()]
+    const res = await post(
+      { intent: 'cancel-ark-plus', kind: 'supporter_coupon' },
+      await sessionCookie('member@example.com'),
+      undefined,
+      ACCEPT,
+    )
+    expect(res.statusCode).toBe(200)
     expect(lastSubUpdate().cancel_at_period_end).toBe(false)
   })
 

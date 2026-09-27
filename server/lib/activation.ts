@@ -145,7 +145,7 @@ function billingFactsFor(sub: Stripe.Subscription): {
   // on that date — they lose access on it. Say nothing rather than the opposite.
   const periodEnd = item?.current_period_end
   const renewsOn =
-    !sub.cancel_at_period_end && typeof periodEnd === 'number' && Number.isFinite(periodEnd)
+    !sub.cancel_at_period_end && sub.cancel_at == null && typeof periodEnd === 'number' && Number.isFinite(periodEnd)
       ? formatTimestampInZone(
           new Date(periodEnd * 1000).toISOString(),
           EMAIL_TIME_ZONE,

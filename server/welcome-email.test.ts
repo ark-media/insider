@@ -26,6 +26,7 @@ describe('renderGiftRedemptionEmail', () => {
       recipientName: 'Alice',
       giverName: 'Bob',
       term: '1yr',
+      tier: 'ark-plus',
       claimUrl: 'https://app.test/redeem?mt=jwt.abc.def',
     })
     expect(subject).toContain('Bob')
@@ -41,6 +42,7 @@ describe('renderGiftRedemptionEmail', () => {
     const { html } = renderGiftRedemptionEmail({
       recipientName: 'Alice@example.com',
       term: '1yr',
+      tier: 'ark-plus',
       claimUrl: 'https://app.test/redeem?mt=jwt',
     })
     expect(html).toContain('Hi there,')
@@ -50,6 +52,7 @@ describe('renderGiftRedemptionEmail', () => {
   test('no giver name: falls back to generic subject + headline', () => {
     const { subject, html } = renderGiftRedemptionEmail({
       term: '1yr',
+      tier: 'ark-plus',
       claimUrl: 'https://app.test/redeem?mt=jwt',
     })
     expect(subject).toBe("You've been gifted Ark+")
@@ -57,10 +60,40 @@ describe('renderGiftRedemptionEmail', () => {
     expect(html).toContain('Hi there,')
   })
 
+  test('names the gifted tier: a Fold or Bundle gift is not announced as Ark+', () => {
+    const fold = renderGiftRedemptionEmail({
+      giverName: 'Bob',
+      term: '6mo',
+      tier: 'circle',
+      claimUrl: 'https://app.test/redeem?mt=jwt',
+    })
+    expect(fold.subject).toBe('Bob sent you the Fold')
+    expect(fold.html).toContain('gifted you 6 months of the Fold.')
+    expect(fold.html).not.toContain('Ark+')
+    expect(fold.html).toContain('Claim your gift to start your membership.</')
+
+    const bundle = renderGiftRedemptionEmail({
+      term: '1yr',
+      tier: 'bundle',
+      claimUrl: 'https://app.test/redeem?mt=jwt',
+    })
+    expect(bundle.subject).toBe("You've been gifted Ark+ and the Fold")
+    expect(bundle.html).toContain('plus the Fold')
+
+    const arkPlus = renderGiftRedemptionEmail({
+      term: '1yr',
+      tier: 'ark-plus',
+      claimUrl: 'https://app.test/redeem?mt=jwt',
+    })
+    // Ark+ alone doesn't include the Fold; the old copy said it did.
+    expect(arkPlus.html).not.toContain('the Fold')
+  })
+
   test('escapes HTML in user-supplied giver name and message', () => {
     const { html } = renderGiftRedemptionEmail({
       giverName: '<script>x</script>',
       term: '1yr',
+      tier: 'ark-plus',
       message: 'a & b < c',
       claimUrl: 'https://app.test/redeem?mt=jwt',
     })
@@ -78,6 +111,7 @@ describe('renderGiftRedemptionEmail — subject line', () => {
     renderGiftRedemptionEmail({
       giverName,
       term: '1yr',
+      tier: 'ark-plus',
       claimUrl: 'https://app.test/redeem?mt=jwt',
     }).subject
 
@@ -117,6 +151,7 @@ describe('renderGiftRedemptionEmail — subject line', () => {
   test('the note is capped at 500 characters in the body', () => {
     const { html } = renderGiftRedemptionEmail({
       term: '1yr',
+      tier: 'ark-plus',
       message: 'm'.repeat(2000),
       claimUrl: 'https://app.test/redeem?mt=jwt',
     })

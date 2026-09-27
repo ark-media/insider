@@ -428,11 +428,25 @@ export type GiftRedemptionEmailParams = {
   recipientEmail?: string
   giverName?: string
   term: GiftTerm
+  // What was gifted. The subject, headline and body all name it.
+  tier: GiftTier
   message?: string
   // The single magic link (/redeem?mt=…). One click logs the recipient in,
   // redeems the gift, and drops them into the welcome flow — no separate
   // sign-in step, and no Auth0 email.
   claimUrl: string
+}
+
+type GiftTier = 'ark-plus' | 'circle' | 'bundle'
+
+// How each gifted tier is named in the claim email: `name` after "sent you" /
+// "gifted you 1 year of", `includes` as the body's sentence on what it
+// includes. The Fold has no approved line yet, so its body is the claim
+// sentence alone.
+const GIFT_TIER_COPY: Record<GiftTier, { name: string; includes: string | null }> = {
+  'ark-plus': { name: 'Ark+', includes: `It includes ${FEED_INCLUDED}.` },
+  circle: { name: 'the Fold', includes: null },
+  bundle: { name: 'Ark+ and the Fold', includes: `It includes ${FEED_INCLUDED}, plus the Fold.` },
 }
 
 // The giver's name as it may appear in the SUBJECT line.
@@ -483,13 +497,15 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
   const giver = p.giverName?.trim()
   const first = firstName(p.recipientName, p.recipientEmail)
 
+  const gift = GIFT_TIER_COPY[p.tier]
+
   const giverInSubject = subjectName(giver)
   const subject = giverInSubject
-    ? `${giverInSubject} sent you Ark+`
-    : `You've been gifted Ark+`
+    ? `${giverInSubject} sent you ${gift.name}`
+    : `You've been gifted ${gift.name}`
   const headlineHtml = giver
-    ? `${esc(giver)} gifted you ${termLabel} of Ark+.`
-    : `You've been gifted ${termLabel} of Ark+.`
+    ? `${esc(giver)} gifted you ${termLabel} of ${gift.name}.`
+    : `You've been gifted ${termLabel} of ${gift.name}.`
 
   const message = Array.from(p.message?.trim() ?? '')
     .slice(0, GIFT_MESSAGE_MAX)
@@ -515,7 +531,9 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
     eyebrow: 'A gift for you',
     headlineHtml,
     greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
-    bodyHtml: `Claim your gift to start your membership. It includes ${FEED_INCLUDED}, plus the Fold.`,
+    bodyHtml: gift.includes
+      ? `Claim your gift to start your membership. ${gift.includes}`
+      : 'Claim your gift to start your membership.',
     messageBlockHtml,
     footerHtml: `Gifts are one-time — once claimed, your access runs for ${termLabel} and won't auto-renew. Redeem whenever you like; there's no deadline. Need help? Just reply to this email.`,
     ctaHref: p.claimUrl,
