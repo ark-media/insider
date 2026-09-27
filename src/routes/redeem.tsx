@@ -192,10 +192,7 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
   const claiming = claim.kind === "claiming";
   return (
     <Card>
-      <p className="text-body-sm">
-        Your gift starts today.
-      </p>
-      <div className="mt-8">
+      <div>
         <button
           type="button"
           onClick={onClaim}
@@ -203,10 +200,10 @@ function MagicClaimBody({ mt, tierLabel }: { mt: string; tierLabel: string | nul
           className={primaryCta}
         >
           {claiming
-            ? "Starting…"
+            ? "Activating…"
             : tierLabel
-              ? `Start your ${tierLabel} membership`
-              : "Start your membership"}{" "}
+              ? `Activate your ${tierLabel} gift`
+              : "Activate your gift"}{" "}
           →
         </button>
       </div>
@@ -276,15 +273,12 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
   const claiming = claim.kind === "claiming";
   return (
     <Card>
-      <p className="text-body-sm">
-        Your gift starts today.
-      </p>
       {claim.kind === "error" ? (
-        <p role="alert" className="mt-5 text-body-sm text-danger">
+        <p role="alert" className="mb-8 text-body-sm text-danger">
           {claim.message}
         </p>
       ) : null}
-      <div className="mt-8 flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3">
         {claim.kind === "error" && claim.terminal ? (
           <Link to="/account" className={secondaryCta}>
             Go to your account
@@ -296,7 +290,7 @@ function TokenClaimBody({ token }: { token: string | undefined }) {
             disabled={claiming}
             className={primaryCta}
           >
-            {claiming ? "Claiming…" : "Claim your gift"} →
+            {claiming ? "Activating…" : "Activate your gift"} →
           </button>
         )}
       </div>
