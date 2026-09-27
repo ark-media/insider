@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   getShow,
   showAtmosphere,
@@ -177,13 +177,12 @@ function ShowArtwork({ show }: { show: Show }) {
 // How many rows to reveal per "Show more" press (search results).
 const ARCHIVE_PAGE_SIZE = 8;
 
-// Owns the show's episode-listening experience: an in-place player plus the
-// grid and archive that feed it. Any episode is playable without leaving the
-// page — clicking Play swaps the player's source to that episode and scrolls
-// it into view (the Crooked-style "listen here, browse here" model). The
-// player defaults to the latest episode; the grid and archive skip whatever
-// the player is showing only by skipping the latest, so the layout stays
-// stable as the selection changes.
+// Owns the show's episode-listening experience: the player with its playlist,
+// then the latest episodes as cards (and search). Any episode is playable
+// without leaving the page — picking a playlist row swaps the player's source
+// in place (the Crooked-style "listen here, browse here" model). The player
+// defaults to the latest episode; the cards skip the player's opening episode,
+// not the current pick, so the layout stays stable as the selection changes.
 function EpisodeBrowser({
   show,
   episodes,
@@ -215,7 +214,6 @@ function EpisodeBrowser({
     (ep) => ep.slug !== featuredEpisode?.slug,
   );
   const latest = remaining.slice(0, 3);
-  const archive = remaining.slice(3);
 
   const selectedEpisode =
     (selected.id ? episodes?.find((ep) => ep.id === selected.id) : null) ??
@@ -300,25 +298,15 @@ function EpisodeBrowser({
               emptyLabel={`No episodes match “${query.trim()}”.`}
             />
           ) : (
-            <>
-              <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-                {latest.map((ep) => (
-                  <EpisodeCard
-                    key={ep.slug}
-                    show={show}
-                    episode={ep}
-                  />
-                ))}
-              </div>
-              {archive.length > 0 ? (
-                <EpisodeList
+            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+              {latest.map((ep) => (
+                <EpisodeCard
+                  key={ep.slug}
                   show={show}
-                  episodes={archive}
-                  label="All episodes"
-                  maxVisibleRows={4}
+                  episode={ep}
                 />
-              ) : null}
-            </>
+              ))}
+            </div>
           )}
         </div>
       </section>
@@ -347,61 +335,22 @@ function EpisodeSearch({
   );
 }
 
-// A flat episode list used for both the back catalog and search results.
-// Search results paginate via "Show more". The back catalog passes
-// maxVisibleRows to become a fixed-height scroll box sized to exactly that
-// many rows instead.
+// Search results: a flat episode list, paginated via "Show more".
 function EpisodeList({
   show,
   episodes,
   label,
   emptyLabel,
-  maxVisibleRows,
 }: {
   show: Show;
   episodes: Episode[];
   label: string;
   emptyLabel?: string;
-  maxVisibleRows?: number;
 }) {
   const [visible, setVisible] = useState(ARCHIVE_PAGE_SIZE);
 
-  // When capped, the list scrolls inside a box sized to maxVisibleRows. The
-  // height is measured from the rendered rows so it tracks whatever the real
-  // row height is rather than assuming a fixed pixel value. We track the raw
-  // measurement and derive the applied height — when the list shrinks below
-  // the cap, `scrollable` flips false and we render with no maxHeight without
-  // needing a state reset in the effect.
-  const scrollable =
-    maxVisibleRows != null && episodes.length > maxVisibleRows;
-  const listRef = useRef<HTMLUListElement>(null);
-  const [measuredHeight, setMeasuredHeight] = useState<number>();
-  useEffect(() => {
-    if (!scrollable) return;
-    const ul = listRef.current;
-    if (!ul) return;
-    const rows = Array.from(ul.children).slice(
-      0,
-      maxVisibleRows,
-    ) as HTMLElement[];
-    // Add the ul's own top/bottom border so the scroll box doesn't clip its
-    // bottom rule. Derived from computed style rather than hardcoded so a
-    // theme change to border thickness doesn't silently break the math.
-    const cs = window.getComputedStyle(ul);
-    const borderY =
-      (parseFloat(cs.borderTopWidth) || 0) +
-      (parseFloat(cs.borderBottomWidth) || 0);
-    setMeasuredHeight(
-      rows.reduce((h, row) => h + row.offsetHeight, 0) + borderY,
-    );
-  }, [scrollable, maxVisibleRows, episodes]);
-  const maxHeight = scrollable ? measuredHeight : undefined;
-
-  const shown =
-    maxVisibleRows != null ? episodes : episodes.slice(0, visible);
-
   return (
-    <div id="all-episodes" className="mt-16">
+    <div className="mt-16">
       <div className="label text-fg-muted">
         {label}
       </div>
@@ -411,14 +360,8 @@ function EpisodeList({
         </p>
       ) : (
         <>
-          <ul
-            ref={listRef}
-            style={maxHeight != null ? { maxHeight } : undefined}
-            className={`mt-6 divide-y divide-rule border-y border-rule${
-              scrollable ? " overflow-y-auto" : ""
-            }`}
-          >
-            {shown.map((ep) => (
+          <ul className="mt-6 divide-y divide-rule border-y border-rule">
+            {episodes.slice(0, visible).map((ep) => (
               <EpisodeRow
                 key={ep.slug}
                 show={show}
@@ -426,7 +369,7 @@ function EpisodeList({
               />
             ))}
           </ul>
-          {maxVisibleRows == null && episodes.length > visible ? (
+          {episodes.length > visible ? (
             <button
               type="button"
               onClick={() => setVisible((v) => v + ARCHIVE_PAGE_SIZE)}
