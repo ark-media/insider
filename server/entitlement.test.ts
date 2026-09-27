@@ -519,7 +519,9 @@ function row(over: Partial<Record<string, unknown>>): Record<string, unknown> {
 // (tolerated during drift downgrade).
 function reconcilerFetch(opts: {
   // Circle group members, by email (projected to subs via auth0SubsByEmail).
-  circleMembers?: Array<{ email: string }>
+  // `inactive` members are in the group but, like Circle's real roster, absent
+  // from the members list — reachable only by id.
+  circleMembers?: Array<{ email: string; inactive?: boolean }>
 }): FetchHandler {
   const circleMembers = opts.circleMembers ?? []
   const idFor = new Map(circleMembers.map((m, i) => [m, i + 1] as const))
@@ -554,12 +556,20 @@ function reconcilerFetch(opts: {
           : []
       return jsonRes(200, { records, has_next_page: false })
     }
-    // Circle full members roster (id → email).
+    // One member by id (the inactive ones the roster leaves out).
+    const byId = url.match(/\/community_members\/(\d+)$/)?.[1]
+    if (byId) {
+      const m = circleMembers.find((x) => idFor.get(x) === Number(byId))
+      return m ? jsonRes(200, { id: Number(byId), email: m.email }) : jsonRes(404, {})
+    }
+    // Circle full members roster (id → email) — active members only.
     if (url.includes('/community_members')) {
       const page = Number(url.match(/[?&]page=(\d+)/)?.[1] ?? '1')
       const records =
         page === 1
-          ? circleMembers.map((m) => ({ id: idFor.get(m)!, email: m.email }))
+          ? circleMembers
+              .filter((m) => !m.inactive)
+              .map((m) => ({ id: idFor.get(m)!, email: m.email }))
           : []
       return jsonRes(200, { records, has_next_page: false })
     }
@@ -718,6 +728,45 @@ describe('reconcileEntitlements', () => {
     expect(summary.circleRemoved).toBe(1)
     expect(circleDelete('drift@x.com')).toBeDefined()
     expect(circleDelete('keep@x.com')).toBeUndefined()
+  })
+
+  test('Circle drift (enforced): an INACTIVE group member is still checked, by id', async () => {
+    // Circle's members list leaves inactive members out, so their email has to
+    // come from a per-id lookup — or a lapsed one keeps the group forever.
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    auth0SubsByEmail = new Map([
+      ['keep@x.com', ['auth0|keep']],
+      ['sleeper@x.com', ['auth0|gone']],
+      ['kept-sleeper@x.com', ['auth0|keep']],
+    ])
+    installFetch(
+      reconcilerFetch({
+        circleMembers: [
+          { email: 'keep@x.com' },
+          { email: 'sleeper@x.com', inactive: true },
+          { email: 'kept-sleeper@x.com', inactive: true },
+        ],
+      }),
+    )
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleDrift).toBe(1)
+    expect(circleDelete('sleeper@x.com')).toBeDefined()
+    expect(circleDelete('kept-sleeper@x.com')).toBeUndefined()
+  })
+
+  test('Circle drift: a failed per-id lookup leaves that member alone', async () => {
+    neonMembershipRows = [row({ auth0_sub: 'auth0|keep', tier: 'circle' })]
+    auth0SubsByEmail = new Map([['keep@x.com', ['auth0|keep']]])
+    const base = reconcilerFetch({
+      circleMembers: [{ email: 'keep@x.com' }, { email: 'ghost@x.com', inactive: true }],
+    })
+    installFetch((req) =>
+      /\/community_members\/\d+$/.test(req.url) ? jsonRes(500, {}) : base(req),
+    )
+    const summary = await reconcileEntitlements(ENFORCE_ENV, {} as Stripe)
+    expect(summary.circleDrift).toBe(0)
+    expect(summary.errors).toBe(0)
+    expect(circleDelete('ghost@x.com')).toBeUndefined()
   })
 
   test('Circle drift: a checkout that lands mid-run is re-checked and kept', async () => {
