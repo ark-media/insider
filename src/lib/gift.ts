@@ -229,3 +229,25 @@ export async function fetchGiftStatus(
     return null;
   }
 }
+
+export type ResendClaimResult = "sent" | "too_many" | "claimed" | "failed";
+
+// Swap an expired magic link for a fresh one. The server mails it to the
+// address the old link was made for — nothing about the caller decides where
+// it goes — so the page only needs to know how it went.
+export async function resendGiftClaim(mt: string): Promise<ResendClaimResult> {
+  try {
+    const res = await fetch("/api/gift/resend-claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ mt }),
+    });
+    if (res.ok) return "sent";
+    if (res.status === 429) return "too_many";
+    if (res.status === 409) return "claimed";
+    return "failed";
+  } catch {
+    return "failed";
+  }
+}

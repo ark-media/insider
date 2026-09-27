@@ -33,6 +33,7 @@ import {
 } from "../lib/currency";
 import { AmountPicker, resolveAmount } from "./AmountPicker";
 import { ProductMarks } from "./FoldLogo";
+import { formatTimestamp } from "../../shared/format-date";
 import type { ProductMark } from "../data/pricingTiers";
 
 type Plan = "monthly" | "yearly";
@@ -908,8 +909,10 @@ function renewalDisclosure(
   plan: Plan,
 ): Renewal | null {
   if (!session) return null;
+  const trialEnd = session.recurring?.trial?.trialEnd ?? null;
   return {
     amount: session.recurring?.dueNext.total.amount ?? null,
+    startsOn: trialEnd !== null ? firstChargeDate(trialEnd) : null,
     period: session.recurring
       ? billingPeriod(
           session.recurring.interval,
@@ -917,6 +920,12 @@ function renewalDisclosure(
         )
       : `per ${plan === "yearly" ? "year" : "month"}`,
   };
+}
+
+// The day a gift-covered subscription first charges (create-checkout-session
+// sets the trial to end with the gift). Stripe states it in unix seconds.
+function firstChargeDate(trialEndSec: number): string {
+  return formatTimestamp(new Date(trialEndSec * 1000).toISOString(), "long");
 }
 
 // Lives inside CheckoutElementsProvider, so useCheckout() gives us the buyer's
@@ -1012,6 +1021,14 @@ function CheckoutForm({
   const discount = checkout.total.discount.amount;
   const hasTax = checkout.total.taxExclusive.minorUnitsAmount > 0;
   const tax = checkout.total.taxExclusive.amount;
+  // A gift recipient's billing waits for their gift to end: nothing is due
+  // today, and the price they're choosing is the first charge's, not today's.
+  const trialEnd = checkout.recurring?.trial?.trialEnd ?? null;
+  const startsOn = trialEnd !== null ? firstChargeDate(trialEnd) : null;
+  const headlinePrice =
+    trialEnd !== null && checkout.recurring
+      ? checkout.recurring.dueNext.subtotal.amount
+      : subtotal;
 
   // Shared tail for both the card form and the wallet button: Stripe has
   // returned a confirm result, so surface a decline (retryable) or poll for
@@ -1119,7 +1136,7 @@ function CheckoutForm({
   return (
     <>
       <h2 id="checkout-title" className={titleClass}>
-        {subtotal}{" "}
+        {headlinePrice}{" "}
         <span className="text-body-sm font-sans font-normal">
           / {intervalLabel}
         </span>
@@ -1196,28 +1213,41 @@ function CheckoutForm({
             funnel where a new subscriber's name is captured. */}
         <BillingAddressElement options={{ display: { name: "split" } }} />
         <PromoCode checkout={checkout} promo={promo} surface="membership" />
-        <div className="space-y-2 border-t border-rule pt-3 text-sm">
-          <div className="flex items-baseline justify-between">
-            <span className="text-fg-muted">Subtotal</span>
-            <span className="text-fg-strong">{subtotal}</span>
-          </div>
-          {hasDiscount ? (
+        {startsOn !== null && checkout.recurring ? (
+          <div className="space-y-2 border-t border-rule pt-3 text-sm">
             <div className="flex items-baseline justify-between">
-              <span className="text-fg-muted">Discount</span>
-              <span className="text-fg-strong">−{discount}</span>
+              <span className="text-fg-muted">Total due today</span>
+              <span className="font-semibold text-fg-strong">{total}</span>
             </div>
-          ) : null}
-          {hasTax ? (
-            <div className="flex items-baseline justify-between">
-              <span className="text-fg-muted">Tax</span>
-              <span className="text-fg-strong">{tax}</span>
-            </div>
-          ) : null}
-          <div className="flex items-baseline justify-between border-t border-rule pt-2">
-            <span className="text-fg-muted">Total due today</span>
-            <span className="font-semibold text-fg-strong">{total}</span>
+            <p className="text-body-sm text-fg-muted">
+              Nothing to pay until your gift ends. Your first payment of{" "}
+              {checkout.recurring.dueNext.total.amount} is on {startsOn}.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-2 border-t border-rule pt-3 text-sm">
+            <div className="flex items-baseline justify-between">
+              <span className="text-fg-muted">Subtotal</span>
+              <span className="text-fg-strong">{subtotal}</span>
+            </div>
+            {hasDiscount ? (
+              <div className="flex items-baseline justify-between">
+                <span className="text-fg-muted">Discount</span>
+                <span className="text-fg-strong">−{discount}</span>
+              </div>
+            ) : null}
+            {hasTax ? (
+              <div className="flex items-baseline justify-between">
+                <span className="text-fg-muted">Tax</span>
+                <span className="text-fg-strong">{tax}</span>
+              </div>
+            ) : null}
+            <div className="flex items-baseline justify-between border-t border-rule pt-2">
+              <span className="text-fg-muted">Total due today</span>
+              <span className="font-semibold text-fg-strong">{total}</span>
+            </div>
+          </div>
+        )}
         {payError ? (
           <p role="alert" className="text-body-sm text-danger">
             {payError}
@@ -1236,7 +1266,11 @@ function CheckoutForm({
           aria-busy={working}
           className={ctaClass}
         >
-          {working ? "Processing…" : `Pay ${total}`}
+          {working
+            ? "Processing…"
+            : startsOn !== null
+              ? "Start membership"
+              : `Pay ${total}`}
         </button>
       </form>
     </>

@@ -83,7 +83,22 @@ export function ageAttestationFor(
  * also what gets stamped on the Session as the record of what the buyer agreed
  * to. A subscription must never lose the sentence, only its precision.
  */
-export function renewalStatement(amount: string | null, period: string): string {
+/*
+ * `startsOn` is the date of the first charge when it isn't today — a gift
+ * recipient whose billing waits for the gift to end (a Stripe trial). The
+ * sentence then says when paying starts, since nothing is charged at the
+ * button they're about to press.
+ */
+export function renewalStatement(
+  amount: string | null,
+  period: string,
+  startsOn: string | null = null,
+): string {
+  if (startsOn !== null) {
+    return amount === null
+      ? `I understand my subscription starts charging on ${startsOn} and renews automatically ${asCadence(period)} until I cancel.`
+      : `I understand my subscription starts charging ${amount} ${period} on ${startsOn} and renews automatically until I cancel.`
+  }
   return amount === null
     ? `I understand my subscription renews automatically ${asCadence(period)} until I cancel.`
     : `I understand my subscription renews automatically at ${amount} ${period} until I cancel.`

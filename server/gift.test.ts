@@ -1023,12 +1023,12 @@ describe('POST /api/gift/claim — guards', () => {
     expect((res.__json() as { error: string }).error).toBe('token required')
   })
 
-  test('400 expired_link on an unverifiable mt (before any DB call)', async () => {
+  test('400 invalid_gift on an unverifiable mt (before any DB call)', async () => {
     const h = getHandler(CLAIM_PATH, { DATABASE_URL: 'postgres://x' })
     const res = makeRes()
     await runHandler(h, makeReq({ method: 'POST', body: { mt: 'not-a-token' } }), res)
     expect(res.statusCode).toBe(400)
-    expect((res.__json() as { error: string }).error).toBe('expired_link')
+    expect((res.__json() as { error: string }).error).toBe('invalid_gift')
     // Never reached Stripe or the DB — verification fails first.
     expect(stripeCalls.length).toBe(0)
   })
