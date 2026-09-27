@@ -16,8 +16,8 @@ export async function sendContactMessage(input: {
   email: string;
   /** Optional: where the sender listens from. */
   location?: string;
-  topic: ContactTopic;
-  /** Required when `topic` is "questions"; ignored otherwise. */
+  topic: ContactTopic | "";
+  /** Optional, except that a "questions" topic must name one. */
   show?: ShowSlug | "";
   message: string;
 }): Promise<{ ok: boolean; error?: string }> {
@@ -35,9 +35,9 @@ export async function sendContactMessage(input: {
   if (!contactTopics.some((t) => t.value === input.topic)) {
     return { ok: false, error: "Please choose a topic." };
   }
-  const show = input.topic === "questions" ? input.show : undefined;
-  if (input.topic === "questions" && !isShowSlug(show)) {
-    return { ok: false, error: "Please choose a show." };
+  const show = isShowSlug(input.show) ? input.show : undefined;
+  if (input.topic === "questions" && !show) {
+    return { ok: false, error: "Please choose a podcast." };
   }
   if (!message) return { ok: false, error: "Please add a message." };
   if (message.length > CONTACT_MESSAGE_MAX) {
@@ -68,7 +68,7 @@ export async function sendContactMessage(input: {
       case "invalid_email":
         return { ok: false, error: "That doesn't look like a valid email." };
       case "invalid_show":
-        return { ok: false, error: "Please choose a show." };
+        return { ok: false, error: "Please choose a podcast." };
       case "too_many_requests":
         return { ok: false, error: "Too many attempts. Please wait a moment." };
       default:

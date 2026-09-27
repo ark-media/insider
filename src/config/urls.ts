@@ -51,13 +51,18 @@ export const contactEmails = {
  */
 export const contactTopics = [
   {
+    value: "support",
+    label: "Membership and technical support",
+    email: contactEmails.support,
+  },
+  {
     value: "general",
     label: "Show ideas, feedback & corrections",
     email: contactEmails.general,
   },
   {
     value: "questions",
-    label: "Listener questions",
+    label: "Submit a question for an episode",
     email: contactEmails.general,
   },
   {
@@ -74,11 +79,6 @@ export const contactTopics = [
     value: "institutions",
     label: "Group & institutional subscriptions",
     email: contactEmails.general,
-  },
-  {
-    value: "support",
-    label: "Membership and technical support",
-    email: contactEmails.support,
   },
 ] as const;
 
