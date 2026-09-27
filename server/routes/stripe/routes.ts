@@ -117,6 +117,7 @@ import {
   periodEndIso,
   phaseDiscountParams,
   phaseTrialParams,
+  periodEndChangeAtIso,
   planFromSubscription,
   quoteChargeToday,
   readCardOnFile,
@@ -1845,6 +1846,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             ...(introCoupon ? [{ coupon: introCoupon.id }] : []),
           ]
           const currentDiscounts = phaseDiscountParams(currentPhase.discounts)
+          // A gift pausing a monthly sub past its paid period holds the change
+          // until the gift ends, as a cancel does (periodEndChangeAtIso). The
+          // new price then starts its own cycle that day, with no proration:
+          // the paused months were never billed, so there is nothing to credit.
+          const giftPauseEnd = giftPauseEndSec(sub)
           await stripe.subscriptionSchedules.update(scheduleId, {
             end_behavior: 'release',
             phases: [
@@ -1854,7 +1860,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                   quantity: i.quantity ?? 1,
                 })),
                 start_date: currentPhase.start_date,
-                end_date: currentPhase.end_date,
+                end_date: giftPauseEnd ?? currentPhase.end_date,
                 // A gift holding the renewal off is a trial; without this the
                 // rebuild ends it today and bills the member for the gift.
                 ...phaseTrialParams(currentPhase),
@@ -1862,6 +1868,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               },
               {
                 items: [{ ...destinationPrice, quantity: 1 }],
+                ...(giftPauseEnd !== null
+                  ? { billing_cycle_anchor: 'phase_start' as const, proration_behavior: 'none' as const }
+                  : {}),
                 ...(destinationDiscounts.length > 0 ? { discounts: destinationDiscounts } : {}),
               },
             ],
@@ -1875,7 +1884,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             })
           }
           const surveyId = await recordDebundleWinBack()
-          const effectiveAt = periodEndIso(sub)
+          const effectiveAt = periodEndChangeAtIso(sub)
           await notifyDebundle(effectiveAt)
           return json(200, {
             ok: true,

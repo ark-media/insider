@@ -19,7 +19,7 @@ import {
   changeIsImmediate,
   giftExtensionRunning,
   oneCycleFromNowIso,
-  periodEndIso,
+  periodEndChangeAtIso,
   planFromSubscription,
   pwycMaxAmount,
   quoteChargeToday,
@@ -185,7 +185,7 @@ export async function previewChange(
     timing: immediate ? 'immediate' : 'period_end',
     dueTodayCents,
     renewsAt: immediate ? oneCycleFromNowIso(want.plan) : null,
-    startsAt: immediate ? null : periodEndIso(sub),
+    startsAt: immediate ? null : periodEndChangeAtIso(sub),
     blocked,
   }
 }

@@ -1669,3 +1669,69 @@ describe('matrix: Bundle debundle', () => {
     expect(JSON.stringify(nextPhase().discounts)).toContain('di_welcome')
   })
 })
+
+// A gift pausing a monthly sub past its paid period holds a period-end change
+// until the gift ends, as a cancel does (#63): dropping the Fold at the old
+// period end would lose the rest of the gifted months. The kept price then
+// starts its own cycle that day with no proration, since the paused months
+// were never billed. Seen in Stripe test mode: Bundle kept through the gift,
+// nothing charged, $8 for Ark+ on the day it ended.
+describe('matrix: a period-end change during a monthly gift pause', () => {
+  const GIFT_ENDS = NOW_SEC + 180 * 86400
+  function pausedBundle() {
+    withSub({ tier: 'bundle', amountCents: 2500, choseAboveFloor: false })
+    ;(currentSub as Record<string, unknown>).pause_collection = {
+      behavior: 'keep_as_draft',
+      resumes_at: GIFT_ENDS,
+    }
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_bundle_monthly' }] },
+    ]
+  }
+  const phasesWritten = () => {
+    const write = [...stripeCalls].reverse().find((c) => c.method === 'subscriptionSchedules.update')
+    return (write!.args[1] as { phases: Array<Phase & Record<string, unknown>> }).phases
+  }
+
+  test('a debundle lands when the gift ends, starting a fresh cycle without proration', async () => {
+    pausedBundle()
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().effective_at).toBe(new Date(GIFT_ENDS * 1000).toISOString())
+    const phases = phasesWritten()
+    expect(phases[0].end_date).toBe(GIFT_ENDS)
+    expect(phases[1].billing_cycle_anchor).toBe('phase_start')
+    expect(phases[1].proration_behavior).toBe('none')
+  })
+
+  test('without a pause the change keeps the period end and Stripe’s defaults', async () => {
+    withSub({ tier: 'bundle', amountCents: 2500, choseAboveFloor: false })
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_bundle_monthly' }] },
+    ]
+    await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    const phases = phasesWritten()
+    expect(phases[0].end_date).toBe(NOW_SEC + 1000)
+    expect(phases[1]).not.toHaveProperty('billing_cycle_anchor')
+    expect(phases[1]).not.toHaveProperty('proration_behavior')
+  })
+
+  test('a pause that ends inside the paid period changes nothing', async () => {
+    pausedBundle()
+    ;(currentSub as Record<string, unknown>).pause_collection = {
+      behavior: 'keep_as_draft',
+      resumes_at: NOW_SEC + 500,
+    }
+    await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(phasesWritten()[0].end_date).toBe(NOW_SEC + 1000)
+  })
+})
