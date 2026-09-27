@@ -24,6 +24,7 @@ const NOW_SEC = 1_800_000_000 // fixed, comfortably in range for phase math
 type Phase = {
   start_date: number
   end_date: number | null
+  trial_end?: number | null
   items: Array<{ price: string; quantity?: number }>
   discounts?: Array<Record<string, unknown>>
 }
@@ -1323,5 +1324,52 @@ describe('GET /api/stripe/save-offers', () => {
     withSub({ tier: 'bundle', amountCents: 25000 })
     const body = await get('cancel-ark-plus')
     expect(body.offers).toEqual([])
+  })
+})
+
+// A gift on an annual sub is a trial (trial_end pushed out). Rebuilding the
+// current phase without it ends the trial on the spot: Stripe bills the full
+// annual price today and the gifted year is lost (seen in Stripe test mode with
+// a test clock). Every period-end change goes through this rebuild.
+describe('POST /api/stripe/change-tier — a gift-pushed trial survives a period-end change', () => {
+  function giftedAnnualSub(giftEnds: number) {
+    withSub({ tier: 'bundle', amountCents: 25000, choseAboveFloor: false })
+    const sub = currentSub as { status: string; trial_end: number; items: { data: Array<{ price: { recurring: { interval: string } }; current_period_end: number }> } }
+    sub.status = 'trialing'
+    sub.trial_end = giftEnds
+    sub.items.data[0].price.recurring.interval = 'year'
+    sub.items.data[0].current_period_end = giftEnds
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: giftEnds, trial_end: giftEnds, items: [{ price: 'price_current' }] },
+    ]
+  }
+  const phasesWritten = () => {
+    const write = [...stripeCalls].reverse().find((c) => c.method === 'subscriptionSchedules.update')
+    return (write!.args[1] as { phases: Phase[] }).phases
+  }
+
+  test.each([
+    ['annual → monthly', { tier: 'bundle', plan: 'monthly' }],
+    ['a debundle', { tier: 'ark-plus', plan: 'yearly', retained_product: 'kept-ark-plus' }],
+  ])('%s keeps the trial on the current phase, and nothing is charged now', async (_label, body) => {
+    const giftEnds = NOW_SEC + 300 * 86400
+    giftedAnnualSub(giftEnds)
+    const res = await post(body, await sessionCookie('member@example.com'))
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().timing).toBe('period_end')
+    const phases = phasesWritten()
+    expect(phases[0].trial_end).toBe(giftEnds)
+    expect(phases[0].end_date).toBe(giftEnds)
+    expect(phases[1].trial_end).toBeUndefined()
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+
+  test('a period-end change with no trial sends no trial_end', async () => {
+    withSub({ tier: 'ark-plus', amountCents: 1500 })
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_current' }] },
+    ]
+    await post({ tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 800 }, await sessionCookie('member@example.com'))
+    expect(phasesWritten()[0]).not.toHaveProperty('trial_end')
   })
 })

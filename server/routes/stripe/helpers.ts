@@ -525,6 +525,18 @@ export function phaseDiscountParams(
   return out
 }
 
+// A schedule phase's trial as an update param. `subscriptionSchedules.update`
+// REPLACES every phase, and a phase rebuilt without its `trial_end` ends the
+// trial on the spot: Stripe invoices the full price today and restarts the
+// period. Our only trials are gifts (an annual renewal pushed out, or billing
+// held until a recipient's gift ends), so dropping it charges a gifted member
+// for time they were given. Checked in Stripe test mode with a test clock.
+export function phaseTrialParams(
+  phase: Pick<Stripe.SubscriptionSchedule.Phase, 'trial_end'>,
+): { trial_end?: number } {
+  return phase.trial_end ? { trial_end: phase.trial_end } : {}
+}
+
 // Add a coupon to a schedule's LAST phase — the pending change — leaving every
 // phase otherwise as it is. The update replaces all phases, so each is passed
 // back with its items, dates and discounts intact.
@@ -548,6 +560,7 @@ export async function addCouponToFinalPhase(
         })),
         start_date: p.start_date,
         end_date: p.end_date,
+        ...phaseTrialParams(p),
         ...(discounts.length > 0 ? { discounts } : {}),
       }
     }),

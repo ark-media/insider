@@ -10,6 +10,7 @@
 import { describe, test, expect } from 'bun:test'
 import type Stripe from 'stripe'
 import {
+  addCouponToFinalPhase,
   existingDiscountParams,
   billingCurrencyOf,
   findLiveSubscription,
@@ -207,5 +208,35 @@ describe('billingCurrencyOf', () => {
 
   test('a currency we do not sell is not a lock', () => {
     expect(billingCurrencyOf(customer('kwd'))).toBeNull()
+  })
+})
+
+// A save offer accepted on a booked change adds its coupon to the pending phase
+// by rewriting every phase. A gift on an annual sub is a trial on the current
+// phase; rewriting it without trial_end ends the gift today and bills the full
+// price (seen in Stripe test mode).
+describe('addCouponToFinalPhase', () => {
+  test('keeps a gift trial on the current phase and adds the coupon to the last', async () => {
+    const updates: Array<Record<string, unknown>> = []
+    const stripe = {
+      subscriptionSchedules: {
+        retrieve: async () => ({
+          phases: [
+            { start_date: 100, end_date: 900, trial_end: 900, items: [{ price: 'price_y', quantity: 1 }], discounts: [] },
+            { start_date: 900, end_date: 1800, trial_end: null, items: [{ price: 'price_m', quantity: 1 }], discounts: [] },
+          ],
+        }),
+        update: async (_id: string, args: Record<string, unknown>) => {
+          updates.push(args)
+          return {}
+        },
+      },
+    } as unknown as Stripe
+    await addCouponToFinalPhase(stripe, 'sched_1', 'co_save')
+    const phases = updates[0].phases as Array<Record<string, unknown>>
+    expect(phases[0].trial_end).toBe(900)
+    expect(phases[0]).not.toHaveProperty('discounts')
+    expect(phases[1]).not.toHaveProperty('trial_end')
+    expect(phases[1].discounts).toEqual([{ coupon: 'co_save' }])
   })
 })
