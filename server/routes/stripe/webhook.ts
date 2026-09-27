@@ -4,6 +4,8 @@ import { sendEmail } from '../../lib/email.js'
 import { signGiftClaimToken } from '../../lib/session.js'
 import { renderGiftRedemptionEmail } from '../../lib/welcome-email.js'
 import { renderPaymentFailedEmail } from '../../lib/payment-failed-email.js'
+import { renderAccessEndedEmail } from '../../lib/billing-notice-emails.js'
+import { getAuth0NameProfile } from '../../lib/auth0-user.js'
 import type { CancellableTier } from '../../lib/cancellation-email.js'
 import { greetingFirstName } from '../../../shared/profile-name.js'
 import { redactEmail } from '../../../shared/validation.js'
@@ -274,7 +276,11 @@ export async function dispatchWebhookEvent(
             return
           }
         }
-        await handleSubscriptionEnded(sub, customerId, stripe, env)
+        // Only `deleted` is final enough to tell the member it's over: a paused
+        // subscription can still resume.
+        await handleSubscriptionEnded(sub, customerId, stripe, env, {
+          notify: event.type === 'customer.subscription.deleted',
+        })
         // No churn event here on purpose. Stripe Billing already reports churn,
         // splits voluntary from involuntary via `cancellation_details.reason`,
         // and reconciles to the ledger. See server/lib/analytics-server.ts.
@@ -491,6 +497,10 @@ async function handleSubscriptionEnded(
   customerId: string,
   stripe: Stripe,
   env: Env,
+  // Send the "access ended" email. Only the `deleted` event asks: the other
+  // callers (a pause, a late upsert for a dead subscription) are either not
+  // final or will be followed by the `deleted` that is.
+  opts: { notify?: boolean } = {},
 ): Promise<void> {
   const email = await emailForStripeCustomer(sub.customer, stripe)
 
@@ -534,6 +544,9 @@ async function handleSubscriptionEnded(
     if (!remaining.arkPlus) {
       await tryPush('downgrade (cancel)', () => downgradeToFree({ env, sql }, email))
     }
+    if (opts.notify) {
+      await notifyAccessEnded(sub, email, remaining, row?.auth0_sub ?? null, stripe, env)
+    }
   }
 
   if (!row) return
@@ -542,6 +555,56 @@ async function handleSubscriptionEnded(
     await deleteMembershipByCustomer(sql, customerId, sub.id)
   } else {
     await clearMembershipSubscription(sql, customerId, sub.id, remainingTier)
+  }
+}
+
+// The "access ended" email: the membership has actually stopped. The
+// cancellation email went out weeks ago, at the moment of cancelling; this one
+// is the notice on the day, and the only one a member whose payments lapsed
+// ever gets. It names only what was lost: a Bundle whose Fold half a gift still
+// holds tells the member their Ark+ ended, nothing more, and a subscription
+// whose every axis a gift still covers sends nothing.
+//
+// Best-effort, after the revoke: a mail failure must never fail the event into
+// a Stripe retry, which would repeat the revoke too.
+async function notifyAccessEnded(
+  sub: Stripe.Subscription,
+  email: string,
+  remaining: { arkPlus: boolean; circle: boolean },
+  auth0Sub: string | null,
+  stripe: Stripe,
+  env: Env,
+): Promise<void> {
+  try {
+    const ended = await catalogTierOfSubscription(sub, stripe)
+    if (!ended) return
+    const had = deriveEntitlements(ended)
+    const lostTier = tierFromEntitlements({
+      arkPlus: had.arkPlus && !remaining.arkPlus,
+      circle: had.circle && !remaining.circle,
+    })
+    if (lostTier === 'free') return
+
+    const profile = auth0Sub ? await getAuth0NameProfile(env, auth0Sub) : null
+    const base = env.APP_BASE_URL || 'http://localhost:5173'
+    const { subject, html } = renderAccessEndedEmail({
+      firstName: profile
+        ? greetingFirstName(profile.givenName, email, profile.familyName, profile.setByMember)
+        : undefined,
+      tier: lostTier,
+      reason: sub.cancellation_details?.reason === 'payment_failed' ? 'payment_failed' : 'ended',
+      rejoinUrl: `${base}${lostTier === 'circle' ? '/fold' : '/plus'}`,
+    })
+    // One per subscription: a redelivered `deleted` collapses.
+    const sent = await sendEmail(env, {
+      to: email,
+      subject,
+      html,
+      idempotencyKey: `access_ended_${sub.id}`,
+    })
+    if (!sent) console.error('[email] access-ended email did not send:', sub.id)
+  } catch (err) {
+    console.error('[email] access-ended email failed:', err)
   }
 }
 

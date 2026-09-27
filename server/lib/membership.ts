@@ -568,3 +568,57 @@ export async function recordGiftExpiryReminderSent(
     values (${auth0Sub}, ${axis}, ${expiresAt})
     on conflict (auth0_sub, axis, expires_at) do nothing`
 }
+
+// --- Annual renewal reminders (lib/renewal-reminders.ts) --------------------
+
+export type AnnualRenewalRow = {
+  auth0_sub: string
+  stripe_subscription_id: string
+  tier: Tier
+  scheduled_tier: string | null
+  pending_plan: string | null
+  current_period_end: string
+}
+
+// Yearly subscriptions renewing inside (now, now + withinDays] that nothing is
+// set to stop: no booked cancel, and a status that will actually be charged.
+// A gift-pushed trial counts (`trialing`): its period end IS the renewal.
+export async function getAnnualRenewalsWithin(
+  sql: Sql,
+  withinDays: number,
+): Promise<AnnualRenewalRow[]> {
+  const rows = await sql`
+    select auth0_sub, stripe_subscription_id, tier, scheduled_tier, pending_plan,
+           current_period_end
+    from membership
+    where stripe_subscription_id is not null
+      and plan = 'yearly'
+      and status in ('active', 'trialing')
+      and cancel_at is null
+      and current_period_end > now()
+      and current_period_end <= now() + make_interval(days => ${withinDays})`
+  return rows as AnnualRenewalRow[]
+}
+
+export async function renewalReminderSent(
+  sql: Sql,
+  subscriptionId: string,
+  periodEnd: string,
+): Promise<boolean> {
+  const rows = (await sql`
+    select 1 from renewal_reminder_sends
+    where stripe_subscription_id = ${subscriptionId} and period_end = ${periodEnd}
+    limit 1`) as unknown[]
+  return rows.length > 0
+}
+
+export async function recordRenewalReminderSent(
+  sql: Sql,
+  subscriptionId: string,
+  periodEnd: string,
+): Promise<void> {
+  await sql`
+    insert into renewal_reminder_sends (stripe_subscription_id, period_end)
+    values (${subscriptionId}, ${periodEnd})
+    on conflict (stripe_subscription_id, period_end) do nothing`
+}

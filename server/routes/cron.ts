@@ -16,6 +16,7 @@ import {
   runGiftExpiryReminders,
 } from '../lib/gift-expiry-reminders.js'
 import { runWinbackCampaign } from '../lib/winback.js'
+import { RENEWAL_REMINDER_DAYS, runRenewalReminders } from '../lib/renewal-reminders.js'
 import { winbackUnsubUrl } from './winback.js'
 import { getAuth0NameProfile } from '../lib/auth0-user.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
@@ -186,6 +187,60 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
           json(200, summary)
         } catch (err) {
           console.error('[cron] gift-expiry-reminders failed:', err)
+          json(500, { error: 'reminder_run_failed' })
+        }
+      },
+    }),
+    defineRoute({
+      // Remind annual members 30 days before their membership renews: the
+      // date, the amount (Stripe's preview of the renewal invoice, discounts
+      // and tax included) and how to cancel. One send per renewal, recorded in
+      // renewal_reminder_sends. See lib/renewal-reminders.ts.
+      path: '/api/cron/renewal-reminders',
+      method: ['POST', 'GET'],
+      handler: async (req, _res, json) => {
+        const cronSecret = env.CRON_SECRET
+        if (!cronSecret) return json(500, { error: 'not_configured' })
+        if (!cronAuthorized(req, cronSecret)) {
+          return json(401, { error: 'unauthorized' })
+        }
+        if (!env.DATABASE_URL || !stripe) {
+          return json(500, { error: 'not_configured' })
+        }
+
+        const sql = getDb(env)
+        try {
+          const summary = await runRenewalReminders({
+            env,
+            sql,
+            appBaseUrl,
+            withinDays: RENEWAL_REMINDER_DAYS,
+            quoteRenewal: async (subscriptionId) => {
+              try {
+                const invoice = await stripe.invoices.createPreview({ subscription: subscriptionId })
+                return { amountMinor: invoice.amount_due, currency: invoice.currency }
+              } catch (err) {
+                console.error('[cron] renewal quote failed:', subscriptionId, err)
+                return null
+              }
+            },
+            resolveRecipient: async (sub) => {
+              const profile = await getAuth0NameProfile(env, sub)
+              if (!profile) return null
+              return {
+                email: profile.email,
+                firstName: greetingFirstName(
+                  profile.givenName,
+                  profile.email,
+                  profile.familyName,
+                  profile.setByMember,
+                ),
+              }
+            },
+          })
+          json(200, summary)
+        } catch (err) {
+          console.error('[cron] renewal-reminders failed:', err)
           json(500, { error: 'reminder_run_failed' })
         }
       },
