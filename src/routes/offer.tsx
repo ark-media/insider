@@ -252,13 +252,8 @@ function OfferConfirm({
 
   return (
     <div>
-      <p className="body-text text-fg-muted">
-        You're on Ark+. This moves you to the bundle — Ark+ and the Fold
-        together — at a welcome price for {termLabel}.
-      </p>
-
       {/* Current plan → new plan → what today costs, one row each. */}
-      <div className="mt-8 divide-y divide-rule border-y border-rule">
+      <div className="divide-y divide-rule border-y border-rule">
         <div className="flex items-center justify-between gap-4 py-4">
           <div>
             <p className="body-text text-sm text-fg-muted">Current plan</p>

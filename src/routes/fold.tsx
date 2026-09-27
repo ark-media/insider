@@ -472,10 +472,7 @@ function JoinCta({
     <section>
       <div className="page-gutter py-14 sm:py-20">
         <div className="text-center">
-          <div className="flex justify-center">
-            <FoldLogo className="h-10 sm:h-12" />
-          </div>
-          <h2 className={`mt-8 ${SECTION_HEADING}`}>Join the Fold</h2>
+          <h2 className={SECTION_HEADING}>Join the Fold</h2>
           <p className="mx-auto mt-6 max-w-xl text-body-lg">
             A private community from Ark Media, for people who take these
             questions seriously.

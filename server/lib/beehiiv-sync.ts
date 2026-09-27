@@ -144,7 +144,7 @@ async function createSubscription(
     // Re-subscribe readers who previously unsubscribed instead of erroring
     // (matches the public /api/beehiiv/subscribe behavior).
     reactivate_existing: true,
-    utm_source: opts.premiumTierId ? 'insider-membership' : 'insider-site',
+    utm_source: opts.premiumTierId ? 'ark-media-membership' : 'ark-media-website',
   }
   if (opts.premiumTierId) body.premium_tier_ids = [opts.premiumTierId]
   const res = await fetchWithTimeout(

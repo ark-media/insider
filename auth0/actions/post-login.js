@@ -166,11 +166,10 @@ exports.onExecutePostLogin = async (event, api) => {
     // accumulating as real users on the tenant.
     //
     // We deliberately do NOT require the Database account's own email_verified
-    // flag. Members are provisioned by the webhook with email_verified:false
-    // (findOrCreateAuth0User) and set a password via the reset email rather than
-    // verifying, so a member who signs in with Google *before* doing that reset
-    // still has an unverified Database account — requiring it here would reject
-    // them as self-signups and delete their incoming identity. Linking is
+    // flag. findOrCreateAuth0User now creates accounts verified, but accounts
+    // provisioned before 2026-09-27 were created with email_verified:false and
+    // never verified since. Requiring it here would reject those members as
+    // self-signups and delete their incoming identity. Linking is
     // already safe without it: the check above proved the *incoming* email is
     // verified, and users-by-email only returns records with that exact email,
     // so Google (or the emailed code) has confirmed the person controls the

@@ -100,12 +100,18 @@ export function AudioPlayer({
    * browser has metadata, so the control doesn't flash "0:00" on first paint.
    */
   fallbackDurationMinutes,
+  /**
+   * Start playing as soon as the source is set. Only for a play the listener
+   * just asked for (a click elsewhere on the page) — browsers block it otherwise.
+   */
+  autoPlay = false,
   className = "",
 }: {
   src: string;
   title: string;
   artworkUrl?: string | null;
   fallbackDurationMinutes?: number;
+  autoPlay?: boolean;
   className?: string;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -155,6 +161,13 @@ export function AudioPlayer({
     scrubbingRef.current = false;
     pendingSeekRef.current = null;
   }, [src]);
+
+  useEffect(() => {
+    if (!autoPlay) return;
+    // Same rejection handling as togglePlay: a blocked play leaves the button
+    // showing "play", which is the truth.
+    void audioRef.current?.play().catch(() => setPlaying(false));
+  }, [autoPlay, src]);
 
   const togglePlay = useCallback(() => {
     const el = audioRef.current;

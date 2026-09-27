@@ -108,38 +108,19 @@ export function EmailPreferences({ email }: { email: string }) {
               Try again
             </button>
           </div>
-        ) : (
-          <>
-            {prefs ? (
-              <PrefRow
-                title={newsletter.title}
-                description={
-                  prefs.canPremium
-                    ? "Weekly. You get the members' edition, with the members-only sections."
-                    : "The weekly free edition"
-                }
-                on={prefs.free}
-                busy={saving}
-                onToggle={() => void onToggle()}
-              />
-            ) : null}
-            {/* Not a switch. Receipts, renewal notices and cancellation
-                confirmations are how a member finds out what they were charged,
-                so there is nothing here to opt out of — and a disabled toggle
-                would suggest otherwise. */}
-            <div className="flex items-center justify-between gap-4 p-6">
-              <div className="min-w-0">
-                <h4 className="text-h5">Account &amp; billing notices</h4>
-                <p className="mt-1 text-body-sm text-fg-muted">
-                  Receipts and renewal reminders. Always on.
-                </p>
-              </div>
-              <span className="shrink-0 border border-rule px-2 py-1 text-[11px] font-semibold uppercase tracking-button text-fg-muted">
-                Required
-              </span>
-            </div>
-          </>
-        )}
+        ) : prefs ? (
+          <PrefRow
+            title={newsletter.title}
+            description={
+              prefs.canPremium
+                ? "The weekly members' edition"
+                : "The weekly free edition"
+            }
+            on={prefs.free}
+            busy={saving}
+            onToggle={() => void onToggle()}
+          />
+        ) : null}
       </div>
 
       {error ? (

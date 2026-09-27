@@ -6,14 +6,16 @@ import {
   forgetNewsletterPosts,
   sourceFor,
 } from "../../lib/newsletterSources";
-import { newsletterCommentUrl } from "../../lib/circle";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
 import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { NewsletterArticle } from "../../lib/newsletter-renderer";
 import { fetchPostDocument } from "../../lib/beehiiv";
-import { NewsletterFrame } from "../../components/NewsletterFrame";
+import {
+  NewsletterFrame,
+  NEWSLETTER_PAPER,
+} from "../../components/NewsletterFrame";
 
 export const Route = createFileRoute("/newsletters/$post")({
   beforeLoad: ({ params }) => {
@@ -101,107 +103,141 @@ function PostPage() {
     : null;
   const issueYear = issueDate ? String(issueDate.year) : null;
 
+  // A members-only issue's free edition is just its header, so a non-member
+  // gets the paywall below, not a header on its own.
+  const framed = documentHtml !== null && !(gated && post.membersOnly);
+
+  const breadcrumbs = (
+    <Breadcrumbs
+      items={[
+        { label: "Home", to: "/" },
+        { label: "Newsletters", to: "/newsletters" },
+        { label: post.title },
+      ]}
+    />
+  );
+
   return (
     <main className="relative">
-      <section className="section-hero relative">
-        <div className="mx-auto max-w-[1040px] px-6 pt-10 pb-4 sm:px-10 sm:pt-14">
-          <Breadcrumbs
-            items={[
-              { label: "Home", to: "/" },
-              { label: "Newsletters", to: "/newsletters" },
-              { label: post.title },
-            ]}
-          />
-        </div>
-        <header className="mx-auto max-w-[1040px] px-6 pb-12 pt-6 sm:px-10 sm:pb-16">
-          <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-[auto_1fr] sm:items-end">
-            {issueMonthDay && issueYear ? (
-              <div className="rise rise-1 flex flex-col leading-none">
-                <span className="label font-display font-bold tracking-[0.28em] text-cyan">
-                  Issue
-                </span>
-                <span className="mt-3 font-display text-[clamp(3.4rem,7vw,5.2rem)] font-black italic leading-[0.85] tracking-[-0.02em] text-fg-strong">
-                  {issueMonthDay}
-                </span>
-                <span className="mt-1 font-display text-[clamp(1rem,1.6vw,1.25rem)] font-semibold uppercase tracking-[0.3em] text-fg-muted">
-                  {issueYear}
-                </span>
-              </div>
-            ) : null}
-            <div className="rise rise-2">
-              <div className="label tracking-[0.28em] text-cyan">
-                {newsletter.shortTitle} · Newsletter
-              </div>
-              <h1 className="mt-4 font-display text-[clamp(2rem,4.5vw,3.4rem)] font-bold leading-[1.05] tracking-[-0.01em] text-fg-strong">
-                {post.title}
-              </h1>
-              <p className="mt-5 meta tracking-[0.22em]">
-                <span className="text-fg-strong">{post.authorName}</span>
+      {framed ? (
+        <>
+          {/* The issue's masthead leads, so the page adds one quiet strip:
+              a way back, then byline and date. Sized to the issue's column
+              (672px, 40px gutters) so it lines up with the masthead. */}
+          <section className="section-hero relative">
+            <div className="mx-auto flex max-w-[672px] flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-10 py-6 sm:py-7">
+              {breadcrumbs}
+              <h1 className="sr-only">{post.title}</h1>
+              <p className="meta">
+                {post.authorName}
                 <span className="mx-2 text-fg-faint">·</span>
-                {formatPostDate(post.publishedAt)}
+                <time dateTime={post.publishedAt}>
+                  {formatPostDate(post.publishedAt)}
+                </time>
               </p>
             </div>
-          </div>
-          <div className="mt-10 h-px w-full bg-gradient-to-r from-cyan/60 via-rule to-transparent" />
-        </header>
-      </section>
-
-      <article>
-        <div className="mx-auto max-w-[1040px] px-6 pb-16 sm:px-10">
-          {/* A members-only issue's free edition is just the header the frame
-              hides, so a non-member gets the paywall below, not an empty box. */}
-          {documentHtml && !(gated && post.membersOnly) ? (
+          </section>
+          {/* Full-bleed in the issue's own paper colour: one seam where the
+              site ends and the newsletter begins, not a box inside a band. */}
+          <article
+            className="section-hero border-t border-rule"
+            style={{ backgroundColor: NEWSLETTER_PAPER }}
+          >
             <NewsletterFrame html={documentHtml} title={post.title} />
-          ) : post.bodyHtml ? (
-            <NewsletterArticle html={post.bodyHtml} postTitle={post.title} />
-          ) : (
-            <div className="space-y-5 text-body leading-[1.75]">
-              {post.body.split("\n\n").map((para, i) => (
-                <p
-                  key={`${i}-${para.slice(0, 32)}`}
-                  className="break-words whitespace-pre-line"
-                >
-                  {para}
-                </p>
-              ))}
+          </article>
+        </>
+      ) : (
+        <>
+          <section className="section-hero relative">
+            <div className="mx-auto max-w-[1040px] px-6 pt-10 pb-4 sm:px-10 sm:pt-14">
+              {breadcrumbs}
             </div>
-          )}
-        </div>
-      </article>
+            <header className="mx-auto max-w-[1040px] px-6 pb-12 pt-6 sm:px-10 sm:pb-16">
+              <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-[auto_1fr] sm:items-end">
+                {issueMonthDay && issueYear ? (
+                  <div className="rise rise-1 flex flex-col leading-none">
+                    <span className="label font-display font-bold tracking-[0.28em] text-cyan">
+                      Issue
+                    </span>
+                    <span className="mt-3 font-display text-[clamp(3.4rem,7vw,5.2rem)] font-black italic leading-[0.85] tracking-[-0.02em] text-fg-strong">
+                      {issueMonthDay}
+                    </span>
+                    <span className="mt-1 font-display text-[clamp(1rem,1.6vw,1.25rem)] font-semibold uppercase tracking-[0.3em] text-fg-muted">
+                      {issueYear}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="rise rise-2">
+                  <div className="label tracking-[0.28em] text-cyan">
+                    {newsletter.shortTitle} · Newsletter
+                  </div>
+                  <h1 className="mt-4 font-display text-[clamp(2rem,4.5vw,3.4rem)] font-bold leading-[1.05] tracking-[-0.01em] text-fg-strong">
+                    {post.title}
+                  </h1>
+                  <p className="mt-5 meta tracking-[0.22em]">
+                    <span className="text-fg-strong">{post.authorName}</span>
+                    <span className="mx-2 text-fg-faint">·</span>
+                    {formatPostDate(post.publishedAt)}
+                  </p>
+                </div>
+              </div>
+            </header>
+          </section>
 
-      {gated ? null : (
+          <article>
+            <div className="mx-auto max-w-[1040px] px-6 pb-16 sm:px-10">
+              {post.bodyHtml ? (
+                <NewsletterArticle
+                  html={post.bodyHtml}
+                  postTitle={post.title}
+                />
+              ) : (
+                <div className="space-y-5 text-body leading-[1.75]">
+                  {post.body.split("\n\n").map((para, i) => (
+                    <p
+                      key={`${i}-${para.slice(0, 32)}`}
+                      className="break-words whitespace-pre-line"
+                    >
+                      {para}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </article>
+        </>
+      )}
+
+      {/* Only posts with their own Fold thread get a discuss link. The
+          generic per-newsletter "Comment in the app" fallback is hidden until
+          that Circle link is set up. */}
+      {!gated && post.discussUrl ? (
         <section>
           <div className="mx-auto flex max-w-[1040px] flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-10">
             <div>
-              <div className="label text-cyan">
-                {post.discussUrl ? "Discuss this piece" : "Keep the conversation going"}
-              </div>
+              <div className="label text-cyan">Discuss this piece</div>
               <p className="mt-2 text-body-sm text-fg">
-                {post.discussUrl
-                  ? "There's an open thread on this post in the Fold."
-                  : "Comments and replies live in the Fold. Sign in once and they open straight to the thread."}
+                There&rsquo;s an open thread on this post in the Fold.
               </p>
             </div>
             <a
-              href={post.discussUrl ?? newsletterCommentUrl(newsletter.slug)}
+              href={post.discussUrl}
               target="_blank"
               rel="noreferrer noopener"
               className="inline-flex shrink-0 items-center justify-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
-              {post.discussUrl ? "Discuss on forum →" : "Comment in the app →"}
+              Discuss on forum →
             </a>
           </div>
         </section>
-      )}
+      ) : null}
 
       {gated ? (
         <section className="border-t border-cyan/30">
           <div className="mx-auto max-w-[1040px] px-6 py-16 sm:px-10">
             <div className="flex items-center gap-4">
               <ArkPlusMark className="h-14 w-14" alt="Ark+" />
-              <div className="label text-cyan">
-                Members only
-              </div>
+              <div className="label text-cyan">Members only</div>
             </div>
             <h2 className="mt-6 font-display text-[28px] leading-[1.1] text-fg-strong">
               The rest of this issue is in the members&rsquo; edition.

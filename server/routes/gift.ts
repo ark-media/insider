@@ -449,9 +449,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // This is the ONLY account-provisioning point in the gift flow — nothing
         // is created at purchase — so exactly one email ever reaches the
         // recipient. An existing account is found, not recreated.
-        const auth0 = await findOrCreateAuth0User(claim.email, claim.name, env, {
-          emailVerified: true,
-        })
+        const auth0 = await findOrCreateAuth0User(claim.email, claim.name, env)
         const auth0Sub = auth0?.userId ?? null
         if (!auth0Sub) return json(502, { error: 'could_not_resolve_account' })
 

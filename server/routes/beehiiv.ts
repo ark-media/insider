@@ -186,7 +186,7 @@ async function createBeehiivSubscription(
       reactivate_existing: false,
       send_welcome_email: true,
       // Tag the source so we can distinguish site signups in Beehiiv.
-      utm_source: 'insider-site',
+      utm_source: 'ark-media-website',
     }),
   })
   if (res.ok) return { ok: true }

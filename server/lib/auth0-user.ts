@@ -138,12 +138,6 @@ export async function findOrCreateAuth0User(
   email: string,
   nameHint: string | undefined,
   env: Env,
-  // `emailVerified` creates the account with email_verified:true. The gift
-  // magic-link flow sets it: the recipient clicked a link delivered to their
-  // inbox, which proves control of the address — and creating the user
-  // pre-verified suppresses Auth0's own "Verify your email" message (which
-  // otherwise fires on every email_verified:false creation).
-  opts: { emailVerified?: boolean } = {},
 ): Promise<Auth0UserResult | null> {
   const mgmt = getManagementClient(env)
   if (!mgmt) return null
@@ -194,7 +188,14 @@ export async function findOrCreateAuth0User(
       password: tempPassword,
       ...(givenName ? { given_name: givenName.slice(0, MAX_NAME_PART_LEN) } : {}),
       ...(familyName ? { family_name: familyName.slice(0, MAX_NAME_PART_LEN) } : {}),
-      email_verified: opts.emailVerified ?? false,
+      // Always created verified. Nothing about this account is proven by the
+      // flag: it has no usable password, and every way in (an emailed code, a
+      // signed link in our own email, Google) already proves control of the
+      // address on its own. Left false, Auth0 mails its own "Verify your
+      // email" message on creation, a second, confusing email beside our
+      // welcome (or gift claim) email.
+      email_verified: true,
+      verify_email: false,
     })
     userId = created.user_id
   } catch (err) {

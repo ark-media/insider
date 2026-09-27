@@ -106,9 +106,10 @@ const DOCUMENT_DROPPED_TAGS = new Set([
   'title',
 ])
 
-// Our page already shows the title, byline and date; Beehiiv's header repeats
-// them with its share buttons. Links open outside the frame, which is
-// sandboxed without navigation of the top window.
+// The page's own strip carries the title, byline and date; Beehiiv's header
+// repeats them (plus share buttons to the beehiiv.com copy) at a size that
+// pushes the issue's masthead below the fold. Links open outside the frame,
+// which is sandboxed without navigation of the top window.
 const DOCUMENT_HEAD =
   '<base target="_blank">' +
   '<style>#web-header{display:none!important}html,body{margin:0}</style>'

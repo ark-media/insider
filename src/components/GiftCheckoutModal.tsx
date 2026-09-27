@@ -96,6 +96,11 @@ export function GiftCheckoutModal({
   // sale is applied in the browser like any other code — see PromoCode.
   const [promo, setPromo] = useState<PromoInfo | null>(null);
   const startedFor = useRef<string | null>(null);
+  // Changing currency unmounts the picker while the new Session is created, so
+  // keyboard focus would fall to <body>. Set on a change; focus goes back to the
+  // picker once the new Session is ready.
+  const refocusCurrency = useRef(false);
+  const currencyRowRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
   const navigate = useNavigate();
 
@@ -205,6 +210,12 @@ export function GiftCheckoutModal({
     };
   }, [open, input, sessionKey, currency, currencyReady]);
 
+  useEffect(() => {
+    if (step.kind !== "ready" || !refocusCurrency.current) return;
+    refocusCurrency.current = false;
+    currencyRowRef.current?.querySelector("button")?.focus();
+  }, [step]);
+
   const stripePromiseValue = getStripe();
 
   return (
@@ -252,13 +263,16 @@ export function GiftCheckoutModal({
           {/* Currency lives OUTSIDE the Elements provider: changing it recreates
               the Session (new currency_options amount), so the picker can't live
               on the provider it tears down. */}
-          <div className="mt-4 flex items-center justify-between gap-3">
+          <div ref={currencyRowRef} className="mt-4 flex items-center justify-between gap-3">
             <span className="eyebrow text-fg-muted">Pay in</span>
             <CurrencySelect
               value={currency}
               options={currencies ?? [currency]}
               disabled={!currencies}
-              onChange={setCurrency}
+              onChange={(next) => {
+                if (next !== currency) refocusCurrency.current = true;
+                setCurrency(next);
+              }}
             />
           </div>
           <CheckoutElementsProvider
