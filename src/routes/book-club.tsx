@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
   danBooks,
   formatPickMonth,
@@ -186,16 +186,6 @@ function BookClubPage() {
                 </p>
                 <div className="mt-8 flex flex-wrap items-start gap-4">
                   <BuyOnAmazon book={current} />
-                  <Link
-                    to="/fold"
-                    onClick={() => trackEvent("book_club_join_clicked")}
-                    className="group inline-flex min-h-12 items-center gap-2 button-text font-display font-bold tracking-cta text-cyan transition hover:text-fg-strong"
-                  >
-                    Discuss it in the Fold
-                    <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
-                      →
-                    </span>
-                  </Link>
                 </div>
               </div>
             </div>
@@ -264,7 +254,7 @@ function BookClubPage() {
       ) : null}
 
       {/* Pick detail — opened by clicking a cover in the shelf. Shows the note
-          and the two actions: buy it, or take it into the Fold. */}
+          and the buy link. */}
       <Modal
         open={selected !== null}
         onClose={() => setSelected(null)}
@@ -297,16 +287,6 @@ function BookClubPage() {
               <p className="mt-5 text-body-sm text-fg">{selected.danNote}</p>
               <div className="mt-6 flex flex-col gap-3">
                 <BuyOnAmazon book={selected} stretch />
-                <Link
-                  to="/fold"
-                  onClick={() => trackEvent("book_club_join_clicked")}
-                  className="group inline-flex min-h-12 w-full items-center justify-between border border-rule-strong px-5 button-text font-display font-bold tracking-cta text-fg-strong transition hover:border-cyan hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
-                >
-                  Discuss it in the Fold
-                  <span className="transition-transform duration-500 ease-[cubic-bezier(.16,1,.3,1)] group-hover:translate-x-1">
-                    →
-                  </span>
-                </Link>
               </div>
             </div>
           </div>

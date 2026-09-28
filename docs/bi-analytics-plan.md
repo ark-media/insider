@@ -20,7 +20,7 @@ An honest inventory, from the code — not aspiration.
 | Churn / retention | `cancel_initiated`, `save_offer_shown/accepted/declined`, `cancellation_reason_submitted`, `subscription_cancelled`, `subscription_debundled`, `subscription_reactivated` — all tagged by flow A–E and tier |
 | Gift funnel | `gift_checkout_opened/…_succeeded/…_failed`, `gift_redeemed{applied}` |
 | Feed activation | `feed_app_selected`, `feed_activated{app,method}`, `feed_spotify_linked` |
-| Content (thin) | `episode_play_clicked{show,episode}`, `listen_link_clicked{platform}`, `book_link_clicked`, `book_club_join_clicked` |
+| Content (thin) | `episode_play_clicked{show,episode}`, `listen_link_clicked{platform}`, `book_link_clicked` |
 | Errors / perf | Sentry (`@sentry/react`), Vercel Speed Insights |
 | First-party data | Neon: `membership`, `gift`, `cancellation_survey`, `sc_feed_activations`, `beehiiv_subscription`, `stripe_webhook_events` |
 
