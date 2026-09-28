@@ -42,7 +42,6 @@ const podcastChildren: NavChild[] = [
     .map((show) => ({
       label: show.title,
       to: show.route,
-      description: show.cadence,
     })),
 ];
 

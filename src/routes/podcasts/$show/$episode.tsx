@@ -127,8 +127,9 @@ function EpisodePage() {
 }
 
 // The sidebar that fills the right column: the show's identity (cover + link),
-// where to subscribe, and the cadence — built from the site's own structured
-// data rather than the raw show-notes link dump.
+// and where to subscribe — built from the site's own structured data rather
+// than the raw show-notes link dump. No release schedule: members and the
+// public get episodes on different schedules, so one line would mislead one of them.
 function EpisodeAside({ show }: { show: Show }) {
   return (
     <div className="lg:sticky lg:top-24">
@@ -157,12 +158,6 @@ function EpisodeAside({ show }: { show: Show }) {
         <p className="mt-3 text-body-sm">
           {show.tagline}
         </p>
-        <div className="mt-5 border-t border-rule pt-5 text-body-sm">
-          <span className="font-semibold uppercase tracking-[0.18em] text-fg-faint">
-            New episodes
-          </span>
-          <div className="mt-1.5 text-fg">{show.cadence}</div>
-        </div>
       </div>
 
       {show.listen.length > 0 ? (

@@ -108,7 +108,6 @@ function NetworkPage() {
                   <span className="font-display text-[18px] leading-[1.2] text-fg-strong group-hover:text-cyan">
                     {s.title}
                   </span>
-                  <span className="meta">{s.cadence}</span>
                 </Link>
               </li>
             ))}

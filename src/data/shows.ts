@@ -32,7 +32,6 @@ export type Show = {
   tagline: string;
   description: string;
   hosts: string[];
-  cadence: string;
   /**
    * Square (1:1) cover art served from `/public`. When present it's used
    * everywhere the show is represented (hero, hub grid); shows without one
@@ -56,7 +55,6 @@ export const shows: Show[] = [
     description:
       "Call me Back un-breaks the news affecting the Jewish world, focusing on the structural forces shaping life in Israel and the diaspora.",
     hosts: ["Dan Senor"],
-    cadence: "New episodes Mondays and Thursdays",
     coverArt: "/shows/call-me-back.jpg",
     paid: false,
     listen: showListenLinks["call-me-back"],
@@ -79,7 +77,6 @@ export const shows: Show[] = [
     description:
       "Long-form interviews, unedited extras, and Q&As reserved for Ark+ members. Delivered as a private, ad-free feed in the podcast app you already use.",
     hosts: ["Dan Senor"],
-    cadence: "New episodes weekly",
     coverArt: "/inside-cmb.jpg",
     paid: true,
     // Deliberately empty: a private feed has no public "listen on" links.
@@ -95,7 +92,6 @@ export const shows: Show[] = [
     description:
       "Donniel Hartman and Yossi Klein Halevi engage in the Jewish tradition of constructive disagreement about Israel, world Jewry, and the future of Zionism.",
     hosts: ["Donniel Hartman", "Yossi Klein Halevi"],
-    cadence: "Weekly",
     coverArt: "/shows/for-heavens-sake.jpg",
     paid: false,
     listen: showListenLinks["for-heavens-sake"],
@@ -112,7 +108,6 @@ export const shows: Show[] = [
     description:
       "Members-only episodes of For Heaven's Sake, ad-free. Delivered as a private feed in the podcast app you already use.",
     hosts: ["Donniel Hartman", "Yossi Klein Halevi"],
-    cadence: "",
     paid: true,
     listen: showListenLinks["for-heavens-sake-plus"],
   },
@@ -126,7 +121,6 @@ export const shows: Show[] = [
     description:
       "Every morning, Ark Media gives you the latest updates on the war in Iran and how they impact the Middle East, geopolitics, and Jews around the world.",
     hosts: ["Ark Media newsroom"],
-    cadence: "Weekdays",
     coverArt: "/shows/ark-news-daily.jpg",
     paid: false,
     listen: showListenLinks["ark-news-daily"],
@@ -143,18 +137,15 @@ export const shows: Show[] = [
     description:
       "Members-only episodes of Ark News Daily, ad-free. Delivered as a private feed in the podcast app you already use.",
     hosts: ["Ark Media newsroom"],
-    cadence: "",
     paid: true,
     listen: showListenLinks["ark-news-daily-plus"],
   },
   // PARTLY PLACEHOLDER. The cover art is now the show's own (finalised art, added
   // 2026-09-10), and the tagline/description/hosts match it. What is still Ask a
   // Jew's: `listen` — every link in showListenLinks["chosen-people-problems"]
-  // still points at the Ask a Jew feed/channel — and `cadence`. The episode
-  // artwork and per-episode descriptions come from the podcast host at runtime,
-  // not from here, so those update when the host's do. It is also absent from
-  // `schedule` below: we don't know when it drops, and a guess would put a wrong
-  // show in the masthead's next-drop strip.
+  // still points at the Ask a Jew feed/channel. The episode artwork and
+  // per-episode descriptions come from the podcast host at runtime, not from
+  // here, so those update when the host's do.
   {
     slug: "chosen-people-problems",
     route: "/podcasts/chosen-people-problems",
@@ -165,7 +156,6 @@ export const shows: Show[] = [
     description:
       "Yael Bar tur, secular sinner, and Chaya Leah Sufrin, pious Haredi, ask each other the hard questions, from Torah to Tinder.",
     hosts: ["Yael Bar tur", "Chaya Leah Sufrin"],
-    cadence: "Weekly",
     coverArt: "/shows/chosen-people-problems.jpg",
     paid: false,
     listen: showListenLinks["chosen-people-problems"],
@@ -182,7 +172,6 @@ export const shows: Show[] = [
     description:
       "Members-only episodes of Chosen People Problems, ad-free. Delivered as a private feed in the podcast app you already use.",
     hosts: ["Yael Bar tur", "Chaya Leah Sufrin"],
-    cadence: "",
     paid: true,
     listen: showListenLinks["chosen-people-problems-plus"],
   },
