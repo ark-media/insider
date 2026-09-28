@@ -1003,7 +1003,6 @@ single member only ever sees some of them.
 - **EYEBROW**: {Month 'YY} Pick (e.g. "July '26 Pick")
 - **BUTTON**: Buy on Amazon → (goes to the book's main edition)
 - **EDITIONS LINE (UNDER THE BUTTON)**: {Main format} · Also in {Other formats, each a link} (e.g. "Paperback · Also in Hardcover, Kindle")
-- **LINK**: Discuss it in the Fold →
 
 ### Upcoming picks
 > A pick appears here once it's announced, on the 15th of the month before its month (November's pick on Oct 15). Hidden entirely until then.
@@ -1024,7 +1023,6 @@ single member only ever sees some of them.
 
 ### Pick detail modal
 - **BUTTON**: Buy on Amazon →
-- **BUTTON**: Discuss it in the Fold →
 
 ### Placeholder book cover (books without cover art)
 - **EYEBROW**: Ark Book Club

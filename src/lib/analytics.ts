@@ -189,10 +189,8 @@ interface EventMap {
   // --- Tier 4: content engagement (high-value subset) ---
   episode_play_clicked: { show: string; episode: string }
   listen_link_clicked: { platform: string }
-  // Book club: outbound Amazon (affiliate) click per pick, and the Fold
-  // hand-off CTA — the two ends of the book-club → Fold funnel.
+  // Book club: outbound Amazon (affiliate) click per pick.
   book_link_clicked: { slug: string; format?: string }
-  book_club_join_clicked: void
 }
 
 // Single typed entry point. The conditional tuple makes props REQUIRED for
