@@ -4,9 +4,20 @@
 // handler bails with a 500 immediately *after* the auth check passes, so a
 // valid secret is observable as that 500 without any network.
 
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, mock, afterAll, spyOn } from 'bun:test'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { neonMockModule, type SqlCall } from '../test-utils'
+
+// Neon mock, for the renewal-reminders run below (the auth-gate tests never
+// reach the DB). Routes by query text via `nextSqlResult`.
+const sqlCalls: SqlCall[] = []
+let nextSqlResult: (sql: string) => unknown[] = () => []
+mock.module('@neondatabase/serverless', () =>
+  neonMockModule(sqlCalls, (merged) => nextSqlResult(merged)),
+)
+
 import { cronRoutes } from './cron'
+import * as auth0User from '../lib/auth0-user.js'
 import type { Deps, Handler } from '../lib/route.js'
 
 const PATH = '/api/cron/reconcile-entitlements'
@@ -147,5 +158,85 @@ describe('GET/POST /api/cron/prune-webhook-events (auth gate)', () => {
       expect(res.statusCode).toBe(500)
       expect(JSON.parse(res.body).error).toBe('not_configured')
     }
+  })
+})
+
+// R6 — the renewal-reminder cron wires Stripe's renewal-invoice preview into the
+// email: the amount the member reads is `invoice.amount_due` in the invoice's
+// currency. The recipient lookup is spied (other files mock the Auth0 SDK
+// process-wide, so an HTTP-level Auth0 stub isn't reliable in a full run),
+// Resend is answered by a stubbed global fetch, Neon by the module mock above.
+describe('/api/cron/renewal-reminders — R6 quoted amount', () => {
+  const RENEW_PATH = '/api/cron/renewal-reminders'
+  const PERIOD_END = '2030-01-01T00:00:00.000Z'
+  const realFetch = globalThis.fetch
+  const resendBodies: { to: string; subject: string; html: string }[] = []
+  afterAll(() => {
+    globalThis.fetch = realFetch
+  })
+
+  test('R6: the email carries the amount from stripe.invoices.createPreview (amount_due + currency)', async () => {
+    const profileSpy = spyOn(auth0User, 'getAuth0NameProfile').mockResolvedValue({
+      email: 'annual@example.com',
+      givenName: 'Dana',
+      familyName: null,
+      setByMember: false,
+    } as Awaited<ReturnType<typeof auth0User.getAuth0NameProfile>>)
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes('api.resend.com')) {
+        resendBodies.push(JSON.parse(String(init?.body)))
+        return new Response('{"id":"email_1"}', { status: 200 })
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+
+    nextSqlResult = (sql) =>
+      sql.includes('from membership')
+        ? [
+            {
+              auth0_sub: 'auth0|annual',
+              stripe_subscription_id: 'sub_annual',
+              tier: 'ark-plus',
+              scheduled_tier: null,
+              pending_plan: null,
+              current_period_end: PERIOD_END,
+            },
+          ]
+        : []
+
+    const previews: unknown[] = []
+    const stripe = {
+      invoices: {
+        createPreview: async (params: unknown) => {
+          previews.push(params)
+          // Discounted + taxed renewal: deliberately not the list price.
+          return { amount_due: 6150, currency: 'gbp' }
+        },
+      },
+    }
+    const env = {
+      CRON_SECRET: SECRET,
+      DATABASE_URL: 'postgres://stub-cron-renewal',
+      RESEND_API_KEY: 'rk_test',
+      AUTH0_TENANT_DOMAIN: 'https://tenant.test.auth0.com',
+      AUTH0_MANAGEMENT_CLIENT_ID: 'mgmt-client-cron-test',
+      AUTH0_MANAGEMENT_CLIENT_SECRET: 'mgmt-secret',
+    }
+    const handler = cronRoutes({ ...deps(env), stripe: stripe as never }).find(
+      (r) => r.path === RENEW_PATH,
+    )?.handler
+    if (!handler) throw new Error('renewal route not found')
+    const res = makeRes()
+    await handler(makeReq({ auth: `Bearer ${SECRET}`, url: RENEW_PATH }), res)
+
+    expect(res.statusCode).toBe(200)
+    expect(previews).toEqual([{ subscription: 'sub_annual' }])
+    expect(JSON.parse(res.body)).toEqual({ scanned: 1, eligible: 1, sent: 1, failed: 0 })
+    expect(resendBodies).toHaveLength(1)
+    expect(resendBodies[0].to).toBe('annual@example.com')
+    expect(resendBodies[0].html).toContain('£61.50')
+    expect(profileSpy).toHaveBeenCalledWith(expect.anything(), 'auth0|annual')
+    profileSpy.mockRestore()
   })
 })

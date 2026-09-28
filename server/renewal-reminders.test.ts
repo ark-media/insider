@@ -21,7 +21,7 @@ import {
   renderCardUpdatedEmail,
   renderRenewalReminderEmail,
 } from './lib/billing-notice-emails'
-import type { AnnualRenewalRow } from './lib/membership'
+import { getAnnualRenewalsWithin, type AnnualRenewalRow } from './lib/membership'
 
 // 2030-01-01T00:00:00Z: renders as December 31, 2029 in ET.
 const PERIOD_END = '2030-01-01T00:00:00.000Z'
@@ -207,5 +207,40 @@ describe('renderRenewalReminderEmail', () => {
     })
     expect(subject).toBe('Your Ark+ and Fold membership renews on March 3, 2027 ET')
     expect(html).toContain('<strong>$250</strong>')
+  })
+})
+
+// R6 — the roster query behind the reminder: yearly only, nothing booked to
+// stop it, and a (now, now + N days] window with N bound as a parameter.
+describe('getAnnualRenewalsWithin — R6 query shape', () => {
+  function capture() {
+    const calls: { sql: string; values: unknown[] }[] = []
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ sql: strings.join('?').replace(/\s+/g, ' '), values })
+      return Promise.resolve([])
+    }) as never
+    return { calls, sql }
+  }
+
+  test("R6: filters plan = 'yearly' and a 30-day window from now", async () => {
+    const { calls, sql } = capture()
+    await getAnnualRenewalsWithin(sql, RENEWAL_REMINDER_DAYS)
+    expect(RENEWAL_REMINDER_DAYS).toBe(30)
+    expect(calls).toHaveLength(1)
+    const q = calls[0].sql
+    expect(q).toContain('from membership')
+    expect(q).toContain("plan = 'yearly'")
+    expect(q).toContain('stripe_subscription_id is not null')
+    expect(q).toContain("status in ('active', 'trialing')")
+    expect(q).toContain('cancel_at is null')
+    expect(q).toContain('current_period_end > now()')
+    expect(q).toContain('current_period_end <= now() + make_interval(days => ?)')
+    expect(calls[0].values).toEqual([30])
+  })
+
+  test('R6: the window length is the bound parameter, not baked in', async () => {
+    const { calls, sql } = capture()
+    await getAnnualRenewalsWithin(sql, 7)
+    expect(calls[0].values).toEqual([7])
   })
 })

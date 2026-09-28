@@ -9,9 +9,14 @@ import { describe, test, expect } from 'bun:test'
 import {
   WINBACK_AFTER_DAYS,
   candidateFor,
+  runWinbackCampaign,
   type WinbackRow,
 } from './lib/winback'
-import { renderFoldWinbackEmail, renderWinbackEmail } from './lib/winback-email'
+import {
+  renderBundleWinbackEmail,
+  renderFoldWinbackEmail,
+  renderWinbackEmail,
+} from './lib/winback-email'
 
 const PARAMS = { rejoinUrl: 'https://ark.test/fold', unsubscribeUrl: 'https://ark.test/unsub' }
 import { mailableStatus } from './lib/beehiiv-status'
@@ -34,8 +39,13 @@ describe('candidateFor', () => {
     expect(candidateFor(row(), CLEAR)).toEqual({ email: 'left@example.com', campaign: 'ark_plus' })
   })
 
-  test('a bundle canceller gets the Ark+ email — they had Ark+ too, and one win-back is enough', () => {
-    expect(candidateFor(row({ canceled_tier: 'bundle' }), CLEAR)?.campaign).toBe('ark_plus')
+  test('a bundle canceller gets the Bundle email', () => {
+    expect(candidateFor(row({ canceled_tier: 'bundle' }), CLEAR)?.campaign).toBe('bundle')
+  })
+
+  test('a Bundle leaver back on either product is left alone', () => {
+    expect(candidateFor(row({ canceled_tier: 'bundle' }), { ...CLEAR, onFold: true })).toBeNull()
+    expect(candidateFor(row({ canceled_tier: 'bundle', has_premium: true }), CLEAR)).toBeNull()
   })
 
   test('a Fold-only canceller gets the Fold email, never the Ark+ one', () => {
@@ -138,5 +148,59 @@ describe('renderFoldWinbackEmail', () => {
     expect(html).toContain('href="https://ark.test/unsub"')
     // Nothing about Ark+ in a Fold-only leaver's email.
     expect(html).not.toContain('Ark+')
+  })
+})
+
+describe('renderBundleWinbackEmail', () => {
+  test('invites them back to both, with the CTA target and opt-out', () => {
+    const { subject, html } = renderBundleWinbackEmail({
+      ...PARAMS,
+      rejoinUrl: 'https://ark.test/plus',
+      firstName: 'Rae',
+    })
+    expect(subject).toBe('We saved your seat')
+    expect(html).toContain('Hi Rae,')
+    expect(html).toContain('six months since you left Ark+ and the Fold')
+    expect(html).toContain('href="https://ark.test/plus"')
+    expect(html).toContain('Rejoin Ark+ and the Fold')
+    expect(html).toContain('ad-free listening')
+    expect(html).toContain('Dan&rsquo;s book club')
+    expect(html).toContain('href="https://ark.test/unsub"')
+  })
+})
+
+// C10 — the roster query bounds: cancellations 180–210 days old (inclusive on
+// both ends), full exits only. Driven through runWinbackCampaign with a fake sql
+// that captures the roster query; an empty roster sends nothing.
+describe('runWinbackCampaign — C10 roster window', () => {
+  test('C10: roster is full exits with created_at in [now-210d, now-180d]', async () => {
+    const calls: { sql: string; values: unknown[] }[] = []
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ sql: strings.join('?').replace(/\s+/g, ' '), values })
+      return Promise.resolve([])
+    }) as never
+    const nowMs = Date.parse('2027-06-30T12:00:00.000Z')
+    const summary = await runWinbackCampaign({
+      env: {},
+      sql,
+      appBaseUrl: 'https://ark.test',
+      nowMs,
+      unsubscribeUrlFor: () => 'https://ark.test/unsub',
+      isOnFold: async () => false,
+    })
+    expect(summary).toEqual({ scanned: 0, eligible: 0, sent: 0, failed: 0 })
+    expect(calls).toHaveLength(1)
+    const q = calls[0].sql
+    expect(q).toContain('from cancellation_survey cs')
+    expect(q).toContain("cs.retained_product = 'full-exit'")
+    expect(q).toContain('cs.created_at >= ?')
+    expect(q).toContain('cs.created_at <= ?')
+    const DAY = 86_400_000
+    // values are [oldest, newest]
+    expect(calls[0].values).toEqual([
+      new Date(nowMs - 210 * DAY).toISOString(),
+      new Date(nowMs - 180 * DAY).toISOString(),
+    ])
+    expect(WINBACK_AFTER_DAYS).toBe(180)
   })
 })

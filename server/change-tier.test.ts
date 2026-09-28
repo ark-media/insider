@@ -282,8 +282,10 @@ async function post(
 
 // A live subscription for `member@example.com` on the given tier/amount.
 function withSub(opts: {
-  tier: 'ark-plus' | 'bundle'
+  tier: 'ark-plus' | 'circle' | 'bundle'
   amountCents: number
+  // The current price's cadence. Monthly by default.
+  interval?: 'month' | 'year'
   scheduleId?: string
   // Whether the member chose above the minimum at checkout, which is what lets
   // them pick an amount at all (plan-change.ts amountChoiceOpen). On by default:
@@ -293,6 +295,7 @@ function withSub(opts: {
   existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
   productEntitlements = {
     prod_ark_plus: 'ark_plus',
+    prod_circle: 'circle',
     prod_bundle: 'ark_plus,circle',
   }
   currentSub = {
@@ -310,8 +313,8 @@ function withSub(opts: {
             id: 'price_current',
             unit_amount: opts.amountCents,
             currency: 'usd',
-            product: `prod_${opts.tier === 'ark-plus' ? 'ark_plus' : 'bundle'}`,
-            recurring: { interval: 'month' },
+            product: `prod_${opts.tier === 'ark-plus' ? 'ark_plus' : opts.tier}`,
+            recurring: { interval: opts.interval ?? 'month' },
           },
           current_period_end: NOW_SEC + 1000,
         },
@@ -1371,5 +1374,364 @@ describe('POST /api/stripe/change-tier — a gift-pushed trial survives a period
     ]
     await post({ tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 800 }, await sessionCookie('member@example.com'))
     expect(phasesWritten()[0]).not.toHaveProperty('trial_end')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Membership Change Matrix: every starting tier × cadence the matrix lists for
+// the cadence and upgrade columns. The single-tier cases above pin the detail;
+// these pin that each row of the matrix takes the same path.
+// ---------------------------------------------------------------------------
+
+type MatrixTier = 'ark-plus' | 'circle' | 'bundle'
+const TIER_LABEL: Record<MatrixTier, string> = {
+  'ark-plus': 'Ark+',
+  circle: 'Fold',
+  bundle: 'Bundle',
+}
+const declined = () =>
+  Object.assign(new Error('Your card was declined.'), {
+    type: 'StripeCardError',
+    code: 'card_declined',
+    statusCode: 402,
+  })
+
+function monthlySub(tier: MatrixTier) {
+  withSub({ tier, amountCents: 800, choseAboveFloor: false })
+}
+function annualSub(tier: MatrixTier) {
+  withSub({ tier, amountCents: 8000, interval: 'year', choseAboveFloor: false })
+  schedulePhases = [
+    { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_current' }] },
+  ]
+}
+
+describe.each(['ark-plus', 'circle', 'bundle'] as MatrixTier[])(
+  'matrix: %s monthly → annual',
+  (tier) => {
+    test(`${TIER_LABEL[tier]}: charged today, cycle restarts, no email`, async () => {
+      monthlySub(tier)
+      const res = await post({ tier, plan: 'yearly' }, await sessionCookie('member@example.com'))
+      expect(res.statusCode).toBe(200)
+      const update = lastSubUpdate()
+      expect(update.proration_behavior).toBe('always_invoice')
+      expect(update.payment_behavior).toBe('error_if_incomplete')
+      expect(update.billing_cycle_anchor).toBe('now')
+      expect((res.__json() as Record<string, unknown>).timing).toBe('immediate')
+      expect(resendBody()).toBeNull()
+    })
+
+    test(`${TIER_LABEL[tier]}: a declined card is a 402`, async () => {
+      monthlySub(tier)
+      subscriptionUpdateError = declined()
+      const res = await post({ tier, plan: 'yearly' }, await sessionCookie('member@example.com'))
+      expect(res.statusCode).toBe(402)
+      expect((res.__json() as Record<string, unknown>).code).toBe('payment_failed')
+    })
+
+    test(`${TIER_LABEL[tier]}: calls off a booked cancel`, async () => {
+      monthlySub(tier)
+      ;(currentSub as Record<string, unknown>).cancel_at_period_end = true
+      const res = await post({ tier, plan: 'yearly' }, await sessionCookie('member@example.com'))
+      expect(res.statusCode).toBe(200)
+      expect(lastSubUpdate().cancel_at_period_end).toBe(false)
+    })
+
+    test(`${TIER_LABEL[tier]}: refused while a gift pause runs`, async () => {
+      monthlySub(tier)
+      ;(currentSub as Record<string, unknown>).pause_collection = {
+        behavior: 'keep_as_draft',
+        resumes_at: NOW_SEC + 90 * 86400,
+      }
+      const res = await post({ tier, plan: 'yearly' }, await sessionCookie('member@example.com'))
+      expect(res.statusCode).toBe(409)
+      expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    })
+  },
+)
+
+describe.each(['ark-plus', 'circle', 'bundle'] as MatrixTier[])(
+  'matrix: %s annual → monthly',
+  (tier) => {
+    test(`${TIER_LABEL[tier]}: booked for the end of the year, nothing charged, no email`, async () => {
+      annualSub(tier)
+      const res = await post({ tier, plan: 'monthly' }, await sessionCookie('member@example.com'))
+      expect(res.statusCode).toBe(200)
+      expect((res.__json() as Record<string, unknown>).timing).toBe('period_end')
+      expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+      const write = [...stripeCalls].reverse().find((c) => c.method === 'subscriptionSchedules.update')
+      const phases = (write?.args[1] as { phases: Phase[] }).phases
+      // Phase 0 keeps the paid year; the monthly price starts where it ends.
+      expect(phases[0].end_date).toBe(NOW_SEC + 1000)
+      expect(phases[1].items[0].price).toBe(`price_${tier === 'ark-plus' ? 'ark_plus' : tier}_monthly`)
+      expect(resendBody()).toBeNull()
+    })
+
+    test(`${TIER_LABEL[tier]}: calls off a booked cancel before the schedule`, async () => {
+      annualSub(tier)
+      ;(currentSub as Record<string, unknown>).cancel_at_period_end = true
+      const res = await post({ tier, plan: 'monthly' }, await sessionCookie('member@example.com'))
+      expect(res.statusCode).toBe(200)
+      const clear = stripeCalls.findIndex((c) => c.method === 'subscriptions.update')
+      const schedule = stripeCalls.findIndex((c) => c.method.startsWith('subscriptionSchedules.'))
+      expect(stripeCalls[clear].args[1]).toEqual({ cancel_at_period_end: false })
+      expect(clear).toBeLessThan(schedule)
+    })
+  },
+)
+
+describe.each([
+  ['ark-plus', 'month'],
+  ['ark-plus', 'year'],
+  ['circle', 'month'],
+  ['circle', 'year'],
+] as Array<[MatrixTier, 'month' | 'year']>)('matrix: %s (%s) → Bundle', (tier, interval) => {
+  const plan = interval === 'month' ? 'monthly' : 'yearly'
+  const setup = () =>
+    withSub({
+      tier,
+      amountCents: interval === 'month' ? 800 : 8000,
+      interval,
+      choseAboveFloor: false,
+    })
+
+  test(`${TIER_LABEL[tier]} ${plan}: charged today on the same cadence`, async () => {
+    setup()
+    const res = await post({ tier: 'bundle', plan }, await sessionCookie('member@example.com'))
+    expect(res.statusCode).toBe(200)
+    const update = lastSubUpdate()
+    expect(update.proration_behavior).toBe('always_invoice')
+    expect(update.payment_behavior).toBe('error_if_incomplete')
+    expect(update.billing_cycle_anchor).toBe('now')
+    const items = update.items as Array<Record<string, unknown>>
+    expect(items[0].price).toBe(`price_bundle_${plan}`)
+  })
+
+  test(`${TIER_LABEL[tier]} ${plan}: a declined card is a 402`, async () => {
+    setup()
+    subscriptionUpdateError = declined()
+    const res = await post({ tier: 'bundle', plan }, await sessionCookie('member@example.com'))
+    expect(res.statusCode).toBe(402)
+  })
+
+  test(`${TIER_LABEL[tier]} ${plan}: calls off a booked cancel`, async () => {
+    setup()
+    ;(currentSub as Record<string, unknown>).cancel_at_period_end = true
+    const res = await post({ tier: 'bundle', plan }, await sessionCookie('member@example.com'))
+    expect(res.statusCode).toBe(200)
+    expect(lastSubUpdate().cancel_at_period_end).toBe(false)
+  })
+
+  test(`${TIER_LABEL[tier]} ${plan}: refused while a gift extension runs`, async () => {
+    setup()
+    if (interval === 'year') {
+      ;(currentSub as Record<string, unknown>).status = 'trialing'
+    } else {
+      ;(currentSub as Record<string, unknown>).pause_collection = {
+        behavior: 'keep_as_draft',
+        resumes_at: NOW_SEC + 90 * 86400,
+      }
+    }
+    const res = await post({ tier: 'bundle', plan }, await sessionCookie('member@example.com'))
+    expect(res.statusCode).toBe(409)
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+  })
+})
+
+// A gift on an annual sub is a trial (trial_end pushed out). A period-end
+// change is booked, not refused, since a refusal would leave the member facing
+// another annual charge when the gift ends. The rebuilt current phase must keep
+// the trial: without it Stripe ends the trial on the spot and bills the full
+// price today (seen in Stripe test mode with a test clock).
+describe.each(['ark-plus', 'circle', 'bundle'] as MatrixTier[])(
+  'matrix: %s annual → monthly during a gift-pushed trial',
+  (tier) => {
+    test(`${TIER_LABEL[tier]}: booked for when the gift ends, and the gift is kept`, async () => {
+      annualSub(tier)
+      const giftEnds = NOW_SEC + 300 * 86400
+      ;(currentSub as Record<string, unknown>).status = 'trialing'
+      ;(currentSub as Record<string, unknown>).trial_end = giftEnds
+      schedulePhases = [
+        { start_date: NOW_SEC - 100, end_date: giftEnds, trial_end: giftEnds, items: [{ price: 'price_current' }] },
+      ]
+      const res = await post({ tier, plan: 'monthly' }, await sessionCookie('member@example.com'))
+      expect(res.statusCode).toBe(200)
+      expect((res.__json() as Record<string, unknown>).timing).toBe('period_end')
+      const write = [...stripeCalls].reverse().find((c) => c.method === 'subscriptionSchedules.update')
+      const phases = (write!.args[1] as { phases: Phase[] }).phases
+      expect(phases[0].trial_end).toBe(giftEnds)
+      expect(phases[0].end_date).toBe(giftEnds)
+      expect(phases[1].trial_end).toBeUndefined()
+      expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    })
+  },
+)
+
+
+// Matrix: Bundle → keep one product (debundle), the details the notice test
+// above doesn't pin.
+describe('matrix: Bundle debundle', () => {
+  function stageBundle(plan: 'monthly' | 'yearly') {
+    withSub({
+      tier: 'bundle',
+      amountCents: plan === 'monthly' ? 2500 : 25000,
+      interval: plan === 'monthly' ? 'month' : 'year',
+    })
+    schedulePhases = [
+      {
+        start_date: NOW_SEC - 100,
+        end_date: NOW_SEC + 1000,
+        items: [{ price: `price_bundle_${plan}`, quantity: 1 }],
+      },
+    ]
+  }
+  const nextPhase = () => {
+    const write = [...stripeCalls].reverse().find((c) => c.method === 'subscriptionSchedules.update')
+    return (write!.args[1] as { phases: Array<Phase & Record<string, unknown>> }).phases[1]
+  }
+
+  test.each([
+    ['monthly', 'kept-ark-plus', 'ark-plus'],
+    ['monthly', 'kept-circle', 'circle'],
+    ['yearly', 'kept-ark-plus', 'ark-plus'],
+    ['yearly', 'kept-circle', 'circle'],
+  ] as const)('%s, %s: the kept product starts at its catalog price at period end', async (plan, kept, tier) => {
+    stageBundle(plan)
+    const res = await post(
+      // A custom amount rides along to prove PWYC can't be slipped into a debundle.
+      { tier, plan, retained_product: kept, custom_amount_cents: 5000 },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().timing).toBe('period_end')
+    expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
+    const write = [...stripeCalls].reverse().find((c) => c.method === 'subscriptionSchedules.update')
+    const phases = (write!.args[1] as { phases: Phase[] }).phases
+    // The paid Bundle period runs out; the kept product starts where it ends.
+    expect(phases[0].end_date).toBe(NOW_SEC + 1000)
+    const phase = nextPhase()
+    expect(phase.items[0].price).toBe(`price_${tier === 'ark-plus' ? 'ark_plus' : tier}_${plan}`)
+  })
+
+  test('an intro coupon is put on the kept product’s phase', async () => {
+    stageBundle('monthly')
+    activeCoupons = [
+      {
+        id: 'co_intro',
+        valid: true,
+        percent_off: 25,
+        duration: 'repeating',
+        duration_in_months: 6,
+        metadata: { retention_offer: 'true', offer_kind: 'debundle_intro' },
+      },
+    ]
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(nextPhase().discounts).toContainEqual({ coupon: 'co_intro' })
+  })
+
+  test('the notice is keyed on the subscription and the product kept', async () => {
+    stageBundle('monthly')
+    await post(
+      { tier: 'circle', plan: 'monthly', retained_product: 'kept-circle' },
+      await sessionCookie('member@example.com'),
+    )
+    const call = fetchCalls.find((c) => c.url.includes('api.resend.com'))
+    const headers = call!.init!.headers as Record<string, string>
+    expect(headers['Idempotency-Key']).toBe('debundle_sub_1_kept-circle')
+  })
+
+  // The matrix says the welcome‑offer coupon can't carry into a debundle. Our
+  // code keeps any coupon without retention_offer metadata, so it IS copied to
+  // the kept product's phase; what stops it discounting anything is Stripe's
+  // applies_to (Bundle product only), set by scripts/welcome-offer-coupons.ts.
+  test('a welcome-offer coupon is copied onto the kept phase; applies_to is what neutralises it (current behaviour)', async () => {
+    stageBundle('monthly')
+    ;(currentSub as Record<string, unknown>).discounts = ['di_welcome']
+    expandedDiscounts = [
+      {
+        id: 'di_welcome',
+        source: {
+          type: 'coupon',
+          coupon: { id: 'co_welcome', metadata: { campaign: 'icmb', auto_apply: 'false' } },
+        },
+      },
+    ]
+    schedulePhases[0].discounts = [{ discount: 'di_welcome', coupon: null, promotion_code: null }]
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(JSON.stringify(nextPhase().discounts)).toContain('di_welcome')
+  })
+})
+
+// A gift pausing a monthly sub past its paid period holds a period-end change
+// until the gift ends, as a cancel does (#63): dropping the Fold at the old
+// period end would lose the rest of the gifted months. The kept price then
+// starts its own cycle that day with no proration, since the paused months
+// were never billed. Seen in Stripe test mode: Bundle kept through the gift,
+// nothing charged, $8 for Ark+ on the day it ended.
+describe('matrix: a period-end change during a monthly gift pause', () => {
+  const GIFT_ENDS = NOW_SEC + 180 * 86400
+  function pausedBundle() {
+    withSub({ tier: 'bundle', amountCents: 2500, choseAboveFloor: false })
+    ;(currentSub as Record<string, unknown>).pause_collection = {
+      behavior: 'keep_as_draft',
+      resumes_at: GIFT_ENDS,
+    }
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_bundle_monthly' }] },
+    ]
+  }
+  const phasesWritten = () => {
+    const write = [...stripeCalls].reverse().find((c) => c.method === 'subscriptionSchedules.update')
+    return (write!.args[1] as { phases: Array<Phase & Record<string, unknown>> }).phases
+  }
+
+  test('a debundle lands when the gift ends, starting a fresh cycle without proration', async () => {
+    pausedBundle()
+    const res = await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json().effective_at).toBe(new Date(GIFT_ENDS * 1000).toISOString())
+    const phases = phasesWritten()
+    expect(phases[0].end_date).toBe(GIFT_ENDS)
+    expect(phases[1].billing_cycle_anchor).toBe('phase_start')
+    expect(phases[1].proration_behavior).toBe('none')
+  })
+
+  test('without a pause the change keeps the period end and Stripe’s defaults', async () => {
+    withSub({ tier: 'bundle', amountCents: 2500, choseAboveFloor: false })
+    schedulePhases = [
+      { start_date: NOW_SEC - 100, end_date: NOW_SEC + 1000, items: [{ price: 'price_bundle_monthly' }] },
+    ]
+    await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    const phases = phasesWritten()
+    expect(phases[0].end_date).toBe(NOW_SEC + 1000)
+    expect(phases[1]).not.toHaveProperty('billing_cycle_anchor')
+    expect(phases[1]).not.toHaveProperty('proration_behavior')
+  })
+
+  test('a pause that ends inside the paid period changes nothing', async () => {
+    pausedBundle()
+    ;(currentSub as Record<string, unknown>).pause_collection = {
+      behavior: 'keep_as_draft',
+      resumes_at: NOW_SEC + 500,
+    }
+    await post(
+      { tier: 'ark-plus', plan: 'monthly', retained_product: 'kept-ark-plus' },
+      await sessionCookie('member@example.com'),
+    )
+    expect(phasesWritten()[0].end_date).toBe(NOW_SEC + 1000)
   })
 })

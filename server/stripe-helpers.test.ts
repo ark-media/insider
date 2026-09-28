@@ -223,7 +223,15 @@ describe('addCouponToFinalPhase', () => {
         retrieve: async () => ({
           phases: [
             { start_date: 100, end_date: 900, trial_end: 900, items: [{ price: 'price_y', quantity: 1 }], discounts: [] },
-            { start_date: 900, end_date: 1800, trial_end: null, items: [{ price: 'price_m', quantity: 1 }], discounts: [] },
+            {
+              start_date: 900,
+              end_date: 1800,
+              trial_end: null,
+              billing_cycle_anchor: 'phase_start',
+              proration_behavior: 'none',
+              items: [{ price: 'price_m', quantity: 1 }],
+              discounts: [],
+            },
           ],
         }),
         update: async (_id: string, args: Record<string, unknown>) => {
@@ -238,5 +246,9 @@ describe('addCouponToFinalPhase', () => {
     expect(phases[0]).not.toHaveProperty('discounts')
     expect(phases[1]).not.toHaveProperty('trial_end')
     expect(phases[1].discounts).toEqual([{ coupon: 'co_save' }])
+    // A change booked during a gift pause keeps its fresh cycle, no proration.
+    expect(phases[1].billing_cycle_anchor).toBe('phase_start')
+    expect(phases[1].proration_behavior).toBe('none')
+    expect(phases[0]).not.toHaveProperty('billing_cycle_anchor')
   })
 })

@@ -321,6 +321,16 @@ export function giftPauseEndSec(sub: Stripe.Subscription): number | null {
   return resumesAt > periodEnd ? resumesAt : null
 }
 
+// When a period-end change (a debundle, a lower amount) takes effect: when a
+// gift's pause ends, if one runs past the paid period, else at period end. The
+// same rule as a cancel: landing at period end would throw the gifted months
+// away, since the kept price starts and the dropped product goes while the
+// member is still on gifted time.
+export function periodEndChangeAtIso(sub: Stripe.Subscription): string | null {
+  const giftEnd = giftPauseEndSec(sub)
+  return giftEnd !== null ? tsToIso(giftEnd) : periodEndIso(sub)
+}
+
 // When a cycle re-anchored to now next renews: one month or one year out,
 // Stripe's own arithmetic for a `billing_cycle_anchor: 'now'` change.
 export function oneCycleFromNowIso(plan: 'monthly' | 'yearly', now = new Date()): string {
@@ -561,6 +571,10 @@ export async function addCouponToFinalPhase(
         start_date: p.start_date,
         end_date: p.end_date,
         ...phaseTrialParams(p),
+        // A change booked during a gift pause starts its own cycle with no
+        // proration (change-tier); rebuilding the phase must not undo that.
+        ...(p.billing_cycle_anchor ? { billing_cycle_anchor: p.billing_cycle_anchor } : {}),
+        ...(p.proration_behavior ? { proration_behavior: p.proration_behavior } : {}),
         ...(discounts.length > 0 ? { discounts } : {}),
       }
     }),

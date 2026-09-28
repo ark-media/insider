@@ -154,3 +154,56 @@ describe('intentAllowedForTier — the intent is a claim, not a fact', () => {
     expect(intentAllowedForTier('cancel-ark-plus', 'nonsense')).toBe(false)
   })
 })
+
+// C8 — the Fold (circle) cancel save: only the affordability coupon, only when
+// one is configured for the member's cadence, and never a plan switch.
+describe("deriveSaveOffers — C8 Fold cancel", () => {
+  const monthlyOnlyAffordability = coupon({
+    id: "aff_monthly",
+    amount_off: 500,
+    duration_in_months: 3,
+    metadata: { retention_offer: "true", offer_kind: "affordability_coupon", plan: "monthly" },
+  });
+
+  test("C8: Fold with no coupon configured → no offers (both cadences)", async () => {
+    for (const plan of ["monthly", "yearly"] as const) {
+      expect(await deriveSaveOffers(fakeStripe([]), "cancel-circle", plan)).toEqual([]);
+    }
+  });
+
+  test("C8: Fold ignores Ark+ supporter coupons — no coupon of its own → []", async () => {
+    for (const plan of ["monthly", "yearly"] as const) {
+      expect(await deriveSaveOffers(fakeStripe([supporter]), "cancel-circle", plan)).toEqual([]);
+    }
+  });
+
+  test("C8: yearly Fold member with a monthly-only affordability coupon → no offer", async () => {
+    expect(
+      await deriveSaveOffers(fakeStripe([monthlyOnlyAffordability]), "cancel-circle", "yearly"),
+    ).toEqual([]);
+  });
+
+  test("C8: the same monthly-only coupon does reach a monthly Fold member", async () => {
+    const offers = await deriveSaveOffers(
+      fakeStripe([monthlyOnlyAffordability]),
+      "cancel-circle",
+      "monthly",
+    );
+    expect(offers.map((o) => o.kind)).toEqual(["affordability_coupon"]);
+    expect(offers[0].couponId).toBe("aff_monthly");
+  });
+
+  test("C8: a Fold cancel never offers a plan switch, whatever is configured", async () => {
+    for (const plan of ["monthly", "yearly"] as const) {
+      const offers = await deriveSaveOffers(
+        fakeStripe([supporter, affordability, monthlyOnlyAffordability]),
+        "cancel-circle",
+        plan,
+      );
+      const kinds = offers.map((o) => o.kind);
+      expect(kinds).not.toContain("annual_switch");
+      expect(kinds).not.toContain("monthly_switch");
+      expect(kinds.every((k) => k === "affordability_coupon")).toBe(true);
+    }
+  });
+});

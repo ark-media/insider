@@ -346,3 +346,105 @@ describe('winback unsubscribe', () => {
     expect(write!.values).toContain(EMAIL)
   })
 })
+
+// C10 — someone who left both Ark+ and the Fold gets ONE email, the Bundle one,
+// whether they left as a Bundle or each product on its own, and whichever of
+// their rows the roster happens to return first.
+describe('winback cron — C10 left both Ark+ and the Fold', () => {
+  // Ledger-aware staging: an insert records (email, cohort) into `ledger`, and
+  // the already-sent check answers for any cohort sent to that email, so
+  // consecutive runs see each other's sends. `everLeft` is every full exit on
+  // record for the address, in or out of the window. neonMockModule pushes the
+  // call before asking for its result, so the last sqlCall carries the values.
+  function stageLedgered(roster: RosterRow[], ledger: Set<string>, everLeft = roster) {
+    stripeCustomers = [] // not back on the Fold
+    nextSqlResult = (sql) => {
+      const values = sqlCalls[sqlCalls.length - 1]?.values ?? []
+      if (sql.includes('select distinct canceled_tier')) return everLeft
+      if (sql.includes('from cancellation_survey')) return roster
+      if (sql.includes('from winback_sends')) {
+        return [...ledger].some((k) => k.startsWith(`${values[0]}|`)) ? [{ '?column?': 1 }] : []
+      }
+      if (sql.includes('insert into winback_sends')) ledger.add(`${values[0]}|${values[1]}`)
+      return []
+    }
+  }
+
+  const arkExit = () => leaver({ canceled_tier: 'ark-plus' })
+  const foldExit = () => leaver({ canceled_tier: 'circle' })
+  const sent = () =>
+    resendCalls().map((c) => {
+      const body = parseJsonInitBody(c.init) as Record<string, unknown>
+      return { subject: body.subject, html: String(body.html) }
+    })
+
+  test('C10: a Bundle canceller gets the Bundle email, once', async () => {
+    const ledger = new Set<string>()
+    stageLedgered([leaver({ canceled_tier: 'bundle' })], ledger)
+    await runHandler(getHandler(CRON_PATH), cronReq(), makeRes())
+    await runHandler(getHandler(CRON_PATH), cronReq(), makeRes())
+    expect(sent()).toHaveLength(1)
+    expect(sent()[0].html).toContain('Rejoin Ark+ and the Fold')
+    expect([...ledger]).toEqual(['left@example.com|bundle_180d'])
+  })
+
+  test('C10: both exits in the window → the Bundle email, whichever row comes first', async () => {
+    for (const roster of [
+      [arkExit(), foldExit()],
+      [foldExit(), arkExit()],
+    ]) {
+      fetchCalls = []
+      stageLedgered(roster, new Set())
+      const res = makeRes()
+      await runHandler(getHandler(CRON_PATH), cronReq(), res)
+      expect(res.__json()).toMatchObject({ scanned: 2, eligible: 1, sent: 1 })
+      expect(sent()[0].html).toContain('Rejoin Ark+ and the Fold')
+    }
+  })
+
+  test('C10: an Ark+ exit in the window with an older Fold exit → the Bundle email', async () => {
+    stageLedgered([arkExit()], new Set(), [arkExit(), foldExit()])
+    await runHandler(getHandler(CRON_PATH), cronReq(), makeRes())
+    expect(sent()[0].html).toContain('Rejoin Ark+ and the Fold')
+  })
+
+  test('C10: left both, but back on the Fold → no email', async () => {
+    stageLedgered([arkExit()], new Set(), [arkExit(), foldExit()])
+    stripeCustomers = [{ id: 'cus_back' }]
+    const base = nextSqlResult
+    nextSqlResult = (sql) =>
+      sql.includes('from membership where stripe_customer_id')
+        ? [
+            {
+              auth0_sub: 'auth0|back',
+              stripe_customer_id: 'cus_back',
+              stripe_subscription_id: null,
+              tier: 'circle',
+              status: 'active',
+              ark_plus_gift_expires_at: null,
+              circle_gift_expires_at: null,
+            },
+          ]
+        : base(sql)
+    const res = makeRes()
+    await runHandler(getHandler(CRON_PATH), cronReq(), res)
+    // failed: 0 — skipped because the check found them back, not because it broke.
+    expect(res.__json()).toMatchObject({ eligible: 0, sent: 0, failed: 0 })
+    expect(resendCalls()).toHaveLength(0)
+  })
+
+  test('C10: one win-back per person — an earlier Ark+ win-back means no Bundle one later', async () => {
+    const ledger = new Set<string>()
+    // Run 1: only the Ark+ exit exists, so they get the Ark+ email.
+    stageLedgered([arkExit()], ledger)
+    await runHandler(getHandler(CRON_PATH), cronReq(), makeRes())
+    // Months later their Fold exit reaches the window: they've left both now,
+    // but they already had a win-back.
+    stageLedgered([foldExit()], ledger, [arkExit(), foldExit()])
+    const res = makeRes()
+    await runHandler(getHandler(CRON_PATH), cronReq(), res)
+    expect(res.__json()).toMatchObject({ eligible: 0, sent: 0 })
+    expect(sent().map((m) => m.subject)).toEqual(['We saved your seat'])
+    expect([...ledger]).toEqual(['left@example.com|ark_plus_180d'])
+  })
+})

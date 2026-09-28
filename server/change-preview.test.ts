@@ -344,6 +344,24 @@ describe('POST /api/stripe/change-preview', () => {
     expect(previewCalls).toHaveLength(0)
   })
 
+  test('during a gift pause, a lower amount starts when the gift ends', async () => {
+    withArkPlusSub({ amountCents: 1200, metadata: { chose_above_floor: 'true' } })
+    const giftEnds = NOW_SEC + 150 * 86400
+    ;(currentSub as Record<string, unknown>).pause_collection = {
+      behavior: 'keep_as_draft',
+      resumes_at: giftEnds,
+    }
+    const preview = previewOf(
+      await post(
+        { tier: 'ark-plus', plan: 'monthly', custom_amount_cents: 1000 },
+        await sessionCookie(EMAIL),
+      ),
+    )
+    expect(preview.timing).toBe('period_end')
+    expect(preview.blocked).toBeNull()
+    expect(preview.startsAt).toBe(new Date(giftEnds * 1000).toISOString())
+  })
+
   test('a failed price lookup is a 502, not a preview with made-up numbers', async () => {
     missingLookupKeys = ['bundle_yearly']
     withArkPlusSub({ interval: 'year' })

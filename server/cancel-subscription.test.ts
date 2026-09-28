@@ -50,7 +50,14 @@ let subsByCustomer: Record<
   // longer falls back to the sub's own (client-stamped) metadata. A sub with no
   // tier has no items product, i.e. is not one of our memberships.
   // `resumes_at`: a gift's pause on a monthly sub (routes/gift.ts).
-  Array<{ id: string; current_period_end: number; tier?: string; resumes_at?: number }>
+  // `schedule`: a pending period-end change (e.g. a booked annual→monthly).
+  Array<{
+    id: string
+    current_period_end: number
+    tier?: string
+    resumes_at?: number
+    schedule?: string
+  }>
 > = {}
 // Coupons returned by coupons.list — part of the shared stripe mock harness.
 let activeCoupons: Array<Record<string, unknown>> = []
@@ -82,6 +89,8 @@ class FakeStripe {
         // so the (status-filtered) live-subscription lookup matches it.
         status: 'active',
         metadata: {},
+        customer: args.customer,
+        schedule: s.schedule ?? null,
         pause_collection:
           s.resumes_at != null ? { behavior: 'keep_as_draft', resumes_at: s.resumes_at } : null,
         items: {
@@ -98,6 +107,12 @@ class FakeStripe {
     update: async (id: string, args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
       return { id, items: { data: [{ current_period_end: UPDATED_PERIOD_END }] } }
+    },
+  }
+  subscriptionSchedules = {
+    release: async (id: string) => {
+      stripeCalls.push({ method: 'subscriptionSchedules.release', args: [id] })
+      return { id }
     },
   }
   products = {
@@ -489,6 +504,75 @@ describe('POST /api/stripe/cancel-subscription — confirmation email', () => {
     })
     expect(res.statusCode).toBe(404)
     expect(resendCalls()).toHaveLength(0)
+  })
+})
+
+// ===========================================================================
+// Membership Change Matrix — C4 / C7
+// ===========================================================================
+describe('POST /api/stripe/cancel-subscription — matrix C4/C7', () => {
+  const PERIOD_END = 1893456000 // 2030-01-01
+
+  test('C4: a pending schedule (booked annual→monthly) is released before cancel_at_period_end is set', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [{ id: 'sub_1', current_period_end: PERIOD_END, tier: 'ark-plus', schedule: 'sched_1' }],
+    }
+    const res = await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+
+    expect(res.statusCode).toBe(200)
+    const releaseIdx = stripeCalls.findIndex((c) => c.method === 'subscriptionSchedules.release')
+    const updateIdx = stripeCalls.findIndex((c) => c.method === 'subscriptions.update')
+    expect(releaseIdx).toBeGreaterThanOrEqual(0)
+    expect(stripeCalls[releaseIdx]!.args[0]).toBe('sched_1')
+    // Stripe rejects cancel_at_period_end on a schedule-managed sub, so the
+    // release must land first.
+    expect(updateIdx).toBeGreaterThan(releaseIdx)
+    expect(stripeCalls[updateIdx]!.args).toEqual(['sub_1', { cancel_at_period_end: true }])
+  })
+
+  test('C4: no schedule → nothing is released', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = { cus_1: [{ id: 'sub_1', current_period_end: PERIOD_END, tier: 'ark-plus' }] }
+    await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+    expect(stripeCalls.some((c) => c.method === 'subscriptionSchedules.release')).toBe(false)
+  })
+
+  test('C7: the confirmation is keyed cancel_<subId>_<accessUntilIso>', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = { cus_1: [{ id: 'sub_1', current_period_end: PERIOD_END, tier: 'ark-plus' }] }
+    await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+
+    const sends = resendCalls()
+    expect(sends).toHaveLength(1)
+    expect((sends[0]!.init?.headers as Record<string, string>)['Idempotency-Key']).toBe(
+      `cancel_sub_1_${new Date(PERIOD_END * 1000).toISOString()}`,
+    )
+  })
+
+  test('C7: a gift-paused cancel keys on the gift end date, not the period end', async () => {
+    const giftEnd = PERIOD_END + 182 * 86400
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [{ id: 'sub_1', current_period_end: PERIOD_END, tier: 'ark-plus', resumes_at: giftEnd }],
+    }
+    await post({
+      body: { offer_outcome: 'not_offered' },
+      cookie: await sessionCookie('member@example.com'),
+    })
+
+    expect((resendCalls()[0]!.init?.headers as Record<string, string>)['Idempotency-Key']).toBe(
+      `cancel_sub_1_${new Date(giftEnd * 1000).toISOString()}`,
+    )
   })
 })
 
