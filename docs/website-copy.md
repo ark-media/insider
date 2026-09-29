@@ -42,7 +42,7 @@
 - **MASTHEAD TITLE**: The Current
 - **ISSUE DATE FALLBACK**: Weekly dispatch
 - **ISSUE TITLE FALLBACK**: This week from Ark Media
-- **ISSUE EXCERPT FALLBACK**: The through-lines from this week's interviews — and what they tell us about the week ahead.
+- **ISSUE EXCERPT FALLBACK**: Navigating the Jewish Week
 - **READ CTA**: Read the issue →
 - **EMAIL FOOTER**: You're reading the free weekly edition · Unsubscribe
 
@@ -1241,7 +1241,7 @@ single member only ever sees some of them.
 > One newsletter. Free readers get the free edition; Ark+ members get the members' edition of the same issue.
 - **TITLE**: The Current
 - **SHORT TITLE**: The Current
-- **DESCRIPTION**: The through-lines from this week's interviews and what they tell us about the week ahead. Ark+ members get the members' edition, with sharper analysis and source notes.
+- **DESCRIPTION**: Navigating the Jewish Week
 - **CADENCE**: Weekly
 - **AUTHOR**: Ark Media newsroom
 
