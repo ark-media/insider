@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { shows, getShow, type ShowSlug } from "../data/shows";
+import { shows } from "../data/shows";
 import { useShowDescriptions } from "../lib/useShowDescription";
 import { LinkCard } from "../components/ContentCard";
 import arkWordmark from "../assets/logo-wordmark.png";
+import arkMark from "../assets/favicon.png";
 import { NewsletterSignupForm } from "../components/NewsletterSignupForm";
 import { ShowCover } from "../components/ShowCover";
 import { ArkPlusMark } from "../components/ArkPlusMark";
@@ -282,59 +283,24 @@ function PlusVisual() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Hero visual — the four show covers fanned like a deck, giving the hero a
-// right-side anchor that mirrors the feature bands below. The covers are
-// decorative here (the "Four shows" grid further down is the real browse path),
-// so the stack is aria-hidden and not interactive. Each card rises in on its
-// own delay, continuing the hero's staggered entrance.
-// ---------------------------------------------------------------------------
-const heroFan: {
-  slug: ShowSlug;
-  x: number;
-  y: number;
-  r: number;
-  z: number;
-}[] = [
-  { slug: "for-heavens-sake", x: -52, y: -6, r: -14, z: 10 },
-  { slug: "chosen-people-problems", x: 52, y: -2, r: 13, z: 20 },
-  { slug: "ark-news-daily", x: -24, y: 12, r: -6, z: 30 },
-  { slug: "call-me-back", x: 22, y: 6, r: 5, z: 40 },
-];
-
-function HeroShowStack() {
+// Hero visual — the Ark "A" mark as the hero's right-side anchor, mirroring the
+// feature bands below. A placeholder until we have a photo of the hosts to put
+// here instead. Decorative (the masthead already names Ark Media), so it's
+// aria-hidden.
+function HeroMark() {
   return (
-    // The whole deck rises in as a single unit (one `rise`, no per-card stagger)
-    // so all four covers always appear together — never a partial 2-of-4 while
-    // late-delayed cards are still fading in.
     <div
       aria-hidden="true"
-      className="rise relative isolate mx-auto aspect-square w-full max-w-[340px] sm:max-w-[400px]"
+      className="rise relative isolate mx-auto aspect-square w-full max-w-[300px] sm:max-w-[340px]"
     >
-      <div className="absolute inset-[14%] -z-10 rounded-full bg-cyan/15 blur-3xl" />
-      {heroFan.map(({ slug, x, y, r, z }) => {
-        const show = getShow(slug);
-        if (!show) return null;
-        return (
-          <div
-            key={slug}
-            className="absolute inset-0 flex items-center justify-center"
-            style={{ zIndex: z }}
-          >
-            <div
-              className="w-1/2 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10"
-              style={{ transform: `translate(${x}%, ${y}%) rotate(${r}deg)` }}
-            >
-              {/* Half the width of a deck capped at 340px (400px from `sm`). */}
-              <ShowCover
-                show={show}
-                priority
-                sizes="(min-width: 640px) 200px, 170px"
-              />
-            </div>
-          </div>
-        );
-      })}
+      <div className="absolute inset-[10%] -z-10 rounded-full bg-cyan/15 blur-3xl" />
+      <img
+        src={arkMark}
+        width={512}
+        height={512}
+        alt=""
+        className="h-full w-full rounded-[22%] shadow-2xl ring-1 ring-white/10"
+      />
     </div>
   );
 }
@@ -513,7 +479,7 @@ function HomePage() {
               </div>
             </div>
             <div className="hidden lg:block">
-              <HeroShowStack />
+              <HeroMark />
             </div>
           </div>
         </div>
