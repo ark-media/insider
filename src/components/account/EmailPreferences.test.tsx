@@ -78,7 +78,7 @@ afterEach(async () => {
   g.fetch = realFetch;
 });
 
-const NEWSLETTER = "The Ark Media Newsletter";
+const NEWSLETTER = "The Current";
 
 /** The newsletter's subscribe/unsubscribe button. */
 function button(): HTMLButtonElement {

@@ -56,8 +56,8 @@ export type NewsletterPost = {
 
 export const newsletter: Newsletter = {
   slug: "ark-daily",
-  title: "The Ark Media Newsletter",
-  shortTitle: "Ark Media",
+  title: "The Current",
+  shortTitle: "The Current",
   description:
     "The through-lines from this week's interviews and what they tell us about the week ahead. Ark+ members get the members' edition, with sharper analysis and source notes.",
   cadence: "Weekly",

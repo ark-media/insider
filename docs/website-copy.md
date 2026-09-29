@@ -38,8 +38,8 @@
 > Guests see the inline newsletter signup form instead (see Newsletter signup form below).
 
 ### Newsletter visual (illustrative mock)
-- **MASTHEAD EYEBROW**: The Ark Media Newsletter
-- **MASTHEAD TITLE**: Ark Media
+- **MASTHEAD EYEBROW**: Ark Media
+- **MASTHEAD TITLE**: The Current
 - **ISSUE DATE FALLBACK**: Weekly dispatch
 - **ISSUE TITLE FALLBACK**: This week from Ark Media
 - **ISSUE EXCERPT FALLBACK**: The through-lines from this week's interviews — and what they tell us about the week ahead.
@@ -655,7 +655,7 @@ single member only ever sees some of them.
 - **ROW**: Ad-free video episodes
 - **GROUP HEADING**: The Fold & newsletters
 - **ROW**: Premium access to the Fold
-- **ROW**: Full access to Ark Media newsletters
+- **ROW**: Full access to The Current
 - **COLUMN CTA**: Choose →
 
 ### Details (below the comparison table — expands each row)
@@ -674,7 +674,7 @@ single member only ever sees some of them.
 - **ENTRY**: Premium access to the Fold
 - **ENTRY SUMMARY**: The Fold, in full.
 - **ENTRY BULLETS**: Conversations with the hosts and fellow members / Live member events & Q&As / Dan's book club / Members-only spaces
-- **ENTRY**: Full access to Ark Media newsletters
+- **ENTRY**: Full access to The Current
 - **ENTRY SUMMARY**: Both member newsletters, in your inbox.
 - **ENTRY BULLETS**: Weekly roundup / Ark+ paid newsletter with Nadav's column
 
@@ -1239,8 +1239,8 @@ single member only ever sees some of them.
 ## Newsletter data (src/data/newsletters.ts)
 ### The newsletter
 > One newsletter. Free readers get the free edition; Ark+ members get the members' edition of the same issue.
-- **TITLE**: The Ark Media Newsletter
-- **SHORT TITLE**: Ark Media
+- **TITLE**: The Current
+- **SHORT TITLE**: The Current
 - **DESCRIPTION**: The through-lines from this week's interviews and what they tell us about the week ahead. Ark+ members get the members' edition, with sharper analysis and source notes.
 - **CADENCE**: Weekly
 - **AUTHOR**: Ark Media newsroom
@@ -1572,7 +1572,7 @@ The reasons asked follow what the member gave up — including a debundle, where
 
 ### Preference card
 > One switch: whether the newsletter arrives. The edition follows the membership and isn't a setting.
-- **ROW TITLE**: The Ark Media Newsletter
+- **ROW TITLE**: The Current
 - **ROW DESCRIPTION (ARK+ MEMBERS)**: The weekly members' edition
 - **ROW DESCRIPTION (FREE ACCOUNTS)**: The weekly free edition
 - **STATUS**: Subscribed / Not subscribed
