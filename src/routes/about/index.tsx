@@ -38,23 +38,13 @@ function AboutPage() {
           <h2 className="label text-cyan">
             What Ark Media does
           </h2>
-          <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-12">
-            <p className="text-[15.5px] leading-[1.75] text-fg lg:col-span-7">
-              Ark Media explores the big questions
-              shaping Jewish life, Israel's future, and our rapidly changing
-              world. Through conversations with leading Jewish thinkers from
-              around the world, Ark Media aims to build a global community
-              driven by curiosity and meaningful dialogue.
-            </p>
-            <div className="text-body-sm lg:col-span-5">
-              <p>
-                The company sits behind <em>Call me Back with Dan Senor</em>,{" "}
-                <em>For Heaven's Sake</em> with Donniel Hartman and Yossi
-                Klein Halevi, <em>Ark News Daily</em>, and an Ark+ membership
-                that funds the work.
-              </p>
-            </div>
-          </div>
+          <p className="mt-8 text-[15.5px] leading-[1.75] text-fg">
+            Ark Media explores the big questions
+            shaping Jewish life, Israel's future, and our rapidly changing
+            world. Through conversations with leading Jewish thinkers from
+            around the world, Ark Media aims to build a global community
+            driven by curiosity and meaningful dialogue.
+          </p>
         </div>
       </section>
 
