@@ -14,6 +14,7 @@ import {
 import {
   DEFAULT_OPEN_HOUSE_CONFIG,
   OPEN_HOUSE_DISPLAY_LIMIT,
+  OPEN_HOUSE_TIME_ZONE,
   upcomingOpenHouses,
   validateOpenHouseConfig,
 } from "../../../shared/open-house";
@@ -379,7 +380,11 @@ function OpenHousesAdmin() {
               ) : (
                 <ul className="mt-2 flex flex-col gap-1">
                   {live.map((s) => {
-                    const when = formatEventParts(s.startsAt);
+                    const when = formatEventParts(
+                      s.startsAt,
+                      OPEN_HOUSE_TIME_ZONE,
+                      "generic",
+                    );
                     return (
                       <li key={s.id} className="text-body-sm text-fg-muted">
                         <span className="text-fg-strong">{when?.date}</span> ·{" "}

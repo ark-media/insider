@@ -246,6 +246,15 @@ describe('formatEventParts', () => {
     )
   })
 
+  test("'generic' labels the zone ET on both sides of the DST change", () => {
+    expect(formatEventParts('2026-10-14T17:00:00Z', TZ_NY, 'generic')?.time).toBe(
+      '1:00 PM ET',
+    )
+    expect(formatEventParts('2026-11-11T17:00:00Z', TZ_NY, 'generic')?.time).toBe(
+      '12:00 PM ET',
+    )
+  })
+
   test('omitting the zone renders in the viewer\'s own', () => {
     const parts = formatEventParts('2026-10-14T16:00:00Z')
     // Shape, not a specific day — the right answer depends on where this runs.
