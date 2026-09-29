@@ -104,7 +104,7 @@ const GROUPS: Group[] = [
         tiers: { "ark-plus": false, apple: false, bundle: true, circle: true },
       },
       {
-        label: "Full access to Ark Media newsletters",
+        label: "Full access to The Current",
         shortLabel: "Newsletters",
         detail: ["Weekly roundup", "Ark+ paid newsletter with Nadav's column"],
         tiers: { "ark-plus": true, apple: false, bundle: true, circle: true },
