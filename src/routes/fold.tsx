@@ -20,6 +20,7 @@ import {
 } from "../lib/openHouses";
 import { annualSavingsPct, usePricing } from "../lib/usePricing";
 import { formatEventParts } from "../../shared/format-date";
+import { OPEN_HOUSE_TIME_ZONE } from "../../shared/open-house";
 
 export const Route = createFileRoute("/fold")({
   component: FoldPage,
@@ -364,9 +365,12 @@ function OpenHouses() {
 }
 
 function OpenHouseCard({ session }: { session: OpenHouseSession }) {
-  // Rendered in the visitor's own timezone with the zone named, so a reader in
-  // Tel Aviv doesn't have to work out what "12:00 PM" was supposed to mean.
-  const when = formatEventParts(session.startsAt);
+  // Always Eastern, labelled "ET" — see OPEN_HOUSE_TIME_ZONE.
+  const when = formatEventParts(
+    session.startsAt,
+    OPEN_HOUSE_TIME_ZONE,
+    "generic",
+  );
   if (!when) return null;
 
   return (

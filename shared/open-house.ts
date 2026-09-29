@@ -36,6 +36,13 @@ export type OpenHouseConfig = {
   sessions: OpenHouseSession[]
 }
 
+/**
+ * Every session is shown in Eastern time, labelled "ET", whoever is looking —
+ * the team schedules and announces in ET, so the site states the same clock
+ * time as the emails and social posts rather than converting it per visitor.
+ */
+export const OPEN_HOUSE_TIME_ZONE = 'America/New_York'
+
 /** How many upcoming sessions the /fold section lists at once. */
 export const OPEN_HOUSE_DISPLAY_LIMIT = 3
 

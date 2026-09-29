@@ -251,20 +251,23 @@ const eventFormatters = new Map<
  * every reader who doesn't share it. No year: these are near-term invitations,
  * and a year on the card only adds noise.
  *
- * The zone uses the specific 'EDT'/'EST' form rather than the DST-stable 'ET'
- * that `formatTimestampInZone` appends — a clock time is being stated here, so
- * the reader needs the offset that actually applies on that day.
+ * The zone defaults to the specific 'EDT'/'EST' form rather than the DST-stable
+ * 'ET' that `formatTimestampInZone` appends — a clock time is being stated here,
+ * so the reader needs the offset that actually applies on that day. Pass
+ * `zoneName: 'generic'` for the 'ET' form when the whole schedule is published
+ * in one fixed zone and a consistent label matters more than the offset.
  *
  * Returns null for a missing or unparseable value, so callers can drop the row.
  */
 export function formatEventParts(
   iso: string | null | undefined,
   timeZone?: string,
+  zoneName: 'specific' | 'generic' = 'specific',
 ): { date: string; time: string } | null {
   const ms = iso ? Date.parse(iso) : NaN
   if (Number.isNaN(ms)) return null
 
-  const key = timeZone ?? ''
+  const key = `${timeZone ?? ''}|${zoneName}`
   let f = eventFormatters.get(key)
   if (!f) {
     const zone = timeZone ? { timeZone } : {}
@@ -281,7 +284,7 @@ export function formatEventParts(
         ...zone,
         hour: 'numeric',
         minute: '2-digit',
-        timeZoneName: 'short',
+        timeZoneName: zoneName === 'generic' ? 'shortGeneric' : 'short',
       }),
     }
     eventFormatters.set(key, f)
