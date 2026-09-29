@@ -845,8 +845,7 @@ single member only ever sees some of them.
 
 ### What Ark Media does
 - **SECTION HEADING**: What Ark Media does
-- **BODY (MAIN COLUMN)**: Ark Media is a podcast network that explores the big questions shaping Jewish life, Israel's future, and our rapidly changing world. Through conversations with leading Jewish thinkers from around the world, Ark Media aims to build a global community driven by curiosity and meaningful dialogue.
-- **BODY (SIDE COLUMN)**: The company sits behind Call me Back with Dan Senor, For Heaven's Sake with Donniel Hartman and Yossi Klein Halevi, Ark News Daily, and an Ark+ membership that funds the work. (show names in italics)
+- **BODY**: Ark Media is a podcast network that explores the big questions shaping Jewish life, Israel's future, and our rapidly changing world. Through conversations with leading Jewish thinkers from around the world, Ark Media aims to build a global community driven by curiosity and meaningful dialogue.
 
 ### Link cards
 - **CARD 1 EYEBROW**: Careers
