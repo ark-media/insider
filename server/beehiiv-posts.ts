@@ -110,9 +110,21 @@ const DOCUMENT_DROPPED_TAGS = new Set([
 // repeats them (plus share buttons to the beehiiv.com copy) at a size that
 // pushes the issue's masthead below the fold. Links open outside the frame,
 // which is sandboxed without navigation of the top window.
+//
+// The issue sits on a white card on Beehiiv's grey page, the way Beehiiv's
+// email preview shows it. Beehiiv's web layout paints the column the page
+// grey, so the card is ours. On a phone the card fills the width with no
+// edges, as in a mail client.
 const DOCUMENT_HEAD =
   '<base target="_blank">' +
-  '<style>#web-header{display:none!important}html,body{margin:0}</style>'
+  '<style>' +
+  '#web-header{display:none!important}' +
+  'html,body{margin:0}' +
+  'body{padding:32px 16px}' +
+  '.rendered-post{background:#fff;border:1px solid #DCE2EE;border-radius:8px;overflow:hidden}' +
+  '.rendered-post .bg-wt-background{background-color:#fff}' +
+  '@media (max-width:600px){body{padding:0}.rendered-post{border:0;border-radius:0}}' +
+  '</style>'
 
 /**
  * Beehiiv's web HTML kept whole — its own styles and layout — for rendering
