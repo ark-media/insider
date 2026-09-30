@@ -209,7 +209,7 @@ describe('renderPaymentFailedEmail', () => {
 
 describe('renderWinbackEmail', () => {
   const BASE = {
-    rejoinUrl: 'https://app.test/plus',
+    rejoinUrl: 'https://app.test/subscribe',
     unsubscribeUrl: 'https://app.test/api/winback/unsubscribe?e=abc&t=xyz',
   }
 

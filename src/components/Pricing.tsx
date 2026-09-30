@@ -4,7 +4,7 @@ import { PricingCards } from "./PricingCards";
 import { PricingComparison } from "./PricingComparison";
 import { trackEvent } from "../lib/analytics";
 
-// The pricing section on /plus: an editorial intro, the three-card grid, and the
+// The pricing section on /subscribe: an editorial intro, the three-card grid, and the
 // full feature-comparison table inline below it (rather than linking out to
 // /pricing). The cards, PWYC, and checkout all live in <PricingCards> so the
 // same grid can be reused elsewhere.

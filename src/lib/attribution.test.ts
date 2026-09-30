@@ -88,11 +88,11 @@ describe("resolveTouch — channel resolution", () => {
   test("our own host as referrer is internal navigation, not acquisition", () => {
     // Includes our cross-host hand-off (checkout → ark-plus.xyz/welcome), which
     // would otherwise show up as our biggest referral source.
-    expect(touch("", "https://ark-plus.xyz/plus")).toMatchObject({
+    expect(touch("", "https://ark-plus.xyz/subscribe")).toMatchObject({
       source: "direct",
       medium: "none",
     });
-    expect(touch("", "https://www.ark-plus.xyz/plus").source).toBe("direct");
+    expect(touch("", "https://www.ark-plus.xyz/subscribe").source).toBe("direct");
     expect(touch("", "https://app.ark-plus.xyz/x").source).toBe("direct");
   });
 
@@ -101,8 +101,8 @@ describe("resolveTouch — channel resolution", () => {
   });
 
   test("records the landing path and capture time", () => {
-    const t = touch("?utm_source=x", "", "/plus");
-    expect(t.landingPath).toBe("/plus");
+    const t = touch("?utm_source=x", "", "/subscribe");
+    expect(t.landingPath).toBe("/subscribe");
     expect(t.at).toBe(NOW);
   });
 });

@@ -387,7 +387,7 @@ function AlsoFromArkMedia() {
         body="Subscribers fund honest coverage of Israel and Jewish life."
         visual={<PlusVisual />}
         cta="Become a subscriber"
-        to="/plus"
+        to="/subscribe"
       />
       <FeatureBand
         eyebrow="The Fold"
@@ -395,7 +395,7 @@ function AlsoFromArkMedia() {
         visual={<CommunityVisual />}
         action={
           <div className="flex flex-col items-start gap-4">
-            <Link to="/plus" className={bandCtaClass}>
+            <Link to="/subscribe" className={bandCtaClass}>
               Join The Fold →
             </Link>
             <Link
@@ -418,17 +418,17 @@ function AlsoFromArkMedia() {
   );
 }
 
-// The paid show lives under /plus, not in the public podcast grid.
+// The paid show lives under /subscribe, not in the public podcast grid.
 const publicShows = shows.filter((show) => !show.paid);
 
 // Hero CTA: guests are sold membership; logged-in subscribers manage theirs.
 export function homeHeroCta(isSubscriber: boolean): {
-  to: "/account" | "/plus";
+  to: "/account" | "/subscribe";
   label: "Subscriber Benefits" | "Subscribe";
 } {
   return isSubscriber
     ? { to: "/account", label: "Subscriber Benefits" }
-    : { to: "/plus", label: "Subscribe" };
+    : { to: "/subscribe", label: "Subscribe" };
 }
 
 function HomePage() {

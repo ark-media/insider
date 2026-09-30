@@ -170,7 +170,7 @@ Complete once before running any suite. **Never run against production.**
 
 ## 3. Suite A — Buying a subscription
 
-Flow: `/plus` or `/pricing` → CheckoutModal → `POST /api/stripe/create-checkout-session`
+Flow: `/subscribe` or `/pricing` → CheckoutModal → `POST /api/stripe/create-checkout-session`
 (embedded Checkout, `ui_mode: elements`) → consent checkboxes recorded via
 `POST /api/stripe/record-consent` → pay → the page polls
 `POST /api/auth/checkout-session` until the webhook has provisioned →
@@ -232,7 +232,7 @@ longer fit.
 |---|---|---|---|
 | **RACT-01** | Undo a pending cancel | After CXL-01, before period end. | Stripe `cancel_at_period_end=false`; Neon `cancel_at` cleared; response `next_charge_at`; Beehiiv/Circle untouched. |
 | **RACT-02** | Undo a pending downgrade | After a scheduled change (TIER-03/CXL-07). | Schedule released; Neon `scheduled_tier`/`schedule_id` cleared; tier unchanged. |
-| **RACT-03** | After it's already ended | Sub already deleted (CXL-04). | 404; nothing re-granted; UI sends them to `/plus` to buy again. |
+| **RACT-03** | After it's already ended | Sub already deleted (CXL-04). | 404; nothing re-granted; UI sends them to `/subscribe` to buy again. |
 | **RACT-04** | Nothing to undo | Active sub with no pending cancel or schedule. | 200, no change (it's a no-op, not an error). |
 | **RACT-05** | Cancel → reactivate → cancel | Within one period. | Final Stripe + Neon state matches the last action; one cancellation email per distinct period end. |
 | **RACT-06** | Re-subscribe after ending | After CXL-04, buy again via checkout. | New sub; same Auth0 user; Beehiiv back to premium; Circle moved back from cancelled to subscriber; new Neon row. |
@@ -388,7 +388,7 @@ Neon row for that `auth0_sub`, then falls back to email → Stripe customer → 
 | **ME-04** | Self-signup blocked | Sign in with a Google account / email code that has no membership account → denied ("Membership is required"), and the orphan Auth0 user deleted. |
 | **ME-05** | Email-code login | Member signs in with the emailed code (not a magic link). |
 | **ME-06** | Email-link session | Lifecycle email link signs in via `/api/auth/email-login`; expired (> 14 days) link goes to normal login; billing actions need a full sign-in (CXL-08). |
-| **ME-07** | Fold gate | Circle login for a `circle`/`bundle` member → allowed; for `ark-plus`/free → sent to `/plus?from=fold`. |
+| **ME-07** | Fold gate | Circle login for a `circle`/`bundle` member → allowed; for `ark-plus`/free → sent to `/subscribe?from=fold`. |
 | **ME-08** | Sign out | `POST /api/signout` and `/api/auth/logout` both clear the session; `/api/me` → 401. |
 
 ---

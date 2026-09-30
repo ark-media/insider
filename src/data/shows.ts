@@ -13,7 +13,7 @@ export type ShowSlug =
 // The Ark+ (members-only) shows have no page of their own; see the entries.
 type ArkPlusShowSlug = Extract<ShowSlug, `${string}-plus`>;
 
-type ShowRoute = `/podcasts/${Exclude<ShowSlug, ArkPlusShowSlug>}` | "/plus";
+type ShowRoute = `/podcasts/${Exclude<ShowSlug, ArkPlusShowSlug>}` | "/subscribe";
 
 export type ListenPlatform =
   | "apple"
@@ -69,7 +69,7 @@ export const shows: Show[] = [
     slug: "call-me-back-plus",
     // No page of its own: members hear it through the private feed, so the
     // show's "home" is the membership page that sells it.
-    route: "/plus",
+    route: "/subscribe",
     title: "Call me Back | Ark+",
     shortTitle: "Call me Back | Ark+",
     tagline:
@@ -97,11 +97,11 @@ export const shows: Show[] = [
     listen: showListenLinks["for-heavens-sake"],
   },
   {
-    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
+    // Members-only, like Call me Back | Ark+: no page, so its home is /subscribe.
     // The tagline and description are shown nowhere today (paid shows are
     // left out of every listing); they're here because every show has them.
     slug: "for-heavens-sake-plus",
-    route: "/plus",
+    route: "/subscribe",
     title: "For Heaven's Sake | Ark+",
     shortTitle: "For Heaven's Sake | Ark+",
     tagline: "Members-only episodes of For Heaven's Sake, for Ark+ members.",
@@ -126,11 +126,11 @@ export const shows: Show[] = [
     listen: showListenLinks["ark-news-daily"],
   },
   {
-    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
+    // Members-only, like Call me Back | Ark+: no page, so its home is /subscribe.
     // The tagline and description are shown nowhere today (paid shows are
     // left out of every listing); they're here because every show has them.
     slug: "ark-news-daily-plus",
-    route: "/plus",
+    route: "/subscribe",
     title: "Ark News Daily | Ark+",
     shortTitle: "Ark News Daily | Ark+",
     tagline: "Members-only episodes of Ark News Daily, for Ark+ members.",
@@ -161,11 +161,11 @@ export const shows: Show[] = [
     listen: showListenLinks["chosen-people-problems"],
   },
   {
-    // Members-only, like Call me Back | Ark+: no page, so its home is /plus.
+    // Members-only, like Call me Back | Ark+: no page, so its home is /subscribe.
     // The tagline and description are shown nowhere today (paid shows are
     // left out of every listing); they're here because every show has them.
     slug: "chosen-people-problems-plus",
-    route: "/plus",
+    route: "/subscribe",
     title: "Chosen People Problems | Ark+",
     shortTitle: "Chosen People Problems | Ark+",
     tagline: "Members-only episodes of Chosen People Problems, for Ark+ members.",

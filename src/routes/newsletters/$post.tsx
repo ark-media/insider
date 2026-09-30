@@ -247,7 +247,7 @@ function PostPage() {
               with the private, ad-free feed.
             </p>
             <Link
-              to="/plus"
+              to="/subscribe"
               className="mt-8 inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
             >
               Subscribe →

@@ -29,10 +29,10 @@ function AccountLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
-    // Don't bounce to /plus when "guest" is just an unreachable /api/me — the
+    // Don't bounce to /subscribe when "guest" is just an unreachable /api/me — the
     // error+retry below owns that case.
     if (!authError && state.kind === "guest") {
-      void navigate({ to: "/plus" });
+      void navigate({ to: "/subscribe" });
     }
   }, [state.kind, authError, navigate]);
 

@@ -20,12 +20,12 @@ const run = async () => {
   });
 
   await Promise.race([
-    page.waitForURL(/\/plus\/?/, { timeout: 10_000 }),
+    page.waitForURL(/\/subscribe\/?/, { timeout: 10_000 }),
     page.getByText("Pick what lands in your inbox.").waitFor({ timeout: 10_000 }),
   ]).catch(() => {});
 
   const url = page.url();
-  const onPlus = /\/plus\/?$/.test(new URL(url).pathname);
+  const onPlus = /\/subscribe\/?$/.test(new URL(url).pathname);
   const hasPrefsHeading =
     (await page.getByText("Pick what lands in your inbox.").count()) > 0;
   const hasLoadingOrToggle =
@@ -46,7 +46,7 @@ const run = async () => {
         hasLoadingOrToggle,
         consoleErrors: consoleErrors.slice(0, 5),
         note: onPlus
-          ? "Guest redirect to /plus — expected without Auth0 session."
+          ? "Guest redirect to /subscribe — expected without Auth0 session."
           : "Authenticated — prefs UI rendered.",
       },
       null,

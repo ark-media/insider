@@ -1,4 +1,4 @@
-// FAQs: admin-managed frequently-asked questions, shown on the /plus FAQ
+// FAQs: admin-managed frequently-asked questions, shown on the /subscribe FAQ
 // section. Managed from the admin back office; the public endpoint reads only
 // enabled rows. Mirrors the careers module (server/lib/careers.ts) minus the
 // slug/detail-page concerns — an FAQ has no standalone URL.
@@ -132,7 +132,7 @@ export async function listFaqs(sql: Sql): Promise<Faq[]> {
   return rows.map(mapRow)
 }
 
-// Enabled FAQs only, for the public /plus section.
+// Enabled FAQs only, for the public /subscribe section.
 export async function listEnabledFaqs(sql: Sql): Promise<Faq[]> {
   const rows = (await sql`
     select ${sql.unsafe(COLUMNS)} from faqs

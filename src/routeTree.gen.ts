@@ -49,8 +49,6 @@ import { Route as HostsIndexRouteImport } from './routes/hosts/index'
 import { Route as HostsSlugRouteImport } from './routes/hosts/$slug'
 import { Route as NewslettersIndexRouteImport } from './routes/newsletters/index'
 import { Route as NewslettersPostRouteImport } from './routes/newsletters/$post'
-import { Route as PlusIndexRouteImport } from './routes/plus/index'
-import { Route as PlusGiftRouteImport } from './routes/plus/gift'
 import { Route as PodcastsIndexRouteImport } from './routes/podcasts/index'
 import { Route as PodcastsArkNewsDailyRouteImport } from './routes/podcasts/ark-news-daily'
 import { Route as PodcastsCallMeBackRouteImport } from './routes/podcasts/call-me-back'
@@ -58,6 +56,8 @@ import { Route as PodcastsChosenPeopleProblemsRouteImport } from './routes/podca
 import { Route as PodcastsForHeavensSakeRouteImport } from './routes/podcasts/for-heavens-sake'
 import { Route as ShowsIndexRouteImport } from './routes/shows/index'
 import { Route as ShowsShowRouteImport } from './routes/shows/$show'
+import { Route as SubscribeIndexRouteImport } from './routes/subscribe/index'
+import { Route as SubscribeGiftRouteImport } from './routes/subscribe/gift'
 import { Route as NewslettersSlugPostRouteImport } from './routes/newsletters/$slug/$post'
 import { Route as PodcastsShowEpisodeRouteImport } from './routes/podcasts/$show/$episode'
 import { Route as ShowsShowEpisodeRouteImport } from './routes/shows/$show/$episode'
@@ -262,16 +262,6 @@ const NewslettersPostRoute = NewslettersPostRouteImport.update({
   path: '/newsletters/$post',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlusIndexRoute = PlusIndexRouteImport.update({
-  id: '/plus/',
-  path: '/plus/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlusGiftRoute = PlusGiftRouteImport.update({
-  id: '/plus/gift',
-  path: '/plus/gift',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PodcastsIndexRoute = PodcastsIndexRouteImport.update({
   id: '/podcasts/',
   path: '/podcasts/',
@@ -306,6 +296,16 @@ const ShowsIndexRoute = ShowsIndexRouteImport.update({
 const ShowsShowRoute = ShowsShowRouteImport.update({
   id: '/shows/$show',
   path: '/shows/$show',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubscribeIndexRoute = SubscribeIndexRouteImport.update({
+  id: '/subscribe/',
+  path: '/subscribe/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubscribeGiftRoute = SubscribeGiftRouteImport.update({
+  id: '/subscribe/gift',
+  path: '/subscribe/gift',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NewslettersSlugPostRoute = NewslettersSlugPostRouteImport.update({
@@ -359,21 +359,21 @@ export interface FileRoutesByFullPath {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/gift': typeof PlusGiftRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
+  '/subscribe/gift': typeof SubscribeGiftRoute
   '/about/': typeof AboutIndexRoute
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/careers/': typeof CareersIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
-  '/plus/': typeof PlusIndexRoute
   '/podcasts/': typeof PodcastsIndexRoute
   '/shows/': typeof ShowsIndexRoute
+  '/subscribe/': typeof SubscribeIndexRoute
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
   '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
@@ -412,21 +412,21 @@ export interface FileRoutesByTo {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/gift': typeof PlusGiftRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
+  '/subscribe/gift': typeof SubscribeGiftRoute
   '/about': typeof AboutIndexRoute
   '/account': typeof AccountIndexRoute
   '/admin': typeof AdminIndexRoute
   '/careers': typeof CareersIndexRoute
   '/hosts': typeof HostsIndexRoute
   '/newsletters': typeof NewslettersIndexRoute
-  '/plus': typeof PlusIndexRoute
   '/podcasts': typeof PodcastsIndexRoute
   '/shows': typeof ShowsIndexRoute
+  '/subscribe': typeof SubscribeIndexRoute
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
   '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
@@ -467,21 +467,21 @@ export interface FileRoutesById {
   '/careers/$slug': typeof CareersSlugRoute
   '/hosts/$slug': typeof HostsSlugRoute
   '/newsletters/$post': typeof NewslettersPostRoute
-  '/plus/gift': typeof PlusGiftRoute
   '/podcasts/ark-news-daily': typeof PodcastsArkNewsDailyRoute
   '/podcasts/call-me-back': typeof PodcastsCallMeBackRoute
   '/podcasts/chosen-people-problems': typeof PodcastsChosenPeopleProblemsRoute
   '/podcasts/for-heavens-sake': typeof PodcastsForHeavensSakeRoute
   '/shows/$show': typeof ShowsShowRouteWithChildren
+  '/subscribe/gift': typeof SubscribeGiftRoute
   '/about/': typeof AboutIndexRoute
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/careers/': typeof CareersIndexRoute
   '/hosts/': typeof HostsIndexRoute
   '/newsletters/': typeof NewslettersIndexRoute
-  '/plus/': typeof PlusIndexRoute
   '/podcasts/': typeof PodcastsIndexRoute
   '/shows/': typeof ShowsIndexRoute
+  '/subscribe/': typeof SubscribeIndexRoute
   '/newsletters/$slug/$post': typeof NewslettersSlugPostRoute
   '/podcasts/$show/$episode': typeof PodcastsShowEpisodeRoute
   '/shows/$show/$episode': typeof ShowsShowEpisodeRoute
@@ -523,21 +523,21 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/gift'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/shows/$show'
+    | '/subscribe/gift'
     | '/about/'
     | '/account/'
     | '/admin/'
     | '/careers/'
     | '/hosts/'
     | '/newsletters/'
-    | '/plus/'
     | '/podcasts/'
     | '/shows/'
+    | '/subscribe/'
     | '/newsletters/$slug/$post'
     | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
@@ -576,21 +576,21 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/gift'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/shows/$show'
+    | '/subscribe/gift'
     | '/about'
     | '/account'
     | '/admin'
     | '/careers'
     | '/hosts'
     | '/newsletters'
-    | '/plus'
     | '/podcasts'
     | '/shows'
+    | '/subscribe'
     | '/newsletters/$slug/$post'
     | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
@@ -630,21 +630,21 @@ export interface FileRouteTypes {
     | '/careers/$slug'
     | '/hosts/$slug'
     | '/newsletters/$post'
-    | '/plus/gift'
     | '/podcasts/ark-news-daily'
     | '/podcasts/call-me-back'
     | '/podcasts/chosen-people-problems'
     | '/podcasts/for-heavens-sake'
     | '/shows/$show'
+    | '/subscribe/gift'
     | '/about/'
     | '/account/'
     | '/admin/'
     | '/careers/'
     | '/hosts/'
     | '/newsletters/'
-    | '/plus/'
     | '/podcasts/'
     | '/shows/'
+    | '/subscribe/'
     | '/newsletters/$slug/$post'
     | '/podcasts/$show/$episode'
     | '/shows/$show/$episode'
@@ -681,20 +681,20 @@ export interface RootRouteChildren {
   CareersSlugRoute: typeof CareersSlugRoute
   HostsSlugRoute: typeof HostsSlugRoute
   NewslettersPostRoute: typeof NewslettersPostRoute
-  PlusGiftRoute: typeof PlusGiftRoute
   PodcastsArkNewsDailyRoute: typeof PodcastsArkNewsDailyRoute
   PodcastsCallMeBackRoute: typeof PodcastsCallMeBackRoute
   PodcastsChosenPeopleProblemsRoute: typeof PodcastsChosenPeopleProblemsRoute
   PodcastsForHeavensSakeRoute: typeof PodcastsForHeavensSakeRoute
   ShowsShowRoute: typeof ShowsShowRouteWithChildren
+  SubscribeGiftRoute: typeof SubscribeGiftRoute
   AboutIndexRoute: typeof AboutIndexRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CareersIndexRoute: typeof CareersIndexRoute
   HostsIndexRoute: typeof HostsIndexRoute
   NewslettersIndexRoute: typeof NewslettersIndexRoute
-  PlusIndexRoute: typeof PlusIndexRoute
   PodcastsIndexRoute: typeof PodcastsIndexRoute
   ShowsIndexRoute: typeof ShowsIndexRoute
+  SubscribeIndexRoute: typeof SubscribeIndexRoute
   NewslettersSlugPostRoute: typeof NewslettersSlugPostRoute
   PodcastsShowEpisodeRoute: typeof PodcastsShowEpisodeRoute
 }
@@ -981,20 +981,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NewslettersPostRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plus/': {
-      id: '/plus/'
-      path: '/plus'
-      fullPath: '/plus/'
-      preLoaderRoute: typeof PlusIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/plus/gift': {
-      id: '/plus/gift'
-      path: '/plus/gift'
-      fullPath: '/plus/gift'
-      preLoaderRoute: typeof PlusGiftRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/podcasts/': {
       id: '/podcasts/'
       path: '/podcasts'
@@ -1042,6 +1028,20 @@ declare module '@tanstack/react-router' {
       path: '/shows/$show'
       fullPath: '/shows/$show'
       preLoaderRoute: typeof ShowsShowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subscribe/': {
+      id: '/subscribe/'
+      path: '/subscribe'
+      fullPath: '/subscribe/'
+      preLoaderRoute: typeof SubscribeIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subscribe/gift': {
+      id: '/subscribe/gift'
+      path: '/subscribe/gift'
+      fullPath: '/subscribe/gift'
+      preLoaderRoute: typeof SubscribeGiftRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/newsletters/$slug/$post': {
@@ -1131,20 +1131,20 @@ const rootRouteChildren: RootRouteChildren = {
   CareersSlugRoute: CareersSlugRoute,
   HostsSlugRoute: HostsSlugRoute,
   NewslettersPostRoute: NewslettersPostRoute,
-  PlusGiftRoute: PlusGiftRoute,
   PodcastsArkNewsDailyRoute: PodcastsArkNewsDailyRoute,
   PodcastsCallMeBackRoute: PodcastsCallMeBackRoute,
   PodcastsChosenPeopleProblemsRoute: PodcastsChosenPeopleProblemsRoute,
   PodcastsForHeavensSakeRoute: PodcastsForHeavensSakeRoute,
   ShowsShowRoute: ShowsShowRouteWithChildren,
+  SubscribeGiftRoute: SubscribeGiftRoute,
   AboutIndexRoute: AboutIndexRoute,
   AdminIndexRoute: AdminIndexRoute,
   CareersIndexRoute: CareersIndexRoute,
   HostsIndexRoute: HostsIndexRoute,
   NewslettersIndexRoute: NewslettersIndexRoute,
-  PlusIndexRoute: PlusIndexRoute,
   PodcastsIndexRoute: PodcastsIndexRoute,
   ShowsIndexRoute: ShowsIndexRoute,
+  SubscribeIndexRoute: SubscribeIndexRoute,
   NewslettersSlugPostRoute: NewslettersSlugPostRoute,
   PodcastsShowEpisodeRoute: PodcastsShowEpisodeRoute,
 }

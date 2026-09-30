@@ -111,7 +111,7 @@ const hasEverything: SupportPredicate = (v) => v.arkPlus && v.circle;
  * behaviour, not something to fix elsewhere — the widget absorbs it. Any
  * guest-state topic that would otherwise offer an /account/* link must offer
  * this instead, because src/routes/account/billing.tsx redirects guests to
- * /plus and would land a paying Apple customer on a sales page.
+ * /subscribe and would land a paying Apple customer on a sales page.
  */
 const appleFork: SupportAction = {
   kind: "note",
@@ -168,7 +168,7 @@ export const supportTopics: SupportTopic[] = [
       { when: isGuest, action: { kind: "signIn", label: "Sign in to set up your feed" } },
       {
         when: (v) => !v.arkPlus,
-        action: { kind: "route", label: "See what Ark+ includes", to: "/plus" },
+        action: { kind: "route", label: "See what Ark+ includes", to: "/subscribe" },
       },
     ],
     // Circle-only members have no podcast feed; don't offer them setup.
@@ -199,7 +199,7 @@ export const supportTopics: SupportTopic[] = [
       { when: isGuest, action: appleFork },
       {
         when: (v) => !v.arkPlus,
-        action: { kind: "route", label: "See what Ark+ includes", to: "/plus" },
+        action: { kind: "route", label: "See what Ark+ includes", to: "/subscribe" },
       },
     ],
     visibleWhen: (v) => v.arkPlus || !v.signedIn,
@@ -220,7 +220,7 @@ export const supportTopics: SupportTopic[] = [
       { when: hasArkPlus, action: { kind: "route", label: "Link Spotify", to: "/setup" } },
       {
         when: (v) => !v.arkPlus,
-        action: { kind: "route", label: "See what Ark+ includes", to: "/plus" },
+        action: { kind: "route", label: "See what Ark+ includes", to: "/subscribe" },
       },
     ],
     chip: true,
@@ -379,10 +379,10 @@ export const supportTopics: SupportTopic[] = [
     label: "Gift a subscription",
     blurb: "Buy Ark+, the Fold, or the Bundle for someone else.",
     keywords: ["gift", "gifting", "present", "buy for someone", "give"],
-    // No FAQ covers gifting at all, despite /plus/gift being a shipped
+    // No FAQ covers gifting at all, despite /subscribe/gift being a shipped
     // revenue feature. Pure routing until that copy exists.
     faqKeys: [],
-    actions: [{ action: { kind: "route", label: "Gift a subscription", to: "/plus/gift" } }],
+    actions: [{ action: { kind: "route", label: "Gift a subscription", to: "/subscribe/gift" } }],
     chip: true,
   },
   {

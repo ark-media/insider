@@ -155,13 +155,13 @@ describe('renderBundleWinbackEmail', () => {
   test('invites them back to both, with the CTA target and opt-out', () => {
     const { subject, html } = renderBundleWinbackEmail({
       ...PARAMS,
-      rejoinUrl: 'https://ark.test/plus',
+      rejoinUrl: 'https://ark.test/subscribe',
       firstName: 'Rae',
     })
     expect(subject).toBe('We saved your seat')
     expect(html).toContain('Hi Rae,')
     expect(html).toContain('six months since you left Ark+ and the Fold')
-    expect(html).toContain('href="https://ark.test/plus"')
+    expect(html).toContain('href="https://ark.test/subscribe"')
     expect(html).toContain('Rejoin Ark+ and the Fold')
     expect(html).toContain('ad-free listening')
     expect(html).toContain('Dan&rsquo;s book club')

@@ -530,7 +530,7 @@ single member only ever sees some of them.
 - **DURATION (HOURS + MINUTES)**: {h} hr {m} min
 # Ark+ Membership, Pricing & Checkout
 
-## Ark+ (membership)   /plus
+## Ark+ (membership)   /subscribe
 ### Hero — guest / free member
 - **EYEBROW**: Ark+
 - **HEADLINE**: The full Ark Media experience. ("experience." in the cyan accent)
@@ -741,7 +741,7 @@ single member only ever sees some of them.
 - **ERROR (POLL FAILURE)**: Could not finish checkout (status {status}).
 - **CTA**: Try again
 
-## Gift Ark+   /plus/gift
+## Gift Ark+   /subscribe/gift
 ### Left pitch column
 - **EYEBROW**: Give a membership
 - **HEADLINE**: Give the full Ark Media experience. ("experience." in the cyan accent)
@@ -1141,7 +1141,7 @@ single member only ever sees some of them.
 - **SAMPLE POST (SARAH K. · LONDON · 3H)**: Sharing the long-read Nadav mentioned — worth every minute.
 - **TAB BAR**: Feed / Events / Rooms / Profile
 
-## The Fold section (on /plus and /pricing)
+## The Fold section (on /subscribe and /pricing)
 ### Section header
 - **EYEBROW**: The Fold
 - **HEADING**: Somewhere to argue properly. ("argue" in the cyan accent)
@@ -1332,7 +1332,7 @@ Google, and member-facing copy never mentions passwords in either direction.)
 - **PAGE TITLE**: You're signed in.
 - **LEDE**: Signed in as {email}. Manage what lands in your inbox, or join Ark+, the Fold, or both.
 - **SECTION LABEL**: Become a member
-- **PLANS**: the same three pricing cards as /plus (Ark+ · Ark+ & The Fold · The Fold) — copy lives under the /plus pricing section
+- **PLANS**: the same three pricing cards as /subscribe (Ark+ · Ark+ & The Fold · The Fold) — copy lives under the /subscribe pricing section
 - **ACCOUNT CARD EYEBROW**: Your account
 - **LINK**: Newsletter preferences →
 - **BUTTON**: Sign out

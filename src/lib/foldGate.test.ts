@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 // Which of the four things the Fold-gate notice says, given the session.
 //
-// The Auth0 Action bounces two very different people to /plus?from=fold with
+// The Auth0 Action bounces two very different people to /subscribe?from=fold with
 // the same URL, and the one that costs money to get wrong is the Ark+-only
 // member: sending them to the pricing cards starts a second subscription the
 // single-active-subscription guard then refuses. So the split is pinned here

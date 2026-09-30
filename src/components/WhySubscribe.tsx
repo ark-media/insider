@@ -1,4 +1,4 @@
-// Mission pitch on /plus: why membership matters beyond the perks — sustaining
+// Mission pitch on /subscribe: why membership matters beyond the perks — sustaining
 // independent journalism. Sits below Pricing; structure mirrors the Sam Harris
 // "better room for conversation" block (eyebrow → headline → two body paras),
 // with Ark Media voice and design tokens.

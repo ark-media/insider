@@ -159,7 +159,7 @@ function auditRows(): AuditRow[] {
 
 // Rows shaped like each table's, so the accessors' mapRow has dates to parse.
 const ANNOUNCEMENT_ROW = {
-  id: ID, body: 'Save now', action_url: '/plus', bar_color: '#4a9fe8', text_color: '#ffffff',
+  id: ID, body: 'Save now', action_url: '/subscribe', bar_color: '#4a9fe8', text_color: '#ffffff',
   dismissible: true, enabled: true, starts_at: NOW, ends_at: NOW, created_at: NOW, updated_at: NOW,
 }
 const FAQ_ROW = {
@@ -185,7 +185,7 @@ function respondAsIfRowsExist(sql: string): unknown[] {
 
 const ANNOUNCEMENT_BODY = {
   body: 'Save now',
-  actionUrl: '/plus',
+  actionUrl: '/subscribe',
   startsAt: '2026-05-01T00:00:00Z',
   endsAt: '2026-05-31T23:59:00Z',
 }

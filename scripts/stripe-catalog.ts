@@ -168,7 +168,7 @@ const CATALOG: ProductDef[] = [
 //   | Ark+      | $48  | $80  |
 //   | The Fold  | $114 | $190 |
 //   | Bundle    | $150 | $250 |
-// Keep src/lib/gift.ts GIFT_PRICE_DOLLARS (the /plus/gift display copy) in sync.
+// Keep src/lib/gift.ts GIFT_PRICE_DOLLARS (the /subscribe/gift display copy) in sync.
 type GiftTerm = '6mo' | '1yr'
 const GIFT_TERMS = ['6mo', '1yr'] as const
 

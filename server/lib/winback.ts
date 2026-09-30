@@ -221,9 +221,9 @@ export async function runWinbackCampaign(deps: {
 
   const rows = await loadRoster(sql, nowMs)
   const rejoinUrl: Record<WinbackCampaign, string> = {
-    ark_plus: `${appBaseUrl}/plus`,
+    ark_plus: `${appBaseUrl}/subscribe`,
     fold: `${appBaseUrl}/fold`,
-    bundle: `${appBaseUrl}/plus`,
+    bundle: `${appBaseUrl}/subscribe`,
   }
   let eligible = 0
   let sent = 0

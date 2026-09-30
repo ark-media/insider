@@ -70,7 +70,7 @@ describe("topic table integrity", () => {
 describe("guest routing — the Apple problem", () => {
   // Apple Podcasts shares no customer data, so a paying Apple subscriber has no
   // account here and reads as a guest. Every /account/* route bounces a guest
-  // to /plus (src/routes/account/billing.tsx), so a widget that offers one to a
+  // to /subscribe (src/routes/account/billing.tsx), so a widget that offers one to a
   // guest lands a paying customer on a sales page. This is the single
   // invariant the user asked the widget to absorb, so it is asserted rather
   // than left to review.
@@ -171,8 +171,8 @@ describe("entitlement gating", () => {
         if (topic.visibleWhen && !topic.visibleWhen(viewer)) continue;
         const actions = actionsFor(topic, viewer);
         if (viewer.arkPlus) {
-          // /plus is the Ark+ pitch. Someone who holds Ark+ has read it.
-          expect(routesOf(actions), `${topic.id} pitched /plus to a ${name}`).not.toContain("/plus");
+          // /subscribe is the Ark+ pitch. Someone who holds Ark+ has read it.
+          expect(routesOf(actions), `${topic.id} pitched /subscribe to a ${name}`).not.toContain("/subscribe");
         }
         if (viewer.circle) {
           expect(

@@ -2,7 +2,7 @@ import { HERO_CONTENT } from "../data/plusContent";
 import { srcSet } from "../lib/images";
 
 export function Hero() {
-  // Static by design — see data/plusContent.ts. /plus reads the same whether or
+  // Static by design — see data/plusContent.ts. /subscribe reads the same whether or
   // not you're signed in.
   const content = HERO_CONTENT;
 

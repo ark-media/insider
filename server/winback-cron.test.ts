@@ -185,7 +185,7 @@ describe('winback cron — run', () => {
     expect(body.to).toBe('left@example.com')
     expect(body.subject).toBe('We saved your seat')
     // The rejoin CTA and a real unsubscribe both have to be in there.
-    expect(String(body.html)).toContain('https://ark.example/plus')
+    expect(String(body.html)).toContain('https://ark.example/subscribe')
     expect(String(body.html)).toContain('/api/winback/unsubscribe?e=')
 
     expect(sqlCalls.some((c) => c.sql.includes('insert into winback_sends'))).toBe(true)
