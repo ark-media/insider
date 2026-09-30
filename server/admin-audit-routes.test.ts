@@ -74,6 +74,10 @@ class FakeStripe {
     list: async () => ({
       data: [{ id: 'cus_1', email: 'jane@example.com', name: 'Jane Listener' }],
     }),
+    // The member directory's search path (partial email/name) uses Stripe Search.
+    search: async () => ({
+      data: [{ id: 'cus_1', email: 'jane@example.com', name: 'Jane Listener' }],
+    }),
   }
 }
 mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
