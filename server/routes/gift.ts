@@ -84,11 +84,6 @@ const LIVE_MEMBERSHIP_STATUSES = new Set(['active', 'trialing', 'past_due', 'unp
 const NAME_CONTROL_CHARS =
   /[\p{Cc}\u2028\u2029\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/u
 
-// A gift name as the rest of the flow should see it, or null when it can't be
-// accepted. Absent and blank are both fine (names are optional) and come back
-// as ''. Checked BEFORE trimming or collapsing anything: whitespace handling
-// would quietly rewrite an embedded newline into a space and turn a
-// header-injection attempt into a plausible name.
 // The shape of a gift redemption token (a base64url SHA-256 HMAC).
 const GIFT_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/
 
@@ -97,6 +92,11 @@ function spentGiftError(status: GiftRow['status']): 'gift_voided' | 'already_red
   return status === 'void' ? 'gift_voided' : 'already_redeemed'
 }
 
+// A gift name as the rest of the flow should see it, or null when it can't be
+// accepted. Absent and blank are both fine (names are optional) and come back
+// as ''. Checked BEFORE trimming or collapsing anything: whitespace handling
+// would quietly rewrite an embedded newline into a space and turn a
+// header-injection attempt into a plausible name.
 function cleanGiftName(raw: unknown): string | null {
   if (raw == null) return ''
   if (typeof raw !== 'string') return null
