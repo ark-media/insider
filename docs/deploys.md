@@ -54,14 +54,10 @@ stable alias:
 Vercel Authentication is on for all non-custom domains, so that URL asks for a
 Vercel login. Team members get in; the public does not.
 
-**Staging shares every environment variable with production.** All 40 on the
-project target production and preview with the same value. For
-`DATABASE_URL` that value is `ark-insider-dev` — confirmed 2026-09-16 by
-matching the FAQ row ids ark-plus.xyz serves against each database — so
-staging's data is already the dev database, and `ark-insider-prod` is not wired
-into Vercel at all yet. The rest (live Stripe, prod Auth0, prod Beehiiv) still
-point wherever production does, so treat staging as safe to look at, not safe
-to click through a checkout or a cancellation on.
+Preview must never share production integrations. The API now fails closed on a
+Vercel Preview deployment unless `PREVIEW_SAFE_INTEGRATIONS=true` is present,
+and it rejects live Stripe keys even when that flag is set. This is a release
+guard, not a substitute for setting the correct values in Vercel.
 
 Splitting it means giving these a preview-scoped value of their own:
 
@@ -74,7 +70,10 @@ Splitting it means giving these a preview-scoped value of their own:
 | Beehiiv keys | a non-production publication, or accept read-only drift |
 
 `vercel env add <NAME> preview` sets a preview-only value without disturbing
-production.
+production. Set `PREVIEW_SAFE_INTEGRATIONS=true` only after those preview
+values are in place. Keep Vercel Deployment Protection enabled for the preview
+domain as well: `VITE_GATE_PASSWORD` is a client-side convenience gate and is
+not an access-control boundary for `/api/*`.
 
 ## Shipping to production
 

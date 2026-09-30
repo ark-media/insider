@@ -81,6 +81,7 @@ export type Me = {
   // to stay resilient to a stale cached response; the UI guards for it.
   axes?: { arkPlus: AxisAccess; circle: AxisAccess };
   feeds: UserFeed[];
+  feedsLoaded?: boolean;
 };
 
 // Every authenticated request rides the httpOnly session cookie (`ark_session`
@@ -91,11 +92,15 @@ export type Me = {
 // for a signed-in member. A network failure or non-401 server error THROWS, so
 // the auth provider can distinguish "logged out" from "couldn't reach the
 // server" and surface an error+retry instead of silently demoting to guest.
-export async function fetchMe(): Promise<Me | null> {
-  const res = await fetch("/api/me", { credentials: "include" });
+export async function fetchMe(options?: {
+  includeFeeds?: boolean;
+}): Promise<Me | null> {
+  const path = options?.includeFeeds ? "/api/me?include_feeds=1" : "/api/me?include_feeds=0";
+  const res = await fetch(path, { credentials: "include" });
   if (res.status === 401) return null;
   if (!res.ok) throw new Error(`/api/me failed (${res.status})`);
-  return (await res.json()) as Me;
+  const body = (await res.json()) as Me & { feeds_loaded?: boolean };
+  return { ...body, feedsLoaded: body.feeds_loaded ?? body.feedsLoaded };
 }
 
 // Every call that changes what a member is billed goes through here.

@@ -12,7 +12,7 @@ export const Route = createFileRoute("/setup")({
 
 function SetupPage() {
   const navigate = useNavigate();
-  const { state, signIn } = useSubscriberAuth();
+  const { state, refresh, signIn } = useSubscriberAuth();
 
   useEffect(() => {
     if (state.kind === "guest") {
@@ -31,6 +31,16 @@ function SetupPage() {
     }
   }, [state, navigate, signIn]);
 
+  useEffect(() => {
+    if (
+      state.kind === "member" &&
+      isArkPlusMember(state) &&
+      state.me.feedsLoaded === false
+    ) {
+      void refresh({ includeFeeds: true });
+    }
+  }, [state, refresh]);
+
   if (state.kind === "loading") {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-navy-900">
@@ -41,6 +51,13 @@ function SetupPage() {
 
   if (state.kind === "guest") return null;
   if (!state.me.entitlements.arkPlus) return null;
+  if (state.me.feedsLoaded === false) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900">
+        <p className="text-fg-muted">Loading your private feeds…</p>
+      </div>
+    );
+  }
 
   return (
     <PageShell

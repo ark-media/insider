@@ -3,9 +3,8 @@ import { PublicMasthead } from "../components/PublicMasthead";
 import { Footer } from "../components/Footer";
 import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import { AuthErrorNotice } from "../components/AuthErrorNotice";
-import { Spinner } from "../components/Spinner";
 import { SupportWidget } from "../components/support/SupportWidget";
-import { SubscriberAuthProvider, useSubscriberAuth } from "../lib/subscriberAuth";
+import { SubscriberAuthProvider } from "../lib/subscriberAuth";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -21,18 +20,7 @@ function RootLayout() {
 
 function RootContent() {
   const matches = useMatches();
-  const { state } = useSubscriberAuth();
   const chromeless = matches.some((m) => m.staticData?.chromeless);
-
-  // Block rendering while /api/me is in-flight for a likely session (the
-  // provider seeds "loading" only when a session-presence cookie exists).
-  if (state.kind === "loading") {
-    return (
-      <div role="status" aria-label="Loading" className="flex min-h-dvh items-center justify-center bg-navy-900">
-        <Spinner className="h-6 w-6" />
-      </div>
-    );
-  }
 
   return (
     <div className="bg-app min-h-dvh font-sans text-ink">

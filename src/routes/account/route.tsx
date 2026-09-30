@@ -4,8 +4,9 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
+import { fetchAdminMe } from "../../lib/admin";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { AccountTabs } from "../../components/account/AccountTabs";
@@ -25,8 +26,10 @@ export const Route = createFileRoute("/account")({
 
 function AccountLayout() {
   const navigate = useNavigate();
-  const { state, authError, refresh, isAdmin, signOut } = useSubscriberAuth();
+  const { state, authError, refresh, signOut } = useSubscriberAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const memberEmail = state.kind === "member" ? state.me.email : null;
 
   useEffect(() => {
     // Don't bounce to /subscribe when "guest" is just an unreachable /api/me — the
@@ -35,6 +38,21 @@ function AccountLayout() {
       void navigate({ to: "/subscribe" });
     }
   }, [state.kind, authError, navigate]);
+
+  useEffect(() => {
+    if (!memberEmail) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    void fetchAdminMe().then((result) => {
+      if (!cancelled) setIsAdmin(result.isAdmin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [memberEmail]);
 
   if (authError) {
     return (

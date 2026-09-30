@@ -55,13 +55,23 @@ function PodcastsTab() {
     }
   }, [state, navigate]);
 
+  useEffect(() => {
+    if (
+      state.kind === "member" &&
+      isArkPlusMember(state) &&
+      state.me.feedsLoaded === false
+    ) {
+      void refresh({ includeFeeds: true });
+    }
+  }, [state, refresh]);
+
   // Entitled but holding nothing: the feeds are still being minted upstream.
   // Re-read /api/me until they land, then stop — `waiting` flips false the
   // moment one arrives, which tears the interval down.
   const waiting =
     state.kind === "member" &&
     state.me.entitlements.arkPlus &&
-    state.me.feeds.length === 0;
+    (state.me.feedsLoaded === false || state.me.feeds.length === 0);
   const [pollExhausted, setPollExhausted] = useState(false);
   useEffect(() => {
     if (!waiting) return;
@@ -73,7 +83,7 @@ function PodcastsTab() {
         setPollExhausted(true);
         return;
       }
-      void refresh();
+      void refresh({ includeFeeds: true });
     }, FEED_POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [waiting, refresh]);
