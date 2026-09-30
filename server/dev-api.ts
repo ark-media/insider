@@ -16,8 +16,6 @@ import { buildApi } from './api.js'
 // Keeps the exact surface the tests rely on: `plugin.configureServer(fake)`
 // captures a handler per path via `server.middlewares.use(path, handler)`.
 export function devApiPlugin(env: Env): Plugin {
-  const api = buildApi(env)
-
   const withErrors =
     (path: string, handler: Handler) =>
     (req: IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
@@ -72,6 +70,11 @@ export function devApiPlugin(env: Env): Plugin {
   return {
     name: 'ark-insider-dev-api',
     configureServer(server) {
+      // Built here, not when the plugin is created: vite.config.ts creates it
+      // for `vite build` too, and buildApi's deploy guards (the Preview
+      // integration check) would fail a production bundle that never runs
+      // this API.
+      const api = buildApi(env)
       for (const { path, handler } of api.routes) {
         server.middlewares.use(path, withErrors(path, handler))
       }
