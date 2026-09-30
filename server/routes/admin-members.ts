@@ -2,9 +2,11 @@
 // from Stripe per page, so Neon never stores PII).
 //
 //   GET /api/admin/members
-//     ?email=       exact-match lookup — resolves email → Stripe customer →
-//                   membership. When set, pagination is ignored (one result set)
-//                   and a customer with no membership row surfaces as tier=free.
+//     ?email=       partial-match lookup (≥3 chars) — Stripe Search substring
+//                   match on the customer's email or name → membership. When
+//                   set, pagination is ignored (one result set, top 100) and a
+//                   customer with no membership row surfaces as tier=free.
+//                   Stripe's search index lags writes by up to ~1 minute.
 //     ?tier=        ark-plus | circle | bundle — SQL filter on the membership spine.
 //     ?activation=  activated | unactivated — applied AFTER email hydration.
 //                   Activation is keyed by email, not by the membership key, so
@@ -39,6 +41,16 @@ import type {
 import { stripeCustomerUrl } from '../lib/stripe-dashboard.js'
 
 const PAGE_SIZE = 25
+
+// Stripe Search's substring operator (`~`) needs at least 3 characters.
+export const MIN_SEARCH_LENGTH = 3
+
+// Stripe Search query for a partial email/name match. Values sit inside single
+// quotes, so backslashes and quotes in the admin's text are escaped.
+export function customerSearchQuery(term: string): string {
+  const v = term.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  return `email~'${v}' OR name~'${v}'`
+}
 
 function isTierFilter(v: string | null): v is 'ark-plus' | 'circle' | 'bundle' {
   return v === 'ark-plus' || v === 'circle' || v === 'bundle'
@@ -124,6 +136,9 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
           return json(400, { error: 'invalid activation filter' })
         }
         const emailParam = params.get('email')?.trim() || null
+        if (emailParam !== null && emailParam.length < MIN_SEARCH_LENGTH) {
+          return json(400, { error: `search needs at least ${MIN_SEARCH_LENGTH} characters` })
+        }
 
         if (!env.DATABASE_URL) {
           return json(200, { members: [], hasMore: false, nextOffset: null })
@@ -136,9 +151,12 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         const matchesActivation = (e: MemberDirectoryEntry) =>
           activationParam === null || e.activated === wantActivated
 
-        // --- Search path: email → Stripe customers → membership -------------
+        // --- Search path: partial email/name → Stripe customers → membership -
         if (emailParam) {
-          const found = await stripe.customers.list({ email: emailParam, limit: 100 })
+          const found = await stripe.customers.search({
+            query: customerSearchQuery(emailParam),
+            limit: 100,
+          })
           const [rowsByCustomer, activatedEmails] = await Promise.all([
             getMembershipsByStripeCustomers(sql, found.data.map((c) => c.id)),
             getActivatedEmails(

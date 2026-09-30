@@ -130,14 +130,17 @@ function MembersAdmin() {
       >
         <div className="grow">
           <label htmlFor="m-email" className={adminFieldLabel}>
-            Search email
+            Search email or name
           </label>
+          {/* Plain text, not type="email": the browser would refuse a partial
+              address. Stripe's substring search needs 3+ characters. */}
           <input
             id="m-email"
-            type="email"
+            type="search"
+            minLength={3}
             value={emailDraft}
             onChange={(e) => setEmailDraft(e.target.value)}
-            placeholder="member@example.com"
+            placeholder="Part of an email or name"
             className={`mt-2 ${adminField}`}
           />
         </div>
@@ -250,7 +253,7 @@ function MembersTable({
   if (members.length === 0) {
     return (
       <p className="mt-8 text-body-sm text-fg-muted">
-        {searching ? "No members match this email." : "No members match these filters."}
+        {searching ? "No members match this search." : "No members match these filters."}
       </p>
     );
   }
