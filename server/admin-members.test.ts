@@ -12,6 +12,7 @@ import { silenceExpectedConsole } from './test-utils'
 import { devApiPlugin } from './dev-api'
 import { signSessionToken } from './lib/session'
 import { SESSION_COOKIE_NAME } from './lib/cookies'
+import { customerSearchQuery } from './routes/admin-members'
 
 type Middleware = (
   req: IncomingMessage,
@@ -161,5 +162,26 @@ describe('GET /api/admin/members', () => {
   test('400 on an invalid activation filter', async () => {
     const res = await get({ cookie: await cookie(['admin']) }, '?activation=maybe')
     expect(res.statusCode).toBe(400)
+  })
+})
+
+describe('member search', () => {
+  test('400 when the search is shorter than 3 characters', async () => {
+    const res = await get({ cookie: await cookie(['admin']) }, '?email=ha')
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('surrounding whitespace does not count toward the minimum', async () => {
+    const res = await get({ cookie: await cookie(['admin']) }, '?email=%20ha%20')
+    expect(res.statusCode).toBe(400)
+  })
+
+  test('substring-matches email or name', () => {
+    expect(customerSearchQuery('hannah')).toBe("email~'hannah' OR name~'hannah'")
+  })
+
+  test('escapes quotes and backslashes so the text stays one value', () => {
+    expect(customerSearchQuery("o'brien")).toBe("email~'o\\'brien' OR name~'o\\'brien'")
+    expect(customerSearchQuery('a\\b')).toBe("email~'a\\\\b' OR name~'a\\\\b'")
   })
 })

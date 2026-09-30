@@ -9,7 +9,7 @@ const CARDS = [
   {
     to: "/admin/members",
     title: "Members",
-    body: "Search members by email and filter by tier or feed-activation status. Each links out to their Stripe customer profile.",
+    body: "Search members by part of an email or name, and filter by tier or feed-activation status. Each links out to their Stripe customer profile.",
   },
   {
     to: "/admin/announcements",
