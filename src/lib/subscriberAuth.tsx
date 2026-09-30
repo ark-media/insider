@@ -131,7 +131,10 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
           fetched?.feedsLoaded === false &&
           fetched.entitlements.arkPlus &&
           previous.kind === "member" &&
-          previous.me.entitlements.arkPlus;
+          previous.me.entitlements.arkPlus &&
+          // Only ever the same person's feeds: a different account signed in
+          // on another tab must not inherit these private URLs.
+          previous.me.email === fetched.email;
         const baseFeeds = preserveHydratedFeeds
           ? previous.me.feeds
           : fetched?.feeds ?? [];

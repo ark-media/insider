@@ -67,11 +67,13 @@ function PodcastsTab() {
 
   // Entitled but holding nothing: the feeds are still being minted upstream.
   // Re-read /api/me until they land, then stop — `waiting` flips false the
-  // moment one arrives, which tears the interval down.
+  // moment one arrives, which tears the interval down. Feeds not read yet
+  // aren't "being minted": the effect above owns that first read.
   const waiting =
     state.kind === "member" &&
     state.me.entitlements.arkPlus &&
-    (state.me.feedsLoaded === false || state.me.feeds.length === 0);
+    state.me.feedsLoaded !== false &&
+    state.me.feeds.length === 0;
   const [pollExhausted, setPollExhausted] = useState(false);
   useEffect(() => {
     if (!waiting) return;
@@ -140,6 +142,11 @@ function PodcastsTab() {
   }, [spotifyLinked, state, pollExhausted]);
 
   if (state.kind !== "member" || !state.me.entitlements.arkPlus) return null;
+
+  // A failed first read surfaces through the account layout's error+retry.
+  if (state.me.feedsLoaded === false) {
+    return <p className="text-fg-muted">Loading your private feeds…</p>;
+  }
 
   return (
     <FeedSetup

@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { fetchAdminMe } from "../lib/admin";
+import type { ReactNode } from "react";
+import { useIsAdmin } from "../lib/useIsAdmin";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { Spinner } from "./Spinner";
 import { StatusPage, HomeButton } from "./StatusPage";
@@ -10,25 +10,9 @@ import { StatusPage, HomeButton } from "./StatusPage";
 export function AdminGuard({ children }: { children: ReactNode }) {
   const { state, signIn } = useSubscriberAuth();
   const memberEmail = state.kind === "member" ? state.me.email : null;
-  const [admin, setAdmin] = useState({ loading: true, isAdmin: false });
+  const { loading: adminLoading, isAdmin } = useIsAdmin(memberEmail);
 
-  useEffect(() => {
-    if (!memberEmail) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAdmin({ loading: false, isAdmin: false });
-      return;
-    }
-    let cancelled = false;
-    setAdmin({ loading: true, isAdmin: false });
-    void fetchAdminMe().then((result) => {
-      if (!cancelled) setAdmin({ loading: false, isAdmin: result.isAdmin });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [memberEmail]);
-
-  if (state.kind === "loading" || admin.loading) {
+  if (state.kind === "loading" || adminLoading) {
     return (
       <div className="mx-auto flex min-h-[60vh] max-w-[1100px] flex-col items-center justify-center px-6 py-16">
         <Spinner role="status" aria-label="Loading" className="h-6 w-6" />
@@ -58,7 +42,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!admin.isAdmin) {
+  if (!isAdmin) {
     return (
       <StatusPage
         eyebrow="Admin"

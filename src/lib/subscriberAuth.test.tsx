@@ -234,3 +234,31 @@ describe("SubscriberAuthProvider — set-up marks", () => {
     expect(feedA()).toMatchObject({ activated: true, pending: false });
   });
 });
+
+describe("SubscriberAuthProvider — feeds kept across a feedless read", () => {
+  const SHOW: Me["feeds"][number] = { id: "pod_a", name: "Alpha", url: "https://x" };
+
+  test("keeps the same member's loaded feeds when a read skips them", async () => {
+    meImpl = async () => ({ ...ME, feeds: [SHOW], feedsLoaded: true });
+    await mountProvider();
+
+    meImpl = async () => ({ ...ME, feeds: [], feedsLoaded: false });
+    await refocus(60_000);
+
+    const state = ctx!.state;
+    expect(state.kind === "member" && state.me.feeds.map((f) => f.id)).toEqual(["pod_a"]);
+  });
+
+  test("never hands one member's private feeds to another account", async () => {
+    meImpl = async () => ({ ...ME, feeds: [SHOW], feedsLoaded: true });
+    await mountProvider();
+
+    meImpl = async () => ({ ...ME, email: "other@x.com", feeds: [], feedsLoaded: false });
+    await refocus(60_000);
+
+    const state = ctx!.state;
+    expect(state.kind === "member" && state.me.email).toBe("other@x.com");
+    expect(state.kind === "member" && state.me.feeds).toEqual([]);
+    expect(state.kind === "member" && state.me.feedsLoaded).toBe(false);
+  });
+});
