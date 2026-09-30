@@ -20,20 +20,16 @@ import {
 type ApiResponse = { posts?: NewsletterPost[] };
 
 async function fetchPosts(slug: NewsletterSlug): Promise<NewsletterPost[]> {
-  try {
-    // credentials:'include' attaches the session cookie when present, so the
-    // server serves Ark+ members the full premium body and everyone else the
-    // above-divider preview. No client-held token is involved.
-    const res = await fetch(
-      `/api/beehiiv/posts?newsletter=${encodeURIComponent(slug)}`,
-      { credentials: "include" },
-    );
-    if (!res.ok) return [];
-    const body = (await res.json()) as ApiResponse;
-    return body.posts ?? [];
-  } catch {
-    return [];
-  }
+  // credentials:'include' attaches the session cookie when present, so the
+  // server serves Ark+ members the full premium body and everyone else the
+  // above-divider preview. No client-held token is involved.
+  const res = await fetch(
+    `/api/beehiiv/posts?newsletter=${encodeURIComponent(slug)}`,
+    { credentials: "include" },
+  );
+  if (!res.ok) throw new Error(`/api/beehiiv/posts failed (${res.status})`);
+  const body = (await res.json()) as ApiResponse;
+  return body.posts ?? [];
 }
 
 /**

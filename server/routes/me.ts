@@ -191,6 +191,9 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // Identity-scoped response (email/tier/entitlements/feeds) — must never
         // be cached by a shared proxy/CDN and served to another user.
         res.setHeader('cache-control', 'private, no-store')
+        const requestUrl = new URL(req.url ?? '/', 'http://ark-plus.local')
+        const feedMode = requestUrl.searchParams.get('include_feeds')
+        const includeFeeds = feedMode !== '0'
 
         // Neon is the single entitlement authority (§3). The by-email fallback
         // still resolves a just-paid member whose session carries no sub yet.
@@ -216,10 +219,12 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         // invisible. `fetchPrivateFeeds` never throws — a Beehiiv outage
         // degrades to an empty list, because entitlement came from Neon and the
         // membership decision must never depend on Beehiiv being reachable.
-        const feeds: PrivateFeed[] = entitlements.arkPlus
+        const feeds: PrivateFeed[] = includeFeeds && entitlements.arkPlus
           ? await fetchPrivateFeeds(env, email)
           : []
-        const enriched = await enrichFeedsWithActivation(env, email, feeds)
+        const enriched = includeFeeds
+          ? await enrichFeedsWithActivation(env, email, feeds)
+          : []
 
         // First-login auto-subscribe to the free newsletter for a logged-in free
         // reader. Soft-fails internally so a Beehiiv outage can't block login;
@@ -237,6 +242,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           entitlements,
           axes,
           feeds: enriched,
+          ...(feedMode !== null ? { feeds_loaded: includeFeeds } : {}),
         })
       },
     }),

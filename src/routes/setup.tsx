@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { FeedSetup } from "../components/FeedSetup";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { PageShell } from "../components/PageShell";
+import { ContentError } from "../components/ContentError";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 
 // The component's own gate sends guests to sign in and free users to /subscribe.
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/setup")({
 
 function SetupPage() {
   const navigate = useNavigate();
-  const { state, signIn } = useSubscriberAuth();
+  const { state, authError, refresh, signIn } = useSubscriberAuth();
 
   useEffect(() => {
     if (state.kind === "guest") {
@@ -31,6 +32,16 @@ function SetupPage() {
     }
   }, [state, navigate, signIn]);
 
+  useEffect(() => {
+    if (
+      state.kind === "member" &&
+      isArkPlusMember(state) &&
+      state.me.feedsLoaded === false
+    ) {
+      void refresh({ includeFeeds: true });
+    }
+  }, [state, refresh]);
+
   if (state.kind === "loading") {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-navy-900">
@@ -41,6 +52,27 @@ function SetupPage() {
 
   if (state.kind === "guest") return null;
   if (!state.me.entitlements.arkPlus) return null;
+  if (state.me.feedsLoaded === false) {
+    // A failed feeds read leaves the state untouched, so the effect above
+    // won't ask again on its own — hand the member the retry instead.
+    if (authError) {
+      return (
+        <div className="flex min-h-dvh items-center justify-center bg-navy-900 p-6">
+          <div className="w-full max-w-md">
+            <ContentError
+              message="We couldn't load your private feeds. Refresh to try again."
+              onRetry={() => void refresh({ includeFeeds: true })}
+            />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-navy-900">
+        <p className="text-fg-muted">Loading your private feeds…</p>
+      </div>
+    );
+  }
 
   return (
     <PageShell

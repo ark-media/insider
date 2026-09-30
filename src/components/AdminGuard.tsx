@@ -1,4 +1,5 @@
-import { type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useIsAdmin } from "../lib/useIsAdmin";
 import { useSubscriberAuth } from "../lib/subscriberAuth";
 import { Spinner } from "./Spinner";
 import { StatusPage, HomeButton } from "./StatusPage";
@@ -7,7 +8,9 @@ import { StatusPage, HomeButton } from "./StatusPage";
 // endpoint independently re-verifies the "admin" role server-side, so a
 // crafted client can't reach the data by bypassing this.
 export function AdminGuard({ children }: { children: ReactNode }) {
-  const { state, isAdmin, adminLoading, signIn } = useSubscriberAuth();
+  const { state, signIn } = useSubscriberAuth();
+  const memberEmail = state.kind === "member" ? state.me.email : null;
+  const { loading: adminLoading, isAdmin } = useIsAdmin(memberEmail);
 
   if (state.kind === "loading" || adminLoading) {
     return (

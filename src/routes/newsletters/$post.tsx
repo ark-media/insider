@@ -8,6 +8,7 @@ import {
 } from "../../lib/newsletterSources";
 import { PageShell } from "../../components/PageShell";
 import { Breadcrumbs } from "../../components/Breadcrumbs";
+import { ContentError } from "../../components/ContentError";
 import { ArkPlusMark } from "../../components/ArkPlusMark";
 import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 import { NewsletterArticle } from "../../lib/newsletter-renderer";
@@ -36,7 +37,36 @@ export const Route = createFileRoute("/newsletters/$post")({
     return { posts, documentHtml };
   },
   component: PostPage,
+  // The issue list throws when /api/beehiiv/posts fails; say so in the page
+  // rather than the router's bare default error screen.
+  errorComponent: PostError,
 });
+
+function PostError() {
+  const router = useRouter();
+  return (
+    <PageShell
+      breadcrumbs={
+        <Breadcrumbs
+          items={[
+            { label: "Home", to: "/" },
+            { label: "Newsletters", to: "/newsletters" },
+          ]}
+        />
+      }
+      title="Newsletters"
+    >
+      <section>
+        <div className="page-gutter py-10 sm:py-12">
+          <ContentError
+            message="We couldn't load this issue right now."
+            onRetry={() => void router.invalidate()}
+          />
+        </div>
+      </section>
+    </PageShell>
+  );
+}
 
 function PostPage() {
   const router = useRouter();

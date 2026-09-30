@@ -13,7 +13,6 @@ import {
   persistSpotifyFollowOpened,
   type Me,
 } from "./auth";
-import { fetchAdminMe } from "./admin";
 import { hasAnySession } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
 import { trackEvent } from "./analytics";
@@ -69,7 +68,7 @@ type SignInOpts = {
 
 type SubscriberAuthValue = {
   state: SubscriberAuthState;
-  refresh: () => Promise<void>;
+  refresh: (options?: { includeFeeds?: boolean }) => Promise<void>;
   // Optimistically mark private feeds as set up: patches the in-memory
   // `me.feeds` (instant check-off in the setup hub) and persists a server-side
   // pending marker so it survives reloads and follows the member across
@@ -90,11 +89,6 @@ type SubscriberAuthValue = {
   // current path; `signup` shows Auth0's signup screen.
   signIn: (returnTo?: string, opts?: SignInOpts) => void;
   signOut: () => void;
-  // Whether the signed-in user holds the "admin" role, per /api/admin/me
-  // (which re-verifies the session server-side). `adminLoading` is true until
-  // that first check resolves for a member session.
-  isAdmin: boolean;
-  adminLoading: boolean;
 };
 
 const SubscriberAuthContext = createContext<SubscriberAuthValue | null>(null);
@@ -112,10 +106,6 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     hasAnySession() ? { kind: "loading" } : { kind: "guest" },
   );
   const [authError, setAuthError] = useState(false);
-  const [admin, setAdmin] = useState<{ loading: boolean; isAdmin: boolean }>({
-    loading: hasAnySession(),
-    isAdmin: false,
-  });
 
   // Marks the member made this session: feeds they set up, and Spotify
   // follow ticks. A /api/me read that went out before a mark's save committed
@@ -126,7 +116,7 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   const setUpIds = useRef(new Set<string>());
   const followOpenedIds = useRef(new Set<string>());
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { includeFeeds?: boolean }) => {
     if (!hasAnySession()) {
       setUpIds.current.clear();
       followOpenedIds.current.clear();
@@ -135,20 +125,36 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const fetched = await fetchMe();
-      const me = fetched && {
-        ...fetched,
-        feeds: fetched.feeds.map((f) => ({
-          ...f,
-          ...(setUpIds.current.has(f.id) && !f.activated
-            ? { pending: true }
-            : {}),
-          ...(followOpenedIds.current.has(f.id)
-            ? { spotify_follow_opened: true }
-            : {}),
-        })),
-      };
-      setState(me ? { kind: "member", me } : { kind: "guest" });
+      const fetched = await fetchMe(options);
+      setState((previous) => {
+        const preserveHydratedFeeds =
+          fetched?.feedsLoaded === false &&
+          fetched.entitlements.arkPlus &&
+          previous.kind === "member" &&
+          previous.me.entitlements.arkPlus &&
+          // Only ever the same person's feeds: a different account signed in
+          // on another tab must not inherit these private URLs.
+          previous.me.email === fetched.email;
+        const baseFeeds = preserveHydratedFeeds
+          ? previous.me.feeds
+          : fetched?.feeds ?? [];
+        const me = fetched && {
+          ...fetched,
+          feeds: baseFeeds.map((f) => ({
+            ...f,
+            ...(setUpIds.current.has(f.id) && !f.activated
+              ? { pending: true }
+              : {}),
+            ...(followOpenedIds.current.has(f.id)
+              ? { spotify_follow_opened: true }
+              : {}),
+          })),
+          feedsLoaded: preserveHydratedFeeds
+            ? previous.me.feedsLoaded
+            : fetched.feedsLoaded,
+        };
+        return me ? { kind: "member", me } : { kind: "guest" };
+      });
       setAuthError(false);
     } catch {
       // Couldn't reach /api/me. Surface error+retry on member-data pages, but
@@ -187,25 +193,6 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refresh]);
-
-  // Resolve admin status from the server (authoritative — it re-verifies the
-  // session's role). Only a member session can be admin.
-  useEffect(() => {
-    if (state.kind === "loading") return;
-    if (state.kind === "guest") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAdmin({ loading: false, isAdmin: false });
-      return;
-    }
-    let cancelled = false;
-    setAdmin({ loading: true, isAdmin: false });
-    void fetchAdminMe().then((r) => {
-      if (!cancelled) setAdmin({ loading: false, isAdmin: r.isAdmin });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [state]);
 
   // Tie analytics/error identity to the auth lifecycle.
   useEffect(() => {
@@ -299,8 +286,6 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
         authError,
         signIn,
         signOut,
-        isAdmin: admin.isAdmin,
-        adminLoading: admin.loading,
       }}
     >
       {children}

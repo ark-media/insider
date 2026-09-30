@@ -70,12 +70,12 @@ function cachedListPosts(
 ): Promise<NewsletterPost[]> {
   const cached = listPostsCache.get(slug);
   if (cached) return cached;
-  const pending = source.listPosts(slug).catch((err) => {
-    // Don't poison the cache on failure — next attempt should retry.
-    listPostsCache.set(slug, Promise.resolve([]));
-    throw err;
-  });
+  const pending = source.listPosts(slug);
   listPostsCache.set(slug, pending);
+  void pending.catch(() => {
+    // Don't poison the cache on failure — next attempt should retry.
+    if (listPostsCache.get(slug) === pending) listPostsCache.delete(slug);
+  });
   return pending;
 }
 

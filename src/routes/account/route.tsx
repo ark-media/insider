@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useSubscriberAuth } from "../../lib/subscriberAuth";
+import { useIsAdmin } from "../../lib/useIsAdmin";
 import { PageShell } from "../../components/PageShell";
 import { ContentError } from "../../components/ContentError";
 import { AccountTabs } from "../../components/account/AccountTabs";
@@ -25,8 +26,10 @@ export const Route = createFileRoute("/account")({
 
 function AccountLayout() {
   const navigate = useNavigate();
-  const { state, authError, refresh, isAdmin, signOut } = useSubscriberAuth();
+  const { state, authError, refresh, signOut } = useSubscriberAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const memberEmail = state.kind === "member" ? state.me.email : null;
+  const { isAdmin } = useIsAdmin(memberEmail);
 
   useEffect(() => {
     // Don't bounce to /subscribe when "guest" is just an unreachable /api/me — the

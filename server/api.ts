@@ -55,7 +55,21 @@ interface Api {
   routes: Route[]
 }
 
+function assertPreviewIntegrationIsolation(env: Env): void {
+  if (env.VERCEL_ENV !== 'preview') return
+  if (env.PREVIEW_SAFE_INTEGRATIONS !== 'true') {
+    throw new Error('Preview deployment is missing PREVIEW_SAFE_INTEGRATIONS=true')
+  }
+  if (env.STRIPE_SECRET_KEY?.startsWith('sk_live_')) {
+    throw new Error('Preview deployment cannot use a live Stripe secret key')
+  }
+  if (env.VITE_STRIPE_PUBLISHABLE_KEY?.startsWith('pk_live_')) {
+    throw new Error('Preview deployment cannot use a live Stripe publishable key')
+  }
+}
+
 export function buildApi(env: Env): Api {
+  assertPreviewIntegrationIsolation(env)
   const stripeKey = env.STRIPE_SECRET_KEY
   const stripe = stripeKey ? new Stripe(stripeKey) : null
   const appBaseUrl = env.APP_BASE_URL || 'http://localhost:5173'
@@ -188,4 +202,3 @@ export function createCatchAllHandler(env: Env) {
     }
   }
 }
-
