@@ -6,13 +6,12 @@ import {
   AdminListRow,
   StatusPill,
 } from "../../components/admin/AdminList";
-import { LazyRichTextEditor } from "../../components/LazyRichTextEditor";
 import {
-  adminField,
-  adminFieldLabel,
-  adminPrimaryButton,
-  adminSecondaryButton,
-} from "../../lib/admin-styles";
+  AdminFormActions,
+  type AdminFormProps,
+} from "../../components/admin/AdminForm";
+import { LazyRichTextEditor } from "../../components/LazyRichTextEditor";
+import { adminField, adminFieldLabel } from "../../lib/admin-styles";
 import { deleteFaq, listFaqs, saveFaq, type FaqDraft } from "../../lib/admin";
 import type { Faq } from "../../lib/faqs";
 import { RICH_TEXT_CLASS, sanitizeRichPreview } from "../../lib/richTextPreview";
@@ -154,15 +153,7 @@ function FaqForm({
   error,
   onSubmit,
   onCancel,
-}: {
-  editing: boolean;
-  form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
-  saving: boolean;
-  error: string | null;
-  onSubmit: (e: React.FormEvent) => void;
-  onCancel: () => void;
-}) {
+}: AdminFormProps<FormState>) {
   return (
     <section aria-label={editing ? "Edit FAQ" : "New FAQ"}>
       <h2 className="font-display text-lg text-fg-strong">
@@ -283,22 +274,12 @@ function FaqForm({
           </label>
         </div>
 
-        {error ? <p className="text-body-sm text-red-400">{error}</p> : null}
-
-        <div className="flex gap-3">
-          <button type="submit" disabled={saving} className={adminPrimaryButton}>
-            {saving ? "Saving…" : editing ? "Save changes" : "Create"}
-          </button>
-          {editing ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              className={adminSecondaryButton}
-            >
-              Cancel
-            </button>
-          ) : null}
-        </div>
+        <AdminFormActions
+          saving={saving}
+          editing={editing}
+          error={error}
+          onCancel={onCancel}
+        />
       </form>
     </section>
   );

@@ -1,6 +1,5 @@
-// Neon Postgres client. The back office (announcements) is the only feature
-// with mutable server state, so this stays deliberately thin — a single
-// `neon()` HTTP client built from DATABASE_URL. No ORM: callers write SQL with
+// Neon Postgres client. Deliberately thin — a single `neon()` HTTP client
+// built from DATABASE_URL. No ORM: callers write SQL with
 // the tagged-template API, which parameterizes interpolated values (so a
 // `${userInput}` is bound, never concatenated).
 //

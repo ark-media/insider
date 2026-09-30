@@ -14,6 +14,7 @@ import { CancelFlow } from "../../components/account/CancelFlow";
 import { PaymentMethodPanel } from "../../components/account/PaymentMethodPanel";
 import { PlanChangePanel } from "../../components/account/PlanChangePanel";
 import { formatMinor } from "../../lib/currency";
+import { fmtDate } from "../../lib/entitlement-axes";
 import { perPeriod } from "../../../shared/billing-copy";
 import { giftEndsAt } from "../../lib/gift";
 
@@ -158,17 +159,22 @@ function BillingPage() {
   if (state.kind !== "member" || state.me.tier === "free") return null;
 
   const me = state.me;
-  const cancelTier = me.tier as "ark-plus" | "circle" | "bundle";
+  const cancelTier = state.me.tier;
   // The billing-period-end date, localized, or null when we don't have it — used
   // to turn "the end of your current billing period" into a concrete date.
   // Long form throughout the account section — the plan card one click away
   // states the same date that way, and two formats read as two dates.
-  const periodEndLabel = formatTimestamp(periodEnd, "long") || null;
-  const giftUntilLabel = formatTimestamp(giftExtendedUntil, "long") || null;
+  const periodEndLabel = fmtDate(periodEnd);
+  const giftUntilLabel = fmtDate(giftExtendedUntil);
   // A gifted membership with no subscription behind it: nothing to bill or
   // cancel, so the page says so instead of offering either.
   const giftOnly = billsToCard === false;
-  const giftEndsLabel = formatTimestamp(giftEndsAt(me), "long") || null;
+  const giftEndsLabel = fmtDate(giftEndsAt(me));
+
+  const openCancelFlow = () => {
+    setStatus({ kind: "idle" });
+    setFlowOpen(true);
+  };
 
   // A human noun phrase for a tier, so the pending-change banner can name the
   // change ("from the Ark+ & The Fold bundle to Ark+").
@@ -479,10 +485,7 @@ function BillingPage() {
                   <button
                     type="button"
                     disabled={status.kind === "reactivating"}
-                    onClick={() => {
-                      setStatus({ kind: "idle" });
-                      setFlowOpen(true);
-                    }}
+                    onClick={openCancelFlow}
                     className="inline-flex items-center justify-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-60"
                   >
                     Cancel my membership
@@ -491,10 +494,7 @@ function BillingPage() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => {
-                    setStatus({ kind: "idle" });
-                    setFlowOpen(true);
-                  }}
+                  onClick={openCancelFlow}
                   className="mt-6 inline-flex items-center gap-2 border border-rule-strong px-5 py-3 button-text font-display font-bold text-fg-strong transition hover:border-danger hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
                 >
                   {cancelTier === "bundle"
@@ -545,11 +545,9 @@ function BillingPage() {
             // The kept product is the tier the membership lands on at period end,
             // so the banner names the change and a later cancel targets it —
             // without waiting for the getMySubscription reload.
-            setScheduledTier(retained === "kept-ark-plus" ? "ark-plus" : "circle");
-            setStatus({
-              kind: "debundled",
-              kept: retained === "kept-ark-plus" ? "ark-plus" : "circle",
-            });
+            const kept = retained === "kept-ark-plus" ? "ark-plus" : "circle";
+            setScheduledTier(kept);
+            setStatus({ kind: "debundled", kept });
             refresh();
           }}
         />

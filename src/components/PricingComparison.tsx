@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { BillingPeriodToggle } from "./BillingPeriodToggle";
 import { CheckoutModal } from "./CheckoutModal";
 import { OutboundLink } from "./OutboundLink";
@@ -202,12 +202,13 @@ export function PricingComparison({
   const amountsFor = (key: ColumnKey): TierAmounts | null =>
     tiers ? tiers[key === "apple" ? "ark-plus" : key] : null;
 
-  const priceMinor = (key: ColumnKey): number | null => {
+  // A column's price for the selected period, and what annual saves on it.
+  const quoteFor = (key: ColumnKey) => {
     const amounts = amountsFor(key);
-    if (!amounts) return null;
-    return (
-      (plan === "yearly" ? amounts.yearly : amounts.monthly)[currency] ?? null
-    );
+    return {
+      minor: amounts ? (amounts[plan][currency] ?? null) : null,
+      savings: plan === "yearly" && amounts ? annualSavingsPct(amounts) : null,
+    };
   };
 
   const colClass = (c: Column) => (c.featured ? "bg-navy-800/50" : "");
@@ -310,44 +311,40 @@ export function PricingComparison({
               </tr>
             </thead>
             <tbody>
-              {GROUPS.map((group, index) => (
-                <Fragment key={index}>
-                  {group.rows.map((row) => (
-                    <tr key={row.label} className="border-t border-rule-soft">
-                      <th
-                        scope="row"
-                        className="py-2.5 pr-2 align-middle font-normal md:pr-4"
-                      >
-                        <span className="block text-body-sm text-fg">
-                          {row.shortLabel ? (
-                            <>
-                              <span className="md:hidden">
-                                {row.shortLabel}
-                              </span>
-                              <span className="hidden md:inline">
-                                {row.label}
-                              </span>
-                            </>
-                          ) : (
-                            row.label
-                          )}
-                        </span>
-                      </th>
-                      {COLUMNS.map((c) => (
-                        <td
-                          key={c.key}
-                          className={`py-2.5 text-center align-middle ${colClass(c)} ${mobileHidden(c)} ${
-                            c.featured && row.label === LAST_ROW_LABEL
-                              ? "border-b-2 border-cyan md:border-b-0"
-                              : ""
-                          }`}
-                        >
-                          <Mark on={row.tiers[c.key]} />
-                        </td>
-                      ))}
-                    </tr>
+              {ALL_ROWS.map((row) => (
+                <tr key={row.label} className="border-t border-rule-soft">
+                  <th
+                    scope="row"
+                    className="py-2.5 pr-2 align-middle font-normal md:pr-4"
+                  >
+                    <span className="block text-body-sm text-fg">
+                      {row.shortLabel ? (
+                        <>
+                          <span className="md:hidden">
+                            {row.shortLabel}
+                          </span>
+                          <span className="hidden md:inline">
+                            {row.label}
+                          </span>
+                        </>
+                      ) : (
+                        row.label
+                      )}
+                    </span>
+                  </th>
+                  {COLUMNS.map((c) => (
+                    <td
+                      key={c.key}
+                      className={`py-2.5 text-center align-middle ${colClass(c)} ${mobileHidden(c)} ${
+                        c.featured && row.label === LAST_ROW_LABEL
+                          ? "border-b-2 border-cyan md:border-b-0"
+                          : ""
+                      }`}
+                    >
+                      <Mark on={row.tiers[c.key]} />
+                    </td>
                   ))}
-                </Fragment>
+                </tr>
               ))}
             </tbody>
             {/* Prices and CTAs live in the table only from `md`. Below that
@@ -361,12 +358,7 @@ export function PricingComparison({
                   // Bound to a const so the "apple" check still narrows inside
                   // the button's onClick — a property access wouldn't.
                   const key = c.key;
-                  const amounts = amountsFor(key);
-                  const minor = priceMinor(key);
-                  const savings =
-                    plan === "yearly" && amounts
-                      ? annualSavingsPct(amounts)
-                      : null;
+                  const { minor, savings } = quoteFor(key);
                   return (
                     <td
                       key={key}
@@ -448,10 +440,7 @@ export function PricingComparison({
         {reference ? null : (
           <div className="mt-8 space-y-4 md:hidden">
             {BUY_COLUMNS.map((c) => {
-              const amounts = amountsFor(c.key);
-              const minor = priceMinor(c.key);
-              const savings =
-                plan === "yearly" && amounts ? annualSavingsPct(amounts) : null;
+              const { minor, savings } = quoteFor(c.key);
               return (
                 <div
                   key={c.key}

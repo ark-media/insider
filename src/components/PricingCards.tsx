@@ -58,9 +58,7 @@ function PriceCard({
   // The floor price in the buyer's currency (minor units). It's a floor, not a
   // fixed price: members choose their amount (this or more) at checkout, so the
   // card leads with "From <price>".
-  const priceMinor = pricing
-    ? ((plan === "yearly" ? pricing.yearly : pricing.monthly)[currency] ?? null)
-    : null;
+  const priceMinor = pricing ? (pricing[plan][currency] ?? null) : null;
   const savingsPct = pricing ? annualSavingsPct(pricing) : null;
 
   return (
@@ -164,7 +162,7 @@ export function PricingCards({ id = "plans" }: { id?: string }) {
   // Shared with the comparison table below the grid — one request, one currency.
   // (No selector here; the checkout modal owns currency choice.)
   const pricing = usePricing();
-  const data = pricing.status === "ready" ? pricing.data : null;
+  const data = pricing.data;
   const tiers = data?.tiers ?? null;
   const currency = data?.currency ?? "usd";
   const factor = data?.factor ?? 100;

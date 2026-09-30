@@ -1,7 +1,7 @@
 // Anchor-href scheme allowlist for rendering remote HTML.
 //
 // The server sanitizers (server/beehiiv-posts.ts, server/show-notes.ts,
-// server/circle-broadcasts.ts, server/lib/richText.ts) all set
+// server/lib/richText.ts) all set
 // allowedSchemes: ['http','https','mailto'], so by the time HTML reaches a
 // renderer a javascript:/data: href should already be gone. This is the second
 // line of defense: it means a regression in ONE sanitizer config can't become a

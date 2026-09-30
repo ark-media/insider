@@ -1,4 +1,5 @@
 import type Stripe from 'stripe'
+import { hasAcceptedRetention } from '../../lib/cancellation.js'
 import { getDb } from '../../lib/db.js'
 import { listStripeCustomersByEmail } from '../../lib/entitlement-resolver.js'
 import { clearMembershipPending } from '../../lib/membership.js'
@@ -83,8 +84,7 @@ export const LIVE_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
 // (task 14): a delinquent member in dunning is still entitled and must be able
 // to cancel, reactivate, or switch plans from the account UI. The single-active-
 // subscription guard treats the same set as live, so a second checkout can't
-// mint a second sub whose webhook overwrites the one-row membership and runs
-// scDelete on the still-paid feed.
+// mint a second sub whose webhook overwrites the one-row membership.
 //
 // `withPaymentMethod` expands each subscription's default payment method, which
 // is what lets readCardOnFile skip a serial paymentMethods.retrieve. It is
@@ -190,17 +190,17 @@ export function planFromSubscription(sub: Stripe.Subscription): Plan | null {
   // caller sits on a webhook or a request path where a throw becomes a 5xx, so
   // this matches the documented contract rather than relying on callers to
   // never pass a partial subscription.
-  const interval = sub.items?.data?.[0]?.price?.recurring?.interval
+  return planFromInterval(sub.items?.data?.[0]?.price?.recurring?.interval)
+}
+
+// A Stripe price's billing interval as our plan name, or null for anything
+// that isn't month/year.
+export function planFromInterval(interval: string | null | undefined): Plan | null {
   if (interval === 'month') return 'monthly'
   if (interval === 'year') return 'yearly'
   return null
 }
 
-// The subscription's current-period-end as an ISO string, or null when the sub
-// has no items / no finite timestamp. Used for the renewal/access date in the
-// cancel, reactivate, and accept-offer responses — all read it *after* a Stripe
-// write has already succeeded, so an itemless sub must degrade to null rather
-// than throw a 500 that strands an action that already happened.
 // Stripe timestamps are unix seconds; our API/DB speak ISO strings. Null in
 // (or a non-finite value from a malformed payload) → null out, never "Invalid
 // Date".
@@ -214,6 +214,25 @@ export function customerIdOf(sub: Stripe.Subscription): string {
   return typeof sub.customer === 'string' ? sub.customer : sub.customer.id
 }
 
+// A Stripe error that means "the payment didn't go through" (a decline, or a
+// card that needs an authentication step this server-side update can't present)
+// rather than "the request was wrong" or "Stripe is down".
+export function isCardPaymentError(err: unknown): boolean {
+  const e = err as { type?: unknown; statusCode?: unknown } | null
+  return e?.type === 'StripeCardError' || e?.statusCode === 402
+}
+
+// The id off a Stripe reference, whether the field is expanded to an object or
+// left as the bare id string. Null when the reference is absent.
+export function stripeIdOf(x: string | { id: string } | null | undefined): string | null {
+  return typeof x === 'string' ? x : (x?.id ?? null)
+}
+
+// The subscription's current-period-end as an ISO string, or null when the sub
+// has no items / no finite timestamp. Used for the renewal/access date in the
+// cancel, reactivate, and accept-offer responses — all read it *after* a Stripe
+// write has already succeeded, so an itemless sub must degrade to null rather
+// than throw a 500 that strands an action that already happened.
 export function periodEndIso(sub: Stripe.Subscription): string | null {
   return tsToIso(sub.items.data[0]?.current_period_end)
 }
@@ -427,8 +446,6 @@ export async function readCardOnFile(
   }
 }
 
-// The account page's view of a payment method, or null for anything that isn't
-// a card (Link, a bank debit) — there is no "ending 4242" to show for those.
 // A card network as members know it. Stripe's `card.brand` is a lowercase
 // slug ("visa", "amex"); anything unlisted is title-cased rather than dropped.
 const CARD_BRAND_LABELS: Record<string, string> = {
@@ -446,6 +463,8 @@ export function cardBrandLabel(brand: string): string | null {
   return CARD_BRAND_LABELS[brand] ?? brand.charAt(0).toUpperCase() + brand.slice(1)
 }
 
+// The account page's view of a payment method, or null for anything that isn't
+// a card (Link, a bank debit) — there is no "ending 4242" to show for those.
 export function cardOf(pm: Stripe.PaymentMethod): CardOnFile | null {
   const card = pm.card
   if (!card) return null
@@ -477,10 +496,7 @@ export async function scheduledPlanOf(
     const resolved =
       typeof price === 'string' ? await stripe.prices.retrieve(price) : price
     if ('deleted' in resolved && resolved.deleted) return null
-    const interval = resolved.recurring?.interval
-    if (interval === 'month') return 'monthly'
-    if (interval === 'year') return 'yearly'
-    return null
+    return planFromInterval(resolved.recurring?.interval)
   } catch (err) {
     console.error('[stripe] scheduled plan lookup failed:', err)
     return null
@@ -515,21 +531,19 @@ export function existingDiscountParams(
 export function phaseDiscountParams(
   discounts: Stripe.SubscriptionSchedule.Phase.Discount[] | null | undefined,
 ): Array<{ discount: string } | { promotion_code: string } | { coupon: string }> {
-  const idOf = (x: string | { id: string } | null | undefined): string | null =>
-    typeof x === 'string' ? x : (x?.id ?? null)
   const out: Array<{ discount: string } | { promotion_code: string } | { coupon: string }> = []
   for (const d of discounts ?? []) {
-    const discount = idOf(d.discount)
+    const discount = stripeIdOf(d.discount)
     if (discount) {
       out.push({ discount })
       continue
     }
-    const promotionCode = idOf(d.promotion_code)
+    const promotionCode = stripeIdOf(d.promotion_code)
     if (promotionCode) {
       out.push({ promotion_code: promotionCode })
       continue
     }
-    const coupon = idOf(d.coupon)
+    const coupon = stripeIdOf(d.coupon)
     if (coupon) out.push({ coupon })
   }
   return out
@@ -545,6 +559,35 @@ export function phaseTrialParams(
   phase: Pick<Stripe.SubscriptionSchedule.Phase, 'trial_end'>,
 ): { trial_end?: number } {
   return phase.trial_end ? { trial_end: phase.trial_end } : {}
+}
+
+// Whether this member has spent their one promotional retention discount for
+// the rolling 12-month window. No DB → nothing recorded, so not spent. A read
+// failure fails closed: skipping a discount is recoverable, granting a repeat
+// one isn't. `label` names the caller in the log line.
+export async function retentionWindowSpent(
+  env: Env,
+  email: string,
+  label: string,
+): Promise<boolean> {
+  if (!env.DATABASE_URL) return false
+  try {
+    return await hasAcceptedRetention(getDb(env), email)
+  } catch (err) {
+    console.error(`[stripe] ${label} eligibility check failed:`, err)
+    return true
+  }
+}
+
+// A schedule phase's items as update params: the price by id, whether or not
+// the phase came back with it expanded.
+export function phaseItemParams(
+  items: Stripe.SubscriptionSchedule.Phase.Item[],
+): Array<{ price: string; quantity: number }> {
+  return items.map((item) => ({
+    price: typeof item.price === 'string' ? item.price : item.price.id,
+    quantity: item.quantity ?? 1,
+  }))
 }
 
 // Add a coupon to a schedule's LAST phase — the pending change — leaving every
@@ -564,10 +607,7 @@ export async function addCouponToFinalPhase(
         ...(i === last ? [{ coupon: couponId }] : []),
       ]
       return {
-        items: p.items.map((item) => ({
-          price: typeof item.price === 'string' ? item.price : item.price.id,
-          quantity: item.quantity ?? 1,
-        })),
+        items: phaseItemParams(p.items),
         start_date: p.start_date,
         end_date: p.end_date,
         ...phaseTrialParams(p),

@@ -87,7 +87,7 @@ export function memberInWindow(
 
 // One premium reader, as the roster query returns them. Email and status come
 // from the Beehiiv mirror, `joined` is `premium_since`, and the feed list is
-// implicit (exactly one show).
+// implicit (every premium show).
 export type PremiumReader = {
   email: string
   status?: string
@@ -149,8 +149,9 @@ export function evaluateReminder(
 }
 
 // --- ledger ---------------------------------------------------------------
+// Shared with the feed-migration check-in, which records its stages here too.
 
-async function hasReminderBeenSent(
+export async function hasReminderBeenSent(
   sql: Sql,
   email: string,
   reminderNo = 1,
@@ -162,7 +163,7 @@ async function hasReminderBeenSent(
   return rows.length > 0
 }
 
-async function recordReminderSent(
+export async function recordReminderSent(
   sql: Sql,
   email: string,
   doneCount: number,

@@ -10,6 +10,7 @@
 import {
   ARK_MEDIA_TEAM,
   esc,
+  greeting,
   renderShell,
   supportLine,
 } from './welcome-email.js'
@@ -30,7 +31,6 @@ export function renderPaymentFailedEmail(p: PaymentFailedEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
   // "your Ark+ membership" / "your membership" — the article and the noun live
   // here so an unknown tier degrades to a sentence that still reads.
   const product = p.tier
@@ -41,7 +41,7 @@ export function renderPaymentFailedEmail(p: PaymentFailedEmailParams): {
     preheader: 'Update your payment method to keep your membership active.',
     eyebrow: 'Action needed',
     headlineHtml: "There's a problem with your payment.",
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml: `We tried to charge your card for ${product}, and it didn&rsquo;t go through.`,
     // Defusing the alarm is the job of the second paragraph: almost every one of
     // these is an expired card, and a member who thinks something is wrong with

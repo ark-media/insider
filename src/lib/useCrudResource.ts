@@ -112,7 +112,6 @@ export function useCrudResource<T, Form>(config: {
 
   return {
     items,
-    setItems,
     loading,
     listError,
     setListError,

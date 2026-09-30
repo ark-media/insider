@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "../../components/AdminShell";
+import { AdminListPanel } from "../../components/admin/AdminList";
 import {
   createDiscussThread,
   deleteDiscussThread,
@@ -241,74 +242,64 @@ function DiscussThreadsAdmin() {
           </form>
         </section>
 
-        <section aria-label="Existing discussion threads">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-lg text-fg-strong">All threads</h2>
-          </div>
+        <AdminListPanel
+          title="All threads"
+          ariaLabel="Existing discussion threads"
+          loading={loadingThreads}
+          error={listError}
+          items={threads}
+          emptyText="No threads yet. Create one with the form."
+          renderItem={(t) => (
+            <li key={t.id} className="border border-rule p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center border border-rule-strong px-2 py-0.5 label font-bold text-fg-muted">
+                  {t.newsletterSlug}
+                </span>
+                <span className="flex gap-3 button-text font-bold">
+                  <button
+                    type="button"
+                    onClick={() => void copy(t.circleThreadUrl)}
+                    className="text-fg-strong hover:text-cyan"
+                  >
+                    Copy URL
+                  </button>
+                  <a
+                    href={t.circleThreadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-fg-strong hover:text-cyan"
+                  >
+                    Open
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => void remove(t)}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    Delete
+                  </button>
+                </span>
+              </div>
 
-          {loadingThreads ? (
-            <p className="mt-6 text-body-sm">Loading…</p>
-          ) : listError ? (
-            <p className="mt-6 text-body-sm text-red-400">{listError}</p>
-          ) : threads.length === 0 ? (
-            <p className="mt-6 text-body-sm">
-              No threads yet. Create one with the form.
-            </p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {threads.map((t) => (
-                <li key={t.id} className="border border-rule p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="inline-flex items-center border border-rule-strong px-2 py-0.5 label font-bold text-fg-muted">
-                      {t.newsletterSlug}
-                    </span>
-                    <span className="flex gap-3 button-text font-bold">
-                      <button
-                        type="button"
-                        onClick={() => void copy(t.circleThreadUrl)}
-                        className="text-fg-strong hover:text-cyan"
-                      >
-                        Copy URL
-                      </button>
-                      <a
-                        href={t.circleThreadUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-fg-strong hover:text-cyan"
-                      >
-                        Open
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => void remove(t)}
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        Delete
-                      </button>
-                    </span>
-                  </div>
-
-                  <div className="mt-3 text-body text-fg-strong">
-                    {t.beehiivPostTitle}
-                  </div>
-                  <div className="mt-1 truncate text-body-sm">
-                    {t.circleThreadUrl}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
-                    <span>Created {formatTimestampWithTime(t.createdAt)}</span>
-                    {t.beehiivBodyPatched ? (
-                      <span className="text-cyan">Beehiiv body patched</span>
-                    ) : (
-                      <span className="text-amber-300">
-                        Beehiiv body NOT patched — copy URL manually
-                      </span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+              <div className="mt-3 text-body text-fg-strong">
+                {t.beehiivPostTitle}
+              </div>
+              <div className="mt-1 truncate text-body-sm">
+                {t.circleThreadUrl}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-body-sm">
+                <span>Created {formatTimestampWithTime(t.createdAt)}</span>
+                {t.beehiivBodyPatched ? (
+                  <span className="text-cyan">Beehiiv body patched</span>
+                ) : (
+                  <span className="text-amber-300">
+                    Beehiiv body NOT patched — copy URL manually
+                  </span>
+                )}
+              </div>
+            </li>
           )}
-        </section>
+        />
       </div>
     </AdminShell>
   );

@@ -6,6 +6,7 @@
 import type Stripe from 'stripe'
 import { formatCurrencyMajor } from '../../shared/currency-format.js'
 import { createSingleFlight } from '../../shared/single-flight.js'
+import { makeTTLCache } from '../../shared/ttl-cache.js'
 
 export type Plan = 'monthly' | 'yearly'
 
@@ -95,7 +96,7 @@ export type CatalogPrice = {
 }
 
 const PRICE_TTL_MS = 5 * 60_000
-const cache = new Map<string, { at: number; price: CatalogPrice }>()
+const cache = makeTTLCache<string, CatalogPrice>(PRICE_TTL_MS)
 const priceFlight = createSingleFlight<string, CatalogPrice>()
 
 // Resolve the catalog price for a tier+plan by `lookup_key`, with its product id
@@ -150,9 +151,8 @@ async function resolvePriceByLookupKey(
   stripe: Stripe,
   key: string,
 ): Promise<CatalogPrice> {
-  const now = Date.now()
   const hit = cache.get(key)
-  if (hit && now - hit.at < PRICE_TTL_MS) return hit.price
+  if (hit) return hit
   return priceFlight.run(key, () => loadPriceByLookupKey(stripe, key))
 }
 
@@ -190,7 +190,7 @@ async function loadPriceByLookupKey(
     floors[cur] = amount
   }
   const resolved: CatalogPrice = { priceId: price.id, productId, floors }
-  cache.set(key, { at: Date.now(), price: resolved })
+  cache.set(key, resolved)
   return resolved
 }
 

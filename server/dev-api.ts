@@ -10,7 +10,7 @@
 import type { Plugin, Connect } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Env, Handler } from './lib/route.js'
-import { PayloadTooLargeError } from './lib/http.js'
+import { PayloadTooLargeError, makeJsonRes } from './lib/http.js'
 import { buildApi } from './api.js'
 
 // Keeps the exact surface the tests rely on: `plugin.configureServer(fake)`
@@ -38,12 +38,9 @@ export function devApiPlugin(env: Env): Plugin {
         return next()
       }
       handler(req, res).catch((err: unknown) => {
+        const json = makeJsonRes(res)
         if (err instanceof PayloadTooLargeError) {
-          if (!res.headersSent) {
-            res.statusCode = 413
-            res.setHeader('content-type', 'application/json')
-            res.end(JSON.stringify({ error: 'payload_too_large' }))
-          }
+          if (!res.headersSent) json(413, { error: 'payload_too_large' })
           return
         }
         console.error('[dev-api]', err)
@@ -54,13 +51,7 @@ export function devApiPlugin(env: Env): Plugin {
           )
         }
         if (!res.headersSent) {
-          res.statusCode = 500
-          res.setHeader('content-type', 'application/json')
-          res.end(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : 'Internal error',
-            }),
-          )
+          json(500, { error: err instanceof Error ? err.message : 'Internal error' })
         } else {
           next(err as Error)
         }

@@ -99,35 +99,22 @@ function NewsletterVisual() {
 }
 
 // A phone shell mirroring the app mockups on /fold — fixed dark colors so
-// it reads as a real screenshot in both themes. `bleed` top-anchors the device
-// in a capped window that fades out at the bottom, so it reads as "rising into
+// it reads as a real screenshot in both themes. The device is top-anchored in a
+// capped window that fades out at the bottom, so it reads as "rising into
 // frame" instead of dominating the band with its full height.
-function PhoneFrame({
-  children,
-  bleed = false,
-}: {
-  children: ReactNode;
-  bleed?: boolean;
-}) {
-  const frame = (
-    <div className="relative aspect-[9/19] overflow-hidden rounded-[2.4rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
-      <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
-        {/* notch */}
-        <div className="absolute left-1/2 top-[10px] z-20 h-[20px] w-[88px] -translate-x-1/2 rounded-full bg-black/70" />
-        {children}
-      </div>
-    </div>
-  );
+function PhoneFrame({ children }: { children: ReactNode }) {
   return (
     <div className="relative isolate mx-auto w-[212px] shrink-0 sm:w-[232px]">
       <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-cyan/10 blur-2xl" />
-      {bleed ? (
-        <div className="relative h-[380px] overflow-hidden [-webkit-mask-image:linear-gradient(to_bottom,#000_70%,transparent)] [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]">
-          {frame}
+      <div className="relative h-[380px] overflow-hidden [-webkit-mask-image:linear-gradient(to_bottom,#000_70%,transparent)] [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]">
+        <div className="relative aspect-[9/19] overflow-hidden rounded-[2.4rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
+          <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
+            {/* notch */}
+            <div className="absolute left-1/2 top-[10px] z-20 h-[20px] w-[88px] -translate-x-1/2 rounded-full bg-black/70" />
+            {children}
+          </div>
         </div>
-      ) : (
-        frame
-      )}
+      </div>
     </div>
   );
 }
@@ -153,7 +140,7 @@ function PhoneStatusBar() {
 // ---------------------------------------------------------------------------
 function CommunityVisual() {
   return (
-    <PhoneFrame bleed>
+    <PhoneFrame>
       <div className="flex h-full flex-col text-white">
         <PhoneStatusBar />
 

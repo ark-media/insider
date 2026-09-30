@@ -6,8 +6,7 @@
 // and thin DB accessors over `Sql`. Active-window selection is done in SQL so
 // the public endpoint never loads the full table.
 
-import sanitizeHtml from 'sanitize-html'
-import { sanitizeRichText } from './richText.js'
+import { plainText, sanitizeRichText } from './richText.js'
 import type { Sql } from './db.js'
 import type { Announcement } from '../../shared/announcement.js'
 
@@ -90,7 +89,7 @@ export function validateAnnouncementInput(raw: unknown): ValidationResult {
   }
   const body = sanitizeAnnouncementBody(r.body).trim()
   // After sanitizing + stripping all tags, there must be real text left.
-  const textOnly = sanitizeHtml(body, { allowedTags: [], allowedAttributes: {} }).trim()
+  const textOnly = plainText(body)
   if (!textOnly) {
     return { ok: false, error: 'Body has no visible text after sanitizing.' }
   }

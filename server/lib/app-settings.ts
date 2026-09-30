@@ -40,6 +40,23 @@ async function setSetting(sql: Sql, key: string, value: string): Promise<void> {
     on conflict (key) do update set value = ${value}, updated_at = now()`
 }
 
+// A stored config row, parsed and validated. Null (and a log line) when the
+// row is malformed, so the caller falls back rather than throwing.
+function parseStored<T>(
+  raw: string,
+  label: string,
+  validate: (value: unknown) => { ok: true; value: T } | { ok: false; error: string },
+): T | null {
+  try {
+    const parsed = validate(JSON.parse(raw))
+    if (parsed.ok) return parsed.value
+    console.error(`[app-settings] stored ${label} config invalid:`, parsed.error)
+  } catch (err) {
+    console.error(`[app-settings] ${label} config parse failed:`, err)
+  }
+  return null
+}
+
 // Resolve the live reminder config. Precedence: the admin-set DB row, then env
 // overrides, then code defaults. A malformed DB value falls back rather
 // than throwing, so a bad row can't break the cron.
@@ -55,14 +72,7 @@ export async function getReminderConfig(
     return loadReminderConfigFromEnv(env)
   }
   if (raw === null) return loadReminderConfigFromEnv(env)
-  try {
-    const parsed = validateReminderConfig(JSON.parse(raw))
-    if (parsed.ok) return parsed.value
-    console.error('[app-settings] stored reminder config invalid:', parsed.error)
-  } catch (err) {
-    console.error('[app-settings] reminder config parse failed:', err)
-  }
-  return loadReminderConfigFromEnv(env)
+  return parseStored(raw, 'reminder', validateReminderConfig) ?? loadReminderConfigFromEnv(env)
 }
 
 export async function setReminderConfig(
@@ -86,14 +96,7 @@ export async function getMigrationConfig(sql: Sql): Promise<MigrationConfig> {
     return DEFAULT_MIGRATION_CONFIG
   }
   if (raw === null) return DEFAULT_MIGRATION_CONFIG
-  try {
-    const parsed = validateMigrationConfig(JSON.parse(raw))
-    if (parsed.ok) return parsed.value
-    console.error('[app-settings] stored migration config invalid:', parsed.error)
-  } catch (err) {
-    console.error('[app-settings] migration config parse failed:', err)
-  }
-  return DEFAULT_MIGRATION_CONFIG
+  return parseStored(raw, 'migration', validateMigrationConfig) ?? DEFAULT_MIGRATION_CONFIG
 }
 
 export async function setMigrationConfig(
@@ -122,14 +125,7 @@ export async function setMigrationConfig(
 export async function getOpenHouseConfig(sql: Sql): Promise<OpenHouseConfig> {
   const raw = await getSetting(sql, OPEN_HOUSE_CONFIG_KEY)
   if (raw === null) return DEFAULT_OPEN_HOUSE_CONFIG
-  try {
-    const parsed = validateOpenHouseConfig(JSON.parse(raw))
-    if (parsed.ok) return parsed.value
-    console.error('[app-settings] stored open house config invalid:', parsed.error)
-  } catch (err) {
-    console.error('[app-settings] open house config parse failed:', err)
-  }
-  return DEFAULT_OPEN_HOUSE_CONFIG
+  return parseStored(raw, 'open house', validateOpenHouseConfig) ?? DEFAULT_OPEN_HOUSE_CONFIG
 }
 
 export async function setOpenHouseConfig(

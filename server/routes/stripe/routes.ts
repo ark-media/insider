@@ -25,7 +25,7 @@
 //     Stripe; the source of truth for membership + entitlement state.
 
 import type Stripe from 'stripe'
-import { deriveEntitlements } from '../../entitlement.js'
+import { deriveEntitlements, type Tier } from '../../entitlement.js'
 import { getDb } from '../../lib/db.js'
 import {
   clearMembershipPending,
@@ -33,11 +33,7 @@ import {
   getScheduledTierByCustomer,
   setMembershipPending,
 } from '../../lib/membership.js'
-import {
-  hasAcceptedRetention,
-  insertCancellationSurvey,
-  updateCancellationSurveyReasons,
-} from '../../lib/cancellation.js'
+import { insertCancellationSurvey, updateCancellationSurveyReasons } from '../../lib/cancellation.js'
 import {
   bundleBreakdown,
   debundlePricePreview,
@@ -86,11 +82,7 @@ import {
   destinationItem,
   previewChange,
 } from './plan-change.js'
-import {
-  renderCancellationEmail,
-  renderDebundleEmail,
-  type CancellableTier,
-} from '../../lib/cancellation-email.js'
+import { renderCancellationEmail, renderDebundleEmail } from '../../lib/cancellation-email.js'
 import {
   EMAIL_TIME_ZONE,
   formatTimestampInZone,
@@ -113,17 +105,21 @@ import {
   giftExtensionEndIso,
   giftExtensionRunning,
   giftPauseEndSec,
+  isCardPaymentError,
   MAX_NAME_LEN,
   periodEndIso,
   phaseDiscountParams,
+  phaseItemParams,
   phaseTrialParams,
   periodEndChangeAtIso,
   planFromSubscription,
   quoteChargeToday,
   readCardOnFile,
   releaseScheduleIfAny,
+  retentionWindowSpent,
   scheduledPlanOf,
   scheduleIdOf,
+  stripeIdOf,
   subscriptionAmount,
   tsToIso,
   validatePwycAmount,
@@ -149,14 +145,6 @@ function isUndefinedColumn(err: unknown): boolean {
   const e = err as { code?: unknown; message?: unknown } | null
   if (e?.code === '42703') return true
   return typeof e?.message === 'string' && /column .* does not exist/i.test(e.message)
-}
-
-// A Stripe error that means "the payment didn't go through" (a decline, or a
-// card that needs an authentication step this server-side update can't present)
-// rather than "the request was wrong" or "Stripe is down".
-function isCardPaymentError(err: unknown): boolean {
-  const e = err as { type?: unknown; statusCode?: unknown } | null
-  return e?.type === 'StripeCardError' || e?.statusCode === 402
 }
 
 export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[] {
@@ -249,7 +237,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         }
 
         const plan = body.plan
-        const interval: 'month' | 'year' = plan === 'monthly' ? 'month' : 'year'
         const tier = coerceTier(body.tier)
 
         // Rate-limit after input validation so a clearly-malformed request
@@ -369,7 +356,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // currency_options the session's `currency` selects), else inline
         // price_data on the catalog PRODUCT for a PWYC uplift. price_data (not
         // product_data) reuses the persistent product — product_data mints a new
-        // Product every call, the cause of the sandbox sprawl (§4).
+        // Product every call, the cause of the sandbox sprawl (§4). The inline
+        // amount is tax-exclusive: pre-tax, with Stripe Tax adding tax on top —
+        // required once automatic_tax is on.
         // Derive the line-item type by indexing into the create params rather
         // than the `Checkout.SessionCreateParams.LineItem` namespace: this SDK
         // version re-exports SessionCreateParams as a plain type alias at the
@@ -377,21 +366,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         type CheckoutLineItem = NonNullable<
           Stripe.Checkout.SessionCreateParams['line_items']
         >[number]
-        const lineItem: CheckoutLineItem =
-          amountCents === floor
-            ? { price: catalog.priceId, quantity: 1 }
-            : {
-                price_data: {
-                  currency,
-                  product: catalog.productId,
-                  unit_amount: amountCents,
-                  recurring: { interval },
-                  // Exclusive: the amount is pre-tax; Stripe Tax adds tax on top.
-                  // Required once automatic_tax is on.
-                  tax_behavior: 'exclusive',
-                },
-                quantity: 1,
-              }
+        const lineItem: CheckoutLineItem = {
+          ...destinationItem(catalog, amountCents, floor, currency, plan),
+          quantity: 1,
+        }
 
         // Reuse the member's own Customer (found above, for a PROVEN email only)
         // so a signed-in member doesn't mint duplicates; everyone else gets a
@@ -609,7 +587,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // Derived outside the DB block because the confirmation email needs it
         // too — which tier is being left decides the whole body of that email,
         // and a Stripe-only preview env still sends it.
-        let canceledTier: string | null = null
+        let canceledTier: Tier | null = null
         try {
           canceledTier = await tierFromSubscription(sub, stripe)
         } catch (err) {
@@ -652,7 +630,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             : { cancel_at_period_end: true },
         )
 
-        const accessUntilIso = giftEnd !== null ? tsToIso(giftEnd) : periodEndIso(sub)
+        const accessUntilIso = periodEndChangeAtIso(sub)
 
         // The confirmation email. Sent HERE rather than off
         // customer.subscription.deleted, which is the other obvious hook and the
@@ -669,7 +647,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             const identity = await resolveRequestIdentity(req, env)
             const { subject, html } = renderCancellationEmail({
               firstName: identity?.firstName ?? undefined,
-              tier: canceledTier as CancellableTier,
+              tier: canceledTier,
               accessUntil:
                 formatTimestampInZone(accessUntilIso, EMAIL_TIME_ZONE, 'long', {
                   withZoneLabel: true,
@@ -913,15 +891,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // way — the coupons are quoted off the list price, and stacking one on
         // the welcome discount would quote a number they won't be charged.
         {
-          let blocked = welcomeDiscountActive(sub.metadata)
-          if (!blocked && env.DATABASE_URL) {
-            blocked = true
-            try {
-              blocked = await hasAcceptedRetention(getDb(env), email)
-            } catch (err) {
-              console.error('[stripe] save-offers eligibility check failed:', err)
-            }
-          }
+          const blocked =
+            welcomeDiscountActive(sub.metadata) ||
+            (await retentionWindowSpent(env, email, 'save-offers'))
           // A spent window removes the discount, not the switch itself: the
           // member can still change plan, just at the plain catalog price.
           if (blocked) {
@@ -1014,14 +986,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // One temporary promotional discount per rolling 12 months, so a member
         // can't re-enter the cancel flow to collect it again. This covers the
         // discount riding the annual→monthly switch too — it's the same coupon.
-        if (env.DATABASE_URL) {
-          let blocked = true
-          try {
-            blocked = await hasAcceptedRetention(getDb(env), email)
-          } catch (err) {
-            console.error('[stripe] accept-save-offer eligibility check failed:', err)
-          }
-          if (blocked) return json(409, { error: 'Save offer already used recently.' })
+        if (await retentionWindowSpent(env, email, 'accept-save-offer')) {
+          return json(409, { error: 'Save offer already used recently.' })
         }
 
         const pendingScheduleId = target.scheduled ? scheduleIdOf(sub) : null
@@ -1212,7 +1178,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           periodEnd: sub ? periodEndIso(sub) : null,
           // Billing cadence, so the cancel flows can branch copy by monthly vs
           // annual (Flow A / Flow D). Null when there's no live sub.
-          plan: sub ? planFromSubscription(sub) : null,
+          plan: subPlan,
           // What the next bill is, in its own currency + minor units, so the
           // account page can render it without a second round trip. Null when
           // there's no live sub or the amount can't be quoted honestly.
@@ -1324,8 +1290,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         } catch {
           return json(404, { error: 'That card could not be found. Please try again.' })
         }
-        const intentCustomer =
-          typeof intent.customer === 'string' ? intent.customer : intent.customer?.id
+        const intentCustomer = stripeIdOf(intent.customer)
         // Same answer as a missing intent: whether an id belongs to someone
         // else is not something to confirm to the caller.
         if (intentCustomer !== customerId) {
@@ -1579,20 +1544,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // /accept-save-offer. On a DB error, treat the window as spent: skipping
         // a discount is recoverable, granting an unlimited one isn't.
         let introCoupon: Awaited<ReturnType<typeof pickIntroCoupon>> | null = null
-        if (isDebundle) {
-          let windowSpent = true
-          if (env.DATABASE_URL) {
-            try {
-              windowSpent = await hasAcceptedRetention(getDb(env), email)
-            } catch (err) {
-              console.error('[stripe] debundle intro eligibility check failed:', err)
-            }
-          } else {
-            windowSpent = false
-          }
-          if (!windowSpent) {
-            introCoupon = pickIntroCoupon(await listActiveCoupons(stripe), currency)
-          }
+        if (isDebundle && !(await retentionWindowSpent(env, email, 'debundle intro'))) {
+          introCoupon = pickIntroCoupon(await listActiveCoupons(stripe), currency)
         }
 
         // Kept for the timing decision below: gaining an entitlement applies
@@ -1731,7 +1684,6 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             // (preserves the item id) with exact prorations. The webhook derives
             // the new tier from the price product and syncs Beehiiv/Circle/Neon.
             await releaseScheduleIfAny(stripe, sub, env)
-            const priceField = destinationPrice
             // Retention coupons are priced for one product at one cadence, and a
             // subscription-level discount otherwise rides straight through this
             // update: the monthly supporter rate onto an annual invoice, the
@@ -1754,7 +1706,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             // and cancel before ever paying for it, and a declined card still
             // moved a monthly member onto an unpaid annual plan.
             const updated = await stripe.subscriptions.update(sub.id, {
-              items: [{ id: item.id, ...priceField }],
+              items: [{ id: item.id, ...destinationPrice }],
               proration_behavior: 'always_invoice',
               payment_behavior: 'error_if_incomplete',
               billing_cycle_anchor: 'now',
@@ -1855,10 +1807,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             end_behavior: 'release',
             phases: [
               {
-                items: currentPhase.items.map((i) => ({
-                  price: typeof i.price === 'string' ? i.price : i.price.id,
-                  quantity: i.quantity ?? 1,
-                })),
+                items: phaseItemParams(currentPhase.items),
                 start_date: currentPhase.start_date,
                 end_date: giftPauseEnd ?? currentPhase.end_date,
                 // A gift holding the renewal off is a trial; without this the

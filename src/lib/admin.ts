@@ -30,12 +30,6 @@ export type { OpenHouseConfig };
 export type { SupportSession };
 export type { MemberDirectoryEntry, MemberDirectoryFilter, MemberDirectoryPage };
 
-// Kept as a thin indirection so call sites stay uniform; the session now
-// rides the cookie, so this only forwards any extra headers (e.g. content-type).
-function authHeaders(extra?: Record<string, string>): Record<string, string> {
-  return { ...(extra ?? {}) };
-}
-
 async function errorMessage(res: Response): Promise<string> {
   try {
     const data = (await res.json()) as { error?: string };
@@ -45,14 +39,27 @@ async function errorMessage(res: Response): Promise<string> {
   }
 }
 
+// Every admin call: send the session cookie, and throw the server's error
+// message on a non-OK response so the page can show it.
+async function adminFetch(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, { ...init, credentials: "include" });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return res;
+}
+
+function jsonInit(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
+
 export type AdminMe = { isAdmin: boolean; email: string | null };
 
 export async function fetchAdminMe(): Promise<AdminMe> {
   try {
-    const res = await fetch("/api/admin/me", {
-      headers: await authHeaders(),
-      credentials: "include",
-    });
+    const res = await fetch("/api/admin/me", { credentials: "include" });
     if (!res.ok) return { isAdmin: false, email: null };
     return (await res.json()) as AdminMe;
   } catch {
@@ -78,11 +85,7 @@ export async function fetchCancellations(
   filter?: CancellationFilter,
 ): Promise<CancellationSummary> {
   const qs = cancellationQuery(filter).toString();
-  const res = await fetch(`/api/admin/cancellations${qs ? `?${qs}` : ""}`, {
-    headers: authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch(`/api/admin/cancellations${qs ? `?${qs}` : ""}`);
   return (await res.json()) as CancellationSummary;
 }
 
@@ -94,11 +97,7 @@ export async function downloadCancellationsCsv(
 ): Promise<void> {
   const params = cancellationQuery(filter);
   params.set("format", "csv");
-  const res = await fetch(`/api/admin/cancellations?${params.toString()}`, {
-    headers: authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch(`/api/admin/cancellations?${params.toString()}`);
 
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -134,11 +133,7 @@ export type AnnouncementDraft = {
 };
 
 export async function listAnnouncements(): Promise<Announcement[]> {
-  const res = await fetch("/api/admin/announcements", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/announcements");
   return ((await res.json()) as { announcements: Announcement[] }).announcements;
 }
 
@@ -149,23 +144,15 @@ export async function saveAnnouncement(
   const url = id
     ? `/api/admin/announcements?id=${encodeURIComponent(id)}`
     : "/api/admin/announcements";
-  const res = await fetch(url, {
-    // PUT, not PATCH: the editor always submits the full record (full replace).
-    method: id ? "PUT" : "POST",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(draft),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  // PUT, not PATCH: the editor always submits the full record (full replace).
+  const res = await adminFetch(url, jsonInit(id ? "PUT" : "POST", draft));
   return ((await res.json()) as { announcement: Announcement }).announcement;
 }
 
 export async function deleteAnnouncement(id: string): Promise<void> {
-  const res = await fetch(
-    `/api/admin/announcements?id=${encodeURIComponent(id)}`,
-    { method: "DELETE", headers: await authHeaders(), credentials: "include" },
-  );
-  if (!res.ok) throw new Error(await errorMessage(res));
+  await adminFetch(`/api/admin/announcements?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 // --- Careers -------------------------------------------------------------
@@ -186,11 +173,7 @@ export type CareerDraft = {
 };
 
 export async function listCareers(): Promise<Career[]> {
-  const res = await fetch("/api/admin/careers", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/careers");
   return ((await res.json()) as { careers: Career[] }).careers;
 }
 
@@ -198,24 +181,15 @@ export async function saveCareer(draft: CareerDraft, id?: string): Promise<Caree
   const url = id
     ? `/api/admin/careers?id=${encodeURIComponent(id)}`
     : "/api/admin/careers";
-  const res = await fetch(url, {
-    // PUT, not PATCH: the editor always submits the full record (full replace).
-    method: id ? "PUT" : "POST",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(draft),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  // PUT, not PATCH: the editor always submits the full record (full replace).
+  const res = await adminFetch(url, jsonInit(id ? "PUT" : "POST", draft));
   return ((await res.json()) as { career: Career }).career;
 }
 
 export async function deleteCareer(id: string): Promise<void> {
-  const res = await fetch(`/api/admin/careers?id=${encodeURIComponent(id)}`, {
+  await adminFetch(`/api/admin/careers?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: await authHeaders(),
-    credentials: "include",
   });
-  if (!res.ok) throw new Error(await errorMessage(res));
 }
 
 // --- FAQs -----------------------------------------------------------------
@@ -233,11 +207,7 @@ export type FaqDraft = {
 };
 
 export async function listFaqs(): Promise<Faq[]> {
-  const res = await fetch("/api/admin/faqs", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/faqs");
   return ((await res.json()) as { faqs: Faq[] }).faqs;
 }
 
@@ -245,24 +215,15 @@ export async function saveFaq(draft: FaqDraft, id?: string): Promise<Faq> {
   const url = id
     ? `/api/admin/faqs?id=${encodeURIComponent(id)}`
     : "/api/admin/faqs";
-  const res = await fetch(url, {
-    // PUT, not PATCH: the editor always submits the full record (full replace).
-    method: id ? "PUT" : "POST",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(draft),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  // PUT, not PATCH: the editor always submits the full record (full replace).
+  const res = await adminFetch(url, jsonInit(id ? "PUT" : "POST", draft));
   return ((await res.json()) as { faq: Faq }).faq;
 }
 
 export async function deleteFaq(id: string): Promise<void> {
-  const res = await fetch(`/api/admin/faqs?id=${encodeURIComponent(id)}`, {
+  await adminFetch(`/api/admin/faqs?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: await authHeaders(),
-    credentials: "include",
   });
-  if (!res.ok) throw new Error(await errorMessage(res));
 }
 
 // --- Promos (Stripe-native) ----------------------------------------------
@@ -294,79 +255,46 @@ export type PromoDraft = {
 };
 
 export async function listPromos(): Promise<Promo[]> {
-  const res = await fetch("/api/admin/promos", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/promos");
   return ((await res.json()) as { promos: Promo[] }).promos;
 }
 
 export async function createPromo(draft: PromoDraft): Promise<Promo> {
-  const res = await fetch("/api/admin/promos", {
-    method: "POST",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(draft),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/promos", jsonInit("POST", draft));
   return ((await res.json()) as { promo: Promo }).promo;
 }
 
 export async function deletePromo(id: string): Promise<void> {
-  const res = await fetch(`/api/admin/promos?id=${encodeURIComponent(id)}`, {
+  await adminFetch(`/api/admin/promos?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: await authHeaders(),
-    credentials: "include",
   });
-  if (!res.ok) throw new Error(await errorMessage(res));
 }
 
 // --- Feed-setup reminders ------------------------------------------------
 
 export async function fetchReminderConfig(): Promise<ReminderConfig> {
-  const res = await fetch("/api/admin/feed-reminders", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/feed-reminders");
   return ((await res.json()) as { config: ReminderConfig }).config;
 }
 
 export async function saveReminderConfig(
   config: ReminderConfig,
 ): Promise<ReminderConfig> {
-  const res = await fetch("/api/admin/feed-reminders", {
-    method: "PUT",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(config),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/feed-reminders", jsonInit("PUT", config));
   return ((await res.json()) as { config: ReminderConfig }).config;
 }
 
 // --- Feed-migration check-ins --------------------------------------------
 
 export async function fetchMigrationConfig(): Promise<MigrationConfig> {
-  const res = await fetch("/api/admin/feed-migration", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/feed-migration");
   return ((await res.json()) as { config: MigrationConfig }).config;
 }
 
 export async function saveMigrationConfig(
   config: MigrationConfig,
 ): Promise<MigrationConfig> {
-  const res = await fetch("/api/admin/feed-migration", {
-    method: "PUT",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(config),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/feed-migration", jsonInit("PUT", config));
   return ((await res.json()) as { config: MigrationConfig }).config;
 }
 
@@ -375,24 +303,14 @@ export async function saveMigrationConfig(
 // The whole schedule, past sessions included — the back office edits the full
 // list, unlike the public route which only serves what's still to come.
 export async function fetchOpenHouseConfig(): Promise<OpenHouseConfig> {
-  const res = await fetch("/api/admin/open-houses", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/open-houses");
   return ((await res.json()) as { config: OpenHouseConfig }).config;
 }
 
 export async function saveOpenHouseConfig(
   config: OpenHouseConfig,
 ): Promise<OpenHouseConfig> {
-  const res = await fetch("/api/admin/open-houses", {
-    method: "PUT",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(config),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/open-houses", jsonInit("PUT", config));
   return ((await res.json()) as { config: OpenHouseConfig }).config;
 }
 
@@ -410,11 +328,7 @@ export async function listMembers(
   if (filter.activation) params.set("activation", filter.activation);
   if (filter.offset) params.set("offset", String(filter.offset));
   const qs = params.toString();
-  const res = await fetch(`/api/admin/members${qs ? `?${qs}` : ""}`, {
-    headers: authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch(`/api/admin/members${qs ? `?${qs}` : ""}`);
   return (await res.json()) as MemberDirectoryPage;
 }
 
@@ -423,20 +337,14 @@ export async function listMembers(
 export async function listBeehiivDrafts(
   newsletterSlug: NewsletterSlug,
 ): Promise<BeehiivDraft[]> {
-  const res = await fetch(
+  const res = await adminFetch(
     `/api/admin/beehiiv-drafts?newsletter=${encodeURIComponent(newsletterSlug)}`,
-    { headers: await authHeaders(), credentials: "include" },
   );
-  if (!res.ok) throw new Error(await errorMessage(res));
   return ((await res.json()) as { drafts: BeehiivDraft[] }).drafts;
 }
 
 export async function listDiscussThreads(): Promise<DiscussThread[]> {
-  const res = await fetch("/api/admin/discuss-threads", {
-    headers: await authHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/discuss-threads");
   return ((await res.json()) as { threads: DiscussThread[] }).threads;
 }
 
@@ -450,22 +358,14 @@ export type CreateDiscussThreadDraft = {
 export async function createDiscussThread(
   draft: CreateDiscussThreadDraft,
 ): Promise<{ thread: DiscussThread; alreadyExisted: boolean }> {
-  const res = await fetch("/api/admin/discuss-threads", {
-    method: "POST",
-    headers: await authHeaders({ "content-type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(draft),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res));
+  const res = await adminFetch("/api/admin/discuss-threads", jsonInit("POST", draft));
   return (await res.json()) as { thread: DiscussThread; alreadyExisted: boolean };
 }
 
 export async function deleteDiscussThread(id: string): Promise<void> {
-  const res = await fetch(
-    `/api/admin/discuss-threads?id=${encodeURIComponent(id)}`,
-    { method: "DELETE", headers: await authHeaders(), credentials: "include" },
-  );
-  if (!res.ok) throw new Error(await errorMessage(res));
+  await adminFetch(`/api/admin/discuss-threads?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 // --- Help widget sessions -------------------------------------------------
@@ -475,10 +375,8 @@ export async function deleteDiscussThread(id: string): Promise<void> {
 export async function listSupportSessions(
   limit = 200,
 ): Promise<SupportSession[]> {
-  const res = await fetch(
+  const res = await adminFetch(
     `/api/admin/support-conversations?limit=${encodeURIComponent(String(limit))}`,
-    { headers: await authHeaders(), credentials: "include" },
   );
-  if (!res.ok) throw new Error(await errorMessage(res));
   return ((await res.json()) as { sessions: SupportSession[] }).sessions;
 }

@@ -11,6 +11,7 @@ import {
   saveOpenHouseConfig,
   type OpenHouseConfig,
 } from "../../lib/admin";
+import { errMessage } from "../../lib/errMessage";
 import {
   DEFAULT_OPEN_HOUSE_CONFIG,
   OPEN_HOUSE_DISPLAY_LIMIT,
@@ -20,9 +21,8 @@ import {
 } from "../../../shared/open-house";
 import { formatEventParts } from "../../../shared/format-date";
 import {
-  COMMON_TIME_ZONES,
   DEFAULT_TIME_ZONE,
-  browserTimeZone,
+  timeZoneOptions,
   utcToZonedWallClock,
   zonedWallClockToUtc,
 } from "../../lib/datetime";
@@ -31,13 +31,8 @@ export const Route = createFileRoute("/admin/open-houses")({
   component: OpenHousesAdmin,
 });
 
-// Same dropdown the announcement scheduler offers, plus the admin's own zone
-// when it isn't already on the list.
-const TIME_ZONE_OPTIONS = (() => {
-  const tz = browserTimeZone();
-  if (COMMON_TIME_ZONES.some((z) => z.value === tz)) return COMMON_TIME_ZONES;
-  return [{ value: tz, label: `${tz} (your timezone)` }, ...COMMON_TIME_ZONES];
-})();
+// Same dropdown the announcement scheduler offers.
+const TIME_ZONE_OPTIONS = timeZoneOptions();
 
 // A row mid-edit. The instant is held as (zone, wall clock) rather than as the
 // stored ISO string so "7:00 PM in London" stays 7:00 PM in London while the
@@ -153,7 +148,7 @@ function OpenHousesAdmin() {
       },
       (err: unknown) => {
         if (!live) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load.");
+        setLoadError(errMessage(err, "Failed to load."));
         setLoading(false);
       },
     );
@@ -186,7 +181,7 @@ function OpenHousesAdmin() {
       setRows(rowsFrom(next));
       setSaved(true);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save.");
+      setFormError(errMessage(err, "Failed to save."));
     } finally {
       setSaving(false);
     }

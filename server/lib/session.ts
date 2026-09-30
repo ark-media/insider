@@ -496,7 +496,7 @@ export async function verifyAuthTxnToken(token: string, env: Env): Promise<AuthT
 }
 
 // Reads the logged-in session profile from the `ark_session` cookie. Used by
-// routes that need roles (admin) or want the tier hint.
+// routes that need roles (admin).
 export async function getSessionProfile(
   req: IncomingMessage,
   env: Env,
@@ -536,17 +536,9 @@ export type RequestIdentity = {
   session?: SessionProfile
 }
 
-// Resolve who is making this request, checking every accepted credential in one
-// precedence order: an Auth0 bearer, then the checkout bearer, then the
-// ark_session cookie, then the checkout cookie. Null when unauthenticated. The
-// single source of request identity — the entitlement resolver and every gate
-// resolve through this, and `getSessionEmail` is just its `.email`.
 // The greeting name for a RequestIdentity, derived once so the bearer and cookie
 // paths can't drift. Runs through shared/profile-name, so a name we manufactured
-// from the email resolves to null rather than leaking into a greeting. The
-// checkout token carries no name at all, hence NO_NAME.
-const NO_NAME = { firstName: null } as const
-
+// from the email resolves to null rather than leaking into a greeting.
 function identityName(profile: {
   email: string
   givenName?: string
@@ -560,6 +552,23 @@ function identityName(profile: {
   }
 }
 
+// The identity a checkout token proves, from either the bearer or the cookie.
+// The token carries no name at all, hence the null.
+function checkoutIdentity(checkout: CheckoutProfile): RequestIdentity {
+  return {
+    email: checkout.email,
+    sub: checkout.sub,
+    source: 'checkout',
+    assurance: 'link',
+    firstName: null,
+  }
+}
+
+// Resolve who is making this request, checking every accepted credential in one
+// precedence order: an Auth0 bearer, then the checkout bearer, then the
+// ark_session cookie, then the checkout cookie. Null when unauthenticated. The
+// single source of request identity — the entitlement resolver and every gate
+// resolve through this, and `getSessionEmail` is just its `.email`.
 export async function resolveRequestIdentity(
   req: IncomingMessage,
   env: Env,
@@ -582,15 +591,7 @@ export async function resolveRequestIdentity(
       }
     }
     const checkout = await verifyCheckoutProfile(token, env)
-    if (checkout) {
-      return {
-        email: checkout.email,
-        sub: checkout.sub,
-        source: 'checkout',
-        assurance: 'link',
-        ...NO_NAME,
-      }
-    }
+    if (checkout) return checkoutIdentity(checkout)
   }
   const session = await getSessionProfile(req, env)
   if (session) {
@@ -606,15 +607,7 @@ export async function resolveRequestIdentity(
   const cookieToken = readCookie(req, CHECKOUT_COOKIE_NAME)
   if (cookieToken) {
     const checkout = await verifyCheckoutProfile(cookieToken, env)
-    if (checkout) {
-      return {
-        email: checkout.email,
-        sub: checkout.sub,
-        source: 'checkout',
-        assurance: 'link',
-        ...NO_NAME,
-      }
-    }
+    if (checkout) return checkoutIdentity(checkout)
   }
   return null
 }
@@ -789,7 +782,7 @@ function isEmailLinkPurpose(v: unknown): v is EmailLinkPurpose {
 // How long after the offer email goes out its link can redeem without a
 // sign-in. Measured from when the link was signed, so one opened a week later
 // asks for a code. 48 hours covers the day it is read, and the next.
-export const EMAIL_LINK_TRUST_SEC = 48 * 60 * 60
+const EMAIL_LINK_TRUST_SEC = 48 * 60 * 60
 
 // The purpose of the fresh emailed link behind this session, or null when it
 // has none or it is older than EMAIL_LINK_TRUST_SEC. A caller names the one

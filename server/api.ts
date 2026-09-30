@@ -22,7 +22,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import Stripe from 'stripe'
 import { createActivator } from './lib/activation.js'
 import type { Deps, Env, Handler, Route } from './lib/route.js'
-import { PayloadTooLargeError } from './lib/http.js'
+import { PayloadTooLargeError, makeJsonRes } from './lib/http.js'
 import { adminRoutes } from './routes/admin.js'
 import { adminMemberRoutes } from './routes/admin-members.js'
 import { adminFeedReminderRoutes } from './routes/admin-feed-reminders.js'
@@ -142,13 +142,12 @@ export function createCatchAllHandler(env: Env) {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
+    const json = makeJsonRes(res)
     if (initError || !routesByPath) {
       // Log the detail server-side; never echo message/stack to the caller —
       // init failures expose file paths, config state, and driver internals.
       console.error('[api] init failed', initError)
-      res.statusCode = 500
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ error: 'init_failed' }))
+      json(500, { error: 'init_failed' })
       return
     }
 
@@ -168,9 +167,7 @@ export function createCatchAllHandler(env: Env) {
     const pathname = slug !== null ? `/api/${slug}` : url.pathname
     const handler = routesByPath.get(pathname)
     if (!handler) {
-      res.statusCode = 404
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ error: 'not_found', path: pathname }))
+      json(404, { error: 'not_found', path: pathname })
       return
     }
 
@@ -178,11 +175,7 @@ export function createCatchAllHandler(env: Env) {
       await handler(req, res)
     } catch (err) {
       if (err instanceof PayloadTooLargeError) {
-        if (!res.headersSent) {
-          res.statusCode = 413
-          res.setHeader('content-type', 'application/json')
-          res.end(JSON.stringify({ error: 'payload_too_large' }))
-        }
+        if (!res.headersSent) json(413, { error: 'payload_too_large' })
         return
       }
       console.error('[api]', err)
@@ -195,9 +188,7 @@ export function createCatchAllHandler(env: Env) {
       if (!res.headersSent) {
         // Generic body only — the detail is already logged above. Echoing
         // err.message leaks DB/driver internals and config state to callers.
-        res.statusCode = 500
-        res.setHeader('content-type', 'application/json')
-        res.end(JSON.stringify({ error: 'internal_error' }))
+        json(500, { error: 'internal_error' })
       }
     }
   }

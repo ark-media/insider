@@ -131,9 +131,7 @@ const showNotesParserOptions: HTMLReactParserOptions = {
     }
 
     if (node.name === "a") {
-      const href = safeHref(
-        typeof node.attribs.href === "string" ? node.attribs.href : undefined,
-      );
+      const href = safeHref(node.attribs.href);
       // Authored show notes often nest surrounding spaces inside the anchor
       // (`<a> Inside Call me Back</a>`). Pull them out so the underline hugs
       // the link text instead of bleeding into the gap beside it.

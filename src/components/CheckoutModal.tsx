@@ -9,6 +9,7 @@ import {
   type StripeCheckoutElementsValue,
 } from "@stripe/react-stripe-js/checkout";
 import { CheckoutConsent } from "./CheckoutConsent";
+import { CheckoutTotals } from "./CheckoutTotals";
 import { PromoBanner, PromoCode } from "./PromoCode";
 import { fetchActivePromo, type PromoInfo } from "../lib/promo";
 import { useCheckoutConsent, type Renewal } from "../lib/checkoutConsent";
@@ -35,6 +36,7 @@ import { AmountPicker } from "./AmountPicker";
 import { resolveAmount } from "../lib/pwycAmount";
 import { ProductMarks } from "./FoldLogo";
 import { formatTimestamp } from "../../shared/format-date";
+import { isValidEmail } from "../../shared/validation";
 import type { ProductMark } from "../data/pricingTiers";
 
 type Plan = "monthly" | "yearly";
@@ -92,8 +94,6 @@ function getStripe() {
 
 const inputClass =
   "w-full border border-rule-strong bg-transparent px-3 py-2.5 text-fg-strong placeholder:text-fg-placeholder outline-none transition focus:border-cyan disabled:opacity-50";
-
-const ctaClass = modalPrimaryCta;
 
 const titleClass =
   "display-upright mt-3 text-[clamp(1.6rem,3vw,2rem)] leading-[1.05] text-fg-strong";
@@ -301,8 +301,7 @@ export function CheckoutModal({
   // The tier+plan floor in the selected currency (minor units) and that
   // currency's minor-unit factor — everything the slider/hero needs.
   const tierAmounts = pricing?.tiers[tier];
-  const floorMinor =
-    tierAmounts?.[plan === "yearly" ? "yearly" : "monthly"]?.[currency] ?? null;
+  const floorMinor = tierAmounts?.[plan]?.[currency] ?? null;
   const factor = pricing?.minor_factors[currency] ?? 100;
 
   // Closing only tells the parent — `onClose` is called directly everywhere
@@ -608,7 +607,7 @@ export function CheckoutModal({
               // stuff" sign-in, not a contextual one — land on /account rather
               // than returning to whatever page the modal was opened over.
               onClick={() => signIn("/account", { loginHint: step.email })}
-              className={ctaClass}
+              className={modalPrimaryCta}
             >
               Sign in
             </button>
@@ -782,7 +781,7 @@ export function EmailForm({
     const trimmed = email.trim();
     if (!trimmed || working) return;
     // Loose client-side check; the server is the real validator.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    if (!isValidEmail(trimmed)) {
       setError("Please enter a valid email.");
       return;
     }
@@ -876,7 +875,7 @@ export function EmailForm({
           type="submit"
           disabled={working}
           aria-busy={working}
-          className={ctaClass}
+          className={modalPrimaryCta}
         >
           {working
             ? "Loading…"
@@ -979,7 +978,8 @@ function CheckoutForm({
   );
   // "self": the person paying is the person who'll be in the Fold. A gift is
   // the other case, and it asks its own question (GiftCheckoutModal).
-  const consent = useCheckoutConsent(renewal, ageAttestationFor(tier, "self"));
+  const age = ageAttestationFor(tier, "self");
+  const consent = useCheckoutConsent(renewal, age);
   const consentRef = useRef<HTMLDivElement>(null);
 
   // Send an unaccepted buyer to the box that's still empty. Both pay paths use
@@ -1018,10 +1018,6 @@ function CheckoutForm({
   // once the buyer enters a billing address, so the tax row appears reactively.
   const subtotal = checkout.total.subtotal.amount; // pre-tax, pre-discount
   const total = checkout.total.total.amount; // due today, incl. tax
-  const hasDiscount = checkout.total.discount.minorUnitsAmount > 0;
-  const discount = checkout.total.discount.amount;
-  const hasTax = checkout.total.taxExclusive.minorUnitsAmount > 0;
-  const tax = checkout.total.taxExclusive.amount;
   // A gift recipient's billing waits for their gift to end: nothing is due
   // today, and the price they're choosing is the first charge's, not today's.
   const trialEnd = checkout.recurring?.trial?.trialEnd ?? null;
@@ -1226,28 +1222,7 @@ function CheckoutForm({
             </p>
           </div>
         ) : (
-          <div className="space-y-2 border-t border-rule pt-3 text-sm">
-            <div className="flex items-baseline justify-between">
-              <span className="text-fg-muted">Subtotal</span>
-              <span className="text-fg-strong">{subtotal}</span>
-            </div>
-            {hasDiscount ? (
-              <div className="flex items-baseline justify-between">
-                <span className="text-fg-muted">Discount</span>
-                <span className="text-fg-strong">−{discount}</span>
-              </div>
-            ) : null}
-            {hasTax ? (
-              <div className="flex items-baseline justify-between">
-                <span className="text-fg-muted">Tax</span>
-                <span className="text-fg-strong">{tax}</span>
-              </div>
-            ) : null}
-            <div className="flex items-baseline justify-between border-t border-rule pt-2">
-              <span className="text-fg-muted">Total due today</span>
-              <span className="font-semibold text-fg-strong">{total}</span>
-            </div>
-          </div>
+          <CheckoutTotals total={checkout.total} />
         )}
         {payError ? (
           <p role="alert" className="text-body-sm text-danger">
@@ -1257,7 +1232,7 @@ function CheckoutForm({
         <div ref={consentRef}>
           <CheckoutConsent
             renewal={renewal}
-            age={ageAttestationFor(tier, "self")}
+            age={age}
             consent={consent}
           />
         </div>
@@ -1265,7 +1240,7 @@ function CheckoutForm({
           type="submit"
           disabled={working}
           aria-busy={working}
-          className={ctaClass}
+          className={modalPrimaryCta}
         >
           {working
             ? "Processing…"

@@ -49,8 +49,10 @@ import {
   coerceTier,
   customerIdOf,
   periodEndIso,
+  planFromInterval,
   planFromSubscription,
   scheduleIdOf,
+  stripeIdOf,
   subscriptionAmount,
   tsToIso,
 } from './helpers.js'
@@ -113,10 +115,9 @@ export async function saveFlowTargetOf(
         typeof product === 'object' && !('deleted' in product && product.deleted)
           ? tierFromEntitlementString(product.metadata?.entitlements)
           : 'free'
-      const interval = resolved.recurring?.interval
       return {
         tier: derived === 'free' ? null : derived,
-        plan: interval === 'month' ? 'monthly' : interval === 'year' ? 'yearly' : null,
+        plan: planFromInterval(resolved.recurring?.interval),
         scheduled: true,
       }
     }
@@ -177,10 +178,6 @@ const ENDED_SUB_STATUSES = new Set<Stripe.Subscription.Status>([
   'canceled',
   'incomplete_expired',
 ])
-
-function cancelAtIso(sub: Stripe.Subscription): string | null {
-  return tsToIso(sub.cancel_at)
-}
 
 // Shared props for the two subscription-shaped analytics events. Read entirely
 // off the event payload — no extra Stripe calls. These are segmentation
@@ -335,10 +332,7 @@ export async function dispatchWebhookEvent(
       // as well. The events carry different objects — a Charge and a Dispute —
       // that happen to share the one field needed from either.
       const reversed = event.data.object as Stripe.Charge | Stripe.Dispute
-      const piId =
-        typeof reversed.payment_intent === 'string'
-          ? reversed.payment_intent
-          : reversed.payment_intent?.id ?? null
+      const piId = stripeIdOf(reversed.payment_intent)
       // A dispute contests the whole charge — unless it is only an inquiry
       // (`warning_*`): no money has moved, and it closes as `warning_closed`,
       // never `won`, so a gift voided for it could never be restored. An
@@ -385,10 +379,7 @@ export async function dispatchWebhookEvent(
       // judgement call, so it is logged for a human rather than guessed at.
       const dispute = event.data.object as Stripe.Dispute
       if (dispute.status !== 'won' || !env.DATABASE_URL) break
-      const piId =
-        typeof dispute.payment_intent === 'string'
-          ? dispute.payment_intent
-          : dispute.payment_intent?.id ?? null
+      const piId = stripeIdOf(dispute.payment_intent)
       if (!piId) break
       const sql = getDb(env)
       const token = giftTokenForPaymentIntent(piId, env)
@@ -406,72 +397,76 @@ export async function dispatchWebhookEvent(
       }
       break
     }
-    case 'invoice.payment_failed': {
-      // Dunning: reflect the delinquency on the membership row (task 9). Keep
-      // entitlement — Stripe's dunning retries within the grace window; a later
-      // subscription.deleted revokes if it ultimately fails.
-      const invoice = event.data.object as Stripe.Invoice
-      console.warn('[stripe] invoice.payment_failed', invoice.id)
-      const customerId =
-        typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id ?? null
-      let failedTier: CancellableTier | null = null
-      if (customerId && env.DATABASE_URL) {
-        await setMembershipStatusByCustomer(getDb(env), customerId, 'past_due')
-        // The membership row is also where the tier comes from for the email
-        // below. Reading it here rather than off the invoice keeps this away
-        // from Stripe's invoice→subscription shape, which has moved between
-        // API versions; the row is ours and its `tier` is the authority anyway.
-        try {
-          const row = await getMembershipByStripeCustomer(getDb(env), customerId)
-          const t = row?.tier
-          if (t === 'ark-plus' || t === 'circle' || t === 'bundle') failedTier = t
-        } catch (err) {
-          console.error('[stripe] payment_failed tier read failed:', err)
-        }
-      }
-
-      // Tell the member. Without this the only signal a card failed is access
-      // disappearing a few weeks later, when Stripe gives up and the
-      // subscription is cancelled — by which point the fix (a new card) no
-      // longer helps. Best-effort: this runs after the status write, and a mail
-      // failure must never 500 the webhook into a Stripe retry loop.
-      if (customerId) {
-        try {
-          const to = await emailForStripeCustomer(invoice.customer, stripe)
-          if (to) {
-            const { subject, html } = renderPaymentFailedEmail({
-              firstName: greetingFirstName(
-                invoice.customer_name ?? undefined,
-                to,
-                undefined,
-              ),
-              tier: failedTier,
-              updateCardUrl: `${env.APP_BASE_URL || 'http://localhost:5173'}/account/billing`,
-            })
-            // Keyed on the invoice AND the attempt: Stripe's Smart Retries fire
-            // this event once per attempt over ~three weeks, and each one is a
-            // fresh chance the member should hear about. Only a redelivery of
-            // the SAME attempt collapses.
-            const sent = await sendEmail(env, {
-              to,
-              subject,
-              html,
-              idempotencyKey: `payment_failed_${invoice.id}_${invoice.attempt_count ?? 0}`,
-            })
-            if (!sent) {
-              console.error('[email] payment-failed email did not send:', invoice.id)
-            }
-          }
-        } catch (err) {
-          console.error('[email] payment-failed email failed:', err)
-        }
-      }
+    case 'invoice.payment_failed':
+      await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice, stripe, env)
       // No dunning event here on purpose — Stripe's own Smart Retries reporting
       // covers failed payments and recovery rate. See lib/analytics-server.ts.
       break
-    }
     default:
       break
+  }
+}
+
+// Dunning: reflect the delinquency on the membership row (task 9). Keep
+// entitlement — Stripe's dunning retries within the grace window; a later
+// subscription.deleted revokes if it ultimately fails.
+async function handleInvoicePaymentFailed(
+  invoice: Stripe.Invoice,
+  stripe: Stripe,
+  env: Env,
+): Promise<void> {
+  console.warn('[stripe] invoice.payment_failed', invoice.id)
+  const customerId = stripeIdOf(invoice.customer)
+  if (!customerId) return
+
+  let failedTier: CancellableTier | null = null
+  if (env.DATABASE_URL) {
+    await setMembershipStatusByCustomer(getDb(env), customerId, 'past_due')
+    // The membership row is also where the tier comes from for the email
+    // below. Reading it here rather than off the invoice keeps this away
+    // from Stripe's invoice→subscription shape, which has moved between
+    // API versions; the row is ours and its `tier` is the authority anyway.
+    try {
+      const row = await getMembershipByStripeCustomer(getDb(env), customerId)
+      const t = row?.tier
+      if (t === 'ark-plus' || t === 'circle' || t === 'bundle') failedTier = t
+    } catch (err) {
+      console.error('[stripe] payment_failed tier read failed:', err)
+    }
+  }
+
+  // Tell the member. Without this the only signal a card failed is access
+  // disappearing a few weeks later, when Stripe gives up and the
+  // subscription is cancelled — by which point the fix (a new card) no
+  // longer helps. Best-effort: this runs after the status write, and a mail
+  // failure must never 500 the webhook into a Stripe retry loop.
+  try {
+    const to = await emailForStripeCustomer(invoice.customer, stripe)
+    if (!to) return
+    const { subject, html } = renderPaymentFailedEmail({
+      firstName: greetingFirstName(
+        invoice.customer_name ?? undefined,
+        to,
+        undefined,
+      ),
+      tier: failedTier,
+      updateCardUrl: `${env.APP_BASE_URL || 'http://localhost:5173'}/account/billing`,
+    })
+    // Keyed on the invoice AND the attempt: Stripe's Smart Retries fire
+    // this event once per attempt over ~three weeks, and each one is a
+    // fresh chance the member should hear about. Only a redelivery of
+    // the SAME attempt collapses.
+    const sent = await sendEmail(env, {
+      to,
+      subject,
+      html,
+      idempotencyKey: `payment_failed_${invoice.id}_${invoice.attempt_count ?? 0}`,
+    })
+    if (!sent) {
+      console.error('[email] payment-failed email did not send:', invoice.id)
+    }
+  } catch (err) {
+    console.error('[email] payment-failed email failed:', err)
   }
 }
 
@@ -687,10 +682,8 @@ async function handleSubscriptionUpsert(
 
   // priorTier from the existing row BEFORE any write (default free), keyed on the
   // customer so it doesn't depend on provisioning having run (§3 ordering trap).
-  const priorRow = env.DATABASE_URL
-    ? await getMembershipByStripeCustomer(getDb(env), customerId)
-    : null
-  const priorTier: Tier = (priorRow?.tier as Tier | undefined) ?? 'free'
+  const priorRow = await getMembershipByStripeCustomer(getDb(env), customerId)
+  const priorTier: Tier = priorRow?.tier ?? 'free'
   const priorEnt = deriveEntitlements(priorTier)
   const entitlementsChanged =
     newEnt.arkPlus !== priorEnt.arkPlus || newEnt.circle !== priorEnt.circle
@@ -756,7 +749,7 @@ async function handleSubscriptionUpsert(
     if (email) {
       await syncEntitlement(env, email, tier)
       // Beehiiv premium mirrors the arkPlus axis: drop it when arkPlus is lost.
-      if (priorEnt.arkPlus && !newEnt.arkPlus && env.DATABASE_URL) {
+      if (priorEnt.arkPlus && !newEnt.arkPlus) {
         await tryPush('downgrade (tier drop)', () =>
           downgradeToFree({ env, sql: getDb(env) }, email),
         )
@@ -766,75 +759,73 @@ async function handleSubscriptionUpsert(
 
   // Write the membership row (the authority) keyed on auth0_sub. Without a
   // resolved sub we can't key it — throw so Stripe retries rather than leave a
-  // paying member reading free (§8 risk 2). No DB → nothing to persist.
-  if (env.DATABASE_URL) {
-    if (!auth0Sub) {
-      throw new Error(`membership row: no auth0_sub resolved for customer ${customerId}`)
+  // paying member reading free (§8 risk 2).
+  if (!auth0Sub) {
+    throw new Error(`membership row: no auth0_sub resolved for customer ${customerId}`)
+  }
+  const amountCents = await subscriptionAmountInOwnCurrency(stripe, sub)
+  await upsertMembership(getDb(env), {
+    auth0_sub: auth0Sub,
+    stripe_customer_id: customerId,
+    stripe_subscription_id: sub.id,
+    // The arkPlus grant is Beehiiv's premium tier, keyed on email, so a
+    // subscription carries no provider-side id to store here.
+    tier,
+    status: sub.status,
+    plan,
+    amount_cents: amountCents,
+    currency: amountCents != null ? (sub.currency ?? null) : null,
+    current_period_end: periodEndIso(sub),
+    cancel_at: tsToIso(sub.cancel_at),
+  })
+  // A pending period-end change only exists while a schedule is attached; once
+  // it lands (or is released) the sub carries no schedule, so any recorded
+  // pending columns are stale — clear them. Best-effort.
+  if (!scheduleIdOf(sub)) {
+    await clearMembershipPending(getDb(env), customerId)
+  }
+
+  // A failed Circle add is retried by failing this event — nothing else ever
+  // re-attempts it (the reconciler only removes). The row is written first on
+  // every path, so a Circle outage can't strand the authority on a stale tier,
+  // period end or cancel_at, and a tier-drop revocation above never runs
+  // against a row that still shows the old tier. The redelivery fans out again
+  // via `circleOwed`; only activation's markers change, so it redoes just
+  // Circle. Before analytics, so `member_provisioned` fires on the delivery
+  // where the member actually got in.
+  if (circleFailed) {
+    // Bounded: a Circle refusal that never clears (a banned address) would
+    // otherwise 500 every event for this sub. Past the window, ack and hand it
+    // to a human; any later event for the sub still retries via `circleOwed`.
+    const ageMs = Date.now() - event.created * 1000
+    if (ageMs < CIRCLE_RETRY_WINDOW_MS) {
+      throw new Error(`Circle provisioning failed for ${sub.id}; retrying`)
     }
-    const amountCents = await subscriptionAmountInOwnCurrency(stripe, sub)
-    await upsertMembership(getDb(env), {
-      auth0_sub: auth0Sub,
-      stripe_customer_id: customerId,
-      stripe_subscription_id: sub.id,
-      // The arkPlus grant is Beehiiv's premium tier, keyed on email, so a
-      // subscription carries no provider-side id to store here.
+    console.error(
+      `[stripe] CIRCLE-PROVISION-FAILED ${sub.id} (customer ${customerId}): ` +
+        'gave up retrying. MANUAL ACTION: add them to the Circle subscriber access group.',
+    )
+  }
+
+  // Analytics last, and only after the membership row has actually committed —
+  // the conversion count must never claim a member the DB doesn't have.
+  //
+  // Gated so a routine `subscription.updated` (a payment-method swap, our own
+  // metadata stamp from activation) neither emits nor pays for the customer
+  // lookup that resolving the distinct_id would cost. Tier/plan/amount changes
+  // emit nothing here — expansion and contraction MRR live in Stripe.
+  if (created || shouldFanOut) {
+    await emitProvisioningEvents(
+      env,
+      sub,
       tier,
-      status: sub.status,
-      plan,
-      amount_cents: amountCents,
-      currency: amountCents != null ? (sub.currency ?? null) : null,
-      current_period_end: periodEndIso(sub),
-      cancel_at: cancelAtIso(sub),
-    })
-    // A pending period-end change only exists while a schedule is attached; once
-    // it lands (or is released) the sub carries no schedule, so any recorded
-    // pending columns are stale — clear them. Best-effort.
-    if (!scheduleIdOf(sub)) {
-      await clearMembershipPending(getDb(env), customerId)
-    }
-
-    // A failed Circle add is retried by failing this event — nothing else ever
-    // re-attempts it (the reconciler only removes). The row is written first on
-    // every path, so a Circle outage can't strand the authority on a stale tier,
-    // period end or cancel_at, and a tier-drop revocation above never runs
-    // against a row that still shows the old tier. The redelivery fans out again
-    // via `circleOwed`; only activation's markers change, so it redoes just
-    // Circle. Before analytics, so `member_provisioned` fires on the delivery
-    // where the member actually got in.
-    if (circleFailed) {
-      // Bounded: a Circle refusal that never clears (a banned address) would
-      // otherwise 500 every event for this sub. Past the window, ack and hand it
-      // to a human; any later event for the sub still retries via `circleOwed`.
-      const ageMs = Date.now() - event.created * 1000
-      if (ageMs < CIRCLE_RETRY_WINDOW_MS) {
-        throw new Error(`Circle provisioning failed for ${sub.id}; retrying`)
-      }
-      console.error(
-        `[stripe] CIRCLE-PROVISION-FAILED ${sub.id} (customer ${customerId}): ` +
-          'gave up retrying. MANUAL ACTION: add them to the Circle subscriber access group.',
-      )
-    }
-
-    // Analytics last, and only after the membership row has actually committed —
-    // the conversion count must never claim a member the DB doesn't have.
-    //
-    // Gated so a routine `subscription.updated` (a payment-method swap, our own
-    // metadata stamp from activation) neither emits nor pays for the customer
-    // lookup that resolving the distinct_id would cost. Tier/plan/amount changes
-    // emit nothing here — expansion and contraction MRR live in Stripe.
-    if (created || shouldFanOut) {
-      await emitProvisioningEvents(
-        env,
-        sub,
-        tier,
-        amountCents,
-        await memberEmail(),
-        created,
-        // Not after giving up on Circle: the member didn't get in, and with the
-        // marker still missing every later update would claim they did again.
-        shouldFanOut && !circleFailed,
-      )
-    }
+      amountCents,
+      await memberEmail(),
+      created,
+      // Not after giving up on Circle: the member didn't get in, and with the
+      // marker still missing every later update would claim they did again.
+      shouldFanOut && !circleFailed,
+    )
   }
 }
 
@@ -911,7 +902,7 @@ async function cancelSubscriptionForReversedPayment(
     return
   }
   const subRef = invoice.parent?.subscription_details?.subscription
-  const subscriptionId = typeof subRef === 'string' ? subRef : subRef?.id ?? null
+  const subscriptionId = stripeIdOf(subRef)
   if (!subscriptionId) return
 
   const current = await retrieveCurrentSubscription(stripe, subscriptionId)

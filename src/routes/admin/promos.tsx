@@ -483,7 +483,7 @@ function PromosAdmin() {
                   label={p.autoApply ? "auto-apply" : "code only"}
                 />
                 <AdminBadge on={p.valid} label={p.valid ? "valid" : "expired"} />
-                {p.plan ? <AdminTag>{p.plan}</AdminTag> : <AdminTag>both plans</AdminTag>}
+                <AdminTag>{p.plan || "both plans"}</AdminTag>
                 {p.maxRedemptions != null ? (
                   <AdminTag>
                     {p.timesRedeemed}/{p.maxRedemptions} used

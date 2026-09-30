@@ -16,11 +16,9 @@ import { createHmac } from 'node:crypto'
 import type { ServerResponse } from 'node:http'
 import { getDb } from '../lib/db.js'
 import { normalizeEmail } from '../lib/feed-activations.js'
-import { defineRoute, type Deps, type Route } from '../lib/route.js'
+import { defineRoute, type Deps, type Env, type Route } from '../lib/route.js'
 import { secretEquals } from '../lib/timing-safe.js'
 import { suppressWinback } from '../lib/winback.js'
-
-type Env = Record<string, string>
 
 // HMAC over the normalized address. Deterministic so a link mailed months ago
 // still verifies, and unguessable so the endpoint can't be used to opt out an

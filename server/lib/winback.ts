@@ -144,7 +144,7 @@ async function productsLeft(sql: Sql, email: string): Promise<Set<string>> {
 // A single-product leaver who has also fully left the other product (in the
 // window or before it) left both, so they get the Bundle email: their row is
 // returned as a 'bundle' exit. Anyone else's row comes back as it was.
-export function bundleRowIfLeftBoth(row: WinbackRow, left: Set<string>): WinbackRow {
+function bundleRowIfLeftBoth(row: WinbackRow, left: Set<string>): WinbackRow {
   if (row.canceled_tier === 'bundle') return row
   const leftArkPlus = left.has('ark-plus') || left.has('bundle')
   const leftFold = left.has('circle') || left.has('bundle')

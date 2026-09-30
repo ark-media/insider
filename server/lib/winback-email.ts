@@ -14,6 +14,7 @@ import {
   ARK_MEDIA_TEAM,
   BRAND_FG_MUTED,
   esc,
+  greeting,
   renderShell,
 } from './welcome-email.js'
 import { getShow } from '../../src/data/shows.js'
@@ -42,14 +43,13 @@ export function renderWinbackEmail(p: WinbackEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
 
   const html = renderShell({
     preheader:
       'Six months of debate and discovery, and a few episodes we think you&rsquo;ll want back.',
     eyebrow: 'We saved your seat',
     headlineHtml: 'We saved your seat.',
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml:
       'It&rsquo;s been six months since you left Ark+, and the questions about Israel and Jewish life haven&rsquo;t gotten any simpler since you&rsquo;ve been gone. And they&rsquo;re not exactly the kind of questions an algorithm rewards covering. Our Ark+ member support is what lets us keep asking them anyway.',
     bodySecondHtml:
@@ -85,14 +85,13 @@ export function renderFoldWinbackEmail(p: WinbackEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
 
   const html = renderShell({
     preheader:
       'Six months of conversations, member events and Dan&rsquo;s book club since you left.',
     eyebrow: 'The conversation kept going',
     headlineHtml: 'The conversation kept going.',
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml:
       'It&rsquo;s been six months since you left the Fold, and the conversation hasn&rsquo;t stopped. Some days that means debating the hardest questions facing Jewish life right now. Other days it&rsquo;s a good recipe or a joke only a few people will get.',
     bodySecondHtml:
@@ -125,14 +124,13 @@ export function renderBundleWinbackEmail(p: WinbackEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
 
   const html = renderShell({
     preheader:
       'Six months of debate, discovery and conversation, and a few episodes we think you&rsquo;ll want back.',
     eyebrow: 'We saved your seat',
     headlineHtml: 'We saved your seat.',
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml:
       'It&rsquo;s been six months since you left Ark+ and the Fold, and the questions about Israel and Jewish life haven&rsquo;t gotten any simpler since you&rsquo;ve been gone. The conversation in the Fold hasn&rsquo;t stopped either. Member support is what lets us keep asking those questions, and keeps a place to talk them through.',
     bodySecondHtml:

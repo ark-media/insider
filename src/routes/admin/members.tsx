@@ -6,6 +6,7 @@ import {
   type MemberDirectoryEntry,
   type MemberDirectoryFilter,
 } from "../../lib/admin";
+import { errMessage } from "../../lib/errMessage";
 import { adminField, adminFieldLabel } from "../../lib/admin-styles";
 import { formatTimestamp } from "../../../shared/format-date";
 
@@ -86,7 +87,7 @@ function MembersAdmin() {
       },
       (err: unknown) => {
         if (!live) return;
-        setError(err instanceof Error ? err.message : "Failed to load.");
+        setError(errMessage(err, "Failed to load."));
         setLoaded(request);
       },
     );

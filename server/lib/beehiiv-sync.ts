@@ -25,6 +25,7 @@
 
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { redactEmail } from '../../shared/validation.js'
+import { publicationIdFromEnv } from './beehiiv-feeds.js'
 import type { Sql } from './db.js'
 import { fetchWithTimeout } from "./http.js"
 
@@ -41,13 +42,6 @@ type RefreshCacheEntry = { row: LocalSubscriptionRow | null }
 const refreshCache = makeTTLCache<string, RefreshCacheEntry>(
   REFRESH_CACHE_TTL_MS,
 )
-
-function setNewsletterRefreshCache(
-  email: string,
-  row: LocalSubscriptionRow | null,
-): void {
-  refreshCache.set(email.toLowerCase(), { row })
-}
 
 /** Resets the process-global refresh cache (unit tests only). */
 export function clearNewsletterRefreshCache(): void {
@@ -96,12 +90,6 @@ function unwrapData(
     status: d.status ?? 'active',
     hasPremium: inferHasPremium(d),
   }
-}
-
-function publicationIdFromEnv(env: Env): string | null {
-  const id = env.BEEHIIV_PUBLICATION_ID_ARK_DAILY
-  if (!id || !/^pub_[A-Za-z0-9-]+$/.test(id)) return null
-  return id
 }
 
 function beehiivHeaders(token: string): Record<string, string> {
@@ -376,9 +364,7 @@ export async function ensureFreeSubscription(
   if (!beehiivConfigured(deps.env)) return
   const existing = await getLocalSubscription(deps.sql, email.toLowerCase())
   if (existing) return
-  await tryPush('first-login subscribe', async () => {
-    await applyPreferences(deps, email, { free: true })
-  })
+  await tryPush('first-login subscribe', () => applyPreferences(deps, email, { free: true }))
 }
 
 // Subscribe (or upgrade) a reader to the premium "Plus" tier. Used on Stripe
@@ -620,7 +606,7 @@ export async function applyPreferences(
   }
   await persistFromBeehiiv(deps.sql, cfg.pubId, result)
   const row = await getLocalSubscription(deps.sql, normalized)
-  setNewsletterRefreshCache(normalized, row)
+  refreshCache.set(normalized, { row })
   return row
 }
 

@@ -264,8 +264,8 @@ function classifyBlocks(nodes: DOMNode[], postTitle?: string): Block[] {
       continue;
     }
 
-    if (isPictureNode(n)) {
-      const picture = extractPicture(n)!;
+    const picture = extractPicture(n);
+    if (picture) {
       const nextIdx = nextSignificant(filtered, i + 1);
       const next = nextIdx !== null ? filtered[nextIdx] : null;
 
@@ -628,8 +628,6 @@ export function NewsletterArticle({
 
   // Number episodes within the article so each card carries a "№ NN" chip.
   let episodeIndex = 0;
-  // Suppress consecutive rules — Beehiiv puts an <hr/> between every block,
-  // but our cards already carry their own separation.
   // Beehiiv emits an <hr/> between every block; the cards carry their own
   // separation, so drop consecutive rules and rules adjacent to sections.
   const compact: Block[] = [];

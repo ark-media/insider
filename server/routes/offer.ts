@@ -78,6 +78,7 @@ import {
   existingDiscountParams,
   findLiveSubscription,
   giftExtensionRunning,
+  isCardPaymentError,
   periodEndIso,
   planFromSubscription,
   releaseScheduleIfAny,
@@ -100,11 +101,6 @@ type Ineligible = OfferBlock | 'no_subscription' | 'gift_running'
 function isIdempotencyConflict(err: unknown): boolean {
   const e = err as { type?: unknown; statusCode?: unknown } | null
   return e?.type === 'StripeIdempotencyError' || e?.statusCode === 409
-}
-
-function isCardPaymentError(err: unknown): boolean {
-  const e = err as { type?: unknown; statusCode?: unknown } | null
-  return e?.type === 'StripeCardError' || e?.statusCode === 402
 }
 
 // The member's side of the offer: who they are, what they're on, and the

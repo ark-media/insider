@@ -13,6 +13,12 @@ export const RICH_TEXT_ALLOWED_TAGS = [
   'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'blockquote',
 ]
 
+// Every tag stripped, trimmed: what's left of rich text once the markup is gone,
+// and the sanitizer for fields that are plain text to begin with.
+export function plainText(html: string): string {
+  return sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} }).trim()
+}
+
 export function sanitizeRichText(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: RICH_TEXT_ALLOWED_TAGS,

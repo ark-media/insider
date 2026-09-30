@@ -143,15 +143,18 @@ export async function giftClaimPending(): Promise<boolean> {
   }
 }
 
-// Claim a gift the recipient received by email. Requires a signed-in session
-// (the server keys the grant on the recipient's Auth0 sub); the /redeem page
-// gates on auth before calling this. Rides the httpOnly session cookie.
-export async function redeemGift(): Promise<RedeemGiftResult> {
+// The two claim calls below differ only in endpoint and body; the server
+// answers both in the same shape.
+async function postGiftRedemption(
+  path: string,
+  body?: unknown,
+): Promise<RedeemGiftResult> {
   try {
-    const res = await fetch("/api/gift/redeem", {
+    const res = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const data = (await res.json().catch(() => ({}))) as {
       redeemed?: boolean;
@@ -176,39 +179,19 @@ export async function redeemGift(): Promise<RedeemGiftResult> {
   }
 }
 
+// Claim a gift the recipient received by email. Requires a signed-in session
+// (the server keys the grant on the recipient's Auth0 sub); the /redeem page
+// gates on auth before calling this. Rides the httpOnly session cookie.
+export function redeemGift(): Promise<RedeemGiftResult> {
+  return postGiftRedemption("/api/gift/redeem");
+}
+
 // Claim a gift via the single-email magic link. The `mt` token (from
 // /redeem?mt=…) both authenticates and identifies the gift: one call creates or
 // finds the recipient's account, logs them in (sets the session cookie on the
 // response), and redeems. No prior sign-in needed — that's the whole point.
-export async function claimGiftWithMagicToken(mt: string): Promise<RedeemGiftResult> {
-  try {
-    const res = await fetch("/api/gift/claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ mt }),
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      redeemed?: boolean;
-      applied?: "membership" | "credit" | "mixed" | "extended" | "held";
-      expires_at?: string;
-      error?: string;
-    };
-    if (!res.ok || !data.redeemed) {
-      return {
-        ok: false,
-        status: res.status,
-        error: data.error ?? "Could not redeem this gift.",
-      };
-    }
-    return {
-      ok: true,
-      applied: data.applied ?? "membership",
-      expiresAt: data.expires_at,
-    };
-  } catch {
-    return { ok: false, error: "Network error. Please try again." };
-  }
+export function claimGiftWithMagicToken(mt: string): Promise<RedeemGiftResult> {
+  return postGiftRedemption("/api/gift/claim", { mt });
 }
 
 export async function fetchGiftStatus(

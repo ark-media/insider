@@ -503,10 +503,10 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     return { email, name, tier, plan, auth0Sub, accountCreated, circleFailed }
   }
 
-  const activateMembershipForStripeSub = async (
-    sub: Stripe.Subscription,
-    tier: Tier,
-  ): Promise<MembershipProvisionResult> => {
+  const activateMembershipForStripeSub: Activator['activateMembershipForStripeSub'] = async (
+    sub,
+    tier,
+  ) => {
     if (!stripe) {
       return {
         email: '',
@@ -554,18 +554,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     return promise
   }
 
-  const activateGiftForRecipient = async (opts: {
-    email: string
-    name?: string
-    auth0Sub: string | null
-    term: GiftTerm
-    giftToken: string
-    arkPlusFromMs: number | null
-    circleFromMs: number | null
-  }): Promise<{
-    arkPlusEndsAt: string | null
-    circleEndsAt: string | null
-  }> => {
+  const activateGiftForRecipient: Activator['activateGiftForRecipient'] = async (opts) => {
     const termMs = GIFT_TERM_DAYS[opts.term] * 24 * 60 * 60 * 1000
     let arkPlusEndsAt: string | null = null
     let circleEndsAt: string | null = null

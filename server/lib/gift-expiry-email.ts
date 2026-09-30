@@ -3,9 +3,11 @@
 // they can convert to a paid subscription before access lapses. Reuses the Ark+
 // brand shell from welcome-email. Pure (no I/O) so it's trivially testable.
 
-import { BRAND_CYAN, esc, renderShell } from './welcome-email.js'
+import { esc, greeting, link, renderShell } from './welcome-email.js'
 
 export type GiftExpiryEmailParams = {
+  // Already a clean first name — callers resolve it through greetingFirstName,
+  // which is what rejects a name manufactured from the member's email.
   firstName?: string
   // The human label of the expiring axis — 'Ark+' or 'the Fold'. Every
   // sentence below names it mid-phrase ("access to the Fold"), never as a
@@ -39,9 +41,6 @@ export function renderGiftExpiryEmail(p: GiftExpiryEmailParams): {
   subject: string
   html: string
 } {
-  // Already a clean first name — callers resolve it through greetingFirstName,
-  // which is what rejects a name manufactured from the member's email.
-  const first = p.firstName?.trim() || undefined
   const axis = esc(p.axisLabel)
   const when = endsWhen(p.daysRemaining)
 
@@ -54,14 +53,14 @@ export function renderGiftExpiryEmail(p: GiftExpiryEmailParams): {
   const endsSentence = `Your gifted access to ${axis} ends ${when}, on <strong>${esc(p.expiresOn)}</strong>.`
 
   const bodyHtml = p.otherAxisSubscribed
-    ? `${endsSentence} Because you already subscribe, you can keep it by adding ${axis} to your plan — that moves you to the Ark+ &amp; The Fold bundle, so both live on one subscription. Manage it from <a href="${p.accountUrl}" style="color:${BRAND_CYAN};">your account</a>.`
-    : `${endsSentence} To keep it going without a gap, subscribe from <a href="${p.accountUrl}" style="color:${BRAND_CYAN};">your account</a> — you'll pick up right where the gift leaves off.`
+    ? `${endsSentence} Because you already subscribe, you can keep it by adding ${axis} to your plan — that moves you to the Ark+ &amp; The Fold bundle, so both live on one subscription. Manage it from ${link(p.accountUrl, 'your account')}.`
+    : `${endsSentence} To keep it going without a gap, subscribe from ${link(p.accountUrl, 'your account')} — you'll pick up right where the gift leaves off.`
 
   const html = renderShell({
     preheader: `Ends ${p.expiresOn}. Keep it going.`,
     eyebrow: 'Your gift is ending',
     headlineHtml,
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml,
     ctaHref: p.accountUrl,
     ctaLabel: p.otherAxisSubscribed ? 'Add it to my plan' : `Keep ${p.axisLabel}`,

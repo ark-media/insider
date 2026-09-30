@@ -5,8 +5,7 @@
 // without an explicit cast that surfaces in code review.
 //
 // Producers:
-//   - sanitizeBeehiivHtml   (server/beehiiv-posts.ts)
-//   - sanitizeBroadcastHtml (server/circle-broadcasts.ts)
+//   - sanitizeBeehiivHtml, sanitizeBeehiivDocument (server/beehiiv-posts.ts)
 //
 // Consumers must declare the input as SanitizedHtml, not string.
 

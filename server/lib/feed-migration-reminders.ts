@@ -24,6 +24,7 @@ import { premiumShowIds } from './beehiiv-feeds.js'
 import { getActivatedFeeds, normalizeEmail } from './feed-activations.js'
 import { mailableStatus } from './beehiiv-status.js'
 import { renderMigrationCheckInEmail } from './feed-migration-email.js'
+import { hasReminderBeenSent, recordReminderSent } from './feed-reminders.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
 import { sendEmail } from './email.js'
 import { emailLoginUrl } from './session.js'
@@ -84,31 +85,6 @@ async function loadMigratedReaders(
   return rows.map((r) => ({ email: r.email, status: r.status ?? undefined }))
 }
 
-async function stageAlreadySent(
-  sql: Sql,
-  email: string,
-  reminderNo: number,
-): Promise<boolean> {
-  const rows = (await sql`
-    select 1 from feed_reminder_sends
-    where email = ${normalizeEmail(email)} and reminder_no = ${reminderNo}
-    limit 1`) as unknown[]
-  return rows.length > 0
-}
-
-async function recordStageSent(
-  sql: Sql,
-  email: string,
-  reminderNo: number,
-  doneCount: number,
-  total: number,
-): Promise<void> {
-  await sql`
-    insert into feed_reminder_sends (email, reminder_no, done_count, total_count)
-    values (${normalizeEmail(email)}, ${reminderNo}, ${doneCount}, ${total})
-    on conflict (email, reminder_no) do nothing`
-}
-
 export async function runFeedMigrationReminders(deps: {
   env: Env
   sql: Sql
@@ -160,7 +136,7 @@ export async function runFeedMigrationReminders(deps: {
     if (!mailableStatus(reader.status)) continue
 
     const email = normalizeEmail(reader.email)
-    if (await stageAlreadySent(sql, email, reminderNo)) continue
+    if (await hasReminderBeenSent(sql, email, reminderNo)) continue
 
     // Still unset? The whole campaign is addressed to people who haven't
     // finished, so this is the last and most important gate. ANY premium show
@@ -191,7 +167,7 @@ export async function runFeedMigrationReminders(deps: {
       idempotencyKey: `feed_migration_${stage}_${email}`,
     })
     if (ok) {
-      await recordStageSent(sql, email, reminderNo, 0, 1)
+      await recordReminderSent(sql, email, 0, 1, reminderNo)
       sent++
     } else {
       // Soft-fail: leave the ledger untouched so the next run retries this

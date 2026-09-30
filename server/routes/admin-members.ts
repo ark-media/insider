@@ -31,7 +31,6 @@ import {
   type MemberDirectoryRow,
 } from '../lib/membership.js'
 import { getActivatedEmails, normalizeEmail } from '../lib/feed-activations.js'
-import type { Tier } from '../entitlement.js'
 import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 import type {
@@ -43,7 +42,7 @@ import { stripeCustomerUrl } from '../lib/stripe-dashboard.js'
 const PAGE_SIZE = 25
 
 // Stripe Search's substring operator (`~`) needs at least 3 characters.
-export const MIN_SEARCH_LENGTH = 3
+const MIN_SEARCH_LENGTH = 3
 
 // Stripe Search query for a partial email/name match. Values sit inside single
 // quotes, so backslashes and quotes in the admin's text are escaped.
@@ -80,7 +79,7 @@ async function retrieveCustomer(
     const info: StripeCustomerInfo =
       'deleted' in c && c.deleted
         ? { email: null, name: null }
-        : { email: (c as Stripe.Customer).email ?? null, name: (c as Stripe.Customer).name ?? null }
+        : { email: c.email ?? null, name: c.name ?? null }
     customerCache.set(customerId, { at: now, info })
     return info
   } catch {
@@ -202,7 +201,7 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
         // --- List path: membership spine, hydrate this page's emails --------
         const offset = Math.max(0, Number(params.get('offset') ?? '0') | 0)
         const rows = await listMemberships(sql, {
-          tier: tierParam as Tier | null,
+          tier: tierParam,
           limit: PAGE_SIZE + 1,
           offset,
         })

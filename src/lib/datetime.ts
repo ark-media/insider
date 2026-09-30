@@ -7,8 +7,8 @@
 // `now` in UTC), so all the timezone knows about lives here, on the write side.
 
 // A curated set for a US-audience admin, plus UTC. The browser's own zone is
-// added at runtime by the form if it isn't already in this list.
-export const COMMON_TIME_ZONES: { value: string; label: string }[] = [
+// added at runtime by timeZoneOptions() if it isn't already in this list.
+const COMMON_TIME_ZONES: { value: string; label: string }[] = [
   { value: "America/New_York", label: "Eastern — New York" },
   { value: "America/Chicago", label: "Central — Chicago" },
   { value: "America/Denver", label: "Mountain — Denver" },
@@ -24,6 +24,15 @@ export const DEFAULT_TIME_ZONE = "America/New_York";
 // The zone the admin's browser is set to (e.g. "America/Los_Angeles").
 export function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+// Zones offered in a scheduling dropdown: the curated list, plus the admin's own
+// browser zone if it isn't already there (so a traveling/remote admin can pick
+// it).
+export function timeZoneOptions(): { value: string; label: string }[] {
+  const tz = browserTimeZone();
+  if (COMMON_TIME_ZONES.some((z) => z.value === tz)) return COMMON_TIME_ZONES;
+  return [{ value: tz, label: `${tz} (your timezone)` }, ...COMMON_TIME_ZONES];
 }
 
 const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/;

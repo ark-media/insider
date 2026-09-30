@@ -4,12 +4,10 @@
 // slug/detail-page concerns — an FAQ has no standalone URL.
 //
 // Split into pure helpers (sanitize/validate — unit-tested with plain objects)
-// and thin DB accessors over `Sql`. The answer is a short rich-text block, so
-// the sanitizer allows paragraphs, lists, inline formatting, and links — but
-// not headings (an answer doesn't need document structure).
+// and thin DB accessors over `Sql`. The answer is a short rich-text block,
+// sanitized with the shared back-office allowlist.
 
-import sanitizeHtml from 'sanitize-html'
-import { sanitizeRichText } from './richText.js'
+import { plainText, sanitizeRichText } from './richText.js'
 import type { Sql } from './db.js'
 import type { Faq } from '../../shared/faq.js'
 
@@ -33,7 +31,7 @@ export function sanitizeFaqAnswer(html: string): string {
 
 // The question is a plain-text label — strip all markup.
 export function sanitizeQuestion(text: string): string {
-  return sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} }).trim()
+  return plainText(text)
 }
 
 export type ValidationResult =
@@ -58,7 +56,7 @@ export function validateFaqInput(raw: unknown): ValidationResult {
     return { ok: false, error: 'Answer is required.' }
   }
   const answer = sanitizeFaqAnswer(r.answer).trim()
-  const textOnly = sanitizeHtml(answer, { allowedTags: [], allowedAttributes: {} }).trim()
+  const textOnly = plainText(answer)
   if (!textOnly) {
     return { ok: false, error: 'Answer has no visible text after sanitizing.' }
   }
@@ -87,7 +85,7 @@ export function validateFaqInput(raw: unknown): ValidationResult {
   let displayOrder = 0
   if (r.displayOrder != null) {
     const n = Number(r.displayOrder)
-    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    if (!Number.isInteger(n)) {
       return { ok: false, error: 'Display order must be a whole number.' }
     }
     displayOrder = n

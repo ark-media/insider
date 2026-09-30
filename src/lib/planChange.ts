@@ -23,19 +23,21 @@ export function useChangeQuote(initial: ChangePreview) {
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const latest = useRef(0);
 
-  const { effectiveMajor } = resolveAmount(value, initial.floorCents, initial.minorFactor);
-  const wantCents =
-    effectiveMajor === null ? initial.floorCents : toMinor(effectiveMajor, initial.minorFactor);
-
-  const setValue = (next: string) => {
-    const { effectiveMajor: nextMajor } = resolveAmount(
-      next,
+  // What a picker value asks to pay, in minor units.
+  const centsFor = (pickerValue: string) => {
+    const { effectiveMajor } = resolveAmount(
+      pickerValue,
       initial.floorCents,
       initial.minorFactor,
     );
-    const nextCents =
-      nextMajor === null ? initial.floorCents : toMinor(nextMajor, initial.minorFactor);
-    setQuoting(nextCents !== preview.amountCents);
+    return effectiveMajor === null
+      ? initial.floorCents
+      : toMinor(effectiveMajor, initial.minorFactor);
+  };
+  const wantCents = centsFor(value);
+
+  const setValue = (next: string) => {
+    setQuoting(centsFor(next) !== preview.amountCents);
     setValueState(next);
   };
 

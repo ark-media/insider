@@ -21,8 +21,6 @@ export type RichTextEditorProps = {
   minHeight?: string;
 };
 
-type Props = RichTextEditorProps;
-
 function buildExtensions() {
   return [
     StarterKit.configure({
@@ -49,7 +47,7 @@ export function RichTextEditor({
   onChange,
   ariaLabel,
   minHeight = "8rem",
-}: Props) {
+}: RichTextEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: buildExtensions(),

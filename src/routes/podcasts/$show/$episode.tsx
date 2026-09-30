@@ -9,7 +9,6 @@ import {
   getShow,
   showAtmosphere,
   type Show,
-  type ShowSlug,
 } from "../../../data/shows";
 import { fetchEpisodeById, getEpisode } from "../../../lib/podcasts";
 import { renderShowNotes } from "../../../lib/show-notes-renderer";
@@ -47,7 +46,7 @@ function EpisodePage() {
 
   useEffect(() => {
     let live = true;
-    void getEpisode(show.slug as ShowSlug, episodeSlug).then(
+    void getEpisode(show.slug, episodeSlug).then(
       (r) => live && setEpisode(r),
     );
     return () => {
@@ -63,7 +62,7 @@ function EpisodePage() {
     // spinning on placeholder lines forever.
     if (!episodeId) return;
     let live = true;
-    void fetchEpisodeById(show.slug as ShowSlug, episodeId).then((full) => {
+    void fetchEpisodeById(show.slug, episodeId).then((full) => {
       if (live) setDetail({ id: episodeId, value: full });
     });
     return () => {

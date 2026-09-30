@@ -140,7 +140,7 @@ async function listLiveShowIds(env: Env, pubId: string): Promise<string[]> {
 // Only an ANSWER is cached — a feed, or a public show. A `none` read is not;
 // see the note at the cache write.
 const FEED_CACHE_TTL_MS = 60_000
-const feedCache = makeTTLCache<string, { read: FeedRead }>(FEED_CACHE_TTL_MS)
+const feedCache = makeTTLCache<string, FeedRead>(FEED_CACHE_TTL_MS)
 
 /** Resets the process-global feed cache (unit tests only). */
 export function clearPrivateFeedCache(): void {
@@ -175,7 +175,7 @@ async function readPrivateFeed(
 
   const cacheKey = `${pubId}:${podcastId}:${email.toLowerCase()}`
   const cached = feedCache.get(cacheKey)
-  if (cached) return cached.read
+  if (cached) return cached
 
   const url =
     `https://api.beehiiv.com/v2/publications/${pubId}` +
@@ -239,7 +239,7 @@ async function readPrivateFeed(
   //
   // The cost is bounded: only a member with no feed re-probes, the page paces
   // those probes, and entitlement never depended on this answer anyway.
-  if (read.kind !== 'none') feedCache.set(cacheKey, { read })
+  if (read.kind !== 'none') feedCache.set(cacheKey, read)
   return read
 }
 

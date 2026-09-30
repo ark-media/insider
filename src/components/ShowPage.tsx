@@ -191,8 +191,8 @@ function EpisodeBrowser({
 }: {
   show: Show;
   episodes: Episode[] | null;
-  error?: boolean;
-  onRetry?: () => void;
+  error: boolean;
+  onRetry: () => void;
 }) {
   // Reset the player selection when navigating between shows so an episode
   // chosen on one show can't linger in the player on the next.
@@ -277,7 +277,7 @@ function EpisodeBrowser({
             <div className="mt-8">
               <ContentError
                 message="We couldn't load episodes. Refresh to try again."
-                onRetry={onRetry ?? (() => {})}
+                onRetry={onRetry}
               />
             </div>
           ) : episodes === null ? (
@@ -345,7 +345,7 @@ function EpisodeList({
   show: Show;
   episodes: Episode[];
   label: string;
-  emptyLabel?: string;
+  emptyLabel: string;
 }) {
   const [visible, setVisible] = useState(ARCHIVE_PAGE_SIZE);
 
@@ -356,7 +356,7 @@ function EpisodeList({
       </div>
       {episodes.length === 0 ? (
         <p className="mt-6 text-body-sm">
-          {emptyLabel ?? "No episodes."}
+          {emptyLabel}
         </p>
       ) : (
         <>
