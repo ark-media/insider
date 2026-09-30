@@ -43,6 +43,6 @@ bun.lockb
 # Agent worktrees: full checkouts of this repo, copied .env files included.
 .claude/worktrees/
 
-# Machine-specific workspace overrides
-.humanlayer/workspace.local.json
+# HumanLayer workspace config (machine-specific)
+.humanlayer/
 .vercel
