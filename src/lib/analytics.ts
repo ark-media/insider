@@ -160,7 +160,7 @@ interface EventMap {
   // checkout_opened, not a hand-off. Every purchase transacts through our
   // Stripe checkout — there is no other buy path.
   circle_join_clicked: void
-  // The Fold login gate turned someone away and landed them on /plus?from=fold
+  // The Fold login gate turned someone away and landed them on /subscribe?from=fold
   // (auth0/actions/post-login.js). `audience` is what they were actually
   // missing — a session, the axis on top of Ark+, or a membership at all — which
   // is the difference between a sign-in problem and a sales one.

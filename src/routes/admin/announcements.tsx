@@ -295,7 +295,7 @@ function AnnouncementForm({
             type="text"
             value={form.actionUrl}
             onChange={(e) => setForm((f) => ({ ...f, actionUrl: e.target.value }))}
-            placeholder="/plus  or  https://…"
+            placeholder="/subscribe  or  https://…"
             className={`mt-2 ${field}`}
           />
           <p className="mt-1 text-body-sm">

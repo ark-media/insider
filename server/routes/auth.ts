@@ -295,7 +295,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
     // Lifecycle emails link here rather than straight at /setup: the recipient
     // is usually opening the mail on a device that has never held a session, so
     // a bare link lands them on a sign-in wall (or, before this existed, on the
-    // /plus sales page). Verify the signed `lt`, mint the same `ark_session`
+    // /subscribe sales page). Verify the signed `lt`, mint the same `ark_session`
     // the OAuth callback would, and 302 on to `to` with the token stripped from
     // the address bar.
     //

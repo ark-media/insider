@@ -8,7 +8,7 @@
 // ("Catalog definition" + "Gift catalog", which have no imports or IO) are cut
 // out of the source, transpiled, and evaluated in isolation — the real
 // giftPricesFor / pricesFor run, not a copy. The USD table below is the one
-// src/lib/gift.test.ts pins GIFT_PRICE_DOLLARS (the /plus/gift display copy) to;
+// src/lib/gift.test.ts pins GIFT_PRICE_DOLLARS (the /subscribe/gift display copy) to;
 // src/ is browser code, so it isn't imported into the server type-check here.
 
 import { describe, expect, test } from 'bun:test'

@@ -12,7 +12,7 @@ import {
 } from "../../lib/gift";
 import { trackEvent } from "../../lib/analytics";
 
-export const Route = createFileRoute("/plus/gift")({
+export const Route = createFileRoute("/subscribe/gift")({
   component: GiftPage,
 });
 

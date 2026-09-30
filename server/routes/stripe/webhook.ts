@@ -593,7 +593,7 @@ async function notifyAccessEnded(
         : undefined,
       tier: lostTier,
       reason: sub.cancellation_details?.reason === 'payment_failed' ? 'payment_failed' : 'ended',
-      rejoinUrl: `${base}${lostTier === 'circle' ? '/fold' : '/plus'}`,
+      rejoinUrl: `${base}${lostTier === 'circle' ? '/fold' : '/subscribe'}`,
     })
     // One per subscription: a redelivered `deleted` collapses.
     const sent = await sendEmail(env, {

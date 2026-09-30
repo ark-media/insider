@@ -28,7 +28,7 @@ import { trackEvent } from "../lib/analytics";
 
 // Public shows only. The members' show (Call me Back | Ark+) has no page of its
 // own: members hear it in their podcast app through the private feed, and the
-// membership pitch lives on /plus.
+// membership pitch lives on /subscribe.
 export function ShowPage({ slug }: { slug: ShowSlug }) {
   const show = getShow(slug);
   if (!show || show.paid) {
@@ -151,7 +151,7 @@ function ShowUpsell() {
         <span className="font-display text-[18px]">Ark+</span> subscribers fund honest coverage of Israel and Jewish life. Get ad-free listening and exclusive content across every show.
       </p>
       <Link
-        to="/plus"
+        to="/subscribe"
         className="mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-4 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Join Ark+ →

@@ -18,7 +18,7 @@ function groupByCategory(faqs: Faq[]): { category: string; items: Faq[] }[] {
 }
 
 // `as` promotes the section heading to the page's h1 on the standalone /faq
-// route, where this section is the whole page. Inline on /plus and /pricing it
+// route, where this section is the whole page. Inline on /subscribe and /pricing it
 // stays an h2 under those pages' own h1.
 export function FAQ({ faqs, as: Heading = "h2" }: { faqs: Faq[]; as?: "h1" | "h2" }) {
   // Two independent accordion layers. Sections are collapsed by default (a Set

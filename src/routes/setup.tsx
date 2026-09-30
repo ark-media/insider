@@ -5,7 +5,7 @@ import { Breadcrumbs } from "../components/Breadcrumbs";
 import { PageShell } from "../components/PageShell";
 import { isArkPlusMember, useSubscriberAuth } from "../lib/subscriberAuth";
 
-// The component's own gate sends guests to sign in and free users to /plus.
+// The component's own gate sends guests to sign in and free users to /subscribe.
 export const Route = createFileRoute("/setup")({
   component: SetupPage,
 });
@@ -27,7 +27,7 @@ function SetupPage() {
     // Free accounts have no private feed to set up. Send them to the upgrade
     // pitch so the route can't be reached by URL-poking.
     if (state.kind === "member" && !isArkPlusMember(state)) {
-      void navigate({ to: "/plus" });
+      void navigate({ to: "/subscribe" });
     }
   }, [state, navigate, signIn]);
 

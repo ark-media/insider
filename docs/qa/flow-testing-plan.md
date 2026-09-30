@@ -43,16 +43,16 @@ Confirm this grid on every audience before walking the flow-specific cases.
 | Surface | Visitor | Free (signed in) | Ark+ | Fold | Bundle |
 |---|---|---|---|---|---|
 | Public podcasts | Yes | Yes | Yes | Yes | Yes |
-| Paid show audio (`/plus/inside-call-me-back`) | Tease | Tease | Yes | No | Yes |
+| Paid show audio (`/subscribe/inside-call-me-back`) | Tease | Tease | Yes | No | Yes |
 | Private RSS / `/account/podcast-feed` | No | No | Yes | No | Yes |
 | Members Letter (full post) | Tease | Tease | Yes | Tease | Yes |
 | Ark Daily | Yes | Yes | Yes | Yes | Yes |
 | `/fold` marketing page | Yes | Yes | Yes | Yes | Yes |
 | Fold app / Circle SSO | No | No | No | Yes | Yes |
 | `/account/fold` tab | No | No | No | Yes | Yes |
-| `/account` membership | No → `/plus` | Free pitch | Plan card | Plan card | Plan card |
+| `/account` membership | No → `/subscribe` | Free pitch | Plan card | Plan card | Plan card |
 | Subscribe nav | Membership + Gift | Membership + Gift | Membership + Gift | Membership + Gift | **Gift** tab only |
-| Home hero CTA | Subscribe → `/plus` | Subscribe → `/plus` | Subscriber Benefits → `/account` | Subscribe → `/plus` (keys on Ark+) | Subscriber Benefits → `/account` |
+| Home hero CTA | Subscribe → `/subscribe` | Subscribe → `/subscribe` | Subscriber Benefits → `/account` | Subscribe → `/subscribe` (keys on Ark+) | Subscriber Benefits → `/account` |
 
 The Fold-only home CTA is keyed on `arkPlus`, not “any paid”. Treat a mismatch
 as a product bug to flag, not as a silent pass.
@@ -68,14 +68,14 @@ Signed-out, plus signed-in with no membership (the pre-checkout identity).
 | **VIS-01** | Home, podcasts hub, show pages | Public episodes play. Paid show is a join CTA, no audio. |
 | **VIS-02** | `/newsletters` + a Members Letter URL | Daily is readable. Members Letter is a teaser + Subscribe, not the full body. |
 | **VIS-03** | `/fold`, `/book-club`, open-house band | Public marketing, no auth spinner. Join CTAs are **Fold** and **Bundle** only (not Ark+). No real Fold posts. Upcoming open houses render or the band hides. |
-| **VIS-04** | `/plus`, `/pricing` | Three SKUs (Ark+, Bundle featured, Fold). Prices from `/api/pricing`, not hardcoded. Gift lives under Subscribe. |
-| **VIS-05** | `/account`, `/welcome`, `/setup`, `/account/billing` | Guests bounce to `/plus` or Auth0. No member chrome leak. |
+| **VIS-04** | `/subscribe`, `/pricing` | Three SKUs (Ark+, Bundle featured, Fold). Prices from `/api/pricing`, not hardcoded. Gift lives under Subscribe. |
+| **VIS-05** | `/account`, `/welcome`, `/setup`, `/account/billing` | Guests bounce to `/subscribe` or Auth0. No member chrome leak. |
 | **VIS-06** | Sign in | Auth0 offers **emailed code** and **Google** only. Unknown email cannot receive a code (sign-ups disabled). Return-to lands back on the page. |
-| **VIS-07** | Fold deep link / SSO while signed out | Lands on `/plus?from=fold` with the **guest** gate (“sign in”), not a cold pricing page. |
+| **VIS-07** | Fold deep link / SSO while signed out | Lands on `/subscribe?from=fold` with the **guest** gate (“sign in”), not a cold pricing page. |
 | **VIS-08** | Newsletter signup on home | Subscribes the address to Ark Daily. Duplicate is idempotent, not an error. |
 | **VIS-09** | Signed-in free: `/account` | Greeting + Membership + Settings only. Pricing cards to join. No Podcasts / Fold tabs. |
-| **VIS-10** | Signed-in free: Fold gate (`/plus?from=fold`) | **no-membership** copy (“join or renew”), not “add the Fold”. Pricing cards are the right next step. |
-| **VIS-11** | URL-poke `/account/podcast-feed` and `/account/fold` while free | Redirect to `/account` or `/plus`. No empty entitled chrome. |
+| **VIS-10** | Signed-in free: Fold gate (`/subscribe?from=fold`) | **no-membership** copy (“join or renew”), not “add the Fold”. Pricing cards are the right next step. |
+| **VIS-11** | URL-poke `/account/podcast-feed` and `/account/fold` while free | Redirect to `/account` or `/subscribe`. No empty entitled chrome. |
 | **VIS-12** | About, FAQ, contact, careers, privacy, terms | Load; forms submit. |
 
 ---
@@ -91,10 +91,10 @@ subscription instead of switching the one they have.
 | **AP-02** | Members Letter + paid show | Full post. Paid episode **plays**. Private-feed CTA on the show page. |
 | **AP-03** | `/account` tabs + jump cards | Membership, **Podcasts**, Settings. No Fold tab. Jump: feeds + newsletter + **Add the Fold**. |
 | **AP-04** | `/account/podcast-feed` and `/setup` | Feed checklist. New members may wait ~2 min for Beehiiv to mint feeds; empty then populated, not a dead end. |
-| **AP-05** | `/account/fold` and Circle SSO / app link | Tab absent; URL-poke → `/account`. SSO bounces to `/plus?from=fold` with **ark-plus-only** copy. CTA is **Add the Fold** → `/account`, **not** a pricing-card checkout. |
+| **AP-05** | `/account/fold` and Circle SSO / app link | Tab absent; URL-poke → `/account`. SSO bounces to `/subscribe?from=fold` with **ark-plus-only** copy. CTA is **Add the Fold** → `/account`, **not** a pricing-card checkout. |
 | **AP-06** | Add the Fold from the membership tab | Bundle **change-tier** confirm (price, cadence, proration). On confirm: entitlements become bundle, Circle access granted, **one** Stripe sub. Age attestation required. |
 | **AP-07** | Preview fails | Error + retry on the panel. Must **not** open standalone checkout (that would double-bill). |
-| **AP-08** | Buy Ark+ or Bundle again from `/plus` | `already_subscribed`. No second customer/subscription. |
+| **AP-08** | Buy Ark+ or Bundle again from `/subscribe` | `already_subscribed`. No second customer/subscription. |
 | **AP-09** | `/fold` while entitled only for Ark+ | Still the public marketing page with join CTAs (by design). App hand-off is `/account/fold` only. |
 | **AP-10** | Billing | Card on file, invoices. Cancel = period-end (access stays). Reactivate clears cancel. Receipts cannot be opted out. |
 | **AP-11** | Email prefs | Daily + Members Letter. Daily off unsubscribes **both**. Letter on from unsubscribed re-subscribes + premium. Free user cannot self-grant premium. |
@@ -113,8 +113,8 @@ gift/nav hiding the only remaining Gift entry.
 | **BU-02** | Content | Paid audio, Members Letter, private feeds, Circle SSO / Fold app all work. |
 | **BU-03** | `/account` tabs | Membership, Podcasts, **The Fold**, Settings. Jump: feeds + Fold (outbound to Circle) + newsletter. **No** “add an axis” card. |
 | **BU-04** | `/account/fold` | App download / open links. Session should SSO into Circle without a second login. |
-| **BU-05** | Nav | Subscribe menu **hidden**. Top-level **Gift** tab present. `/plus/gift` still reachable. |
-| **BU-06** | `/plus` pricing | Must not create a second sub. `already_subscribed` or no checkout CTA for an already-held SKU. |
+| **BU-05** | Nav | Subscribe menu **hidden**. Top-level **Gift** tab present. `/subscribe/gift` still reachable. |
+| **BU-06** | `/subscribe` pricing | Must not create a second sub. `already_subscribed` or no checkout CTA for an already-held SKU. |
 | **BU-07** | Billing cancel | Bundle selector: keep both / keep Ark+ / keep Fold / keep none. Keep-one is a **debundle** (one sub remains, other axis revoked at the stated time). Keep-none = period-end cancel of the whole bundle. Access unchanged until then. |
 | **BU-08** | After debundle to Ark+ | Fold tab gone, Circle revoked, feeds still work, offer to add Fold returns. Reverse for debundle-to-Fold. |
 | **BU-09** | Retention offer | Accepting an offer does not cancel. Declining continues the chosen cancel/debundle. Survey stored. |
@@ -130,16 +130,16 @@ Members Letter, paid audio) or sending them through **new** checkout to add Ark+
 | ID | Check | Expected |
 |---|---|---|
 | **FO-01** | Sign in | `/api/me` is `circle`. Circle SSO / Fold app works. |
-| **FO-02** | Ark+ surfaces | Members Letter teaser. Paid-show **audio withheld** (empty `audioUrl`). `/account/podcast-feed` and `/setup` bounce to `/account` or `/plus`. No Podcasts tab. |
+| **FO-02** | Ark+ surfaces | Members Letter teaser. Paid-show **audio withheld** (empty `audioUrl`). `/account/podcast-feed` and `/setup` bounce to `/account` or `/subscribe`. No Podcasts tab. |
 | **FO-03** | `/account` | Membership, **The Fold**, Settings. Jump: Fold + newsletter + **Add Ark+**. Plan card is Fold, not Ark+. |
 | **FO-04** | Add Ark+ | Same change-tier confirm as AP-06, opposite axis. Lands on bundle, one sub, Beehiiv premium + feeds mint. Age attestation required. |
 | **FO-05** | Preview failure | Error + retry. No standalone Ark+ checkout (double-bill). |
-| **FO-06** | Fold gate (`/plus?from=fold`) | **member** copy (“you're already in”) + Go to the Fold — not a sales pitch. |
+| **FO-06** | Fold gate (`/subscribe?from=fold`) | **member** copy (“you're already in”) + Go to the Fold — not a sales pitch. |
 | **FO-07** | `/fold` marketing | Still public; join CTAs still show (by design). Entry to the app is `/account/fold`. |
 | **FO-08** | Home hero | Today keys on Ark+, so Fold-only still sees **Subscribe**. Flag if that is not intended. |
 | **FO-09** | Billing | Same period-end cancel as Ark+ (Flow B copy). Reactivate. No private-feed setup in the cancel path. |
 | **FO-10** | Email prefs | Daily only unless they somehow hold premium — `canPremium` is false. Cannot self-grant Members Letter. |
-| **FO-11** | Buy Fold again from `/plus` | `already_subscribed`. |
+| **FO-11** | Buy Fold again from `/subscribe` | `already_subscribed`. |
 | **FO-12** | Open houses / book club | Marketing still public. Live Fold rooms only inside Circle, not on the website. |
 
 ---
@@ -151,7 +151,7 @@ product belong in AP-06 / FO-04, not here.
 
 | ID | Check | Expected |
 |---|---|---|
-| **SUB-01** | Entry points | Checkout opens from `/plus`, `/pricing`, `/fold` (Fold + Bundle only), home Subscribe. Modal matches the card clicked. |
+| **SUB-01** | Entry points | Checkout opens from `/subscribe`, `/pricing`, `/fold` (Fold + Bundle only), home Subscribe. Modal matches the card clicked. |
 | **SUB-02** | Six happy paths | Ark+ / Fold / Bundle × monthly / yearly. `4242` succeeds. Redirect / in-modal complete. `/api/me` matches the SKU. |
 | **SUB-03** | Fan-out (each SKU) | Neon row live. Ark+ axis → Beehiiv premium + feeds. Circle axis → Circle access group. Bundle → both. Auth0 is identity only (no tier claim). |
 | **SUB-04** | Post-checkout session | Auto-login via checkout token. `/welcome` shows the right steps: feeds if Ark+, Fold app if Circle, both if Bundle. Webhook lag → all steps shown rather than none. |
@@ -174,7 +174,7 @@ Anyone can buy a gift. Redemption is identity-keyed on the **recipient**.
 
 | ID | Check | Expected |
 |---|---|---|
-| **GIFT-01** | `/plus/gift` as guest, free, Ark+, Fold, Bundle | Form works. Bundle members reach it via the Gift **tab**; everyone else via Subscribe → Gift. |
+| **GIFT-01** | `/subscribe/gift` as guest, free, Ark+, Fold, Bundle | Form works. Bundle members reach it via the Gift **tab**; everyone else via Subscribe → Gift. |
 | **GIFT-02** | Six purchases | Ark+ / Fold / Bundle × 6 months / 1 year. Giver + recipient emails required. Optional names/message. Localized total. Age attestation is on the **recipient** for Fold/Bundle. |
 | **GIFT-03** | Pay + confirm | `4242` succeeds. Home `?gift=complete` toast. Giver is **not** entitled. Recipient is not entitled until they redeem. |
 | **GIFT-04** | Recipient email | Magic-link (`?mt=`) auto-logs-in, redeems, strips `mt` from the URL, lands on `/welcome?claimed=1` with a “how to sign in next time” step. |

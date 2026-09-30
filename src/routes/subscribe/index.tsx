@@ -6,12 +6,12 @@ import { FAQ } from "../../components/FAQ";
 import { FoldGateNotice } from "../../components/FoldGateNotice";
 import { fetchFaqs } from "../../lib/faqs";
 
-export const Route = createFileRoute("/plus/")({
+export const Route = createFileRoute("/subscribe/")({
   // `?from=fold` means the Auth0 post-login Action turned this person away from
   // a Fold login and sent them here (auth0/actions/post-login.js). It is the
   // only thing that distinguishes them from an ordinary visitor, so the notice
   // above the hero is keyed on it. Omit the key entirely when absent, so the
-  // router doesn't make it a required search param on every `Link to="/plus"`.
+  // router doesn't make it a required search param on every `Link to="/subscribe"`.
   validateSearch: (search: Record<string, unknown>): { from?: "fold" } =>
     search.from === "fold" ? { from: "fold" } : {},
   loader: async () => ({ faqs: await fetchFaqs() }),

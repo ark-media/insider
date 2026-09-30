@@ -103,7 +103,7 @@ describe("redactSensitiveQuery", () => {
   });
 
   test("leaves URLs without sensitive params byte-identical", () => {
-    const clean = "https://ark-plus.xyz/plus?tier=bundle#pricing";
+    const clean = "https://ark-plus.xyz/subscribe?tier=bundle#pricing";
     expect(redactSensitiveQuery(clean)).toBe(clean);
   });
 
@@ -126,7 +126,7 @@ describe("redactSensitiveQuery", () => {
   });
 
   test("does not mistake a longer param name for a sensitive one", () => {
-    const clean = "/plus?format=mt&estate=1&xtoken=1";
+    const clean = "/subscribe?format=mt&estate=1&xtoken=1";
     expect(redactSensitiveQuery(clean)).toBe(clean);
   });
 
@@ -263,7 +263,7 @@ describe("stashUrlCredentials", () => {
   });
 
   test("leaves `token` alone on every other page", () => {
-    setURL("https://ark-plus.xyz/plus?token=not-ours&mt=nor-this");
+    setURL("https://ark-plus.xyz/subscribe?token=not-ours&mt=nor-this");
     stashUrlCredentials();
     expect(window.location.search).toBe("?token=not-ours&mt=nor-this");
     expect(getLandingCredential("mt")).toBeUndefined();
@@ -279,7 +279,7 @@ describe("isReplayBlockedPath", () => {
   });
 
   test("does not block look-alike or public paths", () => {
-    for (const path of ["/", "/plus", "/accounting", "/administrivia", "/shows/account"]) {
+    for (const path of ["/", "/subscribe", "/accounting", "/administrivia", "/shows/account"]) {
       expect(isReplayBlockedPath(path)).toBe(false);
     }
   });
@@ -296,7 +296,7 @@ describe("initObservability", () => {
 
   test("before init, the replay hooks are inert", () => {
     pauseReplayIfSensitive("/account");
-    resumeReplayIfSafe("/plus");
+    resumeReplayIfSafe("/subscribe");
     expect(posthogCalls.stop).toBe(0);
     expect(posthogCalls.start).toEqual([]);
   });
@@ -321,7 +321,7 @@ describe("initObservability", () => {
 
   test("PostHog masks replay text + inputs, autocapture text + attributes, and pauses on sensitive routes", () => {
     env.VITE_POSTHOG_KEY = "phc_test";
-    setURL("https://ark-plus.xyz/plus");
+    setURL("https://ark-plus.xyz/subscribe");
     initObservability();
 
     const { config } = posthogCalls.init.at(-1)!;
@@ -349,8 +349,8 @@ describe("initObservability", () => {
 
     // The next public page has rendered → back on, under the project's own
     // sampling rules (no override argument).
-    resumeReplayIfSafe("/plus");
-    resumeReplayIfSafe("/plus");
+    resumeReplayIfSafe("/subscribe");
+    resumeReplayIfSafe("/subscribe");
     expect(posthogCalls.start).toEqual([undefined]);
   });
 

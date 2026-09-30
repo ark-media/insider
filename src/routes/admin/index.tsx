@@ -29,7 +29,7 @@ const CARDS = [
   {
     to: "/admin/faqs",
     title: "FAQs",
-    body: "Write and reorder the questions in the FAQ section on the /plus page.",
+    body: "Write and reorder the questions in the FAQ section on the /subscribe page.",
   },
   {
     to: "/admin/promos",

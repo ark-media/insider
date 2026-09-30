@@ -43,7 +43,7 @@ export function isHexColor(value: string): boolean {
   return HEX_COLOR.test(value)
 }
 
-// Action URL may be an absolute http(s) link or a site-relative path ("/plus").
+// Action URL may be an absolute http(s) link or a site-relative path ("/subscribe").
 // Returns the trimmed value, null when empty, or an Error message string when
 // it's neither — so a typo'd URL is rejected rather than rendered as a dead
 // link.
@@ -56,7 +56,7 @@ export function normalizeActionUrl(raw: unknown): string | null | { error: strin
     // Reject protocol-relative URLs ("//host") — they read as relative but the
     // browser navigates off-site. Only a single leading slash is a site path.
     if (value.startsWith('//')) {
-      return { error: 'Action URL must be absolute (http/https) or a site path like /plus.' }
+      return { error: 'Action URL must be absolute (http/https) or a site path like /subscribe.' }
     }
     return value
   }

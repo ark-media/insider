@@ -38,9 +38,9 @@ const sections: FooterSection[] = [
   {
     title: "Subscribe",
     links: [
-      { label: "Become a member", to: "/plus" },
+      { label: "Become a member", to: "/subscribe" },
       { label: "Pricing", to: "/pricing" },
-      { label: "Gift", to: "/plus/gift" },
+      { label: "Gift", to: "/subscribe/gift" },
       { label: "FAQ", to: "/faq" },
     ],
   },

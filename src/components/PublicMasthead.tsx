@@ -36,7 +36,7 @@ type NavItem = {
 
 const podcastChildren: NavChild[] = [
   { label: "All", to: "/podcasts" },
-  // The paid show lives under /plus, so the podcast menu lists public shows only.
+  // The paid show lives under /subscribe, so the podcast menu lists public shows only.
   ...shows
     .filter((show) => !show.paid)
     .map((show) => ({
@@ -68,18 +68,18 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { variant: "text", label: "Newsletters", to: "/newsletters", matchPrefix: "/newsletters" },
-  // One landing page to browse membership (/plus); gifting lives in this
+  // One landing page to browse membership (/subscribe); gifting lives in this
   // dropdown rather than as its own tab. Hidden from full-bundle members —
   // they already have Ark+ and the Fold — and the full-member-only "Gift" tab
   // below keeps gifting reachable for them.
   {
     variant: "menu",
     label: "Subscribe",
-    to: "/plus",
+    to: "/subscribe",
     hideWhen: "fullMember",
     children: [
-      { label: "Membership", to: "/plus" },
-      { label: "Gift", to: "/plus/gift" },
+      { label: "Membership", to: "/subscribe" },
+      { label: "Gift", to: "/subscribe/gift" },
     ],
   },
   // Anyone (guest, member, or full member) can buy a gift, but full-bundle
@@ -88,7 +88,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     variant: "text",
     label: "Gift",
-    to: "/plus/gift",
+    to: "/subscribe/gift",
     hideWhen: "nonFullMember",
   },
   {
@@ -171,7 +171,7 @@ export function PublicMasthead() {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
 
-  // Publish masthead height so hash links (e.g. /plus#pricing) scroll clear of
+  // Publish masthead height so hash links (e.g. /subscribe#pricing) scroll clear of
   // the sticky header — paired with --ann-height from AnnouncementBanner.
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -367,7 +367,7 @@ export function PublicMasthead() {
               for paid members and while auth resolves. */}
           {showSubscribe ? (
             <Link
-              to="/plus"
+              to="/subscribe"
               hash="pricing"
               className="inline-flex min-h-11 items-center whitespace-nowrap border border-cyan bg-cyan px-3 font-display text-[11px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:hidden"
             >
@@ -457,7 +457,7 @@ export function PublicMasthead() {
                 compete. */}
             {showSubscribe ? (
               <Link
-                to="/plus"
+                to="/subscribe"
                 hash="pricing"
                 onClick={() => setMobileOpen(false)}
                 className="mb-3 inline-flex min-h-12 items-center justify-center border border-cyan bg-cyan px-4 font-display text-[14px] font-bold uppercase tracking-button text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"

@@ -236,7 +236,7 @@ exports.onExecutePostLogin = async (event, api) => {
       // when APP_BASE_URL is unset, so this line is unreachable without it.
       // Keep that invariant if either function is edited — a relative URL here
       // would throw inside the action instead of redirecting.
-      return api.redirect.sendUserTo(`${appBase(event)}/plus?from=fold`);
+      return api.redirect.sendUserTo(`${appBase(event)}/subscribe?from=fold`);
     }
   }
 

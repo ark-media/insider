@@ -14,7 +14,7 @@ function FaqPage() {
   const router = useRouter();
 
   // fetchFaqs() swallows a failed request into an empty array and FAQ renders
-  // nothing when it has nothing to show. Inline on /plus that's a quietly
+  // nothing when it has nothing to show. Inline on /subscribe that's a quietly
   // dropped section; here it would be a blank page, so offer a retry.
   if (faqs.length === 0) {
     return (

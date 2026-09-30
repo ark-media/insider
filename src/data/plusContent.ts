@@ -1,7 +1,7 @@
-// Copy for the /plus Hero.
+// Copy for the /subscribe Hero.
 //
 // This header is deliberately STATIC — it reads the same for a guest, a free
-// reader, an Ark+ member, and a full-bundle member. /plus is the public
+// reader, an Ark+ member, and a full-bundle member. /subscribe is the public
 // "what membership is" page, not an entitlement-personalized upsell.
 
 // A two-line heading with a single cyan accent span. `line2Accent` sits between

@@ -226,7 +226,7 @@ describe("topics", () => {
 
   test("a signed-out visitor is told about Apple instead of being sent to an account page", async () => {
     // The whole point of the fork: an Apple subscriber has no login here and
-    // reads as a guest, and /account/billing would bounce them to /plus.
+    // reads as a guest, and /account/billing would bounce them to /subscribe.
     await mount();
     await open();
     await click(buttonWith("Cancel or change my plan"));

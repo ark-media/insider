@@ -48,7 +48,7 @@ const TIER_LABEL: Record<Tier, string> = {
   bundle: "Ark+ & The Fold",
 };
 
-// The brand marks beside that label, mirroring the tier cards on /plus so the
+// The brand marks beside that label, mirroring the tier cards on /subscribe so the
 // modal reads as a continuation of the card the buyer just clicked. Same grant
 // as TIERS[].marks in data/pricingTiers.ts.
 const TIER_MARKS: Record<Tier, ProductMark[]> = {

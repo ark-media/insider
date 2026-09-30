@@ -173,7 +173,7 @@ function Mark({ on }: { on: boolean }) {
 //   "standalone" (/pricing) — the primary buying surface, and the only place
 //     these prices appear: a Monthly/Annual toggle, and per column a price and
 //     a "Choose" button that opens checkout for that tier at that period.
-//   "reference" (/plus)     — sits below the card grid, which already owns the
+//   "reference" (/subscribe)     — sits below the card grid, which already owns the
 //     toggle, the prices, and the CTAs. Here the table is purely a read-only
 //     summary of what each tier includes: no toggle, no prices, no buttons, and
 //     nothing to click or hover.

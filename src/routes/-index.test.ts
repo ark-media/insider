@@ -22,7 +22,7 @@ describe("homepage hero CTA", () => {
   });
 
   test("sends everyone else to subscribe", () => {
-    expect(homeHeroCta(false)).toEqual({ to: "/plus", label: "Subscribe" });
+    expect(homeHeroCta(false)).toEqual({ to: "/subscribe", label: "Subscribe" });
   });
 });
 

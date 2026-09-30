@@ -16,7 +16,7 @@ export const Route = createFileRoute("/hosts/$slug")({
 
 function HostPage() {
   const { host } = Route.useLoaderData();
-  // Public shows only: the paid show lives under /plus. Hosts still list it in
+  // Public shows only: the paid show lives under /subscribe. Hosts still list it in
   // the data because its own page reads its hosts from there.
   const shows = host.shows
     .map((s) => getShow(s))

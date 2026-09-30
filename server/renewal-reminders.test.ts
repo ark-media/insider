@@ -155,11 +155,11 @@ describe('renderAccessEndedEmail', () => {
     const { subject, html } = renderAccessEndedEmail({
       tier: 'ark-plus',
       reason: 'payment_failed',
-      rejoinUrl: 'https://app.test/plus',
+      rejoinUrl: 'https://app.test/subscribe',
     })
     expect(subject).toBe('Your Ark+ membership has ended')
     expect(html).toContain('take payment after several tries')
-    expect(html).toContain('https://app.test/plus')
+    expect(html).toContain('https://app.test/subscribe')
   })
 
   test('a scheduled end reads as a plain end, and a Fold end says only the Fold', () => {

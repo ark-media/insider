@@ -7,7 +7,7 @@ export const Route = createFileRoute("/shows/$show")({
   beforeLoad: ({ params }) => {
     const dest =
       params.show === "call-me-back-plus"
-        ? "/plus"
+        ? "/subscribe"
         : `/podcasts/${params.show}`;
     throw redirect({ href: dest, replace: true });
   },

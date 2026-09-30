@@ -60,7 +60,7 @@ function FoldPage() {
    page.
 
    Prices are never hardcoded here: the Fold sells on the `circle` tier and the
-   amounts come from Stripe via /api/pricing, same as the /plus card grid.
+   amounts come from Stripe via /api/pricing, same as the /subscribe card grid.
 --------------------------------------------------------------------------- */
 
 /**
@@ -128,7 +128,7 @@ function MarketingShowcase() {
           </button>
         }
         aside={
-          // Art, not instruction — hidden on narrow screens the way the /plus
+          // Art, not instruction — hidden on narrow screens the way the /subscribe
           // hero hides its cover, so the headline and CTA own the first screen.
           <div className="hidden lg:block">
             <PhoneFrame className="w-[250px]">
@@ -457,7 +457,7 @@ function JoinCta({
   factor: number;
   onJoin: (tier: JoinTier, plan: Plan) => void;
 }) {
-  // Monthly by default, unlike /plus (which leads annual). This card sits at the
+  // Monthly by default, unlike /subscribe (which leads annual). This card sits at the
   // end of a long read and the smaller number is the easier yes; the toggle is
   // right there for anyone who'd rather commit for the year.
   const [plan, setPlan] = useState<Plan>("monthly");
@@ -508,7 +508,7 @@ function JoinCta({
         </div>
 
         <div className="mt-8 text-center">
-          <Link to="/plus" className="episode-action hover:underline">
+          <Link to="/subscribe" className="episode-action hover:underline">
             See all membership options
           </Link>
         </div>
@@ -518,7 +518,7 @@ function JoinCta({
 }
 
 // The button copy names what the buyer ends up with, rather than the generic
-// "Subscribe monthly" the /plus grid uses — on this page the Fold is assumed
+// "Subscribe monthly" the /subscribe grid uses — on this page the Fold is assumed
 // and the bundle is the upgrade.
 const JOIN_CARD_CTA: Record<JoinTier, string> = {
   circle: "Join the Fold",
@@ -546,7 +546,7 @@ function JoinCard({
   if (!meta) return null;
 
   // A floor, not a fixed price: members choose their amount at checkout, so the
-  // card leads with "From" exactly as the /plus grid does.
+  // card leads with "From" exactly as the /subscribe grid does.
   const minor = amounts?.[plan][currency] ?? null;
   const featured = tier === "bundle";
 

@@ -7,7 +7,7 @@ export const Route = createFileRoute("/about/network")({
   component: NetworkPage,
 });
 
-// The paid show lives under /plus, not in the public network listing.
+// The paid show lives under /subscribe, not in the public network listing.
 const publicShows = shows.filter((show) => !show.paid);
 
 type NetworkProperty = {
@@ -44,7 +44,7 @@ const properties: NetworkProperty[] = [
     kind: "Membership",
     description:
       "Ark+ is every Ark Media podcast ad-free, plus the members-only newsletter. The Fold is the members' app, live events, and Dan's book club. Ark+ & The Fold is both, one membership.",
-    to: "/plus",
+    to: "/subscribe",
   },
 ];
 

@@ -148,7 +148,7 @@ function PriceCard({
 
 // The 3-card pricing grid: a shared Monthly/Annual toggle, one card per SKU
 // (the Bundle featured in the center), and the checkout modal. Always the full
-// catalog — /plus is a public membership page, not an upsell that hides SKUs
+// catalog — /subscribe is a public membership page, not an upsell that hides SKUs
 // the viewer already owns. Prices come from Stripe (the source of truth) via
 // /api/pricing — never hardcoded, so the displayed amount can't drift from
 // what we charge.

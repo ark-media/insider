@@ -8,7 +8,7 @@ import { useSubscriberAuth } from "../lib/subscriberAuth";
 //
 // When someone without the `circle` entitlement opens a Fold link, the Auth0
 // post-login Action (auth0/actions/post-login.js) abandons the login
-// transaction and sends them here — `/plus?from=fold` — so Circle never gets a
+// transaction and sends them here — `/subscribe?from=fold` — so Circle never gets a
 // callback and never auto-provisions them a member. The notice explains why
 // they were bounced out of a link they'd just clicked.
 //
@@ -74,7 +74,7 @@ export function FoldGateNotice() {
   return (
     // A div, not a section: the zebra striping in index.css bands every
     // section/article child of #main-content, so a section here would flip the
-    // parity of every band below it on /plus.
+    // parity of every band below it on /subscribe.
     //
     // role="status", not "alert" — nothing has gone wrong, and a Fold link is
     // most often clicked by someone who simply hasn't bought this part yet.

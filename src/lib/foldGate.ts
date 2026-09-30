@@ -4,7 +4,7 @@ import type { SubscriberAuthState } from "./subscriberAuth";
 //
 // The Auth0 post-login Action (auth0/actions/post-login.js) denies a Fold login
 // for anyone without the `circle` entitlement and lands them all on the same
-// URL — /plus?from=fold — but they need opposite instructions, and one of the
+// URL — /subscribe?from=fold — but they need opposite instructions, and one of the
 // splits costs money to get wrong: an Ark+-only member buying from the pricing
 // cards starts a SECOND subscription, which the single-active-subscription
 // guard then refuses with an "already a member" screen. The upgrade path for

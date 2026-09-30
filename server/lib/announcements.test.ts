@@ -23,8 +23,8 @@ const valid = {
 
 describe('sanitizeAnnouncementBody', () => {
   test('keeps inline formatting and links', () => {
-    expect(sanitizeAnnouncementBody('<b>Save</b> <a href="/plus">now</a>')).toContain('<b>Save</b>')
-    expect(sanitizeAnnouncementBody('<a href="/plus">now</a>')).toContain('href="/plus"')
+    expect(sanitizeAnnouncementBody('<b>Save</b> <a href="/subscribe">now</a>')).toContain('<b>Save</b>')
+    expect(sanitizeAnnouncementBody('<a href="/subscribe">now</a>')).toContain('href="/subscribe"')
   })
   test('strips scripts but keeps block formatting', () => {
     expect(sanitizeAnnouncementBody('<script>alert(1)</script>Hello')).toBe('Hello')
@@ -56,7 +56,7 @@ describe('normalizeActionUrl', () => {
     expect(normalizeActionUrl('   ')).toBeNull()
   })
   test('relative path is kept', () => {
-    expect(normalizeActionUrl('/plus')).toBe('/plus')
+    expect(normalizeActionUrl('/subscribe')).toBe('/subscribe')
   })
   test('http(s) absolute is kept', () => {
     expect(normalizeActionUrl('https://ark.com/x')).toBe('https://ark.com/x')
@@ -103,13 +103,13 @@ describe('validateAnnouncementInput', () => {
     const r = validateAnnouncementInput({
       ...valid,
       body: '<script>x</script><b>Hi</b>',
-      actionUrl: '/plus',
+      actionUrl: '/subscribe',
       dismissible: false,
     })
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.value.body).toBe('<b>Hi</b>')
-      expect(r.value.actionUrl).toBe('/plus')
+      expect(r.value.actionUrl).toBe('/subscribe')
       expect(r.value.dismissible).toBe(false)
       expect(r.value.startsAt).toBe(new Date(valid.startsAt).toISOString())
     }
@@ -134,7 +134,7 @@ describe('action URL is re-validated on read', () => {
     ['data:text/html,<script>alert(1)</script>', null],
     ['//evil.example/x', null],
     ['not a url', null],
-    ['/plus', '/plus'],
+    ['/subscribe', '/subscribe'],
     ['https://ark.com/x', 'https://ark.com/x'],
     [null, null],
   ])('stored %p is served as %p', async (stored, served) => {

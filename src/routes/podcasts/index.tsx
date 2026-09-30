@@ -14,7 +14,7 @@ import { isArkPlusMember, useSubscriberAuth } from "../../lib/subscriberAuth";
 const BROWSE_GRID_SIZES =
   "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
 
-// The paid show lives under /plus, not in the public podcast browse grid.
+// The paid show lives under /subscribe, not in the public podcast browse grid.
 const publicShows = shows.filter((show) => !show.paid);
 
 export const Route = createFileRoute("/podcasts/")({
@@ -102,7 +102,7 @@ function ArkPlusCallout() {
         </div>
         <div className="lg:col-span-4 lg:text-right">
           <Link
-            to="/plus"
+            to="/subscribe"
             className="inline-flex items-center gap-2 border border-cyan bg-cyan px-5 py-3 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
           >
             Subscribe →

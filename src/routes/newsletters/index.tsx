@@ -204,7 +204,7 @@ function JoinPlusCard() {
         analysis and source notes — plus ad-free episodes and the full archive.
       </p>
       <Link
-        to="/plus"
+        to="/subscribe"
         className="button-text mt-6 inline-flex min-h-11 items-center gap-2 border border-cyan bg-cyan px-5 py-3 font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
       >
         Join Ark+ →
