@@ -345,6 +345,58 @@ describe('activateMembershipForStripeSub — tier-aware fan-out', () => {
     expect(sentEmails.length).toBe(0)
   })
 
+  test('a suppress marker provisions the first purchase silently and is consumed', async () => {
+    // The ICMB migration announces itself on its own schedule: the swap must
+    // provision everything (feed, Fold, login) without the welcome email.
+    const { stripe, sub, meta } = makeFakeStripe({ suppress_welcome_email: 'true' })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(beehiivPremiumGrant()).toBe(true)
+    expect(circleGroupPost()).toBe(true)
+    expect(sentEmails.length).toBe(0)
+    // Still recorded as welcomed, so the rest of this purchase can't later read
+    // as an upgrade — and the marker is gone, so it silences this one pass only.
+    expect(meta.welcomed_axes).toBe('ark_plus,circle')
+    expect(meta.suppress_welcome_email ?? '').toBe('')
+  })
+
+  test('a suppress marker silences the axis-added email too', async () => {
+    // A staffer moved from Ark+ to the Bundle by the migration after they were
+    // already provisioned: the Fold is granted, nothing is announced.
+    const { stripe, sub, meta } = makeFakeStripe({
+      beehiiv_premium: 'true',
+      auth0_user_id: 'auth0|abc',
+      welcomed_axes: 'ark_plus',
+      suppress_welcome_email: 'true',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+
+    expect(circleGroupPost()).toBe(true)
+    expect(sentEmails.length).toBe(0)
+    expect(meta.welcomed_axes).toBe('ark_plus,circle')
+    expect(meta.suppress_welcome_email ?? '').toBe('')
+  })
+
+  test('after a silent migration, a later upgrade is announced as usual', async () => {
+    // First pass: migrated onto Ark+ silently.
+    const { stripe, sub, meta } = makeFakeStripe({
+      suppress_welcome_email: 'true',
+      amount_cents: '2500',
+      currency: 'usd',
+    })
+    const activator = createActivator(EMAIL_ENV, stripe)
+    await activator.activateMembershipForStripeSub(sub, 'ark-plus')
+    expect(sentEmails.length).toBe(0)
+    expect(meta.welcomed_axes).toBe('ark_plus')
+
+    // Later the member redeems the welcome offer and gains the Fold.
+    await activator.activateMembershipForStripeSub(sub, 'bundle')
+    expect(sentEmails.length).toBe(1)
+    expect(sentEmails[0].subject).toContain('Fold')
+  })
+
   test('a redelivery that adds no axis sends nothing', async () => {
     // Both axes already carry their markers, so the fan-out is a no-op — and a
     // no-op must not re-announce an upgrade the member made weeks ago.

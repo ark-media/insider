@@ -26,7 +26,14 @@
 //
 // The swap fires `customer.subscription.updated`. Wherever a webhook endpoint
 // for this Stripe mode is listening, that provisions the member: Auth0 login,
-// Beehiiv premium, the membership row, and the welcome email.
+// Beehiiv premium, the Fold for staff, and the membership row.
+//
+// It sends NO email. Every swap also stamps `suppress_welcome_email`, which
+// the activation consumes instead of sending the welcome (or, for a staffer
+// re-targeted Ark+ → Bundle, the axis-added) email — the migration is
+// announced separately, on its own schedule. Lifecycle crons still run on
+// their own rules: turn the feed-setup reminder off in /admin before a bulk
+// run, or every migrated member is nudged about a day after their swap.
 //
 // Test mode by default. STRIPE_SECRET_KEY must start with `sk_test_` unless
 // `--live` is passed, and a live write additionally needs CONFIRM_LIVE_ACCOUNT
@@ -77,6 +84,9 @@ const MIGRATED_AT = 'icmb_migrated_at'
 const FROM_PRICE = 'icmb_from_price'
 const FROM_PRODUCT = 'icmb_from_product'
 const FROM_COUPONS = 'icmb_from_coupons'
+
+// Mirrors SUPPRESS_WELCOME_MARKER in server/lib/activation.ts, which consumes it.
+const SUPPRESS_WELCOME = 'suppress_welcome_email'
 
 // Mirrors STAFF_COUPON_ID in scripts/stripe-catalog.ts, which creates it.
 const STAFF_COUPON_ID = 'staff_bundle_100'
@@ -349,6 +359,7 @@ async function migrate(
     proration_behavior: 'none',
     metadata: {
       plan: planOf(price)!,
+      [SUPPRESS_WELCOME]: 'true',
       [MIGRATED_AT]: new Date().toISOString(),
       // A re-target (Ark+ → Bundle) keeps the ORIGINAL legacy price as the
       // revert point, not the Ark+ price it is leaving.
@@ -400,6 +411,7 @@ async function migrateStaff(
     proration_behavior: 'none',
     metadata: {
       plan: planOf(price)!,
+      [SUPPRESS_WELCOME]: 'true',
       [MIGRATED_AT]: new Date().toISOString(),
       [FROM_PRICE]: sub.metadata?.[FROM_PRICE] || price.id,
       [FROM_PRODUCT]: sub.metadata?.[FROM_PRODUCT] || (idOf(product) ?? ''),
@@ -424,7 +436,13 @@ async function revertMigration(stripe: Stripe, sub: Stripe.Subscription): Promis
       : {}),
     proration_behavior: 'none',
     // '' deletes a metadata key. `plan` is left: it is accurate either way.
-    metadata: { [MIGRATED_AT]: '', [FROM_PRICE]: '', [FROM_PRODUCT]: '', [FROM_COUPONS]: '' },
+    metadata: {
+      [MIGRATED_AT]: '',
+      [FROM_PRICE]: '',
+      [FROM_PRODUCT]: '',
+      [FROM_COUPONS]: '',
+      [SUPPRESS_WELCOME]: '',
+    },
   })
 }
 
@@ -580,9 +598,9 @@ async function main(): Promise<void> {
             ' (no proration) and clear the migration markers'
         : staffPrice
           ? `    WILL move to "${target.name}" at its catalog ${money(staffAmount, price.currency)} ${planOf(price)} ` +
-            'with the Staff coupon (100% off, renewals $0) replacing any discount, no proration'
+            'with the Staff coupon (100% off, renewals $0) replacing any discount, no proration (no email)'
           : `    WILL move to "${target.name}" at ${money(price.unit_amount, price.currency)} ${planOf(price)} ` +
-            '(own amount kept, no proration, no invoice), and stamp plan + migration markers',
+            '(own amount kept, no proration, no invoice), and stamp plan + migration markers (no email)',
     )
     if (isStaff) counts.toBundle++
     if (!apply) {
