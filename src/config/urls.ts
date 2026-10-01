@@ -41,11 +41,37 @@ export const contactEmails = {
   /** Membership and technical support — the desk the team staffs. Also where
       job applications go when a role has no apply link. */
   support: "support@arkmedia.org",
+  /** Chosen People Problems' own desk. Anything about CPP or CPP | Ark+ goes
+      here whatever the topic — support included — instead of the two above. */
+  chosenPeopleProblems: "chosen@arkmedia.org",
+  /** Sponsorships & partnerships — Ryan, whichever podcast is named. */
+  partnerships: "ryan@arkmedia.org",
 } as const;
+
+/** Shows whose submissions skip the topic inbox for their own. */
+const showInboxes: Record<string, string> = {
+  "chosen-people-problems": contactEmails.chosenPeopleProblems,
+  "chosen-people-problems-plus": contactEmails.chosenPeopleProblems,
+};
+
+/** Topics whose inbox holds even when the podcast picked has its own. */
+const topicInboxWins = new Set<string>(["partnerships"]);
+
+/** The inbox a contact submission is emailed to: the show's own desk when it
+    has one (except for topics that always keep theirs), else the topic's. */
+export function contactInboxFor(
+  topic: { value: string; email: string },
+  showSlug?: string,
+): string {
+  if (topicInboxWins.has(topic.value) || !showSlug) return topic.email;
+  return showInboxes[showSlug] ?? topic.email;
+}
 
 /**
  * Topics offered by the /contact form. Each maps to the inbox the submission
- * is forwarded to: support to support@, everything else to hello@. Shared by
+ * is forwarded to: support to support@, sponsorships to Ryan, everything else
+ * to hello@ (unless the podcast picked has its own inbox — see
+ * contactInboxFor). Shared by
  * the form (dropdown) and the server route (topic → destination address), so
  * the two can never drift.
  */
@@ -73,7 +99,7 @@ export const contactTopics = [
   {
     value: "partnerships",
     label: "Sponsorships & partnerships",
-    email: contactEmails.general,
+    email: contactEmails.partnerships,
   },
   {
     value: "institutions",

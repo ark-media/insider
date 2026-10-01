@@ -332,9 +332,13 @@ describe('/api/contact — inboxes and Airtable', () => {
     MAKE_CONTACT_WEBHOOK_KEY: 'make-key',
   }
 
-  test('support goes to support@, every other topic to hello@', () => {
+  test('support goes to support@, sponsorships to ryan@, every other topic to hello@', () => {
+    const special: Record<string, string> = {
+      support: 'support@arkmedia.org',
+      partnerships: 'ryan@arkmedia.org',
+    }
     for (const t of contactTopics) {
-      expect(t.email).toBe(t.value === 'support' ? 'support@arkmedia.org' : 'hello@arkmedia.org')
+      expect<string>(t.email).toBe(special[t.value] ?? 'hello@arkmedia.org')
     }
   })
 
@@ -466,6 +470,39 @@ describe('/api/contact — inboxes and Airtable', () => {
     expect(email.html).toContain('<strong>Podcast:</strong> Chosen People Problems')
     const payload = JSON.parse(String(calls[1].init?.body)) as Record<string, string>
     expect(payload).toMatchObject({ show: 'Chosen People Problems', showSlug: 'chosen-people-problems' })
+  })
+
+  test('anything about Chosen People Problems goes to chosen@, whatever the topic', async () => {
+    for (const [topic, show] of [
+      ['questions', 'chosen-people-problems'],
+      ['questions', 'chosen-people-problems-plus'],
+      ['support', 'chosen-people-problems-plus'],
+      ['press', 'chosen-people-problems'],
+    ]) {
+      calls.length = 0
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body: { ...QUESTION, topic, show } }), res)
+      expect(res.statusCode).toBe(200)
+      const email = JSON.parse(String(calls[0].init?.body)) as { to: string }
+      expect(email.to).toBe('chosen@arkmedia.org')
+    }
+  })
+
+  test('other shows keep the topic inbox', async () => {
+    for (const [topic, show, to] of [
+      ['questions', 'call-me-back', 'hello@arkmedia.org'],
+      ['support', 'call-me-back-plus', 'support@arkmedia.org'],
+      // Sponsorships always go to Ryan, even about Chosen People Problems.
+      ['partnerships', 'chosen-people-problems', 'ryan@arkmedia.org'],
+      ['partnerships', '', 'ryan@arkmedia.org'],
+    ]) {
+      calls.length = 0
+      const res = makeRes()
+      await getHandler(ENV)(makeReq({ body: { ...QUESTION, topic, show } }), res)
+      expect(res.statusCode).toBe(200)
+      const email = JSON.parse(String(calls[0].init?.body)) as { to: string }
+      expect(email.to).toBe(to)
+    }
   })
 
   test('refuses a podcast that is not one of ours on any topic', async () => {
