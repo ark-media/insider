@@ -17,7 +17,7 @@
 // unsubscribe block or postal address — the footer is the lifecycle emails'.
 // Pure (no I/O) so it's trivially testable.
 
-import { MANAGE_FOOTER } from './welcome-email.js'
+import { ARK_MEDIA_LOGO, eyebrowRows, MANAGE_FOOTER, showRows } from './email-layout.js'
 
 const TOP_BG = '#e1eefc' // matches the hero JPG's own background
 const PAGE_BG = '#eff9fe'
@@ -27,36 +27,6 @@ const FG = '#454c78'
 const CYAN = '#3eb5f9' // brand cyan: highlights, and the CTA under navy text
 const RULE = '#b9e3fa'
 const FONT = "'Helvetica Neue',Helvetica,Arial,sans-serif"
-
-// Hosted with the Fold launch email's assets on Beehiiv.
-const ARK_MEDIA_LOGO =
-  'https://beehiiv-images-production.s3.amazonaws.com/uploads/asset/file/d50e9e46-101e-4927-8937-d7e3a8008942/Ark_Media_-_Dark__2___1_.png?t=1790188765'
-
-const SHOWS = [
-  {
-    cover: 'call-me-back',
-    title: 'Call me Back',
-    blurb: 'Dan Senor unpacks the news shaping Israel and the Jewish world.',
-  },
-  {
-    cover: 'for-heavens-sake',
-    title: 'For Heaven&rsquo;s Sake',
-    blurb:
-      'Donniel Hartman and Yossi Klein Halevi model honest disagreement about Israel and Jewish life.',
-  },
-  {
-    cover: 'ark-news-daily',
-    title: 'Ark News Daily',
-    blurb: 'A fast, trustworthy catch-up on the stories that matter each morning.',
-  },
-  {
-    cover: 'chosen-people-problems',
-    title: 'Chosen People Problems',
-    blurb:
-      'Yael and Chaya Leah take on the sacred, political, and familial chaos of Jewish life.',
-    isNew: true,
-  },
-] as const
 
 const BENEFITS = [
   { icon: 'icon-early-access', label: 'Early<br />access' },
@@ -98,14 +68,6 @@ export function renderFeedMoveEmail(p: FeedMoveEmailParams): {
   const img = (path: string) => `${base}/${path}`
   const cyan = (html: string) => `<span style="color:${CYAN};">${html}</span>`
 
-  const eyebrow = (label: string, color = INK) => `
-            <tr>
-              <td align="center" style="padding:36px 24px 0;font:500 12px/16px ${FONT};letter-spacing:4px;text-transform:uppercase;color:${color};">${label}</td>
-            </tr>
-            <tr>
-              <td align="center" style="padding:12px 0 0;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="64" style="width:64px;height:1px;line-height:1px;font-size:1px;background:${CYAN};">&nbsp;</td></tr></table></td>
-            </tr>`
-
   const benefits = BENEFITS.map(
     (b, i) => `
                     <td width="25%" align="center" valign="top" style="width:25%;padding:0 4px;${i > 0 ? `border-left:1px solid ${CYAN};` : ''}">
@@ -113,35 +75,6 @@ export function renderFeedMoveEmail(p: FeedMoveEmailParams): {
                       <div style="padding-top:10px;font:700 11px/15px ${FONT};letter-spacing:0.5px;text-transform:uppercase;color:${INK};">${b.label}</div>
                     </td>`,
   ).join('')
-
-  const showRows = SHOWS.map((s, i) => {
-    const cover = `
-                    <td width="42%" valign="middle" style="width:42%;padding:${i % 2 ? '0 0 0 12px' : '0 12px 0 0'};">
-                      <img src="${img(`shows/${s.cover}-400.jpg`)}" alt="${s.title}" width="200" style="display:block;width:100%;max-width:200px;height:auto;border:1px solid ${RULE};${i % 2 ? 'margin-left:auto;' : ''}" />
-                    </td>`
-    const text = `
-                    <td valign="middle" style="padding:${i % 2 ? '0 12px 0 0' : '0 0 0 12px'};">
-                      ${
-                        'isNew' in s
-                          ? `<div style="padding-bottom:8px;"><span style="display:inline-block;padding:3px 10px;border-radius:10px;white-space:nowrap;background:#cdeafc;font:700 9px/14px ${FONT};letter-spacing:2px;text-transform:uppercase;color:#0a6fad;">New from Ark Media</span></div>`
-                          : ''
-                      }
-                      <div class="h3" style="font:800 24px/28px ${FONT};letter-spacing:-0.5px;color:${INK};">${s.title}</div>
-                      <div style="padding-top:8px;font:400 15px/22px ${FONT};color:${FG};">${s.blurb}</div>
-                    </td>`
-    return `
-            <tr>
-              <td style="padding:0 32px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${i > 0 ? `border-top:1px solid ${RULE};` : ''}">
-                  <tr>
-                    <td style="padding:20px 0;">
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${i % 2 ? text + cover : cover + text}</tr></table>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>`
-  }).join('')
 
   const unchanged = UNCHANGED.map(
     (u, i) => `
@@ -232,17 +165,17 @@ export function renderFeedMoveEmail(p: FeedMoveEmailParams): {
             </tr>
 
             <!-- What you now get -->
-            ${eyebrow('What you now get')}
+            ${eyebrowRows('What you now get')}
             <tr>
               <td align="center" class="pad h2" style="padding:24px 32px 0;font:900 40px/42px ${FONT};letter-spacing:-1.2px;color:${INK};">One membership.<br />The whole ${cyan('network.')}</td>
             </tr>
             <tr>
               <td align="center" class="pad" style="padding:14px 40px 12px;font:400 16px/24px ${FONT};color:${FG};">Early access, ad-free listening, and exclusive content across every show in the network, plus our weekly subscriber-exclusive newsletter.</td>
             </tr>
-            ${showRows}
+            ${showRows(base)}
 
             <!-- What's not changing -->
-            ${eyebrow('What&rsquo;s not changing')}
+            ${eyebrowRows('What&rsquo;s not changing')}
             <tr>
               <td class="pad" style="padding:12px 32px 32px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${unchanged}
@@ -254,7 +187,7 @@ export function renderFeedMoveEmail(p: FeedMoveEmailParams): {
             <tr>
               <td bgcolor="${DARK_BG}" style="background:${DARK_BG};">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                  ${eyebrow('What you need to do', '#ffffff')}
+                  ${eyebrowRows('What you need to do', '#ffffff')}
                   <tr>
                     <td align="center" class="pad" style="padding:22px 32px 0;font:800 26px/32px ${FONT};letter-spacing:-0.5px;color:#ffffff;">Log into your account at <a href="${p.setupUrl}" target="_blank" style="color:${CYAN};text-decoration:none;">arkmedia.org</a> and move your podcast feed to the new platform ${cyan('today.')}</td>
                   </tr>

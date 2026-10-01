@@ -266,7 +266,7 @@ describe('renderGiftExpiryEmail', () => {
     // the subject doesn't get truncated in the inbox list.
     expect(subject).toContain('in 7 days')
     expect(html).toContain('August 20, 2026 ET')
-    expect(html).toContain('subscribe from')
+    expect(html).toContain('Subscribe from')
     expect(html).toContain('https://ark.test/account')
   })
 
@@ -308,7 +308,7 @@ describe('renderGiftExpiryEmail', () => {
       accountUrl: 'https://ark.test/account',
       otherAxisSubscribed: true,
     })
-    expect(html).toContain('bundle')
+    expect(html).toContain('add the Fold to your plan')
     expect(html).toContain('ends in 7 days, on')
   })
 })

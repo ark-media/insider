@@ -15,7 +15,7 @@ import {
 } from './lib/cancellation-email'
 import { renderPaymentFailedEmail } from './lib/payment-failed-email'
 import { renderWinbackEmail } from './lib/winback-email'
-import { SUPPORT_EMAIL } from './lib/welcome-email'
+import { SUPPORT_EMAIL } from './lib/email-layout'
 import { shows } from '../src/data/shows'
 
 const CANCEL_BASE = {
@@ -66,18 +66,18 @@ describe('renderCancellationEmail', () => {
 
   test('each tier is told what it specifically loses, and nothing it does not', () => {
     const arkPlus = renderCancellationEmail({ ...CANCEL_BASE, tier: 'ark-plus' }).html
-    expect(arkPlus).toContain('free, ad-supported version')
+    expect(arkPlus).toContain('free, ad-supported shows')
     // An Ark+ canceller never had the Fold — do not describe losing it.
-    expect(arkPlus).not.toContain('no more logging in')
+    expect(arkPlus).not.toContain('Fold access ends')
 
     const fold = renderCancellationEmail({ ...CANCEL_BASE, tier: 'circle' }).html
-    expect(fold).toContain('lose access to The Fold')
+    expect(fold).toContain('access to the Fold')
     // A Fold member had no feed, so no ad-free-listening eulogy.
     expect(fold).not.toContain('ad-free listening')
 
     const bundle = renderCancellationEmail({ ...CANCEL_BASE, tier: 'bundle' }).html
-    expect(bundle).toContain('free, ad-supported version')
-    expect(bundle).toContain('no more logging in')
+    expect(bundle).toContain('free, ad-supported shows')
+    expect(bundle).toContain('Fold access ends')
   })
 
   test('carries the feedback CTA and a working undo route', () => {
@@ -130,7 +130,7 @@ describe('renderDebundleEmail', () => {
     expect(html).toContain('$8 a month')
     // What continues has to be as loud as what stops, or this reads as a cancel.
     expect(html).toContain('Ark+')
-    expect(html).toContain('lose access to the Fold')
+    expect(html).toContain('Fold access ends')
   })
 
   test('the other direction keeps the Fold and drops the feed', () => {
@@ -140,13 +140,13 @@ describe('renderDebundleEmail', () => {
       price: '$10',
     })
     expect(subject).toBe("You've removed Ark+ from your membership")
-    expect(html).toContain('free, ad-supported version')
-    expect(html).toContain('your place in the Fold carries on')
+    expect(html).toContain('free, ad-supported shows')
+    expect(html).toContain('Your place in the Fold carries on')
   })
 
   test('an unreadable price drops the figure rather than guessing one', () => {
     const { html } = renderDebundleEmail({ ...BASE, removed: 'circle' })
-    expect(html).toContain('covers Ark+ alone')
+    expect(html).toContain('cover Ark+ alone')
     expect(html).not.toContain('$')
   })
 
@@ -202,7 +202,7 @@ describe('renderPaymentFailedEmail', () => {
 
   test('says access is still live — the point is that there is time to fix it', () => {
     const { html } = renderPaymentFailedEmail({ tier: 'ark-plus', updateCardUrl: UPDATE_URL })
-    expect(html).toContain('still active for now')
+    expect(html).toContain('still active, for now')
     expect(html).toContain('rarely anything serious')
   })
 })
@@ -221,7 +221,8 @@ describe('renderWinbackEmail', () => {
     expect(html).toContain('Rejoin Ark+')
     expect(html).toContain('Dan Senor')
     expect(html).toContain('two days before they go public')
-    expect(html).toContain('Ad-free listening across every Ark Media show')
+    expect(html).toContain('Ad-free listening')
+    expect(html).toContain('Across every Ark Media show')
   })
 
   test('names the members-only show as the app names it', () => {

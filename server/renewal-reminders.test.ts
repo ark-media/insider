@@ -100,7 +100,7 @@ describe('runRenewalReminders', () => {
     expect(m.to).toBe('member@example.com')
     expect(m.subject).toBe('Your Ark+ membership renews on December 31, 2029 ET')
     expect(m.html).toContain('$80')
-    expect(m.html).toContain('cancel from')
+    expect(m.html).toContain('Cancel from')
     expect(m.html).toContain('https://app.test/account/billing')
     expect(m.idempotencyKey).toBe(`renewal_reminder_sub_1_${PERIOD_END}`)
     expect(d.sent.has(`sub_1|${PERIOD_END}`)).toBe(true)
@@ -184,7 +184,7 @@ describe('renderCardUpdatedEmail', () => {
     })
     expect(subject).toBe('Your payment card was updated')
     expect(html).toContain('Visa ending in 4242')
-    expect(html).toContain('didn&rsquo;t make this change')
+    expect(html).toContain('Didn&rsquo;t make this change?')
   })
 
   test('a method with no card details still reads', () => {

@@ -13,7 +13,7 @@
 // Transactional (sent per member, to their own subscription), so there is no
 // unsubscribe block or postal address — the footer is the lifecycle emails'.
 
-import { BRAND_FG_MUTED, esc, MANAGE_FOOTER } from './welcome-email.js'
+import { BRAND_FG_MUTED, esc, MANAGE_FOOTER } from './email-layout.js'
 import { WELCOME_OFFER_CLOSES_LABEL } from '../../shared/welcome-offer.js'
 
 // The hand-off's style rules: navy, one accent blue for every highlight and

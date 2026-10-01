@@ -163,7 +163,7 @@ describe('renderBundleWinbackEmail', () => {
     expect(html).toContain('six months since you left Ark+ and the Fold')
     expect(html).toContain('href="https://ark.test/subscribe"')
     expect(html).toContain('Rejoin Ark+ and the Fold')
-    expect(html).toContain('ad-free listening')
+    expect(html).toContain('Ad-free listening')
     expect(html).toContain('Dan&rsquo;s book club')
     expect(html).toContain('href="https://ark.test/unsub"')
   })

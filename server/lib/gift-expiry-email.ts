@@ -1,36 +1,28 @@
-// The gift-expiry reminder email (T7.5). Sent by the reminder cron to a gift
-// recipient whose gifted axis (Ark+ or the Fold) is nearing its term end, so
-// they can convert to a paid subscription before access lapses. Reuses the Ark+
-// brand shell from welcome-email. Pure (no I/O) so it's trivially testable.
+// The gift-expiry reminder email. Sent by the reminder cron to a gift recipient
+// whose gifted Ark+ or Fold access is nearing its end, so they can keep it
+// before access lapses. Pure (no I/O) so it's trivially testable.
 
-import { esc, greeting, link, renderShell } from './welcome-email.js'
+import { accent, esc, greeting, link, renderShell } from './email-layout.js'
 
 export type GiftExpiryEmailParams = {
-  // Already a clean first name — callers resolve it through greetingFirstName,
-  // which is what rejects a name manufactured from the member's email.
+  // Already a clean first name — callers resolve it through greetingFirstName.
   firstName?: string
-  // The human label of the expiring axis — 'Ark+' or 'the Fold'. Every
-  // sentence below names it mid-phrase ("access to the Fold"), never as a
-  // possessive, so a name that carries its own article still reads.
+  // 'Ark+' or 'the Fold'. Always used mid-phrase ("access to the Fold"), never
+  // as a possessive, so a name carrying its own article still reads.
   axisLabel: string
-  // The term-end date, already formatted for display and carrying the zone it's
-  // stated in (e.g. "August 3, 2026 ET") — a gift term ends at an absolute
-  // instant, so a bare date is ambiguous to a reader in another zone.
+  // The term-end date, formatted with its zone (e.g. "August 3, 2026 ET").
   expiresOn: string
   // Whole calendar days until the term ends, counted in the same zone as
-  // `expiresOn` so the relative and absolute halves of the sentence agree.
+  // `expiresOn` so the two halves of the sentence agree.
   daysRemaining: number
-  // Where the CTA lands — the account page, whose per-axis rows carry the actual
-  // keep-access / switch-to-bundle actions (T7.3/T7.4/D9).
+  // The account page, whose rows carry the keep-access actions.
   accountUrl: string
-  // D9: the recipient already holds the OTHER axis via a live subscription, so
-  // the nudge is "add this to your plan (the bundle)" rather than a standalone
-  // subscribe. Copy-only — the account page owns the mechanic.
+  // The recipient already pays for the OTHER half, so the nudge is "add this to
+  // your plan" rather than a standalone subscribe.
   otherAxisSubscribed: boolean
 }
 
-// "in 7 days" reads as urgency; the exact date reads as fact. The nudge wants
-// both, so the copy states the countdown and then pins it to a dated deadline.
+// "in 7 days" reads as urgency; the exact date reads as fact. The email gives both.
 function endsWhen(daysRemaining: number): string {
   if (daysRemaining <= 0) return 'today'
   if (daysRemaining === 1) return 'tomorrow'
@@ -44,29 +36,28 @@ export function renderGiftExpiryEmail(p: GiftExpiryEmailParams): {
   const axis = esc(p.axisLabel)
   const when = endsWhen(p.daysRemaining)
 
-  // Subject carries the countdown alone — it's read at a glance, and the date
-  // would push it past where most clients truncate. The preheader states the
-  // date, so the two together give the whole picture in the inbox list.
+  // The subject carries the countdown alone; the preheader adds the date.
   const subject = `Your gifted access to ${p.axisLabel} ends ${when}`
-  const headlineHtml = `Your gift of ${axis} is ending.`
 
-  const endsSentence = `Your gifted access to ${axis} ends ${when}, on <strong>${esc(p.expiresOn)}</strong>.`
-
-  const bodyHtml = p.otherAxisSubscribed
-    ? `${endsSentence} Because you already subscribe, you can keep it by adding ${axis} to your plan — that moves you to the Ark+ &amp; The Fold bundle, so both live on one subscription. Manage it from ${link(p.accountUrl, 'your account')}.`
-    : `${endsSentence} To keep it going without a gap, subscribe from ${link(p.accountUrl, 'your account')} — you'll pick up right where the gift leaves off.`
+  const keep = p.otherAxisSubscribed
+    ? `You already subscribe, so you can add ${axis} to your plan. Both then live on one membership.`
+    : `Subscribe from ${link(p.accountUrl, 'your account')} and you&rsquo;ll pick up right where the gift leaves off.`
 
   const html = renderShell({
-    preheader: `Ends ${p.expiresOn}. Keep it going.`,
-    eyebrow: 'Your gift is ending',
-    headlineHtml,
+    preheader: `Ends ${esc(p.expiresOn)}. Keep it going.`,
+    headlineHtml: `Your gift of ${axis} is ${accent('ending.')}`,
+    sublineHtml: 'Keep it going without a gap.',
     greetingHtml: greeting(p.firstName),
-    bodyHtml,
-    ctaHref: p.accountUrl,
-    ctaLabel: p.otherAxisSubscribed ? 'Add it to my plan' : `Keep ${p.axisLabel}`,
-    ctaFollowupHtml: `No auto-charge — your gift never renews on its own, so nothing happens unless you choose to continue.`,
+    bodyHtml: [
+      `Your gifted access to ${axis} ends ${when}, on <strong>${esc(p.expiresOn)}</strong>. ${keep}`,
+      'Gifts never renew on their own, so nothing is charged unless you choose to continue.',
+    ],
+    action: {
+      href: p.accountUrl,
+      label: p.otherAxisSubscribed ? 'Add it to my plan' : `Keep ${axis}`,
+    },
     footerHtml:
-      'You’re getting this because a gifted membership on your account is about to end. Need help? Just reply to this email.',
+      'You&rsquo;re getting this because a gifted membership on your account is about to end. Need help? Just reply to this email.',
   })
 
   return { subject, html }

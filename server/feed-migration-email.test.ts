@@ -4,7 +4,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { renderMigrationCheckInEmail } from './lib/feed-migration-email'
-import { SUPPORT_EMAIL, networkShowBullets } from './lib/welcome-email'
+import { SUPPORT_EMAIL, showRows } from './lib/email-layout'
 import type { MigrationStage } from '../shared/feed-migration'
 
 const BASE = {
@@ -31,7 +31,7 @@ describe('every stage', () => {
     for (const stage of STAGES) {
       const { html } = renderMigrationCheckInEmail({ ...BASE, stage })
       expect(html).toContain('Spotify')
-      expect(html).toContain('Podcast app')
+      expect(html).toContain('podcast app')
     }
   })
 
@@ -60,20 +60,20 @@ describe('30-day check-in', () => {
       ...BASE,
       stage: 'check_in_30',
     })
-    expect(subject).toBe('Finish setting up your Ark+ membership')
-    expect(html).toContain("haven&rsquo;t finished moving")
-    expect(html).toContain('ad-free listening, early access, and exclusive content')
+    expect(subject).toBe('Finish moving your Ark+ feed')
+    expect(html).toContain('haven&rsquo;t moved')
+    expect(html).toContain('early access, ad-free listening, and exclusive content')
     // The escalation belongs to the later stages — this one only mentions the
     // switch-off date as a reason not to put it off.
     expect(html).not.toContain('at risk')
-    expect(html).not.toContain('final reminder')
+    expect(html.toLowerCase()).not.toContain('final reminder')
   })
 
   test('names the shows setup unlocks, from the same source as the welcomes', () => {
     // The copy doc's VISUAL BENEFITS LIST. "Every show in the network" is the
     // promise; this is the list that makes it concrete.
     const { html } = renderMigrationCheckInEmail({ ...BASE, stage: 'check_in_30' })
-    for (const bullet of networkShowBullets()) expect(html).toContain(bullet)
+    expect(html).toContain(showRows('https://app.test'))
   })
 
   test('the later stages do not repeat it', () => {
@@ -81,7 +81,7 @@ describe('30-day check-in', () => {
     // escalate to what stops working instead of re-selling the catalogue.
     for (const stage of ['check_in_60', 'final'] as MigrationStage[]) {
       const { html } = renderMigrationCheckInEmail({ ...BASE, stage })
-      for (const bullet of networkShowBullets()) expect(html).not.toContain(bullet)
+      expect(html).not.toContain(showRows('https://app.test'))
     }
   })
 })
@@ -95,10 +95,10 @@ describe('60-day check-in', () => {
     expect(subject).toBe("You're about to lose early access to Call me Back")
     expect(html).toContain('at risk')
     expect(html).toContain('Friday Q&amp;A')
-    expect(html).toContain('early access to the Wednesday episode')
+    expect(html).toContain('early access to Wednesday&rsquo;s Call me Back')
     expect(html).toContain('ad-free listening')
     // And still says the membership itself survives the switch.
-    expect(html).toContain('Everything else about your membership continues')
+    expect(html).toContain('Everything else about your membership stays the same')
   })
 })
 
@@ -130,23 +130,17 @@ describe('final notice', () => {
     expect(late.html).not.toContain('-3')
   })
 
-  test('says it once — the urgent support line is not doubled', () => {
-    // supportLine() supplies "reach out to us at <address>" itself, so a lead
-    // that already said it rendered "reach out to us right away, reach out to
-    // us at support@…".
+  test('offers the support desk once', () => {
     const { html } = renderMigrationCheckInEmail({ ...BASE, stage: 'final' })
-    expect(html.match(/reach out to us/g) ?? []).toHaveLength(1)
-    expect(html).toContain('reach out to us right away at')
-    // Same for the reassurance — it read twice, once in the body and once in
-    // the footer directly beneath it.
-    expect(html.match(/already paying for/g) ?? []).toHaveLength(1)
+    expect(html.match(new RegExp(`mailto:${SUPPORT_EMAIL}`, 'g')) ?? []).toHaveLength(1)
   })
 
   test('defuses the expensive misreading: this is not a cancellation', () => {
     // A member who thinks their subscription is ending behaves very differently
     // from one who understands it is a delivery-address change.
     const { html } = renderMigrationCheckInEmail({ ...BASE, stage: 'final' })
-    expect(html).toContain('subscription and payment aren&rsquo;t affected')
-    expect(html).toContain('like changing the address')
+    expect(html).toContain('Same price')
+    expect(html).toContain('Same billing')
+    expect(html).toContain('like changing a mailing address')
   })
 })

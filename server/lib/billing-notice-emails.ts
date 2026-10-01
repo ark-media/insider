@@ -1,6 +1,4 @@
-// Three billing notices with no entry in the "Lifecycle Emails & Member
-// Communications" doc, so their wording is written here, modelled on the
-// cancellation and failed-payment copy:
+// Three billing notices:
 //
 //   - access ended: the membership has actually stopped (the cancellation email
 //     went out weeks earlier, at the moment of cancelling);
@@ -11,13 +9,14 @@
 // sendEmail().
 
 import {
-  ARK_MEDIA_TEAM,
+  accent,
   esc,
   greeting,
   link,
+  MANAGE_FOOTER,
   renderShell,
   supportLine,
-} from './welcome-email.js'
+} from './email-layout.js'
 import { TIER_EMAIL_LABEL, type CancellableTier } from './cancellation-email.js'
 
 // ---------------------------------------------------------------------------
@@ -31,7 +30,7 @@ export type AccessEndedEmailParams = {
   tier: CancellableTier
   // Why Stripe ended the subscription. 'payment_failed' is Stripe's own
   // cancellation_details.reason once its retries run out; everything else
-  // (a cancel landing at period end, a Dashboard cancel) reads as a plain end.
+  // reads as a plain end.
   reason: 'payment_failed' | 'ended'
   // Where to rejoin: the Ark+ pricing page, or the Fold page for a Fold-only
   // member.
@@ -41,10 +40,10 @@ export type AccessEndedEmailParams = {
 // What they no longer have, one sentence per tier.
 const WHAT_STOPPED: Record<CancellableTier, string> = {
   'ark-plus':
-    'Ad-free listening, early access and exclusive content have ended, and you&rsquo;re back on the free, ad-supported version of our shows.',
+    'Early access, ad-free listening, and exclusive content have ended. You&rsquo;re back on the free, ad-supported shows.',
   circle: 'You no longer have access to the Fold.',
   bundle:
-    'Your Ark+ benefits have ended, so you&rsquo;re back on the free, ad-supported version of our shows, and you no longer have access to the Fold.',
+    'Your Ark+ benefits and your Fold access have ended. You&rsquo;re back on the free, ad-supported shows.',
 }
 
 export function renderAccessEndedEmail(p: AccessEndedEmailParams): {
@@ -53,25 +52,22 @@ export function renderAccessEndedEmail(p: AccessEndedEmailParams): {
 } {
   const label = TIER_EMAIL_LABEL[p.tier]
   const subject = `Your ${label} membership has ended`
-  const why =
-    p.reason === 'payment_failed'
-      ? `We weren&rsquo;t able to take payment after several tries, so your ${esc(label)} membership has ended.`
-      : `Your ${esc(label)} membership has now ended.`
+  const failed = p.reason === 'payment_failed'
 
   const html = renderShell({
     preheader: esc(subject),
-    eyebrow: 'Membership ended',
-    headlineHtml: `${esc(subject)}.`,
+    headlineHtml: `Your ${esc(label)} membership has ${accent('ended.')}`,
+    sublineHtml: failed
+      ? 'We couldn&rsquo;t take payment after several tries.'
+      : 'You won&rsquo;t be charged again.',
     greetingHtml: greeting(p.firstName),
-    bodyHtml: why,
-    bodySecondHtml: WHAT_STOPPED[p.tier],
-    ctaHref: p.rejoinUrl,
-    ctaLabel: 'Rejoin',
-    ctaFollowupHtml:
-      p.reason === 'payment_failed'
-        ? `Rejoining takes a minute, with a card that works. ${supportLine('If you think this is a mistake')}`
-        : supportLine('If you have any questions'),
-    signoffHtml: ARK_MEDIA_TEAM,
+    bodyHtml: [WHAT_STOPPED[p.tier], failed ? `Think this is a mistake? ${supportLine()}` : supportLine()],
+    action: {
+      headingHtml: `Come back ${accent('any time.')}`,
+      bodyHtml: failed ? 'Rejoining takes a minute, with a card that works.' : 'Rejoining takes a minute.',
+      href: p.rejoinUrl,
+      label: 'Rejoin',
+    },
     footerHtml:
       'You&rsquo;re getting this because your membership ended. You won&rsquo;t be charged again. Need help? Just reply to this email.',
   })
@@ -105,18 +101,17 @@ export function renderCardUpdatedEmail(p: CardUpdatedEmailParams): {
 
   const html = renderShell({
     preheader: 'The card on your membership was changed.',
-    eyebrow: 'Account notice',
-    headlineHtml: 'Your payment card was updated.',
+    headlineHtml: `Your payment card was ${accent('updated.')}`,
+    sublineHtml: 'Nothing else about your membership has changed.',
     greetingHtml: greeting(p.firstName),
-    bodyHtml: card
-      ? `Your membership will now be charged to your ${card}.`
-      : 'The payment method on your membership was updated.',
-    // The reason this email exists: a change the member didn't make.
-    bodySecondHtml: `If you didn&rsquo;t make this change, reply to this email or write to us right away and we&rsquo;ll look into it.`,
-    ctaHref: p.accountUrl,
-    ctaLabel: 'View billing',
-    ctaFollowupHtml: 'Nothing else about your membership has changed.',
-    signoffHtml: ARK_MEDIA_TEAM,
+    bodyHtml: [
+      card
+        ? `Your membership will now be charged to your ${card}.`
+        : 'The payment method on your membership was updated.',
+      // The reason this email exists: a change the member didn't make.
+      '<strong>Didn&rsquo;t make this change?</strong> Reply to this email right away and we&rsquo;ll look into it.',
+    ],
+    action: { href: p.accountUrl, label: 'View billing' },
     footerHtml:
       'You&rsquo;re getting this because the payment method on your membership changed. Need help? Just reply to this email.',
   })
@@ -141,7 +136,7 @@ export type RenewalReminderEmailParams = {
 
 // Auto-renewal laws (California's among them) ask for notice before a yearly
 // plan renews, saying when, for how much, and how to cancel. All three are in
-// the first two paragraphs, not the small print.
+// the body, not the small print.
 export function renderRenewalReminderEmail(p: RenewalReminderEmailParams): {
   subject: string
   html: string
@@ -151,17 +146,16 @@ export function renderRenewalReminderEmail(p: RenewalReminderEmailParams): {
 
   const html = renderShell({
     preheader: esc(`Your annual ${label} membership renews on ${p.renewsOn}.`),
-    eyebrow: 'Renewal reminder',
-    headlineHtml: `Your annual membership renews soon.`,
+    headlineHtml: `Your annual membership renews ${accent('soon.')}`,
+    sublineHtml: 'There&rsquo;s nothing you need to do to keep it.',
     greetingHtml: greeting(p.firstName),
-    bodyHtml: `Your annual ${esc(label)} membership will renew automatically on <strong>${esc(p.renewsOn)}</strong>, and we&rsquo;ll charge <strong>${esc(p.amount)}</strong> to the card on file.`,
-    bodySecondHtml: `There&rsquo;s nothing you need to do to keep your membership. If you&rsquo;d rather not renew, you can cancel from ${link(p.accountUrl, 'your account')} any time before then and you won&rsquo;t be charged.`,
-    ctaHref: p.accountUrl,
-    ctaLabel: 'Manage membership',
-    ctaFollowupHtml: `Thank you for supporting Ark Media. ${supportLine('If you have any questions')}`,
-    signoffHtml: ARK_MEDIA_TEAM,
-    footerHtml:
-      'You&rsquo;re getting this because your annual membership is set to renew. Need help? Just reply to this email.',
+    bodyHtml: [
+      `Your annual ${esc(label)} membership renews automatically on <strong>${esc(p.renewsOn)}</strong>, and we&rsquo;ll charge <strong>${esc(p.amount)}</strong> to the card on file.`,
+      `Rather not renew? Cancel from ${link(p.accountUrl, 'your account')} any time before then and you won&rsquo;t be charged.`,
+    ],
+    action: { href: p.accountUrl, label: 'Manage membership' },
+    closingHtml: `Thank you for supporting Ark Media. ${supportLine()}`,
+    footerHtml: MANAGE_FOOTER,
   })
 
   return { subject, html }
