@@ -18,7 +18,7 @@ export const WELCOME_OFFER_REDEEM_BY_ISO = '2026-11-01T03:59:59Z'
 // The same moment as the member reads it. Written out rather than formatted
 // from the ISO above: that instant renders as 1 November everywhere east of
 // Eastern, and the deadline members were told is the 31st.
-export const WELCOME_OFFER_CLOSES_LABEL = '31 October 2026'
+export const WELCOME_OFFER_CLOSES_LABEL = 'October 31, 2026'
 
 export const WELCOME_MONTHLY_DISCOUNT_MONTHS = 3
 
