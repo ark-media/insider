@@ -189,6 +189,15 @@ type MembershipProvisionResult = {
 // Stamped on the subscription by the activation that created the account.
 const ACCOUNT_CREATED_MARKER = 'auth0_account_created'
 
+// Set on a subscription by a bulk operation that announces itself separately —
+// scripts/migrate-icmb-subscriptions.ts moving ICMB members onto the catalog,
+// whose email goes out on its own schedule. The next activation provisions as
+// normal (login, Beehiiv, Circle, markers, welcomed_axes) but sends neither the
+// welcome nor the axis-added email, and CONSUMES the marker: anything the
+// member does afterwards (redeeming the welcome offer, adding the Fold) is
+// announced as usual.
+const SUPPRESS_WELCOME_MARKER = 'suppress_welcome_email'
+
 // Allowance for Auth0's clock running behind Stripe's. An account needs at
 // least a webhook round-trip after the subscription exists, so real ones land
 // well clear of it; one made this close before the purchase was not a
@@ -386,6 +395,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       circle: addingCircle && circleProvisioned,
     })
     const welcomedAxes = welcomedAxesValue(fresh.metadata?.welcomed_axes, entitlements)
+    const suppressEmail = fresh.metadata?.[SUPPRESS_WELCOME_MARKER] === 'true'
 
     // Stamp the idempotency markers back onto the sub. The webhook reads
     // auth0_user_id back off this for the membership row, and `beehiiv_premium`
@@ -401,46 +411,53 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
         ...(circleProvisioned ? { circle_provisioned: 'true' } : {}),
         // Both send paths record what they announced.
         ...(wasUnprovisioned || gainedNewAxis ? { welcomed_axes: welcomedAxes } : {}),
+        // One-shot: '' deletes the key, so only this activation stays silent.
+        ...(suppressEmail ? { [SUPPRESS_WELCOME_MARKER]: '' } : {}),
       },
     })
+    if (suppressEmail && (wasUnprovisioned || gainedNewAxis)) {
+      console.log('[email] welcome/axis-added suppressed by marker for', fresh.id)
+    }
 
     if (wasUnprovisioned) {
-      // One branded welcome email — feed setup lives on /welcome (link
-      // embedded above).
-      // One per tier: bundle (feed + Fold) and ark-plus (feed only) share
-      // the subscriber template but branch on tier for accurate copy;
-      // Circle-only gets the Fold-first copy. Soft-fail: the membership is
-      // already provisioned.
-      const [welcomeUrl, setupUrl] = await Promise.all([
-        loginLink('/welcome'),
-        loginLink('/setup'),
-      ])
-      const { subject, html } = entitlements.arkPlus
-        ? renderSubscriberWelcomeEmail({
-            name,
-            email,
-            welcomeUrl,
-            setupUrl,
-            isNewAccount,
-            tier: entitlements.circle ? 'bundle' : 'ark-plus',
-          })
-        : renderCircleWelcomeEmail({
-            name,
-            email,
-            welcomeUrl,
-            isNewAccount,
-          })
-      // Idempotency-keyed on the subscription so two callers on different
-      // instances (webhook + post-checkout route) collapse to one welcome email
-      // rather than each sending its own.
-      const sent = await sendEmail(env, {
-        to: email,
-        subject,
-        html,
-        idempotencyKey: `welcome_${fresh.id}`,
-      })
-      if (!sent) {
-        console.error('[email] member welcome email did not send:', redactEmail(email))
+      if (!suppressEmail) {
+        // One branded welcome email — feed setup lives on /welcome (link
+        // embedded above).
+        // One per tier: bundle (feed + Fold) and ark-plus (feed only) share
+        // the subscriber template but branch on tier for accurate copy;
+        // Circle-only gets the Fold-first copy. Soft-fail: the membership is
+        // already provisioned.
+        const [welcomeUrl, setupUrl] = await Promise.all([
+          loginLink('/welcome'),
+          loginLink('/setup'),
+        ])
+        const { subject, html } = entitlements.arkPlus
+          ? renderSubscriberWelcomeEmail({
+              name,
+              email,
+              welcomeUrl,
+              setupUrl,
+              isNewAccount,
+              tier: entitlements.circle ? 'bundle' : 'ark-plus',
+            })
+          : renderCircleWelcomeEmail({
+              name,
+              email,
+              welcomeUrl,
+              isNewAccount,
+            })
+        // Idempotency-keyed on the subscription so two callers on different
+        // instances (webhook + post-checkout route) collapse to one welcome email
+        // rather than each sending its own.
+        const sent = await sendEmail(env, {
+          to: email,
+          subject,
+          html,
+          idempotencyKey: `welcome_${fresh.id}`,
+        })
+        if (!sent) {
+          console.error('[email] member welcome email did not send:', redactEmail(email))
+        }
       }
 
       // Carry the name the buyer entered at checkout onto their Beehiiv record
@@ -452,7 +469,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
           syncSubscriberName({ env, sql: getDb(env) }, email, { first, last }),
         )
       }
-    } else if (gainedNewAxis) {
+    } else if (gainedNewAxis && !suppressEmail) {
       // An already-provisioned member who just gained an axis — an Ark+ member
       // adding the Fold (or the reverse), which moves their subscription onto
       // the Bundle. `wasUnprovisioned` keeps the welcome copy away from them
