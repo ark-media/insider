@@ -530,6 +530,59 @@ async function upsertIntroCoupon(stripe: Stripe, apply: boolean): Promise<void> 
   })
 }
 
+// --- Staff coupon -----------------------------------------------------------
+
+// Staff hold the Bundle at its real catalog price with this coupon taking it
+// to $0, so receipts and the account page show the true price. It has no
+// promotion code on purpose: checkout only applies coupons through a code, so
+// a code-less coupon can't be redeemed by the public — it is attached
+// directly, by scripts/migrate-icmb-subscriptions.ts (STAFF_COUPON_ID there
+// mirrors this). `applies_to` pins it to the Bundle product, so it can never
+// zero anything else.
+const STAFF_COUPON_ID = 'staff_bundle_100'
+
+// Idempotent like the intro coupon: a coupon's discount and applies_to are
+// immutable, so an existing one that no longer matches is reported, not
+// edited — delete it in the Dashboard and re-run (subscriptions already
+// carrying it keep their discount).
+async function upsertStaffCoupon(
+  stripe: Stripe,
+  bundleProductId: string | null,
+  apply: boolean,
+): Promise<void> {
+  const existing = await stripe.coupons
+    .retrieve(STAFF_COUPON_ID, { expand: ['applies_to'] })
+    .catch(() => null)
+  if (existing) {
+    const products = existing.applies_to?.products ?? []
+    const matches =
+      existing.percent_off === 100 &&
+      existing.duration === 'forever' &&
+      bundleProductId != null &&
+      products.length === 1 &&
+      products[0] === bundleProductId
+    console.log(
+      matches
+        ? `  coupon ${STAFF_COUPON_ID}: unchanged (100% off the Bundle, forever)`
+        : `  coupon ${STAFF_COUPON_ID}: MISMATCH (${existing.percent_off}% off, ${existing.duration}, ` +
+            `applies to ${products.join(',') || 'everything'}) — delete it and re-run`,
+    )
+    return
+  }
+
+  console.log(`  coupon ${STAFF_COUPON_ID}: CREATE (100% off the Bundle, forever)`)
+  if (!apply) return
+  if (!bundleProductId) throw new Error('No Bundle product id (create products first)')
+  await stripe.coupons.create({
+    id: STAFF_COUPON_ID,
+    name: 'Staff',
+    percent_off: 100,
+    duration: 'forever',
+    applies_to: { products: [bundleProductId] },
+    metadata: { kind: 'staff' },
+  })
+}
+
 // --- Main ------------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -552,9 +605,11 @@ async function main(): Promise<void> {
 
   const { byCatalogKey, orphans } = await scanProducts(stripe)
 
+  const productIds = new Map<string, string | null>()
   for (const def of CATALOG) {
     console.log(`\n${def.name} [${def.entitlements}]`)
     const productId = await upsertProduct(stripe, def, byCatalogKey.get(def.catalogKey), apply)
+    productIds.set(def.catalogKey, productId)
     for (const price of pricesFor(def)) {
       await upsertPrice(stripe, productId, price, apply)
     }
@@ -571,6 +626,9 @@ async function main(): Promise<void> {
 
   console.log('\n--- Debundle intro rate ---')
   await upsertIntroCoupon(stripe, apply)
+
+  console.log('\n--- Staff coupon ---')
+  await upsertStaffCoupon(stripe, productIds.get('bundle') ?? null, apply)
 
   console.log('\nOrphans:')
   await handleOrphans(stripe, orphans, archiveOrphans, apply)

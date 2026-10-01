@@ -21,6 +21,8 @@
 //   icmb_migrated_at         ISO timestamp
 //   icmb_from_price          the legacy price id (what --revert restores)
 //   icmb_from_product        the legacy product id
+//   icmb_from_coupons        staff only: the coupons they had (what --revert
+//                            restores in place of the Staff coupon)
 //
 // The swap fires `customer.subscription.updated`. Wherever a webhook endpoint
 // for this Stripe mode is listening, that provisions the member: Auth0 login,
@@ -32,10 +34,15 @@
 // written.
 //
 // Staff move to the Bundle ("Ark+ & The Fold") instead, via --bundle /
-// --bundle-file. The webhook writes the membership row from the subscription's
-// product, so a staffer moved to Ark+ would have their comped Bundle row
-// overwritten down to Ark+; on the Bundle product the row stays Bundle. They
-// keep their own amount and any discount, like everyone else.
+// --bundle-file, at the Bundle's real catalog price (bundle_monthly /
+// bundle_yearly, their own cadence) with the Staff coupon (100% off, forever,
+// Bundle only — provisioned by stripe-catalog.ts) replacing any discount they
+// had, so every renewal is $0 while receipts show the true price. The webhook
+// writes the membership row from the product, so their comped Bundle row
+// stays Bundle rather than being overwritten down to Ark+. Still no proration:
+// the period they already paid for is left alone. Verified by a $0 preview of
+// their next invoice; their original coupons are kept in icmb_from_coupons
+// for --revert.
 //
 // Targets — one of:
 //   (none)                   inventory: every non-catalog product with its count
@@ -69,6 +76,10 @@ import Stripe from 'stripe'
 const MIGRATED_AT = 'icmb_migrated_at'
 const FROM_PRICE = 'icmb_from_price'
 const FROM_PRODUCT = 'icmb_from_product'
+const FROM_COUPONS = 'icmb_from_coupons'
+
+// Mirrors STAFF_COUPON_ID in scripts/stripe-catalog.ts, which creates it.
+const STAFF_COUPON_ID = 'staff_bundle_100'
 
 // Statuses worth moving. An ended or incomplete subscription has nothing to
 // keep billing.
@@ -167,7 +178,9 @@ function snapshot(sub: Stripe.Subscription): Snapshot {
     itemDiscounts: (item.discounts ?? []).map((d) => idOf(d)).join(',') || 'none',
     latestInvoice: idOf(sub.latest_invoice),
     amount: item.price.unit_amount,
-    currency: item.price.currency,
+    // The subscription's own currency: a multi-currency catalog price reports
+    // its USD base here, not what the member is billed in.
+    currency: sub.currency,
     interval: `${item.price.recurring?.interval_count ?? '?'} ${item.price.recurring?.interval ?? 'one-time'}`,
   }
 }
@@ -180,9 +193,14 @@ function printSnapshot(s: Snapshot): void {
 }
 
 // Fields compared before vs after. Any difference is printed as a FAILURE.
-function compare(before: Snapshot, after: Snapshot): string[] {
+function compare(
+  before: Snapshot,
+  after: Snapshot,
+  expected: ReadonlySet<keyof Snapshot> = new Set(),
+): string[] {
   const diffs: string[] = []
   for (const key of Object.keys(before) as (keyof Snapshot)[]) {
+    if (expected.has(key)) continue
     if (before[key] !== after[key]) diffs.push(`${key}: ${before[key]} → ${after[key]}`)
   }
   return diffs
@@ -340,12 +358,73 @@ async function migrate(
   })
 }
 
+// A catalog price by lookup_key, with its per-currency amounts.
+const priceCache = new Map<string, Stripe.Price>()
+async function catalogPrice(stripe: Stripe, lookupKey: string): Promise<Stripe.Price> {
+  const cached = priceCache.get(lookupKey)
+  if (cached) return cached
+  const { data } = await stripe.prices.list({
+    lookup_keys: [lookupKey],
+    active: true,
+    limit: 1,
+    expand: ['data.currency_options'],
+  })
+  if (!data[0]) throw new Error(`No active price with lookup_key ${lookupKey} — run scripts/stripe-catalog.ts first.`)
+  priceCache.set(lookupKey, data[0])
+  return data[0]
+}
+
+// What a catalog price charges in a given currency, or null if it can't.
+function amountIn(price: Stripe.Price, currency: string): number | null {
+  if (currency === price.currency) return price.unit_amount
+  return price.currency_options?.[currency]?.unit_amount ?? null
+}
+
+async function migrateStaff(
+  stripe: Stripe,
+  sub: Stripe.Subscription,
+  product: Stripe.Product | null,
+  staffPrice: Stripe.Price,
+): Promise<void> {
+  const price = sub.items.data[0].price
+  // The coupons they hold now, for --revert. A re-target from Ark+ still
+  // carries the legacy coupons (the Ark+ path keeps discounts), so reading
+  // them here is right either way; a marker already present wins.
+  const full = await stripe.subscriptions.retrieve(sub.id, { expand: ['discounts'] })
+  const fromCoupons = (full.discounts as Stripe.Discount[])
+    .map((d) => idOf(d.source.coupon))
+    .filter((c): c is string => c != null && c !== STAFF_COUPON_ID)
+  await stripe.subscriptions.update(sub.id, {
+    items: [{ id: sub.items.data[0].id, price: staffPrice.id }],
+    discounts: [{ coupon: STAFF_COUPON_ID }],
+    proration_behavior: 'none',
+    metadata: {
+      plan: planOf(price)!,
+      [MIGRATED_AT]: new Date().toISOString(),
+      [FROM_PRICE]: sub.metadata?.[FROM_PRICE] || price.id,
+      [FROM_PRODUCT]: sub.metadata?.[FROM_PRODUCT] || (idOf(product) ?? ''),
+      [FROM_COUPONS]: sub.metadata?.[FROM_COUPONS] ?? fromCoupons.join(','),
+    },
+  })
+}
+
+// The next invoice a staffer will get must be $0.
+async function nextInvoiceTotal(stripe: Stripe, subId: string): Promise<number> {
+  const preview = await stripe.invoices.createPreview({ subscription: subId })
+  return preview.total
+}
+
 async function revertMigration(stripe: Stripe, sub: Stripe.Subscription): Promise<void> {
+  // A staffer's Staff coupon gives way to the coupons they had before.
+  const coupons = sub.metadata[FROM_COUPONS]
   await stripe.subscriptions.update(sub.id, {
     items: [{ id: sub.items.data[0].id, price: sub.metadata[FROM_PRICE] }],
+    ...(coupons !== undefined
+      ? { discounts: coupons ? coupons.split(',').map((coupon) => ({ coupon })) : '' }
+      : {}),
     proration_behavior: 'none',
     // '' deletes a metadata key. `plan` is left: it is accurate either way.
-    metadata: { [MIGRATED_AT]: '', [FROM_PRICE]: '', [FROM_PRODUCT]: '' },
+    metadata: { [MIGRATED_AT]: '', [FROM_PRICE]: '', [FROM_PRODUCT]: '', [FROM_COUPONS]: '' },
   })
 }
 
@@ -414,7 +493,14 @@ async function main(): Promise<void> {
   const bundle = await findCatalogProduct(stripe, 'bundle')
   console.log(`Ark+ product: ${arkPlus.id} "${arkPlus.name}"`)
   console.log(`Bundle product: ${bundle.id} "${bundle.name}"`)
-  if (bundled.size > 0) console.log(`Moving ${bundled.size} email(s) to the Bundle.`)
+  if (bundled.size > 0) {
+    const staff = await stripe.coupons.retrieve(STAFF_COUPON_ID).catch(() => null)
+    if (!staff?.valid) {
+      console.error(`Staff coupon ${STAFF_COUPON_ID} is missing or invalid — run scripts/stripe-catalog.ts --apply first.`)
+      process.exit(1)
+    }
+    console.log(`Moving ${bundled.size} email(s) to the Bundle with the Staff coupon (${STAFF_COUPON_ID}).`)
+  }
   if (excluded.size > 0) console.log(`Excluding ${excluded.size} email(s).`)
   if (limit !== Infinity) console.log(`Limit: ${limit} subscription(s) this run.`)
 
@@ -474,13 +560,31 @@ async function main(): Promise<void> {
       continue
     }
 
+    const isStaff = !revert && target === bundle
+    const staffPrice = isStaff ? await catalogPrice(stripe, `bundle_${planOf(price)}`) : null
+    const staffAmount = staffPrice ? amountIn(staffPrice, price.currency) : null
+    if (staffPrice && staffAmount == null) {
+      const reason = `the Bundle price has no ${price.currency.toUpperCase()} amount`
+      counts.skipped++
+      skipReasons.set(reason, (skipReasons.get(reason) ?? 0) + 1)
+      console.log(`    SKIP: ${reason}`)
+      continue
+    }
+
     console.log(
       revert
-        ? `    WILL restore price ${sub.metadata[FROM_PRICE]} (no proration) and clear the migration markers`
-        : `    WILL move to "${target.name}" at ${money(price.unit_amount, price.currency)} ${planOf(price)} ` +
+        ? `    WILL restore price ${sub.metadata[FROM_PRICE]}` +
+            (sub.metadata[FROM_COUPONS] !== undefined
+              ? ` and coupons [${sub.metadata[FROM_COUPONS] || 'none'}]`
+              : '') +
+            ' (no proration) and clear the migration markers'
+        : staffPrice
+          ? `    WILL move to "${target.name}" at its catalog ${money(staffAmount, price.currency)} ${planOf(price)} ` +
+            'with the Staff coupon (100% off, renewals $0) replacing any discount, no proration'
+          : `    WILL move to "${target.name}" at ${money(price.unit_amount, price.currency)} ${planOf(price)} ` +
             '(own amount kept, no proration, no invoice), and stamp plan + migration markers',
     )
-    if (!revert && target === bundle) counts.toBundle++
+    if (isStaff) counts.toBundle++
     if (!apply) {
       counts.would++
       continue
@@ -489,6 +593,7 @@ async function main(): Promise<void> {
     // One failure must not stop a bulk run; it is counted and reported.
     try {
       if (revert) await revertMigration(stripe, sub)
+      else if (staffPrice) await migrateStaff(stripe, sub, product, staffPrice)
       else await migrate(stripe, sub, product, target)
 
       // Re-read and prove nothing the member cares about moved.
@@ -497,13 +602,30 @@ async function main(): Promise<void> {
       const newProduct = await productOf(stripe, updated)
       console.log(`    DONE → now on "${newProduct?.name ?? '?'}" (price ${updated.items.data[0].price.id})`)
       printSnapshot(after)
-      const diffs = compare(before, after)
+      // Staff (and their revert) change price and discount by design; the
+      // $0 next invoice is what proves the staff swap landed.
+      const touchesStaff = staffPrice != null || (revert && sub.metadata[FROM_COUPONS] !== undefined)
+      const diffs = compare(
+        before,
+        after,
+        touchesStaff ? new Set<keyof Snapshot>(['amount', 'discounts']) : undefined,
+      )
+      if (staffPrice) {
+        const total = await nextInvoiceTotal(stripe, sub.id)
+        console.log(`    next invoice: ${money(total, after.currency)}`)
+        if (total !== 0) diffs.push(`next invoice is ${money(total, after.currency)}, expected 0`)
+      }
       if (diffs.length > 0) {
         counts.failed++
         console.error(`    FAILURE — these changed:\n      ${diffs.join('\n      ')}`)
       } else {
         counts.done++
-        console.log('    VERIFIED: status, created, billing anchor, next bill, amount, currency, interval, payment method, discounts and latest invoice all unchanged')
+        console.log(
+          touchesStaff
+            ? '    VERIFIED: status, created, billing anchor, next bill, currency, interval, payment method and latest invoice unchanged' +
+                (staffPrice ? '; next invoice $0' : '')
+            : '    VERIFIED: status, created, billing anchor, next bill, amount, currency, interval, payment method, discounts and latest invoice all unchanged',
+        )
       }
     } catch (err) {
       counts.failed++
