@@ -78,7 +78,7 @@ describe('captureServerEvent', () => {
 
     expect(ok).toBe(true)
     expect(calls).toHaveLength(1)
-    expect(calls[0]!.url).toBe('https://us.i.posthog.com/i/v0/e/')
+    expect(calls[0]!.url).toBe('https://t.arkmedia.org/i/v0/e/')
     expect(calls[0]!.body.api_key).toBe('phc_test')
     expect(calls[0]!.body.event).toBe('subscription_started_confirmed')
     expect(calls[0]!.body.distinct_id).toBe('hash123')
