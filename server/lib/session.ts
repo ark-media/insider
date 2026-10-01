@@ -39,14 +39,11 @@ const AUTH_TXN_AUDIENCE = 'ark-auth-txn'
 
 const GIFT_CLAIM_ISSUER = 'ark-insider'
 const GIFT_CLAIM_AUDIENCE = 'gift-claim'
-// A gift is claimable anytime (no redeem-by), but a signed link that both logs
-// the recipient in and redeems is a standing credential — so its lifetime should
-// be the delivery window, not the gift's. 90 days meant an unclicked link sat
-// live in an inbox (and in any analytics/log that captured the URL) for a
-// quarter. After expiry the recipient signs in normally (or asks for a resend)
-// and claims via the token-based /redeem fallback — the gift itself is
-// unaffected.
-const GIFT_CLAIM_TTL_SEC = 14 * 24 * 60 * 60
+// A gift is claimable anytime (no redeem-by), and so is its link: a recipient
+// can activate months or years after it was sent. The link is single-use all
+// the same — once the gift is redeemed (or voided) /api/gift/claim refuses it
+// without minting a session, so it stops being a login credential the moment
+// it's spent.
 
 const jwks = createRemoteJWKSet(
   new URL(`${AUTH0_DOMAIN}/.well-known/jwks.json`),
@@ -143,17 +140,18 @@ function hmacKey(secret: string): Uint8Array {
   return key
 }
 
+// `ttl: null` signs a token with no `exp` (the gift claim link — see above).
 function signHs256(
   payload: Record<string, unknown>,
-  opts: { issuer: string; audience: string; ttl: string; secret: string },
+  opts: { issuer: string; audience: string; ttl: string | null; secret: string },
 ): Promise<string> {
-  return new SignJWT(payload)
+  const jwt = new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setIssuer(opts.issuer)
     .setAudience(opts.audience)
-    .setExpirationTime(opts.ttl)
-    .sign(hmacKey(opts.secret))
+  if (opts.ttl) jwt.setExpirationTime(opts.ttl)
+  return jwt.sign(hmacKey(opts.secret))
 }
 
 async function verifyHs256(
@@ -388,67 +386,43 @@ export async function signGiftClaimToken(
     {
       issuer: GIFT_CLAIM_ISSUER,
       audience: GIFT_CLAIM_AUDIENCE,
-      ttl: `${GIFT_CLAIM_TTL_SEC}s`,
+      ttl: null,
       secret,
     },
   )
 }
 
+// Links minted before gift links stopped expiring carry a 14-day `exp`; those
+// are honoured too. jose checks the signature before any claim, so a
+// JWTExpired payload is authentic — but the issuer/audience checks may not have
+// run before expiry did, so they're repeated here: another class of token
+// signed with the same fallback secret must not pass as a gift link.
 export async function verifyGiftClaimToken(
-  token: string,
-  env: Env,
-): Promise<GiftClaimToken | null> {
-  const payload = await verifyHs256(token, {
-    issuer: GIFT_CLAIM_ISSUER,
-    audience: GIFT_CLAIM_AUDIENCE,
-    secret: secretFor(env, 'GIFT_CLAIM_SECRET'),
-  })
-  const giftToken = payload?.giftToken as string | undefined
-  const email = payload?.email as string | undefined
-  if (!giftToken || !email) return null
-  return { giftToken, email, name: (payload?.name as string | undefined) ?? undefined }
-}
-
-// The claim an EXPIRED gift link still vouches for — our signature, our issuer
-// and audience, only past its 14 days. Null for anything else, including a
-// link that is still live (that one should just be used).
-//
-// Only the resend endpoint reads this, and all it can do with it is mail a
-// fresh link to the address the link itself names: an old link never logs
-// anyone in or redeems anything, so its lifetime isn't extended.
-export async function verifyExpiredGiftClaimToken(
   token: string,
   env: Env,
 ): Promise<GiftClaimToken | null> {
   const secret = secretFor(env, 'GIFT_CLAIM_SECRET')
   if (!secret) return null
+  let payload: JWTPayload
   try {
-    await jwtVerify(token, hmacKey(secret), {
+    ;({ payload } = await jwtVerify(token, hmacKey(secret), {
       issuer: GIFT_CLAIM_ISSUER,
       audience: GIFT_CLAIM_AUDIENCE,
       algorithms: ['HS256'],
-    })
-    return null
+    }))
   } catch (err) {
-    // jose checks the signature before any claim, so a JWTExpired payload is
-    // authentic. The issuer/audience checks may not have run before expiry
-    // did, so they are repeated here: another class of token signed with the
-    // same fallback secret must not pass as a gift link.
     if (!(err instanceof errors.JWTExpired)) return null
-    const payload = err.payload
+    payload = err.payload
     const aud = payload.aud
     const audOk = Array.isArray(aud) ? aud.includes(GIFT_CLAIM_AUDIENCE) : aud === GIFT_CLAIM_AUDIENCE
     if (payload.iss !== GIFT_CLAIM_ISSUER || !audOk) return null
-    const giftToken = payload.giftToken
-    const email = payload.email
-    if (typeof giftToken !== 'string' || typeof email !== 'string') return null
-    return {
-      giftToken,
-      email,
-      name: typeof payload.name === 'string' ? payload.name : undefined,
-      tier: typeof payload.tier === 'string' ? payload.tier : undefined,
-    }
   }
+  const giftToken = payload.giftToken
+  const email = payload.email
+  if (typeof giftToken !== 'string' || !giftToken || typeof email !== 'string' || !email) {
+    return null
+  }
+  return { giftToken, email, name: typeof payload.name === 'string' ? payload.name : undefined }
 }
 
 // --- ark_auth_txn: the in-flight OAuth transaction -----------------------

@@ -284,7 +284,7 @@ single member only ever sees some of them.
 #### I received a gift *(search only — not a chip)*
 - **CHIP**: I received a gift
 - **BLURB**: Claim a gifted subscription.
-- **NOTE**: Your gift email has a link that signs you in and sets everything up. If you can't find it, check spam — and if it's expired, send us a message and we'll reissue it.
+- **NOTE**: Your gift email has a link that signs you in and sets everything up. It never expires, so you can claim your gift whenever you're ready. If you can't find it, check spam, or send us a message and we'll resend it.
 - **BUTTON**: Claim a gift
 - **BUTTON**: Send us a message
 
@@ -831,7 +831,6 @@ single member only ever sees some of them.
 
 ### Error messages
 - **ERROR (ALREADY REDEEMED)**: This gift has already been claimed.
-- **ERROR (EXPIRED LINK)**: This link has expired. Reply to your gift email and we'll send a new one.
 - **ERROR (INVALID GIFT)**: We couldn't find this gift. Reply to your gift email and we'll help.
 - **ERROR (DEFAULT)**: Something went wrong. Please try again.
 - **ERROR (REDEEM FALLBACK)**: Could not redeem this gift.

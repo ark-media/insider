@@ -58,14 +58,9 @@ import {
   getSessionProfile,
   resolveRequestIdentity,
   sessionName,
-  signGiftClaimToken,
   signSessionToken,
-  verifyExpiredGiftClaimToken,
   verifyGiftClaimToken,
 } from '../lib/session.js'
-import { sendEmail, withEmailUtm } from '../lib/email.js'
-import { renderGiftRedemptionEmail } from '../lib/welcome-email.js'
-import { createHash } from 'node:crypto'
 import type Stripe from 'stripe'
 
 // Membership statuses that count as an active paid membership for the gift
@@ -144,20 +139,6 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
     name: 'gift-status-ip',
     capacity: 60,
     refillPerSec: 0.5,
-  })
-  // Expired-link resends. The mail only ever goes to the address the link was
-  // made for, so what these bound is repetition: three fresh links a day per
-  // gift is plenty for someone who lost one, and the per-IP cap stops a loop
-  // over a pile of old links from turning our domain into a mail cannon.
-  const giftResendLimiter = createSharedRateLimiter(env, {
-    name: 'gift-resend-gift',
-    capacity: 3,
-    refillPerSec: 3 / (24 * 60 * 60), // 3 per day per gift
-  })
-  const giftResendIpLimiter = createSharedRateLimiter(env, {
-    name: 'gift-resend-ip',
-    capacity: 10,
-    refillPerSec: 10 / (60 * 60), // 10 per hour per source
   })
 
   return [
@@ -407,7 +388,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // arbitrary values out of the handoff cookie without needing to expose
         // recipient or gift existence to an unauthenticated caller.
         if (!GIFT_TOKEN_RE.test(token)) {
-          return json(400, { error: 'expired_link' })
+          return json(400, { error: 'invalid_gift' })
         }
 
         setGiftClaimCookie(res, token, env)
@@ -505,12 +486,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         if (!mt) return json(400, { error: 'token required' })
 
         const claim = await verifyGiftClaimToken(mt, env)
-        if (!claim) {
-          // A genuine link past its 14 days can be swapped for a fresh one
-          // (/api/gift/resend-claim); anything else is just not a gift link.
-          const expired = await verifyExpiredGiftClaimToken(mt, env)
-          return json(400, { error: expired ? 'expired_link' : 'invalid_gift' })
-        }
+        if (!claim) return json(400, { error: 'invalid_gift' })
 
         const sql = getDb(env)
         const gift = await getGiftByToken(sql, claim.giftToken)
@@ -570,74 +546,6 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
       },
     }),
 
-    defineRoute({
-      // Swap an expired claim link for a fresh one, from the /redeem page that
-      // told the recipient theirs had run out. The new link goes to the address
-      // the OLD link was made for, never one the caller supplies — so holding a
-      // stale link gets you nothing but a copy in the recipient's own inbox.
-      // The email is the original claim email, minus what only the purchase
-      // knew (the giver's name and note aren't stored anywhere we can reach).
-      path: '/api/gift/resend-claim',
-      method: 'POST',
-      handler: async (req, res, json) => {
-        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
-        if (!env.DATABASE_URL) return json(500, { error: 'database_not_configured' })
-
-        const body = await readJson<{ mt?: string }>(req)
-        const mt = typeof body?.mt === 'string' ? body.mt.trim() : ''
-        if (!mt) return json(400, { error: 'token required' })
-
-        const claim = await verifyExpiredGiftClaimToken(mt, env)
-        if (!claim) return json(400, { error: 'invalid_gift' })
-
-        const wait =
-          (await giftResendIpLimiter.take(getClientIp(req))) ??
-          (await giftResendLimiter.take(claim.giftToken))
-        if (wait !== null) {
-          res.setHeader('retry-after', String(wait))
-          return json(429, { error: 'too_many_resends' })
-        }
-
-        const gift = await getGiftByToken(getDb(env), claim.giftToken)
-        if (!gift) return json(404, { error: 'invalid_gift' })
-        if (gift.status !== 'pending') {
-          return json(409, { error: spentGiftError(gift.status) })
-        }
-
-        const tier = coerceTier(gift.tier)
-        const term: GiftTerm = gift.plan === '6mo' ? '6mo' : '1yr'
-        const freshMt = await signGiftClaimToken(
-          { giftToken: claim.giftToken, email: claim.email, name: claim.name, tier },
-          env,
-        )
-        const { subject, html } = renderGiftRedemptionEmail({
-          recipientName: claim.name,
-          recipientEmail: claim.email,
-          term,
-          tier,
-          claimUrl: withEmailUtm(
-            `${appBaseUrl}/redeem?mt=${encodeURIComponent(freshMt)}`,
-            'gift-claim',
-          ),
-        })
-        // One send per gift per day even across racing clicks. The key is a
-        // hash: the redemption token is a bearer credential and has no
-        // business in a third party's request log.
-        const day = new Date().toISOString().slice(0, 10)
-        const giftKey = createHash('sha256').update(claim.giftToken).digest('hex').slice(0, 32)
-        const sent = await sendEmail(env, {
-          to: claim.email,
-          subject,
-          html,
-          idempotencyKey: `gift_resend_${giftKey}_${day}`,
-        })
-        if (!sent) {
-          console.error('[gift] claim link resend failed:', redactEmail(claim.email))
-          return json(502, { error: 'send_failed' })
-        }
-        return json(200, { sent: true })
-      },
-    }),
   ]
 }
 

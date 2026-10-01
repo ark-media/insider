@@ -214,28 +214,6 @@ export async function fetchGiftStatus(
   }
 }
 
-export type ResendClaimResult = "sent" | "too_many" | "claimed" | "failed";
-
-// Swap an expired magic link for a fresh one. The server mails it to the
-// address the old link was made for — nothing about the caller decides where
-// it goes — so the page only needs to know how it went.
-export async function resendGiftClaim(mt: string): Promise<ResendClaimResult> {
-  try {
-    const res = await fetch("/api/gift/resend-claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ mt }),
-    });
-    if (res.ok) return "sent";
-    if (res.status === 429) return "too_many";
-    if (res.status === 409) return "claimed";
-    return "failed";
-  } catch {
-    return "failed";
-  }
-}
-
 // When a gifted membership ends: the later of the gifted axes' end dates (a
 // Bundle gift sets both to the same day). Null when neither axis is a gift.
 export function giftEndsAt(me: Me): string | null {
