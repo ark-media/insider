@@ -283,7 +283,7 @@ signs them in. **No Auth0 account exists before the claim.** Terms: 6 months =
 | **GIFT-05** | Gift to a paying member | Recipient has a live Ark+ **monthly** sub. | `applied: extended`; Stripe collection paused for the term; no second axis grant. |
 | **GIFT-06** | Gift to a yearly member | Recipient has a live Ark+ **yearly** sub. | `applied: extended`; `trial_end` pushed out by the term. |
 | **GIFT-07** | Single-axis gift to a Bundle member | Ark+ gift to a Bundle subscriber. | `applied: credit`; customer balance credited with the amount paid (capped at list price); none if currencies differ. |
-| **GIFT-08** | Link reused / expired | Click the claim link twice; and an `mt` older than 14 days. | Second click → 409 `already_redeemed` (or signs in); expired → clear error, nothing granted. |
+| **GIFT-08** | Link reused / old | Click the claim link twice; and an `mt` signed months ago (or a legacy link past its old 14-day `exp`). | Second click → 409 `already_redeemed`, no session minted; an old unclaimed link still claims. |
 | **GIFT-09** | Signed-in redeem fallback | Signed-in recipient uses `POST /api/gift/redeem` with the raw token. | Redeems onto the existing account; never creates one. |
 | **GIFT-10** | Double-click race | Fire two claims at once. | One wins; the loser's grant is undone; one term, not two. |
 | **GIFT-11** | Expiry | Set the gift expiry to the past (§2.3). | `/api/me` = `free` immediately; after reconcile, Beehiiv premium removed and the gift-only row deleted; Circle removal logged (dry run) or done (enforced). |
