@@ -18,7 +18,7 @@ import { fetchWithTimeout, getClientIp, isSameOrigin, readJson } from '../lib/ht
 import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { sendEmail } from '../lib/email.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
-import { contactTopics } from '../../src/config/urls.js'
+import { contactInboxFor, contactTopics } from '../../src/config/urls.js'
 import { getShow, isShowSlug } from '../../src/data/shows.js'
 import {
   CONTACT_MESSAGE_MAX,
@@ -220,7 +220,7 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
           `<p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>`
 
         const sent = await sendEmail(env, {
-          to: topic.email,
+          to: contactInboxFor(topic, show?.slug),
           subject: `[Contact — ${topic.label}${show ? ` — ${show.title}` : ''}] ${subjectSafeName(name) || '(no name)'}`,
           html,
           replyTo: email,
