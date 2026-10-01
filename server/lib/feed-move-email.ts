@@ -3,6 +3,10 @@
 // membership is now Ark+ (every show, same price), and the one thing they have
 // to do is move their podcast feed to the new platform.
 //
+// It is also the Ark+ welcome email (activation.ts), sent as-is to every new
+// Ark+ buyer — a decision, not an oversight, so keep the two in mind together
+// when editing the copy.
+//
 // The design is the launch mockup, built as table HTML. It deliberately names
 // no switch-off date: members should move now, not plan for the deadline. The
 // check-in series (feed-migration-email.ts) carries the date for the members

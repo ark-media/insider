@@ -31,9 +31,10 @@ import { getDb } from './db.js'
 import { sendEmail, withEmailUtm } from './email.js'
 import {
   renderAxisAddedEmail,
+  renderBundleWelcomeEmail,
   renderCircleWelcomeEmail,
-  renderSubscriberWelcomeEmail,
 } from './welcome-email.js'
+import { renderFeedMoveEmail } from './feed-move-email.js'
 import { formatMinorUnits } from './pricing.js'
 import { EMAIL_TIME_ZONE, formatTimestampInZone } from '../../shared/format-date.js'
 import { redactEmail } from '../../shared/validation.js'
@@ -421,31 +422,19 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
 
     if (wasUnprovisioned) {
       if (!suppressEmail) {
-        // One branded welcome email — feed setup lives on /welcome (link
-        // embedded above).
-        // One per tier: bundle (feed + Fold) and ark-plus (feed only) share
-        // the subscriber template but branch on tier for accurate copy;
-        // Circle-only gets the Fold-first copy. Soft-fail: the membership is
-        // already provisioned.
+        // One welcome email per tier. Ark+ alone gets the launch email
+        // ("Your membership just got a lot bigger") as-is, by decision: it
+        // is the Ark+ welcome now. The Bundle and the Fold keep their own.
+        // Soft-fail: the membership is already provisioned.
         const [welcomeUrl, setupUrl] = await Promise.all([
           loginLink('/welcome'),
           loginLink('/setup'),
         ])
-        const { subject, html } = entitlements.arkPlus
-          ? renderSubscriberWelcomeEmail({
-              name,
-              email,
-              welcomeUrl,
-              setupUrl,
-              isNewAccount,
-              tier: entitlements.circle ? 'bundle' : 'ark-plus',
-            })
-          : renderCircleWelcomeEmail({
-              name,
-              email,
-              welcomeUrl,
-              isNewAccount,
-            })
+        const { subject, html } = !entitlements.arkPlus
+          ? renderCircleWelcomeEmail({ name, email, welcomeUrl, isNewAccount })
+          : entitlements.circle
+            ? renderBundleWelcomeEmail({ name, email, setupUrl, isNewAccount })
+            : renderFeedMoveEmail({ setupUrl, assetBaseUrl: baseUrl })
         // Idempotency-keyed on the subscription so two callers on different
         // instances (webhook + post-checkout route) collapse to one welcome email
         // rather than each sending its own.
