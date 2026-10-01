@@ -3,13 +3,21 @@
 // through Beehiiv's v2 API.
 
 export type NewsletterPrefs = {
-  /** Subscribed to the newsletter at all. The one thing a reader can change. */
+  /** Gets The Current. */
   free: boolean;
   /** Holds the premium tier in Beehiiv. Read-only: the membership sets it. */
   premium: boolean;
   /** True when the signed-in reader is entitled to the members' edition. */
   canPremium: boolean;
+  /**
+   * Gets the AMA emails (the unlisted YouTube link for each AMA episode).
+   * Independent of `free`. Ark+ only, default off. Null when unknown — not off.
+   */
+  ama: boolean | null;
 };
+
+/** One switch per request: the newsletter itself, or the AMA emails. */
+export type NewsletterPrefsPatch = { free: boolean } | { ama: boolean };
 
 export type FetchNewsletterPrefsResult =
   | { ok: true; prefs: NewsletterPrefs }
@@ -33,7 +41,7 @@ export async function fetchNewsletterPrefs(): Promise<FetchNewsletterPrefsResult
 }
 
 export async function saveNewsletterPrefs(
-  input: { free: boolean },
+  input: NewsletterPrefsPatch,
 ): Promise<{ ok: boolean; prefs?: NewsletterPrefs; error?: string }> {
   try {
     const res = await fetch("/api/me/newsletters", {
@@ -47,6 +55,12 @@ export async function saveNewsletterPrefs(
       | { error?: string };
     if (!res.ok) {
       const err = (body as { error?: string }).error;
+      if (err === "ama_unavailable") {
+        return {
+          ok: false,
+          error: "AMA emails aren't available right now. Please try again later.",
+        };
+      }
       if (err === "beehiiv_update_failed") {
         return {
           ok: false,

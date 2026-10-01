@@ -9,9 +9,10 @@ import {
 import {
   applyPreferences,
   ensureFreeSubscription,
-  isReceivingEmails,
+  AmaListNotConfiguredError,
   PremiumNotConfiguredError,
-  refreshSubscriptionFromBeehiiv,
+  refreshNewsletterState,
+  setAmaList,
 } from '../lib/beehiiv-sync.js'
 import { deriveEntitlements, type Entitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
@@ -355,12 +356,15 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
       // the inbound Beehiiv webhook). PUT applies the change to Beehiiv, then
       // refreshes the row.
       //
-      // There is one newsletter, so there is one switch:
-      //   free=true  → re-activate the subscription record (status=active)
-      //   free=false → unsubscribe the whole record
-      // The premium tier is which EDITION arrives (and the private-feed grant),
-      // so only the membership moves it — activation and cancellation, never
-      // this route. `premium` in the response is read-only.
+      // Two independent switches, each a Beehiiv newsletter list (see
+      // newsletterListIds in beehiiv-sync.ts):
+      //   free → The Current. On for every new subscriber.
+      //   ama  → the emails carrying the unlisted YouTube link to each AMA
+      //          episode. Off until an Ark+ member turns it on; only arkPlus
+      //          can. Null in the response when unknown.
+      // The premium tier is which EDITION of The Current arrives (and the
+      // private-feed grant), so only the membership moves it — activation and
+      // cancellation, never this route. `premium` in the response is read-only.
       path: '/api/me/newsletters',
       method: ['GET', 'PUT'],
       handler: async (req, res, json) => {
@@ -383,15 +387,18 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         const sql = getDb(env)
         const deps = { env, sql }
 
-        if (req.method === 'GET') {
-          const row = await refreshSubscriptionFromBeehiiv(deps, email)
-          return json(200, {
+        const respond = async () => {
+          const state = await refreshNewsletterState(deps, email)
+          json(200, {
             email,
-            free: row ? isReceivingEmails(row.status) : false,
-            premium: row?.hasPremium ?? false,
+            free: state.current,
+            premium: state.row?.hasPremium ?? false,
             canPremium: isMember,
+            ama: state.ama,
           })
         }
+
+        if (req.method === 'GET') return respond()
 
         // PUT
         const wait = newsletterPrefsLimiter.take(email.toLowerCase())
@@ -400,30 +407,37 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           return json(429, { error: 'too_many_requests' })
         }
 
-        const body = await readJson<{ free?: unknown }>(req)
+        const body = await readJson<{ free?: unknown; ama?: unknown }>(req)
         const setFree = typeof body?.free === 'boolean' ? body.free : undefined
-        if (setFree === undefined) {
+        const setAma = typeof body?.ama === 'boolean' ? body.ama : undefined
+        if (setFree === undefined && setAma === undefined) {
           return json(400, { error: 'no_changes' })
         }
-
-        // A member re-activating the record gets premium:true alongside, so
-        // Beehiiv re-applies their edition on re-subscribe — this closes the
-        // silent-premium-drop edge case.
-        const prefs: { free?: boolean; premium?: boolean } = { free: setFree }
-        if (setFree === true && isMember) prefs.premium = true
+        // A perk, so the entitlement is checked here. Turning it OFF is always
+        // allowed — nobody should be stuck on a list.
+        if (setAma === true && !isMember) {
+          return json(403, { error: 'not_entitled' })
+        }
 
         try {
-          const updated = await applyPreferences(deps, email, prefs)
-          json(200, {
-            email,
-            free: updated ? isReceivingEmails(updated.status) : false,
-            premium: updated?.hasPremium ?? false,
-            canPremium: isMember,
-          })
+          if (setFree !== undefined) {
+            // A member re-activating the record gets premium:true alongside, so
+            // Beehiiv re-applies their edition on re-subscribe — this closes
+            // the silent-premium-drop edge case.
+            const prefs: { free?: boolean; premium?: boolean } = { free: setFree }
+            if (setFree === true && isMember) prefs.premium = true
+            await applyPreferences(deps, email, prefs)
+          }
+          if (setAma !== undefined) await setAmaList(deps, email, setAma)
+          await respond()
         } catch (err) {
           if (err instanceof PremiumNotConfiguredError) {
             console.error(`[me] premium toggle unavailable for ${redactEmail(email)}: no tier configured`)
             return json(503, { error: 'premium_unavailable' })
+          }
+          if (err instanceof AmaListNotConfiguredError) {
+            console.error('[me] AMA list toggle unavailable: BEEHIIV_LIST_ID_AMA not set')
+            return json(503, { error: 'ama_unavailable' })
           }
           console.error(
             `[me] newsletter preferences update failed for ${redactEmail(email)}:`,

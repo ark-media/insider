@@ -262,6 +262,8 @@ describe('GET /api/me/newsletters', () => {
       free: true,
       premium: true,
       canPremium: true,
+      // No AMA list configured in BASE_ENV, so the setting is unknown.
+      ama: null,
     })
   })
 
@@ -276,6 +278,8 @@ describe('GET /api/me/newsletters', () => {
       free: false,
       premium: false,
       canPremium: false,
+      // No AMA list configured in BASE_ENV, so the setting is unknown.
+      ama: null,
     })
   })
 
@@ -324,6 +328,8 @@ describe('GET /api/me/newsletters', () => {
       free: true,
       premium: false,
       canPremium: false,
+      // No AMA list configured in BASE_ENV, so the setting is unknown.
+      ama: null,
     })
     expect(
       sqlCalls.some((c) => c.sql.includes('insert into beehiiv_subscription')),
@@ -711,5 +717,199 @@ describe('PUT /api/me/newsletters', () => {
       last = res.statusCode
     }
     expect(last).toBe(429)
+  })
+})
+
+// ===========================================================================
+// Newsletter lists: The Current and the AMA emails, independently
+// ===========================================================================
+
+describe('newsletter lists', () => {
+  const CURRENT = 'nl_list_current'
+  const AMA = 'nl_list_ama'
+  const LIST_ENV = {
+    ...BASE_ENV,
+    BEEHIIV_LIST_ID_THE_CURRENT: CURRENT,
+    BEEHIIV_LIST_ID_AMA: AMA,
+  }
+  const buildListHandler = () => buildHandler(LIST_ENV)
+
+  function subWith(opts: { status?: string; lists?: string[]; premium?: boolean } = {}) {
+    return new Response(
+      JSON.stringify({
+        data: {
+          id: 'sub_m',
+          email: 'm@x.com',
+          status: opts.status ?? 'active',
+          subscription_tier: opts.premium === false ? 'free' : 'premium',
+          subscription_premium_tier_names: opts.premium === false ? [] : ['Plus'],
+          newsletter_list_ids: opts.lists ?? [CURRENT],
+        },
+      }),
+      { status: 200 },
+    )
+  }
+  const localRow = (status = 'active') => (sql: string) =>
+    sql.includes('select') && sql.includes('beehiiv_subscription')
+      ? [
+          {
+            email: 'm@x.com',
+            publication_id: PUB_ID,
+            beehiiv_subscription_id: 'sub_m',
+            status,
+            has_premium: true,
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      : []
+  const beehiivPuts = () =>
+    fetchCalls.filter((c) => c.method === 'PUT' && c.url.includes('api.beehiiv.com'))
+
+  test('GET reads both switches off the expanded lists', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = ({ url }) => {
+      expect(url).toContain('expand[]=newsletter_lists')
+      return subWith({ lists: [AMA] })
+    }
+    nextSqlResult = localRow()
+    const res = makeRes()
+    await runHandler(buildListHandler(), makeReq({ bearer: token }), res)
+    expect(res.__json()).toMatchObject({ free: false, ama: true })
+  })
+
+  test('GET reports ama null (unknown) when Beehiiv is down', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = () => new Response('{}', { status: 503 })
+    nextSqlResult = localRow()
+    const res = makeRes()
+    await runHandler(buildListHandler(), makeReq({ bearer: token }), res)
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ free: true, ama: null })
+  })
+
+  test('turning The Current off leaves its list only — not the publication', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    let lists = [CURRENT, AMA]
+    beehiivHandler = ({ method }) => {
+      if (method === 'PUT') lists = [AMA]
+      return subWith({ lists })
+    }
+    nextSqlResult = localRow()
+    const res = makeRes()
+    await runHandler(
+      buildListHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { free: false } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(beehiivPuts().map((c) => c.body)).toEqual([
+      { unsubscribe_newsletter_list_ids: [CURRENT] },
+    ])
+    expect(res.__json()).toMatchObject({ free: false, ama: true })
+  })
+
+  test('a member turning The Current on joins its list with their edition', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = () => subWith({ lists: [AMA] })
+    nextSqlResult = localRow()
+    const res = makeRes()
+    await runHandler(
+      buildListHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { free: true } }),
+      res,
+    )
+    expect(beehiivPuts().map((c) => c.body)).toEqual([
+      { newsletter_list_ids: [CURRENT], premium_tier_ids: ['pt_premium'] },
+    ])
+  })
+
+  test('a member turns the AMA emails on: AMA list joined, The Current untouched', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    let lists = [CURRENT]
+    beehiivHandler = ({ method }) => {
+      if (method === 'PUT') lists = [CURRENT, AMA]
+      return subWith({ lists })
+    }
+    nextSqlResult = localRow()
+    const res = makeRes()
+    await runHandler(
+      buildListHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(beehiivPuts().map((c) => c.body)).toEqual([{ newsletter_list_ids: [AMA] }])
+    expect(res.__json()).toMatchObject({ free: true, ama: true })
+  })
+
+  test('the AMA emails can be turned on with The Current off', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    let lists: string[] = []
+    beehiivHandler = ({ method }) => {
+      if (method === 'PUT') lists = [AMA]
+      return subWith({ lists })
+    }
+    nextSqlResult = localRow()
+    const res = makeRes()
+    await runHandler(
+      buildListHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ free: false, ama: true })
+  })
+
+  test('403 for a non-member turning the AMA emails on; Beehiiv never touched', async () => {
+    const token = await signAuth0Token({ email: 'free@x.com' })
+    const res = makeRes()
+    await runHandler(
+      buildListHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(403)
+    expect(fetchCalls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
+  })
+
+  test('anyone can turn the AMA emails off', async () => {
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    let lists = [CURRENT, AMA]
+    beehiivHandler = ({ method }) => {
+      if (method === 'PUT') lists = [CURRENT]
+      return subWith({ lists, premium: false })
+    }
+    nextSqlResult = localRow()
+    const res = makeRes()
+    await runHandler(
+      buildListHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: false } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(beehiivPuts().map((c) => c.body)).toEqual([
+      { unsubscribe_newsletter_list_ids: [AMA] },
+    ])
+    expect(res.__json()).toMatchObject({ free: true, ama: false })
+  })
+
+  test('503 ama_unavailable when no AMA list is configured', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = () => subWith()
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(503)
+    expect(res.__json()).toEqual({ error: 'ama_unavailable' })
   })
 })

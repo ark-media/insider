@@ -38,7 +38,12 @@ export function isReceivingEmails(status: string): boolean {
 
 // Dedupe concurrent GET /api/me/newsletters refreshes on one instance.
 const REFRESH_CACHE_TTL_MS = 45_000
-type RefreshCacheEntry = { row: LocalSubscriptionRow | null }
+type RefreshCacheEntry = {
+  row: LocalSubscriptionRow | null
+  // The reader's newsletter lists as Beehiiv last reported them; null when
+  // Beehiiv couldn't be read (unknown, not "none").
+  listIds: string[] | null
+}
 const refreshCache = makeTTLCache<string, RefreshCacheEntry>(
   REFRESH_CACHE_TTL_MS,
 )
@@ -49,6 +54,37 @@ export function clearNewsletterRefreshCache(): void {
 }
 
 type Env = Record<string, string>
+
+// --- Newsletter lists -----------------------------------------------------
+//
+// The publication carries two Beehiiv newsletter lists, and they are
+// independent — leaving one never touches the other:
+//   - The Current (BEEHIIV_LIST_ID_THE_CURRENT): the newsletter. Auto-subscribe
+//     is on in Beehiiv, so every new subscription lands on it.
+//   - Ark+ AMA Links (BEEHIIV_LIST_ID_AMA): the unlisted YouTube link to each
+//     AMA episode. Opt-in, Ark+ only: /api/me/newsletters checks arkPlus
+//     before adding anyone, and downgradeToFree takes them off it when the
+//     membership ends. Beehiiv can't restrict a list to a tier, so that pair
+//     is the whole gate — never expose this list on a Beehiiv form or
+//     preference center.
+// Leaving a list is not leaving the publication: the subscription stays
+// active (and keeps its premium tier and private feed) on zero lists.
+//
+// Without BEEHIIV_LIST_ID_THE_CURRENT the newsletter switch falls back to
+// subscribing/unsubscribing the whole publication; without BEEHIIV_LIST_ID_AMA
+// the AMA switch is unavailable. Both lists are made by
+// scripts/beehiiv-provision-newsletter-lists.ts.
+type NewsletterListIds = { current: string | null; ama: string | null }
+
+const LIST_ID_RE = /^nl_list_[A-Za-z0-9-]+$/
+
+function newsletterListIds(env: Env): NewsletterListIds {
+  const valid = (v: string | undefined) => (v && LIST_ID_RE.test(v) ? v : null)
+  return {
+    current: valid(env.BEEHIIV_LIST_ID_THE_CURRENT),
+    ama: valid(env.BEEHIIV_LIST_ID_AMA),
+  }
+}
 
 // --- Beehiiv API client ---------------------------------------------------
 
@@ -62,6 +98,8 @@ type BeehiivApiResponse = {
     status?: string
     subscription_tier?: 'free' | 'premium'
     subscription_premium_tier_names?: string[]
+    // Only present when the request asked for `expand[]=newsletter_lists`.
+    newsletter_list_ids?: string[]
   }
 }
 
@@ -70,6 +108,11 @@ export type BeehiivSubscription = {
   email: string
   status: string
   hasPremium: boolean
+  /**
+   * Lists the subscription is actively on. Undefined when the response didn't
+   * carry them (webhook payloads, writes) — unknown, not "none".
+   */
+  listIds?: string[]
 }
 
 function inferHasPremium(data: NonNullable<BeehiivApiResponse['data']>): boolean {
@@ -84,12 +127,14 @@ function unwrapData(
   const d = body.data
   if (!d?.id) throw new Error(`Beehiiv ${op}: response missing id`)
   if (!d.email) throw new Error(`Beehiiv ${op}: response missing email`)
-  return {
+  const sub: BeehiivSubscription = {
     id: d.id,
     email: d.email,
     status: d.status ?? 'active',
     hasPremium: inferHasPremium(d),
   }
+  if (Array.isArray(d.newsletter_list_ids)) sub.listIds = d.newsletter_list_ids
+  return sub
 }
 
 function beehiivHeaders(token: string): Record<string, string> {
@@ -105,7 +150,8 @@ async function getSubscriptionByEmail(
   token: string,
   email: string,
 ): Promise<BeehiivSubscription | null> {
-  const url = `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions/by_email/${encodeURIComponent(email)}`
+  // Lists are expanded so every read also says which newsletters arrive.
+  const url = `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions/by_email/${encodeURIComponent(email)}?expand[]=newsletter_lists`
   const res = await fetchWithTimeout(url, { headers: beehiivHeaders(token) })
   if (res.status === 404) return null
   if (!res.ok) {
@@ -119,13 +165,20 @@ type CreateBody = {
   reactivate_existing: true
   utm_source: string
   premium_tier_ids?: string[]
+  newsletter_list_ids?: string[]
+  skip_newsletter_list_auto_subscribe?: boolean
 }
 
 async function createSubscription(
   publicationId: string,
   token: string,
   email: string,
-  opts: { premiumTierId?: string } = {},
+  opts: {
+    premiumTierId?: string
+    // Exactly these lists, skipping the auto-subscribe ones — so joining one
+    // newsletter never quietly signs the reader up for another.
+    onlyLists?: string[]
+  } = {},
 ): Promise<BeehiivSubscription> {
   const body: CreateBody = {
     email,
@@ -135,6 +188,10 @@ async function createSubscription(
     utm_source: opts.premiumTierId ? 'ark-media-membership' : 'ark-media-website',
   }
   if (opts.premiumTierId) body.premium_tier_ids = [opts.premiumTierId]
+  if (opts.onlyLists) {
+    body.newsletter_list_ids = opts.onlyLists
+    body.skip_newsletter_list_auto_subscribe = true
+  }
   const res = await fetchWithTimeout(
     `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions`,
     {
@@ -164,6 +221,10 @@ type UpdateBody = {
   premium_tier_ids?: string[]
   unsubscribe?: boolean
   custom_fields?: CustomFieldWrite[]
+  // Adds to the reader's lists / removes from them; neither replaces the set.
+  // Beehiiv rejects either alongside `unsubscribe`.
+  newsletter_list_ids?: string[]
+  unsubscribe_newsletter_list_ids?: string[]
 }
 
 async function updateSubscription(
@@ -216,30 +277,67 @@ export async function refreshSubscriptionFromBeehiiv(
   deps: PushDeps,
   email: string,
 ): Promise<LocalSubscriptionRow | null> {
+  return (await refreshNewsletterState(deps, email)).row
+}
+
+export type NewsletterState = {
+  row: LocalSubscriptionRow | null
+  /** The Current arrives. */
+  current: boolean
+  /** On the AMA list. Null when unknown: Beehiiv unreadable or no list configured. */
+  ama: boolean | null
+}
+
+function projectState(env: Env, entry: RefreshCacheEntry): NewsletterState {
+  const lists = newsletterListIds(env)
+  const receiving = entry.row ? isReceivingEmails(entry.row.status) : false
+  const onList = (id: string) =>
+    entry.listIds ? receiving && entry.listIds.includes(id) : null
+  return {
+    row: entry.row,
+    // Unreadable lists fall back to the mirror's publication status.
+    current: lists.current ? (onList(lists.current) ?? receiving) : receiving,
+    ama: lists.ama ? onList(lists.ama) : null,
+  }
+}
+
+// The same refresh, projected to which newsletters the reader gets.
+export async function refreshNewsletterState(
+  deps: PushDeps,
+  email: string,
+): Promise<NewsletterState> {
   const cfg = beehiivConfigured(deps.env)
   const normalized = email.toLowerCase()
-  if (!cfg) return getLocalSubscription(deps.sql, normalized)
+  if (!cfg) {
+    const row = await getLocalSubscription(deps.sql, normalized)
+    return projectState(deps.env, { row, listIds: null })
+  }
 
   const cached = refreshCache.get(normalized)
-  if (cached) return cached.row
+  if (cached) return projectState(deps.env, cached)
 
   try {
     const sub = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+    let entry: RefreshCacheEntry
     if (!sub) {
       await deleteLocalSubscription(deps.sql, normalized)
-      refreshCache.set(normalized, { row: null })
-      return null
+      entry = { row: null, listIds: [] }
+    } else {
+      await persistFromBeehiiv(deps.sql, cfg.pubId, sub)
+      entry = {
+        row: await getLocalSubscription(deps.sql, normalized),
+        listIds: sub.listIds ?? null,
+      }
     }
-    await persistFromBeehiiv(deps.sql, cfg.pubId, sub)
-    const row = await getLocalSubscription(deps.sql, normalized)
-    refreshCache.set(normalized, { row })
-    return row
+    refreshCache.set(normalized, entry)
+    return projectState(deps.env, entry)
   } catch (err) {
     console.error(
       `[beehiiv-sync] refresh failed for ${redactEmail(email)}:`,
       err,
     )
-    return getLocalSubscription(deps.sql, normalized)
+    const row = await getLocalSubscription(deps.sql, normalized)
+    return projectState(deps.env, { row, listIds: null })
   }
 }
 
@@ -489,12 +587,95 @@ export async function downgradeToFree(
   const normalized = email.toLowerCase()
   const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
   if (!existing) return
-  const next = existing.hasPremium
-    ? await updateSubscription(cfg.pubId, cfg.token, existing.id, {
-        tier: 'free',
-      })
-    : existing
+  // The AMA list leaves with the tier, in the same PUT: Beehiiv can't gate a
+  // list on the tier, so staying on it would keep mailing an unlisted link to
+  // someone who is no longer a member. Also taken off a reader already without
+  // the tier who is still on it (premium removed in Beehiiv's UI).
+  const amaList = newsletterListIds(deps.env).ama
+  const body: UpdateBody = {}
+  if (existing.hasPremium) body.tier = 'free'
+  if (amaList && existing.listIds?.includes(amaList)) {
+    body.unsubscribe_newsletter_list_ids = [amaList]
+  }
+  const next =
+    Object.keys(body).length > 0
+      ? await updateSubscription(cfg.pubId, cfg.token, existing.id, body)
+      : existing
   await persistFromBeehiiv(deps.sql, cfg.pubId, next)
+  refreshCache.delete(normalized)
+}
+
+// Beehiiv keeps a record's lists through a publication-level unsubscribe and
+// hands them back on reactivation, so a reader coming back for one newsletter
+// would silently get the other too. After a reactivation, take the record off
+// any of `others` it held before. (Verified against the live API 2026-10-01.)
+async function dropRestoredLists(
+  cfg: { pubId: string; token: string },
+  before: BeehiivSubscription,
+  others: Array<string | null>,
+): Promise<void> {
+  const restored = others.filter(
+    (id): id is string => id !== null && (before.listIds ?? []).includes(id),
+  )
+  if (restored.length === 0) return
+  await updateSubscription(cfg.pubId, cfg.token, before.id, {
+    unsubscribe_newsletter_list_ids: restored,
+  })
+}
+
+// Thrown when the AMA switch is used where no AMA list is configured
+// (BEEHIIV_LIST_ID_AMA unset) — distinct from a Beehiiv failure so the route
+// can say the feature is unavailable rather than "try again".
+export class AmaListNotConfiguredError extends Error {
+  constructor() {
+    super('BEEHIIV_LIST_ID_AMA not set; cannot change the AMA list')
+    this.name = 'AmaListNotConfiguredError'
+  }
+}
+
+// Join or leave the AMA list. Independent of The Current: joining never adds
+// the reader to it, leaving never removes them from it. The caller checks
+// arkPlus before passing `on: true` — this helper does not.
+export async function setAmaList(
+  deps: PushDeps,
+  email: string,
+  on: boolean,
+): Promise<void> {
+  const cfg = beehiivConfigured(deps.env)
+  const lists = newsletterListIds(deps.env)
+  const amaList = lists.ama
+  if (!cfg || !amaList) throw new AmaListNotConfiguredError()
+  const normalized = email.toLowerCase()
+  const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+
+  if (!existing || (on && !isReceivingEmails(existing.status))) {
+    // Nothing to leave without a record; otherwise there's no live record to
+    // add a list to, so create (or reactivate) one on the AMA list alone. The
+    // premium tier rides through a reactivation like applyPreferences does.
+    if (!on) return
+    const premiumTierId =
+      existing?.hasPremium ? deps.env.BEEHIIV_PREMIUM_TIER_ID : undefined
+    const created = await createSubscription(cfg.pubId, cfg.token, normalized, {
+      premiumTierId,
+      onlyLists: [amaList],
+    })
+    if (existing) await dropRestoredLists(cfg, existing, [lists.current])
+    await persistFromBeehiiv(deps.sql, cfg.pubId, created)
+  } else {
+    await updateSubscription(
+      cfg.pubId,
+      cfg.token,
+      existing.id,
+      on
+        ? { newsletter_list_ids: [amaList] }
+        : { unsubscribe_newsletter_list_ids: [amaList] },
+    )
+    // Mirror the by_email read: a list-only PUT says nothing about the tier
+    // (same reason as syncSubscriberName).
+    await persistFromBeehiiv(deps.sql, cfg.pubId, existing)
+  }
+  // The next read goes to Beehiiv for the lists as they now stand.
+  refreshCache.delete(normalized)
 }
 
 // Apply both toggles in one Beehiiv round-trip. `free` and `premium` are the
@@ -502,13 +683,15 @@ export async function downgradeToFree(
 // The caller is responsible for verifying entitlement before passing
 // `premium: true` — this helper does not check.
 //
-// One shared publication = one record. Toggle semantics:
-//   free=true  → status active (re-subscribe if needed). If `premium` was
-//                not specified and the existing record had premium, the
-//                tier is preserved (subject to Beehiiv's own behavior on
-//                re-activation).
-//   free=false → unsubscribe the whole record; premium issues stop too
-//                (UI copy makes this explicit).
+// One shared publication = one record. `free` is The Current:
+//   free=true  → on The Current's list, re-subscribing the record if needed.
+//                If `premium` was not specified and the existing record had
+//                premium, the tier is preserved (subject to Beehiiv's own
+//                behavior on re-activation).
+//   free=false → off The Current's list only. The record stays active, so the
+//                AMA list, the tier and the private feed are untouched.
+// With no BEEHIIV_LIST_ID_THE_CURRENT, `free` is the whole record instead:
+// true re-activates it, false unsubscribes it (and so everything).
 //   premium=true  → apply premium tier
 //   premium=false → tier 'free' (downgrade, do not unsubscribe)
 export type PreferenceInput = { free?: boolean; premium?: boolean }
@@ -562,12 +745,17 @@ export async function applyPreferences(
 
   const normalized = email.toLowerCase()
   const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+  const { current: currentList, ama: amaList } = newsletterListIds(deps.env)
 
   // Build a combined update body so we hit Beehiiv at most once for both
-  // toggles. `unsubscribe`/tier fields are only set when the caller asked.
+  // toggles. List/`unsubscribe`/tier fields are only set when the caller asked.
   const body: UpdateBody = {}
-  if (prefs.free === true) body.unsubscribe = false
-  if (prefs.free === false) body.unsubscribe = true
+  if (prefs.free !== undefined && currentList) {
+    if (prefs.free) body.newsletter_list_ids = [currentList]
+    else body.unsubscribe_newsletter_list_ids = [currentList]
+  } else if (prefs.free !== undefined) {
+    body.unsubscribe = !prefs.free
+  }
   if (prefs.premium === true && premiumTierId) {
     body.premium_tier_ids = [premiumTierId]
   }
@@ -593,6 +781,8 @@ export async function applyPreferences(
       prefs.premium === true || (prefs.premium === undefined && existing.hasPremium)
     result = await createSubscription(cfg.pubId, cfg.token, normalized, {
       premiumTierId: keepPremium ? premiumTierId : undefined,
+      // Back on The Current alone — not whatever else auto-subscribes.
+      onlyLists: currentList ? [currentList] : undefined,
     })
     // An explicit premium downgrade requested alongside reactivation: apply it
     // in a follow-up PUT (create can't express tier=free).
@@ -601,13 +791,15 @@ export async function applyPreferences(
         tier: 'free',
       })
     }
+    if (currentList) await dropRestoredLists(cfg, existing, [amaList])
   } else {
     result = await updateSubscription(cfg.pubId, cfg.token, existing.id, body)
   }
   await persistFromBeehiiv(deps.sql, cfg.pubId, result)
-  const row = await getLocalSubscription(deps.sql, normalized)
-  refreshCache.set(normalized, { row })
-  return row
+  // The write responses don't carry lists, so drop the cached read and let
+  // the next one go to Beehiiv.
+  refreshCache.delete(normalized)
+  return getLocalSubscription(deps.sql, normalized)
 }
 
 // Soft-fail wrapper for activation / webhook paths. Logs and swallows so an
