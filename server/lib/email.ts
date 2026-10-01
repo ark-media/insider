@@ -67,3 +67,29 @@ export async function sendEmail(
     return false
   }
 }
+
+// Our own sends, as distinct from the Beehiiv newsletter (which tags its links
+// with its own source).
+const EMAIL_UTM_SOURCE = 'ark-plus'
+
+/**
+ * Tag a link in one of our own emails so the click is attributed. Email clients
+ * send no referrer, so an untagged link lands as "direct" and a campaign's
+ * conversions are indistinguishable from someone typing the URL (src/lib/
+ * attribution.ts reads these on landing). Takes a path or an absolute URL and
+ * returns the same shape. Existing query params are kept; a link that already
+ * carries a utm_* tag keeps it.
+ *
+ * Wrap the destination BEFORE emailLoginUrl(): the auto-login hop forwards the
+ * `to` path's query string untouched (safeReturnTo).
+ */
+export function withEmailUtm(pathOrUrl: string, campaign: string): string {
+  const isAbsolute = /^https?:\/\//i.test(pathOrUrl)
+  const u = new URL(pathOrUrl, 'http://placeholder.invalid')
+  if (!u.searchParams.has('utm_source')) {
+    u.searchParams.set('utm_source', EMAIL_UTM_SOURCE)
+    u.searchParams.set('utm_medium', 'email')
+    u.searchParams.set('utm_campaign', campaign)
+  }
+  return isAbsolute ? u.toString() : `${u.pathname}${u.search}${u.hash}`
+}

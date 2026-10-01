@@ -28,7 +28,7 @@ import {
   tryPush,
 } from './beehiiv-sync.js'
 import { getDb } from './db.js'
-import { sendEmail } from './email.js'
+import { sendEmail, withEmailUtm } from './email.js'
 import {
   renderAxisAddedEmail,
   renderCircleWelcomeEmail,
@@ -355,7 +355,7 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
       const { first, last } = splitFullName(name)
       return emailLoginUrl(
         baseUrl,
-        path,
+        withEmailUtm(path, 'welcome'),
         {
           email,
           ...(auth0Sub ? { sub: auth0Sub } : {}),

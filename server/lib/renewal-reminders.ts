@@ -21,7 +21,7 @@ import { EMAIL_TIME_ZONE, formatTimestampInZone } from '../../shared/format-date
 import { renderRenewalReminderEmail } from './billing-notice-emails.js'
 import type { CancellableTier } from './cancellation-email.js'
 import { formatMinorUnits } from './pricing.js'
-import { sendEmail } from './email.js'
+import { sendEmail, withEmailUtm } from './email.js'
 
 type Env = Record<string, string>
 
@@ -93,7 +93,7 @@ export async function runRenewalReminders(deps: {
       tier,
       renewsOn: formatTimestampInZone(periodEnd, EMAIL_TIME_ZONE, 'long', { withZoneLabel: true }),
       amount: formatMinorUnits(quote.amountMinor, quote.currency),
-      accountUrl: `${appBaseUrl}/account/billing`,
+      accountUrl: withEmailUtm(`${appBaseUrl}/account/billing`, 'renewal-reminder'),
     })
     const ok = await send(env, {
       to: email,

@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-// Integration tests for the two server-side events the Stripe webhook emits.
+// Integration tests for the server-side events the Stripe webhook emits.
 // What is pinned here is the *mapping* — which Stripe event produces which
 // analytics event, with which properties — not the transport (covered in
 // analytics-server.test.ts).
@@ -228,6 +228,59 @@ describe('customer.subscription.created → subscription_started_confirmed', () 
       data: { object: makeSub({ status: 'incomplete' }) },
     })
     expect(analytics()).toEqual([])
+  })
+})
+
+// ===========================================================================
+describe('payment_intent.succeeded (gift) → gift_purchased_confirmed', () => {
+  // The gift path signs a claim token and must send the claim email (a failed
+  // send throws so Stripe retries), so it needs both on top of BASE_ENV.
+  const GIFT_ENV = {
+    ...BASE_ENV,
+    SESSION_SECRET: 'x'.repeat(32),
+    RESEND_API_KEY: 're_test',
+  }
+  const giftPi = (metadata: Record<string, string> = {}) => ({
+    id: 'pi_gift_1',
+    amount: 4800,
+    amount_received: 4800,
+    currency: 'usd',
+    metadata: {
+      kind: 'gift',
+      tier: 'ark-plus',
+      term: '6mo',
+      currency: 'usd',
+      giver_email: 'sub@example.com',
+      recipient_email: 'friend@example.com',
+      first_touch_source: 'cmb-ep412',
+      last_touch_source: 'newsletter',
+      ...metadata,
+    },
+  })
+
+  test('keys on the giver and carries their checkout attribution', async () => {
+    const res = await dispatch(
+      { type: 'payment_intent.succeeded', data: { object: giftPi() } },
+      GIFT_ENV,
+    )
+    expect(res.statusCode).toBe(200)
+    const bought = findEvent('gift_purchased_confirmed')!
+    expect(bought).toBeDefined()
+    expect(bought.distinct_id).toBe(SUB_EMAIL_HASH)
+    expect(bought.properties).toMatchObject({
+      tier: 'ark-plus',
+      term: '6mo',
+      amount_cents: 4800,
+      currency: 'usd',
+      first_touch_source: 'cmb-ep412',
+      last_touch_source: 'newsletter',
+    })
+  })
+
+  test('the claim link in the recipient email is tagged as a gift-claim email', async () => {
+    await dispatch({ type: 'payment_intent.succeeded', data: { object: giftPi() } }, GIFT_ENV)
+    const email = fetchCalls.find((c) => c.url.includes('resend.com'))!
+    expect(String(email.body.html)).toContain('utm_campaign=gift-claim')
   })
 })
 

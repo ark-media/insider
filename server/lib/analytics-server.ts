@@ -71,6 +71,16 @@ type ServerEventMap = {
   // Gap 3 — a gift was claimed. Keyed on the RECIPIENT, so the follow-on
   // question ("does a gift recipient convert to paid?") is answerable by
   // joining to their own later subscription_started_confirmed.
+  // Gap 4 — a gift was bought. Keyed on the GIVER and carrying their
+  // attribution (stamped on the PaymentIntent at checkout), because the gift
+  // row in Neon has no channel: this is the only place "which channel sells
+  // gifts" is answerable. Counts still come from the gift table, not here.
+  gift_purchased_confirmed: {
+    tier: string
+    term: string
+    amount_cents: number | null
+    currency: string | null
+  }
   gift_redeemed_confirmed: {
     tier: string
     plan: string | null

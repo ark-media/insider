@@ -25,7 +25,7 @@ import { getActivatedFeeds, normalizeEmail } from './feed-activations.js'
 import { mailableStatus } from './beehiiv-status.js'
 import { renderFeedReminderEmail } from './feed-reminder-email.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
-import { sendEmail } from './email.js'
+import { sendEmail, withEmailUtm } from './email.js'
 import { emailLoginUrl } from './session.js'
 import {
   DEFAULT_REMINDER_CONFIG,
@@ -270,7 +270,7 @@ export async function runFeedSetupReminders(deps: {
     // Auth0 sub, so the session resolves its membership by the by-email path.
     const setupUrl = await emailLoginUrl(
       appBaseUrl,
-      '/account/podcast-feed',
+      withEmailUtm('/account/podcast-feed', 'feed-setup-reminder'),
       { email: candidate.email },
       env,
     )
