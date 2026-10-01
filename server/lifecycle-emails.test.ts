@@ -80,6 +80,12 @@ describe('renderCancellationEmail', () => {
     expect(bundle).toContain('Fold access ends')
   })
 
+  test('says goodbye warmly and states the date access actually ends', () => {
+    const { html } = renderCancellationEmail({ ...CANCEL_BASE, tier: 'ark-plus' })
+    expect(html).toContain('sad to see you go')
+    expect(html).toContain(`full access to Ark+ until <strong>${CANCEL_BASE.accessUntil}</strong>`)
+  })
+
   test('carries the feedback CTA and a working undo route', () => {
     // The undo is not in the copy doc and is the most useful line here: the
     // cancel is scheduled, not done, so a mis-click is still reversible — and

@@ -49,11 +49,11 @@ function whatYouKeep(tier: CancellableTier, accessUntil: string | null): string 
     : 'until the end of your current billing period'
   switch (tier) {
     case 'ark-plus':
-      return `You&rsquo;ll keep early access, ad-free listening, and exclusive content ${until}. After that, you&rsquo;ll be back on the free, ad-supported shows.`
+      return `You&rsquo;ll still have full access to Ark+ ${until}. After that, you&rsquo;ll be back on the free, ad-supported shows.`
     case 'circle':
-      return `You&rsquo;ll keep access to the Fold ${until}.`
+      return `You&rsquo;ll still have full access to the Fold ${until}.`
     case 'bundle':
-      return `You&rsquo;ll keep Ark+ and the Fold ${until}. After that, you&rsquo;ll be back on the free, ad-supported shows, and your Fold access ends.`
+      return `You&rsquo;ll still have full access to Ark+ and the Fold ${until}. After that, you&rsquo;ll be back on the free, ad-supported shows, and your Fold access ends.`
   }
 }
 
@@ -82,12 +82,12 @@ export function renderCancellationEmail(p: CancellationEmailParams): {
   const subject = `Your ${label} ${noun} has been canceled`
 
   const html = renderShell({
-    preheader: 'You won&rsquo;t be charged again. Here&rsquo;s what happens next.',
+    preheader: 'We&rsquo;re sad to see you go. Here&rsquo;s what happens next.',
     headlineHtml: `Your ${label} ${noun} has been ${accent('canceled.')}`,
-    sublineHtml: 'You won&rsquo;t be charged again.',
+    sublineHtml: 'We&rsquo;re sad to see you go.',
     greetingHtml: greeting(p.firstName),
     bodyHtml: [
-      whatYouKeep(p.tier, p.accessUntil),
+      `${whatYouKeep(p.tier, p.accessUntil)} You won&rsquo;t be charged again.`,
       `Changed your mind? Restart from ${link(p.accountUrl, 'your account')} any time before then.`,
       WHY_WE_EXIST[p.tier],
     ],
