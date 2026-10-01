@@ -1,6 +1,6 @@
-// Renders the transactional lifecycle emails a member receives — the Bundle
-// and Fold welcomes (Ark+ alone is welcomed with the launch email,
-// feed-move-email.ts), the upgrade notice, and the gift claim link. Pure (no I/O) so they're trivially testable; the
+// Renders the transactional lifecycle emails a member receives — the three
+// purchase-confirmation welcomes (Ark+, the Fold, Bundle), the upgrade notice,
+// and the gift claim link. Pure (no I/O) so they're trivially testable; the
 // activator hands the result to sendEmail().
 //
 // Layout and voice are the launch emails' (see email-layout.ts): a short
@@ -101,31 +101,65 @@ function firstName(name?: string, email?: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Welcome — Bundle (Ark+ alone gets the launch email, feed-move-email.ts)
+// Welcome — Ark+ and Bundle
 // ---------------------------------------------------------------------------
 
-export type BundleWelcomeEmailParams = {
+export type SubscriberWelcomeEmailParams = {
   name?: string
   // The member's address — required for the name check, see firstName().
   email?: string
+  welcomeUrl: string
   // The feed-setup page (/setup), where the button lands.
   setupUrl: string
   // Whether this membership just created the account. Only decides whether the
   // email says the button signs them in.
   isNewAccount?: boolean
+  // 'bundle' also carries the Fold, so its copy adds the Fold's steps.
+  tier: 'ark-plus' | 'bundle'
 }
 
-export function renderBundleWelcomeEmail(p: BundleWelcomeEmailParams): {
+export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
   subject: string
   html: string
 } {
+  const greetingHtml = greeting(firstName(p.name, p.email))
+  const isNewAccount = Boolean(p.isNewAccount)
+  const action = {
+    eyebrow: 'What you need to do',
+    href: p.setupUrl,
+    label: 'Set up my feed',
+  }
+
+  if (p.tier === 'ark-plus') {
+    return {
+      subject: 'Welcome to Ark+',
+      html: renderShell({
+        preheader: 'Every Ark Media show. More exclusive content. One quick step left.',
+        headlineHtml: `You&rsquo;re in. Welcome to ${accent('Ark+.')}`,
+        sublineHtml: 'Every Ark Media show. More exclusive content.',
+        greetingHtml,
+        bodyHtml: [
+          'Thank you for joining. There&rsquo;s one thing left to do: set up your private feed so new episodes reach your podcast app.',
+        ],
+        sections: [networkSection()],
+        action: {
+          ...action,
+          headingHtml: `Set up your ${accent('private feed.')}`,
+          bodyHtml: `Connect Spotify once, or add a private feed for each show in your podcast app. ${FEED_ACTION_BODY}${signsYouIn(isNewAccount)}`,
+        },
+        closingHtml: `Thank you for supporting independent Jewish media. ${supportLine()}`,
+        footerHtml: MANAGE_FOOTER,
+      }),
+    }
+  }
+
   return {
     subject: 'Welcome to Ark+ and The Fold',
     html: renderShell({
       preheader: 'Every show. The whole community. Two quick steps to get started.',
       headlineHtml: `Welcome to Ark+ and ${accent('the Fold.')}`,
       sublineHtml: 'Every show. The whole community. One membership.',
-      greetingHtml: greeting(firstName(p.name, p.email)),
+      greetingHtml,
       bodyHtml: ['Thank you for joining. There are two quick steps to unlock everything.'],
       sections: [
         { eyebrow: 'Getting started', items: [feedItem(p.setupUrl), foldAppItem()] },
@@ -133,11 +167,9 @@ export function renderBundleWelcomeEmail(p: BundleWelcomeEmailParams): {
         foldInsideSection(),
       ],
       action: {
-        eyebrow: 'What you need to do',
+        ...action,
         headingHtml: `Start with your ${accent('private feed.')}`,
-        bodyHtml: `${FEED_ACTION_BODY}${signsYouIn(Boolean(p.isNewAccount))}`,
-        href: p.setupUrl,
-        label: 'Set up my feed',
+        bodyHtml: `${FEED_ACTION_BODY}${signsYouIn(isNewAccount)}`,
       },
       closingHtml: `You&rsquo;re now supporting everything we make at Ark Media, our shows and this community alike. Thank you. ${supportLine()}`,
       footerHtml: MANAGE_FOOTER,

@@ -2,9 +2,9 @@ import { describe, test, expect } from 'bun:test'
 import {
   FEED_INCLUDED,
   renderAxisAddedEmail,
-  renderBundleWelcomeEmail,
   renderCircleWelcomeEmail,
   renderGiftRedemptionEmail,
+  renderSubscriberWelcomeEmail,
 } from './lib/welcome-email'
 import { SUPPORT_EMAIL, esc, showRows } from './lib/email-layout'
 import { circleUrls } from '../src/config/urls'
@@ -182,49 +182,84 @@ describe('showRows', () => {
   })
 })
 
-describe('renderBundleWelcomeEmail', () => {
-  test('new account: CTA is setup, and says the button signs them in', () => {
-    const { subject, html } = renderBundleWelcomeEmail({
+describe('renderSubscriberWelcomeEmail', () => {
+  test('new account: CTA is setup, and says the link signs them in', () => {
+    const { subject, html } = renderSubscriberWelcomeEmail({
       ...URLS,
       name: 'Casey Jones',
       isNewAccount: true,
+      tier: 'ark-plus',
     })
-    expect(subject).toBe('Welcome to Ark+ and The Fold')
+    expect(subject).toBe('Welcome to Ark+')
+    expect(html).toContain('Welcome to')
     expect(html).toContain('Hi Casey,') // first name only
-    // Member-facing copy never mentions a password, in any direction.
+    // Member-facing copy never mentions a password, in any direction: not as a
+    // thing to set, and not as a thing they don't need. See welcome-email.ts.
     expect(html).not.toMatch(/password/i)
     expect(html).toContain('This button signs you in automatically')
+    // The caller wraps setupUrl in an auto-login link, which is what makes a
+    // CTA reachable for an account that has never signed in.
     expect(html).toContain(URLS.setupUrl)
   })
 
   test('a name manufactured from the address falls back to "Hi there,"', () => {
-    const { html } = renderBundleWelcomeEmail({
+    // Without the email passed alongside there is nothing to compare the
+    // name against — so a local-part value would render as a greeting.
+    const { html } = renderSubscriberWelcomeEmail({
       ...URLS,
       name: 'hannah.waxman8',
       email: 'hannah.waxman8@gmail.com',
+      tier: 'ark-plus',
     })
     expect(html).toContain('Hi there,')
     expect(html).not.toContain('hannah.waxman8')
   })
 
-  test('existing account: no sign-in line', () => {
-    const { html } = renderBundleWelcomeEmail(URLS)
+  test('existing account: the CTA is setup itself, with no sign-in line', () => {
+    const { html } = renderSubscriberWelcomeEmail({ ...URLS, tier: 'ark-plus' })
     expect(html).toContain('Set up my feed')
+    expect(html).toContain(URLS.setupUrl)
     expect(html).not.toContain('signs you in automatically')
+    expect(html).not.toMatch(/password/i)
+    expect(html).toContain('Hi there,')
   })
 
-  test('carries the support address, not a placeholder', () => {
-    const { html } = renderBundleWelcomeEmail(URLS)
-    expect(html).toContain(`mailto:${SUPPORT_EMAIL}`)
-    expect(html).not.toContain('PLACEHOLDER')
+  test('every welcome carries the support address, not a placeholder', () => {
+    // [SUPPORT EMAIL PLACEHOLDER] in the copy doc. A shipped email must not.
+    for (const tier of ['ark-plus', 'bundle'] as const) {
+      const { html } = renderSubscriberWelcomeEmail({ ...URLS, tier })
+      expect(html).toContain(SUPPORT_EMAIL)
+      expect(html).toContain(`mailto:${SUPPORT_EMAIL}`)
+      expect(html).not.toContain('PLACEHOLDER')
+    }
   })
 
-  test('two setup steps — the feed and the Fold app — and the network shows', () => {
-    const { html } = renderBundleWelcomeEmail(URLS)
+  test('ark-plus (feed-only): lists the network shows, and does not promise the Fold', () => {
+    const { subject, html } = renderSubscriberWelcomeEmail({
+      ...URLS,
+      tier: 'ark-plus',
+    })
+    expect(subject).toBe('Welcome to Ark+')
+    expect(html).toContain('What you now get')
+    expect(html).toContain(showRows('https://app.test'))
+    // A feed-only membership must not advertise access to the Fold it lacks.
+    expect(html).not.toContain('Fold')
+  })
+
+  test('bundle: two setup steps — the feed and the Fold app', () => {
+    const { subject, html } = renderSubscriberWelcomeEmail({
+      ...URLS,
+      tier: 'bundle',
+    })
+    expect(subject).toBe('Welcome to Ark+ and The Fold')
+    expect(html).toContain('the Fold.')
     expect(html).toContain('Getting started')
     expect(html).toContain('There are two quick steps')
+    // Step one: the private feed. Step two: the app that IS the Fold.
+    expect(html).toContain(URLS.setupUrl)
     expect(html).toContain(circleUrls.appStoreIos)
     expect(html).toContain(circleUrls.appStoreAndroid)
+    // And the same show list as ark-plus, since the bundle includes the feed.
     expect(html).toContain(showRows('https://app.test'))
   })
 })

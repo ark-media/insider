@@ -481,7 +481,7 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     expect(md.beehiiv_premium).toBe('true')
   })
 
-  test('an Ark+ purchase is welcomed with the launch email', async () => {
+  test('sends the branded subscriber welcome email after provisioning', async () => {
     nextSubscription = activeSub()
     fetchImpl = async (url, init) => {
       if (url.includes('/subscriptions/by_email/')) {
@@ -513,8 +513,8 @@ describe('POST /api/auth/checkout-session — happy path', () => {
     expect(emailCall).toBeDefined()
     const body = emailCall!.body as { to: string; subject: string; html: string }
     expect(body.to).toBe('user@example.com')
-    expect(body.subject).toBe('Your membership just got a lot bigger')
-    expect(body.html).toContain('Move my feed')
+    expect(body.subject).toBe('Welcome to Ark+')
+    expect(body.html).toContain('Welcome to')
   })
 
   test('idempotent: skips the grant if the sub is already marked', async () => {
