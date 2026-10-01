@@ -52,7 +52,7 @@ import { fetchWithTimeout } from './http.js'
 
 type Env = Record<string, string>
 
-const DEFAULT_HOST = 'https://us.i.posthog.com'
+const DEFAULT_HOST = 'https://t.arkmedia.org'
 
 // Three events, one per gap listed above. Names are a public contract the same
 // way the client EventMap is: once a funnel references one, add a new event

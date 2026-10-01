@@ -84,7 +84,7 @@ const BASE_ENV = {
 
 const WEBHOOK_PATH = '/api/stripe/webhook'
 const HEADERS = { 'stripe-signature': 'sig' }
-const POSTHOG_URL = 'https://us.i.posthog.com/i/v0/e/'
+const POSTHOG_URL = 'https://t.arkmedia.org/i/v0/e/'
 
 // SHA-256('sub@example.com') — the distinct_id every event below should carry,
 // identical to what the browser's hashEmail() produces for the same member.

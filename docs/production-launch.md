@@ -194,7 +194,7 @@ a green build.
 |---|---|---|
 | `CRON_SECRET` | server | `openssl rand -hex 32`; Vercel sends it as `Authorization: Bearer` to cron routes. |
 | `FEED_REMINDER_ENABLED` + `FEED_REMINDER_*` | server | Keep **off** until real members exist and their feed-activation state is being recorded, or the first run nudges people who are already set up. |
-| `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` | **browser** | PostHog project key + host (`us` or `eu`). Analytics funnel is dark in prod until the key is set. |
+| `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` | **browser** | PostHog project key + ingest host. Host is our reverse proxy `https://t.arkmedia.org` (also allow-listed in the CSP in `vercel.json`); the UI stays at us.posthog.com. Funnel is dark until the key is set. |
 | `VITE_SENTRY_DSN` | **browser** | Sentry client DSN. |
 
 ### 1.4 Easily-missed prerequisites (accounts/verification, not just keys)

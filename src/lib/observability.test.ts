@@ -325,6 +325,10 @@ describe("initObservability", () => {
     initObservability();
 
     const { config } = posthogCalls.init.at(-1)!;
+    // Ingest via our reverse proxy; UI links stay on PostHog Cloud.
+    expect(config.api_host).toBe("https://t.arkmedia.org");
+    expect(config.ui_host).toBe("https://us.posthog.com");
+    expect(config.defaults).toBe("2026-05-30");
     expect(config.mask_all_text).toBe(true);
     expect(config.mask_all_element_attributes).toBe(true);
     expect(config.session_recording).toEqual({

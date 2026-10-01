@@ -266,11 +266,18 @@ export function initObservability() {
   }
 
   const posthogKey = import.meta.env.VITE_POSTHOG_KEY
-  const posthogHost = import.meta.env.VITE_POSTHOG_HOST ?? 'https://us.i.posthog.com'
+  // Events go through our reverse proxy (t.arkmedia.org) rather than
+  // *.posthog.com directly, so tracker blocklists don't blank the funnel.
+  // ui_host keeps toolbar / replay deep links pointing at the real app.
+  const posthogHost = import.meta.env.VITE_POSTHOG_HOST ?? 'https://t.arkmedia.org'
   if (posthogKey) {
     replayPaused = typeof window !== 'undefined' && isReplayBlockedPath(window.location.pathname)
     posthog.init(posthogKey, {
       api_host: posthogHost,
+      ui_host: 'https://us.posthog.com',
+      // Opt into the SDK's dated default bundle (history_change pageviews,
+      // head-injected scripts, scaled canvas replay, rageclick ignore list).
+      defaults: '2026-05-30',
       capture_pageview: 'history_change',
       person_profiles: 'identified_only',
       // Autocapture: no textContent, no element attributes (href, value, …).
