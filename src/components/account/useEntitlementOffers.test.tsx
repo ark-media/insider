@@ -31,8 +31,14 @@ if (!g.document) {
 g.IS_REACT_ACT_ENVIRONMENT = true;
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import {
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+} from "@tanstack/react-router";
 import { ThemeProvider } from "../../lib/theme";
 import { SubscriberAuthProvider } from "../../lib/subscriberAuth";
 import type { AxisAccess, ChangePreview, Me } from "../../lib/auth";
@@ -105,6 +111,10 @@ afterEach(async () => {
 });
 
 const text = () => document.body.textContent ?? "";
+const linkWith = (label: string) =>
+  [...document.body.querySelectorAll<HTMLAnchorElement>("a")].find((a) =>
+    (a.textContent ?? "").includes(label),
+  );
 const buttonWith = (label: string) =>
   [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
     (b.textContent ?? "").includes(label),
@@ -447,6 +457,120 @@ describe("bundle switch — the success banner", () => {
   });
 });
 
+// --- after the switch: waiting for the new axis to reach /api/me ------------
+//
+// change-tier returns as soon as Stripe has the new price; the Neon row that
+// /api/me reads arrives on the webhook a beat later. The member's one refresh
+// on the way back is usually too early, so the hook keeps re-reading until the
+// axis they paid for is live — and the tab bar, which reads the same /api/me,
+// grows its new tab at the same moment.
+
+// A membership tab whose /api/me "lands" the switched axis after `landAfter`
+// refreshes, the way the webhook does a few seconds behind the switch.
+let refreshes = 0;
+function SettlingHarness({ landAfter }: { landAfter: number }) {
+  const [me, setMe] = useState<Me>(arkPlusMember());
+  const onRefresh = () => {
+    refreshes += 1;
+    if (refreshes >= landAfter) {
+      const base = arkPlusMember();
+      setMe({
+        ...base,
+        tier: "bundle",
+        entitlements: { arkPlus: true, circle: true },
+        axes: {
+          arkPlus: base.axes!.arkPlus,
+          circle: axis({ active: true, source: "subscription", renewsAt: base.axes!.arkPlus.renewsAt }),
+        },
+      });
+    }
+  };
+  const { notices, offers } = useEntitlementOffers({
+    me,
+    onRefresh,
+    pollIntervalMs: 5,
+  });
+  return (
+    <>
+      {notices}
+      {offers.map((offer) => (
+        <button key={offer.key} type="button" onClick={offer.onSelect}>
+          {offer.cta} →
+        </button>
+      ))}
+    </>
+  );
+}
+
+async function settle(condition: () => boolean, budgetMs = 1_000) {
+  const until = Date.now() + budgetMs;
+  while (!condition() && Date.now() < until) {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+  }
+}
+
+describe("bundle switch — until the new axis is live", () => {
+  // The link to the new tab is a router Link, so this harness renders inside a
+  // one-route memory router; the tab itself is never navigated to here.
+  async function switchOn(landAfter: number) {
+    refreshes = 0;
+    const rootRoute = createRootRoute({
+      component: () => (
+        <ThemeProvider>
+          <SubscriberAuthProvider>
+            <SettlingHarness landAfter={landAfter} />
+          </SubscriberAuthProvider>
+        </ThemeProvider>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute,
+      history: createMemoryHistory({ initialEntries: ["/account"] }),
+    });
+    await render(<RouterProvider router={router as never} />);
+    await act(async () => {
+      buttonWith("Add the Fold")?.click();
+    });
+    await confirmSwitch();
+  }
+
+  test("keeps re-reading /api/me until the axis lands, then links to its tab", async () => {
+    // The first refresh (on the way back from change-tier) is too early; the
+    // fourth finds the row written.
+    await switchOn(4);
+    expect(text()).toContain("Switching the Fold on now");
+    expect(linkWith("Go to the Fold")).toBeUndefined();
+
+    await settle(() => linkWith("Go to the Fold") !== undefined);
+    expect(linkWith("Go to the Fold")?.getAttribute("href")).toBe("/account/fold");
+    expect(text()).not.toContain("Switching the Fold on now");
+    // Nothing offered any more: the card for the axis they just added is gone.
+    expect(buttonWith("Add the Fold")).toBeUndefined();
+  });
+
+  test("stops polling once the axis is live", async () => {
+    await switchOn(2);
+    await settle(() => linkWith("Go to the Fold") !== undefined);
+    const settled = refreshes;
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    expect(refreshes).toBe(settled);
+  });
+
+  test("a period-end switch waits for nothing", async () => {
+    changeReply = {
+      status: 200,
+      body: { ok: true, changed: true, timing: "period_end", effective_at: "2026-11-01T00:00:00.000Z" },
+    };
+    await switchOn(1_000);
+    expect(text()).toContain("covers Ark+ and the Fold from");
+    expect(text()).not.toContain("Switching the Fold on now");
+  });
+});
+
 // --- the ICMB welcome offer on the membership tab --------------------------
 //
 // An invited member must not be shown the list-price switch: they are holding a
@@ -457,11 +581,6 @@ describe("bundle switch — the success banner", () => {
 // Inside the redemption window (mailed 5 Oct, closes 31 Oct) and after it.
 const DURING_OFFER = Date.parse("2026-10-14T12:00:00Z");
 const AFTER_OFFER = Date.parse("2026-11-02T12:00:00Z");
-
-const linkWith = (label: string) =>
-  [...document.body.querySelectorAll<HTMLAnchorElement>("a")].find((a) =>
-    (a.textContent ?? "").includes(label),
-  );
 
 describe("the welcome offer on the membership tab", () => {
   test("replaces the list-price switch with the member's own price", async () => {

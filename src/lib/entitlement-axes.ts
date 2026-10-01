@@ -13,21 +13,34 @@ export type StandaloneTier = "ark-plus" | "circle";
 // `label` heads a card and starts a sentence; `inline` is the same product
 // named mid-sentence, where "The Fold" would read as a stray capital ("Your
 // gifted The Fold access"). Identical for Ark+, which needs no article.
+// `tabPath` is the account tab the axis unlocks (AccountTabs lists it only once
+// the axis is live), and `tabCta` the one thing to do there first.
 export const AXIS: Record<
   AxisKey,
-  { tier: StandaloneTier; other: AxisKey; label: string; inline: string }
+  {
+    tier: StandaloneTier;
+    other: AxisKey;
+    label: string;
+    inline: string;
+    tabPath: "/account/podcast-feed" | "/account/fold";
+    tabCta: string;
+  }
 > = {
   arkPlus: {
     tier: "ark-plus",
     other: "circle",
     label: "Ark+",
     inline: "Ark+",
+    tabPath: "/account/podcast-feed",
+    tabCta: "Set up your private feed",
   },
   circle: {
     tier: "circle",
     other: "arkPlus",
     label: "The Fold",
     inline: "the Fold",
+    tabPath: "/account/fold",
+    tabCta: "Go to the Fold",
   },
 };
 

@@ -144,8 +144,29 @@ function PodcastsTab() {
   if (state.kind !== "member" || !state.me.entitlements.arkPlus) return null;
 
   // A failed first read surfaces through the account layout's error+retry.
+  //
+  // Same heading and rhythm as FeedSetup, with a placeholder in the slot the
+  // checklist fills: the feeds are a second /api/me round trip away on the
+  // first visit, and a bare line under the tab bar that then jumps into a
+  // full page reads as the page breaking. This way only the panel changes.
   if (state.me.feedsLoaded === false) {
-    return <p className="text-fg-muted">Loading your private feeds…</p>;
+    return (
+      <section aria-busy="true">
+        <div className="page-section">
+          <h2 className="text-h2">Set up your private feed</h2>
+          <p className="mt-4 max-w-2xl text-body">
+            Pick where you listen. These links carry your membership, so keep
+            them to yourself.
+          </p>
+          <div
+            role="status"
+            className="mt-10 border border-rule bg-navy-900/60 p-6 text-body-sm text-fg-muted"
+          >
+            Loading your private feeds…
+          </div>
+        </div>
+      </section>
+    );
   }
 
   return (

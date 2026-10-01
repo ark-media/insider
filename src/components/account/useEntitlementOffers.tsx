@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import type { ChangePreview, Me, WelcomeOffer } from "../../lib/auth";
 import {
   changeTier,
@@ -40,6 +41,16 @@ import { welcomeOfferIsOpen } from "../../../shared/welcome-offer";
 
 const NEAR_EXPIRY_DAYS = 14;
 
+// After an immediate switch, how long to keep re-reading /api/me for the axis
+// the member just paid for. change-tier updates the subscription in Stripe and
+// returns; the Neon membership row that /api/me reads is written by the
+// subscription.updated webhook a beat later. One refresh on the way back is
+// usually too early, and a member who has just paid for Ark+ would otherwise
+// sit on a page with no Podcasts tab until they thought to reload. Counted in
+// visible ticks, like the feed poll on the Podcasts tab.
+const SWITCH_POLL_INTERVAL_MS = 2_000;
+const SWITCH_POLL_TICKS = 30; // ~1 minute of visible time
+
 // The welcome offer in one line, in the member's own currency and cadence:
 // what the bundle costs them and for how long. The list price is left to the
 // confirm page — a jump card has room for the hook, not the whole quote.
@@ -75,7 +86,13 @@ type BundleState =
   // The preview itself failed, so there are no numbers to confirm against and
   // nothing to retry inside the panel. Distinct from `error` for that reason.
   | { kind: "preview-error"; axis: AxisKey }
-  | { kind: "ok"; immediate: boolean; preview: ChangePreview; effectiveAt?: string };
+  | {
+      kind: "ok";
+      axis: AxisKey;
+      immediate: boolean;
+      preview: ChangePreview;
+      effectiveAt?: string;
+    };
 
 // One axis the member could add, in the shape a jump card renders: what it's
 // called, what they're missing, and the single action that starts the flow.
@@ -98,9 +115,13 @@ export function useEntitlementOffers({
   me,
   onRefresh,
   now: nowOverride,
+  pollIntervalMs = SWITCH_POLL_INTERVAL_MS,
 }: {
   me: Me;
   onRefresh: () => void;
+  // How often the post-switch poll re-reads /api/me. Tests pass something
+  // short; production takes the default.
+  pollIntervalMs?: number;
   /**
    * "Now", for the two windows this hook reads: the near-expiry gift banner and
    * whether the welcome offer is still open. Injectable because both are date
@@ -128,6 +149,12 @@ export function useEntitlementOffers({
   // window is fine; the page reloads/refetches on any real state change.
   const [clockNow] = useState(() => Date.now());
   const now = nowOverride ?? clockNow;
+  // The latest refresh, read from inside the poll below without restarting it
+  // (and its tick count) every time the parent hands down a new function.
+  const refreshRef = useRef(onRefresh);
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+  }, [onRefresh]);
 
   // Whether it is even worth asking about the welcome offer. The eligibility
   // check reads Stripe, so it is gated on the two things that can be known for
@@ -151,6 +178,28 @@ export function useEntitlementOffers({
       live = false;
     };
   }, [eligibleShape]);
+
+  // Has the axis the member just switched for reached /api/me yet? True until
+  // there is a switch to wait on, so nothing below polls for no reason.
+  const switched = bundle.kind === "ok" ? bundle : null;
+  const landed = switched ? me.entitlements[switched.axis] : true;
+  const [switchPollExhausted, setSwitchPollExhausted] = useState(false);
+  useEffect(() => {
+    // Only an immediate switch has anything to wait for: a period-end change
+    // lands on a date, not in the next few seconds.
+    if (!switched?.immediate || landed) return;
+    let ticks = 0;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (++ticks > SWITCH_POLL_TICKS) {
+        clearInterval(id);
+        setSwitchPollExhausted(true);
+        return;
+      }
+      refreshRef.current();
+    }, pollIntervalMs);
+    return () => clearInterval(id);
+  }, [switched, landed, pollIntervalMs]);
 
   // Without axes (a stale cached /api/me) there's nothing per-axis to offer;
   // the rest of the dashboard still works.
@@ -208,6 +257,7 @@ export function useEntitlementOffers({
     if (r.ok) {
       setBundle({
         kind: "ok",
+        axis,
         immediate: r.timing !== "period_end",
         preview: quoted,
         effectiveAt: r.effective_at,
@@ -364,22 +414,45 @@ export function useEntitlementOffers({
         </button>
       </div>
     ) : bundle.kind === "ok" ? (
-      <p
+      <div
         className="mb-6 border border-cyan/50 bg-cyan/10 px-4 py-3 text-body-sm text-cyan"
         aria-live="polite"
       >
-        {bundle.immediate
-          ? // Same facts the panel stated a moment ago, from the same module.
-            `You're in — your membership covers Ark+ and the Fold now. ${dueTodayLine(
-              dueTodayOf(bundle.preview),
-            )} ${renewsLine({
-              plan: bundle.preview.plan,
-              renewsOn: fmtDate(bundle.preview.renewsAt),
-            })}`
-          : bundle.effectiveAt
-            ? `Your membership covers Ark+ and the Fold from ${fmtDate(bundle.effectiveAt)}.`
-            : "Your membership covers Ark+ and the Fold now."}
-      </p>
+        <p>
+          {bundle.immediate
+            ? // Same facts the panel stated a moment ago, from the same module.
+              `You're in — your membership covers Ark+ and the Fold now. ${dueTodayLine(
+                dueTodayOf(bundle.preview),
+              )} ${renewsLine({
+                plan: bundle.preview.plan,
+                renewsOn: fmtDate(bundle.preview.renewsAt),
+              })}`
+            : bundle.effectiveAt
+              ? `Your membership covers Ark+ and the Fold from ${fmtDate(bundle.effectiveAt)}.`
+              : "Your membership covers Ark+ and the Fold now."}
+        </p>
+        {/* Where to go next, the moment it can be reached: the tab for the axis
+            they just added appears in the bar above when /api/me confirms it,
+            and this link is the same destination without the hunt. Until then
+            the banner says it's on its way rather than linking to a tab that
+            would bounce them straight back here. */}
+        {bundle.immediate ? (
+          landed ? (
+            <Link
+              to={AXIS[bundle.axis].tabPath}
+              className="mt-3 inline-flex min-h-11 items-center border border-cyan bg-cyan px-4 button-text font-display font-bold text-navy transition hover:bg-transparent hover:text-cyan focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+            >
+              {AXIS[bundle.axis].tabCta} →
+            </Link>
+          ) : (
+            <p className="mt-2 text-fg-muted">
+              {switchPollExhausted
+                ? `${AXIS[bundle.axis].label} is taking longer than usual to switch on. Give it a minute, then reload this page.`
+                : `Switching ${AXIS[bundle.axis].inline} on now — a few seconds.`}
+            </p>
+          )
+        ) : null}
+      </div>
     ) : null;
 
   const modal = checkout ? (
