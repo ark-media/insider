@@ -46,6 +46,26 @@ const SEARCH_ENGINE_HOSTS = [
   'startpage.',
 ]
 
+// Third parties we send a visitor through and get them straight back from —
+// login, 3DS, OAuth consent. Their host shows up as the referrer on the return
+// leg, and without this list a member finishing a login would overwrite the
+// campaign that brought them in with a "referral" from auth0.com. Suffix match,
+// so `ark-media.us.auth0.com` and `hooks.stripe.com` are both covered. Only the
+// account/consent hosts: open.spotify.com sending a listener here is real.
+const HANDOFF_HOST_SUFFIXES = [
+  'auth0.com',
+  'stripe.com',
+  'stripe.network',
+  'accounts.spotify.com',
+  'accounts.google.com',
+  'appleid.apple.com',
+]
+
+// Query params our own hand-off return URLs carry. The Spotify link returns via
+// the Beehiiv publication's host (which, elsewhere, IS a real referral source),
+// so the landing URL is the only reliable tell that this is a round trip.
+const HANDOFF_RETURN_PARAMS = ['spotify', 'checkout']
+
 // Click identifiers that imply a paid channel even with no utm_* present.
 const CLICK_ID_SOURCES: ReadonlyArray<[param: string, source: string]> = [
   ['gclid', 'google'],
@@ -75,7 +95,8 @@ export function resolveTouch(
   const params = new URLSearchParams(search)
   const get = (key: string) => params.get(key)?.trim() || undefined
 
-  const referrerHost = externalReferrerHost(referrer, selfHost)
+  const isHandoffReturn = HANDOFF_RETURN_PARAMS.some((key) => params.has(key))
+  const referrerHost = isHandoffReturn ? undefined : externalReferrerHost(referrer, selfHost)
   const campaign = get('utm_campaign') ?? get('ref')
   const content = get('utm_content') ?? get('utm_term')
 
@@ -135,6 +156,7 @@ function externalReferrerHost(referrer: string, selfHost: string): string | unde
   const self = stripWww(selfHost.toLowerCase())
   // Treat our own apex and any subdomain of it as internal.
   if (bare === self || bare.endsWith(`.${self}`) || self.endsWith(`.${bare}`)) return undefined
+  if (HANDOFF_HOST_SUFFIXES.some((h) => bare === h || bare.endsWith(`.${h}`))) return undefined
   return bare
 }
 

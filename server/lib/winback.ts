@@ -33,7 +33,7 @@ import {
   renderFoldWinbackEmail,
   renderWinbackEmail,
 } from './winback-email.js'
-import { sendEmail } from './email.js'
+import { sendEmail, withEmailUtm } from './email.js'
 
 type Env = Record<string, string>
 
@@ -221,9 +221,9 @@ export async function runWinbackCampaign(deps: {
 
   const rows = await loadRoster(sql, nowMs)
   const rejoinUrl: Record<WinbackCampaign, string> = {
-    ark_plus: `${appBaseUrl}/subscribe`,
-    fold: `${appBaseUrl}/fold`,
-    bundle: `${appBaseUrl}/subscribe`,
+    ark_plus: withEmailUtm(`${appBaseUrl}/subscribe`, 'winback-ark-plus'),
+    fold: withEmailUtm(`${appBaseUrl}/fold`, 'winback-fold'),
+    bundle: withEmailUtm(`${appBaseUrl}/subscribe`, 'winback-bundle'),
   }
   let eligible = 0
   let sent = 0

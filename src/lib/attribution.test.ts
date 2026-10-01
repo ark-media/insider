@@ -96,6 +96,21 @@ describe("resolveTouch — channel resolution", () => {
     expect(touch("", "https://app.ark-plus.xyz/x").source).toBe("direct");
   });
 
+  test("returning from login, 3DS or OAuth consent is not a referral", () => {
+    expect(touch("", "https://ark-media.us.auth0.com/").source).toBe("direct");
+    expect(touch("", "https://hooks.stripe.com/3d_secure").source).toBe("direct");
+    expect(touch("", "https://accounts.spotify.com/").source).toBe("direct");
+    // open.spotify.com sending a listener here is a real referral.
+    expect(touch("", "https://open.spotify.com/show/x").source).toBe("open.spotify.com");
+  });
+
+  test("our hand-off return URLs ignore the referrer they come back with", () => {
+    expect(touch("?spotify=linked", "https://ark-daily.beehiiv.com/").source).toBe("direct");
+    expect(touch("?checkout=complete", "https://example-bank.com/").source).toBe("direct");
+    // A campaign tag on the same URL still wins.
+    expect(touch("?checkout=complete&utm_source=x").source).toBe("x");
+  });
+
   test("a malformed referrer degrades to direct rather than throwing", () => {
     expect(touch("", "not a url").source).toBe("direct");
   });

@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import type Stripe from 'stripe'
-import { sendEmail } from '../../lib/email.js'
+import { sendEmail, withEmailUtm } from '../../lib/email.js'
 import { signGiftClaimToken } from '../../lib/session.js'
 import { renderGiftRedemptionEmail } from '../../lib/welcome-email.js'
 import { renderPaymentFailedEmail } from '../../lib/payment-failed-email.js'
@@ -1083,12 +1083,6 @@ async function handleGiftPurchase(purchase: GiftPurchase, env: Env): Promise<voi
     })
   }
 
-  // No gift-purchase event here on purpose. Stripe has the PaymentIntent and
-  // Neon has the `gift` row, so purchase → redemption rate is a query over the
-  // gift table (`status = 'redeemed'` / total), not something to re-derive in
-  // PostHog. Only the redemption itself is instrumented (routes/gift.ts), and
-  // only because the magic-link path redeems server-side with no browser event.
-
   // Skip the email resend once the token is stamped (a prior delivery sent it).
   if (metadata.gift_token === token) return
 
@@ -1104,7 +1098,7 @@ async function handleGiftPurchase(purchase: GiftPurchase, env: Env): Promise<voi
     { giftToken: token, email: recipientEmail, name: recipientName, tier },
     env,
   )
-  const claimUrl = `${baseUrl}/redeem?mt=${encodeURIComponent(mt)}`
+  const claimUrl = withEmailUtm(`${baseUrl}/redeem?mt=${encodeURIComponent(mt)}`, 'gift-claim')
 
   // Send the claim email BEFORE stamping the idempotency marker: stamping first
   // meant a transient send failure lost the only claim link forever (the retry
@@ -1137,6 +1131,23 @@ async function handleGiftPurchase(purchase: GiftPurchase, env: Env): Promise<voi
   } catch (err) {
     console.error('[stripe] gift token stamp failed:', err)
   }
+
+  // Purchase → redemption RATE is still a query over the `gift` table, not
+  // this event. The event exists for attribution: the gift row has no channel,
+  // so without it "which channel sells gifts" is unanswerable in PostHog.
+  // After the send and past the gift_token early return, so a webhook retry
+  // that finds the token stamped doesn't count the purchase twice.
+  await captureServerEvent(env, {
+    event: 'gift_purchased_confirmed',
+    distinctId: emailDistinctId(metadata.giver_email),
+    properties: {
+      tier,
+      term,
+      amount_cents: purchase.amount,
+      currency: metadata.currency ?? purchase.currency ?? null,
+    },
+    attribution: attributionFromMetadata(metadata),
+  })
 }
 
 // A high-entropy, deterministic redemption token: HMAC(SESSION_SECRET, id), where

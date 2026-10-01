@@ -63,7 +63,7 @@ import {
   verifyExpiredGiftClaimToken,
   verifyGiftClaimToken,
 } from '../lib/session.js'
-import { sendEmail } from '../lib/email.js'
+import { sendEmail, withEmailUtm } from '../lib/email.js'
 import { renderGiftRedemptionEmail } from '../lib/welcome-email.js'
 import { createHash } from 'node:crypto'
 import type Stripe from 'stripe'
@@ -615,7 +615,10 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           recipientEmail: claim.email,
           term,
           tier,
-          claimUrl: `${appBaseUrl}/redeem?mt=${encodeURIComponent(freshMt)}`,
+          claimUrl: withEmailUtm(
+            `${appBaseUrl}/redeem?mt=${encodeURIComponent(freshMt)}`,
+            'gift-claim',
+          ),
         })
         // One send per gift per day even across racing clicks. The key is a
         // hash: the redemption token is a bearer credential and has no

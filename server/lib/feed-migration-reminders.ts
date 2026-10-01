@@ -26,7 +26,7 @@ import { mailableStatus } from './beehiiv-status.js'
 import { renderMigrationCheckInEmail } from './feed-migration-email.js'
 import { hasReminderBeenSent, recordReminderSent } from './feed-reminders.js'
 import { greetingFirstName } from '../../shared/profile-name.js'
-import { sendEmail } from './email.js'
+import { sendEmail, withEmailUtm } from './email.js'
 import { emailLoginUrl } from './session.js'
 import {
   EMAIL_TIME_ZONE,
@@ -150,7 +150,12 @@ export async function runFeedMigrationReminders(deps: {
     // Per-recipient: the link signs them in on whatever device opens the mail.
     // Email only — this campaign reads from beehiiv_subscription, which holds no
     // Auth0 sub, so the session resolves its membership by the by-email path.
-    const setupUrl = await emailLoginUrl(appBaseUrl, '/setup', { email }, env)
+    const setupUrl = await emailLoginUrl(
+      appBaseUrl,
+      withEmailUtm('/setup', 'feed-migration-checkin'),
+      { email },
+      env,
+    )
     const { subject, html } = renderMigrationCheckInEmail({
       firstName: greetingFirstName(name?.firstName, email, name?.lastName),
       stage,

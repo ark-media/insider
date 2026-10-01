@@ -28,7 +28,7 @@
 // will land on. Bun auto-loads .env.
 
 import Stripe from 'stripe'
-import { sendEmail } from '../server/lib/email.js'
+import { sendEmail, withEmailUtm } from '../server/lib/email.js'
 import {
   formatMinorUnits,
   resolveCatalogPrice,
@@ -205,7 +205,7 @@ async function main(): Promise<void> {
       discountedMonths: WELCOME_MONTHLY_DISCOUNT_MONTHS,
       offerUrl: await emailLoginUrl(
         appBaseUrl,
-        '/offer',
+        withEmailUtm('/offer', 'welcome-offer'),
         // Lets this link, alone among our emails, redeem for its first 48 hours.
         { email: r.email, purpose: 'welcome_offer' },
         env,

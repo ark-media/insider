@@ -22,7 +22,7 @@ import {
   formatTimestampInZone,
 } from '../../shared/format-date.js'
 import { renderGiftExpiryEmail } from './gift-expiry-email.js'
-import { sendEmail } from './email.js'
+import { sendEmail, withEmailUtm } from './email.js'
 
 type Env = Record<string, string>
 
@@ -121,7 +121,7 @@ export async function runGiftExpiryReminders(deps: {
   const { env, sql, appBaseUrl, withinDays, nowMs, resolveRecipient } = deps
   const send = deps.send ?? sendEmail
   const rows = await getGiftAxesExpiringWithin(sql, withinDays)
-  const accountUrl = `${appBaseUrl}/account`
+  const accountUrl = withEmailUtm(`${appBaseUrl}/account`, 'gift-expiry-reminder')
   let eligible = 0
   let sent = 0
   let failed = 0
