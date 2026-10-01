@@ -4,7 +4,7 @@
 //     now (enabled + within its date window), or null. Read on every page
 //     load, so failures degrade to "no banner" rather than breaking render.
 //   /api/admin/announcements — admin-only CRUD (GET list, POST create,
-//     PATCH ?id, DELETE ?id). Gated by the Auth0 "admin" role.
+//     PUT ?id, DELETE ?id). Gated by the Auth0 "admin" role.
 
 import { readJson } from '../lib/http.js'
 import { requireAdminRequest } from '../lib/guards.js'

@@ -222,9 +222,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         const feeds: PrivateFeed[] = includeFeeds && entitlements.arkPlus
           ? await fetchPrivateFeeds(env, email)
           : []
-        const enriched = includeFeeds
-          ? await enrichFeedsWithActivation(env, email, feeds)
-          : []
+        const enriched = await enrichFeedsWithActivation(env, email, feeds)
 
         // First-login auto-subscribe to the free newsletter for a logged-in free
         // reader. Soft-fails internally so a Beehiiv outage can't block login;

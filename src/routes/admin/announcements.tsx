@@ -6,6 +6,10 @@ import {
   AdminListRow,
   StatusPill,
 } from "../../components/admin/AdminList";
+import {
+  AdminFormActions,
+  type AdminFormProps,
+} from "../../components/admin/AdminForm";
 import { LazyRichTextEditor } from "../../components/LazyRichTextEditor";
 import {
   deleteAnnouncement,
@@ -13,21 +17,16 @@ import {
   saveAnnouncement,
   type AnnouncementDraft,
 } from "../../lib/admin";
-import {
-  adminField,
-  adminFieldLabel,
-  adminPrimaryButton,
-  adminSecondaryButton,
-} from "../../lib/admin-styles";
+import { adminField, adminFieldLabel } from "../../lib/admin-styles";
 import type { Announcement } from "../../lib/announcements";
 import { sanitizeRichPreview } from "../../lib/richTextPreview";
 import { useCrudResource } from "../../lib/useCrudResource";
 import { formatTimestampWithTime } from "../../../shared/format-date";
 import {
-  COMMON_TIME_ZONES,
   DEFAULT_TIME_ZONE,
   browserTimeZone,
   describeInstant,
+  timeZoneOptions,
   utcToZonedWallClock,
   zonedWallClockToUtc,
 } from "../../lib/datetime";
@@ -39,13 +38,7 @@ export const Route = createFileRoute("/admin/announcements")({
 const DEFAULT_BAR = "#4a9fe8";
 const DEFAULT_TEXT = "#0a2540";
 
-// Zones offered in the dropdown: the curated list, plus the admin's own browser
-// zone if it isn't already there (so a traveling/remote admin can pick it).
-const TIME_ZONE_OPTIONS = (() => {
-  const tz = browserTimeZone();
-  if (COMMON_TIME_ZONES.some((z) => z.value === tz)) return COMMON_TIME_ZONES;
-  return [{ value: tz, label: `${tz} (your timezone)` }, ...COMMON_TIME_ZONES];
-})();
+const TIME_ZONE_OPTIONS = timeZoneOptions();
 
 type FormState = {
   body: string;
@@ -244,15 +237,7 @@ function AnnouncementForm({
   error,
   onSubmit,
   onCancel,
-}: {
-  editing: boolean;
-  form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
-  saving: boolean;
-  error: string | null;
-  onSubmit: (e: React.FormEvent) => void;
-  onCancel: () => void;
-}) {
+}: AdminFormProps<FormState>) {
   const field = adminField;
   const label = adminFieldLabel;
 
@@ -407,22 +392,12 @@ function AnnouncementForm({
           </label>
         </div>
 
-        {error ? <p className="text-body-sm text-red-400">{error}</p> : null}
-
-        <div className="flex gap-3">
-          <button type="submit" disabled={saving} className={adminPrimaryButton}>
-            {saving ? "Saving…" : editing ? "Save changes" : "Create"}
-          </button>
-          {editing ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              className={adminSecondaryButton}
-            >
-              Cancel
-            </button>
-          ) : null}
-        </div>
+        <AdminFormActions
+          saving={saving}
+          editing={editing}
+          error={error}
+          onCancel={onCancel}
+        />
       </form>
     </section>
   );

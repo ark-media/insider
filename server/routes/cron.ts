@@ -8,7 +8,7 @@
 import { secretEquals } from '../lib/timing-safe.js'
 import { liveAxes, reconcileEntitlements, type ReconcileAxis } from '../entitlement.js'
 import { membershipRowsForEmail } from '../lib/entitlement-resolver.js'
-import { getDb } from '../lib/db.js'
+import { getDb, type Sql } from '../lib/db.js'
 import { getMigrationConfig, getReminderConfig } from '../lib/app-settings.js'
 import { runFeedSetupReminders } from '../lib/feed-reminders.js'
 import { runFeedMigrationReminders } from '../lib/feed-migration-reminders.js'
@@ -73,124 +73,95 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       },
     })
 
+  // A cron job that works against the database: the same secret gate, then the
+  // run's summary as the response. A run that throws is logged under the job's
+  // name and answered with `errorCode`.
+  const dbCronRoute = (
+    name: string,
+    errorCode: string,
+    run: (sql: Sql) => Promise<unknown>,
+  ): Route =>
+    defineRoute({
+      path: `/api/cron/${name}`,
+      method: ['POST', 'GET'],
+      handler: async (req, _res, json) => {
+        const cronSecret = env.CRON_SECRET
+        if (!cronSecret) return json(500, { error: 'not_configured' })
+        if (!cronAuthorized(req, cronSecret)) {
+          return json(401, { error: 'unauthorized' })
+        }
+        if (!env.DATABASE_URL) {
+          return json(500, { error: 'not_configured' })
+        }
+
+        const sql = getDb(env)
+        try {
+          json(200, await run(sql))
+        } catch (err) {
+          console.error(`[cron] ${name} failed:`, err)
+          json(500, { error: errorCode })
+        }
+      },
+    })
+
   return [
     reconcileRoute('/api/cron/reconcile-entitlements'),
     reconcileRoute('/api/cron/reconcile-entitlements/ark-plus', 'ark-plus'),
     reconcileRoute('/api/cron/reconcile-entitlements/circle', 'circle'),
-    defineRoute({
-      // Nudge members who started paying but haven't set up their private
-      // feed. Scans the premium readers in Neon, sends a one-time Resend
-      // reminder to the ones who never activated, and records each send so
-      // nobody is nagged twice.
-      path: '/api/cron/feed-setup-reminders',
-      method: ['POST', 'GET'],
-      handler: async (req, _res, json) => {
-        const cronSecret = env.CRON_SECRET
-        if (!cronSecret) return json(500, { error: 'not_configured' })
-        if (!cronAuthorized(req, cronSecret)) {
-          return json(401, { error: 'unauthorized' })
-        }
-        if (!env.DATABASE_URL) {
-          return json(500, { error: 'not_configured' })
-        }
-
-        const sql = getDb(env)
-        try {
-          const config = await getReminderConfig(sql, env)
-          const summary = await runFeedSetupReminders({
-            env,
-            sql,
-            appBaseUrl,
-            config,
-            nowMs: Date.now(),
-          })
-          json(200, summary)
-        } catch (err) {
-          console.error('[cron] feed-setup-reminders failed:', err)
-          json(500, { error: 'reminder_run_failed' })
-        }
-      },
+    // Nudge members who started paying but haven't set up their private
+    // feed. Scans the premium readers in Neon, sends a one-time Resend
+    // reminder to the ones who never activated, and records each send so
+    // nobody is nagged twice.
+    dbCronRoute('feed-setup-reminders', 'reminder_run_failed', async (sql) => {
+      const config = await getReminderConfig(sql, env)
+      return runFeedSetupReminders({
+        env,
+        sql,
+        appBaseUrl,
+        config,
+        nowMs: Date.now(),
+      })
     }),
-    defineRoute({
-      // The feed-migration check-in series: the escalating 30-day / 60-day /
-      // final notices sent to members carried over from the old Call me Back
-      // feed who still haven't moved. Distinct from the reminder above — that
-      // one counts from a member's join date, this one from two fixed calendar
-      // dates. See shared/feed-migration.ts.
-      path: '/api/cron/feed-migration-reminders',
-      method: ['POST', 'GET'],
-      handler: async (req, _res, json) => {
-        const cronSecret = env.CRON_SECRET
-        if (!cronSecret) return json(500, { error: 'not_configured' })
-        if (!cronAuthorized(req, cronSecret)) {
-          return json(401, { error: 'unauthorized' })
-        }
-        if (!env.DATABASE_URL) {
-          return json(500, { error: 'not_configured' })
-        }
-
-        const sql = getDb(env)
-        try {
-          const summary = await runFeedMigrationReminders({
-            env,
-            sql,
-            appBaseUrl,
-            config: await getMigrationConfig(sql),
-            nowMs: Date.now(),
-          })
-          json(200, summary)
-        } catch (err) {
-          console.error('[cron] feed-migration-reminders failed:', err)
-          json(500, { error: 'migration_run_failed' })
-        }
-      },
+    // The feed-migration check-in series: the escalating 30-day / 60-day /
+    // final notices sent to members carried over from the old Call me Back
+    // feed who still haven't moved. Distinct from the reminder above — that
+    // one counts from a member's join date, this one from two fixed calendar
+    // dates. See shared/feed-migration.ts.
+    dbCronRoute('feed-migration-reminders', 'migration_run_failed', async (sql) => {
+      return runFeedMigrationReminders({
+        env,
+        sql,
+        appBaseUrl,
+        config: await getMigrationConfig(sql),
+        nowMs: Date.now(),
+      })
     }),
-    defineRoute({
-      // Nudge gift recipients whose gifted axis (Ark+ / the Fold) is nearing
-      // its term end, so they can convert to a paid subscription before access
-      // lapses. Scans Neon membership rows, resolves each recipient's email from
-      // Auth0 (membership stores no PII), sends a one-time Resend reminder per
-      // (recipient, axis, term-end), and records each send so nobody is nagged
-      // twice for the same term.
-      path: '/api/cron/gift-expiry-reminders',
-      method: ['POST', 'GET'],
-      handler: async (req, _res, json) => {
-        const cronSecret = env.CRON_SECRET
-        if (!cronSecret) return json(500, { error: 'not_configured' })
-        if (!cronAuthorized(req, cronSecret)) {
-          return json(401, { error: 'unauthorized' })
-        }
-        if (!env.DATABASE_URL) {
-          return json(500, { error: 'not_configured' })
-        }
-
-        const sql = getDb(env)
-        try {
-          const summary = await runGiftExpiryReminders({
-            env,
-            sql,
-            appBaseUrl,
-            withinDays: GIFT_EXPIRY_REMINDER_DAYS,
-            nowMs: Date.now(),
-            resolveRecipient: async (sub) => {
-              const profile = await getAuth0NameProfile(env, sub)
-              if (!profile) return null
-              return {
-                email: profile.email,
-                firstName: greetingFirstName(
-                  profile.givenName,
-                  profile.email,
-                  profile.familyName,
-                ),
-              }
-            },
-          })
-          json(200, summary)
-        } catch (err) {
-          console.error('[cron] gift-expiry-reminders failed:', err)
-          json(500, { error: 'reminder_run_failed' })
-        }
-      },
+    // Nudge gift recipients whose gifted axis (Ark+ / the Fold) is nearing
+    // its term end, so they can convert to a paid subscription before access
+    // lapses. Scans Neon membership rows, resolves each recipient's email from
+    // Auth0 (membership stores no PII), sends a one-time Resend reminder per
+    // (recipient, axis, term-end), and records each send so nobody is nagged
+    // twice for the same term.
+    dbCronRoute('gift-expiry-reminders', 'reminder_run_failed', async (sql) => {
+      return runGiftExpiryReminders({
+        env,
+        sql,
+        appBaseUrl,
+        withinDays: GIFT_EXPIRY_REMINDER_DAYS,
+        nowMs: Date.now(),
+        resolveRecipient: async (sub) => {
+          const profile = await getAuth0NameProfile(env, sub)
+          if (!profile) return null
+          return {
+            email: profile.email,
+            firstName: greetingFirstName(
+              profile.givenName,
+              profile.email,
+              profile.familyName,
+            ),
+          }
+        },
+      })
     }),
     defineRoute({
       // Remind annual members 30 days before their membership renews: the
@@ -246,90 +217,51 @@ export function cronRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
         }
       },
     }),
-    defineRoute({
-      // Invite members who left Ark+ or the Fold six months ago to come back. Scans the
-      // cancellation record (which outlives the membership row), skips anyone
-      // who has resubscribed or opted out, sends a one-time Resend invitation,
-      // and records each send so nobody is mailed twice. See lib/winback.ts.
-      path: '/api/cron/winback',
-      method: ['POST', 'GET'],
-      handler: async (req, _res, json) => {
-        const cronSecret = env.CRON_SECRET
-        if (!cronSecret) return json(500, { error: 'not_configured' })
-        if (!cronAuthorized(req, cronSecret)) {
-          return json(401, { error: 'unauthorized' })
-        }
-        if (!env.DATABASE_URL) {
-          return json(500, { error: 'not_configured' })
-        }
-
-        const sql = getDb(env)
-        try {
-          const summary = await runWinbackCampaign({
-            env,
-            sql,
-            appBaseUrl,
-            nowMs: Date.now(),
-            unsubscribeUrlFor: (email) => winbackUnsubUrl(email, env, appBaseUrl),
-            // Any row for the address that still grants the Fold — a new
-            // subscription, a gift, a comp. Throws (that leaver waits a day)
-            // rather than guess when a lookup can't run.
-            isOnFold: async (email) => {
-              if (!stripe) throw new Error('Stripe not configured')
-              const rows = await membershipRowsForEmail(env, stripe, email)
-              return rows.some((row) => liveAxes(row).circle)
-            },
-          })
-          json(200, summary)
-        } catch (err) {
-          console.error('[cron] winback failed:', err)
-          json(500, { error: 'winback_run_failed' })
-        }
-      },
+    // Invite members who left Ark+ or the Fold six months ago to come back. Scans the
+    // cancellation record (which outlives the membership row), skips anyone
+    // who has resubscribed or opted out, sends a one-time Resend invitation,
+    // and records each send so nobody is mailed twice. See lib/winback.ts.
+    dbCronRoute('winback', 'winback_run_failed', async (sql) => {
+      return runWinbackCampaign({
+        env,
+        sql,
+        appBaseUrl,
+        nowMs: Date.now(),
+        unsubscribeUrlFor: (email) => winbackUnsubUrl(email, env, appBaseUrl),
+        // Any row for the address that still grants the Fold — a new
+        // subscription, a gift, a comp. Throws (that leaver waits a day)
+        // rather than guess when a lookup can't run.
+        isOnFold: async (email) => {
+          if (!stripe) throw new Error('Stripe not configured')
+          const rows = await membershipRowsForEmail(env, stripe, email)
+          return rows.some((row) => liveAxes(row).circle)
+        },
+      })
     }),
-    defineRoute({
-      // Prune expired webhook-dedup markers from both event tables. Monthly
-      // Vercel cron; deletes rows older than the retention window so the
-      // append-only markers don't grow unbounded. Safe to run any time — a
-      // no-op when nothing has aged out. See WEBHOOK_EVENT_RETENTION_DAYS.
-      path: '/api/cron/prune-webhook-events',
-      method: ['POST', 'GET'],
-      handler: async (req, _res, json) => {
-        const cronSecret = env.CRON_SECRET
-        if (!cronSecret) return json(500, { error: 'not_configured' })
-        if (!cronAuthorized(req, cronSecret)) {
-          return json(401, { error: 'unauthorized' })
-        }
-        if (!env.DATABASE_URL) {
-          return json(500, { error: 'not_configured' })
-        }
-
-        const sql = getDb(env)
-        try {
-          // make_interval binds the day count as a value; RETURNING id lets the
-          // driver report each delete's row count for the run summary.
-          const stripeDeleted = await sql`
-            delete from stripe_webhook_events
-            where received_at < now() - make_interval(days => ${WEBHOOK_EVENT_RETENTION_DAYS})
-            returning id`
-          const beehiivDeleted = await sql`
-            delete from beehiiv_webhook_events
-            where received_at < now() - make_interval(days => ${WEBHOOK_EVENT_RETENTION_DAYS})
-            returning id`
-          const supportDeleted = await sql`
-            delete from support_conversations
-            where created_at < now() - make_interval(days => ${SUPPORT_SESSION_RETENTION_DAYS})
-            returning id`
-          json(200, {
-            stripe: stripeDeleted.length,
-            beehiiv: beehiivDeleted.length,
-            support: supportDeleted.length,
-          })
-        } catch (err) {
-          console.error('[cron] prune-webhook-events failed:', err)
-          json(500, { error: 'prune_failed' })
-        }
-      },
+    // Prune expired webhook-dedup markers and old help-widget sessions. Monthly
+    // Vercel cron; deletes rows older than the retention window so the
+    // append-only markers don't grow unbounded. Safe to run any time — a
+    // no-op when nothing has aged out. See WEBHOOK_EVENT_RETENTION_DAYS.
+    dbCronRoute('prune-webhook-events', 'prune_failed', async (sql) => {
+      // make_interval binds the day count as a value; RETURNING id lets the
+      // driver report each delete's row count for the run summary.
+      const stripeDeleted = await sql`
+        delete from stripe_webhook_events
+        where received_at < now() - make_interval(days => ${WEBHOOK_EVENT_RETENTION_DAYS})
+        returning id`
+      const beehiivDeleted = await sql`
+        delete from beehiiv_webhook_events
+        where received_at < now() - make_interval(days => ${WEBHOOK_EVENT_RETENTION_DAYS})
+        returning id`
+      const supportDeleted = await sql`
+        delete from support_conversations
+        where created_at < now() - make_interval(days => ${SUPPORT_SESSION_RETENTION_DAYS})
+        returning id`
+      return {
+        stripe: stripeDeleted.length,
+        beehiiv: beehiivDeleted.length,
+        support: supportDeleted.length,
+      }
     }),
   ]
 }

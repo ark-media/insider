@@ -88,9 +88,9 @@ function PostPage() {
     void router.invalidate();
   }, [state.kind, isArkPlusSubscriber, router]);
 
-  const found = posts.find((p) => p.slug === postSlug);
+  const post = posts.find((p) => p.slug === postSlug);
 
-  if (!found) {
+  if (!post) {
     return (
       <PageShell
         breadcrumbs={
@@ -119,8 +119,7 @@ function PostPage() {
     );
   }
 
-  const gated = found.tier === "ark-plus" && !isArkPlusSubscriber;
-  const post = found;
+  const gated = post.tier === "ark-plus" && !isArkPlusSubscriber;
 
   // `publishedAt` is a calendar date ('YYYY-MM-DD'). Read its components
   // directly instead of going through Date, whose local-time getters dated the

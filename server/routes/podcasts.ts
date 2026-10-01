@@ -1,13 +1,14 @@
 // Beehiiv episode catalog.
 //
 // Proxies the Beehiiv Podcasts API and projects the response down to our
-// Episode shape. Three routes:
+// Episode shape. Four routes:
 //
 //   GET /api/podcasts/episodes — list. Summaries only, no show notes.
+//   GET /api/podcasts/latest   — the newest episode of each public show.
 //   GET /api/podcasts/episode  — one episode, with show notes html.
 //   GET /api/podcasts/show     — show-level metadata (description).
 //
-// All three are cached in-process AND behind an edge cache-control header.
+// All four are cached in-process AND behind an edge cache-control header.
 // The in-process layer only deduplicates concurrent calls on one warm
 // instance (see shared/ttl-cache.ts); the header is what stops every cold
 // start from paying for the slowest upstream in the app.
@@ -330,7 +331,7 @@ async function fetchEpisodePage(
 }
 
 async function fetchEpisodes(
-  { publicationId, token }: BeehiivConfig,
+  config: BeehiivConfig,
   podcastId: string,
   showSlug: string,
 ): Promise<EpisodeSummary[]> {
@@ -339,16 +340,16 @@ async function fetchEpisodes(
   // becomes the episode links' route params. Keying on the podcast id alone
   // would serve one slug's episode links to another slug pointed at the same
   // Beehiiv show.
-  const cacheKey = `${publicationId}:${podcastId}:${showSlug}`
+  const cacheKey = `${config.publicationId}:${podcastId}:${showSlug}`
   const cached = episodesCache.get(cacheKey)
   if (cached) return cached
   return episodesFlight.run(cacheKey, () =>
-    loadEpisodes({ publicationId, token }, podcastId, showSlug, cacheKey),
+    loadEpisodes(config, podcastId, showSlug, cacheKey),
   )
 }
 
 async function loadEpisodes(
-  { publicationId, token }: BeehiivConfig,
+  config: BeehiivConfig,
   podcastId: string,
   showSlug: string,
   cacheKey: string,
@@ -359,7 +360,7 @@ async function loadEpisodes(
   // it would be cached and served as if it were complete.
   const pages = await Promise.all(
     Array.from({ length: EPISODE_PAGE_COUNT }, (_, i) =>
-      fetchEpisodePage({ publicationId, token }, podcastId, i + 1),
+      fetchEpisodePage(config, podcastId, i + 1),
     ),
   )
 
@@ -545,14 +546,12 @@ async function loadLatestEpisodes(
 }
 
 async function fetchShowDescription(
-  { publicationId, token }: BeehiivConfig,
+  config: BeehiivConfig,
   podcastId: string,
 ): Promise<string> {
   const cached = showCache.get(podcastId)
   if (cached !== null) return cached
-  return showFlight.run(podcastId, () =>
-    loadShowDescription({ publicationId, token }, podcastId),
-  )
+  return showFlight.run(podcastId, () => loadShowDescription(config, podcastId))
 }
 
 async function loadShowDescription(
@@ -616,10 +615,7 @@ export function podcastRoutes({ env }: Deps): Route[] {
 
         // Public shows only, so the body is identical for every caller and a
         // shared edge can hold it. No entitlement lookup, no `Vary`.
-        res.setHeader(
-          'cache-control',
-          'public, s-maxage=300, stale-while-revalidate=1800',
-        )
+        setReadCacheControl(res, { gated: false, maxAgeSec: 300 })
 
         const config = resolveConfig(env)
         if (!config) {

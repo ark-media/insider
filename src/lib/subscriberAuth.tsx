@@ -12,6 +12,7 @@ import {
   persistFeedsSetUp,
   persistSpotifyFollowOpened,
   type Me,
+  type UserFeed,
 } from "./auth";
 import { hasAnySession } from "./tokenStore";
 import { identifyUser, resetIdentity } from "./observability";
@@ -21,6 +22,16 @@ export type SubscriberAuthState =
   | { kind: "loading" }
   | { kind: "guest" }
   | { kind: "member"; me: Me };
+
+// Apply `fn` to each of a member's feeds. Any other state comes back as it was.
+function mapFeeds(
+  state: SubscriberAuthState,
+  fn: (feed: UserFeed) => UserFeed,
+): SubscriberAuthState {
+  return state.kind === "member"
+    ? { ...state, me: { ...state.me, feeds: state.me.feeds.map(fn) } }
+    : state;
+}
 
 // True only for a signed-in member who holds the arkPlus axis (the private
 // feed) — Ark+ or Bundle. A free user is still `kind: "member"` (Auth0 login,
@@ -213,19 +224,9 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
     // Optimistic in-memory patch — instant check-off. Only flip feeds that
     // aren't already set up, so this can never downgrade a confirmed feed.
     setState((prev) =>
-      prev.kind === "member"
-        ? {
-            ...prev,
-            me: {
-              ...prev.me,
-              feeds: prev.me.feeds.map((f) =>
-                ids.has(f.id) && !f.activated && !f.pending
-                  ? { ...f, pending: true }
-                  : f,
-              ),
-            },
-          }
-        : prev,
+      mapFeeds(prev, (f) =>
+        ids.has(f.id) && !f.activated && !f.pending ? { ...f, pending: true } : f,
+      ),
     );
     // Persist server-side (fire-and-forget; swallows its own errors).
     void persistFeedsSetUp(feedIds);
@@ -234,17 +235,9 @@ export function SubscriberAuthProvider({ children }: { children: ReactNode }) {
   const markSpotifyFollowOpened = useCallback((feedId: string) => {
     const patch = (opened: boolean) =>
       setState((prev) =>
-        prev.kind === "member"
-          ? {
-              ...prev,
-              me: {
-                ...prev.me,
-                feeds: prev.me.feeds.map((f) =>
-                  f.id === feedId ? { ...f, spotify_follow_opened: opened } : f,
-                ),
-              },
-            }
-          : prev,
+        mapFeeds(prev, (f) =>
+          f.id === feedId ? { ...f, spotify_follow_opened: opened } : f,
+        ),
       );
     followOpenedIds.current.add(feedId);
     patch(true);

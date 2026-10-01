@@ -22,7 +22,6 @@ export function Modal({
   scrollBody?: boolean;
   children: React.ReactNode;
 }) {
-  const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<Element | null>(null);
   const onCloseRef = useRef(onClose);
@@ -86,7 +85,6 @@ export function Modal({
 
   return (
     <div
-      ref={backdropRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby={labelledBy}

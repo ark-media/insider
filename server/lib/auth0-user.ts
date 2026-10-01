@@ -183,7 +183,7 @@ export async function findOrCreateAuth0User(
   let userId: string | undefined
   try {
     const created = await mgmt.users.create({
-      connection: 'Username-Password-Authentication',
+      connection: DB_CONNECTION,
       email,
       password: tempPassword,
       ...(givenName ? { given_name: givenName.slice(0, MAX_NAME_PART_LEN) } : {}),
@@ -310,7 +310,7 @@ export async function updateAuth0Name(
       ...(familyName ? { family_name: familyName } : {}),
       name: [givenName, familyName].filter(Boolean).join(' '),
       // Auth0 merges app_metadata at the top level, so writing this one key
-      // leaves the tier mirror sitting beside it untouched.
+      // leaves any others sitting beside it untouched.
       ...(opts.setByMember
         ? { app_metadata: { [NAME_SET_BY_MEMBER_KEY]: true } }
         : {}),

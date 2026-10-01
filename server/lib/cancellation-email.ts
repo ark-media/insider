@@ -12,9 +12,10 @@
 
 import {
   ARK_MEDIA_TEAM,
-  MANAGE_FOOTER,
   esc,
+  greeting,
   link,
+  MANAGE_FOOTER,
   renderShell,
   supportLine,
 } from './welcome-email.js'
@@ -88,7 +89,6 @@ export function renderCancellationEmail(p: CancellationEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
   const label = TIER_EMAIL_LABEL[p.tier]
   const noun = p.tier === 'ark-plus' ? 'subscription' : 'membership'
 
@@ -106,7 +106,7 @@ export function renderCancellationEmail(p: CancellationEmailParams): {
     preheader: "Here's what happens next.",
     eyebrow: 'Cancellation confirmed',
     headlineHtml: `Your ${label} ${noun} has been canceled.`,
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml: confirms,
     bodySecondHtml: whatYouKeep(p.tier, p.accessUntil),
     ctaHref: p.feedbackUrl,
@@ -155,7 +155,6 @@ export function renderDebundleEmail(p: DebundleEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
   // Two forms of each name. "The Fold" is the product, and it is what a subject
   // line or a button says; "the Fold" is how it reads inside a sentence. Mixing
   // them in one paragraph — which this copy did — looks like two things.
@@ -180,7 +179,7 @@ export function renderDebundleEmail(p: DebundleEmailParams): {
     preheader: `${keptLabel} continues. Here's what changes.`,
     eyebrow: 'Membership updated',
     headlineHtml: `You&rsquo;ve removed ${removedLabel} from your membership.`,
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml: `This confirms you&rsquo;re keeping ${keptInline} and dropping ${removedInline}. Nothing changes today — ${removedInline} stays yours until the change takes effect ${when}. ${losing}`,
     bodySecondHtml: `${priceSentence} You&rsquo;ll see the new amount on your next bill.`,
     ctaHref: p.accountUrl,

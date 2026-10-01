@@ -10,6 +10,7 @@ import {
   type MigrationConfig,
   type ReminderConfig,
 } from "../../lib/admin";
+import { errMessage } from "../../lib/errMessage";
 import {
   DEFAULT_REMINDER_CONFIG,
   validateReminderConfig,
@@ -64,7 +65,7 @@ function FeedRemindersAdmin() {
       },
       (err: unknown) => {
         if (!live) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load.");
+        setLoadError(errMessage(err, "Failed to load."));
         setLoading(false);
       },
     );
@@ -93,7 +94,7 @@ function FeedRemindersAdmin() {
       setForm(formFrom(await saveReminderConfig(v.value)));
       setSaved(true);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save.");
+      setFormError(errMessage(err, "Failed to save."));
     } finally {
       setSaving(false);
     }
@@ -290,7 +291,7 @@ function MigrationCampaignForm() {
       },
       (err: unknown) => {
         if (!live) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load.");
+        setLoadError(errMessage(err, "Failed to load."));
         setLoading(false);
       },
     );
@@ -318,7 +319,7 @@ function MigrationCampaignForm() {
       setForm(migrationFormFrom(await saveMigrationConfig(v.value)));
       setSaved(true);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save.");
+      setFormError(errMessage(err, "Failed to save."));
     } finally {
       setSaving(false);
     }

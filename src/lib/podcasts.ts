@@ -13,7 +13,7 @@ import { shows, type Show, type ShowSlug } from "../data/shows";
 
 type ApiResponse = { episodes?: Episode[] };
 
-async function fetchEpisodesFromApi(showSlug: ShowSlug): Promise<Episode[]> {
+export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
   const res = await fetch(
     `/api/podcasts/episodes?show=${encodeURIComponent(showSlug)}`,
     { credentials: "same-origin" },
@@ -21,10 +21,6 @@ async function fetchEpisodesFromApi(showSlug: ShowSlug): Promise<Episode[]> {
   if (!res.ok) throw new Error(`episodes request failed (${res.status})`);
   const body = (await res.json()) as ApiResponse;
   return body.episodes ?? [];
-}
-
-export async function listEpisodes(showSlug: ShowSlug): Promise<Episode[]> {
-  return fetchEpisodesFromApi(showSlug);
 }
 
 export type EpisodeWithShow = Episode & { show: Show };

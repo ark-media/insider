@@ -36,10 +36,8 @@ const PAPER = '#eef3fc' // --color-navy-900 (light): the page canvas
 const SURFACE = '#ffffff' // --color-navy-800 (light): the card
 const INK = '#0b153c' // --color-navy: wordmark and headings
 const CYAN = '#0a6fad' // --color-cyan (light): brand #3eb5f9 fails AA on white
-// Exported for other emails (e.g. the feed-setup reminder) that reuse the
-// shell and need the brand cyan for inline links.
-export const BRAND_CYAN = CYAN
-// Same, for the footer's small-print links.
+// Exported for other emails that reuse the shell and need the muted colour for
+// the footer's small-print links.
 export const BRAND_FG_MUTED = '#686e86'
 const RULE = '#dddee4' // --color-rule, over the card
 const FG = '#373f5f' // --color-fg (10.3:1 on the card)
@@ -190,6 +188,14 @@ export function renderShell(p: ShellParams): string {
 // ---------------------------------------------------------------------------
 // Shared copy blocks (the doc's placeholders, resolved)
 // ---------------------------------------------------------------------------
+
+// The salutation every lifecycle email opens with. The name is already a clean
+// first name (callers resolve it through greetingFirstName); without one the
+// email opens "Hi there,".
+export function greeting(firstName: string | undefined): string {
+  const first = firstName?.trim()
+  return first ? `Hi ${esc(first)},` : 'Hi there,'
+}
 
 export function link(href: string, label: string): string {
   return `<a href="${href}" style="color:${CYAN};">${label}</a>`
@@ -371,7 +377,7 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
         preheader: 'How to unlock all your new benefits.',
         eyebrow: "You're in",
         headlineHtml: 'Welcome to Ark+.',
-        greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+        greetingHtml: greeting(first),
         bodyHtml:
           "You're officially a member! Thank you for joining, and welcome to Ark+.",
         bodySecondHtml: arkPlusStep,
@@ -391,7 +397,7 @@ export function renderSubscriberWelcomeEmail(p: SubscriberWelcomeEmailParams): {
       preheader: "You're in on everything. Here's how to get started.",
       eyebrow: "You're in",
       headlineHtml: 'Welcome to Ark+ and the Fold.',
-      greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+      greetingHtml: greeting(first),
       bodyHtml:
         "You're officially a member of both. Thank you for joining, and welcome to everything Ark Media has to offer.",
       bodySecondHtml: 'There are two quick steps to unlock everything.',
@@ -530,7 +536,7 @@ export function renderGiftRedemptionEmail(p: GiftRedemptionEmailParams): {
     preheader: esc(headlineHtml),
     eyebrow: 'A gift for you',
     headlineHtml,
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(first),
     bodyHtml: gift.includes
       ? `Claim your gift to start your membership. ${gift.includes}`
       : 'Claim your gift to start your membership.',
@@ -567,16 +573,12 @@ export function renderCircleWelcomeEmail(p: CircleWelcomeEmailParams): {
   html: string
 } {
   const first = firstName(p.name, p.email)
-  const isNewAccount = Boolean(p.isNewAccount)
-  // Only the new-account half of ctaPrelude is wanted here: the body above
-  // already told an existing member to sign in with the account they have, and
-  // saying it twice in four lines reads as a warning rather than reassurance.
-  const prelude = isNewAccount ? ctaPrelude(true, p.welcomeUrl) : ''
+  const prelude = ctaPrelude(Boolean(p.isNewAccount), p.welcomeUrl)
   const html = renderShell({
     preheader: "Here's how to get started.",
     eyebrow: "You're in",
     headlineHtml: 'Welcome to the Fold.',
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(first),
     bodyHtml: "You're in! Thank you for joining the Fold.",
     bodySecondHtml: foldAppLinks("If you haven't already, download"),
     ctaHref: p.welcomeUrl,
@@ -675,7 +677,7 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
         preheader: "Here's how to get started.",
         eyebrow: 'Added to your membership',
         headlineHtml: "You've added the Fold to your membership.",
-        greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+        greetingHtml: greeting(first),
         bodyHtml:
           "You're officially a member of the Fold too. Thank you for upgrading.",
         bodySecondHtml: `${priceSentence}${billSentence}`,
@@ -695,7 +697,7 @@ export function renderAxisAddedEmail(p: AxisAddedEmailParams): {
       preheader: 'Your private feed is ready — your membership covers everything now.',
       eyebrow: 'Added to your membership',
       headlineHtml: 'Your private feed is ready.',
-      greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+      greetingHtml: greeting(first),
       bodyHtml: `You just added the private podcast feed — ${FEED_INCLUDED}.`,
       bodySecondHtml: `${priceSentence}${billSentence}`,
       ctaHref: p.setupUrl,

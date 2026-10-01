@@ -32,7 +32,7 @@ type View =
   | { kind: "loading" }
   | { kind: "offer"; offer: WelcomeOffer }
   | { kind: "ineligible"; reason: string }
-  | { kind: "done"; plan: "monthly" | "yearly"; renewsAt: string | null }
+  | { kind: "done"; renewsAt: string | null }
   | { kind: "error" };
 
 // Why the offer isn't available, in the member's terms. Each one names what to
@@ -85,11 +85,7 @@ function OfferPage() {
     if (state.kind !== "member") return;
     let live = true;
     void getWelcomeOffer().then((result) => {
-      if (!live) return;
-      if (result.kind === "offer") setResolved({ kind: "offer", offer: result.offer });
-      else if (result.kind === "ineligible")
-        setResolved({ kind: "ineligible", reason: result.reason });
-      else setResolved({ kind: "error" });
+      if (live) setResolved(result);
     });
     return () => {
       live = false;
@@ -235,11 +231,7 @@ function OfferConfirm({
       // Ark+ /api/me it loaded before the charge — and "Back to your account"
       // is a client-side hop, so /account would show the Fold as not included.
       void refresh();
-      setView({
-        kind: "done",
-        plan: result.plan ?? plan,
-        renewsAt: result.renewsAt ?? null,
-      });
+      setView({ kind: "done", renewsAt: result.renewsAt ?? null });
       return;
     }
     // An eligibility answer is not a retry — the state changed under them.

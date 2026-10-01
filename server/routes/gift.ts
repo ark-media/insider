@@ -6,12 +6,11 @@
 //     currency_options (the session's `currency` selects it) — the same
 //     per-currency model as the subscription checkout, replacing the old, inert
 //     Adaptive Pricing. Gift metadata (tier/term/currency) is stamped on the
-//     underlying PaymentIntent (payment_intent_data) so activation happens on the
-//     webhook (payment_intent.succeeded) via the activator.
+//     underlying PaymentIntent (payment_intent_data) so the webhook
+//     (payment_intent.succeeded) can issue the gift.
 //   GET  /api/gift/status         — poll for activation. The giver just
 //     created this Session moments ago, so an email param matching the
-//     Session's giver_email metadata is sufficient proof of ownership (same
-//     pattern as /api/stripe/subscription-status).
+//     Session's giver_email metadata is sufficient proof of ownership.
 
 import { GIFT_TERM_DAYS, type GiftTerm } from '../lib/activation.js'
 import {
@@ -84,6 +83,14 @@ const LIVE_MEMBERSHIP_STATUSES = new Set(['active', 'trialing', 'past_due', 'unp
 // chose — so they are refused here rather than cleaned up downstream.
 const NAME_CONTROL_CHARS =
   /[\p{Cc}\u2028\u2029\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/u
+
+// The shape of a gift redemption token (a base64url SHA-256 HMAC).
+const GIFT_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/
+
+// Why a gift that is no longer pending can't be claimed.
+function spentGiftError(status: GiftRow['status']): 'gift_voided' | 'already_redeemed' {
+  return status === 'void' ? 'gift_voided' : 'already_redeemed'
+}
 
 // A gift name as the rest of the flow should see it, or null when it can't be
 // accepted. Absent and blank are both fine (names are optional) and come back
@@ -314,10 +321,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           // for a gift regardless of its plan target, which is what
           // /api/promo/active?term= resolves.
           allow_promotion_codes: true,
-          // Stamp the PaymentIntent so the existing webhook
-          // (payment_intent.succeeded, kind:'gift') activates the grant +
-          // entitlement unchanged — the Session is just the funnel that
-          // creates it.
+          // Stamp the PaymentIntent so the webhook (payment_intent.succeeded,
+          // kind:'gift') can issue the gift — the Session is just the funnel
+          // that creates it.
           payment_intent_data: {
             receipt_email: giverEmail,
             description: `Ark Insider gift · ${termLabel}`,
@@ -400,7 +406,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // gift row remains the authority at redemption; this shape check keeps
         // arbitrary values out of the handoff cookie without needing to expose
         // recipient or gift existence to an unauthenticated caller.
-        if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+        if (!GIFT_TOKEN_RE.test(token)) {
           return json(400, { error: 'expired_link' })
         }
 
@@ -417,7 +423,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
       method: 'GET',
       handler: async (req, res, json) => {
         const token = readCookie(req, GIFT_CLAIM_COOKIE_NAME)
-        const pending = token ? /^[A-Za-z0-9_-]{43}$/.test(token) : false
+        const pending = token ? GIFT_TOKEN_RE.test(token) : false
         res.setHeader('cache-control', 'private, no-store')
         return json(200, { pending })
       },
@@ -441,7 +447,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         if (!session) return json(401, { error: 'unauthenticated' })
 
         const token = readCookie(req, GIFT_CLAIM_COOKIE_NAME)
-        if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
+        if (!token || !GIFT_TOKEN_RE.test(token)) {
           clearGiftClaimCookie(_res, env)
           return json(400, { error: 'token required' })
         }
@@ -454,9 +460,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         }
         if (gift.status !== 'pending') {
           clearGiftClaimCookie(_res, env)
-          return json(409, {
-            error: gift.status === 'void' ? 'gift_voided' : 'already_redeemed',
-          })
+          return json(409, { error: spentGiftError(gift.status) })
         }
 
         // Resolve the recipient's primary Auth0 sub. They're signed in, so this
@@ -471,12 +475,9 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
           gift,
           { email: session.email, name: sessionName(session), auth0Sub },
         )
-        if (!result.ok) {
-          clearGiftClaimCookie(_res, env)
-          return json(409, { error: result.error })
-        }
-
         clearGiftClaimCookie(_res, env)
+        if (!result.ok) return json(409, { error: result.error })
+
         return json(200, {
           redeemed: true,
           applied: result.applied,
@@ -518,9 +519,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // mint a session in either case: a spent or reversed magic link must not
         // double as a standing login credential.
         if (gift.status !== 'pending') {
-          return json(409, {
-            error: gift.status === 'void' ? 'gift_voided' : 'already_redeemed',
-          })
+          return json(409, { error: spentGiftError(gift.status) })
         }
 
         // Provision the recipient's Auth0 login now — pre-verified, since
@@ -602,9 +601,7 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         const gift = await getGiftByToken(getDb(env), claim.giftToken)
         if (!gift) return json(404, { error: 'invalid_gift' })
         if (gift.status !== 'pending') {
-          return json(409, {
-            error: gift.status === 'void' ? 'gift_voided' : 'already_redeemed',
-          })
+          return json(409, { error: spentGiftError(gift.status) })
         }
 
         const tier = coerceTier(gift.tier)
@@ -755,6 +752,18 @@ export function planGiftRedemption(
   }
 }
 
+function giftAppliedOutcome(o: {
+  creditApplied: boolean
+  extended: boolean
+  grantedAny: boolean
+  held: boolean
+}): GiftApplied {
+  if (o.creditApplied) return 'credit'
+  if (o.extended) return o.grantedAny ? 'mixed' : 'extended'
+  if (o.held && !o.grantedAny) return 'held'
+  return 'membership'
+}
+
 // The IO core of a redemption, shared by the session-authenticated POST
 // /api/gift/redeem and the magic-link POST /api/gift/claim. The caller has
 // already loaded a PENDING gift and resolved the recipient's Auth0 sub. Decision
@@ -828,20 +837,19 @@ export async function redeemGiftForRecipient(
 
   // The row's per-axis expiries. A null is preserved by the upsert's coalesce, so
   // a single-axis gift never clears the other axis's term or a live sub's fields.
+  // A live paid subscription's billing fields stay its own; otherwise the row
+  // takes the gift's.
+  const paid = plan.hasPaidSub && existing != null ? existing : null
+  const giftCurrency = gift.amount_cents != null ? (gift.currency ?? 'usd') : null
   await upsertMembership(sql, {
     auth0_sub: auth0Sub,
     stripe_customer_id: existing?.stripe_customer_id ?? null,
     stripe_subscription_id: existing?.stripe_subscription_id ?? null,
     tier: plan.rowTier,
-    status: plan.hasPaidSub && existing != null ? existing.status : 'active',
-    plan: plan.hasPaidSub && existing != null ? existing.plan : gift.plan,
-    amount_cents: plan.hasPaidSub && existing != null ? existing.amount_cents : gift.amount_cents,
-    currency:
-      plan.hasPaidSub && existing != null
-        ? existing.currency
-        : gift.amount_cents != null
-          ? (gift.currency ?? 'usd')
-          : null,
+    status: paid ? paid.status : 'active',
+    plan: paid ? paid.plan : gift.plan,
+    amount_cents: paid ? paid.amount_cents : gift.amount_cents,
+    currency: paid ? paid.currency : giftCurrency,
     current_period_end: existing?.current_period_end ?? null,
     cancel_at: existing?.cancel_at ?? null,
     ark_plus_gift_expires_at: grant.arkPlusEndsAt,
@@ -949,15 +957,12 @@ export async function redeemGiftForRecipient(
   // gift only had a Stripe half and it didn't happen (staff were alerted above).
   // Never claim a membership was created when only a sub was extended or credit
   // applied — or when nothing was.
-  const applied: GiftApplied = creditApplied
-    ? 'credit'
-    : grantedAny && extended
-      ? 'mixed'
-      : extended
-        ? 'extended'
-        : unapplied && !grantedAny
-          ? 'held'
-          : 'membership'
+  const applied = giftAppliedOutcome({
+    creditApplied,
+    extended,
+    grantedAny,
+    held: unapplied !== null,
+  })
   const expiresAt = grant.arkPlusEndsAt ?? grant.circleEndsAt ?? undefined
 
   // Closes the gift loop server-side (BI plan §4.2). The client already fires

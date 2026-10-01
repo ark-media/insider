@@ -152,7 +152,7 @@ function validateSession(
   }
 
   const rsvpUrl = normalizeRsvpUrl(r.rsvpUrl)
-  if (rsvpUrl !== undefined && typeof rsvpUrl === 'object') {
+  if (typeof rsvpUrl === 'object') {
     return { ok: false, error: `${where}: ${rsvpUrl.error}` }
   }
 

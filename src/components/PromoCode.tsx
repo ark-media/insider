@@ -90,15 +90,25 @@ function discountValueMinor(session: DiscountedSession): number {
   return applied.minorUnitsAmount * invoices;
 }
 
+// The one sentence for the house sale: promised on the email step, confirmed on
+// the payment step.
+function SaleApplied({ promo }: { promo: PromoInfo }) {
+  return (
+    <>
+      <span className="font-semibold">
+        {formatCouponDiscount(promo.percentOff, promo.amountOffCents, promo.currency, promo.minorFactor)}
+      </span>{" "}
+      applied automatically{promo.name ? ` — ${promo.name}` : ""}.
+    </>
+  );
+}
+
 // The house sale, before a Session exists (the email step). Announces the
 // discount the buyer is about to get without them doing anything.
 export function PromoBanner({ promo }: { promo: PromoInfo }) {
   return (
     <p role="status" className={`mt-3 ${noticeClass}`}>
-      <span className="font-semibold">
-        {formatCouponDiscount(promo.percentOff, promo.amountOffCents, promo.currency, promo.minorFactor)}
-      </span>{" "}
-      applied automatically{promo.name ? ` — ${promo.name}` : ""}.
+      <SaleApplied promo={promo} />
     </p>
   );
 }
@@ -209,10 +219,7 @@ export function PromoCode({
         trackEvent("promo_code_applied", {
           surface,
           code: typed,
-          discount_minor:
-            result.type === "success"
-              ? result.session.total.discount.minorUnitsAmount
-              : 0,
+          discount_minor: result.session.total.discount.minorUnitsAmount,
           currency: checkout.currency,
         });
       }
@@ -257,10 +264,7 @@ export function PromoCode({
     <div className="space-y-2">
       {houseApplied && promo ? (
         <p role="status" className={noticeClass}>
-          <span className="font-semibold">
-            {formatCouponDiscount(promo.percentOff, promo.amountOffCents, promo.currency, promo.minorFactor)}
-          </span>{" "}
-          applied automatically{promo.name ? ` — ${promo.name}` : ""}.
+          <SaleApplied promo={promo} />
         </p>
       ) : null}
 

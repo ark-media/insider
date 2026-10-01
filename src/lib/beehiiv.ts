@@ -8,6 +8,7 @@ import {
   unsafeAssumeSanitized,
   type SanitizedHtml,
 } from "../../shared/sanitized-html";
+import { isValidEmail } from "../../shared/validation";
 
 /**
  * Beehiiv client.
@@ -69,7 +70,7 @@ export async function subscribeEmail(
   email: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const trimmed = email.trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+  if (!isValidEmail(trimmed)) {
     return { ok: false, error: "That doesn't look like a valid email." };
   }
   if (slug !== newsletter.slug) {

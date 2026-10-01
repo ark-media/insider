@@ -97,13 +97,9 @@ function formatDate(iso: string): string {
   return formatTimestamp(iso, "long");
 }
 
-// A human headline for a coupon-backed offer, e.g. "20% off for 6 months".
-function couponHeadline(o: RetentionOffer): string {
-  const amount = formatCouponDiscount(o.percentOff, o.amountOff, o.currency, o.minorFactor);
-  if (o.durationMonths) {
-    return `${amount} for ${o.durationMonths} month${o.durationMonths === 1 ? "" : "s"}`;
-  }
-  return amount;
+// A coupon-backed offer's discount, e.g. "20% off".
+function discountLabel(o: RetentionOffer): string {
+  return formatCouponDiscount(o.percentOff, o.amountOff, o.currency, o.minorFactor);
 }
 
 // How long a coupon-backed rate lasts, as the trailing clause of the design's
@@ -113,6 +109,11 @@ function couponTerm(o: RetentionOffer): string {
     return ` for ${o.durationMonths} month${o.durationMonths === 1 ? "" : "s"}`;
   }
   return "";
+}
+
+// A human headline for a coupon-backed offer, e.g. "20% off for 6 months".
+function couponHeadline(o: RetentionOffer): string {
+  return `${discountLabel(o)}${couponTerm(o)}`;
 }
 
 // Copy for each offer kind's headline + supporting line, per the product
@@ -175,7 +176,7 @@ function offerCopy(
     case "affordability_coupon": {
       const list = o.currentPriceCents;
       return {
-        heading: `Keep your benefits for ${formatCouponDiscount(o.percentOff, o.amountOff, o.currency, o.minorFactor)}`,
+        heading: `Keep your benefits for ${discountLabel(o)}`,
         body:
           list != null ? (
             <>
@@ -206,12 +207,11 @@ function offerCta(o: RetentionOffer): string {
       return "Switch to monthly";
     case "supporter_coupon":
     case "affordability_coupon":
-      return `Redeem ${formatCouponDiscount(o.percentOff, o.amountOff, o.currency, o.minorFactor)} discount`;
+      return `Redeem ${discountLabel(o)} discount`;
   }
 }
 
 type Screen =
-  | "loading"
   // Bundle entry = the "keep any services?" checkbox selector (Flows C/D/E).
   | "entry"
   | "mission"
@@ -370,7 +370,7 @@ export function CancelFlow({
   };
 
   const acceptOffer = async (offer: RetentionOffer) => {
-    if (!offer || !flowId) return;
+    if (!flowId) return;
     const intent = intentFor(flowId);
     setBusy(true);
     setError(null);
@@ -622,12 +622,7 @@ export function CancelFlow({
 
   return (
     <Modal open onClose={handleModalClose} className="max-w-md" labelledBy="cancel-title">
-      {screen === "loading" ? (
-        <div role="status" aria-live="polite">
-          <p className="eyebrow">One moment</p>
-          {heading("Loading…")}
-        </div>
-      ) : screen === "entry" ? (
+      {screen === "entry" ? (
         // Bundle: "keep any services?" — checkbox per product with live total.
         // Keep both = no change; keep one = debundle; keep none = cancel all.
         (() => {
@@ -751,8 +746,7 @@ export function CancelFlow({
               onClick={() => {
                 // A/B → their save offers (the offer screen doubles as "Are you
                 // sure?"); bundle → the "keep any services?" selector.
-                if (flowId === "A") void loadOffers("A", "offer");
-                else if (flowId === "B") void loadOffers("B", "offer");
+                if (flowId === "A" || flowId === "B") void loadOffers(flowId, "offer");
                 else setScreen("entry");
               }}
             >

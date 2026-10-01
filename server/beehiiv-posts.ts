@@ -1,7 +1,7 @@
 // Beehiiv API v2 posts → NewsletterPost projection + HTML sanitizer.
 // Lives outside dev-api.ts so the trust boundary (untrusted upstream HTML →
 // allowlisted HTML safe for the client) is easy to read and easy to test in
-// isolation. Mirrors `circle-broadcasts.ts`.
+// isolation.
 //
 // The projection returns `NewsletterPost` directly — the same type the client
 // consumes — so a field added to NewsletterPost surfaces as a type error here
@@ -14,6 +14,7 @@ import type {
   NewsletterSlug,
 } from '../src/data/newsletters.js'
 import type { SanitizedHtml } from '../shared/sanitized-html.js'
+import { stripHtml as stripTags } from './show-notes.js'
 
 // Beehiiv's v2 post shape — only the fields we actually project.
 // `audience` is what gates premium content; `content.free.web` is the HTML
@@ -51,17 +52,7 @@ function stripHtml(html: string): string {
   // Drop <style>/<script> block *contents* before tag-stripping. Beehiiv's
   // web HTML ships with a dozen+ theme `<style>` blocks; if we only strip
   // the tags, the CSS body survives as raw text and leaks into the excerpt.
-  return html
-    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
+  return stripTags(html.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, ' '))
 }
 
 // Allowlist tuned for Beehiiv's web HTML. Email composers emit a broader set
@@ -240,9 +231,7 @@ export function projectBeehiivPost(
   // the title/byline header and the whole issue in premium.web (observed on
   // the live publication, 2026-09-23). Comparing the two bodies catches that,
   // a paywall divider, and per-tier content blocks alike.
-  const freeText = stripHtml(
-    p.content?.free?.web ?? (audience === 'free' ? p.content_html : '') ?? '',
-  )
+  const freeText = stripHtml(selectBeehiivWebHtml(p, 'free'))
   const premiumText = stripHtml(p.content?.premium?.web ?? '')
   const tier: 'free' | 'ark-plus' =
     audience === 'premium' || premiumText.length > freeText.length

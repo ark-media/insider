@@ -16,8 +16,9 @@
 
 import {
   BRAND_FG_MUTED,
-  MANAGE_FOOTER,
   esc,
+  greeting,
+  MANAGE_FOOTER,
 } from './welcome-email.js'
 import { WELCOME_OFFER_CLOSES_LABEL } from '../../shared/welcome-offer.js'
 
@@ -32,7 +33,7 @@ const CTA_BG = '#3eb5f9'
 const FONT = "'Helvetica Neue',Helvetica,Arial,sans-serif"
 
 // The launch banner, hosted on Resend. Alt text restates it for blocked images.
-export const WELCOME_OFFER_BANNER_URL =
+const WELCOME_OFFER_BANNER_URL =
   'https://resend-attachments.s3.amazonaws.com/9oRhukv-HFodR6l2HbSdkt/a4113a72-d356-469e-ba36-6f046789c997'
 const BANNER_ALT =
   'Ark Media announces that their membership has gotten bigger with more exclusive content for the same price.'
@@ -56,7 +57,6 @@ export function renderWelcomeOfferEmail(p: WelcomeOfferEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
   const offer = esc(p.offerPrice)
   const list = esc(p.bundlePrice)
   const terms =
@@ -93,7 +93,7 @@ export function renderWelcomeOfferEmail(p: WelcomeOfferEmailParams): {
             </tr>
             <tr>
               <td style="padding:32px 8px 8px;">
-                ${para(first ? `Hi ${esc(first)},` : 'Hi there,')}
+                ${para(greeting(p.firstName))}
                 ${para('Thank you for being with us from the start. Today we&rsquo;re opening the Fold, our members&rsquo; community, and as an existing subscriber you can move to the bundle &mdash; Ark+ and the Fold together &mdash; at a welcome price.')}
                 ${para(`The bundle is yours at <strong style="color:${INK};">${terms}</strong>. You keep your ${p.plan === 'yearly' ? 'annual' : 'monthly'} plan, and the offer is valid until ${WELCOME_OFFER_CLOSES_LABEL}.`, '0')}
               </td>

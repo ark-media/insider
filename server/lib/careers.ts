@@ -3,12 +3,11 @@
 // endpoint reads only enabled rows.
 //
 // Split into pure helpers (slugify/sanitize/validate — unit-tested with plain
-// objects) and thin DB accessors over `Sql`. Unlike the announcement banner
-// (inline formatting only), a job description is a full document, so the
-// sanitizer here allows block-level tags (headings, lists, paragraphs).
+// objects) and thin DB accessors over `Sql`. A job description is a full
+// document, so the sanitizer allows block-level tags (headings, lists,
+// paragraphs).
 
-import sanitizeHtml from 'sanitize-html'
-import { sanitizeRichText } from './richText.js'
+import { plainText, sanitizeRichText } from './richText.js'
 import type { Sql } from './db.js'
 import type { Career } from '../../shared/career.js'
 
@@ -36,7 +35,7 @@ export function sanitizeCareerDescription(html: string): string {
 
 // A short, plain-text blurb for the list card — strip all markup.
 function sanitizeSummary(text: string): string {
-  return sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} }).trim()
+  return plainText(text)
 }
 
 // URL-safe slug for the /careers/<slug> route. Lowercase, alphanumerics joined
@@ -70,7 +69,6 @@ export function normalizeApplyUrl(raw: unknown): string | null | { error: string
 }
 
 function optionalString(raw: unknown): string | null {
-  if (raw == null) return null
   if (typeof raw !== 'string') return null
   const v = raw.trim()
   return v ? v : null
@@ -114,7 +112,7 @@ export function validateCareerInput(raw: unknown): ValidationResult {
     return { ok: false, error: 'Description is required.' }
   }
   const description = sanitizeCareerDescription(r.description).trim()
-  const textOnly = sanitizeHtml(description, { allowedTags: [], allowedAttributes: {} }).trim()
+  const textOnly = plainText(description)
   if (!textOnly) {
     return { ok: false, error: 'Description has no visible text after sanitizing.' }
   }
@@ -129,7 +127,7 @@ export function validateCareerInput(raw: unknown): ValidationResult {
   let displayOrder = 0
   if (r.displayOrder != null) {
     const n = Number(r.displayOrder)
-    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    if (!Number.isInteger(n)) {
       return { ok: false, error: 'Display order must be a whole number.' }
     }
     displayOrder = n

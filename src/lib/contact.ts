@@ -1,5 +1,5 @@
 import { contactTopics, type ContactTopic } from "../config/urls";
-import { CONTACT_MESSAGE_MAX } from "../../shared/validation";
+import { CONTACT_MESSAGE_MAX, isValidEmail } from "../../shared/validation";
 import {
   isShowSlug,
   type ShowSlug,
@@ -29,7 +29,7 @@ export async function sendContactMessage(input: {
 
   if (!firstName) return { ok: false, error: "Please add your first name." };
   if (!lastName) return { ok: false, error: "Please add your last name." };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!isValidEmail(email)) {
     return { ok: false, error: "That doesn't look like a valid email." };
   }
   if (!contactTopics.some((t) => t.value === input.topic)) {

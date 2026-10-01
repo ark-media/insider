@@ -9,7 +9,6 @@
 //     calls this before Auth0 logout so brand-new subscribers fully sign
 //     out without leaving a 30-min cookie behind.
 
-import type Stripe from 'stripe'
 import * as client from 'openid-client'
 import { tierFromSubscription } from './stripe/webhook.js'
 import { AUTH0_DOMAIN } from '../auth0.js'
@@ -123,8 +122,7 @@ async function loadOidcConfig(
 
 // Defense against replay of leaked (checkout_session_id, email) pairs:
 // auto-login is only valid during the brief window right after checkout. After
-// that, the user logs in normally via Auth0 with the password they set from the
-// reset email.
+// that, the user logs in normally (an emailed code or Google).
 const AUTO_LOGIN_WINDOW_SEC = 60 * 60
 
 export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[] {
@@ -197,7 +195,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
           typeof customer === 'object' &&
           customer &&
           !('deleted' in customer && customer.deleted)
-            ? (customer as Stripe.Customer).email?.toLowerCase() ?? null
+            ? customer.email?.toLowerCase() ?? null
             : null
         if (!customerEmail || customerEmail !== emailParam) {
           return json(403, { error: 'Forbidden' })

@@ -75,12 +75,7 @@ export function tierFromEntitlementString(raw: string | null | undefined): Tier 
       .map((s) => s.trim())
       .filter(Boolean),
   )
-  const arkPlus = set.has('ark_plus')
-  const circle = set.has('circle')
-  if (arkPlus && circle) return 'bundle'
-  if (arkPlus) return 'ark-plus'
-  if (circle) return 'circle'
-  return 'free'
+  return tierFromEntitlements({ arkPlus: set.has('ark_plus'), circle: set.has('circle') })
 }
 
 type CircleStatus = 'ok' | 'no-member' | 'skipped' | 'error'
@@ -117,8 +112,7 @@ export async function syncEntitlement(
 
 // --- Auth0 (authentication only) -------------------------------------------
 
-// Used by the Circle SSO route to gate access on email verification. Returns
-// true only if Auth0 has at least one identity for this email with
+// Returns true only if Auth0 has at least one identity for this email with
 // email_verified=true. Returns null on any lookup failure so callers can
 // decide whether to fail open or closed.
 export async function fetchAuth0EmailVerified(
@@ -657,14 +651,9 @@ export function liveAxes(row: AxisRow): Entitlements {
   // Subscription row → its tier, while the subscription still grants; comp/staff
   // row (no sub, no gift) → perpetual its tier; gift-only row → no base axes
   // (gift expiries decide below).
-  const base =
-    row.stripe_subscription_id != null
-      ? subscriptionGrants(row, now)
-        ? deriveEntitlements(row.tier)
-        : GRANTS.free
-      : !hasGift
-        ? deriveEntitlements(row.tier)
-        : GRANTS.free
+  const tierGrants =
+    row.stripe_subscription_id != null ? subscriptionGrants(row, now) : !hasGift
+  const base = tierGrants ? deriveEntitlements(row.tier) : GRANTS.free
   const gift = liveGiftAxes(row, now)
   return {
     arkPlus: base.arkPlus || gift.arkPlus,
@@ -812,7 +801,6 @@ async function reconcileArkPlusAxis(
   reloadKeep: () => Promise<Set<string>>,
   batchSize: number,
 ): Promise<number> {
-  if (!env.DATABASE_URL) return 0
   const sql = getDb(env)
   const roster = await loadPremiumSubscriberEmails(sql)
 
@@ -968,9 +956,7 @@ async function listCircleAccessGroupMembers(
   // 1. community_member_ids in the access group.
   const memberIds = new Set<number>()
   for (let page = 1; page <= maxPages; page += 1) {
-    const url =
-      `${CIRCLE_API}/access_groups/${encodeURIComponent(accessGroupId)}/community_members` +
-      `?per_page=100&page=${page}`
+    const url = `${accessGroupMembersUrl(accessGroupId)}?per_page=100&page=${page}`
     const res = await fetchWithTimeout(url, { headers })
     if (!res.ok) {
       throw new Error(`Circle access-group list ${res.status}: ${await res.text()}`)
@@ -1043,16 +1029,12 @@ type CircleMemberRecord = {
   email?: string
 }
 
-async function batched<T, R>(
+async function batched<T>(
   items: T[],
   size: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const out: R[] = []
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
   for (let i = 0; i < items.length; i += size) {
-    const chunk = items.slice(i, i + size)
-    const res = await Promise.all(chunk.map(fn))
-    out.push(...res)
+    await Promise.all(items.slice(i, i + size).map(fn))
   }
-  return out
 }

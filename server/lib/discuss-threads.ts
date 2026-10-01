@@ -26,10 +26,6 @@ const DISCUSS_SPACE_BINDINGS: Record<NewsletterSlug, string> = {
   'ark-daily': 'conversation',
 }
 
-function discussSpaceSlugFor(slug: NewsletterSlug): string {
-  return DISCUSS_SPACE_BINDINGS[slug]
-}
-
 // --- DB accessors --------------------------------------------------------
 
 type Row = Record<string, unknown>
@@ -248,15 +244,15 @@ type CircleSpaceRecord = { id?: number; slug?: string }
 // the entire spaces list. 60s is well under any meaningful "we renamed the
 // space" turnaround, and a stale miss surfaces as a clean "space not found"
 // rather than corrupting state.
-const SPACE_ID_CACHE = new Map<string, { id: number; at: number }>()
 const SPACE_ID_TTL_MS = 60_000
+const SPACE_ID_CACHE = makeTTLCache<string, number>(SPACE_ID_TTL_MS)
 
 async function resolveCircleSpaceId(
   spaceSlug: string,
   token: string,
 ): Promise<number | null> {
   const cached = SPACE_ID_CACHE.get(spaceSlug)
-  if (cached && Date.now() - cached.at < SPACE_ID_TTL_MS) return cached.id
+  if (cached !== null) return cached
 
   // Same paging shape as the read-side resolver in routes/circle.ts. We
   // keep the cache here local rather than sharing read/write paths so a
@@ -276,7 +272,7 @@ async function resolveCircleSpaceId(
     if (records.length === 0) break
     const match = records.find((s) => s.slug === spaceSlug)
     if (match?.id !== undefined) {
-      SPACE_ID_CACHE.set(spaceSlug, { id: match.id, at: Date.now() })
+      SPACE_ID_CACHE.set(spaceSlug, match.id)
       return match.id
     }
     if (records.length < 100) break
@@ -510,7 +506,7 @@ export async function createCompanionThread(
   const existing = await getDiscussThreadByBeehiivId(sql, input.beehiivPostId)
   if (existing) return { ok: true, thread: existing, alreadyExisted: true }
 
-  const spaceSlug = discussSpaceSlugFor(input.newsletterSlug)
+  const spaceSlug = DISCUSS_SPACE_BINDINGS[input.newsletterSlug]
   const spaceId = await resolveCircleSpaceId(spaceSlug, deps.circleToken)
   if (spaceId === null) {
     return {

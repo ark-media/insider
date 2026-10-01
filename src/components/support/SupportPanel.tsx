@@ -242,7 +242,6 @@ export function SupportPanel({ onClose }: { onClose: () => void }) {
           <HomeView
             faqsFailed={faqs.status === "error"}
             onRetry={faqs.retry}
-            query={deferredQuery}
             result={result}
             chips={chips}
             viewer={viewer}
@@ -274,7 +273,6 @@ export function SupportPanel({ onClose }: { onClose: () => void }) {
 function HomeView({
   faqsFailed,
   onRetry,
-  query,
   result,
   chips,
   viewer,
@@ -284,7 +282,6 @@ function HomeView({
 }: {
   faqsFailed: boolean;
   onRetry: () => void;
-  query: string;
   result: SupportSearchResult | null;
   chips: SupportTopic[];
   viewer: SupportViewer;
@@ -310,7 +307,7 @@ function HomeView({
     );
   }
 
-  if (!result || query.trim().length < MIN_QUERY) {
+  if (!result) {
     return (
       <div>
         <p className="text-body-sm text-fg-muted">
@@ -371,9 +368,7 @@ function HomeView({
         onToggle={onToggle}
         className="mt-2"
       />
-      {intentTopics.length > 0 ? (
-        <TopicList topics={intentTopics} onOpen={onOpenTopic} className="mt-5" />
-      ) : null}
+      <TopicList topics={intentTopics} onOpen={onOpenTopic} className="mt-5" />
     </div>
   );
 }

@@ -10,11 +10,12 @@
 
 import {
   ARK_MEDIA_TEAM,
-  SUPPORT_EMAIL,
   esc,
+  greeting,
   link,
   networkShowBullets,
   renderShell,
+  SUPPORT_EMAIL,
   supportLine,
 } from './welcome-email.js'
 import type { MigrationStage } from '../../shared/feed-migration.js'
@@ -60,8 +61,7 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
   subject: string
   html: string
 } {
-  const first = p.firstName?.trim() || undefined
-  const greeting = first ? `Hi ${esc(first)},` : 'Hi there,'
+  const greetingHtml = greeting(p.firstName)
   const deadline = esc(p.deadline)
   const setupLink = link(p.setupUrl, 'arkmedia.org/setup')
 
@@ -72,7 +72,7 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
         preheader: 'It takes about 5 minutes, and unlocks the whole network.',
         eyebrow: 'Finish setup',
         headlineHtml: 'Finish setting up your Ark+ membership.',
-        greetingHtml: greeting,
+        greetingHtml,
         bodyHtml:
           "It looks like you haven&rsquo;t finished moving to your new Ark+ feeds yet. It takes about five minutes.",
         bodySecondHtml: `Once you&rsquo;re set up, you&rsquo;ll get ad-free listening, early access, and exclusive content across every show in the network, not just Call me Back, plus our subscriber-exclusive newsletter.`,
@@ -113,7 +113,7 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
         preheader: `Complete your feed migration before ${deadline} to keep these benefits.`,
         eyebrow: 'Benefits at risk',
         headlineHtml: 'Your Ark+ benefits are at risk.',
-        greetingHtml: greeting,
+        greetingHtml,
         bodyHtml:
           'It looks like you still haven&rsquo;t finished migrating your Call me Back feed.',
         // The escalation is entirely in this sentence: name the three things,
@@ -155,7 +155,7 @@ export function renderMigrationCheckInEmail(p: MigrationEmailParams): {
       preheader: `Your feed migration deadline is ${deadline}. Here's what to do.`,
       eyebrow: 'Final reminder',
       headlineHtml: `${daysLabel} to keep your Call me Back benefits.`,
-      greetingHtml: greeting,
+      greetingHtml,
       bodyHtml: `This is your final reminder. ${countdown}, on <strong>${deadline}</strong>, your old Call me Back feed will be turned off.`,
       // The fear this defuses is the expensive one: a member who thinks their
       // subscription is ending behaves very differently from one who knows it

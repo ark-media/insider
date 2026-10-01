@@ -100,7 +100,7 @@ export async function fetchMe(options?: {
   if (res.status === 401) return null;
   if (!res.ok) throw new Error(`/api/me failed (${res.status})`);
   const body = (await res.json()) as Me & { feeds_loaded?: boolean };
-  return { ...body, feedsLoaded: body.feeds_loaded ?? body.feedsLoaded };
+  return { ...body, feedsLoaded: body.feeds_loaded };
 }
 
 // Every call that changes what a member is billed goes through here.
@@ -125,20 +125,22 @@ async function billingFetch(input: string, init: RequestInit): Promise<Response>
   return res;
 }
 
-export async function cancelSubscription(input: {
-  // `offerOutcome` records whether a retention offer was shown first; defaults
-  // to 'not_offered'. The reasons/note are collected *after* this commits (the
-  // member sees "cancelled" first) via submitCancellationSurvey, keyed by the
-  // survey_id this returns.
-  offerOutcome?: "declined" | "not_offered";
-}): Promise<{
+type CancelResult = {
   ok: boolean;
   access_until?: string;
   // The survey row's id, so the reasons can be attached afterward. Null when no
   // DB is configured (preview envs) — the survey step then just no-ops.
   survey_id?: string | number | null;
   error?: string;
-}> {
+};
+
+export async function cancelSubscription(input: {
+  // `offerOutcome` records whether a retention offer was shown first; defaults
+  // to 'not_offered'. The reasons/note are collected *after* this commits (the
+  // member sees "cancelled" first) via submitCancellationSurvey, keyed by the
+  // survey_id this returns.
+  offerOutcome?: "declined" | "not_offered";
+}): Promise<CancelResult> {
   // Non-2xx still carries a JSON {ok:false, error} body we can surface; only a
   // network failure or a non-JSON error page (e.g. a proxy 502) lands in the
   // catch. Without it the rejection escapes the click handler and strands the
@@ -152,12 +154,7 @@ export async function cancelSubscription(input: {
         offer_outcome: input.offerOutcome ?? "not_offered",
       }),
     });
-    return (await res.json()) as {
-      ok: boolean;
-      access_until?: string;
-      survey_id?: string | number | null;
-      error?: string;
-    };
+    return (await res.json()) as CancelResult;
   } catch {
     return { ok: false, error: "Something went wrong — please try again." };
   }
@@ -190,24 +187,22 @@ export async function submitCancellationSurvey(input: {
   }
 }
 
-// Undo a pending cancel: the server clears cancel_at_period_end so the
-// membership renews normally again. Returns the next charge date for the
-// confirmation message.
-export async function reactivateSubscription(): Promise<{
+type ReactivateResult = {
   ok: boolean;
   next_charge_at?: string | null;
   error?: string;
-}> {
+};
+
+// Undo a pending cancel: the server clears cancel_at_period_end so the
+// membership renews normally again. Returns the next charge date for the
+// confirmation message.
+export async function reactivateSubscription(): Promise<ReactivateResult> {
   try {
     const res = await billingFetch("/api/stripe/reactivate-subscription", {
       method: "POST",
       credentials: "include",
     });
-    return (await res.json()) as {
-      ok: boolean;
-      next_charge_at?: string | null;
-      error?: string;
-    };
+    return (await res.json()) as ReactivateResult;
   } catch {
     return { ok: false, error: "Something went wrong — please try again." };
   }
@@ -356,12 +351,6 @@ export async function getBundleBreakdown(): Promise<BundleBreakdown | null> {
   }
 }
 
-// What adding the missing axis does to a single-axis member's subscription:
-// the Bundle price that REPLACES their current one (never a second charge
-// beside it), in the currency their subscription actually bills in, plus the
-// renewal date the switch leaves untouched. Null when there's no live
-// subscription to change; `bundleCents` alone is null when Stripe's price
-// lookup failed, and the confirm step then renders without price lines.
 // What a plan change would do, before it's made (POST /api/stripe/change-
 // preview): the price move, today's charge or the date it starts, and — for a
 // member who picks their own amount — where the picker starts.
@@ -476,14 +465,7 @@ export async function getSaveOffers(
   }
 }
 
-// Accept a coupon-backed save offer (supporter / affordability /
-// affordability). The server re-derives the coupon for
-// (intent, cadence), attaches it, and clears any pending cancel. Plan switches
-// go through changeTier instead.
-export async function acceptSaveOffer(
-  intent: SaveIntent,
-  kind: OfferKind,
-): Promise<{
+type AcceptSaveOfferResult = {
   ok: boolean;
   kind?: OfferKind;
   percentOff?: number | null;
@@ -491,7 +473,16 @@ export async function acceptSaveOffer(
   durationMonths?: number | null;
   next_charge_at?: string;
   error?: string;
-}> {
+};
+
+// Accept a coupon-backed save offer (supporter / affordability /
+// affordability). The server re-derives the coupon for
+// (intent, cadence), attaches it, and clears any pending cancel. Plan switches
+// go through changeTier instead.
+export async function acceptSaveOffer(
+  intent: SaveIntent,
+  kind: OfferKind,
+): Promise<AcceptSaveOfferResult> {
   try {
     const res = await billingFetch("/api/stripe/accept-save-offer", {
       method: "POST",
@@ -499,19 +490,25 @@ export async function acceptSaveOffer(
       credentials: "include",
       body: JSON.stringify({ intent, kind }),
     });
-    return (await res.json()) as {
-      ok: boolean;
-      kind?: OfferKind;
-      percentOff?: number | null;
-      amountOff?: number | null;
-      durationMonths?: number | null;
-          next_charge_at?: string;
-      error?: string;
-    };
+    return (await res.json()) as AcceptSaveOfferResult;
   } catch {
     return { ok: false, error: "Something went wrong — please try again." };
   }
 }
+
+type ChangeTierResult = {
+  ok: boolean;
+  changed?: boolean;
+  timing?: "immediate" | "period_end";
+  effective_at?: string;
+  // Immediate changes only: the first renewal of the restarted cycle.
+  next_charge_at?: string;
+  // On a debundle, the win-back row's id, so the survey that follows can attach
+  // the member's reasons to it. Null for a plain upgrade/PWYC (no row written)
+  // and in a DB-less preview env — the survey step then just no-ops.
+  survey_id?: string | number | null;
+  error?: string;
+};
 
 // Switch tier / plan / PWYC amount on the member's existing subscription
 // (task 14). A change the member pays more for applies now, is charged today and
@@ -531,19 +528,7 @@ export async function changeTier(input: {
   // Fold, recorded on the subscription. Omitted for every other change — a
   // missing key reads as "never asked", which is the truth for a PWYC tweak.
   ageStatement?: string | null;
-}): Promise<{
-  ok: boolean;
-  changed?: boolean;
-  timing?: "immediate" | "period_end";
-  effective_at?: string;
-  // Immediate changes only: the first renewal of the restarted cycle.
-  next_charge_at?: string;
-  // On a debundle, the win-back row's id, so the survey that follows can attach
-  // the member's reasons to it. Null for a plain upgrade/PWYC (no row written)
-  // and in a DB-less preview env — the survey step then just no-ops.
-  survey_id?: string | number | null;
-  error?: string;
-}> {
+}): Promise<ChangeTierResult> {
   try {
     const res = await billingFetch("/api/stripe/change-tier", {
       method: "POST",
@@ -558,15 +543,7 @@ export async function changeTier(input: {
         age_statement: input.ageStatement ?? undefined,
       }),
     });
-    return (await res.json()) as {
-      ok: boolean;
-      changed?: boolean;
-      timing?: "immediate" | "period_end";
-      effective_at?: string;
-      next_charge_at?: string;
-      survey_id?: string | number | null;
-      error?: string;
-    };
+    return (await res.json()) as ChangeTierResult;
   } catch {
     return { ok: false, error: "Something went wrong — please try again." };
   }
@@ -696,17 +673,19 @@ export async function getWelcomeOffer(): Promise<WelcomeOfferCheck> {
   }
 }
 
-export async function redeemWelcomeOffer(input: {
-  // The 18+ sentence the member ticked — this switch is what puts them in the
-  // Fold, so it is asked and recorded exactly as the account upgrade does.
-  ageStatement: string | null;
-}): Promise<{
+type RedeemWelcomeOfferResult = {
   ok: boolean;
   plan?: "monthly" | "yearly";
   renewsAt?: string | null;
   reason?: string;
   error?: string;
-}> {
+};
+
+export async function redeemWelcomeOffer(input: {
+  // The 18+ sentence the member ticked — this switch is what puts them in the
+  // Fold, so it is asked and recorded exactly as the account upgrade does.
+  ageStatement: string | null;
+}): Promise<RedeemWelcomeOfferResult> {
   try {
     const res = await billingFetch("/api/offer/redeem", {
       method: "POST",
@@ -719,13 +698,7 @@ export async function redeemWelcomeOffer(input: {
     if (res.status === 401) {
       return { ok: false, error: "Please sign in again to take your offer." };
     }
-    return (await res.json()) as {
-      ok: boolean;
-      plan?: "monthly" | "yearly";
-      renewsAt?: string | null;
-      reason?: string;
-      error?: string;
-    };
+    return (await res.json()) as RedeemWelcomeOfferResult;
   } catch {
     return { ok: false, error: "Something went wrong — please try again." };
   }

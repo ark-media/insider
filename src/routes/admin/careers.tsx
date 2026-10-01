@@ -6,6 +6,10 @@ import {
   AdminListRow,
   StatusPill,
 } from "../../components/admin/AdminList";
+import {
+  AdminFormActions,
+  type AdminFormProps,
+} from "../../components/admin/AdminForm";
 import { LazyRichTextEditor } from "../../components/LazyRichTextEditor";
 import {
   deleteCareer,
@@ -13,12 +17,7 @@ import {
   saveCareer,
   type CareerDraft,
 } from "../../lib/admin";
-import {
-  adminField,
-  adminFieldLabel,
-  adminPrimaryButton,
-  adminSecondaryButton,
-} from "../../lib/admin-styles";
+import { adminField, adminFieldLabel } from "../../lib/admin-styles";
 import type { Career } from "../../lib/careers";
 import { RICH_TEXT_CLASS, sanitizeRichPreview } from "../../lib/richTextPreview";
 import { useCrudResource } from "../../lib/useCrudResource";
@@ -184,15 +183,7 @@ function CareerForm({
   error,
   onSubmit,
   onCancel,
-}: {
-  editing: boolean;
-  form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
-  saving: boolean;
-  error: string | null;
-  onSubmit: (e: React.FormEvent) => void;
-  onCancel: () => void;
-}) {
+}: AdminFormProps<FormState>) {
   const field = adminField;
   const label = adminFieldLabel;
 
@@ -377,22 +368,12 @@ function CareerForm({
           </label>
         </div>
 
-        {error ? <p className="text-body-sm text-red-400">{error}</p> : null}
-
-        <div className="flex gap-3">
-          <button type="submit" disabled={saving} className={adminPrimaryButton}>
-            {saving ? "Saving…" : editing ? "Save changes" : "Create"}
-          </button>
-          {editing ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              className={adminSecondaryButton}
-            >
-              Cancel
-            </button>
-          ) : null}
-        </div>
+        <AdminFormActions
+          saving={saving}
+          editing={editing}
+          error={error}
+          onCancel={onCancel}
+        />
       </form>
     </section>
   );

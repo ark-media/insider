@@ -147,6 +147,13 @@ async function membershipByEmailViaStripe(
 
 // Resolve entitlements for an already-known identity.
 //
+// Effective tier is the UNION of the subscription and any live gift axes
+// (D4): an Ark+ subscriber with a live Fold gift resolves to bundle.
+function resolvedFromRow(identity: RequestIdentity, row: MembershipRow): ResolvedMembership {
+  const axes = liveAxes(row)
+  return { identity, tier: tierFromEntitlements(axes), entitlements: axes, row, origin: 'neon' }
+}
+
 // `emailFallback` opts into the by-email net below: /api/me passes it so a
 // just-paid member whose session carries no `sub` still resolves, while the
 // content gates leave it off and run strictly on the sub. It needs `stripe`,
@@ -159,18 +166,7 @@ export async function resolveMembershipForIdentity(
   // 1. Neon is the authority: a live row keyed on the caller's sub decides tier.
   if (identity.sub && env.DATABASE_URL) {
     const row = await getMembershipByAuth0Sub(getDb(env), identity.sub)
-    if (row && membershipIsLive(row)) {
-      // Effective tier is the UNION of the subscription and any live gift axes
-      // (D4): an Ark+ subscriber with a live Fold gift resolves to bundle.
-      const axes = liveAxes(row)
-      return {
-        identity,
-        tier: tierFromEntitlements(axes),
-        entitlements: axes,
-        row,
-        origin: 'neon',
-      }
-    }
+    if (row && membershipIsLive(row)) return resolvedFromRow(identity, row)
   }
 
   // 2. By-email net, for a just-paid member whose session carries no sub
@@ -179,16 +175,7 @@ export async function resolveMembershipForIdentity(
   //    instead of by sub, so bundle/circle members resolve to their real tier.
   if (opts.emailFallback && opts.stripe && env.DATABASE_URL) {
     const row = await membershipByEmailViaStripe(opts.stripe, env, identity.email)
-    if (row) {
-      const axes = liveAxes(row)
-      return {
-        identity,
-        tier: tierFromEntitlements(axes),
-        entitlements: axes,
-        row,
-        origin: 'neon',
-      }
-    }
+    if (row) return resolvedFromRow(identity, row)
   }
 
   return {

@@ -13,16 +13,12 @@
 import {
   ARK_MEDIA_TEAM,
   esc,
+  greeting,
   link,
   renderShell,
   supportLine,
 } from './welcome-email.js'
 import { TIER_EMAIL_LABEL, type CancellableTier } from './cancellation-email.js'
-
-function greeting(firstName: string | undefined): string {
-  const first = firstName?.trim()
-  return first ? `Hi ${esc(first)},` : 'Hi there,'
-}
 
 // ---------------------------------------------------------------------------
 // Access ended

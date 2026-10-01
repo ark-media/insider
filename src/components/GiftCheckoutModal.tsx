@@ -8,6 +8,7 @@ import {
 } from "@stripe/react-stripe-js/checkout";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckoutConsent } from "./CheckoutConsent";
+import { CheckoutTotals } from "./CheckoutTotals";
 import { PromoCode } from "./PromoCode";
 import { fetchActivePromo, type PromoInfo } from "../lib/promo";
 import { useCheckoutConsent } from "../lib/checkoutConsent";
@@ -417,10 +418,6 @@ function GiftPaymentForm({
   // appears reactively.
   const subtotal = checkout.total.subtotal.amount; // pre-tax, pre-discount
   const total = checkout.total.total.amount; // due today, incl. tax
-  const hasDiscount = checkout.total.discount.minorUnitsAmount > 0;
-  const discount = checkout.total.discount.amount;
-  const hasTax = checkout.total.taxExclusive.minorUnitsAmount > 0;
-  const tax = checkout.total.taxExclusive.amount;
   const label = GIFT_LABEL[input.term];
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -478,28 +475,7 @@ function GiftPaymentForm({
             totals below as soon as a usable address is entered. */}
         <BillingAddressElement />
         <PromoCode checkout={checkout} promo={promo} surface="gift" />
-        <div className="space-y-2 border-t border-rule pt-3 text-sm">
-          <div className="flex items-baseline justify-between">
-            <span className="text-fg-muted">Subtotal</span>
-            <span className="text-fg-strong">{subtotal}</span>
-          </div>
-          {hasDiscount ? (
-            <div className="flex items-baseline justify-between">
-              <span className="text-fg-muted">Discount</span>
-              <span className="text-fg-strong">−{discount}</span>
-            </div>
-          ) : null}
-          {hasTax ? (
-            <div className="flex items-baseline justify-between">
-              <span className="text-fg-muted">Tax</span>
-              <span className="text-fg-strong">{tax}</span>
-            </div>
-          ) : null}
-          <div className="flex items-baseline justify-between border-t border-rule pt-2">
-            <span className="text-fg-muted">Total due today</span>
-            <span className="font-semibold text-fg-strong">{total}</span>
-          </div>
-        </div>
+        <CheckoutTotals total={checkout.total} />
         <CheckoutConsent renewal={null} age={age} consent={consent} />
         <button
           type="submit"

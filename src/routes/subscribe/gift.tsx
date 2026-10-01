@@ -61,9 +61,7 @@ function GiftPage() {
   };
 
   const canSubmit =
-    giverEmail.trim().length > 0 &&
-    recipientEmail.trim().length > 0 &&
-    (term === "6mo" || term === "1yr");
+    giverEmail.trim().length > 0 && recipientEmail.trim().length > 0;
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();

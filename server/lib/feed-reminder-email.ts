@@ -3,9 +3,11 @@
 // brand shell from welcome-email so it looks like the rest of the lifecycle.
 // Pure (no I/O) so it's trivially testable.
 
-import { BRAND_CYAN, esc, renderShell, supportLine } from './welcome-email.js'
+import { greeting, link, renderShell, supportLine } from './welcome-email.js'
 
 export type FeedReminderEmailParams = {
+  // Already a clean first name — callers resolve it through greetingFirstName,
+  // which is what rejects a name manufactured from the member's email.
   firstName?: string
   // How many of the member's feeds are already set up, out of how many total.
   doneCount: number
@@ -18,9 +20,6 @@ export function renderFeedReminderEmail(p: FeedReminderEmailParams): {
   subject: string
   html: string
 } {
-  // Already a clean first name — callers resolve it through greetingFirstName,
-  // which is what rejects a name manufactured from the member's email.
-  const first = p.firstName?.trim() || undefined
   const remaining = Math.max(0, p.total - p.doneCount)
   const showWord = remaining === 1 ? 'show' : 'shows'
   const started = p.doneCount > 0
@@ -36,8 +35,8 @@ export function renderFeedReminderEmail(p: FeedReminderEmailParams): {
   // Lead with the outcome, then push the one-click Spotify path (link once →
   // every show) that the hub features up top.
   const bodyHtml = started
-    ? `You've set up ${p.doneCount} of your ${p.total} Ark+ private feeds — there ${remaining === 1 ? 'is' : 'are'} still ${remaining} ${showWord} waiting for you. The fastest way to get the rest is to <a href="${p.setupUrl}" style="color:${BRAND_CYAN};">link Spotify once</a> — it follows every show in the network automatically. Or add each show to the podcast app you already use.`
-    : `Your Ark+ membership unlocks a private feed for all ${p.total} shows in the network — but you haven't set any up yet, so new episodes aren't reaching you. The fastest way in is to <a href="${p.setupUrl}" style="color:${BRAND_CYAN};">link Spotify once</a> and follow the whole network automatically. Prefer another app? Set up each show by hand from the same page.`
+    ? `You've set up ${p.doneCount} of your ${p.total} Ark+ private feeds — there ${remaining === 1 ? 'is' : 'are'} still ${remaining} ${showWord} waiting for you. The fastest way to get the rest is to ${link(p.setupUrl, 'link Spotify once')} — it follows every show in the network automatically. Or add each show to the podcast app you already use.`
+    : `Your Ark+ membership unlocks a private feed for all ${p.total} shows in the network — but you haven't set any up yet, so new episodes aren't reaching you. The fastest way in is to ${link(p.setupUrl, 'link Spotify once')} and follow the whole network automatically. Prefer another app? Set up each show by hand from the same page.`
 
   const html = renderShell({
     preheader: started
@@ -45,7 +44,7 @@ export function renderFeedReminderEmail(p: FeedReminderEmailParams): {
       : 'Add your Ark+ shows to your podcast app.',
     eyebrow: 'Finish setup',
     headlineHtml,
-    greetingHtml: first ? `Hi ${esc(first)},` : 'Hi there,',
+    greetingHtml: greeting(p.firstName),
     bodyHtml,
     ctaHref: p.setupUrl,
     ctaLabel: started ? 'Add the rest' : 'Set up my feeds',

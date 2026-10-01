@@ -27,18 +27,15 @@ const MISSION_REMINDER_COPY: Record<
 
 // Rendered first in each flow. The heading doubles as the flow's labelled
 // heading when `headingRef`/`headingId` are passed (so the modal's focus
-// management and aria-labelledby land on it). `intro` optionally frames the
-// specific action under the shared mission copy.
+// management and aria-labelledby land on it).
 export function MissionReminder({
   variant = "ark-plus",
   headingRef,
   headingId,
-  intro,
 }: {
   variant?: MissionVariant;
   headingRef?: Ref<HTMLHeadingElement>;
   headingId?: string;
-  intro?: string;
 }) {
   const copy = MISSION_REMINDER_COPY[variant];
   return (
@@ -52,7 +49,6 @@ export function MissionReminder({
         {copy.heading}
       </h2>
       <p className="mt-4">{copy.body}</p>
-      {intro ? <p className="mt-4 text-fg-muted">{intro}</p> : null}
     </div>
   );
 }

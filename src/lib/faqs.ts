@@ -7,10 +7,7 @@ import type { Faq } from "../../shared/faq";
 
 export async function fetchFaqs(): Promise<Faq[]> {
   try {
-    const res = await fetch("/api/faqs");
-    if (!res.ok) return [];
-    const data = (await res.json()) as { faqs: Faq[] };
-    return data.faqs ?? [];
+    return await fetchFaqsOrThrow();
   } catch {
     return [];
   }
