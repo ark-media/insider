@@ -11,6 +11,9 @@ import {
   clearNewsletterRefreshCache,
   downgradeToFree,
   ensureSubscribedWithPremium,
+  NewsletterOffError,
+  refreshNewsletterState,
+  setAmaOptIn,
   isReceivingEmails,
   PremiumGrantIgnoredError,
   refreshSubscriptionFromBeehiiv,
@@ -105,6 +108,7 @@ function beehiivSub(opts: {
   status?: string
   tier?: 'free' | 'premium'
   premiumTierNames?: string[]
+  amaOptIn?: boolean
 }): unknown {
   return {
     data: {
@@ -113,6 +117,13 @@ function beehiivSub(opts: {
       status: opts.status ?? 'active',
       subscription_tier: opts.tier ?? 'free',
       subscription_premium_tier_names: opts.premiumTierNames ?? [],
+      ...(opts.amaOptIn === undefined
+        ? {}
+        : {
+            custom_fields: [
+              { name: 'AMA YouTube Links', kind: 'boolean', value: opts.amaOptIn },
+            ],
+          }),
     },
   }
 }
@@ -372,6 +383,111 @@ describe('downgradeToFree', () => {
     const put = fetchCalls.find((c) => c.method === 'PUT')
     expect(put?.body).toEqual({ tier: 'free' })
   })
+
+  // The AMA segment can't see the tier, so the flag must leave with it or a
+  // lapsed member keeps getting the unlisted link.
+  test('clears the AMA opt-in in the same PUT as the tier', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = ({ method, url }) => {
+      if (method === 'GET') {
+        return jsonRes(
+          200,
+          beehiivSub({
+            id: 'sub_paid',
+            tier: 'premium',
+            premiumTierNames: ['Premium'],
+            amaOptIn: true,
+          }),
+        )
+      }
+      if (method === 'PUT') return jsonRes(200, beehiivSub({ id: 'sub_paid' }))
+      return jsonRes(500, { unexpected: url })
+    }
+    await downgradeToFree({ env: BASE_ENV, sql }, 'a@x.com')
+    const puts = fetchCalls.filter((c) => c.method === 'PUT')
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.body).toEqual({
+      tier: 'free',
+      custom_fields: [{ name: 'AMA YouTube Links', value: false }],
+    })
+  })
+
+  test('clears a leftover AMA opt-in on a reader already without the tier', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = ({ method }) => {
+      if (method === 'GET') return jsonRes(200, beehiivSub({ amaOptIn: true }))
+      return jsonRes(200, beehiivSub({ amaOptIn: false }))
+    }
+    await downgradeToFree({ env: BASE_ENV, sql }, 'a@x.com')
+    const put = fetchCalls.find((c) => c.method === 'PUT')
+    expect(put?.body).toEqual({
+      custom_fields: [{ name: 'AMA YouTube Links', value: false }],
+    })
+  })
+})
+
+// ============================================================================
+// setAmaOptIn
+// ============================================================================
+
+describe('setAmaOptIn', () => {
+  test('writes the boolean custom field on an active record', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = ({ method, url }) => {
+      if (method === 'GET') {
+        return jsonRes(
+          200,
+          beehiivSub({ id: 'sub_m', tier: 'premium', premiumTierNames: ['Plus'] }),
+        )
+      }
+      if (method === 'PUT' && url.includes('/subscriptions/sub_m')) {
+        return jsonRes(200, beehiivSub({ id: 'sub_m', amaOptIn: true }))
+      }
+      return jsonRes(500, { unexpected: url })
+    }
+    const on = await setAmaOptIn({ env: BASE_ENV, sql }, 'm@x.com', true)
+    expect(on).toBe(true)
+    const put = fetchCalls.find((c) => c.method === 'PUT')
+    expect(put?.body).toEqual({
+      custom_fields: [{ name: 'AMA YouTube Links', value: true }],
+    })
+  })
+
+  test('mirrors the by_email read, not the custom-fields response', async () => {
+    const { sql, calls } = makeSqlStub(emptyRows)
+    fetchHandler = ({ method }) => {
+      if (method === 'GET') {
+        return jsonRes(
+          200,
+          beehiivSub({ id: 'sub_m', tier: 'premium', premiumTierNames: ['Plus'] }),
+        )
+      }
+      // No tier fields in the response — must not read as a downgrade.
+      return jsonRes(200, { data: { id: 'sub_m', email: 'm@x.com' } })
+    }
+    await setAmaOptIn({ env: BASE_ENV, sql }, 'm@x.com', true)
+    const upsert = calls.find((c) => c.sql.includes('insert into beehiiv_subscription'))
+    expect(upsert?.values).toContain(true)
+  })
+
+  test('refuses to turn on for an unsubscribed record', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = () => jsonRes(200, beehiivSub({ status: 'inactive' }))
+    await expect(
+      setAmaOptIn({ env: BASE_ENV, sql }, 'm@x.com', true),
+    ).rejects.toBeInstanceOf(NewsletterOffError)
+    expect(fetchCalls.filter((c) => c.method === 'PUT')).toHaveLength(0)
+  })
+
+  test('refuses to turn on with no record, but turning off is a no-op', async () => {
+    const { sql } = makeSqlStub(emptyRows)
+    fetchHandler = () => jsonRes(404, {})
+    await expect(
+      setAmaOptIn({ env: BASE_ENV, sql }, 'm@x.com', true),
+    ).rejects.toBeInstanceOf(NewsletterOffError)
+    expect(await setAmaOptIn({ env: BASE_ENV, sql }, 'm@x.com', false)).toBe(false)
+    expect(fetchCalls.filter((c) => c.method === 'PUT')).toHaveLength(0)
+  })
 })
 
 // ============================================================================
@@ -584,6 +700,33 @@ describe('isReceivingEmails', () => {
 // ============================================================================
 // refreshSubscriptionFromBeehiiv
 // ============================================================================
+
+describe('refreshNewsletterState', () => {
+  test('reads the AMA opt-in off the expanded custom fields', async () => {
+    fetchHandler = ({ url }) =>
+      url.includes('expand[]=custom_fields')
+        ? jsonRes(200, beehiivSub({ amaOptIn: true }))
+        : jsonRes(500, { unexpected: url })
+    const { sql } = makeSqlStub(emptyRows)
+    const state = await refreshNewsletterState({ env: BASE_ENV, sql }, 'a@x.com')
+    expect(state.amaOptIn).toBe(true)
+  })
+
+  test('a missing field reads as off', async () => {
+    fetchHandler = () =>
+      jsonRes(200, { data: { id: 'sub_a', email: 'a@x.com', custom_fields: [] } })
+    const { sql } = makeSqlStub(emptyRows)
+    const state = await refreshNewsletterState({ env: BASE_ENV, sql }, 'a@x.com')
+    expect(state.amaOptIn).toBe(false)
+  })
+
+  test('unknown (null), not off, when Beehiiv errors', async () => {
+    fetchHandler = () => jsonRes(503, {})
+    const { sql } = makeSqlStub(emptyRows)
+    const state = await refreshNewsletterState({ env: BASE_ENV, sql }, 'a@x.com')
+    expect(state.amaOptIn).toBeNull()
+  })
+})
 
 describe('refreshSubscriptionFromBeehiiv', () => {
   test('deletes local row when Beehiiv returns 404', async () => {

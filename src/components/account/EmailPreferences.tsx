@@ -4,6 +4,7 @@ import {
   fetchNewsletterPrefs,
   saveNewsletterPrefs,
   type NewsletterPrefs,
+  type NewsletterPrefsPatch,
 } from "../../lib/newsletterPrefs";
 
 // The Settings tab's email section.
@@ -15,12 +16,18 @@ import {
 // all: `free` in /api/me/newsletters, i.e. subscribed to the publication.
 // Turning it back on for an Ark+ member re-applies their edition server-side
 // (server/routes/me.ts).
+//
+// Ark+ members get one more switch, off by default: the AMA emails, which carry
+// the unlisted YouTube link to each AMA episode. They go out from the same
+// Beehiiv publication, so they need the newsletter switch on to arrive.
+
+const AMA_TITLE = "AMA episode links";
 
 export function EmailPreferences({ email }: { email: string }) {
   const [prefs, setPrefs] = useState<NewsletterPrefs | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<"free" | "ama" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loadGeneration = useRef(0);
 
@@ -62,18 +69,19 @@ export function EmailPreferences({ email }: { email: string }) {
     };
   }, [email, loadPrefs]);
 
-  const onToggle = async () => {
+  const onToggle = async (field: "free" | "ama") => {
     if (!prefs || saving || loading || loadError) return;
-    const patch = { free: !prefs.free };
+    const patch: NewsletterPrefsPatch =
+      field === "free" ? { free: !prefs.free } : { ama: !prefs.ama };
     const previous = prefs;
     // Bump the generation so a load still in flight can't overwrite the
     // optimistic value with the pre-toggle one.
     loadGeneration.current += 1;
     setPrefs({ ...prefs, ...patch });
-    setSaving(true);
+    setSaving(field);
     setError(null);
     const result = await saveNewsletterPrefs(patch);
-    setSaving(false);
+    setSaving(null);
     if (result.ok && result.prefs) {
       loadGeneration.current += 1;
       setPrefs(result.prefs);
@@ -109,17 +117,41 @@ export function EmailPreferences({ email }: { email: string }) {
             </button>
           </div>
         ) : prefs ? (
-          <PrefRow
-            title={newsletter.title}
-            description={
-              prefs.canPremium
-                ? "The weekly members' edition"
-                : "The weekly free edition"
-            }
-            on={prefs.free}
-            busy={saving}
-            onToggle={() => void onToggle()}
-          />
+          <>
+            <PrefRow
+              title={newsletter.title}
+              description={
+                prefs.canPremium
+                  ? "The weekly members' edition"
+                  : "The weekly free edition"
+              }
+              on={prefs.free}
+              busy={saving === "free"}
+              disabled={saving !== null}
+              onToggle={() => void onToggle("free")}
+            />
+            {prefs.canPremium ? (
+              <PrefRow
+                title={AMA_TITLE}
+                description="An email with the private YouTube link whenever a new AMA episode is out"
+                note={
+                  prefs.ama === null
+                    ? "Couldn't load this setting. Refresh to try again."
+                    : !prefs.free
+                      ? `Subscribe to ${newsletter.title} to get these. They come from the same list.`
+                      : null
+                }
+                on={prefs.ama === true}
+                busy={saving === "ama"}
+                disabled={
+                  saving !== null ||
+                  prefs.ama === null ||
+                  (!prefs.free && prefs.ama !== true)
+                }
+                onToggle={() => void onToggle("ama")}
+              />
+            ) : null}
+          </>
         ) : null}
       </div>
 
@@ -135,14 +167,18 @@ export function EmailPreferences({ email }: { email: string }) {
 function PrefRow({
   title,
   description,
+  note = null,
   on,
   busy,
+  disabled,
   onToggle,
 }: {
   title: string;
   description: string;
+  note?: string | null;
   on: boolean;
   busy: boolean;
+  disabled: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -159,19 +195,24 @@ function PrefRow({
         >
           {on ? "Subscribed" : "Not subscribed"}
         </p>
+        {note ? (
+          <p className="mt-2 text-body-sm text-fg-muted">{note}</p>
+        ) : null}
       </div>
       <button
         type="button"
         aria-busy={busy}
         aria-label={`${on ? "Unsubscribe from" : "Subscribe to"} ${title}`}
         onClick={onToggle}
-        disabled={busy}
+        disabled={busy || disabled}
         className={`inline-flex min-h-11 shrink-0 items-center border px-4 button-text font-display font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
           busy
             ? "cursor-wait border-rule text-fg-muted opacity-60"
-            : on
-              ? "border-rule-strong text-fg-muted hover:border-cyan hover:text-cyan"
-              : "border-cyan bg-cyan text-navy hover:bg-transparent hover:text-cyan"
+            : disabled
+              ? "cursor-not-allowed border-rule text-fg-muted opacity-60"
+              : on
+                ? "border-rule-strong text-fg-muted hover:border-cyan hover:text-cyan"
+                : "border-cyan bg-cyan text-navy hover:bg-transparent hover:text-cyan"
         }`}
       >
         {busy

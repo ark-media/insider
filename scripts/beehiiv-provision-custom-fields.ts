@@ -1,4 +1,5 @@
-// Create the Beehiiv custom-field definitions that hold a subscriber's name.
+// Create the Beehiiv custom-field definitions that hold a subscriber's name
+// and their AMA opt-in, plus the segment the AMA emails are sent to.
 //
 // Beehiiv has no native name field — a name is a *custom field*, and the
 // definition must exist on the publication before any subscription write can
@@ -10,17 +11,33 @@
 // Run once per publication. Idempotent: an existing field is reported and left
 // alone rather than duplicated. This is a script rather than a dashboard click
 // so the field names stay pinned to the constants the sync code writes
-// (FIELD_FIRST_NAME / FIELD_LAST_NAME in server/lib/beehiiv-sync.ts).
+// (FIELD_FIRST_NAME / FIELD_LAST_NAME / FIELD_AMA_OPT_IN in
+// server/lib/beehiiv-sync.ts).
+//
+// The AMA segment is dynamic: every subscriber whose opt-in equals true. It
+// can't also test the premium tier (the segment API filters on custom fields
+// only) — the app clears the flag when a membership ends instead. Matched by
+// name, so renaming it in Beehiiv makes the next run create a second one.
 //
 // Usage (Bun auto-loads .env; BEEHIIV_API_KEY and a publication id must be set):
 //   bun run scripts/beehiiv-provision-custom-fields.ts          # preview
 //   bun run scripts/beehiiv-provision-custom-fields.ts --apply  # create
 
-import { FIELD_FIRST_NAME, FIELD_LAST_NAME } from '../server/lib/beehiiv-sync.js'
+import {
+  FIELD_AMA_OPT_IN,
+  FIELD_FIRST_NAME,
+  FIELD_LAST_NAME,
+} from '../server/lib/beehiiv-sync.js'
 
 type Env = Record<string, string | undefined>
 
-const FIELDS = [FIELD_FIRST_NAME, FIELD_LAST_NAME]
+const FIELDS: Array<{ display: string; kind: 'string' | 'boolean' }> = [
+  { display: FIELD_FIRST_NAME, kind: 'string' },
+  { display: FIELD_LAST_NAME, kind: 'string' },
+  { display: FIELD_AMA_OPT_IN, kind: 'boolean' },
+]
+
+const AMA_SEGMENT_NAME = 'Ark+ AMA YouTube links (opted in)'
 
 type CustomField = { id?: string; display?: string; kind?: string }
 
@@ -66,6 +83,7 @@ async function createCustomField(
   pubId: string,
   token: string,
   display: string,
+  kind: 'string' | 'boolean',
 ): Promise<void> {
   const res = await fetch(
     `https://api.beehiiv.com/v2/publications/${pubId}/custom_fields`,
@@ -75,11 +93,48 @@ async function createCustomField(
         Authorization: `Bearer ${token}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ kind: 'string', display }),
+      body: JSON.stringify({ kind, display }),
     },
   )
   if (!res.ok) {
     throw new Error(`create "${display}" failed: ${res.status} ${await res.text()}`)
+  }
+}
+
+async function listSegmentNames(pubId: string, token: string): Promise<string[]> {
+  const names: string[] = []
+  for (let page = 1; page <= 20; page += 1) {
+    const res = await fetch(
+      `https://api.beehiiv.com/v2/publications/${pubId}/segments?limit=100&page=${page}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) {
+      throw new Error(`list segments failed: ${res.status} ${await res.text()}`)
+    }
+    const data = ((await res.json()) as { data?: Array<{ name?: string }> }).data ?? []
+    names.push(...data.map((s) => s.name ?? ''))
+    if (data.length < 100) break
+  }
+  return names
+}
+
+async function createAmaSegment(pubId: string, token: string): Promise<void> {
+  const res = await fetch(`https://api.beehiiv.com/v2/publications/${pubId}/segments`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: AMA_SEGMENT_NAME,
+      input: {
+        type: 'custom_fields',
+        custom_fields: [{ name: FIELD_AMA_OPT_IN, operator: 'equal', value: 'true' }],
+      },
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`create segment failed: ${res.status} ${await res.text()}`)
   }
 }
 
@@ -96,13 +151,13 @@ async function main(): Promise<void> {
   const have = new Set(existing.map((f) => (f.display ?? '').trim().toLowerCase()))
 
   let created = 0
-  for (const display of FIELDS) {
+  for (const { display, kind } of FIELDS) {
     if (have.has(display.toLowerCase())) {
       console.log(`  ✓ "${display}" already exists`)
       continue
     }
     if (apply) {
-      await createCustomField(pubId, token, display)
+      await createCustomField(pubId, token, display, kind)
       console.log(`  + created "${display}"`)
     } else {
       console.log(`  + would create "${display}"`)
@@ -110,10 +165,22 @@ async function main(): Promise<void> {
     created += 1
   }
 
+  const segments = await listSegmentNames(pubId, token)
+  if (segments.includes(AMA_SEGMENT_NAME)) {
+    console.log(`  ✓ segment "${AMA_SEGMENT_NAME}" already exists`)
+  } else if (apply) {
+    await createAmaSegment(pubId, token)
+    console.log(`  + created segment "${AMA_SEGMENT_NAME}"`)
+    created += 1
+  } else {
+    console.log(`  + would create segment "${AMA_SEGMENT_NAME}"`)
+    created += 1
+  }
+
   console.log(
     apply
-      ? `\nDone. ${created} field(s) created.`
-      : `\nPreview only — ${created} field(s) would be created. Re-run with --apply.`,
+      ? `\nDone. ${created} item(s) created.`
+      : `\nPreview only — ${created} item(s) would be created. Re-run with --apply.`,
   )
 }
 

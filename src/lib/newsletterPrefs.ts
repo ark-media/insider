@@ -9,7 +9,16 @@ export type NewsletterPrefs = {
   premium: boolean;
   /** True when the signed-in reader is entitled to the members' edition. */
   canPremium: boolean;
+  /**
+   * Opted in to the AMA emails (the unlisted YouTube link for each AMA
+   * episode). Ark+ only, default off. Null when Beehiiv couldn't be read —
+   * unknown, not off.
+   */
+  ama: boolean | null;
 };
+
+/** One switch per request: the newsletter itself, or the AMA emails. */
+export type NewsletterPrefsPatch = { free: boolean } | { ama: boolean };
 
 export type FetchNewsletterPrefsResult =
   | { ok: true; prefs: NewsletterPrefs }
@@ -33,7 +42,7 @@ export async function fetchNewsletterPrefs(): Promise<FetchNewsletterPrefsResult
 }
 
 export async function saveNewsletterPrefs(
-  input: { free: boolean },
+  input: NewsletterPrefsPatch,
 ): Promise<{ ok: boolean; prefs?: NewsletterPrefs; error?: string }> {
   try {
     const res = await fetch("/api/me/newsletters", {
@@ -47,6 +56,12 @@ export async function saveNewsletterPrefs(
       | { error?: string };
     if (!res.ok) {
       const err = (body as { error?: string }).error;
+      if (err === "newsletter_off") {
+        return {
+          ok: false,
+          error: "Subscribe to the newsletter first — the AMA emails come from the same list.",
+        };
+      }
       if (err === "beehiiv_update_failed") {
         return {
           ok: false,

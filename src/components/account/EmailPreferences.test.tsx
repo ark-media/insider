@@ -45,6 +45,7 @@ function stubFetch() {
     // `premium` alone and call it delivery.
     if (typeof body.free === "boolean") prefs = { ...prefs, free: body.free };
     if (typeof body.premium === "boolean") prefs = { ...prefs, premium: body.premium };
+    if (typeof body.ama === "boolean") prefs = { ...prefs, ama: body.ama };
     return Response.json(prefs);
   }) as typeof fetch;
 }
@@ -80,13 +81,19 @@ afterEach(async () => {
 
 const NEWSLETTER = "The Current";
 
-/** The newsletter's subscribe/unsubscribe button. */
-function button(): HTMLButtonElement {
-  const found = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-    (b.getAttribute("aria-label") ?? "").endsWith(NEWSLETTER),
-  );
-  if (!found) throw new Error(`no button for "${NEWSLETTER}"`);
+const AMA = "AMA episode links";
+
+/** A row's subscribe/unsubscribe button — the newsletter's by default. */
+function button(title = NEWSLETTER): HTMLButtonElement {
+  const found = findButton(title);
+  if (!found) throw new Error(`no button for "${title}"`);
   return found;
+}
+
+function findButton(title: string): HTMLButtonElement | undefined {
+  return [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
+    (b.getAttribute("aria-label") ?? "").endsWith(title),
+  );
 }
 
 const label = () => button().textContent;
@@ -98,7 +105,7 @@ const click = async () => {
 };
 
 async function mount(over: Partial<NewsletterPrefs> = {}) {
-  prefs = { free: true, premium: true, canPremium: true, ...over };
+  prefs = { free: true, premium: true, canPremium: true, ama: false, ...over };
   await render(<EmailPreferences email="member@example.com" />);
 }
 
@@ -145,5 +152,44 @@ describe("a free reader", () => {
     expect(on()).toBe(true);
     expect(document.body.textContent).toContain("The weekly free edition");
     expect(document.body.textContent).not.toContain("The weekly members' edition");
+  });
+});
+
+describe("the AMA emails", () => {
+  test("are offered to an Ark+ member, off by default", async () => {
+    await mount();
+    expect(button(AMA).textContent).toBe("Subscribe");
+    expect(button(AMA).disabled).toBe(false);
+  });
+
+  test("turning them on sends only `ama`", async () => {
+    await mount();
+    await act(async () => {
+      button(AMA).click();
+    });
+    expect(puts).toEqual([{ ama: true }]);
+    expect(button(AMA).textContent).toBe("Unsubscribe");
+  });
+
+  test("can't be turned on while the newsletter is off — same list", async () => {
+    await mount({ free: false });
+    expect(button(AMA).disabled).toBe(true);
+    expect(document.body.textContent).toContain(`Subscribe to ${NEWSLETTER} to get these`);
+  });
+
+  test("can still be turned off while the newsletter is off", async () => {
+    await mount({ free: false, ama: true });
+    expect(button(AMA).disabled).toBe(false);
+  });
+
+  test("an unreadable setting is not shown as off", async () => {
+    await mount({ ama: null });
+    expect(button(AMA).disabled).toBe(true);
+    expect(document.body.textContent).toContain("Couldn't load this setting");
+  });
+
+  test("are not offered to a free reader", async () => {
+    await mount({ canPremium: false, premium: false });
+    expect(findButton(AMA)).toBeUndefined();
   });
 });

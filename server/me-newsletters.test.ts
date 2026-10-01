@@ -262,6 +262,7 @@ describe('GET /api/me/newsletters', () => {
       free: true,
       premium: true,
       canPremium: true,
+      ama: false,
     })
   })
 
@@ -276,6 +277,7 @@ describe('GET /api/me/newsletters', () => {
       free: false,
       premium: false,
       canPremium: false,
+      ama: false,
     })
   })
 
@@ -324,6 +326,7 @@ describe('GET /api/me/newsletters', () => {
       free: true,
       premium: false,
       canPremium: false,
+      ama: false,
     })
     expect(
       sqlCalls.some((c) => c.sql.includes('insert into beehiiv_subscription')),
@@ -711,5 +714,127 @@ describe('PUT /api/me/newsletters', () => {
       last = res.statusCode
     }
     expect(last).toBe(429)
+  })
+})
+
+// ===========================================================================
+// AMA opt-in
+// ===========================================================================
+
+describe('AMA opt-in', () => {
+  function subWith(opts: { status?: string; ama?: boolean; premium?: boolean } = {}) {
+    return {
+      data: {
+        id: 'sub_m',
+        email: 'm@x.com',
+        status: opts.status ?? 'active',
+        subscription_tier: opts.premium === false ? 'free' : 'premium',
+        subscription_premium_tier_names: opts.premium === false ? [] : ['Plus'],
+        custom_fields:
+          opts.ama === undefined
+            ? []
+            : [{ name: 'AMA YouTube Links', kind: 'boolean', value: opts.ama }],
+      },
+    }
+  }
+  const localRow = (sql: string) =>
+    sql.includes('select') && sql.includes('beehiiv_subscription')
+      ? [
+          {
+            email: 'm@x.com',
+            publication_id: PUB_ID,
+            beehiiv_subscription_id: 'sub_m',
+            status: 'active',
+            has_premium: true,
+            updated_at: new Date().toISOString(),
+          },
+        ]
+      : []
+
+  test('GET reports the opt-in from Beehiiv', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = () => new Response(JSON.stringify(subWith({ ama: true })), { status: 200 })
+    nextSqlResult = localRow
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+    expect((res.__json() as { ama: boolean }).ama).toBe(true)
+  })
+
+  test('GET reports null (unknown) when Beehiiv is down', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = () => new Response('{}', { status: 503 })
+    nextSqlResult = localRow
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { ama: unknown }).ama).toBeNull()
+  })
+
+  test('a member turns it on: custom field written, ama:true returned', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = ({ method }) =>
+      new Response(JSON.stringify(subWith({ ama: method === 'PUT' })), { status: 200 })
+    nextSqlResult = localRow
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.__json()).toMatchObject({ free: true, ama: true })
+    const put = fetchCalls.find((c) => c.method === 'PUT' && c.url.includes('api.beehiiv.com'))
+    expect(put?.body).toEqual({
+      custom_fields: [{ name: 'AMA YouTube Links', value: true }],
+    })
+  })
+
+  test('403 for a non-member turning it on, and Beehiiv is never touched', async () => {
+    const token = await signAuth0Token({ email: 'free@x.com' })
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(403)
+    expect(fetchCalls.some((c) => c.url.includes('api.beehiiv.com'))).toBe(false)
+  })
+
+  test('anyone can turn it off', async () => {
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = ({ method }) =>
+      new Response(
+        JSON.stringify(subWith({ ama: method !== 'PUT', premium: false })),
+        { status: 200 },
+      )
+    nextSqlResult = localRow
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: false } }),
+      res,
+    )
+    expect(res.statusCode).toBe(200)
+    expect((res.__json() as { ama: boolean }).ama).toBe(false)
+  })
+
+  test('409 newsletter_off when the member is unsubscribed from the publication', async () => {
+    markMember('m@x.com')
+    const token = await signAuth0Token({ email: 'm@x.com' })
+    beehiivHandler = () =>
+      new Response(JSON.stringify(subWith({ status: 'inactive' })), { status: 200 })
+    const res = makeRes()
+    await runHandler(
+      buildHandler(),
+      makeReq({ method: 'PUT', bearer: token, body: { ama: true } }),
+      res,
+    )
+    expect(res.statusCode).toBe(409)
+    expect(res.__json()).toEqual({ error: 'newsletter_off' })
+    expect(fetchCalls.some((c) => c.method === 'PUT')).toBe(false)
   })
 })

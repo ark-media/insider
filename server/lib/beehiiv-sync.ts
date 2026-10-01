@@ -38,7 +38,10 @@ export function isReceivingEmails(status: string): boolean {
 
 // Dedupe concurrent GET /api/me/newsletters refreshes on one instance.
 const REFRESH_CACHE_TTL_MS = 45_000
-type RefreshCacheEntry = { row: LocalSubscriptionRow | null }
+type RefreshCacheEntry = {
+  row: LocalSubscriptionRow | null
+  amaOptIn: boolean | null
+}
 const refreshCache = makeTTLCache<string, RefreshCacheEntry>(
   REFRESH_CACHE_TTL_MS,
 )
@@ -62,6 +65,8 @@ type BeehiivApiResponse = {
     status?: string
     subscription_tier?: 'free' | 'premium'
     subscription_premium_tier_names?: string[]
+    // Only present when the request asked for `expand[]=custom_fields`.
+    custom_fields?: Array<{ name?: string; value?: unknown }>
   }
 }
 
@@ -70,6 +75,12 @@ export type BeehiivSubscription = {
   email: string
   status: string
   hasPremium: boolean
+  /**
+   * The AMA opt-in custom field. Undefined when the response didn't carry
+   * custom fields at all (webhook payloads, PUT bodies without the expand) —
+   * which is not the same as the reader having said no.
+   */
+  amaOptIn?: boolean
 }
 
 function inferHasPremium(data: NonNullable<BeehiivApiResponse['data']>): boolean {
@@ -84,12 +95,19 @@ function unwrapData(
   const d = body.data
   if (!d?.id) throw new Error(`Beehiiv ${op}: response missing id`)
   if (!d.email) throw new Error(`Beehiiv ${op}: response missing email`)
-  return {
+  const sub: BeehiivSubscription = {
     id: d.id,
     email: d.email,
     status: d.status ?? 'active',
     hasPremium: inferHasPremium(d),
   }
+  if (d.custom_fields) {
+    const field = d.custom_fields.find(
+      (f) => (f.name ?? '').toLowerCase() === FIELD_AMA_OPT_IN.toLowerCase(),
+    )
+    sub.amaOptIn = field?.value === true || field?.value === 'true'
+  }
+  return sub
 }
 
 function beehiivHeaders(token: string): Record<string, string> {
@@ -105,7 +123,8 @@ async function getSubscriptionByEmail(
   token: string,
   email: string,
 ): Promise<BeehiivSubscription | null> {
-  const url = `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions/by_email/${encodeURIComponent(email)}`
+  // Custom fields are expanded so the AMA opt-in rides the same read.
+  const url = `https://api.beehiiv.com/v2/publications/${publicationId}/subscriptions/by_email/${encodeURIComponent(email)}?expand[]=custom_fields`
   const res = await fetchWithTimeout(url, { headers: beehiivHeaders(token) })
   if (res.status === 404) return null
   if (!res.ok) {
@@ -157,7 +176,17 @@ async function createSubscription(
 export const FIELD_FIRST_NAME = 'First Name'
 export const FIELD_LAST_NAME = 'Last Name'
 
-type CustomFieldWrite = { name: string; value?: string; delete?: boolean }
+// The opt-in for the AMA YouTube-link emails: a boolean custom field on the
+// same publication, and the Beehiiv segment "Ark+ AMA YouTube links (opted
+// in)" is every subscriber where it equals true. It is a member perk — the
+// link is unlisted — so only an arkPlus reader can turn it on
+// (/api/me/newsletters) and downgradeToFree turns it off. The segment itself
+// can't test the tier (Beehiiv's segment API filters on custom fields only),
+// so clearing it on the way out is what keeps a lapsed member off the list.
+// Provisioned, with the segment, by scripts/beehiiv-provision-custom-fields.ts.
+export const FIELD_AMA_OPT_IN = 'AMA YouTube Links'
+
+type CustomFieldWrite = { name: string; value?: string | boolean; delete?: boolean }
 
 type UpdateBody = {
   tier?: 'free' | 'premium'
@@ -216,30 +245,44 @@ export async function refreshSubscriptionFromBeehiiv(
   deps: PushDeps,
   email: string,
 ): Promise<LocalSubscriptionRow | null> {
+  return (await refreshNewsletterState(deps, email)).row
+}
+
+// The same refresh, plus the AMA opt-in. The opt-in lives only in Beehiiv (no
+// mirror column), so it is null whenever Beehiiv couldn't be read — unknown,
+// which the settings UI must not render as "off".
+export async function refreshNewsletterState(
+  deps: PushDeps,
+  email: string,
+): Promise<RefreshCacheEntry> {
   const cfg = beehiivConfigured(deps.env)
   const normalized = email.toLowerCase()
-  if (!cfg) return getLocalSubscription(deps.sql, normalized)
+  if (!cfg) {
+    return { row: await getLocalSubscription(deps.sql, normalized), amaOptIn: null }
+  }
 
   const cached = refreshCache.get(normalized)
-  if (cached) return cached.row
+  if (cached) return cached
 
   try {
     const sub = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
     if (!sub) {
       await deleteLocalSubscription(deps.sql, normalized)
-      refreshCache.set(normalized, { row: null })
-      return null
+      const entry = { row: null, amaOptIn: false }
+      refreshCache.set(normalized, entry)
+      return entry
     }
     await persistFromBeehiiv(deps.sql, cfg.pubId, sub)
     const row = await getLocalSubscription(deps.sql, normalized)
-    refreshCache.set(normalized, { row })
-    return row
+    const entry = { row, amaOptIn: sub.amaOptIn ?? false }
+    refreshCache.set(normalized, entry)
+    return entry
   } catch (err) {
     console.error(
       `[beehiiv-sync] refresh failed for ${redactEmail(email)}:`,
       err,
     )
-    return getLocalSubscription(deps.sql, normalized)
+    return { row: await getLocalSubscription(deps.sql, normalized), amaOptIn: null }
   }
 }
 
@@ -489,12 +532,61 @@ export async function downgradeToFree(
   const normalized = email.toLowerCase()
   const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
   if (!existing) return
-  const next = existing.hasPremium
-    ? await updateSubscription(cfg.pubId, cfg.token, existing.id, {
-        tier: 'free',
-      })
-    : existing
+  // The AMA opt-in goes with the tier, in the same PUT: the segment can't see
+  // the tier, so a flag left at true would keep mailing an unlisted link to
+  // someone who is no longer a member. Also cleared for a reader already
+  // without the tier whose flag is still set (premium removed in Beehiiv's UI).
+  const body: UpdateBody = {}
+  if (existing.hasPremium) body.tier = 'free'
+  if (existing.amaOptIn) {
+    body.custom_fields = [{ name: FIELD_AMA_OPT_IN, value: false }]
+  }
+  const next =
+    Object.keys(body).length > 0
+      ? await updateSubscription(cfg.pubId, cfg.token, existing.id, body)
+      : existing
   await persistFromBeehiiv(deps.sql, cfg.pubId, next)
+  refreshCache.delete(normalized)
+}
+
+// Thrown when a reader asks for the AMA emails without being on the newsletter
+// at all. They share the publication, so an unsubscribed record can't receive
+// them — saying so beats storing an opt-in that will never deliver.
+export class NewsletterOffError extends Error {
+  constructor() {
+    super('not subscribed to the publication; AMA emails cannot be delivered')
+    this.name = 'NewsletterOffError'
+  }
+}
+
+// Set or clear the AMA opt-in. The caller checks arkPlus before passing
+// `on: true` — this helper does not. Turning it off for a reader with no record
+// is a no-op. Returns the opt-in as Beehiiv now holds it.
+export async function setAmaOptIn(
+  deps: PushDeps,
+  email: string,
+  on: boolean,
+): Promise<boolean> {
+  const cfg = beehiivConfigured(deps.env)
+  if (!cfg) throw new Error('Beehiiv not configured')
+  const normalized = email.toLowerCase()
+  const existing = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+  if (!existing) {
+    if (on) throw new NewsletterOffError()
+    return false
+  }
+  if (on && !isReceivingEmails(existing.status)) throw new NewsletterOffError()
+
+  const result = await updateSubscription(cfg.pubId, cfg.token, existing.id, {
+    custom_fields: [{ name: FIELD_AMA_OPT_IN, value: on }],
+  })
+  // Mirror the by_email read, not the response — same reason as
+  // syncSubscriberName: a custom-fields-only PUT says nothing about the tier.
+  await persistFromBeehiiv(deps.sql, cfg.pubId, existing)
+  const amaOptIn = result.amaOptIn ?? on
+  const row = await getLocalSubscription(deps.sql, normalized)
+  refreshCache.set(normalized, { row, amaOptIn })
+  return amaOptIn
 }
 
 // Apply both toggles in one Beehiiv round-trip. `free` and `premium` are the
@@ -606,7 +698,10 @@ export async function applyPreferences(
   }
   await persistFromBeehiiv(deps.sql, cfg.pubId, result)
   const row = await getLocalSubscription(deps.sql, normalized)
-  refreshCache.set(normalized, { row })
+  refreshCache.set(normalized, {
+    row,
+    amaOptIn: result.amaOptIn ?? existing?.amaOptIn ?? null,
+  })
   return row
 }
 
