@@ -1,18 +1,16 @@
 // The feed-setup reminder email. Sent by the reminder cron to members who
-// joined but haven't finished setting up their private feeds. Reuses the Ark+
-// brand shell from welcome-email so it looks like the rest of the lifecycle.
-// Pure (no I/O) so it's trivially testable.
+// joined but haven't finished setting up their private feeds. Pure (no I/O) so
+// it's trivially testable.
 
-import { greeting, link, renderShell, supportLine } from './welcome-email.js'
+import { accent, greeting, MANAGE_FOOTER, renderShell, supportLine } from './email-layout.js'
 
 export type FeedReminderEmailParams = {
-  // Already a clean first name — callers resolve it through greetingFirstName,
-  // which is what rejects a name manufactured from the member's email.
+  // Already a clean first name — callers resolve it through greetingFirstName.
   firstName?: string
   // How many of the member's feeds are already set up, out of how many total.
   doneCount: number
   total: number
-  // The setup hub — where the CTA lands (Spotify one-click + per-show list).
+  // The setup hub — where the button lands.
   setupUrl: string
 }
 
@@ -28,33 +26,29 @@ export function renderFeedReminderEmail(p: FeedReminderEmailParams): {
     ? `You're ${remaining} ${showWord} away from the full network`
     : 'Finish setting up your Ark+ membership'
 
-  const headlineHtml = started
-    ? `You're ${remaining} ${showWord} away.`
-    : 'Set up your private feeds.'
-
-  // Lead with the outcome, then push the one-click Spotify path (link once →
-  // every show) that the hub features up top.
-  const bodyHtml = started
-    ? `You've set up ${p.doneCount} of your ${p.total} Ark+ private feeds — there ${remaining === 1 ? 'is' : 'are'} still ${remaining} ${showWord} waiting for you. The fastest way to get the rest is to ${link(p.setupUrl, 'link Spotify once')} — it follows every show in the network automatically. Or add each show to the podcast app you already use.`
-    : `Your Ark+ membership unlocks a private feed for all ${p.total} shows in the network — but you haven't set any up yet, so new episodes aren't reaching you. The fastest way in is to ${link(p.setupUrl, 'link Spotify once')} and follow the whole network automatically. Prefer another app? Set up each show by hand from the same page.`
-
   const html = renderShell({
     preheader: started
-      ? `${remaining} more ${showWord} to add to your podcast app.`
-      : 'Add your Ark+ shows to your podcast app.',
-    eyebrow: 'Finish setup',
-    headlineHtml,
+      ? `${remaining} more ${showWord} to add. It takes a few minutes.`
+      : 'Set up your private feed. It takes about 5 minutes.',
+    headlineHtml: started
+      ? `You&rsquo;re ${remaining} ${showWord} ${accent('away.')}`
+      : `Set up your ${accent('private feed.')}`,
+    sublineHtml: 'Every Ark Media show. More exclusive content.',
     greetingHtml: greeting(p.firstName),
-    bodyHtml,
-    ctaHref: p.setupUrl,
-    ctaLabel: started ? 'Add the rest' : 'Set up my feeds',
-    // The copy doc's check-in emails all close their instructions by naming the
-    // support desk. Same sentence, same address — see supportLine().
-    ctaFollowupHtml: `It takes about a minute, and you can always change apps later from your account. ${supportLine(
-      'If you run into any trouble',
-    )}`,
-    footerHtml:
-      'You’re getting this because your Ark+ feeds aren’t fully set up yet. Once they are, we’ll stop sending these. Need help? Just reply to this email.',
+    bodyHtml: [
+      started
+        ? `You&rsquo;ve set up ${p.doneCount} of your ${p.total} private feeds. ${remaining} ${showWord} still ${remaining === 1 ? 'needs' : 'need'} adding before every new episode reaches you.`
+        : `Your membership covers all ${p.total} shows, but none of your private feeds are set up yet, so new episodes aren&rsquo;t reaching you.`,
+    ],
+    action: {
+      eyebrow: 'What you need to do',
+      headingHtml: started ? `Add the ${accent('rest.')}` : `Set it up ${accent('today.')}`,
+      bodyHtml: 'Connect Spotify once to follow every show, or add each show to the podcast app you already use. It should take about 5 minutes.',
+      href: p.setupUrl,
+      label: started ? 'Add the rest' : 'Set up my feed',
+    },
+    closingHtml: supportLine(),
+    footerHtml: `You&rsquo;re getting this because your Ark+ feeds aren&rsquo;t fully set up yet. Once they are, we&rsquo;ll stop sending these. ${MANAGE_FOOTER}`,
   })
 
   return { subject, html }

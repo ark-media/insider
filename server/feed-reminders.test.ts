@@ -247,7 +247,7 @@ describe('renderFeedReminderEmail', () => {
     expect(html).toContain('Hi Ada,')
     expect(html).toContain('all 6 shows')
     expect(html).toContain(setupUrl)
-    expect(html).toContain('Set up my feeds')
+    expect(html).toContain('Set up my feed')
     // The copy doc names the support desk in every check-in email.
     expect(html).toContain('support@arkmedia.org')
   })

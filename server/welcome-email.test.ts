@@ -1,14 +1,12 @@
 import { describe, test, expect } from 'bun:test'
 import {
-  ARK_PLUS_EXTRAS,
   FEED_INCLUDED,
-  SUPPORT_EMAIL,
-  networkShowBullets,
   renderAxisAddedEmail,
   renderCircleWelcomeEmail,
   renderGiftRedemptionEmail,
   renderSubscriberWelcomeEmail,
 } from './lib/welcome-email'
+import { SUPPORT_EMAIL, esc, showRows } from './lib/email-layout'
 import { circleUrls } from '../src/config/urls'
 import { shows } from '../src/data/shows'
 
@@ -34,7 +32,7 @@ describe('renderGiftRedemptionEmail', () => {
     expect(html).toContain('https://app.test/redeem?mt=jwt.abc.def')
     expect(html).not.toMatch(/password/i)
     // Auto-login promise, not a "sign in first" instruction.
-    expect(html).toContain('signed in automatically')
+    expect(html).toContain('One click signs you in')
   })
 
   test('an address typed into recipient_name is never greeted', () => {
@@ -56,7 +54,7 @@ describe('renderGiftRedemptionEmail', () => {
       claimUrl: 'https://app.test/redeem?mt=jwt',
     })
     expect(subject).toBe("You've been gifted Ark+")
-    expect(html).toContain("You've been gifted 1 year of Ark+.")
+    expect(html).toContain('You&rsquo;ve been gifted 1 year of')
     expect(html).toContain('Hi there,')
   })
 
@@ -68,9 +66,10 @@ describe('renderGiftRedemptionEmail', () => {
       claimUrl: 'https://app.test/redeem?mt=jwt',
     })
     expect(fold.subject).toBe('Bob sent you the Fold')
-    expect(fold.html).toContain('gifted you 6 months of the Fold.')
+    expect(fold.html).toContain('gifted you 6 months of')
+    expect(fold.html).toContain('the Fold.</span>')
     expect(fold.html).not.toContain('Ark+')
-    expect(fold.html).toContain('Claim your gift to start your membership.</')
+    expect(fold.html).toContain('A private, moderated community')
 
     const bundle = renderGiftRedemptionEmail({
       term: '1yr',
@@ -87,6 +86,7 @@ describe('renderGiftRedemptionEmail', () => {
     })
     // Ark+ alone doesn't include the Fold; the old copy said it did.
     expect(arkPlus.html).not.toContain('the Fold')
+    expect(arkPlus.html).toContain(FEED_INCLUDED)
   })
 
   test('escapes HTML in user-supplied giver name and message', () => {
@@ -160,26 +160,25 @@ describe('renderGiftRedemptionEmail — subject line', () => {
   })
 })
 
-describe('networkShowBullets', () => {
+describe('showRows', () => {
   test('names every public network show, and never the members-only one', () => {
-    // The copy doc's "VISUAL BENEFITS LIST" — the shows an Ark+ membership makes
-    // ad-free and early. The premium show is delivered through the private feed
-    // and is not one of them, so it must not appear in this list.
-    const bullets = networkShowBullets().join('\n')
+    // The shows an Ark+ membership makes ad-free and early. The premium show is
+    // delivered through the private feed and is not one of them.
+    const rows = showRows('https://app.test')
     for (const show of shows) {
-      if (show.paid) expect(bullets).not.toContain(show.title)
-      else expect(bullets).toContain(show.title)
+      if (show.paid) expect(rows).not.toContain(show.title)
+      else expect(rows).toContain(esc(show.title))
     }
   })
 
-  test('carries a one-line description per show, not just the name', () => {
-    const bullets = networkShowBullets()
-    const callMeBack = shows.find((s) => s.slug === 'call-me-back')!
-    expect(bullets.join('\n')).toContain(callMeBack.tagline)
+  test('covers come from the given origin, and every cover is named for blocked images', () => {
+    const rows = showRows('https://app.test/')
+    expect(rows).toContain('src="https://app.test/shows/call-me-back-400.jpg"')
+    expect(rows).toContain('alt="Call me Back"')
   })
 
-  test('no <img>: key art is still a design placeholder, and mail clients block images', () => {
-    expect(networkShowBullets().join('\n')).not.toContain('<img')
+  test('without an origin the rows are text only', () => {
+    expect(showRows(null)).not.toContain('<img')
   })
 })
 
@@ -191,16 +190,15 @@ describe('renderSubscriberWelcomeEmail', () => {
       isNewAccount: true,
       tier: 'ark-plus',
     })
-    expect(subject).toBe('Welcome to Ark+, one quick step left')
-    expect(html).toContain('Welcome to Ark+.')
+    expect(subject).toBe('Welcome to Ark+')
+    expect(html).toContain('Welcome to')
     expect(html).toContain('Hi Casey,') // first name only
     // Member-facing copy never mentions a password, in any direction: not as a
     // thing to set, and not as a thing they don't need. See welcome-email.ts.
     expect(html).not.toMatch(/password/i)
-    expect(html).toContain('That link signs you in automatically')
+    expect(html).toContain('This button signs you in automatically')
     // The caller wraps setupUrl in an auto-login link, which is what makes a
     // CTA reachable for an account that has never signed in.
-    expect(html).toContain(URLS.welcomeUrl)
     expect(html).toContain(URLS.setupUrl)
   })
 
@@ -219,9 +217,9 @@ describe('renderSubscriberWelcomeEmail', () => {
 
   test('existing account: the CTA is setup itself, with no sign-in line', () => {
     const { html } = renderSubscriberWelcomeEmail({ ...URLS, tier: 'ark-plus' })
-    expect(html).toContain('Finish setup')
+    expect(html).toContain('Set up my feed')
     expect(html).toContain(URLS.setupUrl)
-    expect(html).not.toContain('login you already have')
+    expect(html).not.toContain('signs you in automatically')
     expect(html).not.toMatch(/password/i)
     expect(html).toContain('Hi there,')
   })
@@ -241,10 +239,9 @@ describe('renderSubscriberWelcomeEmail', () => {
       ...URLS,
       tier: 'ark-plus',
     })
-    expect(subject).toBe('Welcome to Ark+, one quick step left')
-    expect(html).toContain('What you have access to')
-    expect(html).toContain(ARK_PLUS_EXTRAS)
-    for (const bullet of networkShowBullets()) expect(html).toContain(bullet)
+    expect(subject).toBe('Welcome to Ark+')
+    expect(html).toContain('What you now get')
+    expect(html).toContain(showRows('https://app.test'))
     // A feed-only membership must not advertise access to the Fold it lacks.
     expect(html).not.toContain('Fold')
   })
@@ -255,7 +252,7 @@ describe('renderSubscriberWelcomeEmail', () => {
       tier: 'bundle',
     })
     expect(subject).toBe('Welcome to Ark+ and The Fold')
-    expect(html).toContain('Welcome to Ark+ and the Fold.')
+    expect(html).toContain('the Fold.')
     expect(html).toContain('Getting started')
     expect(html).toContain('There are two quick steps')
     // Step one: the private feed. Step two: the app that IS the Fold.
@@ -263,7 +260,7 @@ describe('renderSubscriberWelcomeEmail', () => {
     expect(html).toContain(circleUrls.appStoreIos)
     expect(html).toContain(circleUrls.appStoreAndroid)
     // And the same show list as ark-plus, since the bundle includes the feed.
-    for (const bullet of networkShowBullets()) expect(html).toContain(bullet)
+    expect(html).toContain(showRows('https://app.test'))
   })
 })
 
@@ -273,10 +270,10 @@ describe('renderCircleWelcomeEmail', () => {
       welcomeUrl: URLS.welcomeUrl,
     })
     expect(subject).toBe('Welcome to The Fold')
-    expect(html).toContain('Welcome to the Fold.')
+    expect(html).toContain('the Fold.')
     expect(html).toContain(circleUrls.appStoreIos)
     expect(html).toContain(circleUrls.appStoreAndroid)
-    expect(html).toContain("What you'll find inside")
+    expect(html).toContain('Inside the Fold')
     expect(html).toContain('Deborah Pardes')
     expect(html).toContain(SUPPORT_EMAIL)
     // No private feed on this membership, so no RSS/Spotify instructions.
@@ -291,7 +288,7 @@ describe('renderCircleWelcomeEmail', () => {
     })
     expect(html).not.toMatch(/password/i)
     expect(html).toContain('Enter the Fold')
-    expect(html).toContain('That link signs you in automatically')
+    expect(html).toContain('This button signs you in automatically')
     expect(html).toContain(URLS.welcomeUrl)
   })
 })
@@ -380,16 +377,15 @@ describe('renderAxisAddedEmail', () => {
       price: '$25',
       plan: 'monthly',
     })
-    expect(html).toContain("there's just one more step")
     expect(html).toContain(circleUrls.appStoreIos)
     expect(html).toContain(circleUrls.appStoreAndroid)
     expect(html).toContain(circleUrls.webApp)
     expect(html).toContain(circleUrls.profileSettings)
-    expect(html).toContain("What you'll find inside")
+    expect(html).toContain('Inside the Fold')
     expect(html).toContain(SUPPORT_EMAIL)
     // Text links, not the store badge lockups: SVG doesn't render in most mail
     // clients, and image blocking would leave the row empty in the rest.
-    expect(html).not.toContain('<img')
+    expect(html).not.toContain('.svg')
   })
 
   test('adding Ark+: feed copy and the feed setup CTA', () => {
@@ -400,8 +396,8 @@ describe('renderAxisAddedEmail', () => {
       plan: 'monthly',
     })
     expect(subject).toContain('feed')
-    expect(html).toContain(FEED_INCLUDED)
-    expect(html).toContain('Set up your feed')
+    expect(html).toContain('Early access, ad-free listening, and exclusive content')
+    expect(html).toContain('Set up my feed')
     expect(html).toContain(URLS.setupUrl)
     expect(html).not.toContain('Enter the Fold')
     // The Fold app links belong to the axis that grants the Fold.
