@@ -9,17 +9,16 @@ import {
 
 // The Settings tab's email section.
 //
-// There is one newsletter. Free and Ark+ readers get different editions of it
-// — the edition is the premium tier on the reader's Beehiiv record, which the
-// membership sets and removes (server/lib/beehiiv-sync.ts), not something the
-// reader picks. So the only switch here is whether the newsletter arrives at
-// all: `free` in /api/me/newsletters, i.e. subscribed to the publication.
+// Free and Ark+ readers get different editions of The Current — the edition is
+// the premium tier on the reader's Beehiiv record, which the membership sets
+// and removes (server/lib/beehiiv-sync.ts), not something the reader picks. So
+// its switch is only whether it arrives: `free` in /api/me/newsletters.
 // Turning it back on for an Ark+ member re-applies their edition server-side
 // (server/routes/me.ts).
 //
-// Ark+ members get one more switch, off by default: the AMA emails, which carry
-// the unlisted YouTube link to each AMA episode. They go out from the same
-// Beehiiv publication, so they need the newsletter switch on to arrive.
+// Ark+ members get a second, independent switch, off by default: the AMA
+// emails, which carry the unlisted YouTube link to each AMA episode. Each
+// switch is its own Beehiiv list, so either can be on without the other.
 
 const AMA_TITLE = "AMA episode links";
 
@@ -137,17 +136,11 @@ export function EmailPreferences({ email }: { email: string }) {
                 note={
                   prefs.ama === null
                     ? "Couldn't load this setting. Refresh to try again."
-                    : !prefs.free
-                      ? `Subscribe to ${newsletter.title} to get these. They come from the same list.`
-                      : null
+                    : null
                 }
                 on={prefs.ama === true}
                 busy={saving === "ama"}
-                disabled={
-                  saving !== null ||
-                  prefs.ama === null ||
-                  (!prefs.free && prefs.ama !== true)
-                }
+                disabled={saving !== null || prefs.ama === null}
                 onToggle={() => void onToggle("ama")}
               />
             ) : null}

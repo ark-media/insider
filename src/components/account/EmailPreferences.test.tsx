@@ -171,15 +171,21 @@ describe("the AMA emails", () => {
     expect(button(AMA).textContent).toBe("Unsubscribe");
   });
 
-  test("can't be turned on while the newsletter is off — same list", async () => {
+  test("are independent of the newsletter: on while it is off", async () => {
     await mount({ free: false });
-    expect(button(AMA).disabled).toBe(true);
-    expect(document.body.textContent).toContain(`Subscribe to ${NEWSLETTER} to get these`);
+    await act(async () => {
+      button(AMA).click();
+    });
+    expect(puts).toEqual([{ ama: true }]);
+    expect(button(AMA).textContent).toBe("Unsubscribe");
+    expect(label()).toBe("Subscribe");
   });
 
-  test("can still be turned off while the newsletter is off", async () => {
-    await mount({ free: false, ama: true });
-    expect(button(AMA).disabled).toBe(false);
+  test("turning the newsletter off leaves them on", async () => {
+    await mount({ ama: true });
+    await click();
+    expect(puts).toEqual([{ free: false }]);
+    expect(button(AMA).textContent).toBe("Unsubscribe");
   });
 
   test("an unreadable setting is not shown as off", async () => {

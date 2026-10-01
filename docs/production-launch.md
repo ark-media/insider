@@ -159,6 +159,8 @@ you get the value; "Scope" = server-only vs shipped to browser.
 | `BEEHIIV_API_KEY` | server | Beehiiv API key. Also the podcast catalog's credential. |
 | `BEEHIIV_PUBLICATION_ID_ARK_DAILY` | server | The newsletter's publication id (one newsletter; free and members' editions via the premium tier). |
 | `BEEHIIV_PREMIUM_TIER_ID` | server | `GET /v2/publications/<id>/tiers`. |
+| `BEEHIIV_LIST_ID_THE_CURRENT` | server | The Current's newsletter list (auto-subscribe on). `bun run scripts/beehiiv-provision-newsletter-lists.ts` prints it. Unset → the newsletter switch unsubscribes the whole publication. |
+| `BEEHIIV_LIST_ID_AMA` | server | The Ark+ AMA Links list (opt-in, Ark+ only). Same script. Unset → the AMA switch answers 503. |
 | `BEEHIIV_WEBHOOK_SECRET` | server | `openssl rand -hex 32`; register `/api/beehiiv/webhook?key=…` for the subscription.* events. |
 
 ##### Podcasts

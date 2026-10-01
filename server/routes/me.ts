@@ -9,11 +9,10 @@ import {
 import {
   applyPreferences,
   ensureFreeSubscription,
-  isReceivingEmails,
-  NewsletterOffError,
+  AmaListNotConfiguredError,
   PremiumNotConfiguredError,
   refreshNewsletterState,
-  setAmaOptIn,
+  setAmaList,
 } from '../lib/beehiiv-sync.js'
 import { deriveEntitlements, type Entitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
@@ -357,19 +356,15 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
       // the inbound Beehiiv webhook). PUT applies the change to Beehiiv, then
       // refreshes the row.
       //
-      // There is one newsletter, so there is one switch for it:
-      //   free=true  → re-activate the subscription record (status=active)
-      //   free=false → unsubscribe the whole record
-      // The premium tier is which EDITION arrives (and the private-feed grant),
-      // so only the membership moves it — activation and cancellation, never
-      // this route. `premium` in the response is read-only.
-      //
-      // Ark+ members get a second, opt-in switch: `ama`, the emails carrying
-      // the unlisted YouTube link to each AMA episode (FIELD_AMA_OPT_IN in
-      // beehiiv-sync.ts). Default off. Only arkPlus can turn it on, and only
-      // while the newsletter itself is on — it is the same publication, so an
-      // unsubscribed record could never receive them. `ama` is null when
-      // Beehiiv couldn't be read.
+      // Two independent switches, each a Beehiiv newsletter list (see
+      // newsletterListIds in beehiiv-sync.ts):
+      //   free → The Current. On for every new subscriber.
+      //   ama  → the emails carrying the unlisted YouTube link to each AMA
+      //          episode. Off until an Ark+ member turns it on; only arkPlus
+      //          can. Null in the response when unknown.
+      // The premium tier is which EDITION of The Current arrives (and the
+      // private-feed grant), so only the membership moves it — activation and
+      // cancellation, never this route. `premium` in the response is read-only.
       path: '/api/me/newsletters',
       method: ['GET', 'PUT'],
       handler: async (req, res, json) => {
@@ -393,13 +388,13 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         const deps = { env, sql }
 
         const respond = async () => {
-          const { row, amaOptIn } = await refreshNewsletterState(deps, email)
+          const state = await refreshNewsletterState(deps, email)
           json(200, {
             email,
-            free: row ? isReceivingEmails(row.status) : false,
-            premium: row?.hasPremium ?? false,
+            free: state.current,
+            premium: state.row?.hasPremium ?? false,
             canPremium: isMember,
-            ama: amaOptIn,
+            ama: state.ama,
           })
         }
 
@@ -433,15 +428,16 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
             if (setFree === true && isMember) prefs.premium = true
             await applyPreferences(deps, email, prefs)
           }
-          if (setAma !== undefined) await setAmaOptIn(deps, email, setAma)
+          if (setAma !== undefined) await setAmaList(deps, email, setAma)
           await respond()
         } catch (err) {
           if (err instanceof PremiumNotConfiguredError) {
             console.error(`[me] premium toggle unavailable for ${redactEmail(email)}: no tier configured`)
             return json(503, { error: 'premium_unavailable' })
           }
-          if (err instanceof NewsletterOffError) {
-            return json(409, { error: 'newsletter_off' })
+          if (err instanceof AmaListNotConfiguredError) {
+            console.error('[me] AMA list toggle unavailable: BEEHIIV_LIST_ID_AMA not set')
+            return json(503, { error: 'ama_unavailable' })
           }
           console.error(
             `[me] newsletter preferences update failed for ${redactEmail(email)}:`,
