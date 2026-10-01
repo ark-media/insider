@@ -396,7 +396,7 @@ export const supportTopics: SupportTopic[] = [
         action: {
           kind: "note",
           body:
-            "Your gift email has a link that signs you in and sets everything up. If you can't find it, check spam — and if it's expired, send us a message and we'll reissue it.",
+            "Your gift email has a link that signs you in and sets everything up. It never expires, so you can claim your gift whenever you're ready. If you can't find it, check spam, or send us a message and we'll resend it.",
         },
       },
       { action: { kind: "route", label: "Claim a gift", to: "/redeem" } },

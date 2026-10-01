@@ -180,7 +180,7 @@ Anyone can buy a gift. Redemption is identity-keyed on the **recipient**.
 | **GIFT-04** | Recipient email | Magic-link (`?mt=`) auto-logs-in, redeems, strips `mt` from the URL, lands on `/welcome?claimed=1` with a “how to sign in next time” step. |
 | **GIFT-05** | Fallback `?token=` | Guest is asked to sign in first; signed-in recipient redeems. Wrong account must not grant. |
 | **GIFT-06** | Replay / already claimed | Second click → terminal “already claimed”. No double grant, extend, or credit. |
-| **GIFT-07** | Expired / garbage link | Terminal copy; no membership write. |
+| **GIFT-07** | Garbage / tampered link (old links never expire) | Terminal copy; no membership write. |
 | **GIFT-08** | Fresh recipient | Membership row + the gifted axis(es). Welcome/onboarding matches the gift, not a phantom SKU. |
 | **GIFT-09** | Stacking (see matrix) | Grant / extend / credit / mixed match the table. UI copy matches `applied`. |
 | **GIFT-10** | Gift-only member | No card / no subscription on billing. Near-expiry banner inside 14 days. After expiry, axes drop; Circle removed; feeds/letter lock. |
