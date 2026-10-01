@@ -335,7 +335,7 @@ function HomePage() {
           <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
             <div>
               <h1 className="max-w-4xl text-fg-strong">
-                <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
+                <span className="rise rise-2 display-upright block text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.05]">
                   A trusted,{" "}
                   <span className="display-upright text-cyan">independent</span>{" "}
                   media company for Jews around the world
