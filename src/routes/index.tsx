@@ -433,11 +433,9 @@ function HomePage() {
             <div>
               <h1 className="max-w-4xl text-fg-strong">
                 <span className="rise rise-2 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
-                  Connecting Jewish{" "}
-                  <span className="display-upright text-cyan">Voices</span>,
-                </span>
-                <span className="rise rise-3 display-upright block text-[clamp(2.4rem,6vw,4.6rem)] leading-[1.02]">
-                  Near and Far.
+                  A trusted,{" "}
+                  <span className="display-upright text-cyan">independent</span>{" "}
+                  media company for Jews around the world
                 </span>
               </h1>
               <div
@@ -446,11 +444,10 @@ function HomePage() {
                 style={{ animationDelay: "0.7s" }}
               />
               <p className="rise rise-5 mt-8 max-w-2xl text-body-lg">
-                Ark Media explores the big questions
-                shaping Jewish life, Israel's future, and our rapidly changing
-                world. Through conversations with leading Jewish thinkers from
-                around the world, Ark Media aims to build a global community
-                driven by curiosity and meaningful dialogue.
+                Ark Media brings together a global community to explore the big
+                questions shaping Jewish life, Israel’s future, and our rapidly
+                changing world. Our aim is to build a global community driven by
+                curiosity and meaningful dialogue.
               </p>
               <div
                 className="rise mt-10 flex flex-wrap gap-3"

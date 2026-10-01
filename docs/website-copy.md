@@ -8,9 +8,8 @@
 
 ## Home   /
 ### Hero (home)
-- **HEADLINE (LINE 1)**: Connecting Jewish Voices, ("Voices" rendered in the cyan accent color)
-- **HEADLINE (LINE 2)**: Near and Far.
-- **BODY**: Ark Media is a podcast network that explores the big questions shaping Jewish life, Israel's future, and our rapidly changing world. Through conversations with leading Jewish thinkers from around the world, Ark Media aims to build a global community driven by curiosity and meaningful dialogue.
+- **HEADLINE**: A trusted, independent media company for Jews around the world
+- **BODY**: Ark Media brings together a global community to explore the big questions shaping Jewish life, Israel’s future, and our rapidly changing world. Our aim is to build a global community driven by curiosity and meaningful dialogue.
 - **PRIMARY CTA (NON-SUBSCRIBER)**: Become an Ark+ member →
 - **PRIMARY CTA (SUBSCRIBER)**: Explore the Fold →
 
