@@ -1,5 +1,5 @@
 // ICMB → Ark+ subscription migration — moves an existing Inside Call me Back
-// subscription (the Supercast-era products) onto the catalog's Ark+ product IN
+// subscription (the Supporting Cast-era products) onto the catalog's Ark+ product IN
 // PLACE.
 //
 // Why in place, not a new subscription: the webhook only recognises a
