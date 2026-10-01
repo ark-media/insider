@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageShell } from "../components/PageShell";
 import { FoldLogo, ProductMarks } from "../components/FoldLogo";
 import { BookCover } from "../components/BookCover";
@@ -131,9 +131,7 @@ function MarketingShowcase() {
           // Art, not instruction — hidden on narrow screens the way the /subscribe
           // hero hides its cover, so the headline and CTA own the first screen.
           <div className="hidden lg:block">
-            <PhoneFrame className="w-[250px]">
-              <FeedScreen />
-            </PhoneFrame>
+            <AppScreens />
           </div>
         }
         heroClassName="fold-bg grain-overlay overflow-hidden"
@@ -606,150 +604,27 @@ function JoinCard({
 }
 
 /* ---------------------------------------------------------------------------
-   App mockup. Renders with fixed dark colors (not theme tokens) so it reads as
-   a real app screenshot in both the light and dark site themes. Swap the inner
-   screen for an actual capture when we have one.
+   App captures — the splash screen tucked behind the events screen. The PNGs
+   carry their own device frames, so they read the same in both site themes.
 --------------------------------------------------------------------------- */
-function PhoneFrame({
-  children,
-  className = "w-[270px] sm:w-[300px]",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+function AppScreens() {
   return (
-    <div className={`relative isolate shrink-0 ${className}`}>
+    <div className="relative isolate w-[340px] shrink-0">
       <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-cyan/10 blur-2xl" />
-      <div className="relative aspect-[9/19] overflow-hidden rounded-[2.6rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
-        <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
-          {/* notch */}
-          <div className="absolute left-1/2 top-[10px] z-20 h-[22px] w-[96px] -translate-x-1/2 rounded-full bg-black/70" />
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatusBar() {
-  return (
-    <div className="flex items-center justify-between px-5 pt-3 text-[11px] font-semibold text-white/90">
-      <span>9:41</span>
-      <div className="flex items-center gap-1.5">
-        <span className="flex items-end gap-[2px]">
-          <span className="h-[5px] w-[3px] rounded-sm bg-white/90" />
-          <span className="h-[7px] w-[3px] rounded-sm bg-white/90" />
-          <span className="h-[9px] w-[3px] rounded-sm bg-white/90" />
-          <span className="h-[11px] w-[3px] rounded-sm bg-white/40" />
-        </span>
-        <span className="ml-0.5 flex h-[11px] w-[20px] items-center rounded-[3px] border border-white/60 px-[2px]">
-          <span className="h-[6px] w-[12px] rounded-[1px] bg-white/90" />
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Initials({ name, bg }: { name: string; bg: string }) {
-  const initials = name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return (
-    <span
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-[#0b153c]"
-      style={{ background: bg }}
-    >
-      {initials}
-    </span>
-  );
-}
-
-function FeedScreen() {
-  return (
-    <div className="flex h-full flex-col text-white">
-      <StatusBar />
-      {/* header */}
-      <div className="mt-5 flex items-center justify-between border-b border-white/10 px-5 pb-4">
-        <div className="text-[15px] font-bold text-white/95">The Fold</div>
-        <div className="flex items-center gap-1.5 text-[10px] text-white/55">
-          <span className="inline-block h-[6px] w-[6px] rounded-full bg-[#7bd389]" />
-          2,847 online
-        </div>
-      </div>
-
-      {/* feed */}
-      <div className="flex flex-1 flex-col gap-3 overflow-hidden px-4 py-4">
-        <FeedPost
-          name="Maya L."
-          bg="#f2b705"
-          meta="Tel Aviv · 12m"
-          text="Just finished today's episode. The point about the budget timeline reframed the whole thing for me."
-          likes={48}
-          replies={12}
-        />
-        <FeedPost
-          name="David R."
-          bg="#9d8df1"
-          meta="New York · 1h"
-          text="Anyone going to the listener meetup next week? Trying to coordinate a group from the Upper West Side."
-          likes={31}
-          replies={27}
-        />
-        <FeedPost
-          name="Sarah K."
-          bg="#7bd389"
-          meta="London · 3h"
-          text="Sharing the long-read Nadav mentioned — worth every minute."
-          likes={64}
-          replies={9}
-        />
-      </div>
-
-      {/* tab bar */}
-      <div className="flex items-center justify-around border-t border-white/10 px-4 py-3 text-[9px] font-semibold uppercase tracking-wide">
-        <span className="text-[#3eb5f9]">Feed</span>
-        <span className="text-white/45">Events</span>
-        <span className="text-white/45">Rooms</span>
-        <span className="text-white/45">Profile</span>
-      </div>
-    </div>
-  );
-}
-
-function FeedPost({
-  name,
-  bg,
-  meta,
-  text,
-  likes,
-  replies,
-}: {
-  name: string;
-  bg: string;
-  meta: string;
-  text: string;
-  likes: number;
-  replies: number;
-}) {
-  return (
-    <div className="rounded-xl bg-white/[0.05] p-3">
-      <div className="flex items-center gap-2">
-        <Initials name={name} bg={bg} />
-        <div>
-          <div className="text-[11px] font-bold text-white/90">{name}</div>
-          <div className="text-[9px] text-white/45">{meta}</div>
-        </div>
-      </div>
-      <p className="mt-2 text-[11px] leading-snug text-white/85">{text}</p>
-      <div className="mt-2 flex items-center gap-4 text-[10px] text-white/50">
-        <span className="flex items-center gap-1">
-          <span className="text-[#3eb5f9]">♥</span> {likes}
-        </span>
-        <span className="flex items-center gap-1">💬 {replies}</span>
-      </div>
+      <img
+        src="/fold/app-splash.webp"
+        width={640}
+        height={1315}
+        alt=""
+        className="absolute left-0 top-8 h-auto w-[210px] -rotate-6 drop-shadow-2xl"
+      />
+      <img
+        src="/fold/app-events.webp"
+        width={640}
+        height={1315}
+        alt="The Fold app's events screen, listing upcoming gatherings"
+        className="relative ml-auto h-auto w-[240px] drop-shadow-2xl"
+      />
     </div>
   );
 }

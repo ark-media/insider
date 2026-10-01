@@ -33,8 +33,7 @@ const bandCtaClass =
 // real one: most issues are members-only, so the home page can't show a live
 // one to everyone. The body gives way to placeholder lines and fades out at
 // the bottom, like the Fold phone. Fixed colors (not theme tokens) so it reads
-// as a real email in both the light and dark site themes — the same convention
-// the app mockups use.
+// as a real email in both the light and dark site themes.
 // ---------------------------------------------------------------------------
 function NewsletterVisual() {
   return (
@@ -98,123 +97,27 @@ function NewsletterVisual() {
   );
 }
 
-// A phone shell mirroring the app mockups on /fold — fixed dark colors so
-// it reads as a real screenshot in both themes. The device is top-anchored in a
-// capped window that fades out at the bottom, so it reads as "rising into
-// frame" instead of dominating the band with its full height.
-function PhoneFrame({ children }: { children: ReactNode }) {
+// ---------------------------------------------------------------------------
+// Fold visual — a capture of the Fold app's home screen, device frame included.
+// Top-anchored in a capped window that fades out at the bottom, so the phone
+// reads as "rising into frame" instead of dominating the band with its full
+// height.
+// ---------------------------------------------------------------------------
+function CommunityVisual() {
   return (
     <div className="relative isolate mx-auto w-[212px] shrink-0 sm:w-[232px]">
       <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-cyan/10 blur-2xl" />
       <div className="relative h-[380px] overflow-hidden [-webkit-mask-image:linear-gradient(to_bottom,#000_70%,transparent)] [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]">
-        <div className="relative aspect-[9/19] overflow-hidden rounded-[2.4rem] border border-white/15 bg-[#0b153c] p-2 shadow-2xl ring-1 ring-black/50">
-          <div className="relative h-full w-full overflow-hidden rounded-[2.1rem] bg-[#0b153c]">
-            {/* notch */}
-            <div className="absolute left-1/2 top-[10px] z-20 h-[20px] w-[88px] -translate-x-1/2 rounded-full bg-black/70" />
-            {children}
-          </div>
-        </div>
+        <img
+          src="/fold/app-home.webp"
+          width={640}
+          height={1315}
+          alt="The Fold app's home screen, listing its spaces"
+          loading="lazy"
+          className="h-auto w-full drop-shadow-2xl"
+        />
       </div>
     </div>
-  );
-}
-
-function PhoneStatusBar() {
-  return (
-    <div className="flex items-center justify-between px-5 pt-3 text-[11px] font-semibold text-white/90">
-      <span>9:41</span>
-      <span className="ml-0.5 flex h-[11px] w-[20px] items-center rounded-[3px] border border-white/60 px-[2px]">
-        <span className="h-[6px] w-[12px] rounded-[1px] bg-white/90" />
-      </span>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Fold visual — the Fold app on a phone.
-//
-// Every string below is art, like the /fold hero mockup: hand-written, static,
-// and safe to reword for design reasons. Do not wire it to a live source. The
-// Fold is private and this is a public marketing page, so the website reads
-// nothing out of it.
-// ---------------------------------------------------------------------------
-function CommunityVisual() {
-  return (
-    <PhoneFrame>
-      <div className="flex h-full flex-col text-white">
-        <PhoneStatusBar />
-
-        {/* App header */}
-        <div className="flex items-center justify-between px-5 pt-4">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan">
-              The Fold
-            </div>
-            <div className="mt-0.5 text-[17px] font-bold">In the room</div>
-          </div>
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-[12px] font-bold">
-            A
-          </span>
-        </div>
-
-        {/* Live / upcoming event card */}
-        <div className="mt-4 px-4">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-white/45">
-            Live &amp; upcoming
-          </div>
-          <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.06] p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/55">
-                Live room
-              </span>
-              <span className="rounded-full border border-white/25 px-2 py-[2px] text-[9px] font-bold uppercase tracking-wide text-white/55">
-                Upcoming
-              </span>
-            </div>
-            <div className="mt-2 line-clamp-2 text-[14px] font-bold leading-snug">
-              Live Q&amp;A with the hosts
-            </div>
-            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-white/60">
-              <span className="inline-block h-[6px] w-[6px] shrink-0 rounded-full bg-cyan" />
-              This week
-            </div>
-            <div className="mt-3 w-full rounded-full bg-cyan py-2 text-center text-[11px] font-bold text-navy">
-              RSVP
-            </div>
-          </div>
-        </div>
-
-        {/* From-the-Fold snippet */}
-        <div className="mt-4 flex-1 px-4">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-white/45">
-            From the Fold
-          </div>
-          <div className="mt-2 flex items-start gap-2.5">
-            <img
-              src="/hosts/dan-senor.jpg"
-              alt=""
-              className="h-7 w-7 rounded-full object-cover"
-            />
-            <div className="min-w-0">
-              <div className="text-[11px] font-semibold text-white/85">
-                Dan Senor
-              </div>
-              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-white/55">
-                Thanks for all the questions on tonight&apos;s vote — recording
-                the bonus segment now.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Tab bar */}
-        <div className="flex items-center justify-around border-t border-white/10 px-6 py-3">
-          <span className="h-[7px] w-[7px] rounded-full bg-cyan" />
-          <span className="h-[7px] w-[7px] rounded-full bg-white/25" />
-          <span className="h-[7px] w-[7px] rounded-full bg-white/25" />
-        </div>
-      </div>
-    </PhoneFrame>
   );
 }
 
