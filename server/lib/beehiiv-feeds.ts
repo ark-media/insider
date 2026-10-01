@@ -288,6 +288,63 @@ export async function fetchPrivateFeeds(
 }
 
 /**
+ * This member's feed on ONE show, for the Supporting Cast redirect, which maps
+ * the one old feed onto one Beehiiv show and has no use for the other three.
+ *
+ * Three answers, kept apart because the caller treats them differently:
+ * the feed; `null` for "no feed for this member" (a stub feed is the right
+ * response); and `'error'` for "Beehiiv could not say" — a public show, an
+ * upstream failure — which the caller must NOT turn into a stub that an app
+ * would remember.
+ */
+export async function fetchPrivateFeedForShow(
+  env: Env,
+  email: string,
+  showId: string,
+): Promise<PrivateFeed | null | 'error'> {
+  if (!env.BEEHIIV_API_KEY || !publicationIdFromEnv(env)) return 'error'
+  const read = await readPrivateFeedOrFail(env, email, showId)
+  if (read === 'error') return 'error'
+  if (read.kind === 'feed') return read.feed
+  if (read.kind === 'public') {
+    console.error(`[beehiiv-feeds] show ${showId} is public — not a redirect target`)
+    return 'error'
+  }
+  return null
+}
+
+// readPrivateFeed folds a failed call into `none` on purpose (entitlement must
+// not depend on Beehiiv answering). The redirect needs the difference, so this
+// wrapper probes reachability first: an upstream that is down is reported as
+// such rather than as "no feed".
+async function readPrivateFeedOrFail(
+  env: Env,
+  email: string,
+  showId: string,
+): Promise<FeedRead | 'error'> {
+  const read = await readPrivateFeed(env, email, showId)
+  if (read.kind !== 'none') return read
+  // `none` is either a genuine 404 or a swallowed failure. Re-ask once with the
+  // raw status exposed — this path is rare (a member without a feed) so the
+  // extra call is cheap, and it is what makes the 503-vs-stub decision honest.
+  const pubId = publicationIdFromEnv(env)
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.beehiiv.com/v2/publications/${pubId}` +
+        `/podcasts/${showId}/private_feeds/by_email/${encodeURIComponent(email)}`,
+      { headers: { Authorization: `Bearer ${env.BEEHIIV_API_KEY}`, Accept: 'application/json' } },
+    )
+    await res.text()
+    if (res.status === 404) return { kind: 'none' }
+    if (res.status === 422) return { kind: 'public' }
+    if (res.ok) return readPrivateFeed(env, email, showId)
+    return 'error'
+  } catch {
+    return 'error'
+  }
+}
+
+/**
  * The premium show set alone, for callers that need the universe rather than
  * one member's feeds (the reminder crons, which report "N of M set up").
  *

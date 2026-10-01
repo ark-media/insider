@@ -7,6 +7,10 @@
   },
   "rewrites": [
     {
+      "source": "/content/:token.rss",
+      "destination": "/api/handler?_path=sc-feed-redirect&token=:token"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/handler?_path=$1"
     },
