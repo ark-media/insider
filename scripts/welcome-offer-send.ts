@@ -1,4 +1,5 @@
-// ICMB launch welcome offer — the launch-day send.
+// ICMB launch welcome offer — the Fold announcement send, the day after launch
+// (Oct 6; launch day itself carries scripts/feed-move-send.ts).
 //
 // Emails every Ark+ subscriber who predates launch their welcome offer, through
 // Resend, each with an auto-login link to /offer. The audience is read straight
@@ -46,7 +47,6 @@ import {
 import { renderWelcomeOfferEmail } from '../server/lib/welcome-offer-email.js'
 import { LIVE_SUB_STATUSES, planFromSubscription } from '../server/routes/stripe/helpers.js'
 import { catalogTierOfSubscription } from '../server/routes/stripe/webhook.js'
-import { greetingFirstName } from '../shared/profile-name.js'
 import type { Tier } from '../server/entitlement.js'
 
 const SENT_AT_KEY = 'welcome_offer_sent_at'
@@ -78,7 +78,6 @@ async function assertMode(stripe: Stripe, key: string | undefined, live: boolean
 type Recipient = {
   customerId: string
   email: string
-  name: string | null
   plan: Plan
   currency: string
 }
@@ -161,7 +160,6 @@ async function main(): Promise<void> {
     recipients.push({
       customerId: customer.id,
       email,
-      name: customer.name ?? null,
       plan,
       currency: isSupportedCurrency(sub.currency) ? sub.currency : 'usd',
     })
@@ -171,11 +169,13 @@ async function main(): Promise<void> {
     yearly: (await resolveCatalogPrice(stripe, 'bundle', 'yearly')).floors,
     monthly: (await resolveCatalogPrice(stripe, 'bundle', 'monthly')).floors,
   }
-  const pricesFor = (r: Recipient) => {
-    const a = offerAmountFor(floors[r.plan], r.plan, r.currency)
+  // The email quotes both cadences (in the member's currency); the dry run
+  // lists the member's own.
+  const pricesFor = (plan: Plan, currency: string) => {
+    const a = offerAmountFor(floors[plan], plan, currency)
     return {
-      offerPrice: formatMinorUnits(a.offerMinor, r.currency),
-      bundlePrice: formatMinorUnits(a.bundleMinor, r.currency),
+      offerPrice: formatMinorUnits(a.offerMinor, currency),
+      bundlePrice: formatMinorUnits(a.bundleMinor, currency),
     }
   }
 
@@ -185,7 +185,7 @@ async function main(): Promise<void> {
   )
   for (const [why, n] of skipped) console.log(`    skipped ${n}: ${why}`)
   for (const r of recipients.slice(0, 10)) {
-    const p = pricesFor(r)
+    const p = pricesFor(r.plan, r.currency)
     console.log(`    ${r.email}  ${r.plan}  ${p.offerPrice} (list ${p.bundlePrice})`)
   }
   if (recipients.length > 10) console.log(`    …and ${recipients.length - 10} more`)
@@ -197,11 +197,10 @@ async function main(): Promise<void> {
   let sent = 0
   let failed = 0
   for (const r of recipients) {
-    const [first, ...rest] = (r.name ?? '').trim().split(/\s+/)
     const { subject, html } = renderWelcomeOfferEmail({
-      firstName: greetingFirstName(first, r.email, rest.join(' ')),
-      plan: r.plan,
-      ...pricesFor(r),
+      monthly: pricesFor('monthly', r.currency),
+      yearly: pricesFor('yearly', r.currency),
+      openHouseUrl: withEmailUtm(`${appBaseUrl}/fold`, 'welcome-offer'),
       discountedMonths: WELCOME_MONTHLY_DISCOUNT_MONTHS,
       offerUrl: await emailLoginUrl(
         appBaseUrl,
