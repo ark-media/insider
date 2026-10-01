@@ -31,9 +31,11 @@
 // set to the live account id, checked against the key before anything is
 // written.
 //
-// Staff: a paid subscription's membership row overwrites a comp/staff row's
-// tier (and its ending drops the comp). Staff who also pay for ICMB are
-// handled by hand — pass them via --exclude / --exclude-file.
+// Staff move to the Bundle ("Ark+ & The Fold") instead, via --bundle /
+// --bundle-file. The webhook writes the membership row from the subscription's
+// product, so a staffer moved to Ark+ would have their comped Bundle row
+// overwritten down to Ark+; on the Bundle product the row stays Bundle. They
+// keep their own amount and any discount, like everyone else.
 //
 // Targets — one of:
 //   (none)                   inventory: every non-catalog product with its count
@@ -43,8 +45,10 @@
 //                            (repeatable; catalog products are refused). With
 //                            --revert, every subscription migrated OFF it.
 // Options:
+//   --bundle=<addr>          move this customer to the Bundle, not Ark+ (staff)
+//   --bundle-file=<path>     one email per line, # comments allowed
 //   --exclude=<addr>         skip this customer (repeatable)
-//   --exclude-file=<path>    one email per line, # comments allowed
+//   --exclude-file=<path>    same format as --bundle-file
 //   --limit=<n>              stop after n subscriptions — migrated ones leave
 //                            the legacy product, so re-running continues
 //   --apply                  write (otherwise preview)
@@ -55,10 +59,10 @@
 //   bun run scripts/migrate-icmb-subscriptions.ts --email=a@b.com           # preview
 //   bun run scripts/migrate-icmb-subscriptions.ts --email=a@b.com --apply
 //   bun run scripts/migrate-icmb-subscriptions.ts --email=a@b.com --revert --apply
-//   bun run scripts/migrate-icmb-subscriptions.ts --product=prod_… --exclude-file=staff.txt --limit=10
+//   bun run scripts/migrate-icmb-subscriptions.ts --product=prod_… --bundle-file=staff.txt --limit=10
 //   STRIPE_SECRET_KEY=sk_live_… bun run scripts/migrate-icmb-subscriptions.ts --live --product=prod_…
 //   STRIPE_SECRET_KEY=sk_live_… CONFIRM_LIVE_ACCOUNT=acct_… \
-//     bun run scripts/migrate-icmb-subscriptions.ts --live --product=prod_… --exclude-file=staff.txt --apply
+//     bun run scripts/migrate-icmb-subscriptions.ts --live --product=prod_… --bundle-file=staff.txt --apply
 
 import Stripe from 'stripe'
 
@@ -124,11 +128,11 @@ function date(sec: number | null | undefined): string {
 }
 
 // The catalog's Ark+ product, found the way stripe-catalog.ts addresses it.
-async function findArkPlusProduct(stripe: Stripe): Promise<Stripe.Product> {
+async function findCatalogProduct(stripe: Stripe, catalogKey: string): Promise<Stripe.Product> {
   for await (const product of stripe.products.list({ active: true, limit: 100 })) {
-    if (product.metadata?.catalog_key === 'ark_plus') return product
+    if (product.metadata?.catalog_key === catalogKey) return product
   }
-  throw new Error('No active product with catalog_key=ark_plus — run scripts/stripe-catalog.ts first.')
+  throw new Error(`No active product with catalog_key=${catalogKey} — run scripts/stripe-catalog.ts first.`)
 }
 
 // Everything that must NOT change across the swap, captured so the after-state
@@ -185,7 +189,7 @@ function compare(before: Snapshot, after: Snapshot): string[] {
 }
 
 // A subscription to consider, with the customer email it bills (for display and
-// --exclude matching).
+// --bundle / --exclude matching).
 type Target = { sub: Stripe.Subscription; email: string | null }
 
 function emailOf(customer: Stripe.Subscription['customer']): string | null {
@@ -276,6 +280,7 @@ function blockerFor(
   sub: Stripe.Subscription,
   product: Stripe.Product | null,
   revert: boolean,
+  target: Stripe.Product,
 ): string | null {
   if (!MIGRATABLE_STATUSES.has(sub.status)) return `status is ${sub.status}`
   if (sub.items.data.length !== 1) return `${sub.items.data.length} items (expected exactly 1)`
@@ -287,8 +292,12 @@ function blockerFor(
     return null
   }
   if (!product) return 'product is deleted or missing'
-  if (product.metadata?.catalog_key === 'ark_plus') return 'already on Ark+'
-  if (product.metadata?.catalog_key) return `already on catalog product "${product.name}"`
+  const key = product.metadata?.catalog_key
+  if (key && key === target.metadata?.catalog_key) return `already on ${target.name}`
+  // A staffer this script already moved to Ark+ may move on to the Bundle.
+  const reTarget =
+    key === 'ark_plus' && target.metadata?.catalog_key === 'bundle' && !!sub.metadata?.[FROM_PRICE]
+  if (key && !reTarget) return `already on catalog product "${product.name}"`
   if (price.unit_amount == null) return 'price has no fixed unit_amount (tiered/metered)'
   if (!planOf(price)) return `interval is ${price.recurring?.interval_count} ${price.recurring?.interval}, not monthly/yearly`
   return null
@@ -298,7 +307,7 @@ async function migrate(
   stripe: Stripe,
   sub: Stripe.Subscription,
   product: Stripe.Product | null,
-  arkPlus: Stripe.Product,
+  target: Stripe.Product,
 ): Promise<void> {
   const item = sub.items.data[0]
   const price = item.price
@@ -308,7 +317,7 @@ async function migrate(
       {
         id: item.id,
         price_data: {
-          product: arkPlus.id,
+          product: target.id,
           currency: price.currency,
           unit_amount: price.unit_amount!,
           recurring: {
@@ -323,8 +332,10 @@ async function migrate(
     metadata: {
       plan: planOf(price)!,
       [MIGRATED_AT]: new Date().toISOString(),
-      [FROM_PRICE]: price.id,
-      [FROM_PRODUCT]: idOf(product) ?? '',
+      // A re-target (Ark+ → Bundle) keeps the ORIGINAL legacy price as the
+      // revert point, not the Ark+ price it is leaving.
+      [FROM_PRICE]: sub.metadata?.[FROM_PRICE] || price.id,
+      [FROM_PRODUCT]: sub.metadata?.[FROM_PRODUCT] || (idOf(product) ?? ''),
     },
   })
 }
@@ -347,6 +358,18 @@ function listArg(args: string[], name: string): string[] {
     .filter(Boolean)
 }
 
+// --<name>=<addr> (repeatable) plus --<name>-file=<path>, lower-cased.
+async function emailSet(args: string[], name: string): Promise<Set<string>> {
+  const set = new Set(listArg(args, name).map((e) => e.toLowerCase()))
+  for (const file of listArg(args, `${name}-file`)) {
+    for (const line of (await Bun.file(file).text()).split('\n')) {
+      const email = line.trim().toLowerCase()
+      if (email && !email.startsWith('#')) set.add(email)
+    }
+  }
+  return set
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const apply = args.includes('--apply')
@@ -354,12 +377,12 @@ async function main(): Promise<void> {
   const revert = args.includes('--revert')
   const emails = listArg(args, 'email').map((e) => e.toLowerCase())
   const products = listArg(args, 'product')
-  const excluded = new Set(listArg(args, 'exclude').map((e) => e.toLowerCase()))
-  for (const file of listArg(args, 'exclude-file')) {
-    for (const line of (await Bun.file(file).text()).split('\n')) {
-      const email = line.trim().toLowerCase()
-      if (email && !email.startsWith('#')) excluded.add(email)
-    }
+  const excluded = await emailSet(args, 'exclude')
+  const bundled = await emailSet(args, 'bundle')
+  const both = [...bundled].filter((e) => excluded.has(e))
+  if (both.length > 0) {
+    console.error(`Both --bundle and --exclude given for: ${both.join(', ')}`)
+    process.exit(1)
   }
   const limitArg = listArg(args, 'limit')[0]
   const limit = limitArg ? Number.parseInt(limitArg, 10) : Infinity
@@ -387,8 +410,11 @@ async function main(): Promise<void> {
   const action = revert ? 'REVERT' : 'MIGRATE'
   console.log(apply ? `=== ${action} — APPLY (writing to Stripe ${mode}) ===` : `=== ${action} — PREVIEW (${mode}, no writes) ===`)
 
-  const arkPlus = await findArkPlusProduct(stripe)
+  const arkPlus = await findCatalogProduct(stripe, 'ark_plus')
+  const bundle = await findCatalogProduct(stripe, 'bundle')
   console.log(`Ark+ product: ${arkPlus.id} "${arkPlus.name}"`)
+  console.log(`Bundle product: ${bundle.id} "${bundle.name}"`)
+  if (bundled.size > 0) console.log(`Moving ${bundled.size} email(s) to the Bundle.`)
   if (excluded.size > 0) console.log(`Excluding ${excluded.size} email(s).`)
   if (limit !== Infinity) console.log(`Limit: ${limit} subscription(s) this run.`)
 
@@ -412,7 +438,8 @@ async function main(): Promise<void> {
     for (const t of found) targets.set(t.sub.id, t)
   }
 
-  const counts = { done: 0, would: 0, excluded: 0, skipped: 0, failed: 0 }
+  const counts = { done: 0, would: 0, toBundle: 0, excluded: 0, skipped: 0, failed: 0 }
+  const unseenBundled = new Set(bundled)
   const skipReasons = new Map<string, number>()
   for (const { sub, email } of targets.values()) {
     if (counts.done + counts.would >= limit) break
@@ -432,12 +459,14 @@ async function main(): Promise<void> {
     const before = snapshot(sub)
     printSnapshot(before)
 
+    if (email) unseenBundled.delete(email)
     if (email && excluded.has(email)) {
       counts.excluded++
       console.log('    EXCLUDED')
       continue
     }
-    const blocker = blockerFor(sub, product, revert)
+    const target = email && bundled.has(email) ? bundle : arkPlus
+    const blocker = blockerFor(sub, product, revert, target)
     if (blocker) {
       counts.skipped++
       skipReasons.set(blocker, (skipReasons.get(blocker) ?? 0) + 1)
@@ -448,9 +477,10 @@ async function main(): Promise<void> {
     console.log(
       revert
         ? `    WILL restore price ${sub.metadata[FROM_PRICE]} (no proration) and clear the migration markers`
-        : `    WILL move to "${arkPlus.name}" at ${money(price.unit_amount, price.currency)} ${planOf(price)} ` +
+        : `    WILL move to "${target.name}" at ${money(price.unit_amount, price.currency)} ${planOf(price)} ` +
             '(own amount kept, no proration, no invoice), and stamp plan + migration markers',
     )
+    if (!revert && target === bundle) counts.toBundle++
     if (!apply) {
       counts.would++
       continue
@@ -459,7 +489,7 @@ async function main(): Promise<void> {
     // One failure must not stop a bulk run; it is counted and reported.
     try {
       if (revert) await revertMigration(stripe, sub)
-      else await migrate(stripe, sub, product, arkPlus)
+      else await migrate(stripe, sub, product, target)
 
       // Re-read and prove nothing the member cares about moved.
       const updated = await stripe.subscriptions.retrieve(sub.id)
@@ -484,10 +514,16 @@ async function main(): Promise<void> {
   console.log('\n=== Summary ===')
   if (apply) console.log(`  ${revert ? 'reverted' : 'migrated'} + verified: ${counts.done}`)
   else console.log(`  would ${revert ? 'revert' : 'migrate'}: ${counts.would}`)
+  if (!revert) console.log(`    of which to the Bundle: ${counts.toBundle}`)
   console.log(`  excluded: ${counts.excluded}`)
   console.log(`  skipped: ${counts.skipped}`)
   for (const [reason, n] of skipReasons) console.log(`    ${String(n).padStart(5)}  ${reason}`)
   console.log(`  failed: ${counts.failed}`)
+  // A --bundle email that matched nothing is most likely a typo — and a typo'd
+  // staffer is migrated to Ark+ under their real address.
+  if (unseenBundled.size > 0) {
+    console.warn(`\n  WARNING: --bundle email(s) with no subscription in this run: ${[...unseenBundled].join(', ')}`)
+  }
   console.log(apply ? '\nDone.' : '\nPreview only — nothing was written. Re-run with --apply to write.')
   if (counts.failed > 0) process.exit(1)
 }
