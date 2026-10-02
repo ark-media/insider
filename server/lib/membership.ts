@@ -46,6 +46,20 @@ export type MembershipUpsert = {
   // axis) — see the coalesce in upsertMembership.
   ark_plus_gift_expires_at?: string | null
   circle_gift_expires_at?: string | null
+  // Gift redemption only: the term, in days, of the gift being redeemed. When
+  // set, an axis whose expiry is supplied is STACKED in SQL on conflict —
+  // greatest(the row's current expiry, now()) + this many days — instead of
+  // taking the supplied value. The supplied value is what the caller computed
+  // from the row it read; two redemptions racing for the same recipient both
+  // read the same row, and the second write would otherwise erase the first
+  // gift's term. Computing from the row being updated makes stacking atomic.
+  gift_term_days?: number | null
+}
+
+// The row's per-axis gift expiries as written.
+type MembershipGiftExpiries = {
+  ark_plus_gift_expires_at: string | null
+  circle_gift_expires_at: string | null
 }
 
 export async function getMembershipByAuth0Sub(
@@ -116,11 +130,18 @@ export async function getScheduledTierByCustomer(
 
 // Upsert keyed on auth0_sub. `updated_at` is bumped to now(). Each per-axis gift
 // expiry is preserved when omitted (a subscription event must not clear a gift
-// term, and a single-axis gift must not clear the other axis's term).
-export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<void> {
+// term, and a single-axis gift must not clear the other axis's term), and
+// stacked atomically when `gift_term_days` is set (see MembershipUpsert).
+// Resolves the gift expiries the row holds afterwards (null if the driver
+// returned no row).
+export async function upsertMembership(
+  sql: Sql,
+  m: MembershipUpsert,
+): Promise<MembershipGiftExpiries | null> {
   const arkPlusGift = m.ark_plus_gift_expires_at ?? null
   const circleGift = m.circle_gift_expires_at ?? null
-  await sql`
+  const termDays = m.gift_term_days ?? null
+  const rows = (await sql`
     insert into membership (
       auth0_sub, stripe_customer_id, stripe_subscription_id,
       tier, status, plan, amount_cents, currency, current_period_end, cancel_at,
@@ -140,9 +161,30 @@ export async function upsertMembership(sql: Sql, m: MembershipUpsert): Promise<v
       currency                 = excluded.currency,
       current_period_end       = excluded.current_period_end,
       cancel_at                = excluded.cancel_at,
-      ark_plus_gift_expires_at = coalesce(excluded.ark_plus_gift_expires_at, membership.ark_plus_gift_expires_at),
-      circle_gift_expires_at   = coalesce(excluded.circle_gift_expires_at, membership.circle_gift_expires_at),
-      updated_at               = now()`
+      ark_plus_gift_expires_at = case
+        when excluded.ark_plus_gift_expires_at is not null and ${termDays}::int is not null
+          then greatest(coalesce(membership.ark_plus_gift_expires_at, now()), now())
+               + make_interval(days => ${termDays}::int)
+        else coalesce(excluded.ark_plus_gift_expires_at, membership.ark_plus_gift_expires_at)
+      end,
+      circle_gift_expires_at = case
+        when excluded.circle_gift_expires_at is not null and ${termDays}::int is not null
+          then greatest(coalesce(membership.circle_gift_expires_at, now()), now())
+               + make_interval(days => ${termDays}::int)
+        else coalesce(excluded.circle_gift_expires_at, membership.circle_gift_expires_at)
+      end,
+      updated_at               = now()
+    returning ark_plus_gift_expires_at, circle_gift_expires_at`) as Array<{
+    ark_plus_gift_expires_at: string | Date | null
+    circle_gift_expires_at: string | Date | null
+  }>
+  const row = rows?.[0]
+  if (!row) return null
+  const iso = (v: string | Date | null) => (v == null ? null : new Date(v).toISOString())
+  return {
+    ark_plus_gift_expires_at: iso(row.ark_plus_gift_expires_at),
+    circle_gift_expires_at: iso(row.circle_gift_expires_at),
+  }
 }
 
 // The whole membership roster, projected to just what the reconciler needs to

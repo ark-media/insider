@@ -44,7 +44,48 @@ function monthsAgo(n: number): Date {
   return d
 }
 
+function windowSpent(email: string, months: number): boolean {
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - months)
+  return surveyRows.some(
+    (r) =>
+      r.email === email &&
+      r.offer_outcome === 'accepted' &&
+      r.coupon_id !== null &&
+      r.created_at.getTime() >= cutoff.getTime(),
+  )
+}
+
 function fakeSql(sql: string, values: unknown[]): unknown {
+  if (/pg_advisory_xact_lock/.test(sql)) return [{}]
+  if (/insert into cancellation_survey/.test(sql) && /where not exists/.test(sql)) {
+    // claimRetentionWindow: the window check and the accepted-row write as one
+    // statement. values = [email, reasons, coupon, tier, kept, email, months].
+    const [email, , coupon_id, , retained_product, , months] = values as [
+      string,
+      unknown,
+      string,
+      unknown,
+      string | null,
+      string,
+      number,
+    ]
+    if (windowSpent(email, months)) return []
+    const id = nextId++
+    surveyRows.push({
+      id,
+      email,
+      offer_outcome: 'accepted',
+      coupon_id,
+      retained_product,
+      created_at: new Date(),
+    })
+    return [{ id }]
+  }
+  if (/delete from cancellation_survey where id = \?/.test(sql)) {
+    surveyRows = surveyRows.filter((r) => r.id !== values[0])
+    return []
+  }
   if (/from cancellation_survey/.test(sql) && /offer_outcome = 'accepted'/.test(sql)) {
     // hasAcceptedRetention: values = [email, months]. Evaluate with the bound
     // month count so a changed window would change the result.
@@ -80,9 +121,21 @@ function fakeSql(sql: string, values: unknown[]): unknown {
   return []
 }
 
-mock.module('@neondatabase/serverless', () =>
-  neonMockModule(sqlCalls, (sql, values) => fakeSql(sql, values)),
-)
+// neonMockModule plus the driver's non-interactive `transaction`, which the
+// window claim uses: each query is already issued (in order) when the array is
+// built, so the fake just awaits them.
+mock.module('@neondatabase/serverless', () => {
+  const base = neonMockModule(sqlCalls, (sql, values) => fakeSql(sql, values))
+  return {
+    ...base,
+    neon: (url: string) => {
+      const sql = (base.neon as (u: string) => (...a: unknown[]) => Promise<unknown>)(url)
+      return Object.assign(sql, {
+        transaction: (queries: Array<Promise<unknown>>) => Promise.all(queries),
+      })
+    },
+  }
+})
 
 // ---------------------------------------------------------------------------
 // Stripe fake (trimmed copy of change-tier.test.ts)
@@ -101,6 +154,11 @@ let existingCustomers: Array<{ id: string; email: string }> = []
 let currentSub: Record<string, unknown> | null = null
 let schedulePhases: Phase[] = []
 let activeCoupons: Array<Record<string, unknown>> = []
+// Make the next Stripe write the routes depend on fail, and record what the
+// survey table held at the moment a write was attempted.
+let failSubscriptionUpdate = false
+let failScheduleUpdate = false
+let rowsAtStripeWrite: number | null = null
 const PRODUCT_ENTITLEMENTS: Record<string, string> = {
   prod_ark_plus: 'ark_plus',
   prod_circle: 'circle',
@@ -124,6 +182,8 @@ class FakeStripe {
     },
     update: async (id: string, args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
+      rowsAtStripeWrite = surveyRows.length
+      if (failSubscriptionUpdate) throw new Error('stripe down')
       return { ...currentSub, id }
     },
     retrieve: async (id: string, args?: Record<string, unknown>) => {
@@ -148,6 +208,8 @@ class FakeStripe {
     },
     update: async (id: string, args: Record<string, unknown>) => {
       stripeCalls.push({ method: 'subscriptionSchedules.update', args: [id, args] })
+      rowsAtStripeWrite = surveyRows.length
+      if (failScheduleUpdate) throw new Error('stripe down')
       return { id }
     },
     release: async (id: string) => {
@@ -332,6 +394,9 @@ beforeEach(() => {
   currentSub = null
   schedulePhases = []
   activeCoupons = []
+  failSubscriptionUpdate = false
+  failScheduleUpdate = false
+  rowsAtStripeWrite = null
   __resetPriceCacheForTests()
 })
 
@@ -378,6 +443,8 @@ describe('C3: save offers respect the 12-month window (Ark+ monthly)', () => {
     acceptedRow(monthsAgo(3))
     const res = await call('GET', '/api/stripe/save-offers?intent=cancel-ark-plus')
     expect(res.statusCode).toBe(200)
+    // Per member: never stored by a shared cache.
+    expect(res.__headers()['cache-control']).toBe('private, no-store')
     const { offers } = res.__json() as { offers: Offer[] }
     expect(offers.map((o) => o.kind)).toEqual(['annual_switch'])
     expect(offers[0]!.couponId).toBeNull()
@@ -416,8 +483,44 @@ describe('C3: save offers respect the 12-month window (Ark+ monthly)', () => {
     expect(res.statusCode).toBe(409)
     expect((res.__json() as { error: string }).error).toBe('Save offer already used recently.')
     expect(stripeCalls.some((c) => c.method === 'subscriptions.update')).toBe(false)
-    expect(sqlCalls.some((c) => /insert into cancellation_survey/.test(c.sql))).toBe(false)
+    // The atomic claim ran and wrote nothing: the window was already spent.
     expect(surveyRows).toHaveLength(1)
+  })
+
+  test('C3d: the window is spent BEFORE the coupon is attached, in one statement', async () => {
+    withSub('ark-plus', 800)
+    activeCoupons = [SUPPORTER]
+    const res = await call('POST', '/api/stripe/accept-save-offer', {
+      intent: 'cancel-ark-plus',
+      kind: 'supporter_coupon',
+    })
+    expect(res.statusCode).toBe(200)
+    // The accepted row already existed when Stripe was asked to attach.
+    expect(rowsAtStripeWrite).toBe(1)
+    const claim = sqlCalls.find((c) => /insert into cancellation_survey/.test(c.sql))
+    expect(claim!.sql).toContain('where not exists')
+    expect(sqlCalls.some((c) => /pg_advisory_xact_lock/.test(c.sql))).toBe(true)
+  })
+
+  test('C3e: a failed Stripe attach gives the window back', async () => {
+    withSub('ark-plus', 800)
+    activeCoupons = [SUPPORTER]
+    failSubscriptionUpdate = true
+    const res = await call('POST', '/api/stripe/accept-save-offer', {
+      intent: 'cancel-ark-plus',
+      kind: 'supporter_coupon',
+    })
+    expect(res.statusCode).toBeGreaterThanOrEqual(500)
+    expect(surveyRows).toHaveLength(0)
+    expect(sqlCalls.some((c) => /delete from cancellation_survey/.test(c.sql))).toBe(true)
+
+    // So the member can still take it once Stripe recovers.
+    failSubscriptionUpdate = false
+    const retry = await call('POST', '/api/stripe/accept-save-offer', {
+      intent: 'cancel-ark-plus',
+      kind: 'supporter_coupon',
+    })
+    expect(retry.statusCode).toBe(200)
   })
 
   test('C3c control: outside the window the accept lands and writes an accepted row that spends it', async () => {
@@ -510,6 +613,21 @@ describe('D2: debundle intro coupon and the retention window', () => {
     const again = await debundle()
     expect(again.statusCode).toBe(200)
     expect(lastSchedulePhases()[1]!.discounts).toBeUndefined()
+  })
+
+  test('D2: the intro is claimed before the schedule write; a failed write gives it back', async () => {
+    stageDebundle()
+    failScheduleUpdate = true
+    const res = await debundle()
+    expect(res.statusCode).toBe(502)
+    // The claim had landed when the schedule write was attempted…
+    expect(rowsAtStripeWrite).toBe(1)
+    // …and was released when it failed.
+    expect(surveyRows).toHaveLength(0)
+
+    failScheduleUpdate = false
+    await debundle()
+    expect(lastSchedulePhases()[1]!.discounts).toEqual([{ coupon: 'intro50' }])
   })
 
   test('D2: window expired (accept 13 months ago) → intro coupon granted again', async () => {

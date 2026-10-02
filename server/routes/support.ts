@@ -8,7 +8,7 @@
 // Modelled on server/routes/contact.ts, the other public unauthenticated POST:
 // rate-limited per IP, same-origin only, strict validation, generic errors.
 
-import { getClientIp, isSameOrigin, readJson } from '../lib/http.js'
+import { getClientIp, isSameOrigin, readBody } from '../lib/http.js'
 import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { requireAdminRequest } from '../lib/guards.js'
 import { logAdminAction } from '../lib/admin-audit.js'
@@ -21,6 +21,12 @@ import {
   validateSupportSession,
 } from '../lib/support.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
+
+// The whole site's support-widget writes for a day, and the most one request
+// may carry. See the daily limiter below.
+const DAILY_CEILING = 2000
+const DAILY_KEY = 'all'
+const MAX_LOG_BYTES = 64 * 1024
 
 export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
   // A session re-posts as it grows, so the budget is per session rather than
@@ -36,6 +42,16 @@ export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
     capacity: 30,
     refillPerSec: 0.2,
   })
+  // And one bucket for everyone, refilling over a day. The per-IP budget bounds
+  // a single source; this bounds the sum, so a flood spread across addresses
+  // (every IPv6 /64 is its own bucket) cannot grow the table without limit or
+  // bury real escalations under invented ones in the admin view. Far above an
+  // honest day's widget traffic.
+  const dailyLimiter = createSharedRateLimiter(env, {
+    name: 'support-log-daily',
+    capacity: DAILY_CEILING,
+    refillPerSec: DAILY_CEILING / 86_400,
+  })
 
   return [
     defineRoute({
@@ -48,13 +64,24 @@ export function supportRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(403, { error: 'bad_origin' })
         }
 
-        const wait = await limiter.take(getClientIp(req))
+        const wait =
+          (await limiter.take(getClientIp(req))) ?? (await dailyLimiter.take(DAILY_KEY))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })
         }
 
-        const parsed = validateSupportSession(await readJson(req))
+        // A full session is 50 steps of 500 characters — well under this cap
+        // even with the JSON around it. Anything bigger is not the widget, and
+        // the shared 2 MiB reader would otherwise buffer it for nothing.
+        const raw = await readBody(req, MAX_LOG_BYTES)
+        let body: unknown = null
+        try {
+          body = raw.length ? JSON.parse(raw.toString('utf8')) : null
+        } catch {
+          body = null
+        }
+        const parsed = validateSupportSession(body)
         if (!parsed.ok) return json(400, { error: parsed.error })
 
         // Logging is a side benefit, never a dependency: if it isn't

@@ -51,9 +51,20 @@ mock.module('@neondatabase/serverless', () =>
       return []
     }
     if (merged.includes('from beehiiv_subscription')) return mirrorRows
+    // The shared rate limiter's bucket upsert: model a bucket that never
+    // refills within a test, so a burst past capacity is refused. values[0] is
+    // the hashed key, values[1] is capacity - 1.
+    if (merged.includes('insert into rate_limit_buckets')) {
+      const key = values[0] as string
+      const capacity = (values[1] as number) + 1
+      const taken = (bucketTakes.get(key) ?? 0) + 1
+      bucketTakes.set(key, taken)
+      return [{ tokens: 0, allowed: taken <= capacity }]
+    }
     return []
   }),
 )
+const bucketTakes = new Map<string, number>()
 
 // Static imports AFTER mock.module so the plugin picks up the fake neon.
 import { devApiPlugin } from './dev-api'
@@ -116,6 +127,9 @@ function makeReq(opts: {
   cookie?: string
   origin?: string
   body?: unknown
+  // Fetch Metadata. Defaults to what a browser sends for a click on our own
+  // page; null omits the header.
+  fetchSite?: string | null
 }): IncomingMessage {
   const payload =
     opts.body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(opts.body))
@@ -130,6 +144,8 @@ function makeReq(opts: {
   stream.headers = { 'content-type': 'application/json' }
   if (opts.cookie) stream.headers['cookie'] = opts.cookie
   if (opts.origin) stream.headers['origin'] = opts.origin
+  const fetchSite = opts.fetchSite === undefined ? 'same-origin' : opts.fetchSite
+  if (fetchSite !== null) stream.headers['sec-fetch-site'] = fetchSite
   stream.socket = { remoteAddress: '127.0.0.1' }
   return stream as unknown as IncomingMessage
 }
@@ -195,6 +211,7 @@ silenceExpectedConsole()
 
 beforeEach(() => {
   sqlCalls.length = 0
+  bucketTakes.clear()
   fetchCalls = []
   membershipRows = [LIVE_ARK_PLUS]
   mirrorRows = [MIRROR_ROW]
@@ -226,6 +243,32 @@ async function memberCookie(sub = 'auth0|member'): Promise<string> {
 // ===========================================================================
 describe('GET /api/me/feeds/spotify', () => {
   const PATH = '/api/me/feeds/spotify'
+
+  // A top-level navigation carries no Origin, so the same-origin check alone
+  // passed a link on any other site. Fetch Metadata is what tells them apart.
+  for (const fetchSite of ['cross-site', 'same-site', null] as const) {
+    test(`403 and no credential minted when sec-fetch-site is ${fetchSite ?? 'absent'}`, async () => {
+      const res = makeRes()
+      await runHandler(
+        buildHandler(PATH),
+        makeReq({ path: PATH, cookie: await memberCookie(), fetchSite }),
+        res,
+      )
+      expect(res.statusCode).toBe(403)
+      expect((res.__json() as { error: string }).error).toBe('bad_origin')
+      expect(fetchCalls.some((c) => c.url.includes('/jwt_token'))).toBe(false)
+    })
+  }
+
+  test('a user-initiated navigation (sec-fetch-site: none) is allowed', async () => {
+    const res = makeRes()
+    await runHandler(
+      buildHandler(PATH),
+      makeReq({ path: PATH, cookie: await memberCookie(), fetchSite: 'none' }),
+      res,
+    )
+    expect(res.statusCode).toBe(302)
+  })
 
   test('302s into the Spotify consent flow, carrying the minted JWT', async () => {
     const res = makeRes()
@@ -452,8 +495,9 @@ describe('POST /api/me/feeds/email', () => {
   })
 
   test('rate-limits with 429 once the burst capacity is spent', async () => {
-    // Unique email so this test's bucket doesn't collide with the others (the
-    // limiter is module-scoped and persists across handler builds).
+    // Unique email so this test's bucket doesn't collide with the others. The
+    // bucket is the shared (Neon) one, so it persists across handler builds —
+    // the property an in-process bucket lacked across instances.
     const cookie = `${SESSION_COOKIE_NAME}=${await signSessionToken({ email: 'burst@x.com', roles: [], sub: 'auth0|member' }, BASE_ENV)}`
     const post = () =>
       makeReq({

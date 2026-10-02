@@ -7,6 +7,7 @@ import {
   pickIntroCoupon,
   pickOfferCoupon,
   retentionDiscountStillApplies,
+  discountsSurvivingChange,
   toRetentionOffer,
   type RetentionCouponLike,
 } from './lib/retention'
@@ -251,13 +252,41 @@ describe('retentionDiscountStillApplies', () => {
     expect(retentionDiscountStillApplies(marked(metadata), result)).toBe(expected)
   })
 
-  test('an unmarked coupon (a checkout promo, a courtesy discount) is never ours to drop', () => {
+  test('an unmarked, untargeted coupon (a courtesy discount, an all-plans promo) always stays', () => {
     expect(
       retentionDiscountStillApplies(
-        { metadata: { auto_apply: 'true', plan: 'monthly' } },
+        { metadata: { auto_apply: 'true' } },
         { tier: 'bundle', plan: 'yearly' },
+        'monthly',
       ),
     ).toBe(true)
+    expect(retentionDiscountStillApplies({ metadata: null }, { tier: 'circle', plan: 'yearly' }, 'monthly')).toBe(true)
+  })
+
+  test('ANY coupon targeted at the other cadence leaves — a checkout promo too', () => {
+    // A monthly-only code can be typed into a yearly checkout (Stripe can't
+    // restrict a code by cadence), or follow a monthly member onto annual.
+    const monthlyPromo = { metadata: { auto_apply: 'true', plan: 'monthly' } }
+    expect(retentionDiscountStillApplies(monthlyPromo, { tier: 'bundle', plan: 'yearly' })).toBe(false)
+    expect(retentionDiscountStillApplies(monthlyPromo, { tier: 'bundle', plan: 'monthly' })).toBe(true)
+    expect(
+      retentionDiscountStillApplies({ metadata: { plan: 'both' } }, { tier: 'bundle', plan: 'yearly' }),
+    ).toBe(true)
+  })
+
+  test('a retention coupon leaves on ANY cadence change, even untargeted', () => {
+    const affordability = marked({ offer_kind: 'affordability_coupon' })
+    expect(retentionDiscountStillApplies(affordability, { tier: 'circle', plan: 'yearly' }, 'monthly')).toBe(false)
+    expect(retentionDiscountStillApplies(affordability, { tier: 'circle', plan: 'monthly' }, 'yearly')).toBe(false)
+    // Same cadence: stays.
+    expect(retentionDiscountStillApplies(affordability, { tier: 'circle', plan: 'yearly' }, 'yearly')).toBe(true)
+    // The debundle intro too: an annual debundler keeps a full discounted
+    // year (pickIntroCoupon), but the coupon doesn't travel to monthly.
+    const intro = marked({ offer_kind: 'debundle_intro' })
+    expect(retentionDiscountStillApplies(intro, { tier: 'ark-plus', plan: 'yearly' }, 'yearly')).toBe(true)
+    expect(retentionDiscountStillApplies(intro, { tier: 'ark-plus', plan: 'monthly' }, 'yearly')).toBe(false)
+    // Unknown cadence on either side drops nothing on that axis.
+    expect(retentionDiscountStillApplies(affordability, { tier: 'circle', plan: 'yearly' }, null)).toBe(true)
   })
 
   test('reads the marker, not `valid` — an archived retention coupon is still one', () => {
@@ -275,5 +304,45 @@ describe('retentionDiscountStillApplies', () => {
     const c = marked({ offer_kind: 'supporter_coupon', plan: 'monthly' })
     expect(retentionDiscountStillApplies(c, { tier: null, plan: 'monthly' })).toBe(true)
     expect(retentionDiscountStillApplies(c, { tier: 'ark-plus', plan: null })).toBe(true)
+  })
+})
+
+// The cadence being LEFT is read off the subscription itself.
+describe('discountsSurvivingChange', () => {
+  const fakeStripe = (interval: 'month' | 'year', discounts: unknown[]) =>
+    ({
+      subscriptions: {
+        retrieve: async () => ({
+          id: 'sub_1',
+          items: { data: [{ price: { recurring: { interval } } }] },
+          discounts,
+        }),
+      },
+    }) as never
+  const sub = { id: 'sub_1', discounts: ['di_x'] } as never
+  const d = (id: string, metadata: Record<string, string>) => ({
+    id,
+    source: { coupon: { id: `c_${id}`, metadata } },
+  })
+
+  test('monthly → yearly drops the retention coupon and the monthly-only promo, keeps the rest', async () => {
+    const stripe = fakeStripe('month', [
+      d('di_supporter', { retention_offer: 'true', offer_kind: 'supporter_coupon' }),
+      d('di_promo_monthly', { auto_apply: 'true', plan: 'monthly' }),
+      d('di_promo_any', { auto_apply: 'true' }),
+    ])
+    expect(await discountsSurvivingChange(stripe, sub, { tier: 'ark-plus', plan: 'yearly' })).toEqual([
+      { discount: 'di_promo_any' },
+    ])
+  })
+
+  test('a tier change at the same cadence keeps an untargeted retention coupon that still fits', async () => {
+    const stripe = fakeStripe('year', [d('di_intro', { retention_offer: 'true', offer_kind: 'debundle_intro' })])
+    expect(await discountsSurvivingChange(stripe, sub, { tier: 'circle', plan: 'yearly' })).toBeNull()
+  })
+
+  test('everything dropped → the empty-string clear Stripe expects', async () => {
+    const stripe = fakeStripe('year', [d('di_aff', { retention_offer: 'true', offer_kind: 'affordability_coupon' })])
+    expect(await discountsSurvivingChange(stripe, sub, { tier: 'circle', plan: 'monthly' })).toBe('')
   })
 })

@@ -1,5 +1,9 @@
 import type Stripe from 'stripe'
-import { hasAcceptedRetention } from '../../lib/cancellation.js'
+import {
+  RETENTION_WINDOW_MONTHS,
+  hasAcceptedRetention,
+  type SurveyId,
+} from '../../lib/cancellation.js'
 import { getDb } from '../../lib/db.js'
 import { listStripeCustomersByEmail } from '../../lib/entitlement-resolver.js'
 import { clearMembershipPending } from '../../lib/membership.js'
@@ -576,6 +580,80 @@ export async function retentionWindowSpent(
   } catch (err) {
     console.error(`[stripe] ${label} eligibility check failed:`, err)
     return true
+  }
+}
+
+// Spend the member's retention window: write the 'accepted' row that
+// hasAcceptedRetention counts, but only if no such row already sits inside the
+// window — the check and the write in one transaction, serialised per email by
+// an advisory lock. Called BEFORE the Stripe write the discount rides on, so two
+// concurrent accepts can't both pass a read-then-write check and both attach a
+// coupon; the caller deletes the row (releaseRetentionClaim) if that Stripe
+// write then fails, so a failed accept doesn't burn the year.
+//
+// Why a lock and not just `insert … where not exists`: under READ COMMITTED
+// each statement reads a snapshot taken when it starts, so two concurrent
+// inserts each see the other's row as absent. Taking the lock in an earlier
+// statement of the same transaction means the insert's snapshot is taken after
+// any competitor has committed. (No unique index can express "one per rolling
+// 12 months", hence no ON CONFLICT arbiter.)
+//
+// Resolves the new row's id, or null when the window is already spent. Throws
+// on a DB error — callers treat that as spent (fail closed). Without a database
+// there is nothing to record or check, and it resolves 'unrecorded'.
+export async function claimRetentionWindow(
+  env: Env,
+  row: {
+    email: string
+    couponId: string
+    canceledTier?: string | null
+    retainedProduct?: string | null
+  },
+): Promise<SurveyId | null | 'unrecorded'> {
+  if (!env.DATABASE_URL) return 'unrecorded'
+  const sql = getDb(env)
+  const lockKey = `retention-window:${row.email}`
+  const results = await sql.transaction(
+    [
+      sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      sql`
+        insert into cancellation_survey
+          (email, reasons, note, offer_outcome, coupon_id, canceled_tier, retained_product)
+        select ${row.email}, ${[] as string[]}, null, 'accepted', ${row.couponId},
+               ${row.canceledTier ?? null}, ${row.retainedProduct ?? null}
+        where not exists (
+          select 1 from cancellation_survey
+          where email = ${row.email}
+            and offer_outcome = 'accepted'
+            and coupon_id is not null
+            and created_at >= now() - make_interval(months => ${RETENTION_WINDOW_MONTHS})
+        )
+        returning id`,
+    ],
+    { isolationLevel: 'ReadCommitted' },
+  )
+  const inserted = results[1] as Array<{ id: SurveyId }> | undefined
+  return inserted?.[0]?.id ?? null
+}
+
+// Undo a claimRetentionWindow whose Stripe write failed. Best-effort and logged:
+// a row left behind costs the member their next save for a year, which a human
+// can delete; it can never grant a discount.
+export async function releaseRetentionClaim(
+  env: Env,
+  id: SurveyId,
+  label: string,
+): Promise<void> {
+  if (!env.DATABASE_URL) return
+  try {
+    await getDb(env)`
+      delete from cancellation_survey where id = ${id} and offer_outcome = 'accepted'`
+  } catch (err) {
+    console.error(
+      `[stripe] ${label}: could not release retention claim ${String(id)} after a failed Stripe write — ` +
+        'MANUAL ACTION: delete that cancellation_survey row so the member keeps their offer.',
+      err,
+    )
   }
 }
 

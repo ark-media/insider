@@ -17,8 +17,7 @@
 //   - stripe.ts webhook (cancel/delete)          → downgradeToFree
 //   - entitlement.ts reconciler (downgrade pass) → downgradeToFree
 //   - /api/me/newsletters PUT                    → applyPreferences
-//   - /api/beehiiv/webhook                       → persistFromBeehiiv +
-//                                                  deleteLocalSubscription
+//   - /api/beehiiv/webhook                       → reconcileSubscriberFromBeehiiv
 //
 // All push paths soft-fail with a logged error — the feed grant / Auth0
 // patch / Stripe webhook ack should never 500 because Beehiiv burped.
@@ -26,6 +25,7 @@
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { redactEmail } from '../../shared/validation.js'
 import { publicationIdFromEnv } from './beehiiv-feeds.js'
+import { redactEmailsInText } from './beehiiv-status.js'
 import type { Sql } from './db.js'
 import { fetchWithTimeout } from "./http.js"
 
@@ -103,7 +103,7 @@ type BeehiivApiResponse = {
   }
 }
 
-export type BeehiivSubscription = {
+type BeehiivSubscription = {
   id: string
   email: string
   status: string
@@ -155,14 +155,14 @@ async function getSubscriptionByEmail(
   const res = await fetchWithTimeout(url, { headers: beehiivHeaders(token) })
   if (res.status === 404) return null
   if (!res.ok) {
-    throw new Error(`Beehiiv lookup ${res.status}: ${await res.text()}`)
+    throw new Error(`Beehiiv lookup ${res.status}: ${redactEmailsInText(await res.text())}`)
   }
   return unwrapData((await res.json()) as BeehiivApiResponse, 'lookup')
 }
 
 type CreateBody = {
   email: string
-  reactivate_existing: true
+  reactivate_existing: boolean
   utm_source: string
   premium_tier_ids?: string[]
   newsletter_list_ids?: string[]
@@ -178,13 +178,17 @@ async function createSubscription(
     // Exactly these lists, skipping the auto-subscribe ones — so joining one
     // newsletter never quietly signs the reader up for another.
     onlyLists?: string[]
+    // False only for the automatic first-login subscribe, which must never
+    // flip an opt-out back on (see ensureFreeSubscription).
+    reactivate?: boolean
   } = {},
 ): Promise<BeehiivSubscription> {
   const body: CreateBody = {
     email,
-    // Re-subscribe readers who previously unsubscribed instead of erroring
-    // (matches the public /api/beehiiv/subscribe behavior).
-    reactivate_existing: true,
+    // Re-subscribe readers who previously unsubscribed instead of erroring.
+    // Every caller passing true is acting on an explicit choice by the reader
+    // (a preference toggle) or on a paid membership.
+    reactivate_existing: opts.reactivate ?? true,
     utm_source: opts.premiumTierId ? 'ark-media-membership' : 'ark-media-website',
   }
   if (opts.premiumTierId) body.premium_tier_ids = [opts.premiumTierId]
@@ -201,7 +205,7 @@ async function createSubscription(
     },
   )
   if (!res.ok) {
-    throw new Error(`Beehiiv create ${res.status}: ${await res.text()}`)
+    throw new Error(`Beehiiv create ${res.status}: ${redactEmailsInText(await res.text())}`)
   }
   return unwrapData((await res.json()) as BeehiivApiResponse, 'create')
 }
@@ -242,7 +246,7 @@ async function updateSubscription(
     },
   )
   if (!res.ok) {
-    throw new Error(`Beehiiv update ${res.status}: ${await res.text()}`)
+    throw new Error(`Beehiiv update ${res.status}: ${redactEmailsInText(await res.text())}`)
   }
   return unwrapData((await res.json()) as BeehiivApiResponse, 'update')
 }
@@ -320,7 +324,10 @@ export async function refreshNewsletterState(
     const sub = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
     let entry: RefreshCacheEntry
     if (!sub) {
-      await deleteLocalSubscription(deps.sql, normalized)
+      // Tombstone rather than delete: a row that vanishes lets the next
+      // /api/me treat the reader as never-subscribed and auto-subscribe them
+      // again (ensureFreeSubscription). Updates an existing row only.
+      await markLocalSubscriptionDeleted(deps.sql, normalized)
       entry = { row: null, listIds: [] }
     } else {
       await persistFromBeehiiv(deps.sql, cfg.pubId, sub)
@@ -398,17 +405,96 @@ export async function loadPremiumSubscriberEmails(sql: Sql): Promise<string[]> {
   return rows.map((r) => r.email)
 }
 
-export async function deleteLocalSubscription(
+// A mirror row whose Beehiiv record is gone (deleted upstream). Kept as a
+// tombstone, never removed: the row's existence is what tells
+// ensureFreeSubscription this reader has a history with the list and must not
+// be auto-subscribed again. `has_premium` is cleared so the reconciler's roster
+// and the reminder crons never read it as a grant, and 'deleted' is in
+// beehiiv-status.ts's skip set so no campaign mails it.
+const DELETED_SUBSCRIPTION_STATUS = 'deleted'
+
+// Update-only: no row means nothing to tombstone (and no subscription id to
+// write one with).
+async function markLocalSubscriptionDeleted(
   sql: Sql,
   email: string,
 ): Promise<void> {
-  await sql`delete from beehiiv_subscription where email = ${email.toLowerCase()}`
+  await sql`
+    update beehiiv_subscription
+    set status = ${DELETED_SUBSCRIPTION_STATUS},
+        has_premium = false,
+        premium_since = null,
+        updated_at = now()
+    where email = ${email.toLowerCase()}`
+}
+
+// Upsert form, for the `subscription.deleted` webhook: a reader we know through
+// Auth0 may have no mirror row yet. An existing row keeps its subscription id.
+async function tombstoneLocalSubscription(
+  sql: Sql,
+  publicationId: string,
+  email: string,
+  beehiivSubscriptionId: string,
+): Promise<void> {
+  await sql`
+    insert into beehiiv_subscription
+      (email, publication_id, beehiiv_subscription_id, status, has_premium, premium_since, updated_at)
+    values
+      (${email.toLowerCase()}, ${publicationId}, ${beehiivSubscriptionId},
+       ${DELETED_SUBSCRIPTION_STATUS}, false, null, now())
+    on conflict (email) do update set
+      status = ${DELETED_SUBSCRIPTION_STATUS},
+      has_premium = false,
+      premium_since = null,
+      updated_at = now()`
+}
+
+// The inbound webhook's write path. The event body is a HINT, never the
+// record: anyone holding the webhook secret (which travels in the URL, see
+// routes/beehiiv.ts) could otherwise post a `subscription.upgraded` with
+// `subscription_tier: 'premium'` and write has_premium into the mirror — the
+// reconciler's premium roster. So the subscriber is re-read from Beehiiv by
+// email and THAT is what lands.
+//
+//   - Beehiiv has a record (any status) → mirror it.
+//   - Beehiiv has none and the event says it was deleted → tombstone the row
+//     (see markLocalSubscriptionDeleted), so the reader is not auto-subscribed
+//     again on their next /api/me.
+//   - Beehiiv has none otherwise → write nothing. Either the event is forged,
+//     or Beehiiv's read is lagging its own event; the next refresh heals it.
+//
+// A failed re-read THROWS: the webhook answers 500 and Beehiiv retries, which
+// is that route's convention for a transient failure. The mirror is never
+// written from the body alone.
+type SubscriberReconcileOutcome =
+  | 'persisted'
+  | 'tombstoned'
+  | 'absent'
+  | 'unconfigured'
+
+export async function reconcileSubscriberFromBeehiiv(
+  deps: PushDeps,
+  email: string,
+  hint: { deleted: boolean; subscriptionId: string },
+): Promise<SubscriberReconcileOutcome> {
+  const cfg = beehiivConfigured(deps.env)
+  if (!cfg) return 'unconfigured'
+  const normalized = email.toLowerCase()
+  const sub = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+  refreshCache.delete(normalized)
+  if (sub) {
+    await persistFromBeehiiv(deps.sql, cfg.pubId, sub)
+    return 'persisted'
+  }
+  if (!hint.deleted) return 'absent'
+  await tombstoneLocalSubscription(deps.sql, cfg.pubId, normalized, hint.subscriptionId)
+  return 'tombstoned'
 }
 
 // Single projection from Beehiiv subscription to a local DB row. Used by
 // every push helper here and the inbound webhook handler — keeps the
 // projection in one place so a Beehiiv field rename ripples to one site.
-export async function persistFromBeehiiv(
+async function persistFromBeehiiv(
   sql: Sql,
   publicationId: string,
   sub: BeehiivSubscription,
@@ -444,25 +530,40 @@ function beehiivConfigured(env: Env): { pubId: string; token: string } | null {
   return { pubId, token }
 }
 
-// First-login auto-subscribe for a new free Auth0 account. Idempotent on
-// three layers:
-//   1. Local Neon mirror — if we already have a row, skip entirely (no
-//      Beehiiv round-trip, no upsert).
-//   2. Beehiiv's per-publication by_email lookup inside applyPreferences
-//      finds any pre-existing subscription and falls back to a PUT instead
-//      of a duplicate POST.
-//   3. createSubscription sends reactivate_existing:true so even a racing
-//      POST won't error.
+// First-login auto-subscribe for a new free Auth0 account. Runs on a plain GET
+// of /api/me, so it must never override a choice the reader already made:
+//   1. Local Neon mirror — any row (including a 'deleted' tombstone) means the
+//      reader has a history with the list: skip, no Beehiiv round-trip.
+//   2. Beehiiv by_email — ANY record, whatever its status (unsubscribed,
+//      inactive, …), is mirrored as-is and left alone. A reader who
+//      unsubscribed before they had an account has no mirror row (the webhook
+//      drops unknown readers), and this is what keeps them unsubscribed.
+//   3. Only when Beehiiv has no record at all is one created, and with
+//      reactivate_existing:false, so a record appearing in between is not
+//      reactivated either.
 // Soft-fails: callers must keep returning 200 if Beehiiv is unreachable,
 // otherwise a third-party blip would block account login.
 export async function ensureFreeSubscription(
   deps: PushDeps,
   email: string,
 ): Promise<void> {
-  if (!beehiivConfigured(deps.env)) return
-  const existing = await getLocalSubscription(deps.sql, email.toLowerCase())
+  const cfg = beehiivConfigured(deps.env)
+  if (!cfg) return
+  const normalized = email.toLowerCase()
+  const existing = await getLocalSubscription(deps.sql, normalized)
   if (existing) return
-  await tryPush('first-login subscribe', () => applyPreferences(deps, email, { free: true }))
+  await tryPush('first-login subscribe', async () => {
+    const upstream = await getSubscriptionByEmail(cfg.pubId, cfg.token, normalized)
+    if (upstream) {
+      await persistFromBeehiiv(deps.sql, cfg.pubId, upstream)
+      return
+    }
+    const created = await createSubscription(cfg.pubId, cfg.token, normalized, {
+      reactivate: false,
+    })
+    await persistFromBeehiiv(deps.sql, cfg.pubId, created)
+    refreshCache.delete(normalized)
+  })
 }
 
 // Subscribe (or upgrade) a reader to the premium "Plus" tier. Used on Stripe

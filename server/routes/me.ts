@@ -18,6 +18,7 @@ import { deriveEntitlements, type Entitlements } from '../entitlement.js'
 import { getDb } from '../lib/db.js'
 import {
   resolveMembership,
+  resolveMembershipForIdentity,
   resolveRequestIdentity,
 } from '../lib/entitlement-resolver.js'
 import type { MembershipRow } from '../lib/membership.js'
@@ -27,7 +28,7 @@ import {
   recordSpotifyFollowOpened,
 } from '../lib/feed-activations.js'
 import { isSameOrigin, readJson } from '../lib/http.js'
-import { createRateLimiter } from '../lib/rate-limit.js'
+import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 
 // Per-axis access for account settings (T7.1): what the member has on each
@@ -83,22 +84,27 @@ function computeAxes(
   }
 }
 
+// All three buckets are shared (Neon-backed, shared-rate-limit.ts), not
+// in-process: the calls behind them reach Beehiiv (which sends real mail on a
+// re-subscribe) and Stripe, and a per-instance bucket is multiplied by every
+// instance a script fans out across and refilled by every cold start.
+
 // Bucket the PUT route by normalized email so flapping toggles can't burn
 // Beehiiv quota or rate-limit the upstream API. 10 saves per minute is more
 // than any human will click; sustained refill is 1/6s.
-const newsletterPrefsLimiter = createRateLimiter({
-  capacity: 10,
-  refillPerSec: 1 / 6,
-})
+const NEWSLETTER_PREFS_LIMIT = { name: 'me-newsletter-prefs', capacity: 10, refillPerSec: 1 / 6 }
 
 // Bucket the optimistic setup marker by normalized email. A member setting up
 // the whole network plus a few individual feeds fits well under 20 writes;
 // sustained refill is 1/6s. Bounds an authenticated caller from scripting the
 // endpoint to bloat beehiiv_feed_activations with junk pending rows.
-const feedSetupLimiter = createRateLimiter({
-  capacity: 20,
-  refillPerSec: 1 / 6,
-})
+const FEED_SETUP_LIMIT = { name: 'me-feed-setup', capacity: 20, refillPerSec: 1 / 6 }
+
+// GET /api/me, per caller (sub, else email). Every call can reach Stripe (the
+// by-email fallback), Beehiiv (feeds, first-login subscribe) and Neon. The SPA
+// asks on page loads, focus and the post-checkout poll, so the budget is 60 in
+// a burst refilling at one a second — far above a person, far below a loop.
+const ME_LIMIT = { name: 'me-get', capacity: 60, refillPerSec: 1 }
 
 // A feed as returned to the SPA, plus the setup state we mirror server-side.
 //
@@ -185,6 +191,9 @@ async function enrichFeedsWithActivation(
 }
 
 export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
+  const newsletterPrefsLimiter = createSharedRateLimiter(env, NEWSLETTER_PREFS_LIMIT)
+  const feedSetupLimiter = createSharedRateLimiter(env, FEED_SETUP_LIMIT)
+  const meLimiter = createSharedRateLimiter(env, ME_LIMIT)
   return [
     defineRoute({
       path: '/api/me',
@@ -196,10 +205,22 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         const feedMode = requestUrl.searchParams.get('include_feeds')
         const includeFeeds = feedMode !== '0'
 
+        // Identity first (local: a cookie/token check), then the budget, then
+        // the resolution — which is where Stripe can be called.
+        const caller = await resolveRequestIdentity(req, env)
+        if (!caller) return json(401, { error: 'unauthenticated' })
+        const wait = await meLimiter.take(caller.sub ?? caller.email.toLowerCase())
+        if (wait !== null) {
+          res.setHeader('retry-after', String(wait))
+          return json(429, { error: 'too_many_requests' })
+        }
+
         // Neon is the single entitlement authority (§3). The by-email fallback
         // still resolves a just-paid member whose session carries no sub yet.
-        const resolved = await resolveMembership(req, env, { emailFallback: true, stripe })
-        if (!resolved) return json(401, { error: 'unauthenticated' })
+        const resolved = await resolveMembershipForIdentity(caller, env, {
+          emailFallback: true,
+          stripe,
+        })
         const { identity, tier, entitlements } = resolved
         const email = identity.email
         // Per-axis access (source + expiry) for account settings — recipients are
@@ -266,7 +287,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         const email = (await resolveRequestIdentity(req, env))?.email ?? null
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const wait = feedSetupLimiter.take(email.toLowerCase())
+        const wait = await feedSetupLimiter.take(email.toLowerCase())
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })
@@ -319,7 +340,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         const email = (await resolveRequestIdentity(req, env))?.email ?? null
         if (!email) return json(401, { error: 'unauthenticated' })
 
-        const wait = feedSetupLimiter.take(email.toLowerCase())
+        const wait = await feedSetupLimiter.take(email.toLowerCase())
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })
@@ -401,7 +422,7 @@ export function meRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         if (req.method === 'GET') return respond()
 
         // PUT
-        const wait = newsletterPrefsLimiter.take(email.toLowerCase())
+        const wait = await newsletterPrefsLimiter.take(email.toLowerCase())
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })

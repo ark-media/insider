@@ -136,12 +136,40 @@ export async function readJson<T = unknown>(req: IncomingMessage): Promise<T | n
   }
 }
 
-// Extracts the leftmost x-forwarded-for entry (Vercel sets this — the original
-// client; downstream proxies append themselves to the right), falling back to
-// the socket address for the dev server. Used as the per-client rate-limit key.
+// Extracts the leftmost x-forwarded-for entry (Vercel overwrites this header
+// with the original client, so it is not caller-spoofable there; downstream
+// proxies append themselves to the right), falling back to the socket address
+// for the dev server. Used as the per-client rate-limit key, so IPv6 is
+// collapsed to its /64: a single host is routinely handed a whole /64 and can
+// rotate through 2^64 source addresses, each of which would otherwise get a
+// fresh bucket and make every per-IP limit meaningless.
 export function getClientIp(req: IncomingMessage): string {
   const xff = req.headers['x-forwarded-for']
-  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]!.trim()
-  if (Array.isArray(xff) && xff.length > 0) return xff[0]!
-  return req.socket?.remoteAddress ?? 'unknown'
+  let ip: string
+  if (typeof xff === 'string' && xff.length > 0) ip = xff.split(',')[0]!.trim()
+  else if (Array.isArray(xff) && xff.length > 0) ip = xff[0]!
+  else ip = req.socket?.remoteAddress ?? 'unknown'
+  return rateLimitKeyForIp(ip)
+}
+
+// IPv4 as-is; IPv6 reduced to its first four hextets (the /64 prefix) in a
+// canonical form so the same prefix always yields the same key however the
+// address was written. Exported for tests.
+export function rateLimitKeyForIp(ip: string): string {
+  if (!ip.includes(':')) return ip
+  // Strip a zone id and any IPv4-mapped prefix ("::ffff:1.2.3.4" is IPv4).
+  const bare = ip.split('%')[0]!
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare)
+  if (mapped) return mapped[1]!
+  // Expand "::" so the first four groups can be read positionally.
+  const [head, tail] = bare.split('::')
+  const headGroups = head ? head.split(':') : []
+  const tailGroups = tail ? tail.split(':') : []
+  const missing = Math.max(0, 8 - headGroups.length - tailGroups.length)
+  const groups = [...headGroups, ...Array<string>(missing).fill('0'), ...tailGroups]
+  const prefix = groups
+    .slice(0, 4)
+    .map((g) => (g || '0').toLowerCase().replace(/^0+(?=\w)/, ''))
+    .join(':')
+  return `${prefix}::/64`
 }

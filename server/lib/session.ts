@@ -90,14 +90,25 @@ export function isAdminProfile(profile: Auth0Profile | null): boolean {
   return profile !== null && profile.roles.includes('admin')
 }
 
+// `authorizedParty`: the Auth0 client id the token must have been issued to
+// (its `azp`). Every application in the tenant can mint an access token for
+// our API audience — the Circle SSO app included — and issuer + audience alone
+// would accept all of them as a login here. Only the website's own client may.
+// Omitted (no AUTH0_WEB_CLIENT_ID in the env) the check is skipped, which is a
+// local-dev state: the BFF cannot run a login without that id either.
 export async function verifyAuth0BearerProfile(
   token: string,
+  opts: { authorizedParty?: string } = {},
 ): Promise<Auth0Profile | null> {
   try {
     const { payload } = await jwtVerify(token, jwks, {
       issuer: `${AUTH0_DOMAIN}/`,
       audience: AUTH0_AUDIENCE,
     })
+    if (opts.authorizedParty && payload.azp !== opts.authorizedParty) {
+      console.warn('[session] rejecting Auth0 token issued to another client:', payload.azp)
+      return null
+    }
     const email = payload[AUTH0_EMAIL_CLAIM] as string | undefined
     if (!email) return null
     const verifiedClaim = payload[`${AUTH0_EMAIL_CLAIM}_verified`]
@@ -550,7 +561,9 @@ export async function resolveRequestIdentity(
   const authHeader = req.headers.authorization
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
-    const profile = await verifyAuth0BearerProfile(token)
+    const profile = await verifyAuth0BearerProfile(token, {
+      authorizedParty: env.AUTH0_WEB_CLIENT_ID,
+    })
     // An address Auth0 says is UNverified proves nothing about who holds it, and
     // the by-email entitlement net trusts this email. Every login the tenant
     // allows today is verified (Google, an emailed code; signups are closed), so
@@ -710,7 +723,9 @@ export async function requireAdmin(
   // a leaked admin token outlive the role's removal.
   const authHeader = req.headers.authorization
   if (authHeader?.startsWith('Bearer ')) {
-    const profile = await verifyAuth0BearerProfile(authHeader.slice(7))
+    const profile = await verifyAuth0BearerProfile(authHeader.slice(7), {
+      authorizedParty: env.AUTH0_WEB_CLIENT_ID,
+    })
     if (profile && isAdminProfile(profile)) {
       if (!(await adminRoleHolds(profile.sub, req, env))) return null
       return profile

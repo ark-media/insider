@@ -64,9 +64,17 @@ function clean(value: string | null | undefined, max: number): string | null {
 
 // Pathname only. The query string is where a member-directory search carries
 // the email being looked up, and it has no business in the trail.
+//
+// In a deployment every API request arrives as `/api/handler?_path=<route>`
+// (the vercel.json rewrite), so the raw pathname would record `/api/handler`
+// for every action. Resolve the route the same way the dispatcher does — the
+// LAST `_path` value — so the trail names what was actually called.
 function pathOf(req: IncomingMessage): string {
   try {
-    return new URL(req.url ?? '/', 'http://x').pathname
+    const url = new URL(req.url ?? '/', 'http://x')
+    const slugs = url.searchParams.getAll('_path')
+    const slug = slugs.length > 0 ? slugs[slugs.length - 1]! : null
+    return slug !== null ? `/api/${slug}` : url.pathname
   } catch {
     return '/'
   }

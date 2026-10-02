@@ -8,6 +8,8 @@ const MESSAGES: Record<string, string> = {
   expired: "Your sign-in session expired. Please try signing in again.",
   exchange: "Sign-in didn't complete. Please try again.",
   profile: "We couldn't verify your account. Please try again.",
+  unverified:
+    "That sign-in didn't confirm your email address. Please sign in with Google or an emailed code.",
   // `denied` is permanent (Auth0 rejected the account), so don't tell the user
   // to "try again" — point them at support instead.
   denied: `This account isn't authorized to sign in to Ark+. If you think this is a mistake, contact ${contactEmails.support}.`,

@@ -441,6 +441,37 @@ describe('GET /api/stripe/my-subscription — price + card on file', () => {
     })
   })
 
+  test('a session from an emailed link sees the plan but never the card, and nothing is cached', async () => {
+    existingCustomers = [{ id: 'cus_1', email: 'member@example.com' }]
+    subsByCustomer = {
+      cus_1: [
+        {
+          id: 'sub_1',
+          current_period_end: PERIOD_END,
+          currency: 'usd',
+          unit_amount: 800,
+          interval: 'month',
+          default_payment_method: 'pm_1',
+        },
+      ],
+    }
+    paymentMethods = {
+      pm_1: { card: { brand: 'visa', last4: '4242', exp_month: 4, exp_year: 2028 } },
+    }
+    const token = await signSessionToken(
+      { email: 'member@example.com', roles: [], via: 'email_link' },
+      BASE_ENV,
+    )
+    const res = await get({ cookie: `${SESSION_COOKIE_NAME}=${token}` })
+    expect(res.statusCode).toBe(200)
+    const body = res.__json() as Record<string, unknown>
+    expect(body.card).toBeNull()
+    expect(body.amountCents).toBe(800)
+    expect(body.periodEnd).toBe(new Date(PERIOD_END * 1000).toISOString())
+    expect(stripeCalls.some((c) => c.method.startsWith('paymentMethods'))).toBe(false)
+    expect(res.__headers()['cache-control']).toBe('private, no-store')
+  })
+
   test('an unreadable payment method drops the card rather than failing the request', async () => {
     // The renewal date is what this endpoint exists for. A deleted or
     // non-card payment method must not take it down with it.

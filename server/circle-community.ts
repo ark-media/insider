@@ -63,7 +63,10 @@ export function projectEvent(e: CircleEvent): ArkEvent | null {
 
   const loc = e.location_type ?? undefined
   const id = e.slug?.trim() ? e.slug.trim() : `event-${String(e.id)}`
-  const venue = e.in_person_location?.trim() || undefined
+  // `in_person_location` (a physical address) is deliberately NOT projected:
+  // nothing on the site renders a venue, and an address has no business
+  // leaving the server for a strip that only needs the time, title and the
+  // Circle link — where members see the venue inside Circle itself.
 
   return {
     id,
@@ -78,7 +81,6 @@ export function projectEvent(e: CircleEvent): ArkEvent | null {
     hosts: [e.host?.trim() || e.member_name?.trim() || 'Ark Media'],
     description: '',
     location: loc === 'in_person' ? 'in-person' : 'circle-app',
-    venue,
     deepLink: e.url || undefined,
   }
 }

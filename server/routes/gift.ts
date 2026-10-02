@@ -228,17 +228,21 @@ export function giftRoutes({ env, stripe, appBaseUrl, activator }: Deps): Route[
         // billing address, which is what Stripe Tax reads for the owner's own
         // renewals.
         //
-        // `source === 'auth0'` is the durable login; a 'checkout' identity is
-        // the short-lived token minted from an address typed into a checkout
-        // form, which proves nothing about the inbox. Everyone else gets a fresh
-        // Customer. The duplicate is the cheap side of the trade — every lookup
+        // Only a session the giver actually signed in to (`assurance ===
+        // 'login'`: an emailed code or Google) may reuse the Customer. A
+        // 'checkout' identity is the short-lived token minted from an address
+        // typed into a checkout form, which proves nothing about the inbox, and
+        // a 'link' session came from a link in one of our emails — the same
+        // line billing changes draw (requireBillingEmail): a forwarded or
+        // leaked link must not reach a Customer's address and invoices.
+        // Everyone else gets a fresh Customer. The duplicate is the cheap side of the trade — every lookup
         // in the app already copes with several Customers per email.
         //
         // giverEmail is already lowercased, which matters to the lookup:
         // `customers.list({ email })` is an exact, case-sensitive match.
         const identity = await resolveRequestIdentity(req, env)
         const isGiver =
-          identity?.source === 'auth0' &&
+          identity?.assurance === 'login' &&
           identity.email.trim().toLowerCase() === giverEmail
         const owned = isGiver
           ? (await stripe.customers.list({ email: giverEmail, limit: 1 })).data[0]
@@ -748,24 +752,43 @@ export async function redeemGiftForRecipient(
 
   // The row's per-axis expiries. A null is preserved by the upsert's coalesce, so
   // a single-axis gift never clears the other axis's term or a live sub's fields.
+  // A granted axis is STACKED in SQL from the row as it stands at write time
+  // (`gift_term_days`), not from `existing`: two redemptions racing for the
+  // same recipient both read the same `existing`, and the second would
+  // otherwise overwrite the first's term. `grant.*EndsAt` is still passed — it
+  // is what a fresh insert writes, and its nullness says which axes to stack.
+  //
   // A live paid subscription's billing fields stay its own; otherwise the row
-  // takes the gift's.
+  // takes the gift's. A subscription that is NOT live (canceled, paused,
+  // incomplete…) is dropped from the row with its period, as
+  // clearMembershipSubscription would: writing status 'active' beside a dead
+  // subscription's id would revive that subscription's grant (liveAxes reads a
+  // row with a sub id and a live status as a subscriber). The Customer stays.
   const paid = plan.hasPaidSub && existing != null ? existing : null
   const giftCurrency = gift.amount_cents != null ? (gift.currency ?? 'usd') : null
-  await upsertMembership(sql, {
+  const written = await upsertMembership(sql, {
     auth0_sub: auth0Sub,
     stripe_customer_id: existing?.stripe_customer_id ?? null,
-    stripe_subscription_id: existing?.stripe_subscription_id ?? null,
+    stripe_subscription_id: paid ? paid.stripe_subscription_id : null,
     tier: plan.rowTier,
     status: paid ? paid.status : 'active',
     plan: paid ? paid.plan : gift.plan,
     amount_cents: paid ? paid.amount_cents : gift.amount_cents,
     currency: paid ? paid.currency : giftCurrency,
-    current_period_end: existing?.current_period_end ?? null,
-    cancel_at: existing?.cancel_at ?? null,
+    current_period_end: paid ? paid.current_period_end : null,
+    cancel_at: paid ? paid.cancel_at : null,
     ark_plus_gift_expires_at: grant.arkPlusEndsAt,
     circle_gift_expires_at: grant.circleEndsAt,
+    gift_term_days: GIFT_TERM_DAYS[term],
   })
+  // The expiries the row actually holds after the stacked write — what the
+  // recipient is told. Falls back to the planned values if no row came back.
+  const writtenArkPlusEndsAt = grant.arkPlusEndsAt
+    ? (written?.ark_plus_gift_expires_at ?? grant.arkPlusEndsAt)
+    : null
+  const writtenCircleEndsAt = grant.circleEndsAt
+    ? (written?.circle_gift_expires_at ?? grant.circleEndsAt)
+    : null
 
   // Paid-sub overlap (D5, extend-first). Two mutually-exclusive mechanics:
   //   - extendSub → defer the recipient's live sub by the gift term (term-faithful:
@@ -874,7 +897,7 @@ export async function redeemGiftForRecipient(
     grantedAny,
     held: unapplied !== null,
   })
-  const expiresAt = grant.arkPlusEndsAt ?? grant.circleEndsAt ?? undefined
+  const expiresAt = writtenArkPlusEndsAt ?? writtenCircleEndsAt ?? undefined
 
   // Closes the gift loop server-side (BI plan §4.2). The client already fires
   // `gift_redeemed`, but the magic-link path auto-logs the recipient in and

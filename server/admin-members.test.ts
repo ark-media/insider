@@ -119,6 +119,19 @@ async function get(headers?: Record<string, string>, query = ''): Promise<FakeRe
   return res
 }
 
+// A search: the same filters as a JSON body on a POST.
+async function post(headers: Record<string, string>, body: unknown): Promise<FakeRes> {
+  const req = makeReq({ ...headers, 'content-type': 'application/json' })
+  ;(req as unknown as { method: string }).method = 'POST'
+  const stream = Readable.from([Buffer.from(JSON.stringify(body))])
+  Object.defineProperty(req, Symbol.asyncIterator, {
+    value: () => stream[Symbol.asyncIterator](),
+  })
+  const res = makeRes()
+  await runHandler(getHandler(PATH), req, res)
+  return res
+}
+
 async function cookie(roles: string[]): Promise<string> {
   const token = await signSessionToken({ email: 'a@b.co', sub: 'auth0|admin-test', roles }, BASE_ENV)
   return `${SESSION_COOKIE_NAME}=${token}`
@@ -167,12 +180,27 @@ describe('GET /api/admin/members', () => {
 
 describe('member search', () => {
   test('400 when the search is shorter than 3 characters', async () => {
-    const res = await get({ cookie: await cookie(['admin']) }, '?email=ha')
+    const res = await post({ cookie: await cookie(['admin']) }, { email: 'ha' })
     expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toContain('3 characters')
   })
 
   test('surrounding whitespace does not count toward the minimum', async () => {
-    const res = await get({ cookie: await cookie(['admin']) }, '?email=%20ha%20')
+    const res = await post({ cookie: await cookie(['admin']) }, { email: ' ha ' })
+    expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toContain('3 characters')
+  })
+
+  // The search text is part of a member's email or name; a query string would
+  // put it in the platform's request logs.
+  test('refuses a search carried in the query string', async () => {
+    const res = await get({ cookie: await cookie(['admin']) }, '?email=hannah')
+    expect(res.statusCode).toBe(400)
+    expect((res.__json() as { error: string }).error).toContain('POST')
+  })
+
+  test('400 on a body that is not a flat object', async () => {
+    const res = await post({ cookie: await cookie(['admin']) }, ['hannah'])
     expect(res.statusCode).toBe(400)
   })
 

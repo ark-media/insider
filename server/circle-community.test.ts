@@ -40,7 +40,7 @@ describe('projectEvent', () => {
     expect(ev.deepLink).toBe(base.url)
   })
 
-  test('maps in_person events to the in-person format + venue', () => {
+  test('maps in_person events to the in-person format, without the address', () => {
     const ev = projectEvent({
       ...base,
       location_type: 'in_person',
@@ -48,7 +48,9 @@ describe('projectEvent', () => {
     })!
     expect(ev.format).toBe('in-person')
     expect(ev.location).toBe('in-person')
-    expect(ev.venue).toBe('92NY, New York')
+    // The physical address never leaves the server.
+    expect(ev.venue).toBeUndefined()
+    expect(JSON.stringify(ev)).not.toContain('92NY')
   })
 
   test('returns null when id or start time is missing/unparseable', () => {

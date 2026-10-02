@@ -18,13 +18,15 @@ import {
   CHECKOUT_TOKEN_TTL_SEC,
   clearAuthTxnCookie,
   clearCheckoutCookies,
+  clearGiftClaimCookie,
   clearSessionCookies,
   readCookie,
   setAuthTxnCookie,
   setCheckoutCookies,
   setSessionCookies,
 } from '../lib/cookies.js'
-import { getClientIp, isSameOrigin, makeJsonRes, readJson } from '../lib/http.js'
+import { getClientIp, isSameOrigin, makeJsonRes, readBody, readJson } from '../lib/http.js'
+import { esc } from '../lib/email-layout.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { getOidcConfig, OidcNotConfiguredError } from '../lib/oidc.js'
 import {
@@ -100,6 +102,53 @@ function redirect(res: import('node:http').ServerResponse, location: string): vo
   res.statusCode = 302
   res.setHeader('Location', location)
   res.end()
+}
+
+function sendHtml(res: import('node:http').ServerResponse, status: number, body: string): void {
+  res.statusCode = status
+  res.setHeader('content-type', 'text/html; charset=utf-8')
+  // Keyed on two people's addresses; no shared cache may ever hold it.
+  res.setHeader('cache-control', 'no-store')
+  res.end(body)
+}
+
+// The confirm step an emailed link shows when a different person is already
+// signed in on this browser (see /api/auth/email-login). Standalone markup,
+// no script: it never boots the SPA. The form re-submits the same link token
+// and destination to the same route as a POST, which is what performs the
+// switch; "stay signed in" is a plain link to the destination.
+export function switchAccountPage(opts: {
+  current: string
+  link: string
+  lt: string
+  to: string
+}): string {
+  const button =
+    'display:inline-block;padding:12px 20px;border-radius:999px;font:600 15px system-ui;text-decoration:none;cursor:pointer;'
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="robots" content="noindex" />
+    <title>Switch account?</title>
+  </head>
+  <body style="margin:0;background:#eef3fc;color:#373f5f;font:400 16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <main style="max-width:520px;margin:0 auto;padding:64px 24px;">
+      <p style="margin:0 0 24px;font:800 20px system-ui;color:#0b153c;">Ark<span style="color:#0a6fad;">+</span></p>
+      <h1 style="margin:0 0 12px;font:700 24px/1.25 system-ui;color:#0b153c;">Switch account?</h1>
+      <p style="margin:0 0 8px;">This link was sent to <strong>${esc(opts.link)}</strong>.</p>
+      <p style="margin:0 0 24px;">You're currently signed in as <strong>${esc(opts.current)}</strong>. Continuing signs that account out on this browser.</p>
+      <form method="post" action="/api/auth/email-login" style="margin:0 0 16px;">
+        <input type="hidden" name="lt" value="${esc(opts.lt)}" />
+        <input type="hidden" name="to" value="${esc(opts.to)}" />
+        <button type="submit" style="${button}border:0;background:#0a6fad;color:#fff;">Continue as ${esc(opts.link)}</button>
+      </form>
+      <p style="margin:0;"><a href="${esc(opts.to)}" style="${button}border:1px solid #c7d2e8;background:#fff;color:#0b153c;">Stay signed in as ${esc(opts.current)}</a></p>
+    </main>
+  </body>
+</html>`
 }
 
 // Resolve the OIDC config, or write a 500 and return null when the
@@ -284,6 +333,10 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         }
         clearCheckoutCookies(res, env)
         clearSessionCookies(res, env)
+        // And the in-flight gift hand-off: on a shared device the next person
+        // to sign in within its 15 minutes would otherwise be offered the
+        // previous person's gift to claim.
+        clearGiftClaimCookie(res, env)
         json(200, { ok: true })
       },
     }),
@@ -309,9 +362,27 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
     {
       path: '/api/auth/email-login',
       handler: async (req, res) => {
-        const url = new URL(req.url ?? '/', appBaseUrl)
-        const dest = safeReturnTo(url.searchParams.get('to'), appBaseUrl)
-        const lt = url.searchParams.get('lt')
+        // GET is the link itself. POST is the confirm form below, which only
+        // this route renders: a same-origin page re-submitting the same `lt`
+        // and `to` after the person said they want to switch accounts.
+        const method = req.method ?? 'GET'
+        let lt: string | null
+        let to: string | null
+        if (method === 'POST') {
+          if (!isSameOrigin(req, appBaseUrl)) {
+            return makeJsonRes(res)(403, { error: 'bad_origin' })
+          }
+          const form = new URLSearchParams((await readBody(req, 16 * 1024)).toString('utf8'))
+          lt = form.get('lt')
+          to = form.get('to')
+        } else if (method === 'GET') {
+          const url = new URL(req.url ?? '/', appBaseUrl)
+          lt = url.searchParams.get('lt')
+          to = url.searchParams.get('to')
+        } else {
+          return makeJsonRes(res)(405, { error: 'Method Not Allowed' })
+        }
+        const dest = safeReturnTo(to, appBaseUrl)
 
         const claim = lt ? await verifyEmailLoginToken(lt, env) : null
         if (!claim) {
@@ -326,11 +397,25 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         // reminder crons read from a table that holds no Auth0 sub or name at
         // all), so re-minting here would strip a real login back down to an
         // email, degrading the greeting and the sub-keyed membership read until
-        // their next sign-in. A DIFFERENT email still re-mints: that is a
-        // household sharing a browser, and the link's addressee should win.
+        // their next sign-in.
+        //
+        // A DIFFERENT email is a household sharing a browser — or a login CSRF:
+        // anyone can mint a link for an address they control and send someone
+        // else to it, and a plain GET that swapped the session would silently
+        // sign the victim into the attacker's account (whatever they then
+        // claim, link or set up lands there). So a link never replaces another
+        // person's session on its own. The GET renders a confirm page that
+        // names both addresses; only its same-origin POST performs the switch.
         const current = await getSessionProfile(req, env)
         if (current && current.email.toLowerCase() === claim.email.toLowerCase()) {
           return redirect(res, dest)
+        }
+        if (current && method === 'GET') {
+          return sendHtml(
+            res,
+            200,
+            switchAccountPage({ current: current.email, link: claim.email, lt: lt!, to: dest }),
+          )
         }
 
         const sessionToken = await signSessionToken(
@@ -460,11 +545,22 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         // Auth0 Login Action). Verify it with the same path the API uses.
         const accessToken = tokens.access_token
         const profile = accessToken
-          ? await verifyAuth0BearerProfile(accessToken)
+          ? await verifyAuth0BearerProfile(accessToken, {
+              authorizedParty: env.AUTH0_WEB_CLIENT_ID,
+            })
           : null
         if (!profile?.email) {
           console.error('[auth/callback] access token missing/invalid')
           return redirect(res, '/?auth_error=profile')
+        }
+        // The Login Action says whether THIS login proved control of the
+        // address (a Google assertion, an emailed code, or a verified Database
+        // account). A session is a by-email credential everywhere downstream —
+        // the entitlement net, billing lookups — so an unproven address gets
+        // no session, whatever the tenant's connection settings allow today.
+        if (profile.emailVerified === false) {
+          console.warn('[auth/callback] refusing session for unverified email:', profile.sub)
+          return redirect(res, '/?auth_error=unverified')
         }
 
         const session: SessionProfile = {
@@ -503,6 +599,7 @@ export function authRoutes({ env, stripe, activator, appBaseUrl }: Deps): Route[
         }
         clearSessionCookies(res, env)
         clearCheckoutCookies(res, env)
+        clearGiftClaimCookie(res, env)
         // End the Auth0 SSO session too, then come back to the app origin.
         const clientId = env.AUTH0_WEB_CLIENT_ID
         if (clientId) {

@@ -29,9 +29,25 @@ const sqlCalls: SqlCall[] = []
 let nextSqlResult: (sql: string) => unknown[] = () => []
 let membershipRows: unknown[] = []
 
+// The shared rate limiter's bucket upsert (shared-rate-limit.ts), modelled as a
+// bucket that never refills within the run: values[0] is the hashed key,
+// values[1] is capacity - 1. Buckets persist across tests, as the in-process
+// ones did, so rate-limit tests use their own emails.
+const bucketTakes = new Map<string, number>()
+function takeFromBucket(values: unknown[]): unknown[] {
+  const key = values[0] as string
+  const taken = (bucketTakes.get(key) ?? 0) + 1
+  bucketTakes.set(key, taken)
+  return [{ tokens: 0, allowed: taken <= (values[1] as number) + 1 }]
+}
+
 mock.module('@neondatabase/serverless', () =>
-  neonMockModule(sqlCalls, (merged) =>
-    merged.includes('from membership') ? membershipRows : nextSqlResult(merged),
+  neonMockModule(sqlCalls, (merged, values) =>
+    merged.includes('insert into rate_limit_buckets')
+      ? takeFromBucket(values)
+      : merged.includes('from membership')
+        ? membershipRows
+        : nextSqlResult(merged),
   ),
 )
 

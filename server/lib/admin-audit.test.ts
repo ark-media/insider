@@ -98,6 +98,20 @@ describe('logAdminAction', () => {
     expect(logged.join('\n')).not.toContain('jane')
   })
 
+  // In a deployment the vercel.json rewrite turns every call into
+  // `/api/handler?_path=<route>`, so the raw pathname would say `/api/handler`
+  // for every action. The trail must name the route that was actually called —
+  // resolved the way the dispatcher does, from the LAST `_path` value.
+  test('records the rewritten route in a deployment, not /api/handler', async () => {
+    const req = makeFakeReq({
+      url: '/api/handler?_path=evil&email=jane%40example.com&_path=admin%2Fmembers',
+    })
+    await logAdminAction(ENV, ADMIN, req, { action: 'members.search' })
+
+    expect(auditInserts()[0].values[3]).toBe('/api/admin/members')
+    expect(logged.join('\n')).not.toContain('jane')
+  })
+
   test('without DATABASE_URL it logs to the console and touches no database', async () => {
     const req = makeFakeReq({ method: 'PUT', url: '/api/admin/feed-reminders' })
     await logAdminAction({}, ADMIN, req, { action: 'feed_reminders.update' })

@@ -363,14 +363,14 @@ export function identifyUser(opts: {
   // segment Ark+ vs Circle vs Bundle vs free.
   tier?: 'ark-plus' | 'circle' | 'bundle' | 'free'
 }) {
-  // Sentry keeps the real address on purpose — it's the support-debugging
-  // channel, and a hash there would make a bug report untraceable to a member.
-  Sentry.setUser({ id: opts.email, email: opts.email })
-  if (!posthogReady) return
-  const { set, setOnce } = splitTouchProperties(getAttribution())
-  // The hash is async and IS the distinct_id, so there is nothing to identify
-  // with until it resolves.
+  // Sentry gets the same pseudonymous id PostHog does, never the address: a
+  // bug report stays traceable to a member (hash the address they give support
+  // and search for it), while an error event — which also carries the URL,
+  // breadcrumbs and request bodies — holds no plaintext PII of its own.
   void hashEmail(opts.email).then((hash) => {
+    Sentry.setUser({ id: hash })
+    if (!posthogReady) return
+    const { set, setOnce } = splitTouchProperties(getAttribution())
     posthog.identify(
       hash,
       { ...set, tier: opts.tier ?? 'free', email_sha256: hash },

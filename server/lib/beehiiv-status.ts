@@ -6,6 +6,8 @@
 // copies of the same Set before, which is exactly the kind of list that drifts
 // when a provider adds a status.
 
+import { redactEmail } from '../../shared/validation.js'
+
 const SKIP_STATUSES = new Set([
   'inactive',
   'unsubscribed',
@@ -27,4 +29,17 @@ const SKIP_STATUSES = new Set([
 export function mailableStatus(status: string | null | undefined): boolean {
   if (!status) return true
   return !SKIP_STATUSES.has(status.trim().toLowerCase())
+}
+
+/**
+ * Mask every email address in an upstream response body before it is logged.
+ *
+ * Beehiiv's error bodies quote the address they are complaining about, so
+ * logging `await res.text()` verbatim puts a reader's address in the function
+ * logs. Every Beehiiv call site that logs an upstream body goes through this.
+ * Lives here, not in beehiiv-sync/beehiiv-feeds, because this module imports
+ * nothing of ours, so every caller can import it without a cycle.
+ */
+export function redactEmailsInText(text: string): string {
+  return text.replace(/[^\s@"'<>]+@[^\s@"'<>]+/g, redactEmail)
 }

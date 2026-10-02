@@ -417,13 +417,16 @@ describe('admin audit log — bulk reads of member data', () => {
     expect(auditRows()).toHaveLength(0)
   })
 
+  // A search is POSTed (the text would otherwise sit in request logs), and the
+  // trail records it by method and shape only.
   test('a member-directory search is logged without the email searched for', async () => {
-    const res = await call('GET', '/api/admin/members?email=jane%40example.com')
+    const res = await call('POST', '/api/admin/members', { body: { email: 'jane@example.com' } })
     expect(res.statusCode).toBe(200)
 
     const rows = auditRows()
     expect(rows).toEqual([
       expect.objectContaining({
+        method: 'POST',
         path: '/api/admin/members',
         action: 'members.search',
         summary: 'by=email tier=any activation=any rows=1',

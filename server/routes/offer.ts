@@ -48,7 +48,7 @@
 
 import type Stripe from 'stripe'
 import { requireBillingEmail } from '../lib/guards.js'
-import { isSameOrigin, readJson } from '../lib/http.js'
+import { isSameOrigin, readJson, setReadCacheControl } from '../lib/http.js'
 import {
   isSupportedCurrency,
   minorUnitFactors,
@@ -169,7 +169,9 @@ export function offerRoutes({ env, stripe, appBaseUrl }: Deps): Route[] {
       // link while it is fresh (below).
       path: '/api/offer/check',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
+        // Per-member answer: never shared-cacheable.
+        setReadCacheControl(res, { gated: true })
         if (!stripe) return json(500, { error: 'not_configured' })
 
         const email = await getSessionEmail(req, env)

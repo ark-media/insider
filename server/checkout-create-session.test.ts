@@ -133,6 +133,8 @@ mock.module('stripe', () => ({ default: FakeStripe, __esModule: true }))
 let auth0SubsByEmail = new Map<string, string[] | null>()
 let membershipRowsBySub: Record<string, Record<string, unknown>> = {}
 let membershipQueryFails = false
+// Redeemed gift rows by redeemer sub, for the gift-trial token lookup.
+let giftRowsBySub: Record<string, Array<{ redemption_token: string; tier: string }>> = {}
 const sqlTexts: string[] = []
 
 mock.module('@neondatabase/serverless', () => ({
@@ -144,6 +146,9 @@ mock.module('@neondatabase/serverless', () => ({
         if (membershipQueryFails) return Promise.reject(new Error('neon down'))
         const row = membershipRowsBySub[values[0] as string]
         return Promise.resolve(row ? [row] : [])
+      }
+      if (text.includes('from gift') && text.includes('redeemed_by = ?')) {
+        return Promise.resolve(giftRowsBySub[values[0] as string] ?? [])
       }
       if (text.includes('from membership where auth0_sub = any')) {
         if (membershipQueryFails) return Promise.reject(new Error('neon down'))
@@ -209,6 +214,14 @@ function getHandler(path: string, env: Record<string, string> = BASE_ENV): Middl
 // A durable login (the ark_session cookie) as this address.
 async function sessionCookie(email: string, sub?: string): Promise<string> {
   return `${SESSION_COOKIE_NAME}=${await signSessionToken({ email, roles: [], ...(sub ? { sub } : {}) }, BASE_ENV)}`
+}
+
+// An ark_session minted from an emailed link (assurance 'link'), not a login.
+async function linkSessionCookie(email: string, sub?: string): Promise<string> {
+  return `${SESSION_COOKIE_NAME}=${await signSessionToken(
+    { email, roles: [], via: 'email_link', ...(sub ? { sub } : {}) },
+    BASE_ENV,
+  )}`
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +310,7 @@ beforeEach(() => {
   auth0SubsByEmail = new Map()
   membershipRowsBySub = {}
   membershipQueryFails = false
+  giftRowsBySub = {}
   sqlTexts.length = 0
 })
 
@@ -820,6 +834,13 @@ describe('GET /api/stripe/billing-currency', () => {
     const res = await get(`${CHECKOUT_COOKIE_NAME}=${token}`)
     expect(res.__json()).toEqual({ currency: null, email: null })
   })
+
+  test('a session from an emailed link is not a login either → null, and never cached', async () => {
+    existingCustomers = [{ id: 'cus_cad', email: 'a@b.co', currency: 'cad' }]
+    const res = await get(await linkSessionCookie('a@b.co'))
+    expect(res.__json()).toEqual({ currency: null, email: null })
+    expect(res.__header('cache-control')).toBe('private, no-store')
+  })
 })
 
 describe('POST /api/stripe/create-checkout-session — single-active-subscription guard', () => {
@@ -854,6 +875,35 @@ describe('POST /api/stripe/create-checkout-session — rate limit', () => {
     const blocked = await postWith(handler, body)
     expect(blocked.statusCode).toBe(429)
     expect(blocked.__header('retry-after')).toBeTruthy()
+  })
+
+  test('one address is capped across IPs, not just per IP', async () => {
+    // Both other buckets are IP-scoped; rotating the source IP used to hand a
+    // prober a fresh allowance for "is this address a member?" every time.
+    const handler = getHandler(PATH)
+    const body = { email: 'probed@example.com', plan: 'monthly' as const }
+    const fromIp = async (ip: string) => {
+      const res = makeRes()
+      await runHandler(handler, makeReq({ body, headers: { 'x-forwarded-for': ip } }), res)
+      return res
+    }
+    // Ten attempts, two per IP — under every per-IP cap.
+    for (let i = 0; i < 10; i += 1) {
+      expect((await fromIp(`10.0.0.${Math.floor(i / 2)}`)).statusCode).toBe(200)
+    }
+    const blocked = await fromIp('10.0.9.9')
+    expect(blocked.statusCode).toBe(429)
+    // A different address from that fresh IP is unaffected.
+    const other = makeRes()
+    await runHandler(
+      handler,
+      makeReq({
+        body: { email: 'someone-else@example.com', plan: 'monthly' },
+        headers: { 'x-forwarded-for': '10.0.9.9' },
+      }),
+      other,
+    )
+    expect(other.statusCode).toBe(200)
   })
 })
 
@@ -916,6 +966,61 @@ describe('POST /api/stripe/create-checkout-session — billing starts when the g
     )
     expect(res.statusCode).toBe(200)
     expect(trialEndOf()).toBeUndefined()
+  })
+
+  const metadataOf = () =>
+    (lastSessionCreateArgs().subscription_data as { metadata: Record<string, string> }).metadata
+
+  test('names the gift(s) funding the trial on the subscription, so a refund can end it', async () => {
+    auth0SubsByEmail.set('gifted@b.co', ['auth0|gifted'])
+    membershipRowsBySub = { 'auth0|gifted': giftRow({ ark_plus_gift_expires_at: inDays(40) }) }
+    giftRowsBySub = {
+      'auth0|gifted': [
+        { redemption_token: 'tok_arkplus', tier: 'ark-plus' },
+        // A Fold gift pays for nothing an Ark+ plan sells.
+        { redemption_token: 'tok_fold', tier: 'circle' },
+        { redemption_token: 'tok_bundle', tier: 'bundle' },
+      ],
+    }
+    const res = await post(
+      { email: 'gifted@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { env: DB_ENV, cookie: await sessionCookie('gifted@b.co', 'auth0|gifted') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(trialEndOf()).toBeDefined()
+    expect(metadataOf().gift_trial_tokens).toBe('tok_arkplus,tok_bundle')
+  })
+
+  test('no trial → no gift tokens on the subscription', async () => {
+    giftRowsBySub = { 'auth0|reader': [{ redemption_token: 'tok_old', tier: 'ark-plus' }] }
+    const res = await post(
+      { email: 'reader@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { env: DB_ENV, cookie: await sessionCookie('reader@b.co', 'auth0|reader') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(metadataOf().gift_trial_tokens).toBeUndefined()
+  })
+
+  test('a session from an emailed LINK is not a login: account guard, no trial', async () => {
+    auth0SubsByEmail.set('gifted@b.co', ['auth0|gifted'])
+    membershipRowsBySub = { 'auth0|gifted': giftRow({ ark_plus_gift_expires_at: inDays(40) }) }
+    const res = await post(
+      { email: 'gifted@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { env: DB_ENV, cookie: await linkSessionCookie('gifted@b.co', 'auth0|gifted') },
+    )
+    expect(res.statusCode).toBe(409)
+    expect((res.__json() as Record<string, unknown>).code).toBe('login_required')
+    expect(stripeCalls.find((c) => c.method === 'checkout.sessions.create')).toBeUndefined()
+  })
+
+  test('a link session never reuses the existing Customer', async () => {
+    existingCustomers = [{ id: 'cus_mine', email: 'reader@b.co' }]
+    const res = await post(
+      { email: 'reader@b.co', plan: 'monthly', tier: 'ark-plus' },
+      { cookie: await linkSessionCookie('reader@b.co', 'auth0|reader') },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(lastSessionCreateArgs().customer).toBe('cus_new')
   })
 
   test('fails CLOSED when the gift lookup errors — never bills gifted months', async () => {

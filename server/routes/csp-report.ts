@@ -27,6 +27,7 @@
 
 import { getClientIp, PayloadTooLargeError, readBody } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
+import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { defineRoute, type Route } from '../lib/route.js'
 
 // A real report is ~1 KiB; a Reporting API batch is a handful of them. 16 KiB
@@ -37,6 +38,12 @@ const MAX_REPORT_BYTES = 16 * 1024
 // page load that trips the same directive fifty times tells us nothing the
 // first five lines didn't.
 const MAX_REPORTS_PER_REQUEST = 5
+
+// Site-wide reports accepted per day (each logs up to MAX_REPORTS_PER_REQUEST
+// lines). Enough to see a policy regression from every browser in use; small
+// enough that a scripted flood cannot run up the log bill.
+const DAILY_CEILING = 5000
+const DAILY_KEY = 'all'
 
 const FIELD_MAX = 200
 
@@ -136,11 +143,24 @@ export function parseCspReports(payload: unknown): CspReportLine[] {
     )
 }
 
-export function cspReportRoutes(): Route[] {
+export function cspReportRoutes(env: Record<string, string> = {}): Route[] {
   // A page that violates the policy does so a handful of times per load, and
   // browsers de-duplicate + batch. 20-report burst, then one every 2s, is room
   // for an honest browser and useless for filling the logs.
+  //
+  // In-memory on purpose: it is the cheap first gate, and a sink that cost a
+  // database round-trip per report would turn a report flood into a database
+  // flood. What it cannot do alone is bound the TOTAL — every function
+  // instance and every IPv6 /64 gets its own bucket — so a shared, site-wide
+  // daily ceiling sits behind it. Past that, reports are dropped unlogged until
+  // the budget refills; a real regression trips it in minutes and is visible
+  // in the first few hundred lines anyway.
   const limiter = createRateLimiter({ capacity: 20, refillPerSec: 0.5 })
+  const dailyLimiter = createSharedRateLimiter(env, {
+    name: 'csp-report-daily',
+    capacity: DAILY_CEILING,
+    refillPerSec: DAILY_CEILING / 86_400,
+  })
 
   return [
     defineRoute({
@@ -154,7 +174,7 @@ export function cspReportRoutes(): Route[] {
           res.end()
         }
 
-        const wait = limiter.take(getClientIp(req))
+        const wait = limiter.take(getClientIp(req)) ?? (await dailyLimiter.take(DAILY_KEY))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return done(429)

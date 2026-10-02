@@ -45,6 +45,27 @@ function makeReq(opts: {
   return { method: opts.method ?? 'GET', url: opts.url ?? '/', headers } as unknown as IncomingMessage
 }
 
+// A form POST as a browser would send it: urlencoded body, Origin header.
+function makeFormReq(
+  body: string,
+  opts: { cookie?: string; origin?: string } = {},
+): IncomingMessage {
+  const headers: Record<string, string> = {
+    'content-type': 'application/x-www-form-urlencoded',
+  }
+  if (opts.cookie) headers.cookie = opts.cookie
+  if (opts.origin) headers.origin = opts.origin
+  const chunks = [Buffer.from(body)]
+  return {
+    method: 'POST',
+    url: '/api/auth/email-login',
+    headers,
+    async *[Symbol.asyncIterator]() {
+      for (const c of chunks) yield c
+    },
+  } as unknown as IncomingMessage
+}
+
 function makeRes() {
   const headers: Record<string, string | string[]> = {}
   const res = {
@@ -256,7 +277,9 @@ describe('POST /api/signout', () => {
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(res.body)).toEqual({ ok: true })
     const setCookie = res.getHeader('Set-Cookie') as string[]
-    expect(setCookie).toHaveLength(4)
+    // session + checkout pairs, and the single gift-claim hand-off cookie.
+    expect(setCookie).toHaveLength(5)
+    expect(setCookie.some((c) => c.startsWith('ark_gift_claim=;'))).toBe(true)
   })
 
   test('405s on GET', async () => {
@@ -304,6 +327,69 @@ describe('GET /api/auth/email-login', () => {
     // The JS-readable companion is what tells the SPA to call /api/me at all —
     // without it the page renders as a guest despite the session cookie.
     expect(cookies.some((c) => c.startsWith('ark_session_present='))).toBe(true)
+  })
+
+  // A link for one address must never silently replace another person's
+  // session: that is a login CSRF (mint a link for an address you control,
+  // send someone else to it, and whatever they do next lands in your account).
+  test('a different signed-in person gets a confirm page, not a new session', async () => {
+    const existing = await signSessionToken(
+      { email: 'alice@example.com', roles: [], sub: 'auth0|alice' },
+      CONFIGURED,
+    )
+    const lt = await link({ email: 'bob@example.com', sub: 'auth0|bob' })
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeReq({
+        url: `${PATH}?lt=${encodeURIComponent(lt)}&to=%2Fsetup`,
+        cookie: `${SESSION_COOKIE_NAME}=${existing}`,
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(String(res.getHeader('content-type'))).toContain('text/html')
+    expect(res.getHeader('cache-control')).toBe('no-store')
+    expect(setCookies(res)).toEqual([])
+    expect(res.body).toContain('alice@example.com')
+    expect(res.body).toContain('bob@example.com')
+    // The confirm form re-submits the same token to the same route as a POST,
+    // and the token never appears in a link (no GET replay from the page).
+    expect(res.body).toContain('action="/api/auth/email-login"')
+    expect(res.body).toContain(`value="${lt}"`)
+    expect(res.body).toContain('href="/setup"')
+  })
+
+  test('the confirm form\'s same-origin POST performs the switch', async () => {
+    const existing = await signSessionToken(
+      { email: 'alice@example.com', roles: [], sub: 'auth0|alice' },
+      CONFIGURED,
+    )
+    const lt = await link({ email: 'bob@example.com', sub: 'auth0|bob' })
+    const body = new URLSearchParams({ lt, to: '/setup' }).toString()
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(
+      makeFormReq(body, {
+        cookie: `${SESSION_COOKIE_NAME}=${existing}`,
+        origin: APP,
+      }),
+      res,
+    )
+
+    expect(res.statusCode).toBe(302)
+    expect(res.getHeader('Location')).toBe('/setup')
+    const cookie = setCookies(res).find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))!
+    const token = cookie.slice(`${SESSION_COOKIE_NAME}=`.length).split(';')[0]!
+    expect((await verifySessionToken(token, CONFIGURED))?.email).toBe('bob@example.com')
+  })
+
+  test('the POST refuses a cross-site origin', async () => {
+    const lt = await link({ email: 'bob@example.com' })
+    const body = new URLSearchParams({ lt, to: '/setup' }).toString()
+    const res = makeRes()
+    await route(CONFIGURED, PATH)(makeFormReq(body, { origin: 'https://evil.example' }), res)
+    expect(res.statusCode).toBe(403)
+    expect(setCookies(res)).toEqual([])
   })
 
   test('the minted session carries the email, sub and name from the token', async () => {
@@ -423,7 +509,11 @@ describe('GET /api/auth/email-login', () => {
     expect(setCookies(res)).toEqual([])
   })
 
-  test('a link addressed to someone else re-mints — the addressee wins', async () => {
+  // A household sharing a browser: the addressee still wins, but only once
+  // they have said so on the confirm page (the GET alone never swaps — see the
+  // login-CSRF tests above). A guest browser with no session at all is minted
+  // straight away, as before.
+  test('a link addressed to someone else never re-mints on the GET alone', async () => {
     const existing = await signSessionToken(
       { email: 'first@example.com', roles: [], sub: 'auth0|first' },
       CONFIGURED,
@@ -438,11 +528,8 @@ describe('GET /api/auth/email-login', () => {
       res,
     )
 
-    const cookie = setCookies(res).find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`))!
-    const token = cookie.slice(`${SESSION_COOKIE_NAME}=`.length).split(';')[0]!
-    expect((await verifySessionToken(token, CONFIGURED))?.email).toBe(
-      'second@example.com',
-    )
+    expect(res.statusCode).toBe(200)
+    expect(setCookies(res)).toEqual([])
   })
 })
 

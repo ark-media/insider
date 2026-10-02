@@ -24,12 +24,16 @@ import { suppressWinback } from '../lib/winback.js'
 // still verifies, and unguessable so the endpoint can't be used to opt out an
 // arbitrary address.
 export function winbackUnsubToken(email: string, env: Env): string {
-  const secret = env.SESSION_SECRET || env.CHECKOUT_SESSION_SECRET
+  // Its own key, falling back to SESSION_SECRET. Rotating SESSION_SECRET is the
+  // documented way to sign everyone out, and these links sit in inboxes for
+  // months: under the shared key a rotation would quietly break every one of
+  // them. WINBACK_TOKEN_SECRET is set once and never rotated.
+  const secret = env.WINBACK_TOKEN_SECRET || env.SESSION_SECRET || env.CHECKOUT_SESSION_SECRET
   // Never default this. The token is the only authorization on this endpoint,
   // so a hardcoded fallback would let anyone suppress any address. Match the
   // 32-byte floor the other first-party tokens enforce.
   if (!secret || secret.length < 32) {
-    throw new Error('SESSION_SECRET (>= 32 bytes) required to derive win-back tokens')
+    throw new Error('WINBACK_TOKEN_SECRET or SESSION_SECRET (>= 32 bytes) required to derive win-back tokens')
   }
   return createHmac('sha256', secret)
     .update(`winback-unsub:${normalizeEmail(email)}`)

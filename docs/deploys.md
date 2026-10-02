@@ -68,6 +68,7 @@ Splitting it means giving these a preview-scoped value of their own:
 | `APP_BASE_URL` | the staging origin — it drives every OAuth `redirect_uri` |
 | Auth0 client/tenant vars | plus the staging callback URL added to the Auth0 app |
 | Beehiiv keys | a non-production publication, or accept read-only drift |
+| `SESSION_SECRET`, `CHECKOUT_SESSION_SECRET`, `GIFT_TOKEN_SECRET`, `WINBACK_TOKEN_SECRET`, `EMAIL_LOGIN_SECRET`, `GIFT_CLAIM_SECRET`, `AUTH_TXN_SECRET`, `CRON_SECRET`, `BEEHIIV_WEBHOOK_SECRET`, `CIRCLE_GATE_SECRET` | fresh values of their own. These HMAC keys sign sessions (admin role included), gift and login links; anything that runs in a preview build or function can read its env, so a shared key would let a preview forge a production admin session |
 
 `vercel env add <NAME> preview` sets a preview-only value without disturbing
 production. Set `PREVIEW_SAFE_INTEGRATIONS=true` only after those preview

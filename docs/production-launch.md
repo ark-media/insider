@@ -74,6 +74,9 @@ you get the value; "Scope" = server-only vs shipped to browser.
 | `APP_BASE_URL` | server | Production origin, e.g. `https://arkmedia.org`. Drives magic-link/OAuth `redirect_uri` — must exactly match the deployed origin. |
 | `SESSION_SECRET` | server | `openssl rand -hex 32`. **Set it** — if empty, a new one is generated each cold start and all sessions drop. |
 | `CHECKOUT_SESSION_SECRET` | server | `openssl rand -hex 32`. Signs the short-lived post-checkout auto-login JWT. |
+| `GIFT_TOKEN_SECRET` | server | `openssl rand -hex 32`. Derives gift redemption tokens from the PaymentIntent id. **Set it before the first live gift and never rotate it**: without it the derivation falls back to `SESSION_SECRET`, and rotating that (the sign-everyone-out lever) would orphan refund/dispute handling for every gift sold before. |
+| `WINBACK_TOKEN_SECRET` | server | `openssl rand -hex 32`. Signs win-back unsubscribe links; same never-rotate rule and the same `SESSION_SECRET` fallback. |
+| `EMAIL_LOGIN_SECRET` / `GIFT_CLAIM_SECRET` / `AUTH_TXN_SECRET` | server | Optional per-purpose keys (fall back to `SESSION_SECRET`). Set `EMAIL_LOGIN_SECRET` so a laptop running a send script never needs the session key. |
 | `VITE_GATE_PASSWORD` | **browser** | Pre-launch password gate. **Leave empty in production at launch** to disable it (or keep set during a soft-launch window). |
 
 #### Auth0
@@ -162,6 +165,7 @@ you get the value; "Scope" = server-only vs shipped to browser.
 | `BEEHIIV_LIST_ID_THE_CURRENT` | server | The Current's newsletter list (auto-subscribe on). `bun run scripts/beehiiv-provision-newsletter-lists.ts` prints it. Unset → the newsletter switch unsubscribes the whole publication. |
 | `BEEHIIV_LIST_ID_AMA` | server | The Ark+ AMA Links list (opt-in, Ark+ only). Same script. Unset → the AMA switch answers 503. |
 | `BEEHIIV_WEBHOOK_SECRET` | server | `openssl rand -hex 32`; register `/api/beehiiv/webhook?key=…` for the subscription.* events. |
+| `BEEHIIV_WEBHOOK_SIGNING_SECRET` | server | The endpoint's Svix signing secret (`whsec_…`) from Beehiiv → Settings → Webhooks → the endpoint. **Set it**: with it present the webhook verifies Beehiiv's signature and ignores the `?key=` in the URL, which otherwise sits in access logs. |
 
 ##### Podcasts
 Every episode on the site is fetched from Beehiiv at runtime — there is no local
@@ -216,8 +220,10 @@ matter of pasting a key.
 
 ### 1.5 Secrets to generate (don't reuse dev values)
 Regenerate all shared secrets for prod: `SESSION_SECRET`, `CHECKOUT_SESSION_SECRET`,
-`CRON_SECRET`, `BEEHIIV_WEBHOOK_SECRET` — each
-`openssl rand -hex 32`.
+`CRON_SECRET`, `BEEHIIV_WEBHOOK_SECRET`, `GIFT_TOKEN_SECRET`, `WINBACK_TOKEN_SECRET`,
+`EMAIL_LOGIN_SECRET` — each `openssl rand -hex 32`. Rotating `SESSION_SECRET` later
+signs everyone out and nothing else, *provided* the gift and win-back keys were set
+from the start; they are never rotated.
 
 ### 1.6 Pre-launch verification
 - [ ] All server vars present in Vercel **Production** scope; `VITE_` vars also

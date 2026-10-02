@@ -55,31 +55,49 @@ export function isRetentionCoupon(c: RetentionCouponLike): boolean {
 }
 
 // Whether a discount ALREADY on a subscription still belongs there once the
-// subscription becomes `result`. A retention coupon is priced for one product at
-// one cadence — the supporter rate for monthly Ark+, the affordability rate for
-// the Fold, the intro rate for whichever single product a debundler kept — and
-// Stripe knows none of that: a subscription-level discount follows the
-// subscription through any plan or tier change. So a member could accept the
-// monthly supporter rate, switch to annual, and take the same percentage off a
-// whole year; or collect the debundle intro rate and re-bundle under it.
+// subscription moves from `fromPlan` to `result`. Stripe knows nothing of our
+// targeting: a subscription-level discount follows the subscription through any
+// plan or tier change. So, three rules:
+//
+//   1. ANY coupon targeted at one cadence (`metadata.plan` = monthly | yearly)
+//      leaves when the subscription lands on the other — a checkout promo as
+//      much as a retention coupon. Stripe can't restrict a promotion code to a
+//      cadence (the monthly and yearly prices share one product), and codes are
+//      typed into Stripe's own checkout element, which we never see; so a
+//      monthly-only code redeemed on a yearly checkout, or a monthly code that
+//      follows the member onto an annual plan, would otherwise take a monthly-
+//      priced cut off a whole year. This is the one place we can enforce it.
+//   2. A retention coupon (supporter / affordability / debundle intro) leaves
+//      on ANY cadence change, targeted or not. Each is priced for the cadence it
+//      was accepted at, and a repeating N-month coupon on an annual invoice
+//      discounts the whole year: accept the monthly supporter rate, switch to
+//      annual, and take the same percentage off twelve months. (The yearly
+//      debundle intro is a full discounted year by design — pickIntroCoupon —
+//      but it is attached AT the yearly cadence; it just doesn't travel.)
+//   3. A retention coupon leaves when the tier it was priced for goes: the
+//      supporter rate is for Ark+, the affordability rate for the Fold, the
+//      debundle intro for a single product, never a re-bundle.
 //
 // Reads the marker only (`metadata.retention_offer`), NOT isRetentionCoupon: that
 // also requires `valid`, which is about whether a coupon can be redeemed AGAIN.
 // An archived or fully-redeemed retention coupon is still a retention coupon on
-// the subscriptions that hold it. Anything unmarked — a checkout promo code, a
-// Dashboard courtesy discount — is not ours to remove and always stays.
+// the subscriptions that hold it. An unmarked, untargeted coupon — a courtesy
+// discount, an all-plans promo — always stays.
 //
-// A null tier or plan means "couldn't establish it", and never drops anything on
-// that axis: losing a discount the member was promised is the worse error.
+// A null tier or plan (either side) means "couldn't establish it", and never
+// drops anything on that axis: losing a discount the member was promised is the
+// worse error.
 export function retentionDiscountStillApplies(
   coupon: Pick<RetentionCouponLike, 'metadata'>,
   result: { tier: PricedTier | 'free' | null; plan: Plan | null },
+  fromPlan: Plan | null = null,
 ): boolean {
-  if (coupon.metadata?.retention_offer?.toLowerCase() !== 'true') return true
   const targetPlan = coupon.metadata?.plan
   if (targetPlan && targetPlan !== 'both' && result.plan !== null && targetPlan !== result.plan) {
     return false
   }
+  if (coupon.metadata?.retention_offer?.toLowerCase() !== 'true') return true
+  if (fromPlan !== null && result.plan !== null && fromPlan !== result.plan) return false
   if (result.tier === null) return true
   switch (coupon.metadata?.offer_kind) {
     case 'supporter_coupon':
@@ -94,12 +112,19 @@ export function retentionDiscountStillApplies(
   }
 }
 
+// The cadence a subscription bills at now, from its price's interval.
+function currentPlanOf(sub: Stripe.Subscription): Plan | null {
+  const interval = sub.items?.data?.[0]?.price?.recurring?.interval
+  return interval === 'year' ? 'yearly' : interval === 'month' ? 'monthly' : null
+}
+
 // The `discounts` param for a subscription update that lands the subscription on
-// `result`: every current discount except retention coupons that no longer fit
-// (see retentionDiscountStillApplies). Null when nothing needs dropping, so the
-// caller omits the param and Stripe leaves the discounts exactly as they are.
-// Kept discounts are passed back by discount id, which preserves their original
-// start and end — re-attaching by coupon would restart a repeating term.
+// `result`: every current discount except those that no longer fit (see
+// retentionDiscountStillApplies; the cadence being left is read off the
+// subscription itself). Null when nothing needs dropping, so the caller omits
+// the param and Stripe leaves the discounts exactly as they are. Kept discounts
+// are passed back by discount id, which preserves their original start and end
+// — re-attaching by coupon would restart a repeating term.
 //
 // The subscriptions the billing routes hold come from a list call, where
 // `discounts` is bare ids, so this re-reads the one subscription with the
@@ -113,6 +138,7 @@ export async function discountsSurvivingChange(
   const full = await stripe.subscriptions.retrieve(sub.id, {
     expand: ['discounts.source.coupon'],
   })
+  const fromPlan = currentPlanOf(full) ?? currentPlanOf(sub)
   const kept: Array<{ discount: string }> = []
   let dropped = false
   for (const d of full.discounts ?? []) {
@@ -122,7 +148,11 @@ export async function discountsSurvivingChange(
       continue
     }
     const coupon = d.source?.coupon
-    if (coupon && typeof coupon !== 'string' && !retentionDiscountStillApplies(coupon, result)) {
+    if (
+      coupon &&
+      typeof coupon !== 'string' &&
+      !retentionDiscountStillApplies(coupon, result, fromPlan)
+    ) {
       dropped = true
       continue
     }

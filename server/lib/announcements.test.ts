@@ -68,6 +68,17 @@ describe('normalizeActionUrl', () => {
   test('rejects protocol-relative URLs that look relative but go off-site', () => {
     expect(normalizeActionUrl('//evil.com')).toEqual({ error: expect.any(String) })
   })
+  // Browsers fold a backslash into a second slash, so these navigate off-site
+  // just like "//host" while passing a naive startsWith('//') check.
+  test('rejects the backslash spelling of a protocol-relative URL', () => {
+    expect(normalizeActionUrl('/\\evil.com')).toEqual({ error: expect.any(String) })
+    expect(normalizeActionUrl('/\\evil.com/login')).toEqual({ error: expect.any(String) })
+    expect(normalizeActionUrl('/\\/evil.com')).toEqual({ error: expect.any(String) })
+  })
+  test('keeps a site path with a query, hash or encoded characters', () => {
+    expect(normalizeActionUrl('/subscribe?from=banner#top')).toBe('/subscribe?from=banner#top')
+    expect(normalizeActionUrl('/fold/%5Cnot-a-host')).toBe('/fold/%5Cnot-a-host')
+  })
 })
 
 describe('validateAnnouncementInput', () => {

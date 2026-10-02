@@ -626,6 +626,28 @@ describe('POST /api/gift/create-checkout — happy paths', () => {
       expect(sessionCreateArgs().customer).toBe('cus_new')
     })
 
+    test('an email-link session for the giver address does not reach their customer', async () => {
+      // A session minted from a link in one of our emails (lifecycle email,
+      // gift claim) is source 'auth0' but assurance 'link': a forwarded or
+      // leaked link must not attach the Session to — and let it overwrite the
+      // billing address of — the giver's Customer.
+      existingCustomer = { id: 'cus_existing', email: 'giver@example.com' }
+      const cookie = `ark_session=${await signSessionToken(
+        { email: 'giver@example.com', roles: [], via: 'email_link' },
+        BASE_ENV,
+      )}`
+      const res = makeRes()
+      await runHandler(
+        getHandler(CREATE_PATH),
+        makeReq({ body: giftBody, headers: { cookie } }),
+        res,
+      )
+
+      expect(res.statusCode).toBe(200)
+      expect(stripeCalls.some((c) => c.method === 'customers.list')).toBe(false)
+      expect(sessionCreateArgs().customer).toBe('cus_new')
+    })
+
     test('a checkout token for the giver address is not a durable login', async () => {
       // Minted from an address typed into a checkout form — it proves nothing
       // about who controls the inbox.

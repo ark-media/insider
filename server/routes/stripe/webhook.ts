@@ -42,6 +42,7 @@ import {
   upsertMembership,
   voidPendingGift,
   type GiftStripeEffect,
+  type MembershipRow,
 } from '../../lib/membership.js'
 import { type Plan } from '../../lib/pricing.js'
 import type { Deps, Env } from '../../lib/route.js'
@@ -56,6 +57,7 @@ import {
   subscriptionAmount,
   tsToIso,
 } from './helpers.js'
+import { giftTrialEndSec, giftTrialTokensOf } from './gift-trial.js'
 
 // The tier a subscription sells, from its price product's `entitlements`
 // metadata — the ONLY authority. Null means "this is not one of our membership
@@ -953,6 +955,12 @@ async function reverseRedeemedGift(
   const row = gift.redeemed_by
     ? await revokeGiftTerm(sql, gift.redeemed_by, covered, termDays)
     : null
+  // A subscription the redeemer bought WHILE the gift ran bills from the gift's
+  // end, through a trial (gift-trial.ts). With the term gone, so is what that
+  // trial was standing in for.
+  const trialCut = row
+    ? await cutGiftFundedTrial(row, gift.redemption_token ?? token, stripe)
+    : 'none'
 
   // Re-mirror what the redeemer still holds. The row stores no email, so it
   // comes from the Stripe customer when the row has one; a gift-only redeemer
@@ -984,9 +992,72 @@ async function reverseRedeemedGift(
         ? `Its Stripe change (${gift.stripe_effect?.kind}) was reversed.`
         : stripeUndo === 'none'
           ? 'No Stripe change was recorded for it. MANUAL ACTION only if it predates that record and extended a subscription or credited a balance.'
-          : `MANUAL ACTION: its Stripe change (${JSON.stringify(gift.stripe_effect)}) could not be reversed automatically — undo it by hand.`),
+          : `MANUAL ACTION: its Stripe change (${JSON.stringify(gift.stripe_effect)}) could not be reversed automatically — undo it by hand.`) +
+      (trialCut === 'ended'
+        ? ` The gift-funded trial on ${row?.stripe_subscription_id} was ended: billing starts now.`
+        : trialCut === 'shortened'
+          ? ` The gift-funded trial on ${row?.stripe_subscription_id} was cut back to what the redeemer's other gifts still cover.`
+          : trialCut === 'manual'
+            ? ` MANUAL ACTION: subscription ${row?.stripe_subscription_id} is trialing on this gift and its trial could not be ended automatically — set its trial_end to now (no proration) by hand.`
+            : ''),
   )
   return true
+}
+
+// End (or cut back) the trial on a subscription bought while a now-reversed gift
+// was running. Checkout gave that subscription a trial to the gift's end and
+// named the funding gift(s) in its metadata (GIFT_TRIAL_TOKENS_KEY); a trialing
+// subscription reads as live, so without this the refund took the term off the
+// row and left the membership free until the original trial_end.
+//
+// Matched by token, not by "the redeemer's subscription is trialing": a trial
+// pushed by a gift REDEMPTION is a different mechanism (gift.stripe_effect,
+// undone above), and a trial nobody tied to this gift is not ours to end.
+//
+// Doesn't simply end the trial: the redeemer may hold other gifts that still
+// cover the plan (stacked terms). It re-derives coverage from the row the term
+// just came off — giftTrialEndSec, the same rule checkout used — and moves
+// trial_end back to that, or to now when nothing covers it any more. Never
+// pushes a trial LATER.
+//
+// Why decided here, at reversal time, from the live subscription rather than
+// recorded as a stripe_effect when the trialing subscription first appears:
+// the reversal is the only moment the answer matters, and reading the
+// subscription then sees whatever happened in between (a cancel, a plan change,
+// a trial already over) instead of acting on a record that may be stale. The
+// catch is retries: markGiftReversed is the once-only flip, so a redelivery of
+// this event never reaches here again. Hence 'manual' — logged as MANUAL ACTION
+// by the caller — rather than a throw.
+async function cutGiftFundedTrial(
+  row: MembershipRow,
+  giftToken: string,
+  stripe: Stripe,
+): Promise<'none' | 'ended' | 'shortened' | 'manual'> {
+  const subId = row.stripe_subscription_id
+  if (!subId) return 'none'
+  try {
+    const sub = await retrieveCurrentSubscription(stripe, subId)
+    if (!sub || sub.status !== 'trialing') return 'none'
+    if (!giftTrialTokensOf(sub.metadata).includes(giftToken)) return 'none'
+    const nowSec = Math.floor(Date.now() / 1000)
+    // A tier we can't read covers nothing: end the trial.
+    const tier = await catalogTierOfSubscription(sub, stripe).catch(() => null)
+    const coveredUntil = tier && tier !== 'free' ? giftTrialEndSec(row, tier, nowSec) : null
+    if (coveredUntil !== null && sub.trial_end != null && coveredUntil >= sub.trial_end) {
+      return 'none'
+    }
+    // No proration: nothing was billed during the trial, so there is nothing to
+    // credit. Ending it invoices the first period now; a card that fails goes to
+    // dunning like any other renewal.
+    await stripe.subscriptions.update(sub.id, {
+      trial_end: coveredUntil ?? 'now',
+      proration_behavior: 'none',
+    })
+    return coveredUntil === null ? 'ended' : 'shortened'
+  } catch (err) {
+    console.error('[stripe] gift reversal: ending the gift-funded trial failed:', err)
+    return 'manual'
+  }
 }
 
 // Reverse what a redemption did inside Stripe (see GiftStripeEffect). Each case
@@ -1150,19 +1221,30 @@ async function handleGiftPurchase(purchase: GiftPurchase, env: Env): Promise<voi
   })
 }
 
-// A high-entropy, deterministic redemption token: HMAC(SESSION_SECRET, id), where
-// id is the gift's PaymentIntent (or, for a $0 gift, its Checkout Session).
-// Deterministic so webhook retries re-derive the same token (idempotent gift
-// row); unguessable so the link can't be brute-forced from a PI id.
+// A high-entropy, deterministic redemption token: HMAC(GIFT_TOKEN_SECRET, id),
+// where id is the gift's PaymentIntent (or, for a $0 gift, its Checkout
+// Session). Deterministic so webhook retries re-derive the same token
+// (idempotent gift row); unguessable so the link can't be brute-forced from a
+// PI id.
+//
+// Its own secret, because this key is not a session key. Every refund and
+// dispute re-derives the token from the PaymentIntent to find the gift, so
+// rotating the key orphans every gift bought before — their reversals find no
+// row and the money comes back while the gift stays good. SESSION_SECRET is the
+// documented "sign everyone out" lever, which is exactly the key someone will
+// rotate. GIFT_TOKEN_SECRET MUST be set before launch and NEVER rotated. The
+// SESSION_SECRET fallback is only for environments that predate it — and in
+// one that already sold gifts under SESSION_SECRET, GIFT_TOKEN_SECRET must be
+// set to that same value, not a fresh one, for the same reason.
 export function giftTokenForPaymentIntent(piId: string, env: Env): string {
-  const secret = env.SESSION_SECRET || env.CHECKOUT_SESSION_SECRET
+  const secret = env.GIFT_TOKEN_SECRET || env.SESSION_SECRET || env.CHECKOUT_SESSION_SECRET
   // Never default this. The token is the ONLY authorization on /api/gift/redeem,
   // so a hardcoded fallback key ('gift') would make it a pure function of a
   // PaymentIntent id — a value the buyer sees and that appears in Stripe
   // tooling. Match the 32-byte floor the other first-party tokens enforce, and
   // fail loudly rather than minting forgeable instruments in a misconfigured env.
   if (!secret || secret.length < 32) {
-    throw new Error('SESSION_SECRET (>= 32 bytes) required to derive gift tokens')
+    throw new Error('GIFT_TOKEN_SECRET (>= 32 bytes) required to derive gift tokens')
   }
   return createHmac('sha256', secret).update(`gift:${piId}`).digest('base64url')
 }

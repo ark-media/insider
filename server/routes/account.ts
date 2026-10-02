@@ -22,7 +22,7 @@ import { setSessionCookies } from '../lib/cookies.js'
 import { getDb } from '../lib/db.js'
 import { syncSubscriberName, tryPush } from '../lib/beehiiv-sync.js'
 import { updateCircleMemberName } from '../entitlement.js'
-import { isSameOrigin, readJson } from '../lib/http.js'
+import { isSameOrigin, readJson, setReadCacheControl } from '../lib/http.js'
 import { createRateLimiter } from '../lib/rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { MAX_NAME_PART_LEN, hasRealName } from '../../shared/profile-name.js'
@@ -98,7 +98,7 @@ export function accountRoutes({ env, appBaseUrl }: Deps): Route[] {
         }
 
         // Personal, and it changes the moment the member saves.
-        res.setHeader('cache-control', 'private, no-store')
+        setReadCacheControl(res, { gated: true })
 
         if (!isWrite) {
           const profile = await getAuth0NameProfile(env, sub)
