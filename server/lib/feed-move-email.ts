@@ -192,7 +192,7 @@ export function renderFeedMoveEmail(p: FeedMoveEmailParams): {
                     <td align="center" class="pad" style="padding:22px 32px 0;font:800 26px/32px ${FONT};letter-spacing:-0.5px;color:#ffffff;">Log into your account at <a href="${p.setupUrl}" target="_blank" style="color:${CYAN};text-decoration:none;">arkmedia.org</a> and move your podcast feed to the new platform ${cyan('today.')}</td>
                   </tr>
                   <tr>
-                    <td align="center" class="pad" style="padding:14px 40px 0;font:400 16px/24px ${FONT};color:#ffffff;">It should take about 5 minutes. Until you switch, new episodes won&rsquo;t show up in your app.</td>
+                    <td align="center" class="pad" style="padding:14px 40px 0;font:400 16px/24px ${FONT};color:#ffffff;">It should take about 5 minutes. Until you switch, new episodes might not show up in your app.</td>
                   </tr>
                   <tr>
                     <td align="center" style="padding:24px 24px 36px;">
