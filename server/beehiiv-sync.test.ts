@@ -806,7 +806,7 @@ describe('refreshNewsletterState', () => {
 })
 
 describe('refreshSubscriptionFromBeehiiv', () => {
-  test('deletes local row when Beehiiv returns 404', async () => {
+  test('tombstones the local row (never deletes it) when Beehiiv returns 404', async () => {
     fetchHandler = ({ url, method }) => {
       if (method === 'GET' && url.includes('/subscriptions/by_email/')) {
         return jsonRes(404, {})
@@ -819,9 +819,14 @@ describe('refreshSubscriptionFromBeehiiv', () => {
       'gone@example.com',
     )
     expect(row).toBeNull()
+    // A vanished row would let the next /api/me auto-subscribe the reader
+    // again; the tombstone is what ensureFreeSubscription sees instead.
     expect(
       calls.some((c) => c.sql.includes('delete from beehiiv_subscription')),
-    ).toBe(true)
+    ).toBe(false)
+    const tombstone = calls.find((c) => c.sql.includes('update beehiiv_subscription'))
+    expect(tombstone?.values).toContain('deleted')
+    expect(tombstone?.sql).toContain('has_premium = false')
     expect(fetchCalls).toHaveLength(1)
   })
 
@@ -902,3 +907,24 @@ describe('tryPush', () => {
   })
 })
 
+
+// ============================================================================
+// Upstream error bodies in logs
+// ============================================================================
+
+describe('upstream error bodies', () => {
+  test('a failed Beehiiv call throws with the addresses in its body masked', async () => {
+    fetchHandler = () =>
+      jsonRes(400, { errors: [{ message: 'leaky@example.com is not allowed' }] })
+    const { sql } = makeSqlStub(emptyRows)
+    let message = ''
+    try {
+      await downgradeToFree({ env: BASE_ENV, sql }, 'leaky@example.com')
+    } catch (err) {
+      message = (err as Error).message
+    }
+    expect(message).toContain('Beehiiv lookup 400')
+    expect(message).not.toContain('leaky@example.com')
+    expect(message).toContain('l***@example.com')
+  })
+})

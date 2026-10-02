@@ -198,18 +198,6 @@ const ACCOUNT_CREATED_MARKER = 'auth0_account_created'
 // announced as usual.
 const SUPPRESS_WELCOME_MARKER = 'suppress_welcome_email'
 
-// Allowance for Auth0's clock running behind Stripe's. An account needs at
-// least a webhook round-trip after the subscription exists, so real ones land
-// well clear of it; one made this close before the purchase was not a
-// member's long-standing login either.
-const CLOCK_SKEW_SEC = 30
-
-function createdSince(createdAt: string | undefined, subCreated: number): boolean {
-  if (!createdAt) return false
-  const ms = Date.parse(createdAt)
-  return Number.isFinite(ms) && ms / 1000 >= subCreated - CLOCK_SKEW_SEC
-}
-
 export type Activator = {
   // Tier-aware provisioning: Auth0 login for every paid tier, the Beehiiv
   // premium tier only when the tier grants arkPlus, Circle only when it grants
@@ -260,17 +248,18 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
   const ensureAuth0Login = async (
     email: string,
     name: string | undefined,
-  ): Promise<{ userId: string | null; created: boolean; createdAt?: string }> => {
+    provisionedBy: string,
+  ): Promise<{ userId: string | null; created: boolean; provisionedBy?: string }> => {
     let auth0Result: Awaited<ReturnType<typeof findOrCreateAuth0User>> = null
     try {
-      auth0Result = await findOrCreateAuth0User(email, name, env)
+      auth0Result = await findOrCreateAuth0User(email, name, env, { provisionedBy })
     } catch (err) {
       console.error('[auth0] findOrCreateAuth0User failed:', err)
     }
     return {
       userId: auth0Result?.userId ?? null,
       created: auth0Result?.created ?? false,
-      createdAt: auth0Result?.createdAt,
+      provisionedBy: auth0Result?.provisionedBy,
     }
   }
 
@@ -334,15 +323,17 @@ export function createActivator(env: Env, stripe: Stripe | null): Activator {
     let auth0Sub: string | null = fresh.metadata?.auth0_user_id ?? null
     let isNewAccount = false
     if (!auth0Sub) {
-      const login = await ensureAuth0Login(email, name)
+      const login = await ensureAuth0Login(email, name, fresh.id)
       auth0Sub = login.userId
       // The webhook and the browser's poll run this concurrently. The loser
       // finds the account the winner just made, and the winner only stamps the
       // marker after the slow Beehiiv/Circle steps — so neither `created` nor
-      // the marker says "ours" yet. An account born after this subscription
-      // was, though: nothing but this purchase provisions a login that late.
-      isNewAccount =
-        login.created || createdSince(login.createdAt, fresh.created)
+      // the marker says "ours" yet. The account itself does: whoever created it
+      // stamped this subscription's id on it. (It used to be "born within 30s
+      // of the purchase", which also counted an account a gift claim or a comp
+      // happened to create at the same moment — and then signed the buyer in
+      // to it.)
+      isNewAccount = login.created || login.provisionedBy === fresh.id
     }
     const accountCreated =
       isNewAccount || fresh.metadata?.[ACCOUNT_CREATED_MARKER] === 'true'

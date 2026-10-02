@@ -50,8 +50,21 @@ function markMember(email: string): void {
   arkPlusSubs.add(`auth0|${email}`)
 }
 
+// The shared rate limiter's bucket upsert (shared-rate-limit.ts), modelled as a
+// bucket that never refills within the run: values[0] is the hashed key,
+// values[1] is capacity - 1. Buckets persist across tests, as the in-process
+// ones did, so rate-limit tests use their own emails.
+const bucketTakes = new Map<string, number>()
+function takeFromBucket(values: unknown[]): unknown[] {
+  const key = values[0] as string
+  const taken = (bucketTakes.get(key) ?? 0) + 1
+  bucketTakes.set(key, taken)
+  return [{ tokens: 0, allowed: taken <= (values[1] as number) + 1 }]
+}
+
 mock.module('@neondatabase/serverless', () =>
   neonMockModule(sqlCalls, (merged, values) => {
+    if (merged.includes('insert into rate_limit_buckets')) return takeFromBucket(values)
     if (merged.includes('from membership where auth0_sub')) {
       const sub = values[0] as string
       return arkPlusSubs.has(sub)

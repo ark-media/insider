@@ -319,11 +319,20 @@ export async function saveOpenHouseConfig(
 // One page of the member directory. Email/tier/activation narrow the results;
 // offset paginates (ignored when an email search is active). Throws on a non-OK
 // response so the page can show a retry.
+//
+// A search is POSTed: the text is part of a member's email or name, and a query
+// string would sit in the platform's request logs. Plain filters stay a GET.
 export async function listMembers(
   filter: MemberDirectoryFilter & { offset?: number },
 ): Promise<MemberDirectoryPage> {
+  if (filter.email) {
+    const body: Record<string, string | number> = { email: filter.email };
+    if (filter.tier) body.tier = filter.tier;
+    if (filter.activation) body.activation = filter.activation;
+    const res = await adminFetch("/api/admin/members", jsonInit("POST", body));
+    return (await res.json()) as MemberDirectoryPage;
+  }
   const params = new URLSearchParams();
-  if (filter.email) params.set("email", filter.email);
   if (filter.tier) params.set("tier", filter.tier);
   if (filter.activation) params.set("activation", filter.activation);
   if (filter.offset) params.set("offset", String(filter.offset));

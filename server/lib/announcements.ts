@@ -52,9 +52,17 @@ export function normalizeActionUrl(raw: unknown): string | null | { error: strin
   const value = raw.trim()
   if (!value) return null
   if (value.startsWith('/')) {
-    // Reject protocol-relative URLs ("//host") — they read as relative but the
-    // browser navigates off-site. Only a single leading slash is a site path.
-    if (value.startsWith('//')) {
+    // Reject anything that reads as a site path but navigates off-site:
+    // "//host" (protocol-relative) and "/\host" (browsers fold the backslash
+    // into a second slash). Resolving against a throwaway origin and checking
+    // the result stayed on it catches every spelling, not just those two.
+    let resolved: URL
+    try {
+      resolved = new URL(value, 'http://site.invalid')
+    } catch {
+      return { error: 'Action URL is not a valid URL.' }
+    }
+    if (/^\/[/\\]/.test(value) || resolved.origin !== 'http://site.invalid') {
       return { error: 'Action URL must be absolute (http/https) or a site path like /subscribe.' }
     }
     return value

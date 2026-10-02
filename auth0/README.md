@@ -73,6 +73,7 @@ on every login.
    | `AUTH0_TENANT_DOMAIN` | native tenant domain, e.g. `ark-media.us.auth0.com` (scheme optional — `https://ark-media.us.auth0.com` also works; `tenantBase()` normalizes it to match the app's env in `server/auth0.ts`). **Not** the custom login domain `auth.ark-plus.xyz` — the Management API lives on the native domain. |
    | `MGMT_CLIENT_ID` | Ark Plus M2M client id |
    | `MGMT_CLIENT_SECRET` | Ark Plus M2M client secret |
+   | `WEB_CLIENT_ID` | the website's Regular Web App client id (same value as the app's `AUTH0_WEB_CLIENT_ID`). Optional but recommended: with it set, **every** client other than the website runs the Fold gate, so a new or mistyped client id can never bypass it. Without it only `CIRCLE_CLIENT_ID` is gated. |
 
 5. **M2M scopes** (Applications → Ark Plus M2M → APIs → Auth0 Management API):
    `read:users`, `update:users`, `delete:users`, `read:roles`,

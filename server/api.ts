@@ -100,7 +100,7 @@ export function buildApi(env: Env): Api {
     ...adminFeedReminderRoutes(deps),
     ...discussThreadsRoutes(deps),
     ...contactRoutes(deps),
-    ...cspReportRoutes(),
+    ...cspReportRoutes(env),
     ...supportRoutes(deps),
     ...cronRoutes(deps),
     ...winbackRoutes(deps),

@@ -7,8 +7,9 @@
 //   - 401 on missing / wrong key
 //   - 405 on non-POST
 //   - 400 on invalid JSON
-//   - subscription.deleted → row deleted (only when known)
-//   - subscription.upgraded → row upserted with has_premium=true (only when known)
+//   - subscription.* → the reader is re-read from Beehiiv and THAT record is
+//     mirrored (only when known); the body is a hint, never written
+//   - subscription.deleted confirmed by a 404 → tombstone row, never a delete
 //   - unknown reader → no DB writes
 //   - DATABASE_URL absent → 200 received, no DB calls (env-clean shape)
 
@@ -44,6 +45,7 @@ mock.module('@neondatabase/serverless', () =>
 )
 
 // Static import AFTER mock.module so the plugin picks up the fake neon.
+import { createHmac } from 'node:crypto'
 import { devApiPlugin } from './dev-api'
 
 // ---------------------------------------------------------------------------
@@ -148,6 +150,64 @@ describe('webhook auth + transport', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  // With a signing secret provisioned, Beehiiv's Svix signature is the gate
+  // and the URL key proves nothing: it sits in access logs, a signature over
+  // the exact bytes with a five-minute timestamp does not.
+  describe('with BEEHIIV_WEBHOOK_SIGNING_SECRET', () => {
+    const RAW_KEY = Buffer.from('signing-secret-bytes-for-tests-0123456789')
+    const SIGNED_ENV = {
+      ...BASE_ENV,
+      BEEHIIV_WEBHOOK_SIGNING_SECRET: `whsec_${RAW_KEY.toString('base64')}`,
+    }
+    const body = JSON.stringify({ event_type: 'subscription.created', uid: 'evt_sig_1', data: {} })
+    function signed(rawBody: string, secret: Buffer = RAW_KEY) {
+      const ts = String(Math.floor(Date.now() / 1000))
+      const sig = createHmac('sha256', secret).update(`msg_1.${ts}.`).update(rawBody).digest('base64')
+      return { 'svix-id': 'msg_1', 'svix-timestamp': ts, 'svix-signature': `v1,${sig}` }
+    }
+
+    test('the correct URL key alone is refused', async () => {
+      const handler = buildHandler(SIGNED_ENV)
+      const res = makeRes()
+      await runHandler(handler, makeReq({ rawBody: body }), res)
+      expect(res.statusCode).toBe(401)
+      expect(sqlCalls).toHaveLength(0)
+    })
+
+    test('a validly signed delivery is accepted, key or no key', async () => {
+      const handler = buildHandler(SIGNED_ENV)
+      const res = makeRes()
+      await runHandler(
+        handler,
+        makeReq({ url: WEBHOOK_PATH, rawBody: body, headers: signed(body) }),
+        res,
+      )
+      // Past the gate: the known-reader check runs (and fails closed here with
+      // no upstream), which is a 200 with nothing written — not a 401.
+      expect(res.statusCode).not.toBe(401)
+    })
+
+    test('a signature over different bytes, or by another secret, is refused', async () => {
+      const handler = buildHandler(SIGNED_ENV)
+      const tampered = body.replace('subscription.created', 'subscription.deleted')
+      let res = makeRes()
+      await runHandler(
+        handler,
+        makeReq({ url: WEBHOOK_PATH, rawBody: tampered, headers: signed(body) }),
+        res,
+      )
+      expect(res.statusCode).toBe(401)
+
+      res = makeRes()
+      await runHandler(
+        handler,
+        makeReq({ url: WEBHOOK_PATH, rawBody: body, headers: signed(body, Buffer.from('other')) }),
+        res,
+      )
+      expect(res.statusCode).toBe(401)
+    })
+  })
+
   test('accepts the secret in the dedicated header without a query string', async () => {
     const handler = buildHandler()
     const res = makeRes()
@@ -212,13 +272,13 @@ describe('webhook auth + transport', () => {
 // ===========================================================================
 
 describe('webhook event dispatch', () => {
-  test('subscription.deleted removes local row when reader known', async () => {
-    // First SQL call (isKnownReader) returns a row → known.
-    nextSqlResult = (sql) => {
-      if (sql.includes('select') && sql.includes('beehiiv_subscription')) {
-        return [
+  // A mirror row for the reader, so isKnownReader passes. Every other read
+  // returns nothing.
+  const knownReader = (email: string) => (sql: string) =>
+    sql.includes('select') && sql.includes('from beehiiv_subscription')
+      ? [
           {
-            email: 'a@x.com',
+            email,
             publication_id: PUB_ID,
             beehiiv_subscription_id: 'sub_x',
             status: 'active',
@@ -226,69 +286,110 @@ describe('webhook event dispatch', () => {
             updated_at: new Date().toISOString(),
           },
         ]
-      }
-      return []
+      : []
+  // What Beehiiv's by_email read answers. null → 404; a number → that error.
+  const beehiivHas = (record: Record<string, unknown> | null | number) => {
+    fetchHandler = ({ url }) => {
+      if (!url.includes('/subscriptions/by_email/')) return new Response('{}', { status: 500 })
+      if (record === null) return new Response('{}', { status: 404 })
+      if (typeof record === 'number') return new Response('{"error":"down"}', { status: record })
+      return new Response(JSON.stringify({ data: record }), { status: 200 })
     }
-    const handler = buildHandler()
+  }
+  const mirrorUpsert = () =>
+    sqlCalls.find((c) => c.sql.includes('insert into beehiiv_subscription'))
+  const post = async (body: unknown) => {
     const res = makeRes()
-    await runHandler(
-      handler,
-      makeReq({
-        body: {
-          event_type: 'subscription.deleted',
-          data: { id: 'sub_x', email: 'a@x.com' },
-        },
-      }),
-      res,
-    )
+    await runHandler(buildHandler(), makeReq({ body }), res)
+    return res
+  }
+
+  test('subscription.deleted that Beehiiv confirms (404) leaves a tombstone, not a gap', async () => {
+    nextSqlResult = knownReader('a@x.com')
+    beehiivHas(null)
+    const res = await post({
+      event_type: 'subscription.deleted',
+      data: { id: 'sub_x', email: 'a@x.com' },
+    })
     expect(res.statusCode).toBe(200)
-    expect(sqlCalls.some((c) => c.sql.includes('delete from beehiiv_subscription'))).toBe(true)
+    // The row is kept with a terminal status so the next /api/me does not
+    // auto-subscribe the reader again.
+    expect(sqlCalls.some((c) => c.sql.includes('delete from beehiiv_subscription'))).toBe(false)
+    const upsert = mirrorUpsert()
+    expect(upsert).toBeDefined()
+    expect(upsert!.values).toContain('deleted')
+    expect(upsert!.sql).toContain('has_premium = false')
   })
 
-  test('subscription.upgraded upserts with has_premium=true when known', async () => {
-    let firstCall = true
-    nextSqlResult = (sql) => {
-      // isKnownReader's first SELECT returns a row.
-      if (firstCall && sql.includes('select') && sql.includes('beehiiv_subscription')) {
-        firstCall = false
-        return [
-          {
-            email: 'b@x.com',
-            publication_id: PUB_ID,
-            beehiiv_subscription_id: 'sub_y',
-            status: 'active',
-            has_premium: false,
-            updated_at: new Date().toISOString(),
-          },
-        ]
-      }
-      return []
-    }
-    const handler = buildHandler()
-    const res = makeRes()
-    await runHandler(
-      handler,
-      makeReq({
-        body: {
-          event_type: 'subscription.upgraded',
-          data: {
-            id: 'sub_y',
-            email: 'b@x.com',
-            status: 'active',
-            subscription_tier: 'premium',
-            subscription_premium_tier_names: ['Premium'],
-          },
-        },
-      }),
-      res,
-    )
+  test('a forged subscription.deleted for a live reader changes nothing upstream says', async () => {
+    nextSqlResult = knownReader('a@x.com')
+    beehiivHas({ id: 'sub_x', email: 'a@x.com', status: 'active', subscription_tier: 'premium' })
+    const res = await post({
+      event_type: 'subscription.deleted',
+      data: { id: 'sub_x', email: 'a@x.com' },
+    })
     expect(res.statusCode).toBe(200)
-    const upsert = sqlCalls.find((c) =>
-      c.sql.includes('insert into beehiiv_subscription'),
-    )
+    const upsert = mirrorUpsert()
     expect(upsert).toBeDefined()
-    // has_premium is the 5th interpolated value in the upsert (see helper).
-    expect(upsert!.values).toContain(true)
+    // [email, publication, id, status, has_premium] — Beehiiv's record.
+    expect(upsert!.values.slice(0, 5)).toEqual(['a@x.com', PUB_ID, 'sub_x', 'active', true])
+  })
+
+  test('subscription.upgraded mirrors has_premium from Beehiiv, not from the body', async () => {
+    nextSqlResult = knownReader('b@x.com')
+    // The body claims premium; Beehiiv says the reader is free.
+    beehiivHas({ id: 'sub_y', email: 'b@x.com', status: 'active', subscription_tier: 'free' })
+    const res = await post({
+      event_type: 'subscription.upgraded',
+      data: {
+        id: 'sub_y',
+        email: 'b@x.com',
+        status: 'active',
+        subscription_tier: 'premium',
+        subscription_premium_tier_names: ['Premium'],
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(fetchCalls.some((c) => c.url.includes('/subscriptions/by_email/b%40x.com'))).toBe(true)
+    const upsert = mirrorUpsert()
+    expect(upsert).toBeDefined()
+    expect(upsert!.values.slice(0, 5)).toEqual(['b@x.com', PUB_ID, 'sub_y', 'active', false])
+  })
+
+  test('a genuine upgrade lands has_premium=true, read back from Beehiiv', async () => {
+    nextSqlResult = knownReader('b@x.com')
+    beehiivHas({ id: 'sub_y', email: 'b@x.com', status: 'active', subscription_tier: 'premium' })
+    const res = await post({
+      event_type: 'subscription.upgraded',
+      data: { id: 'sub_y', email: 'b@x.com', subscription_tier: 'premium' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(mirrorUpsert()!.values[4]).toBe(true)
+  })
+
+  test('a non-delete event for a reader Beehiiv has no record of writes nothing', async () => {
+    nextSqlResult = knownReader('b@x.com')
+    beehiivHas(null)
+    const res = await post({
+      event_type: 'subscription.created',
+      data: { id: 'sub_y', email: 'b@x.com', subscription_tier: 'premium' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(mirrorUpsert()).toBeUndefined()
+  })
+
+  test('a failed re-read writes nothing and answers 500 so Beehiiv redelivers', async () => {
+    nextSqlResult = knownReader('b@x.com')
+    beehiivHas(503)
+    const res = await post({
+      uid: 'evt_retry',
+      event_type: 'subscription.upgraded',
+      data: { id: 'sub_y', email: 'b@x.com', subscription_tier: 'premium' },
+    })
+    expect(res.statusCode).toBe(500)
+    expect(mirrorUpsert()).toBeUndefined()
+    // Not recorded as processed, so the redelivery is not deduped away.
+    expect(sqlCalls.some((c) => c.sql.includes('insert into beehiiv_webhook_events'))).toBe(false)
   })
 
   // Replay: the only thing a delivery carries that identifies it is `uid`, and

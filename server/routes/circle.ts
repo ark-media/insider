@@ -303,10 +303,13 @@ export function circleRoutes({ env }: Deps): Route[] {
       path: '/api/circle/community-events',
       method: 'GET',
       handler: async (req, res, json) => {
-        // Member-only calendar — projectEvent ships `venue`, the physical
-        // address of in-person events. Identity-scoped, so it must never sit in
-        // a shared cache: one anonymous fill would then be served to members
-        // (and vice versa). Gated like community-feed.
+        // Member-only calendar. Identity-scoped, so it must never sit in a
+        // shared cache: one anonymous fill would then be served to members (and
+        // vice versa). Gated like community-feed. Every event Circle's Admin v2
+        // `/events` returns is passed through: the records carry no status or
+        // visibility field to filter on (none in the shapes probed from the live
+        // API). Physical addresses
+        // are dropped in projectEvent.
         res.setHeader('cache-control', 'private, no-store')
 
         const token = env.CIRCLE_ADMIN_API_TOKEN

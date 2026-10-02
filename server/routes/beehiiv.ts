@@ -6,7 +6,8 @@
 // BEEHIIV_PUBLICATION_ID_ARK_DAILY.
 
 import { secretEquals } from '../lib/timing-safe.js'
-import { isValidEmail, redactEmail } from '../../shared/validation.js'
+import { verifySvixSignature } from '../lib/svix.js'
+import { isValidEmail } from '../../shared/validation.js'
 import {
   isPublishedBeehiivPost,
   projectBeehiivPost,
@@ -19,11 +20,10 @@ import type {
   NewsletterSlug,
 } from '../../src/data/newsletters.js'
 import {
-  deleteLocalSubscription,
   getLocalSubscription,
-  persistFromBeehiiv,
-  type BeehiivSubscription,
+  reconcileSubscriberFromBeehiiv,
 } from '../lib/beehiiv-sync.js'
+import { redactEmailsInText } from '../lib/beehiiv-status.js'
 import { getDb, type Sql } from '../lib/db.js'
 import {
   recordFeedActivated,
@@ -90,7 +90,7 @@ async function loadBeehiivRaw(
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
   if (!res.ok) {
-    throw new Error(`Beehiiv ${res.status}: ${await res.text()}`)
+    throw new Error(`Beehiiv ${res.status}: ${redactEmailsInText(await res.text())}`)
   }
   const body = (await res.json()) as { data?: BeehiivPost[] }
   const posts = body.data ?? []
@@ -195,7 +195,7 @@ async function createBeehiivSubscription(
   // this one was typed by an anonymous visitor — so it is masked on its way into
   // the log, wherever in the text it turns up.
   console.error(
-    `[beehiiv] subscribe ${res.status}: ${text.replace(/[^\s@"'<>]+@[^\s@"'<>]+/g, redactEmail)}`,
+    `[beehiiv] subscribe ${res.status}: ${redactEmailsInText(text)}`,
   )
   if (res.status >= 400 && res.status < 500) {
     if (isAlreadySubscribedError(text)) {
@@ -359,34 +359,69 @@ export function beehiivRoutes({ env }: Deps): Route[] {
       //
       // Caveat — legacy query-string secret leakage. The `?key=` value appears in
       // upstream HTTP access logs (Vercel / CDN / proxy) more than headers
-      // would. We accept the trade-off because (a) Beehiiv's webhook
-      // configuration doesn't support custom headers, and (b) the impact of
-      // a leaked secret is bounded by the second-layer check below: we only
-      // persist events for emails our application already knows about
-      // (existing mirror row or Auth0 user). A leaked key still lets an
-      // attacker replay events, but only for our real readers — not inject
-      // ghost subscribers.
+      // would. It stays accepted because Beehiiv's publication webhooks cannot
+      // be given custom request headers, so the query string is the only place
+      // a shared secret can ride. Treat the key as exposed to anyone who can
+      // read those logs, and rotate it if they may have leaked. Beehiiv does
+      // sign deliveries with Svix (`svix-id` / `svix-timestamp` /
+      // `svix-signature`), and once BEEHIIV_WEBHOOK_SIGNING_SECRET is set the
+      // handler below verifies that instead and the key is ignored — the key
+      // path exists only for a deployment that has not provisioned it yet.
+      //
+      // What a leaked key buys is bounded by two checks below:
+      //   - events are only acted on for readers we already know (mirror row
+      //     or Auth0 user), so no ghost subscribers;
+      //   - a subscription event's body is never written as-is. The reader is
+      //     re-read from Beehiiv and the mirror takes THAT record
+      //     (reconcileSubscriberFromBeehiiv), so a forged or replayed event
+      //     cannot flip has_premium — the reconciler's premium roster — or
+      //     delete a live reader's row.
       path: '/api/beehiiv/webhook',
       method: 'POST',
       handler: async (req, _res, json) => {
-        const secret = env.BEEHIIV_WEBHOOK_SECRET
-        if (!secret) return json(500, { error: 'not_configured' })
-        const url = new URL(req.url ?? '', 'http://x')
-        const headerValue = req.headers['x-beehiiv-webhook-secret']
-        const provided =
-          typeof headerValue === 'string'
-            ? headerValue
-            : url.searchParams.get('key') ?? ''
-        if (!secretEquals(provided, secret)) {
-          return json(401, { error: 'unauthorized' })
+        // Beehiiv POSTs raw JSON; the body is read (bounded) before any check
+        // because the Svix signature covers its exact bytes.
+        const raw = await readBody(req)
+
+        // Two ways in, and the signature wins whenever it is configured:
+        //   - BEEHIIV_WEBHOOK_SIGNING_SECRET (the endpoint's `whsec_…` from
+        //     Beehiiv → Settings → Webhooks): the delivery must carry a valid,
+        //     fresh Svix signature over these bytes. The query-string key is
+        //     then ignored entirely — it is still in the registered URL, but
+        //     holding it proves nothing any more, and a captured request
+        //     cannot be replayed past the five-minute window.
+        //   - Otherwise the shared key, header or `?key=`, as before. This is
+        //     the pre-signing-secret state; the launch checklist asks for the
+        //     signing secret so no deployment stays here.
+        const signingSecret = env.BEEHIIV_WEBHOOK_SIGNING_SECRET
+        if (signingSecret) {
+          const ok = verifySvixSignature(
+            {
+              id: req.headers['svix-id'],
+              timestamp: req.headers['svix-timestamp'],
+              signature: req.headers['svix-signature'],
+            },
+            raw,
+            signingSecret,
+          )
+          if (!ok) return json(401, { error: 'unauthorized' })
+        } else {
+          const secret = env.BEEHIIV_WEBHOOK_SECRET
+          if (!secret) return json(500, { error: 'not_configured' })
+          const url = new URL(req.url ?? '', 'http://x')
+          const headerValue = req.headers['x-beehiiv-webhook-secret']
+          const provided =
+            typeof headerValue === 'string'
+              ? headerValue
+              : url.searchParams.get('key') ?? ''
+          if (!secretEquals(provided, secret)) {
+            return json(401, { error: 'unauthorized' })
+          }
         }
 
         if (!env.DATABASE_URL) return json(200, { received: true })
         const sql = getDb(env)
 
-        // Beehiiv POSTs raw JSON. Parse it ourselves so the constant-time key
-        // check above can run before we touch the body.
-        const raw = await readBody(req)
         let event: BeehiivWebhookEvent
         try {
           event = JSON.parse(raw.toString('utf8')) as BeehiivWebhookEvent
@@ -541,22 +576,18 @@ async function handleBeehiivWebhook(
   // intentional — see the route comment on secret-leak mitigation.
   if (!(await isKnownReader(sql, env, data.email))) return
 
-  if (type === 'subscription.deleted') {
-    await deleteLocalSubscription(sql, data.email)
-    return
-  }
-
-  // For everything else (created, confirmed, upgraded, downgraded, paused,
-  // resumed) Beehiiv has already applied the change — we just mirror the
-  // resulting subscription state via the same projection the push paths use.
+  // Every subscription.* event (created, confirmed, upgraded, downgraded,
+  // paused, resumed, deleted) is a hint that this reader changed: re-read them
+  // from Beehiiv and mirror what Beehiiv says, never the body. A failed re-read
+  // throws, so the route answers 500 and Beehiiv redelivers.
   if (!publicationId) return
-  const sub: BeehiivSubscription = {
-    id: data.id,
-    email: data.email,
-    status: data.status ?? 'active',
-    hasPremium:
-      data.subscription_tier === 'premium' ||
-      (data.subscription_premium_tier_names ?? []).length > 0,
+  const outcome = await reconcileSubscriberFromBeehiiv({ env, sql }, data.email, {
+    deleted: type === 'subscription.deleted',
+    subscriptionId: data.id,
+  })
+  if (outcome === 'absent') {
+    console.warn('[beehiiv] webhook names a reader Beehiiv has no record of; mirror left as is', {
+      type,
+    })
   }
-  await persistFromBeehiiv(sql, publicationId, sub)
 }

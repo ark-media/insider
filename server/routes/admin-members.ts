@@ -31,6 +31,8 @@ import {
   type MemberDirectoryRow,
 } from '../lib/membership.js'
 import { getActivatedEmails, normalizeEmail } from '../lib/feed-activations.js'
+import type { IncomingMessage } from 'node:http'
+import { readJson } from '../lib/http.js'
 import { defineRoute } from '../lib/route.js'
 import type { Deps, Route } from '../lib/route.js'
 import type {
@@ -111,6 +113,23 @@ function toEntry(
   }
 }
 
+// The directory's filters, from the query string (GET) or a JSON body (POST),
+// in one shape so the validation below reads them the same way. Null for a
+// body that isn't a flat object of strings/numbers.
+async function requestParams(req: IncomingMessage): Promise<URLSearchParams | null> {
+  if (req.method !== 'POST') return new URL(req.url ?? '/', 'http://x').searchParams
+  const body = await readJson<Record<string, unknown>>(req)
+  const out = new URLSearchParams()
+  if (body === null) return out
+  if (typeof body !== 'object' || Array.isArray(body)) return null
+  for (const [k, v] of Object.entries(body)) {
+    if (v === undefined || v === null) continue
+    if (typeof v !== 'string' && typeof v !== 'number') return null
+    out.set(k, String(v))
+  }
+  return out
+}
+
 export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
   return [
     defineRoute({
@@ -118,10 +137,21 @@ export function adminMemberRoutes({ stripe, env, appBaseUrl }: Deps): Route[] {
       handler: async (req, res, json) => {
         const admin = await requireAdminRequest(req, res, env, appBaseUrl)
         if (!admin) return
-        if (req.method !== 'GET') return json(405, { error: 'Method Not Allowed' })
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          return json(405, { error: 'Method Not Allowed' })
+        }
         if (!stripe) return json(500, { error: 'not_configured' })
 
-        const params = new URL(req.url ?? '/', 'http://x').searchParams
+        // Filters ride the query string on a GET; a search is POSTed with the
+        // same fields as a JSON body. The text an admin types is part of a
+        // member's email or name, and a query string lands in the platform's
+        // request logs for their retention period — the audit trail already
+        // keeps it out (admin-audit.ts), and so must the URL.
+        const params = await requestParams(req)
+        if (params === null) return json(400, { error: 'invalid body' })
+        if (req.method === 'GET' && params.has('email')) {
+          return json(400, { error: 'search must be POSTed' })
+        }
         const tierParam = params.get('tier')
         if (tierParam !== null && !isTierFilter(tierParam)) {
           return json(400, { error: 'invalid tier filter' })

@@ -55,7 +55,7 @@ import {
 import { listActiveCoupons } from '../../lib/stripe-promos.js'
 import { welcomeDiscountActive } from '../../lib/welcome-offer.js'
 import { membershipRowsForEmail } from '../../lib/entitlement-resolver.js'
-import { giftTrialEndSec } from './gift-trial.js'
+import { GIFT_TRIAL_TOKENS_KEY, giftTrialEndSec, giftTrialTokensFor } from './gift-trial.js'
 import {
   formatMinorUnits,
   isSupportedCurrency,
@@ -69,7 +69,13 @@ import {
   MAX_CONSENT_STATEMENT_LEN,
   consentStatementKey,
 } from '../../../shared/checkout-consent.js'
-import { getClientIp, isSameOrigin, readBody, readJson } from '../../lib/http.js'
+import {
+  getClientIp,
+  isSameOrigin,
+  readBody,
+  readJson,
+  setReadCacheControl,
+} from '../../lib/http.js'
 import { createRateLimiter } from '../../lib/rate-limit.js'
 import { createSharedRateLimiter } from '../../lib/shared-rate-limit.js'
 import { getSessionEmail, resolveRequestIdentity } from '../../lib/session.js'
@@ -116,6 +122,8 @@ import {
   quoteChargeToday,
   readCardOnFile,
   releaseScheduleIfAny,
+  claimRetentionWindow,
+  releaseRetentionClaim,
   retentionWindowSpent,
   scheduledPlanOf,
   scheduleIdOf,
@@ -157,7 +165,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   // consent one) are SHARED — one Neon row per bucket — because the in-memory
   // kind gives every function instance its own allowance, which multiplies the
   // limit on exactly the routes anyone can script. The session-authenticated
-  // ones below stay in memory: their caller is a known, paying member.
+  // ones below mostly stay in memory: their caller is a known, paying member
+  // (card setup is the exception — see cardSetupLimiter).
   const subscribeLimiter = createSharedRateLimiter(env, {
     name: 'stripe-checkout-email',
     capacity: 5,
@@ -172,6 +181,16 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
     name: 'stripe-checkout-ip',
     capacity: 15,
     refillPerSec: 15 / (60 * 60), // 15 per hour per source
+  })
+  // And per address ALONE, across every source. The two buckets above are both
+  // IP-scoped, so a caller with many IPs (a proxy pool) got a fresh allowance on
+  // each, and "is this address a member?" (the 409 codes) could be asked of one
+  // address as often as they had IPs. A real buyer retries a handful of times;
+  // this is a few times that.
+  const subscribeEmailLimiter = createSharedRateLimiter(env, {
+    name: 'stripe-checkout-email-any-ip',
+    capacity: 10,
+    refillPerSec: 10 / (60 * 60), // 10 per hour per address
   })
   // Per-member cap on subscription changes. Unlike the checkout routes this one
   // is session-authenticated, so the risk isn't enumeration — it's cost: every
@@ -196,7 +215,11 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
   // without charging it is the classic card-testing surface, and while this one
   // sits behind a paid membership, nobody replacing their own card needs more
   // than a few tries an hour — a typo'd number and a declined card included.
-  const cardSetupLimiter = createRateLimiter({
+  // SHARED, unlike the other member-authenticated limiters: card testing is
+  // exactly the abuse that fans out across instances, and an in-memory bucket
+  // handed each cold instance a fresh ten. Keyed on the session email.
+  const cardSetupLimiter = createSharedRateLimiter(env, {
+    name: 'stripe-card-setup-email',
     capacity: 10,
     refillPerSec: 10 / (60 * 60), // 10 per hour
   })
@@ -244,7 +267,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const clientIp = getClientIp(req)
         const wait =
           (await subscribeIpLimiter.take(clientIp)) ??
-          (await subscribeLimiter.take(`${clientIp}|${email}`))
+          (await subscribeLimiter.take(`${clientIp}|${email}`)) ??
+          (await subscribeEmailLimiter.take(email))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, {
@@ -278,12 +302,16 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // is theirs. Two things downstream would otherwise treat it as proof:
         // the webhook upserts the membership row `on conflict (auth0_sub)`, and
         // the Customer lookup below reuses an existing Customer. So work out
-        // once whether this request is a DURABLE login as that same address
-        // ('auth0' — the checkout token is itself minted off a typed email, so
-        // it proves nothing here).
+        // once whether this request is a real LOGIN as that same address
+        // (assurance 'login'). Neither the checkout token nor a session minted
+        // from an emailed link counts: the first is itself minted off a typed
+        // email, and the second proves only that someone held a link that sat
+        // in an inbox, got forwarded, passed through mail gateways. Such a
+        // caller meets the existing-account guard, gets a fresh Customer, and
+        // no gift-funded trial — the same as anyone signed out.
         const identity = await resolveRequestIdentity(req, env)
         const provenEmail =
-          identity?.source === 'auth0' && identity.email.trim().toLowerCase() === email
+          identity?.assurance === 'login' && identity.email.trim().toLowerCase() === email
 
         // Existing-account guard. An address that already has a membership row
         // — a comped staffer, an early-access member, a gift recipient — must
@@ -332,11 +360,21 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // the row is theirs, not whoever's address was typed. Fails closed like
         // the account check above — charging today would bill them for gifted
         // months.
+        //
+        // The gifts funding that trial are named on the subscription
+        // (GIFT_TRIAL_TOKENS_KEY), so a refund or dispute of one can end the
+        // trial it was paying for — otherwise the webhook takes the term off the
+        // row and leaves the subscription trialing, free, with the money back.
         let trialEndSec: number | null = null
+        let trialGiftTokens: string[] = []
         if (provenEmail && identity?.sub && env.DATABASE_URL) {
           try {
-            const row = await getMembershipByAuth0Sub(getDb(env), identity.sub)
+            const sql = getDb(env)
+            const row = await getMembershipByAuth0Sub(sql, identity.sub)
             trialEndSec = giftTrialEndSec(row, tier, Math.floor(Date.now() / 1000))
+            if (trialEndSec !== null) {
+              trialGiftTokens = await giftTrialTokensFor(sql, identity.sub, tier)
+            }
           } catch (err) {
             console.error('[stripe] checkout gift lookup failed:', err)
             return json(502, { error: 'Could not start checkout. Please try again.' })
@@ -419,6 +457,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               // Who chose more than the minimum: they keep the amount controls
               // on the billing page for good (plan-change.ts amountChoiceOpen).
               ...(amountCents > floor ? { [CHOSE_ABOVE_FLOOR_KEY]: 'true' } : {}),
+              // The gift(s) this subscription's trial stands in for (above).
+              ...(trialEndSec !== null && trialGiftTokens.length > 0
+                ? { [GIFT_TRIAL_TOKENS_KEY]: trialGiftTokens.join(',') }
+                : {}),
               // Acquisition channel, captured in the browser on first visit and
               // forwarded here (BI plan §4.1). The webhook reads it straight
               // back off the subscription so every server-side revenue event —
@@ -800,8 +842,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // Fails closed to no offers so a Stripe/DB hiccup never blocks the flow.
       path: '/api/stripe/save-offers',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
+        // Per member: never stored by a shared cache.
+        setReadCacheControl(res, { gated: true })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
@@ -986,72 +1030,87 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // One temporary promotional discount per rolling 12 months, so a member
         // can't re-enter the cancel flow to collect it again. This covers the
         // discount riding the annual→monthly switch too — it's the same coupon.
-        if (await retentionWindowSpent(env, email, 'accept-save-offer')) {
+        //
+        // The window is SPENT here, atomically, before anything touches Stripe
+        // (claimRetentionWindow): checking it and writing the accepted row after
+        // the coupon landed let two concurrent accepts both pass the check, and
+        // a failed row write left the discount attached and the window open.
+        // Every exit below that doesn't attach the coupon releases the claim.
+        let claimId: Awaited<ReturnType<typeof claimRetentionWindow>>
+        try {
+          claimId = await claimRetentionWindow(env, { email, couponId: offer.couponId })
+        } catch (err) {
+          // Fails closed, like retentionWindowSpent: skipping a discount is
+          // recoverable, granting a repeat one isn't.
+          console.error('[stripe] accept-save-offer window claim failed:', err)
           return json(409, { error: 'Save offer already used recently.' })
+        }
+        if (claimId === null) {
+          return json(409, { error: 'Save offer already used recently.' })
+        }
+        const releaseClaim = async () => {
+          if (claimId !== null && claimId !== 'unrecorded') {
+            await releaseRetentionClaim(env, claimId, 'accept-save-offer')
+          }
         }
 
         const pendingScheduleId = target.scheduled ? scheduleIdOf(sub) : null
         let updated
-        if (isPlanSwitchKind(offer.kind)) {
-          // change-tier is supposed to have scheduled the switch already, but
-          // only the client calls it — so verify rather than assume. A
-          // plan-switch coupon is priced for its target cadence (the monthly
-          // supporter rate is configured with metadata.plan = 'monthly'), and
-          // attaching it to a subscription still on the old cadence discounts
-          // the wrong invoice: a repeating N-month coupon takes its cut off a
-          // whole annual charge.
-          const target = offer.targetPlan ?? null
-          const scheduled = await scheduledPlanOf(stripe, sub)
-          if (!target || (plan !== target && scheduled !== target)) {
-            return json(409, { error: 'Plan switch not applied.' })
-          }
-          const scheduleId = scheduleIdOf(sub)
-          if (plan !== target && scheduleId) {
-            // The switch is still a future phase. Stripe won't take a discount
-            // update on a schedule-managed subscription, and the coupon belongs
-            // to the cadence being switched TO anyway — so it goes on that phase,
-            // where its clock starts with the new price. Every phase is passed
-            // back with its own discounts, since the update replaces them all.
-            await addCouponToFinalPhase(stripe, scheduleId, offer.couponId)
+        try {
+          if (isPlanSwitchKind(offer.kind)) {
+            // change-tier is supposed to have scheduled the switch already, but
+            // only the client calls it — so verify rather than assume. A
+            // plan-switch coupon is priced for its target cadence (the monthly
+            // supporter rate is configured with metadata.plan = 'monthly'), and
+            // attaching it to a subscription still on the old cadence discounts
+            // the wrong invoice: a repeating N-month coupon takes its cut off a
+            // whole annual charge.
+            const target = offer.targetPlan ?? null
+            const scheduled = await scheduledPlanOf(stripe, sub)
+            if (!target || (plan !== target && scheduled !== target)) {
+              await releaseClaim()
+              return json(409, { error: 'Plan switch not applied.' })
+            }
+            const scheduleId = scheduleIdOf(sub)
+            if (plan !== target && scheduleId) {
+              // The switch is still a future phase. Stripe won't take a discount
+              // update on a schedule-managed subscription, and the coupon belongs
+              // to the cadence being switched TO anyway — so it goes on that phase,
+              // where its clock starts with the new price. Every phase is passed
+              // back with its own discounts, since the update replaces them all.
+              await addCouponToFinalPhase(stripe, scheduleId, offer.couponId)
+              updated = sub
+            } else {
+              // Already on the target cadence: attach to the subscription, keeping
+              // whatever it already carries.
+              updated = await stripe.subscriptions.update(sub.id, {
+                discounts: [...existingDiscountParams(sub), { coupon: offer.couponId }],
+              })
+            }
+          } else if (pendingScheduleId) {
+            // The offer was derived for the pending phase (a booked debundle, say),
+            // so the coupon goes there: releasing the schedule would cancel the
+            // change the member already made and leave the coupon discounting a
+            // product it wasn't priced for. Its clock starts with that phase.
+            await addCouponToFinalPhase(stripe, pendingScheduleId, offer.couponId)
             updated = sub
           } else {
-            // Already on the target cadence: attach to the subscription, keeping
-            // whatever it already carries.
+            // Release any pending schedule so the coupon attaches cleanly, then
+            // attach it and clear any pending cancel in one update. Existing
+            // discounts are passed back alongside it: `discounts` replaces the
+            // whole list, and accepting a save must never quietly strip a promo
+            // the member already had (a forever checkout code, say).
+            await releaseScheduleIfAny(stripe, sub, env)
             updated = await stripe.subscriptions.update(sub.id, {
               discounts: [...existingDiscountParams(sub), { coupon: offer.couponId }],
+              ...clearCancelParams(sub),
             })
           }
-        } else if (pendingScheduleId) {
-          // The offer was derived for the pending phase (a booked debundle, say),
-          // so the coupon goes there: releasing the schedule would cancel the
-          // change the member already made and leave the coupon discounting a
-          // product it wasn't priced for. Its clock starts with that phase.
-          await addCouponToFinalPhase(stripe, pendingScheduleId, offer.couponId)
-          updated = sub
-        } else {
-          // Release any pending schedule so the coupon attaches cleanly, then
-          // attach it and clear any pending cancel in one update. Existing
-          // discounts are passed back alongside it: `discounts` replaces the
-          // whole list, and accepting a save must never quietly strip a promo
-          // the member already had (a forever checkout code, say).
-          await releaseScheduleIfAny(stripe, sub, env)
-          updated = await stripe.subscriptions.update(sub.id, {
-            discounts: [...existingDiscountParams(sub), { coupon: offer.couponId }],
-            ...clearCancelParams(sub),
-          })
-        }
-        if (env.DATABASE_URL) {
-          try {
-            await insertCancellationSurvey(getDb(env), {
-              email,
-              reasons: [],
-              note: null,
-              offerOutcome: 'accepted',
-              couponId: offer.couponId,
-            })
-          } catch (err) {
-            console.error('[stripe] accept-save-offer survey write failed:', err)
-          }
+        } catch (err) {
+          // Nothing was attached (each branch's coupon write is its last step),
+          // so the window this accept claimed goes back.
+          await releaseClaim()
+          throw err
         }
 
         json(200, {
@@ -1077,10 +1136,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // choice of currency.
       path: '/api/stripe/billing-currency',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
+        // Per member: never stored by a shared cache.
+        setReadCacheControl(res, { gated: true })
         const identity = await resolveRequestIdentity(req, env)
-        if (identity?.source !== 'auth0') return json(200, { currency: null, email: null })
+        if (identity?.assurance !== 'login') return json(200, { currency: null, email: null })
         const email = identity.email.trim().toLowerCase()
         const customer = await findReusableSubscriber(stripe, email)
         json(200, { currency: billingCurrencyOf(customer), email })
@@ -1098,15 +1159,25 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // cancel button rather than an error.
       path: '/api/stripe/my-subscription',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
+        // Per member: never stored by a shared cache.
+        setReadCacheControl(res, { gated: true })
 
-        const email = await getSessionEmail(req, env)
-        if (!email) return json(401, { error: 'unauthenticated' })
+        // Either assurance reads the plan; only a real login reads the card.
+        // A session minted from an emailed link (a forwarded lifecycle email, a
+        // link a mail gateway followed) is enough to see what you pay, but the
+        // card's brand, last four and expiry are what a phisher or a
+        // social-engineering call to support would want, and nothing a
+        // link-holder can act on — changing the card needs a login anyway.
+        const identity = await resolveRequestIdentity(req, env)
+        if (!identity) return json(401, { error: 'unauthenticated' })
+        const email = identity.email
+        const showCard = identity.assurance === 'login'
 
         // The one caller that reads the card on file, so the one that asks for
-        // the payment method to ride along on the list.
-        const sub = await findLiveSubscription(stripe, email, { withPaymentMethod: true })
+        // the payment method to ride along on the list — when it will show it.
+        const sub = await findLiveSubscription(stripe, email, { withPaymentMethod: showCard })
         // When cancel_at_period_end is set, Stripe populates cancel_at; fall back
         // to the current period end so we always have a date to show.
         let cancelAt: string | null = null
@@ -1125,8 +1196,9 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // than send the member to Stripe to find out. Read from the
         // subscription's own default first, then the customer's invoice
         // default, which is what Stripe charges when the sub names none.
-        // Best-effort: a failure here just drops the line.
-        const card = sub ? await readCardOnFile(stripe, sub) : null
+        // Best-effort: a failure here just drops the line. Withheld (null) from
+        // a link-assurance session, above.
+        const card = sub && showCard ? await readCardOnFile(stripe, sub) : null
         // The tier a pending period-end change lands on (e.g. a debundle's
         // bundle → ark-plus), read from the Neon row by the sub's customer, so the
         // account page can name the change rather than say "a plan change".
@@ -1185,7 +1257,8 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           amountCents,
           currency,
           minorFactor,
-          // { brand, last4, expMonth, expYear } or null.
+          // { brand, last4, expMonth, expYear } or null — always null for a
+          // session that came from an emailed link.
           card,
           canChangeAmount,
           // When a gift holding the renewal off runs out (ISO), or null. While
@@ -1214,7 +1287,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         const email = await requireBillingEmail(req, res, env)
         if (!email) return
 
-        const wait = cardSetupLimiter.take(email)
+        const wait = await cardSetupLimiter.take(email)
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, {
@@ -1355,8 +1428,10 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
       // its checkboxes (just without the price/total lines) on a Stripe hiccup.
       path: '/api/stripe/bundle-breakdown',
       method: 'GET',
-      handler: async (req, _res, json) => {
+      handler: async (req, res, json) => {
         if (!stripe) return json(500, { error: 'not_configured' })
+        // Per member (their cadence and currency): never stored by a shared cache.
+        setReadCacheControl(res, { gated: true })
 
         const email = await getSessionEmail(req, env)
         if (!email) return json(401, { error: 'unauthenticated' })
@@ -1543,6 +1618,12 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // intro rate indefinitely — the accept-window guard only covered
         // /accept-save-offer. On a DB error, treat the window as spent: skipping
         // a discount is recoverable, granting an unlimited one isn't.
+        //
+        // Only the candidate is picked here. The window itself is claimed
+        // atomically just before the Stripe write (claimIntro, below), once
+        // nothing else can turn the request away.
+        // The read here is only a cheap early-out (no coupon lookup for a member
+        // whose window is visibly spent); the claim is what decides.
         let introCoupon: Awaited<ReturnType<typeof pickIntroCoupon>> | null = null
         if (isDebundle && !(await retentionWindowSpent(env, email, 'debundle intro'))) {
           introCoupon = pickIntroCoupon(await listActiveCoupons(stripe), currency)
@@ -1618,7 +1699,13 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
         // way /cancel-subscription does. Null when nothing was written (a plain
         // upgrade, no DB, or a failed write) — the survey step then no-ops
         // rather than annotating a row that isn't there.
+        //
+        // When the intro was granted, claimIntro already wrote that row (the
+        // accepted one, carrying the coupon and what was kept) — it is returned
+        // rather than written twice.
+        let introClaimId: Awaited<ReturnType<typeof claimRetentionWindow>> | null = null
         const recordDebundleWinBack = async (): Promise<string | number | null> => {
+          if (introClaimId !== null && introClaimId !== 'unrecorded') return introClaimId
           if (!retainedProduct || !env.DATABASE_URL) return null
           try {
             return await insertCancellationSurvey(getDb(env), {
@@ -1678,8 +1765,43 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
           }
         }
 
+        // Spend the retention window for the intro coupon BEFORE the Stripe
+        // write it rides on — check and record in one atomic step
+        // (claimRetentionWindow) — so two concurrent debundles can't both pass
+        // the check, and a failed record can't leave the coupon free to collect
+        // again. A spent window or a DB error means no intro (fail closed); a
+        // failed Stripe write below gives the claim back.
+        if (introCoupon) {
+          try {
+            introClaimId = await claimRetentionWindow(env, {
+              email,
+              couponId: introCoupon.id,
+              canceledTier: currentTier,
+              retainedProduct,
+            })
+          } catch (err) {
+            console.error('[stripe] debundle intro window claim failed:', err)
+            introClaimId = null
+          }
+          if (introClaimId === null) introCoupon = null
+        }
+        const releaseIntroClaim = async () => {
+          if (introClaimId !== null && introClaimId !== 'unrecorded') {
+            const id = introClaimId
+            introClaimId = null
+            await releaseRetentionClaim(env, id, 'debundle intro')
+          }
+        }
+        // Set once the Stripe write a claim pays for has landed; after that a
+        // failure (a DB write, say) must not hand the window back.
+        let stripeCommitted = false
+
         try {
           if (immediate) {
+            // The intro coupon rides the scheduled phase only (above), so an
+            // immediate change attaches none: give back the window it claimed.
+            await releaseIntroClaim()
+            introCoupon = null
             // Release any prior pending change, then update the item in place
             // (preserves the item id) with exact prorations. The webhook derives
             // the new tier from the price product and syncs Beehiiv/Circle/Neon.
@@ -1731,6 +1853,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
                   : {}),
               },
             })
+            stripeCommitted = true
             if (env.DATABASE_URL) {
               await clearMembershipPending(getDb(env), customerId)
             }
@@ -1824,6 +1947,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
               },
             ],
           })
+          stripeCommitted = true
           if (env.DATABASE_URL) {
             await setMembershipPending(getDb(env), customerId, {
               scheduled_tier: newTier,
@@ -1843,6 +1967,7 @@ export function stripeRoutes({ env, stripe, appBaseUrl, activator }: Deps): Rout
             survey_id: surveyId,
           })
         } catch (err) {
+          if (!stripeCommitted) await releaseIntroClaim()
           // error_if_incomplete (above) turns a failed upgrade charge into a 402
           // with the subscription untouched. That is the member's card, not our
           // outage — say so, and point at the fix, rather than "try again".

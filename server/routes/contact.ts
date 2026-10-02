@@ -39,6 +39,11 @@ const SUBJECT_NAME_MAX = 80
 const DAILY_CEILING = 200
 const DAILY_KEY = 'all'
 
+// One address's share of that day. Keeps a single source from spending the
+// whole site's budget: at this pace it takes twenty addresses working together
+// to reach the ceiling, and they announce themselves doing it.
+const PER_IP_DAILY_CEILING = 10
+
 // The name as it appears in the subject line. Control characters — CR, LF and
 // tab among them — become spaces so nothing typed into the form can break out of
 // the header or fold it, runs of whitespace collapse, and the result is capped.
@@ -115,6 +120,16 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
     capacity: 5,
     refillPerSec: 0.1,
   })
+  // A second, per-IP budget shaped over a day. The burst bucket above alone
+  // let one source send a message every ten seconds all day — enough to drain
+  // the site-wide ceiling below in about half an hour and lock every real
+  // visitor out of the form until tomorrow. Nobody honest sends more than a
+  // handful of enquiries a day from one address.
+  const dailyIpLimiter = createSharedRateLimiter(env, {
+    name: 'contact-ip-daily',
+    capacity: PER_IP_DAILY_CEILING,
+    refillPerSec: PER_IP_DAILY_CEILING / 86_400,
+  })
   // One bucket for everyone (constant key), refilling over a day.
   const dailyLimiter = createSharedRateLimiter(env, {
     name: 'contact-daily',
@@ -133,7 +148,8 @@ export function contactRoutes({ env, appBaseUrl }: Deps): Route[] {
           return json(403, { error: 'bad_origin' })
         }
 
-        const wait = await limiter.take(getClientIp(req))
+        const clientIp = getClientIp(req)
+        const wait = (await limiter.take(clientIp)) ?? (await dailyIpLimiter.take(clientIp))
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })

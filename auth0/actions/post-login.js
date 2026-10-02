@@ -213,10 +213,21 @@ exports.onExecutePostLogin = async (event, api) => {
   // membership row is keyed on the DATABASE account's sub, which on the
   // linking path above is `primary`, and reading the secondary sub here would
   // find no row and turn a paying member away.
+  //
+  // Two ways to name the gated client, and the stricter one wins when both are
+  // set: WEB_CLIENT_ID allow-lists the website, so EVERY other application —
+  // Circle today, anything added to the tenant tomorrow, and the Circle app
+  // itself if CIRCLE_CLIENT_ID is ever mistyped — runs the Fold check. Without
+  // it, CIRCLE_CLIENT_ID alone names the one client to gate, and with neither
+  // the gate is off, loudly: that is a misconfiguration, never a decision.
   const circleClientId = event.secrets.CIRCLE_CLIENT_ID;
-  if (!circleClientId) {
-    console.warn('[circle-gate] CIRCLE_CLIENT_ID unset — Fold SSO is ungated');
-  } else if (event.client.client_id === circleClientId) {
+  const webClientId = event.secrets.WEB_CLIENT_ID;
+  const gated = webClientId
+    ? event.client.client_id !== webClientId
+    : Boolean(circleClientId) && event.client.client_id === circleClientId;
+  if (!circleClientId && !webClientId) {
+    console.warn('[circle-gate] CIRCLE_CLIENT_ID and WEB_CLIENT_ID unset — Fold SSO is ungated');
+  } else if (gated) {
     const verdict = await circleAccess(event, resolved.user_id);
     if (verdict === 'error') {
       // "We could not check" is NOT "you are not entitled" — say so, and let
@@ -245,6 +256,19 @@ exports.onExecutePostLogin = async (event, api) => {
   // the sub (tasks/entitlement-tiers.md §2/task 5). Only identity + the admin
   // roles claim ride the token.
   api.accessToken.setCustomClaim(`${NS}/email`, resolved.email);
+
+  // Whether THIS login proved control of that address. The app refuses a
+  // session when it is false (routes/auth.ts callback, lib/session.ts), so the
+  // flag has to mean "proven by the connection that just authenticated", not
+  // the stored verified bit: on a Google or emailed-code login the connection
+  // is the proof (and the signup gate above already required it), while the
+  // Database account it links into may still carry email_verified:false from
+  // provisioning before 2026-09-27. A direct Database (password) login has
+  // only the stored bit to go on.
+  api.accessToken.setCustomClaim(
+    `${NS}/email_verified`,
+    isNonDatabase ? true : event.user.email_verified === true,
+  );
 
   // Name rides the token so the app never spends a Management API read to greet
   // someone. Read from `resolved`, not `event.user` — on the linking path
@@ -284,9 +308,11 @@ exports.onExecutePostLogin = async (event, api) => {
     resolved.app_metadata?.name_set_by_member === true,
   );
 
+  // Access token only. The ID token goes to whichever application started the
+  // login — Circle included — and none of them has any use for our back-office
+  // role; the BFF reads roles off the access token (lib/session.ts).
   if (roles.length > 0) {
     api.accessToken.setCustomClaim(`${NS}/roles`, roles);
-    api.idToken.setCustomClaim(`${NS}/roles`, roles);
   }
 };
 

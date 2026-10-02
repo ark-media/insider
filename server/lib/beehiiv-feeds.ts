@@ -18,6 +18,7 @@
 
 import { makeTTLCache } from '../../shared/ttl-cache.js'
 import { redactEmail } from '../../shared/validation.js'
+import { redactEmailsInText } from './beehiiv-status.js'
 import { fetchWithTimeout } from './http.js'
 
 type Env = Record<string, string | undefined>
@@ -120,7 +121,7 @@ async function listLiveShowIds(env: Env, pubId: string): Promise<string[]> {
       { headers: { Authorization: `Bearer ${env.BEEHIIV_API_KEY}`, Accept: 'application/json' } },
     )
     if (!res.ok) {
-      console.error(`[beehiiv-feeds] podcast list ${res.status}: ${await res.text()}`)
+      console.error(`[beehiiv-feeds] podcast list ${res.status}: ${redactEmailsInText(await res.text())}`)
       return []
     }
     const body = (await res.json()) as PodcastListResponse
@@ -198,7 +199,7 @@ async function readPrivateFeed(
       read = { kind: 'none' }
     } else if (!res.ok) {
       console.error(
-        `[beehiiv-feeds] feed lookup ${res.status} for ${redactEmail(email)}: ${await res.text()}`,
+        `[beehiiv-feeds] feed lookup ${res.status} for ${redactEmail(email)}: ${redactEmailsInText(await res.text())}`,
       )
     } else {
       const body = (await res.json()) as FeedApiResponse
@@ -377,7 +378,7 @@ export async function buildSpotifyHandoff(
     if (!res.ok) {
       // 422 "JWT token fetching not allowed" means auto-login is switched off
       // for the publication — a setting, not a member state.
-      console.error(`[beehiiv-feeds] jwt mint ${res.status}: ${await res.text()}`)
+      console.error(`[beehiiv-feeds] jwt mint ${res.status}: ${redactEmailsInText(await res.text())}`)
       return null
     }
     const jwt = ((await res.json()) as JwtResponse).data?.jwt_token

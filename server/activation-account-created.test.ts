@@ -13,9 +13,15 @@ import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test'
 import type Stripe from 'stripe'
 
 // Accounts Auth0 already holds, by email. Empty = nobody has this address.
-type FakeUser = { user_id: string; created_at?: string; identities: Array<{ connection: string }> }
+type FakeUser = {
+  user_id: string
+  created_at?: string
+  app_metadata?: Record<string, unknown>
+  identities: Array<{ connection: string }>
+}
 let existingUsers: FakeUser[] = []
 const created: string[] = []
+const createdWith: Array<Record<string, unknown> | undefined> = []
 // Set to make the next create fail the way Auth0 does when a concurrent caller
 // created the same address first: the user appears, and the create throws.
 let raceWinner: FakeUser | null = null
@@ -24,12 +30,21 @@ mock.module('auth0', () => ({
   ManagementClient: class {
     users = {
       listUsersByEmail: async () => existingUsers,
-      create: async ({ email, connection }: { email: string; connection: string }) => {
+      create: async ({
+        email,
+        connection,
+        app_metadata,
+      }: {
+        email: string
+        connection: string
+        app_metadata?: Record<string, unknown>
+      }) => {
         if (raceWinner) {
           existingUsers = [raceWinner]
           throw new Error('The user already exists.')
         }
         created.push(`${connection}:${email}`)
+        createdWith.push(app_metadata)
         return { user_id: `auth0|new-${created.length}` }
       },
       update: async () => ({}),
@@ -92,6 +107,7 @@ function fakeStripe(metadata: Record<string, string>) {
 beforeEach(() => {
   existingUsers = []
   created.length = 0
+  createdWith.length = 0
   raceWinner = null
 })
 
@@ -103,6 +119,9 @@ describe('activateMembershipForStripeSub — accountCreated', () => {
     expect(created.length).toBeGreaterThan(0)
     expect(result.accountCreated).toBe(true)
     expect(updates.at(-1)?.auth0_account_created).toBe('true')
+    // The account records which purchase made it, so a concurrent provisioner
+    // of the same purchase can recognise it (the race tests below).
+    expect(createdWith[0]).toEqual({ provisioned_by: 'sub_1' })
   })
 
   test('false, and NOT stamped, when the address already had an account', async () => {
@@ -146,9 +165,15 @@ describe('activateMembershipForStripeSub — accountCreated', () => {
   // webhook creates the login, then spends seconds on Beehiiv and Circle before
   // stamping the marker; the poll lands in between. It must still read as this
   // purchase's account, or a brand-new buyer is told "you're already a member".
-  test('true when a concurrent caller created the account moments ago', async () => {
+  // What says so is the account's own `provisioned_by` stamp — never its age.
+  test('true when a concurrent caller created the account for this purchase', async () => {
     existingUsers = [
-      { user_id: 'auth0|webhook-made', created_at: iso(SUB_CREATED + 2), identities: DB },
+      {
+        user_id: 'auth0|webhook-made',
+        created_at: iso(SUB_CREATED + 2),
+        app_metadata: { provisioned_by: 'sub_1' },
+        identities: DB,
+      },
     ]
     const { stripe, sub, updates } = fakeStripe({})
     const result = await createActivator(ENV, stripe).activateMembershipForStripeSub(sub, 'circle')
@@ -160,7 +185,12 @@ describe('activateMembershipForStripeSub — accountCreated', () => {
   })
 
   test('true when both callers created at once and this one lost the create', async () => {
-    raceWinner = { user_id: 'auth0|winner', created_at: iso(SUB_CREATED + 1), identities: DB }
+    raceWinner = {
+      user_id: 'auth0|winner',
+      created_at: iso(SUB_CREATED + 1),
+      app_metadata: { provisioned_by: 'sub_1' },
+      identities: DB,
+    }
     const { stripe, sub } = fakeStripe({})
     const result = await createActivator(ENV, stripe).activateMembershipForStripeSub(sub, 'circle')
 
@@ -178,5 +208,36 @@ describe('activateMembershipForStripeSub — accountCreated', () => {
     expect(result.auth0Sub).toBe('auth0|victim')
     expect(result.accountCreated).toBe(false)
     expect(updates.at(-1)?.auth0_account_created).toBeUndefined()
+  })
+
+  // An account that another flow (a gift claim, a comp, someone else's
+  // purchase) created at the same moment is not this purchase's, however close
+  // the timestamps. Under the old 30-second rule it was, and the buyer was
+  // signed in to it.
+  test('false for an account another flow created at the same moment', async () => {
+    existingUsers = [
+      { user_id: 'auth0|gift-claimer', created_at: iso(SUB_CREATED + 2), identities: DB },
+      // ...and one that a DIFFERENT purchase provisioned just now.
+    ]
+    const { stripe, sub, updates } = fakeStripe({})
+    const result = await createActivator(ENV, stripe).activateMembershipForStripeSub(sub, 'circle')
+    expect(result.auth0Sub).toBe('auth0|gift-claimer')
+    expect(result.accountCreated).toBe(false)
+    expect(updates.at(-1)?.auth0_account_created).toBeUndefined()
+
+    existingUsers = [
+      {
+        user_id: 'auth0|other-purchase',
+        created_at: iso(SUB_CREATED + 1),
+        app_metadata: { provisioned_by: 'sub_other' },
+        identities: DB,
+      },
+    ]
+    const second = fakeStripe({})
+    const again = await createActivator(ENV, second.stripe).activateMembershipForStripeSub(
+      second.sub,
+      'circle',
+    )
+    expect(again.accountCreated).toBe(false)
   })
 })

@@ -32,10 +32,21 @@ let nextSqlResult: (sql: string) => unknown[] = () => []
 // here rather than staging an upstream record.
 let membershipRows: unknown[] = []
 
+// The shared rate limiter's bucket upsert (shared-rate-limit.ts), modelled as a
+// bucket that never refills within the run: values[0] is the hashed key,
+// values[1] is capacity - 1.
+const bucketTakes = new Map<string, number>()
+
 mock.module('@neondatabase/serverless', () =>
-  neonMockModule(sqlCalls, (merged) =>
-    merged.includes('from membership') ? membershipRows : nextSqlResult(merged),
-  ),
+  neonMockModule(sqlCalls, (merged, values) => {
+    if (merged.includes('insert into rate_limit_buckets')) {
+      const key = values[0] as string
+      const taken = (bucketTakes.get(key) ?? 0) + 1
+      bucketTakes.set(key, taken)
+      return [{ tokens: 0, allowed: taken <= (values[1] as number) + 1 }]
+    }
+    return merged.includes('from membership') ? membershipRows : nextSqlResult(merged)
+  }),
 )
 
 // A live Ark+ subscription row for `sub`. signAuth0TestToken subjects every
@@ -669,6 +680,76 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
     ).toBe(true)
   })
 
+  test('first login creates with reactivate_existing:false', async () => {
+    stageNoLocalRow()
+    beehiivHandler = (call) => {
+      if (call.url.includes('/subscriptions/by_email/')) return new Response('{}', { status: 404 })
+      if (call.url.endsWith('/subscriptions') && call.method === 'POST') {
+        return new Response(
+          JSON.stringify({ data: { id: 'sub_new', email: 'fresh@x.com', status: 'active' } }),
+          { status: 200 },
+        )
+      }
+      return new Response('{}', { status: 500 })
+    }
+    const token = await signAuth0Token({ email: 'fresh@x.com' })
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+    expect(res.statusCode).toBe(200)
+    const create = beehiivCalls.find((c) => c.url.endsWith('/subscriptions') && c.method === 'POST')
+    expect((create?.body as { reactivate_existing: boolean }).reactivate_existing).toBe(false)
+  })
+
+  // A reader who unsubscribed before they had an account has a Beehiiv record
+  // but no mirror row (the webhook drops readers it doesn't know). A plain GET
+  // of /api/me must not re-subscribe them — or send a welcome email.
+  for (const status of ['unsubscribed', 'inactive', 'pending']) {
+    test(`Beehiiv already has a ${status} record → mirrored as-is, never re-subscribed`, async () => {
+      stageNoLocalRow()
+      beehiivHandler = (call) => {
+        if (call.url.includes('/subscriptions/by_email/')) {
+          return new Response(
+            JSON.stringify({
+              data: { id: 'sub_old', email: 'optedout@x.com', status, subscription_tier: 'free' },
+            }),
+            { status: 200 },
+          )
+        }
+        return new Response('{}', { status: 500 })
+      }
+      const token = await signAuth0Token({ email: 'optedout@x.com' })
+      const res = makeRes()
+      await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+
+      expect(res.statusCode).toBe(200)
+      // Only the read — no create, no update.
+      expect(beehiivCalls.filter((c) => c.method !== 'GET')).toHaveLength(0)
+      const upsert = sqlCalls.find((c) => c.sql.includes('insert into beehiiv_subscription'))
+      expect(upsert?.values.slice(0, 4)).toEqual(['optedout@x.com', PUB_ID, 'sub_old', status])
+    })
+  }
+
+  test('a deleted-reader tombstone in the mirror blocks the auto-subscribe', async () => {
+    nextSqlResult = (sql) =>
+      sql.includes('select') && sql.includes('beehiiv_subscription')
+        ? [
+            {
+              email: 'gone@x.com',
+              publication_id: PUB_ID,
+              beehiiv_subscription_id: 'sub_gone',
+              status: 'deleted',
+              has_premium: false,
+              updated_at: new Date().toISOString(),
+            },
+          ]
+        : []
+    const token = await signAuth0Token({ email: 'gone@x.com' })
+    const res = makeRes()
+    await runHandler(buildHandler(), makeReq({ bearer: token }), res)
+    expect(res.statusCode).toBe(200)
+    expect(beehiivCalls).toHaveLength(0)
+  })
+
   test('repeat login (local row exists) → no Beehiiv call, no upsert', async () => {
     stageHasLocalRow('returning@x.com')
     const token = await signAuth0Token({ email: 'returning@x.com' })
@@ -736,5 +817,36 @@ describe('GET /api/me free-tier first-login auto-subscribe', () => {
         (c) => c.sql.includes('beehiiv_subscription'),
       ),
     ).toBe(false)
+  })
+})
+
+// ===========================================================================
+// GET /api/me budget
+// ===========================================================================
+
+describe('GET /api/me per-caller rate limit', () => {
+  test('60 in a burst, then 429 before any membership/Stripe read; other callers unaffected', async () => {
+    const token = await signAuth0Token({ email: 'looper@x.com', sub: 'auth0|looper' })
+    const handler = buildHandler()
+    for (let i = 0; i < 60; i++) {
+      const ok = makeRes()
+      await runHandler(handler, makeReq({ bearer: token }), ok)
+      expect(ok.statusCode).toBe(200)
+    }
+    sqlCalls.length = 0
+    const limited = makeRes()
+    await runHandler(handler, makeReq({ bearer: token }), limited)
+    expect(limited.statusCode).toBe(429)
+    expect(limited.getHeader('retry-after')).toBeDefined()
+    // Refused before resolution: no membership read (and so no Stripe call).
+    expect(sqlCalls.some((c) => c.sql.includes('from membership'))).toBe(false)
+
+    const other = makeRes()
+    await runHandler(
+      handler,
+      makeReq({ bearer: await signAuth0Token({ email: 'calm@x.com', sub: 'auth0|calm' }) }),
+      other,
+    )
+    expect(other.statusCode).toBe(200)
   })
 })

@@ -58,7 +58,7 @@ export function NewsletterFrame({
       title={title}
       srcDoc={html}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      referrerPolicy="no-referrer-when-downgrade"
+      referrerPolicy="no-referrer"
       className="block w-full border-0"
       style={{
         height: height ?? "80vh",

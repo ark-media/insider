@@ -128,16 +128,30 @@ export async function ensureEmailCodeLogin(
 export type Auth0UserResult = {
   userId: string
   created: boolean
-  // When Auth0 made the account (ISO), for one that already existed. Lets a
-  // caller that lost a create race to a concurrent provisioner tell "made
-  // seconds ago by the same purchase" apart from "was already there".
+  // When Auth0 made the account (ISO), for one that already existed.
   createdAt?: string
+  // What provisioned the account, for one that already existed: the value a
+  // creator passed as `provisionedBy` (a Stripe subscription id), stamped in
+  // app_metadata at create time. Lets a caller that lost a create race to a
+  // concurrent provisioner of the SAME purchase tell "ours, made moments ago"
+  // apart from "was already there" — by identity, not by how close in time the
+  // two happened to land.
+  provisionedBy?: string
+}
+
+// app_metadata key for `provisionedBy` above.
+const PROVISIONED_BY_KEY = 'provisioned_by'
+
+function provisionedBy(user: { app_metadata?: unknown }): string | undefined {
+  const v = (user.app_metadata as Record<string, unknown> | undefined)?.[PROVISIONED_BY_KEY]
+  return typeof v === 'string' ? v : undefined
 }
 
 export async function findOrCreateAuth0User(
   email: string,
   nameHint: string | undefined,
   env: Env,
+  opts: { provisionedBy?: string } = {},
 ): Promise<Auth0UserResult | null> {
   const mgmt = getManagementClient(env)
   if (!mgmt) return null
@@ -173,7 +187,12 @@ export async function findOrCreateAuth0User(
     }
     // Also repairs members provisioned before this step existed.
     await linkEmailCodeLogin(mgmt, email, existing)
-    return { userId: found.user_id, created: false, createdAt: found.created_at }
+    return {
+      userId: found.user_id,
+      created: false,
+      createdAt: found.created_at,
+      provisionedBy: provisionedBy(found),
+    }
   }
 
   // Auth0 requires a password on a Database account; nobody will ever use this
@@ -196,6 +215,9 @@ export async function findOrCreateAuth0User(
       // welcome (or gift claim) email.
       email_verified: true,
       verify_email: false,
+      ...(opts.provisionedBy
+        ? { app_metadata: { [PROVISIONED_BY_KEY]: opts.provisionedBy } }
+        : {}),
     })
     userId = created.user_id
   } catch (err) {
@@ -207,7 +229,12 @@ export async function findOrCreateAuth0User(
       (u) => identityOn(u, DB_CONNECTION),
     )
     if (raced?.user_id) {
-      return { userId: raced.user_id, created: false, createdAt: raced.created_at }
+      return {
+        userId: raced.user_id,
+        created: false,
+        createdAt: raced.created_at,
+        provisionedBy: provisionedBy(raced),
+      }
     }
     console.error('[auth0] create user failed:', err)
     return null

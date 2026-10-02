@@ -78,6 +78,8 @@ let productLookupFails = false
 // invoicePayments.list result for the refund/dispute path: the subscription the
 // reversed payment's invoice belongs to, or null for "no invoice behind it".
 let invoiceSubscriptionId: string | null = null
+// Make subscriptions.update throw (a Stripe outage mid-reversal).
+let subUpdateFails = false
 
 class FakeStripe {
   constructor(_key: string) {}
@@ -129,6 +131,7 @@ class FakeStripe {
     },
     update: async (id: string, args: { metadata: Record<string, string> }) => {
       stripeCalls.push({ method: 'subscriptions.update', args: [id, args] })
+      if (subUpdateFails) throw new Error('stripe update failed')
       return makeSub()
     },
     list: async () => ({ data: [] }),
@@ -282,6 +285,7 @@ beforeEach(() => {
   currentSub = null
   productLookupFails = false
   invoiceSubscriptionId = null
+  subUpdateFails = false
   subProductId = 'prod_arkplus'
   subMeta = {}
   omitAxisMarkers = false
@@ -1085,6 +1089,82 @@ describe('webhook DB path — refunds and disputes', () => {
       stripeCalls.some((c) => c.method === 'subscriptions.update' && c.args[0] === 'sub_r'),
     ).toBe(false)
     expect(logged.find((l) => l.includes('GIFT-REVERSED'))).toContain('MANUAL ACTION')
+  })
+
+  // A subscription bought while the gift ran bills from the gift's end via a
+  // trial, and names the gift in its metadata (checkout). Reversing the gift
+  // must end that trial, or the membership stays free with the money back.
+  describe('a gift-funded checkout trial', () => {
+    const nowSec = () => Math.floor(Date.now() / 1000)
+    const DAY = 86400
+    const iso = (sec: number) => new Date(sec * 1000).toISOString()
+    function stage(opts: { coveredUntilSec: number | null; trialEndSec: number; tokens?: string }) {
+      redeemedGift = {
+        redemption_token: 't',
+        tier: 'ark-plus',
+        plan: '6mo',
+        status: 'reversed',
+        redeemed_by: 'auth0|recipient',
+      }
+      rowAfterGiftRevoke = {
+        auth0_sub: 'auth0|recipient',
+        stripe_customer_id: 'cus_r',
+        stripe_subscription_id: 'sub_t',
+        tier: 'ark-plus',
+        status: 'trialing',
+        current_period_end: null,
+        ark_plus_gift_expires_at: opts.coveredUntilSec === null ? null : iso(opts.coveredUntilSec),
+        circle_gift_expires_at: null,
+      }
+      currentSub = {
+        ...(makeSub() as object),
+        id: 'sub_t',
+        status: 'trialing',
+        trial_end: opts.trialEndSec,
+        metadata: { plan: 'monthly', gift_trial_tokens: opts.tokens ?? 'other_tok,t' },
+      }
+      webhookEvent = { type: 'charge.refunded', data: { object: FULL_REFUND } }
+    }
+    const trialUpdate = () =>
+      stripeCalls.find((c) => c.method === 'subscriptions.update' && c.args[0] === 'sub_t')
+
+    test('nothing else covers the plan → the trial ends now, no proration', async () => {
+      stage({ coveredUntilSec: nowSec() - DAY, trialEndSec: nowSec() + 150 * DAY })
+      const res = await runWebhook(AUTH0_ENV)
+      expect(res.statusCode).toBe(200)
+      expect(trialUpdate()?.args[1]).toEqual({ trial_end: 'now', proration_behavior: 'none' })
+    })
+
+    test('another gift still covers part of it → cut back to that, never later', async () => {
+      const covered = nowSec() + 20 * DAY
+      stage({ coveredUntilSec: covered, trialEndSec: nowSec() + 150 * DAY })
+      await runWebhook(AUTH0_ENV)
+      expect(trialUpdate()?.args[1]).toEqual({ trial_end: covered, proration_behavior: 'none' })
+    })
+
+    test('other gifts still cover the whole trial → left alone', async () => {
+      stage({ coveredUntilSec: nowSec() + 200 * DAY, trialEndSec: nowSec() + 150 * DAY })
+      await runWebhook(AUTH0_ENV)
+      expect(trialUpdate()).toBeUndefined()
+    })
+
+    test('a trial that does not name this gift is not ours to end', async () => {
+      stage({ coveredUntilSec: null, trialEndSec: nowSec() + 150 * DAY, tokens: 'someone_else' })
+      await runWebhook(AUTH0_ENV)
+      expect(trialUpdate()).toBeUndefined()
+    })
+
+    test('a failed update is logged as MANUAL ACTION (the reversal flip is once-only)', async () => {
+      stage({ coveredUntilSec: null, trialEndSec: nowSec() + 150 * DAY })
+      subUpdateFails = true
+      const logged: string[] = []
+      console.error = (...args: unknown[]) => void logged.push(args.map(String).join(' '))
+      const res = await runWebhook(AUTH0_ENV)
+      expect(res.statusCode).toBe(200)
+      const line = logged.find((l) => l.includes('GIFT-REVERSED'))
+      expect(line).toContain('sub_t')
+      expect(line).toContain('MANUAL ACTION: subscription sub_t is trialing on this gift')
+    })
   })
 
   test('a second reversal event for the same gift takes nothing more off', async () => {

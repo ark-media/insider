@@ -24,33 +24,43 @@ import {
   fetchPrivateFeeds,
   publicationIdFromEnv,
 } from '../lib/beehiiv-feeds.js'
+import { redactEmailsInText } from '../lib/beehiiv-status.js'
 import { refreshSubscriptionFromBeehiiv } from '../lib/beehiiv-sync.js'
 import { getDb } from '../lib/db.js'
 import { resolveMembership } from '../lib/entitlement-resolver.js'
 import { fetchWithTimeout, isSameOrigin, readJson } from '../lib/http.js'
-import { createRateLimiter } from '../lib/rate-limit.js'
+import { createSharedRateLimiter } from '../lib/shared-rate-limit.js'
 import { defineRoute, type Deps, type Route } from '../lib/route.js'
 import { redactEmail } from '../../shared/validation.js'
 
-// Module scope, not per-route-build: a budget that resets whenever the route
-// table is rebuilt is not a budget. (Same reason the limiters in routes/me.ts
-// live outside meRoutes.)
+// Shared (Neon-backed) buckets, not in-process ones: each send is a real email
+// from Beehiiv, and a per-instance bucket is multiplied by however many
+// instances a script fans out across and refilled by every cold start. The
+// bucket state lives in the database, so building the limiter per route table
+// does not reset it.
 //
-// Beehiiv sends the mail. Still an email to a real inbox on a click. Same
-// budget: 3/hour.
-const emailLimiter = createRateLimiter({
-  capacity: 3,
-  refillPerSec: 3 / (60 * 60),
-})
+// Beehiiv sends the mail. Still an email to a real inbox on a click: 3/hour.
+const EMAIL_LIMIT = { name: 'feed-email', capacity: 3, refillPerSec: 3 / (60 * 60) }
 
 // The hand-off mints a 30-minute credential each time. Cheap, but not something
 // to allow in a loop.
-const spotifyLimiter = createRateLimiter({
-  capacity: 10,
-  refillPerSec: 1 / 30,
-})
+const SPOTIFY_LIMIT = { name: 'feed-spotify', capacity: 10, refillPerSec: 1 / 30 }
+
+// The Spotify hand-off is a top-level GET navigation, which carries no Origin
+// header — so isSameOrigin (which passes a request without one) guards nothing
+// there. Fetch Metadata does: browsers stamp every navigation with
+// `sec-fetch-site`. 'same-origin' is the setup page's own link; 'none' is a
+// user-initiated navigation (typed, bookmarked, reopened). 'cross-site' and
+// 'same-site' are links on someone else's page — refused, as is a request
+// with no header at all (not a browser we hand a credential to).
+function isOwnNavigation(header: string | string[] | undefined): boolean {
+  const value = Array.isArray(header) ? header[0] : header
+  return value === 'same-origin' || value === 'none'
+}
 
 export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
+  const emailLimiter = createSharedRateLimiter(env, EMAIL_LIMIT)
+  const spotifyLimiter = createSharedRateLimiter(env, SPOTIFY_LIMIT)
   return [
     defineRoute({
       path: '/api/me/feeds/email',
@@ -73,7 +83,7 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         if (!resolved.entitlements.arkPlus) return json(403, { error: 'not_entitled' })
         const email = resolved.identity.email
 
-        const wait = emailLimiter.take(email.toLowerCase())
+        const wait = await emailLimiter.take(email.toLowerCase())
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, {
@@ -123,7 +133,7 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
           if (upstream.status === 404) return json(409, { error: 'no_feed_yet' })
           if (!upstream.ok) {
             console.error(
-              `[feed-actions] feed email ${upstream.status} for ${redactEmail(email)}: ${await upstream.text()}`,
+              `[feed-actions] feed email ${upstream.status} for ${redactEmail(email)}: ${redactEmailsInText(await upstream.text())}`,
             )
             return json(502, { error: 'feed_email_failed' })
           }
@@ -142,9 +152,11 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
       method: 'GET',
       handler: async (req, res, json) => {
         // A GET that redirects, so it is reachable as a plain link — but it
-        // mints a credential, so keep the same-origin guard: a member must be
-        // arriving from our own page, not from an off-site link.
-        if (!isSameOrigin(req, appBaseUrl)) return json(403, { error: 'bad_origin' })
+        // mints a credential, so a member must be arriving from our own page,
+        // not from an off-site link. See isOwnNavigation.
+        if (!isSameOrigin(req, appBaseUrl) || !isOwnNavigation(req.headers['sec-fetch-site'])) {
+          return json(403, { error: 'bad_origin' })
+        }
 
         const resolved = await resolveMembership(req, env, {
           emailFallback: true,
@@ -154,7 +166,7 @@ export function feedActionRoutes({ env, appBaseUrl, stripe }: Deps): Route[] {
         if (!resolved.entitlements.arkPlus) return json(403, { error: 'not_entitled' })
         const email = resolved.identity.email
 
-        const wait = spotifyLimiter.take(email.toLowerCase())
+        const wait = await spotifyLimiter.take(email.toLowerCase())
         if (wait !== null) {
           res.setHeader('retry-after', String(wait))
           return json(429, { error: 'too_many_requests' })

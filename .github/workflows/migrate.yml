@@ -57,7 +57,7 @@ jobs:
     name: Apply pending migrations (${{ github.ref_name == 'production' && 'production' || 'preview' }})
     # Only the two long-lived branches map to a database. A manual dispatch from
     # anywhere else is skipped rather than migrating staging with unmerged work.
-    if: github.ref_name == 'main' || github.ref_name == 'production'
+    if: github.ref_type == 'branch' && (github.ref_name == 'main' || github.ref_name == 'production')
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'production' && 'production' || 'preview' }}
     timeout-minutes: 10
