@@ -47,6 +47,7 @@ import { pricingRoutes } from './routes/pricing.js'
 import { promoRoutes } from './routes/promo.js'
 import { podcastRoutes } from './routes/podcasts.js'
 import { feedActionRoutes } from './routes/feed-actions.js'
+import { scFeedRedirectRoutes } from './routes/sc-feed-redirect.js'
 import { stripeRoutes } from './routes/stripe/routes.js'
 import { supportRoutes } from './routes/support.js'
 
@@ -86,6 +87,7 @@ export function buildApi(env: Env): Api {
     ...pricingRoutes(deps),
     ...promoRoutes(deps),
     ...feedActionRoutes(deps),
+    ...scFeedRedirectRoutes(deps),
     ...stripeRoutes(deps),
     ...giftRoutes(deps),
     ...offerRoutes(deps),

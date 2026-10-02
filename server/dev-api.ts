@@ -12,6 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Env, Handler } from './lib/route.js'
 import { PayloadTooLargeError, makeJsonRes } from './lib/http.js'
 import { buildApi } from './api.js'
+import { SC_FEED_REDIRECT_PATH } from './routes/sc-feed-redirect.js'
 
 // Keeps the exact surface the tests rely on: `plugin.configureServer(fake)`
 // captures a handler per path via `server.middlewares.use(path, handler)`.
@@ -66,6 +67,20 @@ export function devApiPlugin(env: Env): Plugin {
       // integration check) would fail a production bundle that never runs
       // this API.
       const api = buildApi(env)
+      // The one non-/api path: a Supporting Cast feed URL. vercel.json rewrites
+      // `/content/<token>.rss` to the redirect route with the token as a query
+      // param; mirror that here so the dev server answers the same URL. Registered
+      // first so the rewritten URL is what the route middlewares below match on
+      // (Connect fixes `originalUrl` at entry, so it is rewritten too — the exact-
+      // path guard in withErrors reads it).
+      server.middlewares.use((req, _res, next) => {
+        const m = (req.url ?? '').match(/^\/content\/([^/?#]+)\.rss(?:\?|$)/)
+        if (m) {
+          req.url = `${SC_FEED_REDIRECT_PATH}?token=${m[1]}`
+          ;(req as IncomingMessage & { originalUrl?: string }).originalUrl = req.url
+        }
+        next()
+      })
       for (const { path, handler } of api.routes) {
         server.middlewares.use(path, withErrors(path, handler))
       }
